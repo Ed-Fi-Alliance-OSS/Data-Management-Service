@@ -786,22 +786,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 {
                     if (trackedChangePlan is not null)
                     {
-                        // The tombstone reads _stampedContentVersion, and only the root stamping path
-                        // declares that local (see the DECLARE block above). A non-root stamping
-                        // trigger carrying a tracked-change attachment would therefore render a
-                        // function body that does not compile, so fail at emit time instead of
-                        // shipping it.
-                        if (!isRootDocumentStampingTrigger)
-                        {
-                            throw new InvalidOperationException(
-                                $"DocumentStamping trigger '{trigger.Name.Value}' on table "
-                                    + $"'{trigger.Table.Schema.Value}.{trigger.Table.Name}' carries a "
-                                    + "tracked-change attachment but does not stamp a root table. Only "
-                                    + "root stamping triggers declare the _stampedContentVersion local "
-                                    + "the tombstone reads."
-                            );
-                        }
-
+                        // A non-null plan already implies a root stamping trigger: TryBuildTrackedChangePlan
+                        // rejects non-root attachments for both dialects, which is also what guarantees the
+                        // DECLARE block above introduced the _stampedContentVersion local read below.
+                        //
                         // The tombstone's ChangeVersion is a fresh sequence value taken right here.
                         // The OLD image carries the pre-delete ContentVersion, and no row survives a
                         // delete to be stamped into one — reading it back out of dms.Document is what
@@ -1154,8 +1142,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// <exception cref="InvalidOperationException">
     /// Thrown when the attachment references a table absent from the tracked-change inventory; when the
     /// tracked table is <see cref="TrackedChangeTableKind.Resource"/> but the trigger has no identity
-    /// projection columns (key-change detection would be impossible); or when
-    /// <see cref="TrackedChangeTriggerBodyEmitter.BuildPlan"/> finds an inventory inconsistency.
+    /// projection columns (key-change detection would be impossible); when the attached trigger does not
+    /// stamp a root table; or when <see cref="TrackedChangeTriggerBodyEmitter.BuildPlan"/> finds an
+    /// inventory inconsistency.
     /// </exception>
     private static TrackedChangeInsertPlan? TryBuildTrackedChangePlan(
         DbTriggerInfo trigger,
@@ -1190,6 +1179,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             );
         }
 
+        // Dialect-independent because both dialect bodies obtain their plan exclusively from here. On the
+        // PgSQL side the DELETE-branch tombstone reads the plpgsql local _stampedContentVersion, and only
+        // the root stamping path emits the DECLARE block that introduces it, so a non-root attachment
+        // would render a function body that does not compile.
         var mirrorTarget = RequireMirrorStampTargetTable(trigger);
         if (!IsRootDocumentStampingTrigger(trigger, tableModel, mirrorTarget))
         {
@@ -1197,7 +1190,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 $"DocumentStamping trigger '{trigger.Name.Value}' is attached to tracked-change table "
                     + $"'{attachment.TrackedChangeTable.Schema.Value}.{attachment.TrackedChangeTable.Name}' "
                     + "but is not a root document-stamping trigger; only root triggers may carry a "
-                    + "tracked-change attachment."
+                    + "tracked-change attachment. Only root stamping triggers declare the "
+                    + "_stampedContentVersion local the tombstone reads."
             );
         }
 

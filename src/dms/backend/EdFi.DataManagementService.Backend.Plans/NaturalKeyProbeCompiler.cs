@@ -166,6 +166,8 @@ internal static class NaturalKeyProbeCompiler
         QualifiedResourceName resource
     )
     {
+        RequireIdentityJsonPaths(concreteResource, resource);
+
         List<NaturalKeyProbeColumn> probeColumns = new(concreteResource.IdentityJsonPaths.Count);
         HashSet<string> seenStorageColumns = new(StringComparer.Ordinal);
 
@@ -256,7 +258,12 @@ internal static class NaturalKeyProbeCompiler
     /// paths collapse onto the reference site's <c>..._DocumentId</c> FK column (no storage resolution —
     /// the constraint names the FK column itself); every other path resolves to its root column.
     /// </summary>
-    private static OwnNaturalKeyProbe BuildOwnNaturalKeyProbe(
+    /// <remarks>
+    /// Internal rather than private only so the empty-identity guard below can be pinned directly:
+    /// <see cref="Compile"/> builds the target probe first, so its identical guard short-circuits the
+    /// compile path before this builder is ever reached.
+    /// </remarks>
+    internal static OwnNaturalKeyProbe BuildOwnNaturalKeyProbe(
         ConcreteResourceModel concreteResource,
         DbTableModel rootTable,
         IReadOnlyDictionary<DbColumnName, DbColumnModel> columnModelsByName,
@@ -265,6 +272,8 @@ internal static class NaturalKeyProbeCompiler
         QualifiedResourceName resource
     )
     {
+        RequireIdentityJsonPaths(concreteResource, resource);
+
         List<OwnNaturalKeyProbeColumn> probeColumns = new(concreteResource.IdentityJsonPaths.Count);
         HashSet<string> seenColumns = new(StringComparer.Ordinal);
 
@@ -520,6 +529,34 @@ internal static class NaturalKeyProbeCompiler
                 $"Cannot compile natural-key probes: descriptor column '{columnModel.ColumnName.Value}' on "
                     + $"table '{table}' of resource '{FormatResource(resource)}' has no target resource."
             );
+    }
+
+    /// <summary>
+    /// Every relationally stored concrete resource must contribute at least one identity path. Both probe
+    /// builders walk <see cref="ConcreteResourceModel.IdentityJsonPaths"/> to build their column lists, so
+    /// an empty list would otherwise fall straight through the loop and answer a zero-column probe — and a
+    /// zero-column seek matches every row of the probe table instead of one.
+    /// </summary>
+    /// <remarks>
+    /// This is the emit-time successor to the zero-identity check
+    /// <c>DeriveTriggerInventoryPass</c> performed for referential identity computation; that check dies
+    /// with the <c>ReferentialIdentity</c> trigger it guarded. Descriptor resources never reach here —
+    /// <see cref="Compile"/> skips <see cref="ResourceStorageKind.SharedDescriptorTable"/> before either
+    /// builder runs.
+    /// </remarks>
+    private static void RequireIdentityJsonPaths(
+        ConcreteResourceModel concreteResource,
+        QualifiedResourceName resource
+    )
+    {
+        if (concreteResource.IdentityJsonPaths.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{FormatResource(resource)}' requires at least one identity element "
+                    + "to compile a natural-key probe, but IdentityJsonPaths is empty. "
+                    + "A zero-column probe would match every row."
+            );
+        }
     }
 
     private static void RejectArraySegments(JsonPathExpression identityPath, QualifiedResourceName resource)

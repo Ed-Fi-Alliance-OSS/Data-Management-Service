@@ -4762,7 +4762,12 @@ public class Given_RelationalModelDdlEmitter_With_NonRoot_Attachment
                 TrackedChangeTriggerFixture.BuildNonRootAttachedResource(sqlDialect)
             );
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*root*");
+        // Both dialects must fail on the one plan-building guard, carrying the PgSQL rationale (only the
+        // root stamping path DECLAREs the local the tombstone reads) with them.
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*only root triggers may carry a tracked-change attachment*")
+            .WithMessage("*_stampedContentVersion*");
     }
 }
 

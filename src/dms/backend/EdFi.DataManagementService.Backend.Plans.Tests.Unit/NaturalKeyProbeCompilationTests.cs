@@ -25,6 +25,7 @@ public class Given_NaturalKeyProbes_Over_Authoritative_MappingSets
         "../Fixtures/authoritative/sample/inputs/sample-api-schema-authoritative.json";
 
     private static readonly DbColumnName _documentIdColumn = new("DocumentId");
+    private static readonly QualifiedResourceName _sectionResource = new("Ed-Fi", "Section");
 
     private MappingSet _ds52MappingSet = null!;
     private MappingSet _sampleExtensionMappingSet = null!;
@@ -363,6 +364,44 @@ public class Given_NaturalKeyProbes_Over_Authoritative_MappingSets
         act.Should().Throw<InvalidOperationException>().WithMessage("*duplicate natural-key probe target*");
     }
 
+    [Test]
+    public void It_should_reject_a_concrete_resource_with_no_identity_json_paths()
+    {
+        var modelSet = RuntimePlanFixtureModelSetBuilder.Build(Ds52FixturePath, SqlDialect.Pgsql);
+        var stripped = StripIdentityJsonPaths(modelSet, _sectionResource);
+
+        var act = () => MappingSetCompiler.BuildNaturalKeyProbes(stripped);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*requires at least one identity element*")
+            .WithMessage("*Ed-Fi.Section*");
+    }
+
+    [Test]
+    public void It_should_reject_an_own_natural_key_probe_with_no_identity_json_paths()
+    {
+        // The target-probe guard fires first on the compile path, so the own-probe guard is only
+        // reachable by calling its builder directly. The empty lookups are never consulted: with no
+        // identity paths the builder's loop body is unreachable with or without the guard.
+        var concreteResource = StripIdentityJsonPaths(ConcreteResource(_ds52MappingSet, _sectionResource));
+
+        var act = () =>
+            NaturalKeyProbeCompiler.BuildOwnNaturalKeyProbe(
+                concreteResource,
+                concreteResource.RelationalModel.Root,
+                new Dictionary<DbColumnName, DbColumnModel>(),
+                new Dictionary<string, DbColumnName>(StringComparer.Ordinal),
+                new Dictionary<string, DocumentReferenceBinding>(StringComparer.Ordinal),
+                concreteResource.RelationalModel.Resource
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*requires at least one identity element*")
+            .WithMessage("*Ed-Fi.Section*");
+    }
+
     /// <summary>
     /// Differential guard: the compiled own-identity probe must reproduce, resource by resource, BOTH
     /// arms of what the runtime derivations produce today from the <c>ReferentialIdentity</c> trigger
@@ -497,6 +536,41 @@ public class Given_NaturalKeyProbes_Over_Authoritative_MappingSets
 
         return (TriggerKindParameters.ReferentialIdentityMaintenance)referentialIdentityTrigger.Parameters;
     }
+
+    private static ConcreteResourceModel ConcreteResource(
+        MappingSet mappingSet,
+        QualifiedResourceName resource
+    ) =>
+        mappingSet.Model.ConcreteResourcesInNameOrder.Single(concreteResource =>
+            concreteResource.RelationalModel.Resource.Equals(resource)
+        );
+
+    /// <summary>
+    /// Reproduces the m93 model defect: a relationally stored resource whose <c>identityJsonPaths</c>
+    /// list came back empty. Without a guard the compiler answers a zero-column probe, and a zero-column
+    /// seek matches every row of the probe table.
+    /// </summary>
+    private static ConcreteResourceModel StripIdentityJsonPaths(ConcreteResourceModel concreteResource) =>
+        concreteResource with
+        {
+            IdentityJsonPaths = [],
+        };
+
+    private static DerivedRelationalModelSet StripIdentityJsonPaths(
+        DerivedRelationalModelSet modelSet,
+        QualifiedResourceName resource
+    ) =>
+        modelSet with
+        {
+            ConcreteResourcesInNameOrder =
+            [
+                .. modelSet.ConcreteResourcesInNameOrder.Select(concreteResource =>
+                    concreteResource.RelationalModel.Resource.Equals(resource)
+                        ? StripIdentityJsonPaths(concreteResource)
+                        : concreteResource
+                ),
+            ],
+        };
 
     private static IReadOnlyList<TableConstraint.Unique> FindProbeTableConstraints(
         MappingSet mappingSet,

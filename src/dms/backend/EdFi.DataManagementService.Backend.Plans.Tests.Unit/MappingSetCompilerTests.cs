@@ -953,6 +953,7 @@ public class Given_MappingSetCompiler
                     keyUnificationModel
                 )
                 {
+                    IdentityJsonPaths = IdentityJsonPaths("schoolYear"),
                     QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
                         ("schoolYear", [("$.schoolYear", "number")]),
                         ("id", [("$.id", "string")])
@@ -964,6 +965,7 @@ public class Given_MappingSetCompiler
                     supportedModel
                 )
                 {
+                    IdentityJsonPaths = IdentityJsonPaths("schoolYear"),
                     QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
                         ("schoolYear", [("$.schoolYear", "number")])
                     ),
@@ -974,6 +976,7 @@ public class Given_MappingSetCompiler
                     multiPathModel
                 )
                 {
+                    IdentityJsonPaths = IdentityJsonPaths("schoolYear"),
                     QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
                         ("schoolYear", [("$.schoolYear", "number")]),
                         ("schoolYearAlias", [("$.schoolYear", "number"), ("$.localSchoolYear", "number")])
@@ -985,6 +988,7 @@ public class Given_MappingSetCompiler
                     projectionMetadataModel
                 )
                 {
+                    IdentityJsonPaths = IdentityJsonPaths("schoolYear"),
                     QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
                         ("schoolId", [("$.schoolReference.schoolId", "number")])
                     ),
@@ -995,6 +999,7 @@ public class Given_MappingSetCompiler
                     nonRootOnlyModel
                 )
                 {
+                    IdentityJsonPaths = IdentityJsonPaths("studentUniqueId"),
                     QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
                         ("streetNumberName", [("$.addresses[*].streetNumberName", "string")])
                     ),
@@ -1005,6 +1010,7 @@ public class Given_MappingSetCompiler
                     extensionTableModel
                 )
                 {
+                    IdentityJsonPaths = IdentityJsonPaths("schoolYear"),
                     QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
                         ("favoriteColor", [("$._ext.sample.favoriteColor", "string")])
                     ),
@@ -1015,6 +1021,7 @@ public class Given_MappingSetCompiler
                     descriptorEdgeModel
                 )
                 {
+                    IdentityJsonPaths = IdentityJsonPaths("schoolYear"),
                     QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
                         ("academicSubjectDescriptor", [("$.academicSubjectDescriptor", "string")])
                     ),
@@ -1040,6 +1047,19 @@ public class Given_MappingSetCompiler
             RelationalResourceModels: relationalResourceModels
         );
     }
+
+    /// <summary>
+    /// Builds the top-level identity paths for a fixture resource. Natural-key probe compilation requires
+    /// every relationally stored resource to name at least one identity path — a zero-column probe would
+    /// match every row — so each relational root here declares the path of its one path-sourced scalar.
+    /// </summary>
+    private static IReadOnlyList<JsonPathExpression> IdentityJsonPaths(params string[] propertyNames) =>
+        [
+            .. propertyNames.Select(propertyName => new JsonPathExpression(
+                $"$.{propertyName}",
+                [new JsonPathSegment.Property(propertyName)]
+            )),
+        ];
 
     private static RelationalResourceModel CreateRootOnlyModel(
         QualifiedResourceName resource,
