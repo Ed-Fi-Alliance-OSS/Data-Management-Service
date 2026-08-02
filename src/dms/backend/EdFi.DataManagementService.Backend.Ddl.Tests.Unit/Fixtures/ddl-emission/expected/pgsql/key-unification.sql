@@ -77,47 +77,28 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseRegistration_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
     _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
-    _stampedDocumentUuid uuid;
-    _stampedIdentityVersion bigint;
-    _stampedIdentityLastModifiedAt timestamp with time zone;
-    _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CourseOffering_DocumentId" IS DISTINCT FROM NEW."CourseOffering_DocumentId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."CourseOffering_LocalCourseCode" IS DISTINCT FROM NEW."CourseOffering_LocalCourseCode" OR OLD."RegistrationDate" IS DISTINCT FROM NEW."RegistrationDate" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt"
-        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt, _stampedDocumentUuid, _stampedIdentityVersion, _stampedIdentityLastModifiedAt, _stampedCreatedAt
-        FROM "dms"."Document"
-        WHERE "DocumentId" = NEW."DocumentId";
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
-        NEW."DocumentUuid" := _stampedDocumentUuid;
-        NEW."IdentityVersion" := _stampedIdentityVersion;
-        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
-        NEW."CreatedAt" := _stampedCreatedAt;
+        NEW."ContentLastModifiedAt" := now();
+        NEW."IdentityVersion" := nextval('"dms"."ChangeVersionSequence"');
+        NEW."IdentityLastModifiedAt" := now();
+        NEW."CreatedAt" := now();
     ELSIF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."ContentLastModifiedAt" := now();
     END IF;
     IF TG_OP = 'UPDATE' AND (OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."CourseOffering_LocalCourseCode" IS DISTINCT FROM NEW."CourseOffering_LocalCourseCode" OR OLD."RegistrationDate" IS DISTINCT FROM NEW."RegistrationDate") THEN
-        UPDATE "dms"."Document"
-        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "IdentityVersion", "IdentityLastModifiedAt" INTO STRICT _stampedIdentityVersion, _stampedIdentityLastModifiedAt;
-        NEW."IdentityVersion" := _stampedIdentityVersion;
-        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
+        NEW."IdentityVersion" := nextval('"dms"."ChangeVersionSequence"');
+        NEW."IdentityLastModifiedAt" := now();
     END IF;
     RETURN NEW;
 END;
@@ -152,47 +133,28 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
     _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
-    _stampedDocumentUuid uuid;
-    _stampedIdentityVersion bigint;
-    _stampedIdentityLastModifiedAt timestamp with time zone;
-    _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt"
-        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt, _stampedDocumentUuid, _stampedIdentityVersion, _stampedIdentityLastModifiedAt, _stampedCreatedAt
-        FROM "dms"."Document"
-        WHERE "DocumentId" = NEW."DocumentId";
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
-        NEW."DocumentUuid" := _stampedDocumentUuid;
-        NEW."IdentityVersion" := _stampedIdentityVersion;
-        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
-        NEW."CreatedAt" := _stampedCreatedAt;
+        NEW."ContentLastModifiedAt" := now();
+        NEW."IdentityVersion" := nextval('"dms"."ChangeVersionSequence"');
+        NEW."IdentityLastModifiedAt" := now();
+        NEW."CreatedAt" := now();
     ELSIF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."ContentLastModifiedAt" := now();
     END IF;
     IF TG_OP = 'UPDATE' AND (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
-        UPDATE "dms"."Document"
-        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "IdentityVersion", "IdentityLastModifiedAt" INTO STRICT _stampedIdentityVersion, _stampedIdentityLastModifiedAt;
-        NEW."IdentityVersion" := _stampedIdentityVersion;
-        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
+        NEW."IdentityVersion" := nextval('"dms"."ChangeVersionSequence"');
+        NEW."IdentityLastModifiedAt" := now();
     END IF;
     RETURN NEW;
 END;

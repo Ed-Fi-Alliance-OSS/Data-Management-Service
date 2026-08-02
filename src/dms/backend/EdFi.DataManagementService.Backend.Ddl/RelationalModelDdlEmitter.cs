@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -29,19 +29,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private static readonly DbColumnName ResourceKeyIdColumn = new("ResourceKeyId");
     private static readonly DbColumnName DiscriminatorColumn = new("Discriminator");
     private static readonly DbColumnName DescriptorUriColumn = new("Uri");
-
-    /// <summary>
-    /// The <c>dms.Document</c> metadata columns the SQL Server root stamping trigger mirrors onto the
-    /// root row in addition to the content stamp pair, in <c>@stamped</c> declaration order. Declared
-    /// after the individual column-name fields above so the static initializers run in dependency order.
-    /// </summary>
-    private static readonly DbColumnName[] MssqlRootMirroredMetadataColumns =
-    [
-        DocumentUuidColumn,
-        IdentityVersionColumn,
-        IdentityLastModifiedAtColumn,
-        CreatedAtColumn,
-    ];
 
     /// <summary>
     /// Builds a SQL script that creates all schemas, tables, indexes, views, and triggers in the model set.
@@ -727,8 +714,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(Quote(funcName));
         writer.AppendLine("()");
         writer.AppendLine("RETURNS TRIGGER AS $func$");
-        // Only root stamping paths read the captured stamp values (to assign NEW mirror
-        // columns); child paths mirror through a CTE and need no locals.
+        // Only root stamping paths hold the content stamp in a local: the tracked-change tombstone and
+        // key-change rows read it back as their ChangeVersion. Child paths stamp the root row in place
+        // and need no locals.
         if (
             trigger.Parameters is TriggerKindParameters.DocumentStamping
             && IsRootDocumentStampingTrigger(
@@ -742,14 +730,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             using (writer.Indent())
             {
                 writer.AppendLine("_stampedContentVersion bigint;");
-                writer.AppendLine("_stampedContentLastModifiedAt timestamp with time zone;");
-                // The remaining dms.Document metadata mirrors. DocumentUuid and CreatedAt are copied
-                // once on INSERT (immutable thereafter); the identity pair is copied on INSERT and
-                // re-copied whenever the identity-diff branch bumps it.
-                writer.AppendLine("_stampedDocumentUuid uuid;");
-                writer.AppendLine("_stampedIdentityVersion bigint;");
-                writer.AppendLine("_stampedIdentityLastModifiedAt timestamp with time zone;");
-                writer.AppendLine("_stampedCreatedAt timestamp with time zone;");
             }
         }
         writer.AppendLine("BEGIN");
@@ -792,11 +772,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                         //
                         // The tombstone's ChangeVersion is a fresh sequence value taken right here.
                         // The OLD image carries the pre-delete ContentVersion, and no row survives a
-                        // delete to be stamped into one — reading it back out of dms.Document is what
-                        // used to make the delete statement order (root row before the dms.Document
-                        // row) load-bearing. The change version stays post-delete and monotonic
-                        // because dms.ChangeVersionSequence is the same source every stamp uses and
-                        // is what GetMaxChangeVersion reports.
+                        // delete to be stamped into one. The change version stays post-delete and
+                        // monotonic because dms.ChangeVersionSequence is the same source every stamp
+                        // uses and is what GetMaxChangeVersion reports.
                         EmitPgsqlStampedContentVersionFromSequence(writer, FormatSequenceName());
                         TrackedChangeTriggerBodyEmitter.EmitPgsqlTombstoneInsert(
                             writer,
@@ -804,17 +782,17 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                             trackedChangePlan
                         );
                     }
-                    else
+                    else if (!isRootDocumentStampingTrigger)
                     {
-                        EmitPgsqlDocumentContentStampUpdate(
+                        // Deleting a child/collection row is a content change to the surviving root
+                        // row, so it still takes a stamp. A root delete stamps nothing: the root row
+                        // is the stamp store and it is the row going away.
+                        EmitPgsqlRootContentStampUpdate(
                             writer,
-                            Quote(DmsTableNames.Document),
                             FormatSequenceName(),
                             deleteKeyColumn,
                             mirrorStampTargetTable,
-                            "OLD",
-                            assignToNewMirrorColumns: false,
-                            updateMirrorTable: !isRootDocumentStampingTrigger
+                            "OLD"
                         );
                     }
                     writer.AppendLine("RETURN OLD;");
@@ -1096,7 +1074,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             );
         }
 
-        var documentTable = Quote(DmsTableNames.Document);
         var sequenceName = FormatSequenceName();
         var keyColumn = trigger.KeyColumns[0];
         var mirrorStampTargetTable = RequireMirrorStampTargetTable(trigger);
@@ -1107,7 +1084,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer,
                 trigger,
                 tableModel,
-                documentTable,
                 sequenceName,
                 keyColumn,
                 mirrorStampTargetTable,
@@ -1120,7 +1096,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer,
                 trigger,
                 tableModel,
-                documentTable,
                 sequenceName,
                 keyColumn,
                 mirrorStampTargetTable,
@@ -1255,7 +1230,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         SqlWriter writer,
         DbTriggerInfo trigger,
         DbTableModel tableModel,
-        string documentTable,
         string sequenceName,
         DbColumnName keyColumn,
         DbTableName mirrorStampTargetTable,
@@ -1279,42 +1253,29 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
         writer.AppendLine("END IF;");
 
-        // Root-document INSERTs and changed UPDATEs capture the dms.Document stamp and mirror the same values into NEW.
+        // The root row owns its stamps outright, so a BEFORE trigger assigns them straight onto NEW.
+        // An INSERT is a brand new row with no prior stamp to preserve, so it takes both the content
+        // and the identity stamp plus CreatedAt; a changed UPDATE takes only the content stamp.
         if (isRootDocumentStampingTrigger)
         {
             writer.AppendLine("IF TG_OP = 'INSERT' THEN");
             using (writer.Indent())
             {
-                EmitPgsqlExistingDocumentStampAndMetadataRead(writer, documentTable, keyColumn, "NEW");
+                EmitPgsqlRootContentStamp(writer, sequenceName);
+                EmitPgsqlNewSequenceAssignment(writer, IdentityVersionColumn, sequenceName);
+                EmitPgsqlNewNowAssignment(writer, IdentityLastModifiedAtColumn);
+                EmitPgsqlNewNowAssignment(writer, CreatedAtColumn);
             }
             writer.AppendLine("ELSIF TG_OP = 'UPDATE' THEN");
             using (writer.Indent())
             {
-                EmitPgsqlDocumentContentStampUpdate(
-                    writer,
-                    documentTable,
-                    sequenceName,
-                    keyColumn,
-                    mirrorStampTargetTable,
-                    "NEW",
-                    assignToNewMirrorColumns: true,
-                    updateMirrorTable: false
-                );
+                EmitPgsqlRootContentStamp(writer, sequenceName);
             }
             writer.AppendLine("END IF;");
         }
         else
         {
-            EmitPgsqlDocumentContentStampUpdate(
-                writer,
-                documentTable,
-                sequenceName,
-                keyColumn,
-                mirrorStampTargetTable,
-                "NEW",
-                assignToNewMirrorColumns: false,
-                updateMirrorTable: true
-            );
+            EmitPgsqlRootContentStampUpdate(writer, sequenceName, keyColumn, mirrorStampTargetTable, "NEW");
         }
 
         // IdentityVersion stamp for root tables with identity projection columns
@@ -1330,44 +1291,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
             using (writer.Indent())
             {
-                writer.Append("UPDATE ");
-                writer.AppendLine(documentTable);
-                writer.Append("SET ");
-                writer.Append(Quote(IdentityVersionColumn));
-                writer.Append(" = nextval('");
-                writer.Append(sequenceName);
-                writer.Append("'), ");
-                writer.Append(Quote(IdentityLastModifiedAtColumn));
-                writer.AppendLine(" = now()");
-                writer.Append("WHERE ");
-                writer.Append(Quote(DocumentIdColumn));
-                writer.Append(" = NEW.");
-                writer.Append(Quote(keyColumn));
-
-                if (isRootDocumentStampingTrigger)
-                {
-                    // Mirror the bump back onto the row being written. Legal because this is a BEFORE
-                    // trigger, so assigning NEW still influences the stored row; without this the root
-                    // mirror would keep the pre-bump identity values until the next INSERT.
-                    writer.AppendLine();
-                    writer.Append("RETURNING ");
-                    writer.Append(Quote(IdentityVersionColumn));
-                    writer.Append(", ");
-                    writer.Append(Quote(IdentityLastModifiedAtColumn));
-                    writer.AppendLine(
-                        " INTO STRICT _stampedIdentityVersion, _stampedIdentityLastModifiedAt;"
-                    );
-                    writer.Append("NEW.");
-                    writer.Append(Quote(IdentityVersionColumn));
-                    writer.AppendLine(" := _stampedIdentityVersion;");
-                    writer.Append("NEW.");
-                    writer.Append(Quote(IdentityLastModifiedAtColumn));
-                    writer.AppendLine(" := _stampedIdentityLastModifiedAt;");
-                }
-                else
-                {
-                    writer.AppendLine(";");
-                }
+                // IdentityProjectionColumns is populated only for root stamping triggers
+                // (DeriveTriggerInventoryPass passes [] for child/collection/_ext tables), so the bump
+                // is always a local assignment onto the root row this BEFORE trigger is writing.
+                EmitPgsqlNewSequenceAssignment(writer, IdentityVersionColumn, sequenceName);
+                EmitPgsqlNewNowAssignment(writer, IdentityLastModifiedAtColumn);
 
                 // Resource-kind tracked-change attachments record a key-change row for the same
                 // identity-diff workset that bumped IdentityVersion above. ConcreteAbstract tables
@@ -1390,75 +1318,46 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits the INSERT-path read of the already-stamped <c>dms.Document</c> row and assigns the full
-    /// document metadata set (the content stamp pair plus <c>DocumentUuid</c>, the identity stamp pair, and
-    /// <c>CreatedAt</c>) onto <c>NEW</c>, so the inserted root row is self-sufficient. Only the root
-    /// document-stamping path uses this; child triggers stamp through
-    /// <see cref="EmitPgsqlDocumentContentStampUpdate" />.
+    /// Emits the plpgsql assignments that stamp the root row's own content pair: the change version is
+    /// taken into <c>_stampedContentVersion</c> first so the tracked-change tombstone and key-change rows
+    /// can report the same value, then assigned onto <c>NEW</c>. Legal because the root stamping trigger
+    /// is a BEFORE trigger, so assigning <c>NEW</c> is what the row is stored with.
     /// </summary>
-    private void EmitPgsqlExistingDocumentStampAndMetadataRead(
-        SqlWriter writer,
-        string documentTable,
-        DbColumnName keyColumn,
-        string sourceRowAlias
-    )
+    private void EmitPgsqlRootContentStamp(SqlWriter writer, string sequenceName)
     {
-        writer.Append("SELECT ");
-        writer.Append(Quote(ContentVersionColumn));
-        writer.Append(", ");
-        writer.Append(Quote(ContentLastModifiedAtColumn));
-        writer.Append(", ");
-        writer.Append(Quote(DocumentUuidColumn));
-        writer.Append(", ");
-        writer.Append(Quote(IdentityVersionColumn));
-        writer.Append(", ");
-        writer.Append(Quote(IdentityLastModifiedAtColumn));
-        writer.Append(", ");
-        writer.Append(Quote(CreatedAtColumn));
-        writer.AppendLine();
-        // STRICT: a missing dms.Document row must fail with a clear no-rows error here,
-        // not as a misleading not-null violation when the NULL locals reach NEW.
-        // The INTO list stays in lockstep with the projection above.
-        writer.Append("INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt");
-        writer.Append(
-            ", _stampedDocumentUuid, _stampedIdentityVersion, _stampedIdentityLastModifiedAt, _stampedCreatedAt"
-        );
-        writer.AppendLine();
-        writer.Append("FROM ");
-        writer.AppendLine(documentTable);
-        writer.Append("WHERE ");
-        writer.Append(Quote(DocumentIdColumn));
-        writer.Append(" = ");
-        writer.Append(sourceRowAlias);
-        writer.Append(".");
-        writer.Append(Quote(keyColumn));
-        writer.AppendLine(";");
-
+        EmitPgsqlStampedContentVersionFromSequence(writer, sequenceName);
         writer.Append("NEW.");
         writer.Append(Quote(ContentVersionColumn));
         writer.AppendLine(" := _stampedContentVersion;");
+        EmitPgsqlNewNowAssignment(writer, ContentLastModifiedAtColumn);
+    }
+
+    /// <summary>
+    /// Emits <c>NEW."&lt;column&gt;" := nextval('&lt;sequence&gt;');</c>.
+    /// </summary>
+    private void EmitPgsqlNewSequenceAssignment(SqlWriter writer, DbColumnName column, string sequenceName)
+    {
         writer.Append("NEW.");
-        writer.Append(Quote(ContentLastModifiedAtColumn));
-        writer.AppendLine(" := _stampedContentLastModifiedAt;");
+        writer.Append(Quote(column));
+        writer.Append(" := nextval('");
+        writer.Append(sequenceName);
+        writer.AppendLine("');");
+    }
+
+    /// <summary>
+    /// Emits <c>NEW."&lt;column&gt;" := now();</c>.
+    /// </summary>
+    private void EmitPgsqlNewNowAssignment(SqlWriter writer, DbColumnName column)
+    {
         writer.Append("NEW.");
-        writer.Append(Quote(DocumentUuidColumn));
-        writer.AppendLine(" := _stampedDocumentUuid;");
-        writer.Append("NEW.");
-        writer.Append(Quote(IdentityVersionColumn));
-        writer.AppendLine(" := _stampedIdentityVersion;");
-        writer.Append("NEW.");
-        writer.Append(Quote(IdentityLastModifiedAtColumn));
-        writer.AppendLine(" := _stampedIdentityLastModifiedAt;");
-        writer.Append("NEW.");
-        writer.Append(Quote(CreatedAtColumn));
-        writer.AppendLine(" := _stampedCreatedAt;");
+        writer.Append(Quote(column));
+        writer.AppendLine(" := now();");
     }
 
     /// <summary>
     /// Emits the plpgsql assignment that gives the tracked-change tombstone its change version:
     /// a fresh value off <c>dms.ChangeVersionSequence</c>. The DELETE branch has no row left to stamp
-    /// and read back, and taking the value here is what keeps the tombstone independent of whether
-    /// the <c>dms.Document</c> row has already been deleted.
+    /// and read back, and taking the value here keeps the tombstone independent of the delete order.
     /// </summary>
     private static void EmitPgsqlStampedContentVersionFromSequence(SqlWriter writer, string sequenceName)
     {
@@ -1467,115 +1366,36 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("');");
     }
 
-    private void EmitPgsqlDocumentContentStampUpdate(
+    /// <summary>
+    /// Emits the content stamp a child / collection / <c>_ext</c> trigger applies to its owning root row:
+    /// a single <c>UPDATE &lt;root&gt; r SET "ContentVersion" = nextval(...), "ContentLastModifiedAt" = now()
+    /// WHERE r."DocumentId" = &lt;NEW|OLD&gt;."&lt;locator&gt;"</c>. A cascade-deleted root leaves no row to
+    /// match, which is what the old CTE's <c>EXISTS</c> guard used to enforce explicitly.
+    /// </summary>
+    private void EmitPgsqlRootContentStampUpdate(
         SqlWriter writer,
-        string documentTable,
         string sequenceName,
         DbColumnName keyColumn,
-        DbTableName mirrorStampTargetTable,
-        string sourceRowAlias,
-        bool assignToNewMirrorColumns,
-        bool updateMirrorTable
+        DbTableName rootTable,
+        string sourceRowAlias
     )
     {
-        if (assignToNewMirrorColumns || !updateMirrorTable)
-        {
-            writer.Append("UPDATE ");
-            writer.AppendLine(documentTable);
-            writer.Append("SET ");
-            writer.Append(Quote(ContentVersionColumn));
-            writer.Append(" = nextval('");
-            writer.Append(sequenceName);
-            writer.Append("'), ");
-            writer.Append(Quote(ContentLastModifiedAtColumn));
-            writer.AppendLine(" = now()");
-            writer.Append("WHERE ");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.Append(" = ");
-            writer.Append(sourceRowAlias);
-            writer.Append(".");
-            writer.Append(Quote(keyColumn));
-
-            if (assignToNewMirrorColumns)
-            {
-                writer.AppendLine();
-                writer.Append("RETURNING ");
-                writer.Append(Quote(ContentVersionColumn));
-                writer.Append(", ");
-                writer.Append(Quote(ContentLastModifiedAtColumn));
-                // STRICT: a missing dms.Document row must fail with a clear no-rows error
-                // here, not as a misleading not-null violation when the NULL locals reach NEW.
-                writer.AppendLine(" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;");
-                writer.Append("NEW.");
-                writer.Append(Quote(ContentVersionColumn));
-                writer.AppendLine(" := _stampedContentVersion;");
-                writer.Append("NEW.");
-                writer.Append(Quote(ContentLastModifiedAtColumn));
-                writer.AppendLine(" := _stampedContentLastModifiedAt;");
-            }
-            else
-            {
-                writer.AppendLine(";");
-            }
-
-            return;
-        }
-
-        writer.AppendLine("WITH stamped AS (");
-        using (writer.Indent())
-        {
-            writer.Append("UPDATE ");
-            writer.AppendLine(documentTable);
-            writer.Append("SET ");
-            writer.Append(Quote(ContentVersionColumn));
-            writer.Append(" = nextval('");
-            writer.Append(sequenceName);
-            writer.Append("'), ");
-            writer.Append(Quote(ContentLastModifiedAtColumn));
-            writer.AppendLine(" = now()");
-            writer.Append("WHERE ");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.Append(" = ");
-            writer.Append(sourceRowAlias);
-            writer.Append(".");
-            writer.Append(Quote(keyColumn));
-            writer.AppendLine();
-            writer.Append("AND EXISTS (");
-            writer.Append("SELECT 1 FROM ");
-            writer.Append(Quote(mirrorStampTargetTable));
-            writer.Append(" r WHERE r.");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.Append(" = ");
-            writer.Append(sourceRowAlias);
-            writer.Append(".");
-            writer.Append(Quote(keyColumn));
-            writer.AppendLine(")");
-            writer.Append("RETURNING ");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.Append(", ");
-            writer.Append(Quote(ContentVersionColumn));
-            writer.Append(", ");
-            writer.Append(Quote(ContentLastModifiedAtColumn));
-            writer.AppendLine();
-        }
-        writer.AppendLine(")");
         writer.Append("UPDATE ");
-        writer.Append(Quote(mirrorStampTargetTable));
+        writer.Append(Quote(rootTable));
         writer.AppendLine(" r");
         writer.Append("SET ");
         writer.Append(Quote(ContentVersionColumn));
-        writer.Append(" = stamped.");
-        writer.Append(Quote(ContentVersionColumn));
-        writer.Append(", ");
+        writer.Append(" = nextval('");
+        writer.Append(sequenceName);
+        writer.Append("'), ");
         writer.Append(Quote(ContentLastModifiedAtColumn));
-        writer.Append(" = stamped.");
-        writer.Append(Quote(ContentLastModifiedAtColumn));
-        writer.AppendLine();
-        writer.AppendLine("FROM stamped");
+        writer.AppendLine(" = now()");
         writer.Append("WHERE r.");
         writer.Append(Quote(DocumentIdColumn));
-        writer.Append(" = stamped.");
-        writer.Append(Quote(DocumentIdColumn));
+        writer.Append(" = ");
+        writer.Append(sourceRowAlias);
+        writer.Append(".");
+        writer.Append(Quote(keyColumn));
         writer.AppendLine(";");
     }
 
@@ -1583,7 +1403,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         SqlWriter writer,
         DbTriggerInfo trigger,
         DbTableModel tableModel,
-        string documentTable,
         string sequenceName,
         DbColumnName keyColumn,
         DbTableName mirrorStampTargetTable,
@@ -1594,7 +1413,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var storedColumns = GetStoredColumnsForDocumentStamping(tableModel, trigger.Name.Value);
         var quotedKeyColumn = Quote(keyColumn);
         var quotedProbeKeyColumn = Quote(tableKeyColumns[0]);
-        var mirrorStampTarget = Quote(mirrorStampTargetTable);
+        var quotedDocumentIdColumn = Quote(DocumentIdColumn);
+        var stampTarget = Quote(mirrorStampTargetTable);
         var isRootDocumentStampingTrigger = IsRootDocumentStampingTrigger(
             trigger,
             tableModel,
@@ -1602,74 +1422,70 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         );
 
         // Built unconditionally so attachment inconsistencies (unknown tracked table, empty identity
-        // workset on a Resource-kind attachment) throw even when neither tracked-change block below
-        // is emitted. Read before the affectedDocs CTE because a tombstone-bearing root trigger
-        // leaves pure deletes out of the dms.Document stamp workset entirely.
+        // workset on a Resource-kind attachment, non-root attachment) throw even when neither
+        // tracked-change block below is emitted.
         var trackedChangePlan = TryBuildTrackedChangePlan(trigger, tableModel, trackedChangeTablesByName);
-
-        // A pure delete no longer stamps dms.Document: its tombstone allocates a change version
-        // straight from the sequence, so there is nothing left for the stamp to hand back and no
-        // reason to write a row that the delete batch removes moments later.
-        var stampDeletedDocuments = !(isRootDocumentStampingTrigger && trackedChangePlan is not null);
-
-        writer.AppendLine("DECLARE @stamped TABLE (");
-        using (writer.Indent())
-        {
-            writer.AppendLine("[DocumentId] bigint NOT NULL PRIMARY KEY,");
-            writer.AppendLine("[ContentVersion] bigint NOT NULL,");
-            // Root triggers also carry the remaining dms.Document metadata mirrors, so the capture
-            // table keeps one column per mirrored value in OUTPUT order (OUTPUT ... INTO @stamped
-            // binds positionally). Child triggers only ever mirror the content stamp pair.
-            if (isRootDocumentStampingTrigger)
-            {
-                writer.AppendLine("[ContentLastModifiedAt] datetime2(7) NOT NULL,");
-                writer.AppendLine("[DocumentUuid] uniqueidentifier NOT NULL,");
-                writer.AppendLine("[IdentityVersion] bigint NOT NULL,");
-                writer.AppendLine("[IdentityLastModifiedAt] datetime2(7) NOT NULL,");
-                writer.AppendLine("[CreatedAt] datetime2(7) NOT NULL");
-            }
-            else
-            {
-                writer.AppendLine("[ContentLastModifiedAt] datetime2(7) NOT NULL");
-            }
-        }
-        writer.AppendLine(");");
 
         if (isRootDocumentStampingTrigger)
         {
-            writer.Append("INSERT INTO @stamped (");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.Append(", ");
-            writer.Append(Quote(ContentVersionColumn));
-            writer.Append(", ");
-            writer.Append(Quote(ContentLastModifiedAtColumn));
-            AppendMssqlRootMirroredMetadataColumns(writer, qualifier: null);
+            // A pure insert is a brand new row with no prior stamp to preserve, so it takes both stamps
+            // and CreatedAt in one pass. The workset is captured into a table variable so the UPDATE can
+            // be gated: the stamp now writes the trigger's own table, and a zero-row UPDATE still re-fires
+            // the trigger, which recurses to the nesting limit on databases with RECURSIVE_TRIGGERS ON.
+            writer.AppendLine("DECLARE @insertedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);");
+            writer.Append("INSERT INTO @insertedDocs (");
+            writer.Append(quotedDocumentIdColumn);
             writer.AppendLine(")");
-            writer.Append("SELECT d.");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.Append(", d.");
-            writer.Append(Quote(ContentVersionColumn));
-            writer.Append(", d.");
-            writer.Append(Quote(ContentLastModifiedAtColumn));
-            AppendMssqlRootMirroredMetadataColumns(writer, "d");
-            writer.AppendLine();
-            writer.Append("FROM ");
-            writer.Append(documentTable);
-            writer.AppendLine(" d");
-            writer.Append("INNER JOIN inserted i ON d.");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.Append(" = i.");
+            writer.Append("SELECT i.");
             writer.AppendLine(quotedKeyColumn);
+            writer.AppendLine("FROM inserted i");
             writer.Append("LEFT JOIN deleted del ON ");
             EmitMssqlJoinConjunction(writer, "del", "i", tableKeyColumns);
             writer.AppendLine();
             writer.Append("WHERE del.");
             writer.Append(quotedProbeKeyColumn);
             writer.AppendLine(" IS NULL;");
+            writer.AppendLine("IF EXISTS (SELECT 1 FROM @insertedDocs)");
+            writer.AppendLine("BEGIN");
+            using (writer.Indent())
+            {
+                writer.AppendLine("UPDATE r");
+                writer.Append("SET r.");
+                writer.Append(Quote(ContentVersionColumn));
+                writer.Append(" = NEXT VALUE FOR ");
+                writer.Append(sequenceName);
+                writer.AppendLine(",");
+                writer.Append("    r.");
+                writer.Append(Quote(ContentLastModifiedAtColumn));
+                writer.AppendLine(" = sysutcdatetime(),");
+                writer.Append("    r.");
+                writer.Append(Quote(IdentityVersionColumn));
+                writer.Append(" = NEXT VALUE FOR ");
+                writer.Append(sequenceName);
+                writer.AppendLine(",");
+                writer.Append("    r.");
+                writer.Append(Quote(IdentityLastModifiedAtColumn));
+                writer.AppendLine(" = sysutcdatetime(),");
+                writer.Append("    r.");
+                writer.Append(Quote(CreatedAtColumn));
+                writer.AppendLine(" = sysutcdatetime()");
+                writer.Append("FROM ");
+                writer.Append(stampTarget);
+                writer.AppendLine(" r");
+                writer.Append("INNER JOIN @insertedDocs s ON s.");
+                writer.Append(quotedDocumentIdColumn);
+                writer.Append(" = r.");
+                writer.Append(quotedDocumentIdColumn);
+                writer.AppendLine(";");
+            }
+            writer.AppendLine("END");
         }
 
         // ContentVersion stamp - compute the set of affected documents from inserted/deleted
         // rows that are inserts, deletes, or actual value changes. No-op UPDATEs are excluded.
+        // A root pure delete stamps nothing: the root row is the stamp store and it is the row going
+        // away, so only child / collection / _ext triggers carry a deleted-side arm.
+        writer.AppendLine("DECLARE @stamped TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);");
         writer.AppendLine(";WITH affectedDocs AS (");
         using (writer.Indent())
         {
@@ -1693,13 +1509,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
             }
             writer.AppendLine();
-            if (stampDeletedDocuments)
+            if (!isRootDocumentStampingTrigger)
             {
-                // Root branches are disjoint (inserted-side takes changed updates, deleted-side
-                // pure deletes), so UNION ALL skips the dedup sort and the diff disjunction runs
-                // once per row. Child rows map many-to-one onto the root document, so the child
-                // shape keeps UNION's dedup and the deleted-side diff for changed updates.
-                writer.AppendLine(isRootDocumentStampingTrigger ? "UNION ALL" : "UNION");
+                // Child rows map many-to-one onto the root document, so the child shape keeps UNION's
+                // dedup and the deleted-side diff for changed updates.
+                writer.AppendLine("UNION");
                 writer.Append("SELECT del.");
                 writer.AppendLine(quotedKeyColumn);
                 writer.AppendLine("FROM deleted del");
@@ -1708,64 +1522,23 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.AppendLine();
                 writer.Append("WHERE i.");
                 writer.Append(quotedProbeKeyColumn);
-                if (isRootDocumentStampingTrigger)
-                {
-                    writer.AppendLine(" IS NULL");
-                }
-                else
-                {
-                    writer.Append(" IS NULL OR ");
-                    EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
-                    writer.AppendLine();
-                }
+                writer.Append(" IS NULL OR ");
+                EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
+                writer.AppendLine();
             }
         }
         writer.AppendLine(")");
-
-        writer.AppendLine("UPDATE d");
-        writer.Append("SET d.");
-        writer.Append(Quote(ContentVersionColumn));
-        writer.Append(" = NEXT VALUE FOR ");
-        writer.Append(sequenceName);
-        writer.Append(", d.");
-        writer.Append(Quote(ContentLastModifiedAtColumn));
-        writer.AppendLine(" = sysutcdatetime()");
-        writer.Append(
-            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt]"
-        );
-        if (isRootDocumentStampingTrigger)
-        {
-            // The post-update dms.Document row image carries the remaining metadata mirrors, so the
-            // changed-UPDATE path re-asserts them on the root row alongside the content stamp.
-            AppendMssqlRootMirroredMetadataColumns(writer, "inserted");
-        }
-        writer.AppendLine(" INTO @stamped");
-        writer.Append("FROM ");
-        writer.Append(documentTable);
-        writer.AppendLine(" d");
-        writer.Append("INNER JOIN affectedDocs a ON d.");
-        writer.Append(Quote(DocumentIdColumn));
-        writer.Append(" = a.");
+        writer.Append("INSERT INTO @stamped (");
+        writer.Append(quotedDocumentIdColumn);
+        writer.AppendLine(")");
+        writer.Append("SELECT ");
         writer.Append(quotedKeyColumn);
-        if (!isRootDocumentStampingTrigger)
-        {
-            writer.AppendLine();
-            writer.Append("INNER JOIN ");
-            writer.Append(mirrorStampTarget);
-            writer.Append(" stampTarget ON stampTarget.");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.Append(" = a.");
-            writer.Append(quotedKeyColumn);
-            writer.AppendLine(";");
-        }
-        else
-        {
-            writer.AppendLine(";");
-        }
+        writer.AppendLine(" FROM affectedDocs;");
 
-        // The guard bounds direct recursion: without it the mirror self-UPDATE re-fires
-        // this trigger even with an empty workset (statement triggers fire on 0 rows),
-        // which recurses to the nesting limit on databases with RECURSIVE_TRIGGERS ON.
+        // The guard bounds direct recursion: without it the stamp UPDATE re-fires this trigger even with
+        // an empty workset (statement triggers fire on 0 rows), which recurses to the nesting limit on
+        // databases with RECURSIVE_TRIGGERS ON. A cascade-deleted root leaves no row for the child arm's
+        // join to match, so a child stamp is naturally a no-op there.
         writer.AppendLine("IF EXISTS (SELECT 1 FROM @stamped)");
         writer.AppendLine("BEGIN");
         using (writer.Indent())
@@ -1773,38 +1546,19 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine("UPDATE r");
             writer.Append("SET r.");
             writer.Append(Quote(ContentVersionColumn));
-            writer.Append(" = s.");
-            writer.Append(Quote(ContentVersionColumn));
+            writer.Append(" = NEXT VALUE FOR ");
+            writer.Append(sequenceName);
             writer.AppendLine(",");
             writer.Append("    r.");
             writer.Append(Quote(ContentLastModifiedAtColumn));
-            writer.Append(" = s.");
-            writer.Append(Quote(ContentLastModifiedAtColumn));
-            if (isRootDocumentStampingTrigger)
-            {
-                // Root rows mirror the full dms.Document metadata set so they are self-sufficient.
-                // Re-asserting the immutable pair (DocumentUuid, CreatedAt) on every stamped UPDATE also
-                // overwrites a client attempt to change them, whenever that same statement touched a
-                // stored column and therefore reached this workset. None of these columns appear in the
-                // affectedDocs diff or in the UPDATE(column) identity prefilter, so the recursive firing
-                // this statement causes under RECURSIVE_TRIGGERS ON finds an empty workset and terminates.
-                foreach (var column in MssqlRootMirroredMetadataColumns)
-                {
-                    writer.AppendLine(",");
-                    writer.Append("    r.");
-                    writer.Append(Quote(column));
-                    writer.Append(" = s.");
-                    writer.Append(Quote(column));
-                }
-            }
-            writer.AppendLine();
+            writer.AppendLine(" = sysutcdatetime()");
             writer.Append("FROM ");
-            writer.Append(mirrorStampTarget);
+            writer.Append(stampTarget);
             writer.AppendLine(" r");
             writer.Append("INNER JOIN @stamped s ON s.");
-            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(quotedDocumentIdColumn);
             writer.Append(" = r.");
-            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(quotedDocumentIdColumn);
             writer.AppendLine(";");
         }
         writer.AppendLine("END");
@@ -1825,7 +1579,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine("END");
         }
 
-        // IdentityVersion stamp for root tables with identity projection columns
+        // IdentityVersion stamp. IdentityProjectionColumns is populated only for root stamping triggers
+        // (DeriveTriggerInventoryPass passes [] for child / collection / _ext tables), so every statement
+        // below writes the root row this trigger is attached to.
         if (trigger.IdentityProjectionColumns.Count > 0)
         {
             if (
@@ -1837,18 +1593,19 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     writer,
                     trigger,
                     tableModel,
-                    documentTable,
+                    stampTarget,
                     sequenceName,
                     keyColumn,
-                    trackedChangePlan,
-                    isRootDocumentStampingTrigger ? mirrorStampTarget : null
+                    trackedChangePlan
                 );
             }
             else
             {
                 // Performance pre-filter: UPDATE(col) returns true if the column appeared in the SET clause,
                 // regardless of whether the value actually changed. The WHERE clause below (using null-safe
-                // inequality) is the authoritative value-change check that filters to only actually changed rows.
+                // inequality) is the authoritative value-change check that filters to only actually changed
+                // rows. It also bounds recursion: the bump below sets only stamp columns, so the re-fired
+                // trigger never re-enters this block.
                 writer.Append("IF EXISTS (SELECT 1 FROM deleted) AND (");
                 EmitMssqlUpdateColumnDisjunction(writer, trigger.IdentityProjectionColumns);
                 writer.AppendLine(")");
@@ -1861,27 +1618,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                         writer,
                         trigger,
                         tableModel,
-                        documentTable,
+                        stampTarget,
                         sequenceName,
-                        keyColumn,
-                        captureIdentityChangedDocs: false
+                        keyColumn
                     );
-
-                    if (isRootDocumentStampingTrigger)
-                    {
-                        // Re-mirror the bumped identity stamp onto the root row; the content mirror above
-                        // ran before this bump and therefore carries the pre-bump values. Recursion is
-                        // bounded by the enclosing UPDATE(<identity column>) prefilter: this statement
-                        // only sets mirror columns, so the re-fired trigger never re-enters this block.
-                        EmitMssqlRootIdentityMirrorUpdate(
-                            writer,
-                            trigger,
-                            tableModel,
-                            documentTable,
-                            keyColumn,
-                            mirrorStampTarget
-                        );
-                    }
                 }
 
                 writer.AppendLine("END");
@@ -1892,26 +1632,25 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// <summary>
     /// Emits the SQL Server IdentityVersion stamp for a stamping trigger attached to a
     /// <see cref="TrackedChangeTableKind.Resource"/> tracked-change table, capturing the
-    /// identity-changed workset into <c>@identityChangedDocs</c> via an OUTPUT clause and rendering the
-    /// key-change INSERT from it. Gated only by row-set existence plus the authoritative null-safe
-    /// value diff — never by <c>UPDATE(column)</c>, which reports SET-clause membership rather than
-    /// value change (DMS-1179 AC bans <c>UPDATE(column)</c> for key-change eligibility).
+    /// identity-changed workset into <c>@identityChangedDocs</c> and rendering the key-change INSERT from
+    /// it. Gated only by row-set existence plus the authoritative null-safe value diff — never by
+    /// <c>UPDATE(column)</c>, which reports SET-clause membership rather than value change (DMS-1179 AC
+    /// bans <c>UPDATE(column)</c> for key-change eligibility).
     /// </summary>
-    /// <param name="rootMirrorStampTarget">
-    /// The quoted root table that mirrors the <c>dms.Document</c> identity stamp, or <see langword="null"/>
-    /// when this trigger is not a root document-stamping trigger and therefore mirrors nothing.
-    /// </param>
+    /// <param name="rootStampTarget">The quoted root table that owns the identity stamp.</param>
     private void EmitMssqlIdentityStampWithKeyChange(
         SqlWriter writer,
         DbTriggerInfo trigger,
         DbTableModel tableModel,
-        string documentTable,
+        string rootStampTarget,
         string sequenceName,
         DbColumnName keyColumn,
-        TrackedChangeInsertPlan trackedChangePlan,
-        string? rootMirrorStampTarget
+        TrackedChangeInsertPlan trackedChangePlan
     )
     {
+        var quotedKeyColumn = Quote(keyColumn);
+        var quotedDocumentIdColumn = Quote(DocumentIdColumn);
+
         writer.AppendLine("IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)");
         writer.AppendLine("BEGIN");
 
@@ -1920,15 +1659,57 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine(
                 "DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);"
             );
-            EmitMssqlIdentityVersionUpdate(
-                writer,
-                trigger,
-                tableModel,
-                documentTable,
-                sequenceName,
-                keyColumn,
-                captureIdentityChangedDocs: true
-            );
+            // The captured ContentVersion is the root row's post-content-stamp value: an identity change
+            // is also a stored-column change, so the content stamp above already bumped this row. The
+            // key-change row reports it as its ChangeVersion.
+            writer.Append("INSERT INTO @identityChangedDocs (");
+            writer.Append(quotedDocumentIdColumn);
+            writer.Append(", ");
+            writer.Append(Quote(ContentVersionColumn));
+            writer.AppendLine(")");
+            writer.Append("SELECT r.");
+            writer.Append(quotedDocumentIdColumn);
+            writer.Append(", r.");
+            writer.AppendLine(Quote(ContentVersionColumn));
+            writer.Append("FROM ");
+            writer.Append(rootStampTarget);
+            writer.AppendLine(" r");
+            writer.Append("INNER JOIN inserted i ON i.");
+            writer.Append(quotedKeyColumn);
+            writer.Append(" = r.");
+            writer.AppendLine(quotedDocumentIdColumn);
+            writer.Append("INNER JOIN deleted del ON del.");
+            writer.Append(quotedKeyColumn);
+            writer.Append(" = i.");
+            writer.AppendLine(quotedKeyColumn);
+            EmitMssqlIdentityDiffWhereClause(writer, trigger, tableModel);
+
+            // Gated on a non-empty workset: this block re-enters on any UPDATE with both row sets
+            // present — including the stamp UPDATEs this trigger issues — so an unguarded zero-row bump
+            // would keep re-firing the trigger up to the nesting limit under RECURSIVE_TRIGGERS ON.
+            writer.AppendLine("IF EXISTS (SELECT 1 FROM @identityChangedDocs)");
+            writer.AppendLine("BEGIN");
+            using (writer.Indent())
+            {
+                writer.AppendLine("UPDATE r");
+                writer.Append("SET r.");
+                writer.Append(Quote(IdentityVersionColumn));
+                writer.Append(" = NEXT VALUE FOR ");
+                writer.Append(sequenceName);
+                writer.AppendLine(",");
+                writer.Append("    r.");
+                writer.Append(Quote(IdentityLastModifiedAtColumn));
+                writer.AppendLine(" = sysutcdatetime()");
+                writer.Append("FROM ");
+                writer.Append(rootStampTarget);
+                writer.AppendLine(" r");
+                writer.Append("INNER JOIN @identityChangedDocs idc ON idc.");
+                writer.Append(quotedDocumentIdColumn);
+                writer.Append(" = r.");
+                writer.Append(quotedDocumentIdColumn);
+                writer.AppendLine(";");
+            }
+            writer.AppendLine("END");
 
             TrackedChangeTriggerBodyEmitter.EmitMssqlKeyChangeInsert(
                 writer,
@@ -1936,159 +1717,60 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 trackedChangePlan,
                 keyColumn
             );
-
-            if (rootMirrorStampTarget is not null)
-            {
-                // Re-mirror the bumped identity stamp onto the root row. Unlike the UPDATE(column)-gated
-                // path, this block re-enters on any UPDATE with both row sets present — including the
-                // mirror UPDATEs this trigger issues — so the mirror must be gated on a non-empty
-                // identity workset. Without the guard the zero-row mirror would keep re-firing the
-                // trigger up to the nesting limit on databases with RECURSIVE_TRIGGERS ON.
-                writer.AppendLine("IF EXISTS (SELECT 1 FROM @identityChangedDocs)");
-                writer.AppendLine("BEGIN");
-                using (writer.Indent())
-                {
-                    EmitMssqlRootIdentityMirrorUpdate(
-                        writer,
-                        trigger,
-                        tableModel,
-                        documentTable,
-                        keyColumn,
-                        rootMirrorStampTarget
-                    );
-                }
-                writer.AppendLine("END");
-            }
         }
 
         writer.AppendLine("END");
     }
 
     /// <summary>
-    /// Emits the SQL Server root mirror for the <c>dms.Document</c> identity stamp:
-    /// <c>UPDATE r SET r.[IdentityVersion] = d.[IdentityVersion], r.[IdentityLastModifiedAt] =
-    /// d.[IdentityLastModifiedAt] FROM &lt;root&gt; r INNER JOIN dms.Document d ... WHERE
-    /// &lt;null-safe identity diff&gt;</c>. Runs after the identity bump so the root row reflects the
-    /// bumped values; the content mirror earlier in the trigger body captured the pre-bump image.
-    /// </summary>
-    private void EmitMssqlRootIdentityMirrorUpdate(
-        SqlWriter writer,
-        DbTriggerInfo trigger,
-        DbTableModel tableModel,
-        string documentTable,
-        DbColumnName keyColumn,
-        string mirrorStampTarget
-    )
-    {
-        var quotedKeyColumn = Quote(keyColumn);
-
-        writer.AppendLine("UPDATE r");
-        writer.Append("SET r.");
-        writer.Append(Quote(IdentityVersionColumn));
-        writer.Append(" = d.");
-        writer.Append(Quote(IdentityVersionColumn));
-        writer.AppendLine(",");
-        writer.Append("    r.");
-        writer.Append(Quote(IdentityLastModifiedAtColumn));
-        writer.Append(" = d.");
-        writer.AppendLine(Quote(IdentityLastModifiedAtColumn));
-        writer.Append("FROM ");
-        writer.Append(mirrorStampTarget);
-        writer.AppendLine(" r");
-        writer.Append("INNER JOIN ");
-        writer.Append(documentTable);
-        writer.Append(" d ON d.");
-        writer.Append(Quote(DocumentIdColumn));
-        writer.Append(" = r.");
-        writer.AppendLine(Quote(DocumentIdColumn));
-        writer.Append("INNER JOIN inserted i ON i.");
-        writer.Append(quotedKeyColumn);
-        writer.Append(" = r.");
-        writer.AppendLine(Quote(DocumentIdColumn));
-        writer.Append("INNER JOIN deleted del ON del.");
-        writer.Append(quotedKeyColumn);
-        writer.Append(" = i.");
-        writer.AppendLine(quotedKeyColumn);
-        writer.Append("WHERE ");
-        for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
-        {
-            if (i > 0)
-            {
-                writer.Append(" OR ");
-            }
-            EmitMssqlColumnValueDiffPredicate(
-                writer,
-                tableModel,
-                "i",
-                "del",
-                trigger.IdentityProjectionColumns[i]
-            );
-        }
-        writer.AppendLine(";");
-    }
-
-    /// <summary>
-    /// Appends <c>, [DocumentUuid], [IdentityVersion], [IdentityLastModifiedAt], [CreatedAt]</c> — each
-    /// optionally prefixed with <paramref name="qualifier"/> and a dot — for the metadata columns the
-    /// SQL Server root stamping trigger mirrors beyond the content stamp pair. Callers emit the leading
-    /// <c>[DocumentId], [ContentVersion], [ContentLastModifiedAt]</c> triple, so this always starts with
-    /// a separator and keeps every list in <c>@stamped</c> declaration order.
-    /// </summary>
-    private void AppendMssqlRootMirroredMetadataColumns(SqlWriter writer, string? qualifier)
-    {
-        foreach (var column in MssqlRootMirroredMetadataColumns)
-        {
-            writer.Append(", ");
-            if (qualifier is not null)
-            {
-                writer.Append(qualifier);
-                writer.Append(".");
-            }
-            writer.Append(Quote(column));
-        }
-    }
-
-    /// <summary>
-    /// Emits the core <c>UPDATE d SET d.[IdentityVersion] = ... FROM ... INNER JOIN inserted ...
-    /// INNER JOIN deleted ... WHERE &lt;null-safe diff&gt;</c> statement, optionally appending an
-    /// <c>OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs</c> line
-    /// when <paramref name="captureIdentityChangedDocs"/> is <see langword="true"/>.
+    /// Emits the root-local <c>UPDATE r SET r.[IdentityVersion] = NEXT VALUE FOR ... FROM &lt;root&gt; r
+    /// INNER JOIN inserted ... INNER JOIN deleted ... WHERE &lt;null-safe diff&gt;</c> statement.
     /// </summary>
     private void EmitMssqlIdentityVersionUpdate(
         SqlWriter writer,
         DbTriggerInfo trigger,
         DbTableModel tableModel,
-        string documentTable,
+        string rootStampTarget,
         string sequenceName,
-        DbColumnName keyColumn,
-        bool captureIdentityChangedDocs
+        DbColumnName keyColumn
     )
     {
-        writer.AppendLine("UPDATE d");
-        writer.Append("SET d.");
+        var quotedKeyColumn = Quote(keyColumn);
+        var quotedDocumentIdColumn = Quote(DocumentIdColumn);
+
+        writer.AppendLine("UPDATE r");
+        writer.Append("SET r.");
         writer.Append(Quote(IdentityVersionColumn));
         writer.Append(" = NEXT VALUE FOR ");
         writer.Append(sequenceName);
-        writer.Append(", d.");
+        writer.AppendLine(",");
+        writer.Append("    r.");
         writer.Append(Quote(IdentityLastModifiedAtColumn));
         writer.AppendLine(" = sysutcdatetime()");
-        if (captureIdentityChangedDocs)
-        {
-            writer.AppendLine(
-                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs"
-            );
-        }
         writer.Append("FROM ");
-        writer.Append(documentTable);
-        writer.AppendLine(" d");
-        writer.Append("INNER JOIN inserted i ON d.");
-        writer.Append(Quote(DocumentIdColumn));
-        writer.Append(" = i.");
-        writer.AppendLine(Quote(keyColumn));
+        writer.Append(rootStampTarget);
+        writer.AppendLine(" r");
+        writer.Append("INNER JOIN inserted i ON i.");
+        writer.Append(quotedKeyColumn);
+        writer.Append(" = r.");
+        writer.AppendLine(quotedDocumentIdColumn);
         writer.Append("INNER JOIN deleted del ON del.");
-        writer.Append(Quote(keyColumn));
+        writer.Append(quotedKeyColumn);
         writer.Append(" = i.");
-        writer.AppendLine(Quote(keyColumn));
+        writer.AppendLine(quotedKeyColumn);
+        EmitMssqlIdentityDiffWhereClause(writer, trigger, tableModel);
+    }
+
+    /// <summary>
+    /// Emits the terminating <c>WHERE &lt;null-safe identity-projection diff&gt;;</c> clause shared by the
+    /// identity workset capture and the plain identity bump.
+    /// </summary>
+    private void EmitMssqlIdentityDiffWhereClause(
+        SqlWriter writer,
+        DbTriggerInfo trigger,
+        DbTableModel tableModel
+    )
+    {
         writer.Append("WHERE ");
         for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
         {
@@ -2526,20 +2208,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
             writer.Append("VALUES (NEW.");
             writer.Append(Quote(DocumentIdColumn));
-            // DocumentUuid is read from dms.Document rather than NEW: PostgreSQL fires same-event BEFORE row
-            // triggers in name order, and TR_<R>_AbstractIdentity sorts before TR_<R>_Stamp, so the root row's
-            // own DocumentUuid mirror is not populated yet when this trigger runs. The dms.Document row always
-            // exists (the root's NOT NULL DocumentId is an FK to it), so the scalar subquery is
-            // order-independent and always finds exactly one row.
-            writer.Append(", (SELECT ");
+            // DocumentUuid is read straight off NEW: the root row carries its own DocumentUuid, bound by
+            // the write path on the INSERT itself rather than filled in by TR_<R>_Stamp, so the value is
+            // present no matter which same-event BEFORE row trigger PostgreSQL runs first.
+            writer.Append(", NEW.");
             writer.Append(Quote(DocumentUuidColumn));
-            writer.Append(" FROM ");
-            writer.Append(Quote(DmsTableNames.Document));
-            writer.Append(" WHERE ");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.Append(" = NEW.");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.Append(")");
             foreach (var mapping in mappings)
             {
                 writer.Append(", NEW.");
@@ -2692,10 +2365,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(";");
 
         // INSERT only the rows that do not already exist in the target table.
-        // DocumentUuid comes from dms.Document rather than from inserted: this is an AFTER trigger, so the
-        // inserted image carries the root row as the triggering statement left it, before TR_<R>_Stamp
-        // mirrored the metadata onto it. The dms.Document row always exists (the root's NOT NULL DocumentId
-        // is an FK to it), so the INNER JOIN never drops a row.
+        // DocumentUuid comes from the inserted image: the root row carries its own DocumentUuid, written by
+        // the triggering statement itself rather than filled in later by TR_<R>_Stamp, so the AFTER-trigger
+        // image already holds the final value. The join is on the same row set the SELECT already reads,
+        // so it never drops or duplicates a row.
         writer.Append("INSERT INTO ");
         writer.Append(targetTable);
         writer.Append(" (");
@@ -2738,9 +2411,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine(") AS s");
         }
 
-        writer.Append("INNER JOIN ");
-        writer.Append(Quote(DmsTableNames.Document));
-        writer.Append(" d ON d.");
+        writer.Append("INNER JOIN inserted d ON d.");
         writer.Append(documentIdCol);
         writer.Append(" = s.");
         writer.Append(documentIdCol);

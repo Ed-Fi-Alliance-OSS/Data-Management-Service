@@ -448,30 +448,14 @@ BEGIN
         END IF;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        WITH stamped AS (
-            SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt", "ResourceKeyId"
-            FROM "dms"."Document"
-            WHERE "DocumentId" = NEW."DocumentId"
-        )
         UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt", "DocumentUuid" = stamped."DocumentUuid", "IdentityVersion" = stamped."IdentityVersion", "IdentityLastModifiedAt" = stamped."IdentityLastModifiedAt", "CreatedAt" = stamped."CreatedAt", "ResourceKeyId" = stamped."ResourceKeyId"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now(), "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
+        WHERE r."DocumentId" = NEW."DocumentId";
     ELSIF TG_OP = 'UPDATE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = NEW."DocumentId"
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt", "ResourceKeyId"
-        )
         UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt", "DocumentUuid" = stamped."DocumentUuid", "IdentityVersion" = stamped."IdentityVersion", "IdentityLastModifiedAt" = stamped."IdentityLastModifiedAt", "CreatedAt" = stamped."CreatedAt", "ResourceKeyId" = stamped."ResourceKeyId"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-    ELSIF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
+        WHERE r."DocumentId" = NEW."DocumentId";
+    ELSIF TG_OP = 'DELETE' THEN
         RETURN OLD;
     END IF;
     RETURN NEW;
@@ -824,11 +808,6 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Program_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
     _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
-    _stampedDocumentUuid uuid;
-    _stampedIdentityVersion bigint;
-    _stampedIdentityLastModifiedAt timestamp with time zone;
-    _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
@@ -847,31 +826,20 @@ BEGIN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt"
-        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt, _stampedDocumentUuid, _stampedIdentityVersion, _stampedIdentityLastModifiedAt, _stampedCreatedAt
-        FROM "dms"."Document"
-        WHERE "DocumentId" = NEW."DocumentId";
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
-        NEW."DocumentUuid" := _stampedDocumentUuid;
-        NEW."IdentityVersion" := _stampedIdentityVersion;
-        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
-        NEW."CreatedAt" := _stampedCreatedAt;
+        NEW."ContentLastModifiedAt" := now();
+        NEW."IdentityVersion" := nextval('"dms"."ChangeVersionSequence"');
+        NEW."IdentityLastModifiedAt" := now();
+        NEW."CreatedAt" := now();
     ELSIF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."ContentLastModifiedAt" := now();
     END IF;
     IF TG_OP = 'UPDATE' AND (OLD."ProgramName" IS DISTINCT FROM NEW."ProgramName") THEN
-        UPDATE "dms"."Document"
-        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "IdentityVersion", "IdentityLastModifiedAt" INTO STRICT _stampedIdentityVersion, _stampedIdentityLastModifiedAt;
-        NEW."IdentityVersion" := _stampedIdentityVersion;
-        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
+        NEW."IdentityVersion" := nextval('"dms"."ChangeVersionSequence"');
+        NEW."IdentityLastModifiedAt" := now();
         INSERT INTO "tracked_changes_edfi"."Program" (
             "OldProgramName",
             "NewProgramName",
@@ -917,11 +885,6 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
     _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
-    _stampedDocumentUuid uuid;
-    _stampedIdentityVersion bigint;
-    _stampedIdentityLastModifiedAt timestamp with time zone;
-    _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
@@ -940,31 +903,20 @@ BEGIN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt"
-        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt, _stampedDocumentUuid, _stampedIdentityVersion, _stampedIdentityLastModifiedAt, _stampedCreatedAt
-        FROM "dms"."Document"
-        WHERE "DocumentId" = NEW."DocumentId";
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
-        NEW."DocumentUuid" := _stampedDocumentUuid;
-        NEW."IdentityVersion" := _stampedIdentityVersion;
-        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
-        NEW."CreatedAt" := _stampedCreatedAt;
+        NEW."ContentLastModifiedAt" := now();
+        NEW."IdentityVersion" := nextval('"dms"."ChangeVersionSequence"');
+        NEW."IdentityLastModifiedAt" := now();
+        NEW."CreatedAt" := now();
     ELSIF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."ContentLastModifiedAt" := now();
     END IF;
     IF TG_OP = 'UPDATE' AND (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
-        UPDATE "dms"."Document"
-        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "IdentityVersion", "IdentityLastModifiedAt" INTO STRICT _stampedIdentityVersion, _stampedIdentityLastModifiedAt;
-        NEW."IdentityVersion" := _stampedIdentityVersion;
-        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
+        NEW."IdentityVersion" := nextval('"dms"."ChangeVersionSequence"');
+        NEW."IdentityLastModifiedAt" := now();
         INSERT INTO "tracked_changes_edfi"."School" (
             "OldSchoolId",
             "NewSchoolId",
@@ -991,33 +943,17 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp"()
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."School_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."School_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
         UPDATE "edfi"."School" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE r."DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."City" IS DISTINCT FROM NEW."City") THEN
         RETURN NEW;
     END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."School_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."School_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-    )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-    FROM stamped
-    WHERE r."DocumentId" = stamped."DocumentId";
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE r."DocumentId" = NEW."School_DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -1032,33 +968,17 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolAddressPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."School_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."School_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
         UPDATE "edfi"."School" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE r."DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."PeriodName" IS DISTINCT FROM NEW."PeriodName") THEN
         RETURN NEW;
     END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."School_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."School_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-    )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-    FROM stamped
-    WHERE r."DocumentId" = stamped."DocumentId";
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE r."DocumentId" = NEW."School_DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -1073,33 +993,17 @@ CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtension_Stamp"()
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
         UPDATE "edfi"."School" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE r."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CampusCode" IS DISTINCT FROM NEW."CampusCode") THEN
         RETURN NEW;
     END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-    )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-    FROM stamped
-    WHERE r."DocumentId" = stamped."DocumentId";
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE r."DocumentId" = NEW."DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -1114,33 +1018,17 @@ CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionAddress_Stamp"()
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."School_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."School_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
         UPDATE "edfi"."School" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE r."DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."BaseCollectionItemId" IS DISTINCT FROM NEW."BaseCollectionItemId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."Zone" IS DISTINCT FROM NEW."Zone") THEN
         RETURN NEW;
     END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."School_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."School_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-    )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-    FROM stamped
-    WHERE r."DocumentId" = stamped."DocumentId";
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE r."DocumentId" = NEW."School_DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -1155,33 +1043,17 @@ CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionAddressSponsorReferenc
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."School_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."School_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
         UPDATE "edfi"."School" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE r."DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."BaseCollectionItemId" IS DISTINCT FROM NEW."BaseCollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."Program_DocumentId" IS DISTINCT FROM NEW."Program_DocumentId" OR OLD."Program_ProgramName" IS DISTINCT FROM NEW."Program_ProgramName") THEN
         RETURN NEW;
     END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."School_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."School_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-    )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-    FROM stamped
-    WHERE r."DocumentId" = stamped."DocumentId";
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE r."DocumentId" = NEW."School_DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -1196,33 +1068,17 @@ CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionIntervention_Stamp"()
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."School_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."School_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
         UPDATE "edfi"."School" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE r."DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."InterventionCode" IS DISTINCT FROM NEW."InterventionCode") THEN
         RETURN NEW;
     END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."School_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."School_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-    )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-    FROM stamped
-    WHERE r."DocumentId" = stamped."DocumentId";
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE r."DocumentId" = NEW."School_DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -1237,33 +1093,17 @@ CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionInterventionVisit_Stam
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."School_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."School_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
         UPDATE "edfi"."School" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE r."DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."VisitCode" IS DISTINCT FROM NEW."VisitCode") THEN
         RETURN NEW;
     END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."School_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."School_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-    )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-    FROM stamped
-    WHERE r."DocumentId" = stamped."DocumentId";
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE r."DocumentId" = NEW."School_DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;

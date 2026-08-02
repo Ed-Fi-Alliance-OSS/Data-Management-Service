@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -422,10 +422,11 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ma
     }
 
     [Test]
-    public void It_should_read_document_uuid_from_dms_document_rather_than_the_new_row()
+    public void It_should_read_document_uuid_from_the_new_row()
     {
-        // Same-event BEFORE row triggers fire in name order, so TR_<R>_AbstractIdentity runs before
-        // TR_<R>_Stamp populates NEW."DocumentUuid". The scalar subquery is order-independent.
+        // The root row carries its own DocumentUuid, bound by the write path on the INSERT itself rather
+        // than filled in by TR_<R>_Stamp, so NEW is populated no matter which same-event BEFORE row
+        // trigger PostgreSQL runs first.
         _triggerBody
             .Should()
             .Contain(
@@ -433,11 +434,10 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ma
                     + "\"EducationOrganizationId\", \"Discriminator\")"
             )
             .And.Contain(
-                "VALUES (NEW.\"DocumentId\", (SELECT \"DocumentUuid\" FROM \"dms\".\"Document\" "
-                    + "WHERE \"DocumentId\" = NEW.\"DocumentId\"), NEW.\"EducationOrganizationId\", "
+                "VALUES (NEW.\"DocumentId\", NEW.\"DocumentUuid\", NEW.\"EducationOrganizationId\", "
                     + "'Ed-Fi:School')"
             );
-        _triggerBody.Should().NotContain("NEW.\"DocumentUuid\"");
+        _triggerBody.Should().NotContain("\"dms\".\"Document\"");
     }
 
     [Test]
@@ -469,10 +469,11 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ma
     }
 
     [Test]
-    public void It_should_read_document_uuid_from_dms_document_rather_than_the_inserted_image()
+    public void It_should_read_document_uuid_from_the_inserted_image()
     {
-        // The inserted image is the root row as the triggering statement left it, before the AFTER
-        // stamping trigger mirrored DocumentUuid onto it, so the value must come from dms.Document.
+        // The root row carries its own DocumentUuid, written by the triggering statement itself rather
+        // than mirrored on later by the AFTER stamping trigger, so the inserted image already holds the
+        // final value and no dms.Document join is needed.
         _triggerBody
             .Should()
             .Contain(
@@ -481,13 +482,12 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ma
                     + "        SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], "
                     + "N'Ed-Fi:School'\n"
                     + "        FROM inserted s\n"
-                    + "        INNER JOIN [dms].[Document] d ON d.[DocumentId] = s.[DocumentId]\n"
+                    + "        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]\n"
                     + "        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing "
                     + "ON existing.[DocumentId] = s.[DocumentId]\n"
                     + "        WHERE existing.[DocumentId] IS NULL;"
             );
-        // The value is never read from the triggering row image, only from the dms.Document join.
-        _triggerBody.Should().NotContain("s.[DocumentUuid]");
+        _triggerBody.Should().NotContain("[dms].[Document]");
     }
 
     [Test]
@@ -1054,99 +1054,108 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     }
 
     [Test]
-    public void It_should_copy_existing_document_stamps_for_root_inserts()
+    public void It_should_stamp_the_root_row_itself_for_root_inserts()
     {
+        // A brand new root row has no prior stamp to preserve, so the INSERT branch takes both stamps
+        // and CreatedAt straight onto NEW. The content version goes through _stampedContentVersion so
+        // the tracked-change rows can report the same value.
         var insertBranch = ExtractPlpgsqlSegment(
             GetRootStampFunctionBody(),
             "IF TG_OP = 'INSERT' THEN",
             "ELSIF TG_OP = 'UPDATE' THEN"
         );
 
-        insertBranch.Should().Contain("SELECT \"ContentVersion\", \"ContentLastModifiedAt\"");
-        insertBranch.Should().Contain("FROM \"dms\".\"Document\"");
-        insertBranch.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
-        insertBranch.Should().Contain("INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt");
+        insertBranch
+            .Should()
+            .Contain("_stampedContentVersion := nextval('\"dms\".\"ChangeVersionSequence\"');");
         insertBranch.Should().Contain("NEW.\"ContentVersion\" := _stampedContentVersion;");
-        insertBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;");
-        insertBranch.Should().NotContain("nextval");
+        insertBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := now();");
+        insertBranch
+            .Should()
+            .Contain("NEW.\"IdentityVersion\" := nextval('\"dms\".\"ChangeVersionSequence\"');");
+        insertBranch.Should().Contain("NEW.\"IdentityLastModifiedAt\" := now();");
+        insertBranch.Should().Contain("NEW.\"CreatedAt\" := now();");
+        // DocumentUuid arrives as an insert parameter from the write path, never from the trigger.
+        insertBranch.Should().NotContain("DocumentUuid");
+        insertBranch.Should().NotContain("\"dms\".\"Document\"");
     }
 
     [Test]
-    public void It_should_mirror_child_write_stamps_from_returning_rows()
+    public void It_should_stamp_the_root_row_directly_from_child_writes()
     {
         var functionBody = GetStampFunctionBody("SchoolAddress");
 
-        var cteStart = functionBody.IndexOf("WITH stamped AS (", StringComparison.Ordinal);
-        var returningStart = functionBody.IndexOf(
-            "RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"",
-            cteStart,
-            StringComparison.Ordinal
-        );
+        functionBody.Should().NotContain("WITH stamped AS (");
+        functionBody.Should().NotContain("\"dms\".\"Document\"");
+
         var mirrorUpdateStart = functionBody.IndexOf(
             "UPDATE \"edfi\".\"School\" r",
             StringComparison.Ordinal
         );
         var mirrorSetStart = functionBody.IndexOf(
-            "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\"",
+            "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()",
             StringComparison.Ordinal
         );
-        var mirrorFromStart = functionBody.IndexOf("FROM stamped", StringComparison.Ordinal);
         var mirrorWhereStart = functionBody.IndexOf(
-            "WHERE r.\"DocumentId\" = stamped.\"DocumentId\";",
+            "WHERE r.\"DocumentId\" = NEW.\"School_DocumentId\";",
             StringComparison.Ordinal
         );
 
-        cteStart
+        mirrorUpdateStart
             .Should()
-            .BeGreaterOrEqualTo(0, "the child stamp function must capture stamped document rows in a CTE");
-        returningStart.Should().BeGreaterThan(cteStart);
-        mirrorUpdateStart.Should().BeGreaterThan(returningStart);
+            .BeGreaterOrEqualTo(0, "the child stamp function must stamp its owning root row");
         mirrorSetStart.Should().BeGreaterThan(mirrorUpdateStart);
-        mirrorFromStart.Should().BeGreaterThan(mirrorSetStart);
-        mirrorWhereStart.Should().BeGreaterThan(mirrorFromStart);
+        mirrorWhereStart.Should().BeGreaterThan(mirrorSetStart);
     }
 
     [Test]
-    public void It_should_skip_child_delete_stamping_when_the_root_mirror_row_is_absent()
+    public void It_should_stamp_the_root_row_on_child_deletes()
     {
+        // A cascade-deleted root leaves no row for the WHERE to match, which is what the old CTE's
+        // EXISTS guard used to enforce explicitly.
         var deleteBranch = ExtractPlpgsqlBlock(
             GetStampFunctionBody("SchoolAddress"),
             "IF TG_OP = 'DELETE' THEN"
         );
 
-        deleteBranch.Should().Contain("AND EXISTS (");
-        deleteBranch.Should().Contain("FROM \"edfi\".\"School\" r");
-        deleteBranch.Should().Contain("WHERE r.\"DocumentId\" = OLD.\"School_DocumentId\"");
-    }
-
-    [Test]
-    public void It_should_allocate_document_stamps_for_root_updates()
-    {
-        var updateBranch = ExtractPlpgsqlBlock(GetRootStampFunctionBody(), "ELSIF TG_OP = 'UPDATE' THEN");
-
-        updateBranch.Should().Contain("UPDATE \"dms\".\"Document\"");
-        updateBranch
+        deleteBranch.Should().Contain("UPDATE \"edfi\".\"School\" r");
+        deleteBranch
             .Should()
             .Contain(
                 "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
             );
-        updateBranch.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
+        deleteBranch.Should().Contain("WHERE r.\"DocumentId\" = OLD.\"School_DocumentId\";");
+        deleteBranch.Should().NotContain("AND EXISTS (");
+        deleteBranch.Should().NotContain("\"dms\".\"Document\"");
+    }
+
+    [Test]
+    public void It_should_stamp_the_root_row_itself_for_root_updates()
+    {
+        var updateBranch = ExtractPlpgsqlBlock(GetRootStampFunctionBody(), "ELSIF TG_OP = 'UPDATE' THEN");
+
         updateBranch
             .Should()
-            .Contain(
-                "RETURNING \"ContentVersion\", \"ContentLastModifiedAt\" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;"
-            );
+            .Contain("_stampedContentVersion := nextval('\"dms\".\"ChangeVersionSequence\"');");
         updateBranch.Should().Contain("NEW.\"ContentVersion\" := _stampedContentVersion;");
-        updateBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;");
+        updateBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := now();");
+        // A changed UPDATE preserves the identity stamp unless the identity-diff branch bumps it.
+        updateBranch.Should().NotContain("IdentityVersion");
+        updateBranch.Should().NotContain("\"dms\".\"Document\"");
     }
 
     [Test]
     public void It_should_not_capture_stamp_variables_on_paths_that_never_read_them()
     {
-        // The stamp locals exist only so root INSERT/UPDATE paths can assign NEW mirror
-        // columns. The root DELETE path and the child CTE path never read them, so they
-        // must not capture into them (and child functions must not declare them at all).
+        // The one surviving local exists so the root INSERT/UPDATE paths can hand the content version to
+        // the tracked-change rows. The child path stamps its root row in place and never reads it, so
+        // child functions must not declare it at all.
         _ddl.Should().NotContain("_stampedDocumentId");
+        _ddl.Should().NotContain("_stampedContentLastModifiedAt");
+        _ddl.Should().NotContain("_stampedDocumentUuid");
+        _ddl.Should().NotContain("_stampedIdentityVersion");
+        _ddl.Should().NotContain("_stampedIdentityLastModifiedAt");
+        _ddl.Should().NotContain("_stampedCreatedAt");
 
         var rootDeleteBranch = ExtractPlpgsqlBlock(GetRootStampFunctionBody(), "IF TG_OP = 'DELETE' THEN");
         rootDeleteBranch.Should().NotContain("RETURNING");
@@ -1161,9 +1170,8 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     {
         _ddl.Should()
             .Contain("IF TG_OP = 'UPDATE' AND (OLD.\"SchoolId\" IS DISTINCT FROM NEW.\"SchoolId\") THEN");
-        _ddl.Should().Contain("\"IdentityVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
-        _ddl.Should().Contain("\"IdentityLastModifiedAt\" = now()");
-        _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\";");
+        _ddl.Should().Contain("NEW.\"IdentityVersion\" := nextval('\"dms\".\"ChangeVersionSequence\"');");
+        _ddl.Should().Contain("NEW.\"IdentityLastModifiedAt\" := now();");
     }
 
     [Test]
@@ -1183,13 +1191,13 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
             .NotContain(
                 """
                 IF TG_OP = 'UPDATE' THEN
-                    UPDATE "dms"."Document"
+                    UPDATE "edfi"."School" r
                     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-                    WHERE "DocumentId" = NEW."School_DocumentId";
+                    WHERE r."DocumentId" = NEW."School_DocumentId";
                 END IF;
                 """
             );
-        _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"School_DocumentId\"");
+        _ddl.Should().Contain("WHERE r.\"DocumentId\" = NEW.\"School_DocumentId\"");
     }
 
     [Test]
@@ -1219,13 +1227,14 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
                 "IF TG_OP = 'UPDATE' AND NOT (OLD.\"DocumentId\" IS DISTINCT FROM NEW.\"DocumentId\" OR OLD.\"ExtensionData\" IS DISTINCT FROM NEW.\"ExtensionData\") THEN"
             );
         functionBody.Should().Contain("RETURN NEW;");
-        functionBody.Should().Contain("UPDATE \"dms\".\"Document\"");
+        functionBody.Should().Contain("UPDATE \"edfi\".\"School\" r");
         functionBody
             .Should()
             .Contain(
                 "\"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
             );
-        functionBody.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
+        functionBody.Should().Contain("WHERE r.\"DocumentId\" = NEW.\"DocumentId\"");
+        functionBody.Should().NotContain("\"dms\".\"Document\"");
         functionBody.Should().NotContain("IF TG_OP = 'UPDATE' THEN");
     }
 
@@ -1449,169 +1458,130 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     }
 
     [Test]
-    public void It_should_capture_content_stamps_with_output_and_mirror_to_target_table()
+    public void It_should_stamp_the_root_row_from_a_guarded_workset()
     {
         var triggerBody = GetSchoolStampTriggerBody();
 
-        var declareStart = triggerBody.IndexOf("DECLARE @stamped TABLE (", StringComparison.Ordinal);
-        var documentIdColumnStart = triggerBody.IndexOf(
-            "[DocumentId] bigint NOT NULL PRIMARY KEY",
+        var declareStart = triggerBody.IndexOf(
+            "DECLARE @stamped TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);",
             StringComparison.Ordinal
         );
-        var contentVersionColumnStart = triggerBody.IndexOf(
-            "[ContentVersion] bigint NOT NULL",
+        var worksetFillStart = triggerBody.IndexOf(
+            "INSERT INTO @stamped ([DocumentId])\n    SELECT [DocumentId] FROM affectedDocs;",
             StringComparison.Ordinal
         );
-        var contentLastModifiedColumnStart = triggerBody.IndexOf(
-            "[ContentLastModifiedAt] datetime2(7) NOT NULL",
+        var guardStart = triggerBody.IndexOf("IF EXISTS (SELECT 1 FROM @stamped)", StringComparison.Ordinal);
+        var stampUpdateStart = triggerBody.IndexOf("UPDATE r", guardStart, StringComparison.Ordinal);
+        var stampSetVersionStart = triggerBody.IndexOf(
+            "SET r.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],",
+            guardStart,
             StringComparison.Ordinal
         );
-        var outputStart = triggerBody.IndexOf(
-            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt], "
-                + "inserted.[DocumentUuid], inserted.[IdentityVersion], inserted.[IdentityLastModifiedAt], "
-                + "inserted.[CreatedAt] INTO @stamped",
+        var stampSetLastModifiedStart = triggerBody.IndexOf(
+            "r.[ContentLastModifiedAt] = sysutcdatetime()",
+            stampSetVersionStart,
             StringComparison.Ordinal
         );
-        var mirrorUpdateStart = triggerBody.IndexOf("UPDATE r", StringComparison.Ordinal);
-        var mirrorSetVersionStart = triggerBody.IndexOf(
-            "SET r.[ContentVersion] = s.[ContentVersion],",
+        var stampFromStart = triggerBody.IndexOf(
+            "FROM [edfi].[School] r",
+            stampSetLastModifiedStart,
             StringComparison.Ordinal
         );
-        var mirrorSetLastModifiedStart = triggerBody.IndexOf(
-            "r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]",
-            StringComparison.Ordinal
-        );
-        var mirrorFromStart = triggerBody.IndexOf("FROM [edfi].[School] r", StringComparison.Ordinal);
-        var mirrorJoinStart = triggerBody.IndexOf(
+        var stampJoinStart = triggerBody.IndexOf(
             "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];",
+            stampFromStart,
             StringComparison.Ordinal
         );
 
         declareStart
             .Should()
-            .BeGreaterOrEqualTo(
-                0,
-                "the School stamp trigger must allocate a capture table for stamped document rows"
-            );
-        documentIdColumnStart.Should().BeGreaterThan(declareStart);
-        contentVersionColumnStart.Should().BeGreaterThan(documentIdColumnStart);
-        contentLastModifiedColumnStart.Should().BeGreaterThan(contentVersionColumnStart);
-        outputStart.Should().BeGreaterThan(contentLastModifiedColumnStart);
-        mirrorUpdateStart.Should().BeGreaterThan(outputStart);
-        mirrorSetVersionStart.Should().BeGreaterThan(mirrorUpdateStart);
-        mirrorSetLastModifiedStart.Should().BeGreaterThan(mirrorSetVersionStart);
-        mirrorFromStart.Should().BeGreaterThan(mirrorSetLastModifiedStart);
-        mirrorJoinStart.Should().BeGreaterThan(mirrorFromStart);
+            .BeGreaterOrEqualTo(0, "the School stamp trigger must allocate a workset for affected rows");
+        worksetFillStart.Should().BeGreaterThan(declareStart);
+        guardStart.Should().BeGreaterThan(worksetFillStart);
+        stampUpdateStart.Should().BeGreaterThan(guardStart);
+        stampSetVersionStart.Should().BeGreaterThan(stampUpdateStart);
+        stampSetLastModifiedStart.Should().BeGreaterThan(stampSetVersionStart);
+        stampFromStart.Should().BeGreaterThan(stampSetLastModifiedStart);
+        stampJoinStart.Should().BeGreaterThan(stampFromStart);
+
+        triggerBody.Should().NotContain("[dms].[Document]");
+        triggerBody.Should().NotContain("OUTPUT ");
     }
 
     [Test]
-    public void It_should_copy_existing_document_stamps_for_root_inserts()
+    public void It_should_stamp_both_version_pairs_for_root_inserts()
     {
+        // A brand new root row has no prior stamp to preserve, so the pure-insert workset takes both
+        // stamps and CreatedAt in one pass. DocumentUuid is bound by the write path on the INSERT itself.
         var triggerBody = GetSchoolStampTriggerBody();
 
         triggerBody
             .Should()
-            .Contain(
-                "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt], "
-                    + "[DocumentUuid], [IdentityVersion], [IdentityLastModifiedAt], [CreatedAt])"
-            );
-        triggerBody
-            .Should()
-            .Contain(
-                "SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt], d.[DocumentUuid], "
-                    + "d.[IdentityVersion], d.[IdentityLastModifiedAt], d.[CreatedAt]"
-            );
-        triggerBody.Should().Contain("FROM [dms].[Document] d");
-        triggerBody.Should().Contain("INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]");
+            .Contain("DECLARE @insertedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);");
+        triggerBody.Should().Contain("INSERT INTO @insertedDocs ([DocumentId])");
+        triggerBody.Should().Contain("SELECT i.[DocumentId]\n    FROM inserted i");
         triggerBody.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
         triggerBody.Should().Contain("WHERE del.[DocumentId] IS NULL;");
-    }
-
-    [Test]
-    public void It_should_mirror_every_document_metadata_column_onto_the_root_row()
-    {
-        var triggerBody = GetSchoolStampTriggerBody();
-
+        triggerBody.Should().Contain("IF EXISTS (SELECT 1 FROM @insertedDocs)");
         triggerBody
             .Should()
             .Contain(
-                "DECLARE @stamped TABLE (\n"
-                    + "        [DocumentId] bigint NOT NULL PRIMARY KEY,\n"
-                    + "        [ContentVersion] bigint NOT NULL,\n"
-                    + "        [ContentLastModifiedAt] datetime2(7) NOT NULL,\n"
-                    + "        [DocumentUuid] uniqueidentifier NOT NULL,\n"
-                    + "        [IdentityVersion] bigint NOT NULL,\n"
-                    + "        [IdentityLastModifiedAt] datetime2(7) NOT NULL,\n"
-                    + "        [CreatedAt] datetime2(7) NOT NULL\n"
-                    + "    );",
-                "OUTPUT ... INTO @stamped binds positionally, so the capture table must declare the "
-                    + "mirrored columns in OUTPUT order"
+                "SET r.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],\n"
+                    + "            r.[ContentLastModifiedAt] = sysutcdatetime(),\n"
+                    + "            r.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],\n"
+                    + "            r.[IdentityLastModifiedAt] = sysutcdatetime(),\n"
+                    + "            r.[CreatedAt] = sysutcdatetime()"
             );
-
-        ExtractMirrorUpdateStatement(triggerBody)
-            .Should()
-            .Contain("SET r.[ContentVersion] = s.[ContentVersion],")
-            .And.Contain("r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt],")
-            .And.Contain("r.[DocumentUuid] = s.[DocumentUuid],")
-            .And.Contain("r.[IdentityVersion] = s.[IdentityVersion],")
-            .And.Contain("r.[IdentityLastModifiedAt] = s.[IdentityLastModifiedAt],")
-            .And.Contain("r.[CreatedAt] = s.[CreatedAt]");
+        triggerBody.Should().Contain("INNER JOIN @insertedDocs s ON s.[DocumentId] = r.[DocumentId];");
+        triggerBody.Should().NotContain("[DocumentUuid]");
     }
 
     [Test]
     public void It_should_keep_child_stamping_limited_to_the_content_stamp_pair()
     {
         // Child rows never change the identity or creation metadata of their root document, so the
-        // child capture table and mirror stay exactly as they were.
+        // child trigger carries only the changed/deleted content workset.
         var childTriggerBody = GetStampTriggerBody("SchoolAddress");
 
         childTriggerBody
             .Should()
-            .Contain(
-                "DECLARE @stamped TABLE (\n"
-                    + "        [DocumentId] bigint NOT NULL PRIMARY KEY,\n"
-                    + "        [ContentVersion] bigint NOT NULL,\n"
-                    + "        [ContentLastModifiedAt] datetime2(7) NOT NULL\n"
-                    + "    );"
-            );
-        childTriggerBody.Should().NotContain("[DocumentUuid]").And.NotContain("[CreatedAt]");
+            .Contain("DECLARE @stamped TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);");
+        childTriggerBody.Should().NotContain("@insertedDocs");
+        childTriggerBody
+            .Should()
+            .NotContain("[DocumentUuid]")
+            .And.NotContain("[CreatedAt]")
+            .And.NotContain("[IdentityVersion]");
     }
 
     [Test]
-    public void It_should_re_mirror_the_root_identity_stamp_after_the_identity_bump()
+    public void It_should_bump_the_root_identity_stamp_in_place()
     {
         var triggerBody = GetSchoolStampTriggerBody();
 
-        // The content mirror ran before the identity bump and therefore carries the pre-bump identity
-        // values, so the bump needs its own mirror to leave the root row consistent with dms.Document.
-        var identityBumpStart = triggerBody.IndexOf(
-            "SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]",
-            StringComparison.Ordinal
-        );
-        identityBumpStart.Should().BeGreaterThanOrEqualTo(0);
-
-        var identityMirrorStart = triggerBody.IndexOf(
-            "UPDATE r\n"
-                + "        SET r.[IdentityVersion] = d.[IdentityVersion],\n"
-                + "            r.[IdentityLastModifiedAt] = d.[IdentityLastModifiedAt]\n"
-                + "        FROM [edfi].[School] r\n"
-                + "        INNER JOIN [dms].[Document] d ON d.[DocumentId] = r.[DocumentId]\n"
-                + "        INNER JOIN inserted i ON i.[DocumentId] = r.[DocumentId]\n"
-                + "        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]\n"
-                + "        WHERE (i.[SchoolId] <> del.[SchoolId]",
-            StringComparison.Ordinal
-        );
-        identityMirrorStart
+        // The bump writes the root row directly — there is no second mirror hop to keep it consistent
+        // with dms.Document any more.
+        triggerBody
             .Should()
-            .BeGreaterThan(identityBumpStart, "the root identity mirror must follow the dms.Document bump");
+            .Contain(
+                "UPDATE r\n"
+                    + "        SET r.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],\n"
+                    + "            r.[IdentityLastModifiedAt] = sysutcdatetime()\n"
+                    + "        FROM [edfi].[School] r\n"
+                    + "        INNER JOIN inserted i ON i.[DocumentId] = r.[DocumentId]\n"
+                    + "        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]\n"
+                    + "        WHERE (i.[SchoolId] <> del.[SchoolId]"
+            );
+        triggerBody.Should().NotContain("r.[IdentityVersion] = d.[IdentityVersion]");
     }
 
     [Test]
-    public void It_should_keep_mirrored_columns_out_of_the_no_op_change_detection()
+    public void It_should_keep_stamped_columns_out_of_the_no_op_change_detection()
     {
-        // Both mirror UPDATEs re-fire this trigger on databases with RECURSIVE_TRIGGERS ON. The
-        // re-fired execution must find nothing to do, which holds only while the mirrored columns stay
-        // out of the affectedDocs value diff and out of the UPDATE(column) identity prefilter.
+        // Every stamp UPDATE now writes the trigger's own root table, so each re-fires this trigger on
+        // databases with RECURSIVE_TRIGGERS ON. The re-fired execution must find nothing to do, which
+        // holds only while the stamped columns stay out of the affectedDocs value diff and out of the
+        // UPDATE(column) identity prefilter.
         foreach (var tableName in new[] { "School", "SchoolAddress" })
         {
             var triggerBody = GetStampTriggerBody(tableName);
@@ -1638,7 +1608,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
                     .Should()
                     .NotContain(
                         $"[{column}]",
-                        "the {0} affectedDocs diff must ignore mirrored column {1} so the mirror "
+                        "the {0} affectedDocs diff must ignore stamped column {1} so the stamp "
                             + "UPDATE cannot recurse",
                         tableName,
                         column
@@ -1647,7 +1617,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
                     .Should()
                     .NotContain(
                         $"UPDATE([{column}])",
-                        "the {0} identity prefilter must ignore mirrored column {1}",
+                        "the {0} identity prefilter must ignore stamped column {1}",
                         tableName,
                         column
                     );
@@ -1656,42 +1626,37 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     }
 
     [Test]
-    public void It_should_not_allocate_a_second_sequence_value_when_mirroring()
-    {
-        var mirrorUpdate = ExtractMirrorUpdateStatement(GetSchoolStampTriggerBody());
-
-        mirrorUpdate.Should().NotContain("NEXT VALUE FOR [dms].[ChangeVersionSequence]");
-    }
-
-    [Test]
     public void It_should_use_a_deduped_affected_docs_workset_for_content_stamping()
     {
         _ddl.Should().Contain(";WITH affectedDocs AS (");
         _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
         _ddl.Should().Contain("WHERE del.[DocumentId] IS NOT NULL AND (");
-        _ddl.Should().Contain("LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]");
-        _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId]");
-        _ddl.Should().Contain("LEFT JOIN deleted del ON del.[CollectionItemId] = i.[CollectionItemId]");
         _ddl.Should().Contain("LEFT JOIN inserted i ON i.[CollectionItemId] = del.[CollectionItemId]");
-        _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[School_DocumentId]");
+        _ddl.Should().Contain("LEFT JOIN deleted del ON del.[CollectionItemId] = i.[CollectionItemId]");
+        _ddl.Should().Contain("INSERT INTO @stamped ([DocumentId])");
+        _ddl.Should().Contain("SELECT [DocumentId] FROM affectedDocs;");
+        _ddl.Should().Contain("SELECT [School_DocumentId] FROM affectedDocs;");
     }
 
     [Test]
-    public void It_should_skip_child_delete_stamping_when_the_root_mirror_row_is_absent()
+    public void It_should_stamp_the_root_row_from_child_deletes()
     {
+        // A cascade-deleted root leaves no row for the stamp join to match, which is what the old
+        // INNER JOIN <root> stampTarget guard used to enforce explicitly.
         var childTriggerBody = GetStampTriggerBody("SchoolAddress");
 
+        childTriggerBody.Should().NotContain("stampTarget");
+        childTriggerBody.Should().Contain("FROM [edfi].[School] r");
+        childTriggerBody.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];");
         childTriggerBody
             .Should()
-            .Contain(
-                "INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[School_DocumentId];"
-            );
+            .Contain("WHERE i.[CollectionItemId] IS NULL OR ", "pure child deletes still stamp the root");
     }
 
     [Test]
-    public void It_should_guard_mirror_updates_against_empty_stamped_worksets()
+    public void It_should_guard_stamp_updates_against_empty_worksets()
     {
-        // Without this guard the mirror self-UPDATE re-fires the trigger even when
+        // Without this guard the stamp self-UPDATE re-fires the trigger even when
         // @stamped is empty, which recurses to the nesting limit on databases with
         // RECURSIVE_TRIGGERS ON (statement triggers fire on 0 affected rows).
         foreach (var tableName in new[] { "School", "SchoolAddress" })
@@ -1706,28 +1671,28 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
                 .Should()
                 .BeGreaterOrEqualTo(
                     0,
-                    "the {0} stamp trigger must skip the mirror update for empty stamped worksets",
+                    "the {0} stamp trigger must skip the stamp update for empty worksets",
                     tableName
                 );
 
-            var mirrorUpdateStart = triggerBody.IndexOf("UPDATE r", guardStart, StringComparison.Ordinal);
-            mirrorUpdateStart.Should().BeGreaterThan(guardStart);
+            var stampUpdateStart = triggerBody.IndexOf("UPDATE r", guardStart, StringComparison.Ordinal);
+            stampUpdateStart.Should().BeGreaterThan(guardStart);
         }
     }
 
     [Test]
     public void It_should_use_disjoint_affected_docs_branches_for_root_triggers()
     {
-        // Root tables key inserted/deleted by the PK, so changed updates land only in the
-        // inserted-side branch and the deleted-side branch reduces to a pure anti-join.
-        // Disjoint branches allow UNION ALL, so the per-column diff disjunction runs once
-        // per row instead of twice plus a dedup sort.
+        // Root tables key inserted/deleted by the PK, so the content workset reduces to changed
+        // updates: pure inserts take the separate @insertedDocs pass and a pure delete has no row
+        // left to stamp. Child triggers map many rows to one root document, so UNION's dedup is
+        // load-bearing there.
         var rootTriggerBody = GetSchoolStampTriggerBody();
-        rootTriggerBody.Should().Contain("UNION ALL");
+        rootTriggerBody.Should().NotContain("UNION");
         rootTriggerBody.Should().NotContain("WHERE i.[DocumentId] IS NULL OR ");
 
-        // Child triggers map many rows to one root document, so UNION's dedup is load-bearing.
         var childTriggerBody = GetStampTriggerBody("SchoolAddress");
+        childTriggerBody.Should().Contain("UNION\n");
         childTriggerBody.Should().NotContain("UNION ALL");
         childTriggerBody.Should().Contain("WHERE i.[CollectionItemId] IS NULL OR ");
     }
@@ -1735,8 +1700,8 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     [Test]
     public void It_should_use_next_value_for_directly_in_the_set_based_update()
     {
-        _ddl.Should().Contain("SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]");
-        _ddl.Should().Contain("SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]");
+        _ddl.Should().Contain("SET r.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]");
+        _ddl.Should().Contain("SET r.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]");
         _ddl.Should().NotContain("DECLARE @contentVersion");
         _ddl.Should().NotContain("DECLARE @identityVersion");
     }
@@ -1747,7 +1712,8 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         _ddl.Should().Contain("IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]))");
         _ddl.Should()
             .Contain(
-                "SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()"
+                "SET r.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],\n"
+                    + "            r.[IdentityLastModifiedAt] = sysutcdatetime()"
             );
         _ddl.Should()
             .Contain(
@@ -1844,26 +1810,6 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         triggerEnd.Should().BeGreaterThan(triggerStart);
 
         return _ddl.Substring(triggerStart, triggerEnd - triggerStart);
-    }
-
-    private static string ExtractMirrorUpdateStatement(string triggerBody)
-    {
-        var mirrorUpdateStart = triggerBody.IndexOf("UPDATE r", StringComparison.Ordinal);
-        mirrorUpdateStart
-            .Should()
-            .BeGreaterOrEqualTo(
-                0,
-                "the School stamp trigger must mirror captured stamps to the target table"
-            );
-
-        const string mirrorJoin = "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];";
-        var mirrorJoinStart = triggerBody.IndexOf(mirrorJoin, mirrorUpdateStart, StringComparison.Ordinal);
-        mirrorJoinStart.Should().BeGreaterThan(mirrorUpdateStart);
-
-        return triggerBody.Substring(
-            mirrorUpdateStart,
-            mirrorJoinStart - mirrorUpdateStart + mirrorJoin.Length
-        );
     }
 }
 
@@ -4601,17 +4547,19 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
     public void It_should_capture_identity_changed_docs_and_not_gate_on_update_function()
     {
         _ddl.Should().Contain("DECLARE @identityChangedDocs TABLE");
-        _ddl.Should()
-            .Contain("OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs");
+        _ddl.Should().Contain("INSERT INTO @identityChangedDocs ([DocumentId], [ContentVersion])");
+        // The captured ContentVersion is the root row's post-content-stamp value, which the key-change
+        // row reports as its ChangeVersion.
+        _ddl.Should().Contain("SELECT r.[DocumentId], r.[ContentVersion]");
         _ddl.Should().NotContain("UPDATE("); // AC: no UPDATE(col) gating on attached Resource triggers
     }
 
     [Test]
-    public void It_should_place_tombstone_branch_after_mirror_update_block()
+    public void It_should_place_tombstone_branch_after_stamp_update_block()
     {
-        // The mirror-update guard block must appear before the tombstone DELETE-only branch.
-        var mirrorUpdateIdx = _ddl.IndexOf("IF EXISTS (SELECT 1 FROM @stamped)", StringComparison.Ordinal);
-        mirrorUpdateIdx.Should().BeGreaterThanOrEqualTo(0, "mirror-update guard must be present");
+        // The stamp-update guard block must appear before the tombstone DELETE-only branch.
+        var stampUpdateIdx = _ddl.IndexOf("IF EXISTS (SELECT 1 FROM @stamped)", StringComparison.Ordinal);
+        stampUpdateIdx.Should().BeGreaterThanOrEqualTo(0, "stamp-update guard must be present");
 
         var tombstoneBranchIdx = _ddl.IndexOf(
             "IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)",
@@ -4619,7 +4567,7 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
         );
         tombstoneBranchIdx
             .Should()
-            .BeGreaterThan(mirrorUpdateIdx, "tombstone branch must appear after the mirror-update block");
+            .BeGreaterThan(stampUpdateIdx, "tombstone branch must appear after the stamp-update block");
     }
 
     [Test]
@@ -4639,36 +4587,41 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
     [Test]
     public void It_should_not_make_the_tombstone_depend_on_the_stamp_table()
     {
-        // The stamp table still exists for the changed-UPDATE mirror — the guard below it is what
-        // bounds mirror recursion — but the tombstone no longer reads it, so no fill has to happen
-        // before the delete-only branch runs and the dms.Document row need not still be there.
-        var stampFillIdx = _ddl.IndexOf("OUTPUT inserted.", StringComparison.Ordinal);
-        stampFillIdx.Should().BeGreaterThanOrEqualTo(0, "the content stamp must OUTPUT into @stamped");
+        // The stamp workset still exists for the changed-UPDATE stamp — the guard below it is what
+        // bounds stamp recursion — but the tombstone no longer reads it, so no fill has to happen
+        // before the delete-only branch runs.
+        var stampFillIdx = _ddl.IndexOf("SELECT [DocumentId] FROM affectedDocs;", StringComparison.Ordinal);
+        stampFillIdx.Should().BeGreaterThanOrEqualTo(0, "the content stamp workset must be filled");
 
-        var mirrorGuardIdx = _ddl.IndexOf("IF EXISTS (SELECT 1 FROM @stamped)", StringComparison.Ordinal);
-        mirrorGuardIdx.Should().BeGreaterThan(stampFillIdx, "the mirror guard reads the filled table");
+        var stampGuardIdx = _ddl.IndexOf("IF EXISTS (SELECT 1 FROM @stamped)", StringComparison.Ordinal);
+        stampGuardIdx.Should().BeGreaterThan(stampFillIdx, "the stamp guard reads the filled table");
 
         var tombstoneBranchIdx = _ddl.IndexOf(
             "IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)",
             StringComparison.Ordinal
         );
-        tombstoneBranchIdx.Should().BeGreaterThan(mirrorGuardIdx);
+        tombstoneBranchIdx.Should().BeGreaterThan(stampGuardIdx);
 
         _ddl[tombstoneBranchIdx..].Should().NotContain("@stamped");
     }
 
     [Test]
-    public void It_should_not_stamp_the_document_row_for_pure_deletes()
+    public void It_should_not_stamp_anything_for_pure_deletes()
     {
         // The delete arm of affectedDocs is gone: a pure delete allocates its change version from
-        // the sequence in the tombstone INSERT and leaves dms.Document alone.
+        // the sequence in the tombstone INSERT, and the root row it would have stamped is the row
+        // being deleted.
         var affectedDocsIdx = _ddl.IndexOf(";WITH affectedDocs AS (", StringComparison.Ordinal);
         affectedDocsIdx.Should().BeGreaterThanOrEqualTo(0, "the affectedDocs CTE must be present");
 
-        var updateIdx = _ddl.IndexOf("UPDATE d\n", affectedDocsIdx, StringComparison.Ordinal);
-        updateIdx.Should().BeGreaterThan(affectedDocsIdx);
+        var worksetIdx = _ddl.IndexOf(
+            "INSERT INTO @stamped ([DocumentId])",
+            affectedDocsIdx,
+            StringComparison.Ordinal
+        );
+        worksetIdx.Should().BeGreaterThan(affectedDocsIdx);
 
-        _ddl[affectedDocsIdx..updateIdx].Should().NotContain("UNION");
+        _ddl[affectedDocsIdx..worksetIdx].Should().NotContain("UNION");
     }
 }
 

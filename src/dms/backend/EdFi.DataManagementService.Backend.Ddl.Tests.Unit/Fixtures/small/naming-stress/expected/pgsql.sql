@@ -448,30 +448,14 @@ BEGIN
         END IF;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        WITH stamped AS (
-            SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt", "ResourceKeyId"
-            FROM "dms"."Document"
-            WHERE "DocumentId" = NEW."DocumentId"
-        )
         UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt", "DocumentUuid" = stamped."DocumentUuid", "IdentityVersion" = stamped."IdentityVersion", "IdentityLastModifiedAt" = stamped."IdentityLastModifiedAt", "CreatedAt" = stamped."CreatedAt", "ResourceKeyId" = stamped."ResourceKeyId"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now(), "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
+        WHERE r."DocumentId" = NEW."DocumentId";
     ELSIF TG_OP = 'UPDATE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = NEW."DocumentId"
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt", "ResourceKeyId"
-        )
         UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt", "DocumentUuid" = stamped."DocumentUuid", "IdentityVersion" = stamped."IdentityVersion", "IdentityLastModifiedAt" = stamped."IdentityLastModifiedAt", "CreatedAt" = stamped."CreatedAt", "ResourceKeyId" = stamped."ResourceKeyId"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-    ELSIF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
+        WHERE r."DocumentId" = NEW."DocumentId";
+    ELSIF TG_OP = 'DELETE' THEN
         RETURN OLD;
     END IF;
     RETURN NEW;
@@ -560,11 +544,6 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_NamingStressItem_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
     _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
-    _stampedDocumentUuid uuid;
-    _stampedIdentityVersion bigint;
-    _stampedIdentityLastModifiedAt timestamp with time zone;
-    _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
@@ -583,31 +562,20 @@ BEGIN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt"
-        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt, _stampedDocumentUuid, _stampedIdentityVersion, _stampedIdentityLastModifiedAt, _stampedCreatedAt
-        FROM "dms"."Document"
-        WHERE "DocumentId" = NEW."DocumentId";
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
-        NEW."DocumentUuid" := _stampedDocumentUuid;
-        NEW."IdentityVersion" := _stampedIdentityVersion;
-        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
-        NEW."CreatedAt" := _stampedCreatedAt;
+        NEW."ContentLastModifiedAt" := now();
+        NEW."IdentityVersion" := nextval('"dms"."ChangeVersionSequence"');
+        NEW."IdentityLastModifiedAt" := now();
+        NEW."CreatedAt" := now();
     ELSIF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."ContentLastModifiedAt" := now();
     END IF;
     IF TG_OP = 'UPDATE' AND (OLD."NamingStressItemId" IS DISTINCT FROM NEW."NamingStressItemId") THEN
-        UPDATE "dms"."Document"
-        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "IdentityVersion", "IdentityLastModifiedAt" INTO STRICT _stampedIdentityVersion, _stampedIdentityLastModifiedAt;
-        NEW."IdentityVersion" := _stampedIdentityVersion;
-        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
+        NEW."IdentityVersion" := nextval('"dms"."ChangeVersionSequence"');
+        NEW."IdentityLastModifiedAt" := now();
         INSERT INTO "tracked_changes_edfi"."NamingStressItem" (
             "OldNamingStressItemId",
             "NewNamingStressItemId",

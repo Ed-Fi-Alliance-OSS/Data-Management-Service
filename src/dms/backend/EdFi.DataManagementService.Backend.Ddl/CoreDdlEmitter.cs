@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -331,11 +331,12 @@ public sealed class CoreDdlEmitter
             );
             writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("Uri"), StringType(306), false)},");
             writer.AppendLine($"{RenderDescriptorUriLoweredColumn()},");
-            // dms.Document metadata mirrored onto the descriptor row by TR_Descriptor_Stamp_Document.
-            // Unlike the root tables (whose PostgreSQL stamping trigger is BEFORE INSERT and can set
-            // NEW directly), the descriptor trigger is AFTER INSERT and mirrors through a separate
-            // UPDATE, so the client INSERT must already satisfy NOT NULL on its own: every mirrored
-            // column carries a DF_ default that the trigger immediately overwrites.
+            // Document metadata the descriptor row owns outright. DocumentUuid is bound by the descriptor
+            // write path on the INSERT itself; the identity stamp pair is written by
+            // TR_Descriptor_Stamp_Document. Unlike the root tables (whose PostgreSQL stamping trigger is
+            // BEFORE INSERT and can set NEW directly), the descriptor trigger is AFTER INSERT and stamps
+            // through a separate UPDATE, so the client INSERT must already satisfy NOT NULL on its own:
+            // every stamped column carries a DF_ default that the trigger immediately overwrites.
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("DocumentUuid"), _dialect.UuidColumnType, false, "DF_Descriptor_DocumentUuid", _dialect.NewGuidDefaultExpression)},"
             );
@@ -353,9 +354,8 @@ public sealed class CoreDdlEmitter
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("CreatedByOwnershipTokenId"), _dialect.SmallintColumnType, true)},"
             );
-            // Mirror of dms.Document.ResourceKeyId, copied by TR_Descriptor_Stamp_Document; nullable with
-            // no default so an out-of-band insert cannot fabricate a descriptor type. Every supported
-            // write goes through the trigger, which fills the column before the statement completes.
+            // The descriptor type discriminator. The descriptor write path binds it on the INSERT. It stays
+            // nullable with no default so an out-of-band insert cannot fabricate a descriptor type.
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("ResourceKeyId"), _dialect.SmallintColumnType, true)},"
             );
@@ -909,10 +909,9 @@ public sealed class CoreDdlEmitter
 
     /// <summary>
     /// Emits core triggers: the dialect-specific descriptor stamping trigger on
-    /// <c>dms.Descriptor</c>. The descriptor stamping trigger bumps
-    /// <c>dms.Document.ContentVersion</c> / <c>ContentLastModifiedAt</c> on real value
-    /// changes to a descriptor row, with a DB-level no-op guard that short-circuits
-    /// when no stored descriptor column actually changed.
+    /// <c>dms.Descriptor</c>. The descriptor stamping trigger bumps the descriptor row's own
+    /// <c>ContentVersion</c> / <c>ContentLastModifiedAt</c> on real value changes, with a DB-level
+    /// no-op guard that short-circuits when no stored descriptor column actually changed.
     /// </summary>
     private void EmitTriggers(SqlWriter writer)
     {
@@ -928,14 +927,13 @@ public sealed class CoreDdlEmitter
         }
     }
 
-    // ── Descriptor stamping trigger (dms.Descriptor → dms.Document) ────────
+    // ── Descriptor stamping trigger (dms.Descriptor, root-local) ───────────
 
     /// <summary>
     /// Client-supplied content columns on <c>dms.Descriptor</c> in the order they are emitted by
     /// <see cref="EmitDescriptorTable"/>, paired with their <see cref="ScalarKind"/>. The
-    /// trigger-maintained mirrors (the content stamp pair and
-    /// <see cref="_descriptorMirroredDocumentColumns"/>) plus the never-written
-    /// <c>CreatedByOwnershipTokenId</c> are deliberately excluded.
+    /// trigger-maintained stamp columns, the write-path-bound <c>DocumentUuid</c>/<c>ResourceKeyId</c>
+    /// pair, and the never-written <c>CreatedByOwnershipTokenId</c> are deliberately excluded.
     /// The kind metadata is load-bearing for the MSSQL trigger: <see cref="ScalarKind.String"/>
     /// columns are compared via <c>CAST(... AS varbinary(max))</c> so that trailing-space-only
     /// and case-only changes (which default CI collation + ANSI padding would miss) are still
@@ -955,69 +953,19 @@ public sealed class CoreDdlEmitter
         };
 
     /// <summary>
-    /// The <c>dms.Document</c> metadata columns the descriptor stamping trigger copies onto the
-    /// <c>dms.Descriptor</c> row in addition to the <c>ContentVersion</c>/<c>ContentLastModifiedAt</c>
-    /// pair, in the order every copy list uses. The order is load-bearing on SQL Server:
-    /// <c>OUTPUT ... INTO @stamped</c> carries no explicit column list and therefore binds positionally,
-    /// so the <c>@stamped</c> declaration, the seeding <c>INSERT</c>, and the <c>OUTPUT</c> list must
-    /// agree. <c>CreatedByOwnershipTokenId</c> is deliberately absent: <c>dms.Document</c> has no such
-    /// column, so there is nothing to copy.
-    /// <para>
-    /// These columns are intentionally <em>not</em> part of <see cref="_descriptorStoredColumns"/>.
-    /// They are trigger-owned mirror targets rather than client content, so they must stay out of the
-    /// no-op change detection — which is also what bounds the recursion the mirror <c>UPDATE</c> would
-    /// otherwise cause (it re-fires this same trigger).
-    /// </para>
-    /// <para>
-    /// <c>ResourceKeyId</c> never changes for a document, so re-copying it on every stamp is wasted but
-    /// harmless; carrying it through the same mechanism as the rest keeps one copy list to maintain.
-    /// </para>
-    /// </summary>
-    private static readonly string[] _descriptorMirroredDocumentColumns =
-    [
-        "DocumentUuid",
-        "IdentityVersion",
-        "IdentityLastModifiedAt",
-        "CreatedAt",
-        "ResourceKeyId",
-    ];
-
-    /// <summary>
-    /// Appends <see cref="_descriptorMirroredDocumentColumns"/> — each quoted for the dialect and
-    /// optionally prefixed with <paramref name="qualifier"/> and a dot — for the <c>dms.Document</c>
-    /// metadata the descriptor stamping trigger copies. Callers always emit the leading
-    /// key/content-stamp columns first, so this starts with a separator.
-    /// </summary>
-    private void AppendDescriptorMirroredDocumentColumns(SqlWriter writer, string? qualifier)
-    {
-        foreach (var column in _descriptorMirroredDocumentColumns)
-        {
-            writer.Append(", ");
-            if (qualifier is not null)
-            {
-                writer.Append(qualifier);
-                writer.Append(".");
-            }
-            writer.Append(Quote(column));
-        }
-    }
-
-    /// <summary>
     /// Emits the PostgreSQL descriptor stamping trigger function and trigger.
-    /// On INSERT or a real value change to any stored column of <c>dms.Descriptor</c>,
-    /// bumps <c>dms.Document.ContentVersion</c> and <c>ContentLastModifiedAt</c> on
-    /// the owning document row, then mirrors those captured stamps — plus
-    /// <see cref="_descriptorMirroredDocumentColumns"/> — back to the descriptor
-    /// (INSERT copies the existing document stamp). DELETE writes only the tracked-change
-    /// tombstone, whose change version comes straight from <c>dms.ChangeVersionSequence</c>:
-    /// the descriptor row is already gone, so there is nothing left to stamp or mirror.
+    /// On INSERT the new descriptor row takes both stamps outright (there is no prior stamp to preserve);
+    /// on a real value change to any stored column it takes a fresh content stamp. Both write
+    /// <c>dms.Descriptor</c>'s own columns — the descriptor row is the stamp store. DELETE writes only the
+    /// tracked-change tombstone, whose change version comes straight from <c>dms.ChangeVersionSequence</c>:
+    /// the descriptor row is already gone, so there is nothing left to stamp. Without a shared descriptor
+    /// tracked-change table the DELETE arm has no work at all.
     /// A DB-level no-op guard (<c>IS DISTINCT FROM</c> across every stored column)
     /// short-circuits same-value UPDATEs so unchanged PUTs do not bump the stamps.
     /// </summary>
     private void EmitPgsqlDescriptorStampingTrigger(SqlWriter writer)
     {
         var descriptorTable = _dialect.QualifyTable(_descriptorTable);
-        var documentTable = _dialect.QualifyTable(_documentTable);
         var sequenceName =
             $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote(DmsTableNames.ChangeVersionSequence)}";
         var funcName = $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote("TF_Descriptor_Stamp_Document")}";
@@ -1026,8 +974,8 @@ public sealed class CoreDdlEmitter
         writer.AppendLine("RETURNS TRIGGER AS $func$");
         if (_sharedDescriptorTrackedChangeTable is not null)
         {
-            // Only the tombstone needs a local: it reports the post-bump ContentVersion, which the
-            // DELETE-branch stamp hands back. Every other branch mirrors through a CTE.
+            // Only the tombstone needs a local: it reports the change version the DELETE branch takes
+            // off the sequence. Every other branch stamps the descriptor row in place.
             writer.AppendLine("DECLARE");
             using (writer.Indent())
             {
@@ -1055,90 +1003,35 @@ public sealed class CoreDdlEmitter
             writer.AppendLine("IF TG_OP = 'INSERT' THEN");
             using (writer.Indent())
             {
-                writer.AppendLine("WITH stamped AS (");
-                using (writer.Indent())
-                {
-                    writer.Append("SELECT ");
-                    writer.Append(Quote("DocumentId"));
-                    writer.Append(", ");
-                    writer.Append(Quote("ContentVersion"));
-                    writer.Append(", ");
-                    writer.Append(Quote("ContentLastModifiedAt"));
-                    AppendDescriptorMirroredDocumentColumns(writer, qualifier: null);
-                    writer.AppendLine();
-                    writer.Append("FROM ");
-                    writer.AppendLine(documentTable);
-                    writer.Append("WHERE ");
-                    writer.Append(Quote("DocumentId"));
-                    writer.Append(" = NEW.");
-                    writer.Append(Quote("DocumentId"));
-                    writer.AppendLine();
-                }
-                writer.AppendLine(")");
-                EmitPgsqlDescriptorMirrorUpdateFromStamped(writer, descriptorTable);
+                // The stamp columns are deliberately absent from the no-op change detection above, which
+                // is what bounds the recursion this self-UPDATE would otherwise cause (it re-fires this
+                // same trigger).
+                EmitPgsqlDescriptorStampUpdate(
+                    writer,
+                    descriptorTable,
+                    sequenceName,
+                    includeIdentityStamp: true
+                );
             }
             writer.AppendLine("ELSIF TG_OP = 'UPDATE' THEN");
             using (writer.Indent())
             {
-                writer.AppendLine("WITH stamped AS (");
-                using (writer.Indent())
-                {
-                    writer.Append("UPDATE ");
-                    writer.AppendLine(documentTable);
-                    writer.Append("SET ");
-                    writer.Append(Quote("ContentVersion"));
-                    writer.Append(" = nextval('");
-                    writer.Append(sequenceName);
-                    writer.Append("'), ");
-                    writer.Append(Quote("ContentLastModifiedAt"));
-                    writer.AppendLine(" = now()");
-                    writer.Append("WHERE ");
-                    writer.Append(Quote("DocumentId"));
-                    writer.Append(" = NEW.");
-                    writer.Append(Quote("DocumentId"));
-                    writer.AppendLine();
-                    // The mirrored metadata columns are unchanged by this UPDATE, but returning them
-                    // keeps the mirror statement one shape across both branches.
-                    writer.Append("RETURNING ");
-                    writer.Append(Quote("DocumentId"));
-                    writer.Append(", ");
-                    writer.Append(Quote("ContentVersion"));
-                    writer.Append(", ");
-                    writer.Append(Quote("ContentLastModifiedAt"));
-                    AppendDescriptorMirroredDocumentColumns(writer, qualifier: null);
-                    writer.AppendLine();
-                }
-                writer.AppendLine(")");
-                EmitPgsqlDescriptorMirrorUpdateFromStamped(writer, descriptorTable);
+                EmitPgsqlDescriptorStampUpdate(
+                    writer,
+                    descriptorTable,
+                    sequenceName,
+                    includeIdentityStamp: false
+                );
             }
             writer.AppendLine("ELSIF TG_OP = 'DELETE' THEN");
             using (writer.Indent())
             {
-                if (_sharedDescriptorTrackedChangeTable is null)
-                {
-                    // DocumentId is the Descriptor PK and the row is already gone in the AFTER
-                    // DELETE branch, so a mirror update can never match; stamp dms.Document only.
-                    writer.Append("UPDATE ");
-                    writer.AppendLine(documentTable);
-                    writer.Append("SET ");
-                    writer.Append(Quote("ContentVersion"));
-                    writer.Append(" = nextval('");
-                    writer.Append(sequenceName);
-                    writer.Append("'), ");
-                    writer.Append(Quote("ContentLastModifiedAt"));
-                    writer.AppendLine(" = now()");
-                    writer.Append("WHERE ");
-                    writer.Append(Quote("DocumentId"));
-                    writer.Append(" = OLD.");
-                    writer.Append(Quote("DocumentId"));
-                    writer.AppendLine(";");
-                }
-                else
+                if (_sharedDescriptorTrackedChangeTable is not null)
                 {
                     // The tombstone's ChangeVersion is a fresh sequence value taken right here. The
-                    // descriptor row is gone and its dms.Document row may already be gone too, so
-                    // there is nothing left to stamp and read back — which is what used to make the
-                    // delete statement order (dms.Descriptor before dms.Document) load-bearing.
+                    // descriptor row is gone, so there is nothing left to stamp and read back — which is
+                    // what used to make the delete statement order (dms.Descriptor before dms.Document)
+                    // load-bearing.
                     writer.Append("_stampedContentVersion := nextval('");
                     writer.Append(sequenceName);
                     writer.AppendLine("');");
@@ -1151,6 +1044,7 @@ public sealed class CoreDdlEmitter
                         sequenceName
                     );
                 }
+
                 writer.AppendLine("RETURN OLD;");
             }
             writer.AppendLine("END IF;");
@@ -1171,49 +1065,58 @@ public sealed class CoreDdlEmitter
         writer.AppendLine();
     }
 
-    private void EmitPgsqlDescriptorMirrorUpdateFromStamped(SqlWriter writer, string descriptorTable)
+    /// <summary>
+    /// Emits the descriptor row's own stamp <c>UPDATE</c>. INSERT rows also take the identity stamp: the
+    /// row is new, so there is no prior identity version to preserve. <c>CreatedAt</c> and
+    /// <c>DocumentUuid</c> are not stamped — the former comes from its <c>DF_</c> default and the latter is
+    /// bound by the descriptor write path on the INSERT itself.
+    /// </summary>
+    private void EmitPgsqlDescriptorStampUpdate(
+        SqlWriter writer,
+        string descriptorTable,
+        string sequenceName,
+        bool includeIdentityStamp
+    )
     {
         writer.Append("UPDATE ");
         writer.Append(descriptorTable);
         writer.AppendLine(" r");
         writer.Append("SET ");
         writer.Append(Quote("ContentVersion"));
-        writer.Append(" = stamped.");
-        writer.Append(Quote("ContentVersion"));
-        writer.Append(", ");
+        writer.Append(" = nextval('");
+        writer.Append(sequenceName);
+        writer.Append("'), ");
         writer.Append(Quote("ContentLastModifiedAt"));
-        writer.Append(" = stamped.");
-        writer.Append(Quote("ContentLastModifiedAt"));
-        foreach (var column in _descriptorMirroredDocumentColumns)
+        writer.Append(" = now()");
+        if (includeIdentityStamp)
         {
             writer.Append(", ");
-            writer.Append(Quote(column));
-            writer.Append(" = stamped.");
-            writer.Append(Quote(column));
+            writer.Append(Quote("IdentityVersion"));
+            writer.Append(" = nextval('");
+            writer.Append(sequenceName);
+            writer.Append("'), ");
+            writer.Append(Quote("IdentityLastModifiedAt"));
+            writer.Append(" = now()");
         }
         writer.AppendLine();
-        writer.AppendLine("FROM stamped");
         writer.Append("WHERE r.");
         writer.Append(Quote("DocumentId"));
-        writer.Append(" = stamped.");
+        writer.Append(" = NEW.");
         writer.Append(Quote("DocumentId"));
         writer.AppendLine(";");
     }
 
     /// <summary>
-    /// Emits the SQL Server descriptor stamping trigger. INSERT rows copy the
-    /// <c>dms.Document</c> defaults into the descriptor mirror; UPDATE rows flow
-    /// through the null-safe per-column diff predicates across every stored descriptor
-    /// column, so no-op UPDATEs produce no CTE rows and the downstream stamp/mirror
-    /// updates stamp nothing. DELETE rows are absent from the stamp workset entirely — they
-    /// write only the tracked-change tombstone, whose change version comes straight from
-    /// <c>dms.ChangeVersionSequence</c>. The mirror writes the content stamp pair plus
-    /// <see cref="_descriptorMirroredDocumentColumns"/>.
+    /// Emits the SQL Server descriptor stamping trigger. INSERT rows take both stamps outright; UPDATE rows
+    /// flow through the null-safe per-column diff predicates across every stored descriptor column, so no-op
+    /// UPDATEs produce no workset rows and the stamp updates stamp nothing. DELETE rows are absent from
+    /// every stamp workset — they write only the tracked-change tombstone, whose change version comes
+    /// straight from <c>dms.ChangeVersionSequence</c>. Both stamps write <c>dms.Descriptor</c>'s own
+    /// columns; the descriptor row is the stamp store.
     /// </summary>
     private void EmitMssqlDescriptorStampingTrigger(SqlWriter writer)
     {
         var descriptorTable = _dialect.QualifyTable(_descriptorTable);
-        var documentTable = _dialect.QualifyTable(_documentTable);
         var sequenceName =
             $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote(DmsTableNames.ChangeVersionSequence)}";
         var triggerName = $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote(DescriptorStampingTriggerName)}";
@@ -1229,34 +1132,15 @@ public sealed class CoreDdlEmitter
         using (writer.Indent())
         {
             writer.AppendLine("SET NOCOUNT ON;");
-            writer.AppendLine("DECLARE @stamped TABLE (");
-            using (writer.Indent())
-            {
-                writer.AppendLine("[DocumentId] bigint NOT NULL PRIMARY KEY,");
-                writer.AppendLine("[ContentVersion] bigint NOT NULL,");
-                writer.AppendLine("[ContentLastModifiedAt] datetime2(7) NOT NULL,");
-                // OUTPUT ... INTO @stamped binds positionally, so this declaration order must match
-                // _descriptorMirroredDocumentColumns.
-                writer.AppendLine("[DocumentUuid] uniqueidentifier NOT NULL,");
-                writer.AppendLine("[IdentityVersion] bigint NOT NULL,");
-                writer.AppendLine("[IdentityLastModifiedAt] datetime2(7) NOT NULL,");
-                writer.AppendLine("[CreatedAt] datetime2(7) NOT NULL,");
-                writer.AppendLine("[ResourceKeyId] smallint NOT NULL");
-            }
-            writer.AppendLine(");");
-            writer.Append("INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt]");
-            AppendDescriptorMirroredDocumentColumns(writer, qualifier: null);
-            writer.AppendLine(")");
-            writer.Append("SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]");
-            AppendDescriptorMirroredDocumentColumns(writer, "d");
-            writer.AppendLine();
-            writer.Append("FROM ");
-            writer.Append(documentTable);
-            writer.AppendLine(" d");
-            writer.Append("INNER JOIN inserted i ON d.");
+
+            // Pure inserts: the row is new, so it takes the identity stamp alongside the content stamp.
+            writer.AppendLine("DECLARE @insertedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);");
+            writer.Append("INSERT INTO @insertedDocs (");
             writer.Append(quotedKeyColumn);
-            writer.Append(" = i.");
+            writer.AppendLine(")");
+            writer.Append("SELECT i.");
             writer.AppendLine(quotedKeyColumn);
+            writer.AppendLine("FROM inserted i");
             writer.Append("LEFT JOIN deleted del ON del.");
             writer.Append(quotedKeyColumn);
             writer.Append(" = i.");
@@ -1264,6 +1148,18 @@ public sealed class CoreDdlEmitter
             writer.Append("WHERE del.");
             writer.Append(quotedKeyColumn);
             writer.AppendLine(" IS NULL;");
+            EmitMssqlDescriptorStampUpdate(
+                writer,
+                descriptorTable,
+                sequenceName,
+                quotedKeyColumn,
+                worksetVariable: "@insertedDocs",
+                includeIdentityStamp: true
+            );
+
+            // Changed updates only. A pure delete stamps nothing: the descriptor row is the stamp store
+            // and it is the row going away.
+            writer.AppendLine("DECLARE @stamped TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);");
             writer.AppendLine(";WITH affectedDocs AS (");
             using (writer.Indent())
             {
@@ -1280,84 +1176,23 @@ public sealed class CoreDdlEmitter
                 EmitMssqlDescriptorColumnDiffDisjunction(writer, "i", "del");
                 writer.Append(")");
                 writer.AppendLine();
-                if (_sharedDescriptorTrackedChangeTable is null)
-                {
-                    // Branches are disjoint (changed updates vs pure deletes), so UNION ALL
-                    // skips the dedup sort.
-                    writer.AppendLine("UNION ALL");
-                    writer.Append("SELECT del.");
-                    writer.AppendLine(quotedKeyColumn);
-                    writer.AppendLine("FROM deleted del");
-                    writer.Append("LEFT JOIN inserted i ON i.");
-                    writer.Append(quotedKeyColumn);
-                    writer.Append(" = del.");
-                    writer.AppendLine(quotedKeyColumn);
-                    writer.Append("WHERE i.");
-                    writer.Append(quotedKeyColumn);
-                    writer.AppendLine(" IS NULL");
-                }
             }
             writer.AppendLine(")");
-
-            writer.AppendLine("UPDATE d");
-            writer.Append("SET d.");
-            writer.Append(Quote("ContentVersion"));
-            writer.Append(" = NEXT VALUE FOR ");
-            writer.Append(sequenceName);
-            writer.Append(", d.");
-            writer.Append(Quote("ContentLastModifiedAt"));
-            writer.AppendLine(" = sysutcdatetime()");
-            // The mirrored metadata columns are unchanged by this UPDATE; capturing them from the
-            // post-update row image keeps one mirror statement shape for insert and update rows alike.
-            writer.Append(
-                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt]"
+            writer.Append("INSERT INTO @stamped (");
+            writer.Append(quotedKeyColumn);
+            writer.AppendLine(")");
+            writer.Append("SELECT ");
+            writer.Append(quotedKeyColumn);
+            writer.AppendLine(" FROM affectedDocs;");
+            EmitMssqlDescriptorStampUpdate(
+                writer,
+                descriptorTable,
+                sequenceName,
+                quotedKeyColumn,
+                worksetVariable: "@stamped",
+                includeIdentityStamp: false
             );
-            AppendDescriptorMirroredDocumentColumns(writer, "inserted");
-            writer.AppendLine(" INTO @stamped");
-            writer.Append("FROM ");
-            writer.Append(documentTable);
-            writer.AppendLine(" d");
-            writer.Append("INNER JOIN affectedDocs a ON d.");
-            writer.Append(quotedKeyColumn);
-            writer.Append(" = a.");
-            writer.Append(quotedKeyColumn);
-            writer.AppendLine(";");
-            // The guard bounds direct recursion: without it the mirror self-UPDATE re-fires
-            // this trigger even with an empty workset (statement triggers fire on 0 rows),
-            // which recurses to the nesting limit on databases with RECURSIVE_TRIGGERS ON.
-            writer.AppendLine("IF EXISTS (SELECT 1 FROM @stamped)");
-            writer.AppendLine("BEGIN");
-            using (writer.Indent())
-            {
-                writer.AppendLine("UPDATE r");
-                writer.Append("SET r.");
-                writer.Append(Quote("ContentVersion"));
-                writer.Append(" = s.");
-                writer.Append(Quote("ContentVersion"));
-                writer.AppendLine(",");
-                writer.Append("    r.");
-                writer.Append(Quote("ContentLastModifiedAt"));
-                writer.Append(" = s.");
-                writer.Append(Quote("ContentLastModifiedAt"));
-                foreach (var column in _descriptorMirroredDocumentColumns)
-                {
-                    writer.AppendLine(",");
-                    writer.Append("    r.");
-                    writer.Append(Quote(column));
-                    writer.Append(" = s.");
-                    writer.Append(Quote(column));
-                }
-                writer.AppendLine();
-                writer.Append("FROM ");
-                writer.Append(descriptorTable);
-                writer.AppendLine(" r");
-                writer.Append("INNER JOIN @stamped s ON s.");
-                writer.Append(quotedKeyColumn);
-                writer.Append(" = r.");
-                writer.Append(quotedKeyColumn);
-                writer.AppendLine(";");
-            }
-            writer.AppendLine("END");
+
             if (_sharedDescriptorTrackedChangeTable is not null)
             {
                 writer.AppendLine(
@@ -1382,6 +1217,60 @@ public sealed class CoreDdlEmitter
         // Close the batch so that subsequent DDL starts in a fresh batch.
         writer.AppendLine("GO");
         writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits one guarded descriptor stamp <c>UPDATE</c> over a workset table variable. The guard bounds
+    /// direct recursion: without it the self-UPDATE re-fires this trigger even with an empty workset
+    /// (statement triggers fire on 0 rows), which recurses to the nesting limit on databases with
+    /// RECURSIVE_TRIGGERS ON. The stamp columns are deliberately absent from the diff disjunction that
+    /// builds the update workset, so the re-fired trigger finds nothing to do and terminates.
+    /// </summary>
+    private void EmitMssqlDescriptorStampUpdate(
+        SqlWriter writer,
+        string descriptorTable,
+        string sequenceName,
+        string quotedKeyColumn,
+        string worksetVariable,
+        bool includeIdentityStamp
+    )
+    {
+        writer.AppendLine($"IF EXISTS (SELECT 1 FROM {worksetVariable})");
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            writer.AppendLine("UPDATE r");
+            writer.Append("SET r.");
+            writer.Append(Quote("ContentVersion"));
+            writer.Append(" = NEXT VALUE FOR ");
+            writer.Append(sequenceName);
+            writer.AppendLine(",");
+            writer.Append("    r.");
+            writer.Append(Quote("ContentLastModifiedAt"));
+            writer.Append(" = sysutcdatetime()");
+            if (includeIdentityStamp)
+            {
+                writer.AppendLine(",");
+                writer.Append("    r.");
+                writer.Append(Quote("IdentityVersion"));
+                writer.Append(" = NEXT VALUE FOR ");
+                writer.Append(sequenceName);
+                writer.AppendLine(",");
+                writer.Append("    r.");
+                writer.Append(Quote("IdentityLastModifiedAt"));
+                writer.Append(" = sysutcdatetime()");
+            }
+            writer.AppendLine();
+            writer.Append("FROM ");
+            writer.Append(descriptorTable);
+            writer.AppendLine(" r");
+            writer.Append($"INNER JOIN {worksetVariable} s ON s.");
+            writer.Append(quotedKeyColumn);
+            writer.Append(" = r.");
+            writer.Append(quotedKeyColumn);
+            writer.AppendLine(";");
+        }
+        writer.AppendLine("END");
     }
 
     /// <summary>

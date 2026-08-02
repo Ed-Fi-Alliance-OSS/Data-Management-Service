@@ -448,30 +448,14 @@ BEGIN
         END IF;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        WITH stamped AS (
-            SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt", "ResourceKeyId"
-            FROM "dms"."Document"
-            WHERE "DocumentId" = NEW."DocumentId"
-        )
         UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt", "DocumentUuid" = stamped."DocumentUuid", "IdentityVersion" = stamped."IdentityVersion", "IdentityLastModifiedAt" = stamped."IdentityLastModifiedAt", "CreatedAt" = stamped."CreatedAt", "ResourceKeyId" = stamped."ResourceKeyId"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now(), "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
+        WHERE r."DocumentId" = NEW."DocumentId";
     ELSIF TG_OP = 'UPDATE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = NEW."DocumentId"
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt", "ResourceKeyId"
-        )
         UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt", "DocumentUuid" = stamped."DocumentUuid", "IdentityVersion" = stamped."IdentityVersion", "IdentityLastModifiedAt" = stamped."IdentityLastModifiedAt", "CreatedAt" = stamped."CreatedAt", "ResourceKeyId" = stamped."ResourceKeyId"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-    ELSIF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
+        WHERE r."DocumentId" = NEW."DocumentId";
+    ELSIF TG_OP = 'DELETE' THEN
         RETURN OLD;
     END IF;
     RETURN NEW;
@@ -659,33 +643,17 @@ CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp"
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."ParentResource_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = OLD."ParentResource_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
         UPDATE "edfi"."ParentResource" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE r."DocumentId" = OLD."ParentResource_DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."BaseCollectionItemId" IS DISTINCT FROM NEW."BaseCollectionItemId" OR OLD."ParentResource_DocumentId" IS DISTINCT FROM NEW."ParentResource_DocumentId" OR OLD."AlignedHiddenScalar" IS DISTINCT FROM NEW."AlignedHiddenScalar" OR OLD."AlignedVisibleScalar" IS DISTINCT FROM NEW."AlignedVisibleScalar") THEN
         RETURN NEW;
     END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."ParentResource_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = NEW."ParentResource_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-    )
     UPDATE "edfi"."ParentResource" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-    FROM stamped
-    WHERE r."DocumentId" = stamped."DocumentId";
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE r."DocumentId" = NEW."ParentResource_DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -700,33 +668,17 @@ CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildre
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."ParentResource_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = OLD."ParentResource_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
         UPDATE "edfi"."ParentResource" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE r."DocumentId" = OLD."ParentResource_DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."BaseCollectionItemId" IS DISTINCT FROM NEW."BaseCollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentResource_DocumentId" IS DISTINCT FROM NEW."ParentResource_DocumentId" OR OLD."ChildCode" IS DISTINCT FROM NEW."ChildCode" OR OLD."ChildValue" IS DISTINCT FROM NEW."ChildValue") THEN
         RETURN NEW;
     END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."ParentResource_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = NEW."ParentResource_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-    )
     UPDATE "edfi"."ParentResource" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-    FROM stamped
-    WHERE r."DocumentId" = stamped."DocumentId";
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE r."DocumentId" = NEW."ParentResource_DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -741,33 +693,17 @@ CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildre
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."ParentResource_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = OLD."ParentResource_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
         UPDATE "edfi"."ParentResource" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE r."DocumentId" = OLD."ParentResource_DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."ParentResource_DocumentId" IS DISTINCT FROM NEW."ParentResource_DocumentId" OR OLD."ExtensionChildCode" IS DISTINCT FROM NEW."ExtensionChildCode" OR OLD."ExtensionChildValue" IS DISTINCT FROM NEW."ExtensionChildValue") THEN
         RETURN NEW;
     END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."ParentResource_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = NEW."ParentResource_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-    )
     UPDATE "edfi"."ParentResource" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-    FROM stamped
-    WHERE r."DocumentId" = stamped."DocumentId";
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE r."DocumentId" = NEW."ParentResource_DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -801,11 +737,6 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResource_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
     _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
-    _stampedDocumentUuid uuid;
-    _stampedIdentityVersion bigint;
-    _stampedIdentityLastModifiedAt timestamp with time zone;
-    _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
@@ -824,31 +755,20 @@ BEGIN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt"
-        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt, _stampedDocumentUuid, _stampedIdentityVersion, _stampedIdentityLastModifiedAt, _stampedCreatedAt
-        FROM "dms"."Document"
-        WHERE "DocumentId" = NEW."DocumentId";
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
-        NEW."DocumentUuid" := _stampedDocumentUuid;
-        NEW."IdentityVersion" := _stampedIdentityVersion;
-        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
-        NEW."CreatedAt" := _stampedCreatedAt;
+        NEW."ContentLastModifiedAt" := now();
+        NEW."IdentityVersion" := nextval('"dms"."ChangeVersionSequence"');
+        NEW."IdentityLastModifiedAt" := now();
+        NEW."CreatedAt" := now();
     ELSIF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."ContentLastModifiedAt" := now();
     END IF;
     IF TG_OP = 'UPDATE' AND (OLD."ParentResourceId" IS DISTINCT FROM NEW."ParentResourceId") THEN
-        UPDATE "dms"."Document"
-        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "IdentityVersion", "IdentityLastModifiedAt" INTO STRICT _stampedIdentityVersion, _stampedIdentityLastModifiedAt;
-        NEW."IdentityVersion" := _stampedIdentityVersion;
-        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
+        NEW."IdentityVersion" := nextval('"dms"."ChangeVersionSequence"');
+        NEW."IdentityLastModifiedAt" := now();
         INSERT INTO "tracked_changes_edfi"."ParentResource" (
             "OldParentResourceId",
             "NewParentResourceId",
@@ -875,33 +795,17 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp"()
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."ParentResource_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = OLD."ParentResource_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
         UPDATE "edfi"."ParentResource" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE r."DocumentId" = OLD."ParentResource_DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentResource_DocumentId" IS DISTINCT FROM NEW."ParentResource_DocumentId" OR OLD."ParentCode" IS DISTINCT FROM NEW."ParentCode" OR OLD."ParentName" IS DISTINCT FROM NEW."ParentName") THEN
         RETURN NEW;
     END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."ParentResource_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = NEW."ParentResource_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-    )
     UPDATE "edfi"."ParentResource" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-    FROM stamped
-    WHERE r."DocumentId" = stamped."DocumentId";
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE r."DocumentId" = NEW."ParentResource_DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;

@@ -1,9 +1,8 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using NUnit.Framework;
@@ -281,18 +280,17 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_mirror_resource_key_id_on_the_descriptor_row()
+    public void It_should_carry_resource_key_id_on_the_descriptor_row()
     {
-        // The project-qualified descriptor type only lived on dms.Document, so descriptor reads rooted on
-        // dms.Descriptor need it mirrored here. Nullable with no default: a fabricated default would be
-        // silently-wrong data on a column the read path filters by, and the stamping trigger fills the
-        // column on every supported insert, so a NULL can only come from an out-of-band write.
+        // Descriptor reads root on dms.Descriptor and filter by the project-qualified descriptor type, so
+        // the column lives here. Nullable with no default: a fabricated default would be silently-wrong
+        // data on a column the read path filters by, and the descriptor write path binds it on every
+        // supported insert, so a NULL can only come from an out-of-band write.
         var block = DescriptorTableColumnExtractor.ExtractPgBlock(_ddl);
 
         // The trailing comma is load-bearing — it proves nothing (a DEFAULT) follows the null marker.
         block.Should().Contain("\"ResourceKeyId\" smallint NULL,");
         _ddl.Should().Contain("\"IX_Descriptor_ResourceKeyId_DocumentId\"");
-        _ddl.Should().Contain("\"ResourceKeyId\" = stamped.\"ResourceKeyId\"");
     }
 
     [Test]
@@ -666,89 +664,77 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_copy_existing_document_stamps_for_descriptor_inserts()
+    public void It_should_stamp_the_descriptor_row_itself_for_descriptor_inserts()
     {
-        _ddl.Should().Contain("IF TG_OP = 'INSERT' THEN");
-        _ddl.Should().Contain("SELECT \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"");
-        _ddl.Should().Contain("FROM \"dms\".\"Document\"");
-        _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
-        _ddl.Should().Contain("UPDATE \"dms\".\"Descriptor\" r");
-        _ddl.Should()
+        // A new descriptor row has no prior stamp to preserve, so INSERT takes the identity stamp
+        // alongside the content stamp — and writes dms.Descriptor's own columns, never dms.Document.
+        var insertBranch = SliceBranch(_ddl, "IF TG_OP = 'INSERT' THEN", "ELSIF TG_OP = 'UPDATE' THEN");
+
+        insertBranch.Should().Contain("UPDATE \"dms\".\"Descriptor\" r");
+        insertBranch
+            .Should()
             .Contain(
-                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\""
+                "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), "
+                    + "\"ContentLastModifiedAt\" = now(), "
+                    + "\"IdentityVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), "
+                    + "\"IdentityLastModifiedAt\" = now()"
             );
+        insertBranch.Should().Contain("WHERE r.\"DocumentId\" = NEW.\"DocumentId\";");
+        insertBranch.Should().NotContain("\"dms\".\"Document\"");
+        insertBranch.Should().NotContain("WITH stamped AS (");
     }
 
     [Test]
-    public void It_should_allocate_document_stamps_for_descriptor_updates()
+    public void It_should_stamp_the_descriptor_row_itself_for_descriptor_updates()
     {
-        _ddl.Should().Contain("ELSIF TG_OP = 'UPDATE' THEN");
-        _ddl.Should().Contain("UPDATE \"dms\".\"Document\"");
-        _ddl.Should().Contain("\"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
-        _ddl.Should().Contain("\"ContentLastModifiedAt\" = now()");
+        // A changed UPDATE takes only the content stamp: the descriptor identity is immutable through
+        // every supported write, so re-bumping IdentityVersion would be a false key change.
+        var updateBranch = SliceBranch(_ddl, "ELSIF TG_OP = 'UPDATE' THEN", "ELSIF TG_OP = 'DELETE' THEN");
+
+        updateBranch.Should().Contain("UPDATE \"dms\".\"Descriptor\" r");
+        updateBranch
+            .Should()
+            .Contain(
+                "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), "
+                    + "\"ContentLastModifiedAt\" = now()\n"
+            );
+        updateBranch.Should().Contain("WHERE r.\"DocumentId\" = NEW.\"DocumentId\";");
+        updateBranch.Should().NotContain("\"IdentityVersion\"");
+        updateBranch.Should().NotContain("\"dms\".\"Document\"");
+        updateBranch.Should().NotContain("WITH stamped AS (");
     }
 
     [Test]
-    public void It_should_allocate_document_stamps_for_descriptor_deletes()
+    public void It_should_leave_the_no_tombstone_descriptor_delete_branch_without_a_stamp()
     {
-        _ddl.Should().Contain("ELSIF TG_OP = 'DELETE' THEN");
-        _ddl.Should().Contain("WHERE \"DocumentId\" = OLD.\"DocumentId\"");
-        _ddl.Should().Contain("RETURN OLD;");
-    }
-
-    [Test]
-    public void It_should_not_mirror_descriptor_delete_stamps_to_the_deleted_row()
-    {
-        // DocumentId is the Descriptor PK and the row is already gone when the AFTER
-        // DELETE branch runs, so a mirror update can never match a row. The DELETE
-        // branch must stamp dms.Document with a plain UPDATE and nothing else.
+        // No-tombstone variant: the descriptor row is the stamp store and it is the row going away, so
+        // the DELETE arm has nothing left to write. Its only surviving statement is RETURN OLD.
         var deleteStart = _ddl.IndexOf("ELSIF TG_OP = 'DELETE' THEN", StringComparison.Ordinal);
         deleteStart.Should().BeGreaterOrEqualTo(0);
         var deleteEnd = _ddl.IndexOf("END IF;", deleteStart, StringComparison.Ordinal);
         deleteEnd.Should().BeGreaterThan(deleteStart);
         var deleteBranch = _ddl[deleteStart..deleteEnd];
 
-        deleteBranch.Should().Contain("UPDATE \"dms\".\"Document\"");
-        deleteBranch.Should().Contain("WHERE \"DocumentId\" = OLD.\"DocumentId\";");
+        deleteBranch.Should().NotContain("UPDATE ");
+        deleteBranch.Should().NotContain("nextval");
         deleteBranch.Should().NotContain("WITH stamped AS (");
         deleteBranch.Should().NotContain("RETURNING");
-        deleteBranch.Should().NotContain("UPDATE \"dms\".\"Descriptor\" r");
         deleteBranch.Should().Contain("RETURN OLD;");
     }
 
     [Test]
-    public void It_should_capture_descriptor_document_stamps_with_returning_and_mirror_them()
+    public void It_should_not_read_dms_document_from_the_descriptor_stamping_function()
     {
-        _ddl.Should().Contain("WITH stamped AS (");
-        _ddl.Should()
-            .Contain(
-                "RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\", "
-                    + "\"DocumentUuid\", \"IdentityVersion\", \"IdentityLastModifiedAt\", \"CreatedAt\", "
-                    + "\"ResourceKeyId\""
-            );
-        _ddl.Should().Contain("UPDATE \"dms\".\"Descriptor\" r");
-        _ddl.Should().Contain(PgsqlDescriptorMirrorSetClause);
-        _ddl.Should().Contain("WHERE r.\"DocumentId\" = stamped.\"DocumentId\";");
-    }
+        // The descriptor row owns every stamp it reports, so no branch of the trigger touches
+        // dms.Document any more.
+        var function = SliceBranch(
+            _ddl,
+            "CREATE OR REPLACE FUNCTION \"dms\".\"TF_Descriptor_Stamp_Document\"()",
+            "$func$ LANGUAGE plpgsql;"
+        );
 
-    [Test]
-    public void It_should_mirror_every_document_metadata_column_onto_the_descriptor_row()
-    {
-        // Both branches share one mirror statement, so the INSERT branch's SELECT and the UPDATE
-        // branch's RETURNING have to surface the same columns even though an UPDATE leaves the
-        // metadata values unchanged. Phase 2's descriptor reads depend on the row being self-sufficient.
-        var insertBranch = SliceBranch(_ddl, "IF TG_OP = 'INSERT' THEN", "ELSIF TG_OP = 'UPDATE' THEN");
-        var updateBranch = SliceBranch(_ddl, "ELSIF TG_OP = 'UPDATE' THEN", "ELSIF TG_OP = 'DELETE' THEN");
-
-        insertBranch
-            .Should()
-            .Contain(
-                "SELECT \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\", "
-                    + "\"DocumentUuid\", \"IdentityVersion\", \"IdentityLastModifiedAt\", \"CreatedAt\", "
-                    + "\"ResourceKeyId\""
-            );
-        insertBranch.Should().Contain(PgsqlDescriptorMirrorSetClause);
-        updateBranch.Should().Contain(PgsqlDescriptorMirrorSetClause);
+        function.Should().NotContain("\"dms\".\"Document\"");
+        function.Should().NotContain("stamped.");
     }
 
     private static string SliceBranch(string ddl, string startMarker, string endMarker)
@@ -779,15 +765,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     /// <summary>
     /// The mirror <c>SET</c> list both branches of the PostgreSQL descriptor stamping trigger share.
     /// </summary>
-    private const string PgsqlDescriptorMirrorSetClause =
-        "SET \"ContentVersion\" = stamped.\"ContentVersion\", "
-        + "\"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\", "
-        + "\"DocumentUuid\" = stamped.\"DocumentUuid\", "
-        + "\"IdentityVersion\" = stamped.\"IdentityVersion\", "
-        + "\"IdentityLastModifiedAt\" = stamped.\"IdentityLastModifiedAt\", "
-        + "\"CreatedAt\" = stamped.\"CreatedAt\", "
-        + "\"ResourceKeyId\" = stamped.\"ResourceKeyId\"";
-
     [Test]
     public void It_should_diff_every_non_key_descriptor_column_in_stamping_trigger()
     {
@@ -1148,12 +1125,12 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_mirror_resource_key_id_on_the_descriptor_row()
+    public void It_should_carry_resource_key_id_on_the_descriptor_row()
     {
-        // The project-qualified descriptor type only lived on dms.Document, so descriptor reads rooted on
-        // dms.Descriptor need it mirrored here. Nullable with no default: a fabricated default would be
-        // silently-wrong data on a column the read path filters by, and the stamping trigger fills the
-        // column on every supported insert, so a NULL can only come from an out-of-band write.
+        // Descriptor reads root on dms.Descriptor and filter by the project-qualified descriptor type, so
+        // the column lives here. Nullable with no default: a fabricated default would be silently-wrong
+        // data on a column the read path filters by, and the descriptor write path binds it on every
+        // supported insert, so a NULL can only come from an out-of-band write.
         DescriptorTableColumnExtractor
             .ExtractMssqlBlock(_ddl)
             .Should()
@@ -1161,7 +1138,6 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             .Contain("[ResourceKeyId] smallint NULL,");
         _ddl.Should().NotContain("DF_Descriptor_ResourceKeyId");
         _ddl.Should().Contain("[IX_Descriptor_ResourceKeyId_DocumentId]");
-        _ddl.Should().Contain("r.[ResourceKeyId] = s.[ResourceKeyId]");
     }
 
     // ── MSSQL named default constraints ─────────────────────────────
@@ -1391,33 +1367,33 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     [Test]
     public void It_should_emit_affected_docs_cte_in_descriptor_stamping_trigger()
     {
-        // INSERT rows have no deleted counterpart and copy the dms.Document default stamps.
-        // UPDATE rows keep the null-safe diff predicate so no-op updates produce
-        // no affected docs, including the recursive mirror-only UPDATE. DELETE rows are
-        // included so descriptor deletes allocate the tombstone-facing content stamp.
+        // The CTE carries changed UPDATE rows only. Pure inserts take their stamp through the separate
+        // @insertedDocs workset, and pure deletes stamp nothing at all: the descriptor row is the stamp
+        // store and it is the row going away. The null-safe diff predicate keeps no-op updates — including
+        // the recursive stamp-only UPDATE — out of the workset.
         _ddl.Should().Contain(";WITH affectedDocs AS (");
         _ddl.Should().Contain("FROM inserted i");
         _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
         _ddl.Should().Contain("WHERE del.[DocumentId] IS NOT NULL AND (");
-        // The branches are disjoint (changed updates vs pure deletes), so UNION ALL
-        // avoids a pointless dedup sort on every descriptor statement.
-        _ddl.Should().Contain("UNION ALL");
-        _ddl.Should().Contain("FROM deleted del");
-        _ddl.Should().Contain("LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]");
-        _ddl.Should().Contain("WHERE i.[DocumentId] IS NULL");
+        _ddl.Should()
+            .Contain("INSERT INTO @stamped ([DocumentId])\n    SELECT [DocumentId] FROM affectedDocs;");
+        _ddl.Should().NotContain("UNION ALL");
+        _ddl.Should().NotContain("LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]");
     }
 
     [Test]
-    public void It_should_guard_the_descriptor_mirror_update_against_empty_stamped_worksets()
+    public void It_should_guard_the_descriptor_stamp_updates_against_empty_worksets()
     {
-        // Without this guard the mirror self-UPDATE re-fires the trigger even when
-        // @stamped is empty, which recurses to the nesting limit on databases with
-        // RECURSIVE_TRIGGERS ON (statement triggers fire on 0 affected rows).
-        var guardStart = _ddl.IndexOf("IF EXISTS (SELECT 1 FROM @stamped)", StringComparison.Ordinal);
-        guardStart.Should().BeGreaterOrEqualTo(0);
+        // Without these guards the stamp self-UPDATE re-fires the trigger even when its workset is
+        // empty, which recurses to the nesting limit on databases with RECURSIVE_TRIGGERS ON
+        // (statement triggers fire on 0 affected rows).
+        var insertGuard = _ddl.IndexOf("IF EXISTS (SELECT 1 FROM @insertedDocs)", StringComparison.Ordinal);
+        insertGuard.Should().BeGreaterOrEqualTo(0);
+        _ddl.IndexOf("UPDATE r", insertGuard, StringComparison.Ordinal).Should().BeGreaterThan(insertGuard);
 
-        var mirrorUpdateStart = _ddl.IndexOf("UPDATE r", guardStart, StringComparison.Ordinal);
-        mirrorUpdateStart.Should().BeGreaterThan(guardStart);
+        var updateGuard = _ddl.IndexOf("IF EXISTS (SELECT 1 FROM @stamped)", StringComparison.Ordinal);
+        updateGuard.Should().BeGreaterThan(insertGuard);
+        _ddl.IndexOf("UPDATE r", updateGuard, StringComparison.Ordinal).Should().BeGreaterThan(updateGuard);
     }
 
     [Test]
@@ -1445,93 +1421,62 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_update_document_from_descriptor_stamping_trigger()
+    public void It_should_stamp_the_descriptor_row_itself_from_the_stamping_trigger()
     {
-        _ddl.Should().Contain("UPDATE d");
-        _ddl.Should().Contain("SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]");
-        _ddl.Should().Contain("d.[ContentLastModifiedAt] = sysutcdatetime()");
-        _ddl.Should().Contain("FROM [dms].[Document] d");
-        _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId]");
-    }
-
-    [Test]
-    public void It_should_copy_existing_document_stamps_for_descriptor_inserts()
-    {
-        _ddl.Should()
-            .Contain(
-                "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt], "
-                    + "[DocumentUuid], [IdentityVersion], [IdentityLastModifiedAt], [CreatedAt], "
-                    + "[ResourceKeyId])"
-            );
-        _ddl.Should()
-            .Contain(
-                "SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt], "
-                    + "d.[DocumentUuid], d.[IdentityVersion], d.[IdentityLastModifiedAt], d.[CreatedAt], "
-                    + "d.[ResourceKeyId]"
-            );
-        _ddl.Should().Contain("FROM [dms].[Document] d");
-        _ddl.Should().Contain("INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]");
-        _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
-        _ddl.Should().Contain("WHERE del.[DocumentId] IS NULL;");
-    }
-
-    [Test]
-    public void It_should_capture_descriptor_document_stamps_with_output_and_mirror_them()
-    {
-        _ddl.Should().Contain("DECLARE @stamped TABLE (");
-        _ddl.Should()
-            .Contain(
-                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt], "
-                    + "inserted.[DocumentUuid], inserted.[IdentityVersion], "
-                    + "inserted.[IdentityLastModifiedAt], inserted.[CreatedAt], inserted.[ResourceKeyId] "
-                    + "INTO @stamped"
-            );
+        // The stamp writes dms.Descriptor's own columns; nothing in the trigger touches dms.Document.
         _ddl.Should().Contain("UPDATE r");
-        _ddl.Should().Contain("SET r.[ContentVersion] = s.[ContentVersion],");
-        _ddl.Should().Contain("r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt],");
-        _ddl.Should().Contain("r.[DocumentUuid] = s.[DocumentUuid],");
-        _ddl.Should().Contain("r.[IdentityVersion] = s.[IdentityVersion],");
-        _ddl.Should().Contain("r.[IdentityLastModifiedAt] = s.[IdentityLastModifiedAt],");
-        _ddl.Should().Contain("r.[CreatedAt] = s.[CreatedAt],");
-        _ddl.Should().Contain("r.[ResourceKeyId] = s.[ResourceKeyId]");
+        _ddl.Should().Contain("SET r.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],");
+        _ddl.Should().Contain("    r.[ContentLastModifiedAt] = sysutcdatetime()");
         _ddl.Should().Contain("FROM [dms].[Descriptor] r");
         _ddl.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];");
+
+        var trigger = SliceMssqlDescriptorTrigger(_ddl);
+        trigger.Should().NotContain("[dms].[Document]");
     }
 
     [Test]
-    public void It_should_declare_the_stamped_capture_table_in_output_binding_order()
+    public void It_should_stamp_both_version_pairs_for_descriptor_inserts()
     {
-        // OUTPUT ... INTO @stamped carries no explicit column list, so it binds positionally: the
-        // declaration order, the seeding INSERT list, and the OUTPUT list must all agree or the
-        // mirror silently writes one column's value into another.
-        var declareStart = _ddl.IndexOf("DECLARE @stamped TABLE (", StringComparison.Ordinal);
-        declareStart.Should().BeGreaterOrEqualTo(0);
-        var declareEnd = _ddl.IndexOf(");", declareStart, StringComparison.Ordinal);
-        declareEnd.Should().BeGreaterThan(declareStart);
-
-        var declareBlock = _ddl[declareStart..declareEnd];
-        var declaredColumns = Regex
-            .Matches(declareBlock, @"\[(?<name>[A-Za-z][A-Za-z0-9]*)\]\s+\S")
-            .Select(m => m.Groups["name"].Value)
-            .ToList();
-
-        declaredColumns
-            .Should()
-            .Equal(
-                "DocumentId",
-                "ContentVersion",
-                "ContentLastModifiedAt",
-                "DocumentUuid",
-                "IdentityVersion",
-                "IdentityLastModifiedAt",
-                "CreatedAt",
-                "ResourceKeyId"
+        // A new descriptor row has no prior stamp to preserve, so the pure-insert workset takes the
+        // identity stamp alongside the content stamp. CreatedAt stays on its DF_ default and DocumentUuid
+        // is bound by the descriptor write path on the INSERT itself.
+        _ddl.Should().Contain("DECLARE @insertedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);");
+        _ddl.Should().Contain("INSERT INTO @insertedDocs ([DocumentId])");
+        _ddl.Should().Contain("SELECT i.[DocumentId]\n    FROM inserted i");
+        _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+        _ddl.Should().Contain("WHERE del.[DocumentId] IS NULL;");
+        _ddl.Should()
+            .Contain(
+                "SET r.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],\n"
+                    + "            r.[ContentLastModifiedAt] = sysutcdatetime(),\n"
+                    + "            r.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],\n"
+                    + "            r.[IdentityLastModifiedAt] = sysutcdatetime()"
             );
-        declareBlock.Should().Contain("[DocumentUuid] uniqueidentifier NOT NULL,");
-        declareBlock.Should().Contain("[IdentityVersion] bigint NOT NULL,");
-        // The capture table's columns are typed from dms.Document, where ResourceKeyId is NOT NULL; the
-        // nullable one is the dms.Descriptor mirror target this feeds.
-        declareBlock.Should().Contain("[ResourceKeyId] smallint NOT NULL");
+        _ddl.Should().Contain("INNER JOIN @insertedDocs s ON s.[DocumentId] = r.[DocumentId];");
+    }
+
+    [Test]
+    public void It_should_declare_the_stamp_worksets_as_document_id_only_tables()
+    {
+        // Nothing is captured out of the stamp any more — the stamp writes the descriptor row directly —
+        // so both worksets carry only the key they join on.
+        _ddl.Should().Contain("DECLARE @insertedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);");
+        _ddl.Should().Contain("DECLARE @stamped TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);");
+
+        var trigger = SliceMssqlDescriptorTrigger(_ddl);
+        trigger.Should().NotContain("OUTPUT ");
+    }
+
+    private static string SliceMssqlDescriptorTrigger(string ddl)
+    {
+        var start = ddl.IndexOf(
+            "CREATE OR ALTER TRIGGER [dms].[TR_Descriptor_Stamp_Document]",
+            StringComparison.Ordinal
+        );
+        start.Should().BeGreaterOrEqualTo(0);
+        var end = ddl.IndexOf("\nEND;", start, StringComparison.Ordinal);
+        end.Should().BeGreaterThan(start);
+        return ddl[start..end];
     }
 
     [Test]
@@ -1966,33 +1911,37 @@ public class Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Mssql
     }
 
     [Test]
-    public void It_should_not_stamp_the_document_row_for_pure_descriptor_deletes()
+    public void It_should_not_stamp_the_descriptor_row_for_pure_descriptor_deletes()
     {
         // The delete arm of affectedDocs is gone: a pure delete allocates its change version from
-        // the sequence in the tombstone INSERT and leaves dms.Document alone.
+        // the sequence in the tombstone INSERT and stamps nothing.
         var affectedDocsIdx = _ddl.IndexOf(";WITH affectedDocs AS (", StringComparison.Ordinal);
         affectedDocsIdx.Should().BeGreaterOrEqualTo(0);
 
-        var updateIdx = _ddl.IndexOf("UPDATE d\n", affectedDocsIdx, StringComparison.Ordinal);
-        updateIdx.Should().BeGreaterThan(affectedDocsIdx);
+        var worksetIdx = _ddl.IndexOf(
+            "INSERT INTO @stamped ([DocumentId])",
+            affectedDocsIdx,
+            StringComparison.Ordinal
+        );
+        worksetIdx.Should().BeGreaterThan(affectedDocsIdx);
 
-        _ddl[affectedDocsIdx..updateIdx].Should().NotContain("UNION");
+        _ddl[affectedDocsIdx..worksetIdx].Should().NotContain("UNION");
     }
 
     [Test]
-    public void It_should_place_the_tombstone_after_the_document_stamp_update()
+    public void It_should_place_the_tombstone_after_the_descriptor_stamp_update()
     {
-        var documentStampUpdate = _ddl.IndexOf(
-            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt],",
+        var descriptorStampUpdate = _ddl.IndexOf(
+            "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];",
             StringComparison.Ordinal
         );
-        documentStampUpdate.Should().BeGreaterOrEqualTo(0);
+        descriptorStampUpdate.Should().BeGreaterOrEqualTo(0);
 
         var tombstoneGuard = _ddl.IndexOf(
             "IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)",
             StringComparison.Ordinal
         );
-        tombstoneGuard.Should().BeGreaterThan(documentStampUpdate);
+        tombstoneGuard.Should().BeGreaterThan(descriptorStampUpdate);
     }
 
     [Test]

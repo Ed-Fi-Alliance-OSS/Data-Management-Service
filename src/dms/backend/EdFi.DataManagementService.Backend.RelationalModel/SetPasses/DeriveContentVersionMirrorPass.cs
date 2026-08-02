@@ -8,17 +8,19 @@ using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 
 /// <summary>
-/// Synthesizes the row-local change-version mirror columns (<c>ContentVersion</c> and
+/// Synthesizes the row-local change-version columns (<c>ContentVersion</c> and
 /// <c>ContentLastModifiedAt</c>) onto the root table of every concrete resource stored as relational tables.
-/// The columns have no source JSONPath and no target resource; they are maintained only by document-stamping
+/// The root row is the authoritative store for these stamps — nothing mirrors them from elsewhere. The
+/// columns have no source JSONPath and no target resource; they are maintained only by document-stamping
 /// triggers and are kept out of client-writable projections via <see cref="DbColumnModel.IsWritable"/>.
-/// Descriptor resources (<see cref="ResourceStorageKind.SharedDescriptorTable"/>) are skipped; their mirror
-/// columns live on the shared <c>dms.Descriptor</c> table added by the core DDL pass.
+/// Descriptor resources (<see cref="ResourceStorageKind.SharedDescriptorTable"/>) are skipped; their
+/// change-version columns live on the shared <c>dms.Descriptor</c> table added by the core DDL pass.
 /// </summary>
 public sealed class DeriveContentVersionMirrorPass : IRelationalModelSetPass
 {
     /// <summary>
-    /// Appends the mirror columns to each <see cref="ResourceStorageKind.RelationalTables"/> resource root.
+    /// Appends the change-version columns to each <see cref="ResourceStorageKind.RelationalTables"/>
+    /// resource root.
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
@@ -53,8 +55,8 @@ public sealed class DeriveContentVersionMirrorPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Builds the two synthesized mirror columns. They are stored, non-writable, non-nullable, and carry no
-    /// source JSONPath or target resource.
+    /// Builds the two synthesized change-version columns. They are stored, non-writable, non-nullable, and
+    /// carry no source JSONPath or target resource.
     /// </summary>
     private static DbColumnModel[] BuildMirrorColumns() =>
         [
