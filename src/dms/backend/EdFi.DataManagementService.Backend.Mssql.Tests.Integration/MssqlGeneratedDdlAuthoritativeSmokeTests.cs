@@ -1065,10 +1065,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var afterInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
         afterInsert.ContentVersion.Should().BeGreaterThan(beforeInsertMaxChangeVersion);
         afterInsert.IdentityVersion.Should().BeGreaterThan(beforeInsertMaxChangeVersion);
-        afterInsert.ContentVersion.Should().NotBe(afterInsert.IdentityVersion);
+        // SQL Server evaluates every NEXT VALUE FOR reference to one sequence once per row per
+        // statement, so the single insert-stamp UPDATE gives both pairs the same change version. The
+        // PostgreSQL sibling takes two nextval() values; either way both stamps record the change
+        // version the insert happened at.
+        afterInsert.ContentVersion.Should().Be(afterInsert.IdentityVersion);
         (afterInsertMaxChangeVersion - beforeInsertMaxChangeVersion)
             .Should()
-            .Be(2L, "a root insert allocates one content stamp and one identity stamp");
+            .Be(1L, "a root insert stamps both pairs from one NEXT VALUE FOR evaluation");
 
         await DelayForDistinctTimestampsAsync();
         var updateRowsAffected = await _database.ExecuteNonQueryAsync(

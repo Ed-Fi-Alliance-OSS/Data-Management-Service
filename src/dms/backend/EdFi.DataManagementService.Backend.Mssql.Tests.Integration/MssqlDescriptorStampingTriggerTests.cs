@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -209,10 +209,14 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
 
         contentStamp.Version.Should().BeGreaterThan(beforeMaxChangeVersion);
         identityStamp.Version.Should().BeGreaterThan(beforeMaxChangeVersion);
-        contentStamp.Version.Should().NotBe(identityStamp.Version);
+        // SQL Server evaluates every NEXT VALUE FOR reference to one sequence once per row per
+        // statement, so the single insert-stamp UPDATE gives both pairs the same change version. The
+        // PostgreSQL sibling takes two nextval() values; either way both stamps record the change
+        // version the insert happened at.
+        contentStamp.Version.Should().Be(identityStamp.Version);
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
-            .Be(2L, "a descriptor insert allocates one content stamp and one identity stamp");
+            .Be(1L, "a descriptor insert stamps both pairs from one NEXT VALUE FOR evaluation");
         (await ReadDocumentStampAsync(documentId))
             .Should()
             .Be(beforeDocument, "no trigger writes dms.Document any more");

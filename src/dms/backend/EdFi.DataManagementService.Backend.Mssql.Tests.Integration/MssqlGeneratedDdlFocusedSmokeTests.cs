@@ -110,11 +110,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
     }
 
     [Test]
-    public async Task It_should_keep_school_mirror_in_lock_step_for_representative_write_paths()
+    public async Task It_should_stamp_the_school_root_row_for_representative_write_paths()
     {
-        await AssertSchoolMirrorMatchesDocumentAsync(_seedData.SchoolDocumentId);
-
-        var schoolBefore = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var schoolBefore = await GetSchoolMirrorStampStateAsync(_seedData.SchoolDocumentId);
 
         var rootRowsAffected = await _database.ExecuteNonQueryAsync(
             """
@@ -127,11 +125,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         );
         rootRowsAffected.Should().Be(1);
 
-        var schoolAfter = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var schoolAfter = await GetSchoolMirrorStampStateAsync(_seedData.SchoolDocumentId);
         schoolAfter.ContentVersion.Should().BeGreaterThan(schoolBefore.ContentVersion);
-        await AssertSchoolMirrorMatchesDocumentAsync(_seedData.SchoolDocumentId);
 
-        schoolBefore = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        schoolBefore = await GetSchoolMirrorStampStateAsync(_seedData.SchoolDocumentId);
 
         var childRowsAffected = await _database.ExecuteNonQueryAsync(
             """
@@ -144,11 +141,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         );
         childRowsAffected.Should().Be(1);
 
-        schoolAfter = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        schoolAfter = await GetSchoolMirrorStampStateAsync(_seedData.SchoolDocumentId);
         schoolAfter.ContentVersion.Should().BeGreaterThan(schoolBefore.ContentVersion);
-        await AssertSchoolMirrorMatchesDocumentAsync(_seedData.SchoolDocumentId);
 
-        schoolBefore = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        schoolBefore = await GetSchoolMirrorStampStateAsync(_seedData.SchoolDocumentId);
 
         var extensionRowsAffected = await _database.ExecuteNonQueryAsync(
             """
@@ -161,12 +157,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         );
         extensionRowsAffected.Should().Be(1);
 
-        schoolAfter = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        schoolAfter = await GetSchoolMirrorStampStateAsync(_seedData.SchoolDocumentId);
         schoolAfter.ContentVersion.Should().BeGreaterThan(schoolBefore.ContentVersion);
-        await AssertSchoolMirrorMatchesDocumentAsync(_seedData.SchoolDocumentId);
 
-        schoolBefore = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
-        var otherSchoolBefore = await GetDocumentStampStateAsync(_seedData.OtherSchoolDocumentId);
+        schoolBefore = await GetSchoolMirrorStampStateAsync(_seedData.SchoolDocumentId);
+        var otherSchoolBefore = await GetSchoolMirrorStampStateAsync(_seedData.OtherSchoolDocumentId);
 
         var multiRowRowsAffected = await _database.ExecuteNonQueryAsync(
             """
@@ -179,13 +174,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         );
         multiRowRowsAffected.Should().Be(2);
 
-        schoolAfter = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
-        var otherSchoolAfter = await GetDocumentStampStateAsync(_seedData.OtherSchoolDocumentId);
+        schoolAfter = await GetSchoolMirrorStampStateAsync(_seedData.SchoolDocumentId);
+        var otherSchoolAfter = await GetSchoolMirrorStampStateAsync(_seedData.OtherSchoolDocumentId);
         schoolAfter.ContentVersion.Should().BeGreaterThan(schoolBefore.ContentVersion);
         otherSchoolAfter.ContentVersion.Should().BeGreaterThan(otherSchoolBefore.ContentVersion);
         schoolAfter.ContentVersion.Should().NotBe(otherSchoolAfter.ContentVersion);
-        await AssertSchoolMirrorMatchesDocumentAsync(_seedData.SchoolDocumentId);
-        await AssertSchoolMirrorMatchesDocumentAsync(_seedData.OtherSchoolDocumentId);
     }
 
     [Test]
@@ -201,7 +194,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         );
         secondAddressCollectionItemId.Should().NotBe(_seedData.AddressCollectionItemId);
 
-        var schoolBefore = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var schoolBefore = await GetSchoolMirrorStampStateAsync(_seedData.SchoolDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
 
         // City participates in UX_SchoolAddress_City_School_DocumentId, so each row
@@ -217,12 +210,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         rowsAffected.Should().Be(2);
 
         var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        var schoolAfter = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var schoolAfter = await GetSchoolMirrorStampStateAsync(_seedData.SchoolDocumentId);
         schoolAfter.ContentVersion.Should().BeGreaterThan(schoolBefore.ContentVersion);
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(1L, "a multi-row child update of one root document must allocate exactly one content stamp");
-        await AssertSchoolMirrorMatchesDocumentAsync(_seedData.SchoolDocumentId);
     }
 
     [Test]
@@ -682,20 +674,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         return await _database.ExecuteScalarAsync<long>("SELECT [dms].[GetMaxChangeVersion]();");
     }
 
-    private async Task<MssqlDocumentStampState> GetDocumentStampStateAsync(long documentId)
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT [ContentVersion], [ContentLastModifiedAt]
-            FROM [dms].[Document]
-            WHERE [DocumentId] = @documentId;
-            """,
-            new SqlParameter("@documentId", documentId)
-        );
-        var row = rows.Single();
-        return new(Convert.ToInt64(row["ContentVersion"]), Convert.ToDateTime(row["ContentLastModifiedAt"]));
-    }
-
     private async Task<MssqlDocumentStampState> GetSchoolMirrorStampStateAsync(long documentId)
     {
         var rows = await _database.QueryRowsAsync(
@@ -708,14 +686,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         );
         var row = rows.Single();
         return new(Convert.ToInt64(row["ContentVersion"]), Convert.ToDateTime(row["ContentLastModifiedAt"]));
-    }
-
-    private async Task AssertSchoolMirrorMatchesDocumentAsync(long documentId)
-    {
-        var document = await GetDocumentStampStateAsync(documentId);
-        var mirror = await GetSchoolMirrorStampStateAsync(documentId);
-
-        mirror.Should().Be(document);
     }
 
     private static async Task AssertForeignKeyViolationAsync(Func<Task> act)
