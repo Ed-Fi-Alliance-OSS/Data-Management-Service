@@ -94,8 +94,11 @@ function Invoke-NativeCommandWithInput {
 
         The contract is measured, not assumed:
 
-        - ONE deadline, computed at entry, governs the stdin write, the flush, and the exit
-          wait; no stage restarts it. A synchronous stdin write is forbidden: measured, a 2 MiB
+        - ONE monotonic budget (a Stopwatch started at entry, immune to wall-clock adjustments)
+          governs the stdin write, the flush, and the exit wait; no stage restarts it, and a
+          delivery stage that exhausts it marks the result TimedOut immediately - a child
+          exiting in the race window right after the delivery deadline cannot reinterpret a
+          spent budget as success. A synchronous stdin write is forbidden: measured, a 2 MiB
           write to a child that never reads stdin blocks until the child dies - before any
           WaitForExit timeout would even begin.
         - Input travels as explicit ASCII bytes through StandardInput.BaseStream. The
@@ -110,11 +113,14 @@ function Invoke-NativeCommandWithInput {
           failure paths, only after the child is known dead.
         - On deadline exhaustion the process tree is killed FIRST (Kill($true)); measured,
           kill-first lets an abandoned write task complete as Faulted/IOException within
-          seconds, while close-first poisons it. Only after termination succeeded, or the
-          process is confirmed exited, do the unbounded WaitForExit() and full output drains
-          run; the stdin task itself is only ever awaited with a bounded grace. A failed kill
-          on a still-running process is reported as TerminationFailure with bounded,
-          best-effort cleanup - this function never replaces one hang with another.
+          seconds, while close-first poisons it. A successful Kill call only INITIATES
+          termination, so stdin stays closed until the EXIT itself is confirmed (bounded wait
+          after a successful kill; HasExited after a failed one - no exception type is assumed
+          to mean the exited-process race). Only after that confirmation do the stdin close,
+          the parameterless WaitForExit(), and the full output drains run; the stdin task
+          itself is only ever awaited with a bounded grace. An unconfirmed exit is reported as
+          TerminationFailure with bounded, best-effort cleanup - this function never replaces
+          one hang with another.
 
         The caller decides what a result MEANS. Exit code zero alone is never success: the SQL
         authority additionally requires StdinCompleted and a strict parse of StandardOutput.
@@ -152,16 +158,19 @@ function Invoke-NativeCommandWithInput {
         [int]$TimeoutSeconds = 60
     )
 
-    # The single end-to-end deadline: computed once, at entry, before the process starts and
-    # before any stdin delivery; every wait below uses whatever remains of it and nothing ever
-    # restarts it.
-    $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+    # The single end-to-end budget: one MONOTONIC stopwatch started at entry, before the process
+    # starts and before any stdin delivery; every wait below uses whatever remains of it and
+    # nothing ever restarts or replaces it. Wall-clock arithmetic is deliberately absent - a
+    # system clock adjustment mid-run would stretch or collapse a DateTime-based deadline.
+    $deadlineBudgetMs = [long]$TimeoutSeconds * 1000
+    $deadlineStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
-    # How long cleanup may wait on the stdin task once the child is dead. Measured: after
-    # kill-first the abandoned write completes (Faulted, IOException) within seconds; a poisoned
-    # task is still API-possible, so the wait is bounded and a still-pending task is abandoned,
+    # Bounded grace for cleanup-stage waits: confirming exit after a successful kill, and
+    # draining the stdin task once the child is dead. Measured: after kill-first the abandoned
+    # write completes (Faulted, IOException) within seconds; a poisoned task is still
+    # API-possible, so every cleanup wait is bounded and a still-pending task is abandoned,
     # never awaited unbounded.
-    $stdinDrainGraceMs = 5000
+    $cleanupGraceMs = 5000
 
     $result = [ordered]@{
         Started         = $false
@@ -184,7 +193,10 @@ function Invoke-NativeCommandWithInput {
     }
 
     function Get-RemainingDeadlineMillisecond {
-        return [int][math]::Max(0, [math]::Ceiling(($deadline - [datetime]::UtcNow).TotalMilliseconds))
+        $remaining = $deadlineBudgetMs - $deadlineStopwatch.ElapsedMilliseconds
+        if ($remaining -le 0) { return 0 }
+        if ($remaining -gt [int]::MaxValue) { return [int]::MaxValue }
+        return [int]$remaining
     }
 
     function Wait-TaskOutcome {
@@ -274,11 +286,16 @@ function Invoke-NativeCommandWithInput {
                 $result.FailureTypeName = Get-InnermostExceptionTypeName -Failure $faultedTask.Exception
             }
         }
-        # A 'TimedOut' delivery falls through with zero remaining time: the exit wait below
-        # expires immediately and the shared timeout path kills BEFORE any stdin close.
+        elseif ($flushOutcome -eq 'TimedOut') {
+            # Classify the delivery timeout IMMEDIATELY. Deciding it at the exit poll instead
+            # leaves a race window: a child that exits right around the delivery deadline would
+            # turn an exhausted budget into TimedOut = false with an exit code, and no later
+            # observation may erase or reinterpret a spent delivery budget.
+            $result.TimedOut = $true
+        }
 
         $failureStageKind = "TerminationFailure"
-        if ($process.WaitForExit((Get-RemainingDeadlineMillisecond))) {
+        if (-not $result.TimedOut -and $process.WaitForExit((Get-RemainingDeadlineMillisecond))) {
             # The child exited on its own within the deadline. The parameterless WaitForExit is
             # required to complete the redirected-output pipes (the timed overload alone does
             # not guarantee it) and is safe here: the process is gone.
@@ -293,36 +310,37 @@ function Invoke-NativeCommandWithInput {
             # Kill FIRST - never close stdin against a live child. Measured: a close attempted
             # around a pending write throws and poisons the write task permanently, while
             # kill-first lets it complete as Faulted within seconds.
-            $terminationConfirmed = $false
+            $killError = $null
             try {
                 $process.Kill($true)
-                $terminationConfirmed = $true
-            }
-            catch [System.InvalidOperationException] {
-                # The exited-between-check-and-kill race: the process is already gone, which is
-                # exactly the state the cleanup below requires.
-                $terminationConfirmed = $true
             }
             catch {
-                # The kill itself failed. Only a CONFIRMED exit still permits unbounded cleanup.
-                if ($process.HasExited) {
-                    $terminationConfirmed = $true
-                }
-                else {
-                    $result.FailureKind = "TerminationFailure"
-                    $result.FailureTypeName = Get-InnermostExceptionTypeName -Failure $_.Exception
-                }
+                # Never assume the exception type identifies the exited-between-check-and-kill
+                # race; the process state itself is checked below, whatever was thrown.
+                $killError = $_
             }
 
-            if (-not $terminationConfirmed) {
-                # The child is alive and unkillable. Every remaining cleanup step - stdin
-                # close, parameterless WaitForExit, full drains - could block against it, so
-                # none of them runs: this function never replaces one hang with another. The
-                # leaked child is reported through the structured result, never thrown.
+            # Kill only INITIATES termination - it does not wait for it. Stdin must never be
+            # closed until the EXIT is confirmed, or the close races the still-pending write
+            # (the measured poison). A successful kill call is confirmed with a bounded exit
+            # wait; a failed one is confirmed only by the process already having exited.
+            $exitConfirmed =
+                if ($null -eq $killError) { $process.WaitForExit($cleanupGraceMs) }
+                else { $process.HasExited }
+
+            if (-not $exitConfirmed) {
+                # The child is alive and would block every remaining cleanup step - stdin
+                # close, parameterless WaitForExit, full drains - so none of them runs: this
+                # function never replaces one hang with another. The leaked child is reported
+                # through the structured result, never thrown.
+                $result.FailureKind = "TerminationFailure"
+                if ($null -ne $killError) {
+                    $result.FailureTypeName = Get-InnermostExceptionTypeName -Failure $killError.Exception
+                }
                 return [pscustomobject]$result
             }
 
-            # The process is dead: EOF/close is best-effort and safe (the reader is gone, so a
+            # Exit is CONFIRMED: EOF/close is best-effort and safe (the reader is gone, so a
             # broken-pipe failure here is expected and meaningless), and the parameterless
             # WaitForExit completes the output pipes.
             try { $process.StandardInput.Close() } catch { $null = $_ }
@@ -356,10 +374,10 @@ function Invoke-NativeCommandWithInput {
         # is API-possible and a still-pending one is abandoned here, never awaited unbounded.
         # Wait-TaskOutcome swallows the expected fault.
         if (-not $stdinTask.IsCompleted) {
-            $null = Wait-TaskOutcome -Task $stdinTask -WaitMs $stdinDrainGraceMs
+            $null = Wait-TaskOutcome -Task $stdinTask -WaitMs $cleanupGraceMs
         }
         if ($null -ne $stdinFlushTask -and -not $stdinFlushTask.IsCompleted) {
-            $null = Wait-TaskOutcome -Task $stdinFlushTask -WaitMs $stdinDrainGraceMs
+            $null = Wait-TaskOutcome -Task $stdinFlushTask -WaitMs $cleanupGraceMs
         }
 
         return [pscustomobject]$result
