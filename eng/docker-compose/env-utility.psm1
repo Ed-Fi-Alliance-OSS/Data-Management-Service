@@ -78,6 +78,314 @@ function Test-NativeCommandWithTimeout {
     }
 }
 
+function Invoke-NativeCommandWithInput {
+    <#
+    .SYNOPSIS
+        Runs a native command with text delivered over stdin, one end-to-end deadline, and a
+        structured result. Never throws: every start, stdin, output, termination, or cleanup
+        failure is reported in the result as a failure kind plus an exception type name only.
+
+    .DESCRIPTION
+        The transport half of the SQL Server physical-name authority: sqlcmd receives its batch
+        over stdin, so this runner must deliver arbitrary-size input to a child that may never
+        read it, without blocking past its deadline and without leaking a raw exception. It is a
+        sibling of Test-NativeCommandWithTimeout, which stays boolean, carries no stdin, and is
+        deliberately untouched.
+
+        The contract is measured, not assumed:
+
+        - ONE deadline, computed at entry, governs the stdin write, the flush, and the exit
+          wait; no stage restarts it. A synchronous stdin write is forbidden: measured, a 2 MiB
+          write to a child that never reads stdin blocks until the child dies - before any
+          WaitForExit timeout would even begin.
+        - Input travels as explicit ASCII bytes through StandardInput.BaseStream. The
+          StreamWriter text layer is NEVER written: its Close() flushes synchronously
+          (unbounded), and measured, a Close() during a pending WriteAsync throws
+          InvalidOperationException and leaves the write task permanently incomplete, so any
+          unbounded await of it afterwards hangs forever. The bounded FlushAsync after the
+          write is defense in depth: write-through was measured for redirected stdin, but
+          FileStream's documented contract permits buffering.
+        - Stdin is closed (EOF) only after the write AND the flush both completed - every
+          buffer is then provably empty, so the close cannot write and cannot block - or, on
+          failure paths, only after the child is known dead.
+        - On deadline exhaustion the process tree is killed FIRST (Kill($true)); measured,
+          kill-first lets an abandoned write task complete as Faulted/IOException within
+          seconds, while close-first poisons it. Only after termination succeeded, or the
+          process is confirmed exited, do the unbounded WaitForExit() and full output drains
+          run; the stdin task itself is only ever awaited with a bounded grace. A failed kill
+          on a still-running process is reported as TerminationFailure with bounded,
+          best-effort cleanup - this function never replaces one hang with another.
+
+        The caller decides what a result MEANS. Exit code zero alone is never success: the SQL
+        authority additionally requires StdinCompleted and a strict parse of StandardOutput.
+        FailureTypeName deliberately carries only the innermost exception TYPE name - exception
+        MESSAGES embed environment paths (measured) and never belong in operator-facing
+        diagnostics.
+
+    .PARAMETER FilePath
+        The executable to run. Resolution follows Process.Start semantics.
+
+    .PARAMETER ArgumentList
+        Arguments, one per element (ProcessStartInfo.ArgumentList - exact boundaries, no shell).
+
+    .PARAMETER InputText
+        Text delivered to the child's stdin and terminated with EOF. Encoded as ASCII: the one
+        production payload (the emitted SQL batch) is ASCII by construction, and the explicit
+        encoding keeps the delivered bytes equal to the text by inspection.
+
+    .PARAMETER TimeoutSeconds
+        The single end-to-end deadline covering stdin delivery and process exit together.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$FilePath,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [string[]]$ArgumentList,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$InputText,
+
+        [ValidateRange(1, 600)]
+        [int]$TimeoutSeconds = 60
+    )
+
+    # The single end-to-end deadline: computed once, at entry, before the process starts and
+    # before any stdin delivery; every wait below uses whatever remains of it and nothing ever
+    # restarts it.
+    $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+
+    # How long cleanup may wait on the stdin task once the child is dead. Measured: after
+    # kill-first the abandoned write completes (Faulted, IOException) within seconds; a poisoned
+    # task is still API-possible, so the wait is bounded and a still-pending task is abandoned,
+    # never awaited unbounded.
+    $stdinDrainGraceMs = 5000
+
+    $result = [ordered]@{
+        Started         = $false
+        TimedOut        = $false
+        StdinCompleted  = $false
+        ExitCode        = $null
+        StandardOutput  = ""
+        StandardError   = ""
+        FailureKind     = "None"
+        FailureTypeName = ""
+    }
+
+    function Get-InnermostExceptionTypeName {
+        # Type name ONLY - never the message, which embeds environment detail (measured: a
+        # start failure names the working directory).
+        param([Parameter(Mandatory)] [System.Exception]$Failure)
+        $inner = $Failure
+        while ($null -ne $inner.InnerException) { $inner = $inner.InnerException }
+        return $inner.GetType().FullName
+    }
+
+    function Get-RemainingDeadlineMillisecond {
+        return [int][math]::Max(0, [math]::Ceiling(($deadline - [datetime]::UtcNow).TotalMilliseconds))
+    }
+
+    function Wait-TaskOutcome {
+        # Task.Wait(ms) THROWS AggregateException when the task is FAULTED - a faulted task IS
+        # a completed task, so classify instead of rethrowing (and never let the fault escape).
+        param(
+            [Parameter(Mandatory)] [System.Threading.Tasks.Task]$Task,
+            [Parameter(Mandatory)] [int]$WaitMs
+        )
+        try {
+            if ($Task.Wait($WaitMs)) {
+                if ($Task.IsFaulted) { return 'Faulted' }
+                return 'Completed'
+            }
+            return 'TimedOut'
+        }
+        catch {
+            return 'Faulted'
+        }
+    }
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $FilePath
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    foreach ($argument in $ArgumentList) {
+        $null = $startInfo.ArgumentList.Add($argument)
+    }
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    # Tracks which stage an unclassified failure escaped from, so the outermost boundary can
+    # still report an honest kind instead of throwing.
+    $failureStageKind = "StartFailure"
+
+    try {
+        try {
+            if (-not $process.Start()) {
+                $result.FailureKind = "StartFailure"
+                return [pscustomobject]$result
+            }
+        }
+        catch {
+            $result.FailureKind = "StartFailure"
+            $result.FailureTypeName = Get-InnermostExceptionTypeName -Failure $_.Exception
+            return [pscustomobject]$result
+        }
+        $result.Started = $true
+        $failureStageKind = "StdinFailure"
+
+        # Drain both output pipes from the first moment, so a child filling either one can
+        # never deadlock stdin delivery or the exit wait.
+        $standardOutputTask = $process.StandardOutput.ReadToEndAsync()
+        $standardErrorTask = $process.StandardError.ReadToEndAsync()
+
+        # Stdin delivery: explicit ASCII bytes on the BaseStream, bounded write, bounded flush.
+        # The StreamWriter text layer is never written through.
+        $stdinStream = $process.StandardInput.BaseStream
+        $inputBytes = [System.Text.Encoding]::ASCII.GetBytes($InputText)
+        $stdinTask = $stdinStream.WriteAsync($inputBytes, 0, $inputBytes.Length)
+        $stdinFlushTask = $null
+
+        $writeOutcome = Wait-TaskOutcome -Task $stdinTask -WaitMs (Get-RemainingDeadlineMillisecond)
+        $flushOutcome = $writeOutcome
+        if ($writeOutcome -eq 'Completed') {
+            $stdinFlushTask = $stdinStream.FlushAsync()
+            $flushOutcome = Wait-TaskOutcome -Task $stdinFlushTask -WaitMs (Get-RemainingDeadlineMillisecond)
+        }
+
+        if ($flushOutcome -eq 'Completed') {
+            $result.StdinCompleted = $true
+            # Both buffers are provably empty (bounded write + bounded flush), so this close
+            # writes nothing and cannot block; the child receives EOF and proceeds.
+            try { $process.StandardInput.Close() } catch { $null = $_ }
+        }
+        elseif ($flushOutcome -eq 'Faulted') {
+            # Measured shape: the child exited early and the pipe broke. Not a verdict and not
+            # a throw - record it, skip EOF (the reader is gone), and let the exit wait decide
+            # whether the child actually finished. A partial write is NEVER success: the caller
+            # sees StdinCompleted = $false regardless of the exit code.
+            $result.FailureKind = "StdinFailure"
+            $faultedTask = if ($writeOutcome -eq 'Faulted') { $stdinTask } else { $stdinFlushTask }
+            if ($null -ne $faultedTask.Exception) {
+                $result.FailureTypeName = Get-InnermostExceptionTypeName -Failure $faultedTask.Exception
+            }
+        }
+        # A 'TimedOut' delivery falls through with zero remaining time: the exit wait below
+        # expires immediately and the shared timeout path kills BEFORE any stdin close.
+
+        $failureStageKind = "TerminationFailure"
+        if ($process.WaitForExit((Get-RemainingDeadlineMillisecond))) {
+            # The child exited on its own within the deadline. The parameterless WaitForExit is
+            # required to complete the redirected-output pipes (the timed overload alone does
+            # not guarantee it) and is safe here: the process is gone.
+            $process.WaitForExit()
+            $result.ExitCode = $process.ExitCode
+            # EOF/close is now trivially safe if delivery never completed (the reader is gone).
+            try { $process.StandardInput.Close() } catch { $null = $_ }
+        }
+        else {
+            $result.TimedOut = $true
+
+            # Kill FIRST - never close stdin against a live child. Measured: a close attempted
+            # around a pending write throws and poisons the write task permanently, while
+            # kill-first lets it complete as Faulted within seconds.
+            $terminationConfirmed = $false
+            try {
+                $process.Kill($true)
+                $terminationConfirmed = $true
+            }
+            catch [System.InvalidOperationException] {
+                # The exited-between-check-and-kill race: the process is already gone, which is
+                # exactly the state the cleanup below requires.
+                $terminationConfirmed = $true
+            }
+            catch {
+                # The kill itself failed. Only a CONFIRMED exit still permits unbounded cleanup.
+                if ($process.HasExited) {
+                    $terminationConfirmed = $true
+                }
+                else {
+                    $result.FailureKind = "TerminationFailure"
+                    $result.FailureTypeName = Get-InnermostExceptionTypeName -Failure $_.Exception
+                }
+            }
+
+            if (-not $terminationConfirmed) {
+                # The child is alive and unkillable. Every remaining cleanup step - stdin
+                # close, parameterless WaitForExit, full drains - could block against it, so
+                # none of them runs: this function never replaces one hang with another. The
+                # leaked child is reported through the structured result, never thrown.
+                return [pscustomobject]$result
+            }
+
+            # The process is dead: EOF/close is best-effort and safe (the reader is gone, so a
+            # broken-pipe failure here is expected and meaningless), and the parameterless
+            # WaitForExit completes the output pipes.
+            try { $process.StandardInput.Close() } catch { $null = $_ }
+            $process.WaitForExit()
+        }
+
+        # Output drains. After a confirmed exit these complete (measured); a drain failure is
+        # collected, never thrown, and never overwrites an earlier failure kind.
+        $failureStageKind = "OutputFailure"
+        try {
+            $result.StandardOutput = $standardOutputTask.GetAwaiter().GetResult()
+        }
+        catch {
+            if ($result.FailureKind -eq "None") {
+                $result.FailureKind = "OutputFailure"
+                $result.FailureTypeName = Get-InnermostExceptionTypeName -Failure $_.Exception
+            }
+        }
+        try {
+            $result.StandardError = $standardErrorTask.GetAwaiter().GetResult()
+        }
+        catch {
+            if ($result.FailureKind -eq "None") {
+                $result.FailureKind = "OutputFailure"
+                $result.FailureTypeName = Get-InnermostExceptionTypeName -Failure $_.Exception
+            }
+        }
+
+        # The stdin tasks are only ever awaited with a bounded grace: measured, they complete
+        # (Faulted, IOException) within this window once the child is dead, but a poisoned task
+        # is API-possible and a still-pending one is abandoned here, never awaited unbounded.
+        # Wait-TaskOutcome swallows the expected fault.
+        if (-not $stdinTask.IsCompleted) {
+            $null = Wait-TaskOutcome -Task $stdinTask -WaitMs $stdinDrainGraceMs
+        }
+        if ($null -ne $stdinFlushTask -and -not $stdinFlushTask.IsCompleted) {
+            $null = Wait-TaskOutcome -Task $stdinFlushTask -WaitMs $stdinDrainGraceMs
+        }
+
+        return [pscustomobject]$result
+    }
+    catch {
+        # The frozen exception boundary: nothing escapes this function. Anything reaching here
+        # is an unclassified failure from the stage recorded above; report its kind and type
+        # name, attempt one bounded best-effort kill so a live child is not silently orphaned,
+        # and never wait on anything.
+        if ($result.FailureKind -eq "None") {
+            $result.FailureKind = $failureStageKind
+            $result.FailureTypeName = Get-InnermostExceptionTypeName -Failure $_.Exception
+        }
+        try {
+            if ($result.Started -and -not $process.HasExited) { $process.Kill($true) }
+        }
+        catch {
+            $null = $_
+        }
+        return [pscustomobject]$result
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
 function ReadValuesFromEnvFile {
     param (
         [string]$EnvironmentFile
