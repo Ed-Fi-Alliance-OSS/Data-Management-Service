@@ -46,6 +46,45 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
     }
 
     [Test]
+    public void It_lets_the_natural_key_registration_win_the_shared_reference_resolver_slot()
+    {
+        // The dialect entry points production hosts call register the natural-key resolver first and
+        // then delegate to the referential-id surface verbatim. Because the shared surface uses TryAdd,
+        // ordering alone decides which resolver the query path consumes — pin it.
+        var services = new ServiceCollection();
+
+        services.AddLogging();
+        services.AddNaturalKeyReferenceResolver<TestNaturalKeyLookupAdapterFactory>();
+        services.AddReferenceResolver<TestReferenceResolverAdapterFactory>();
+
+        using var serviceProvider = BuildServiceProvider(services);
+        using var scope = serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IReferenceResolver>()
+            .Should()
+            .BeOfType<NaturalKeyReferenceResolver>();
+        scope
+            .ServiceProvider.GetRequiredService<INaturalKeyLookupAdapterFactory>()
+            .Should()
+            .BeOfType<TestNaturalKeyLookupAdapterFactory>();
+        scope
+            .ServiceProvider.GetRequiredService<INaturalKeyLookupAdapter>()
+            .Should()
+            .BeOfType<TestNaturalKeyLookupAdapter>();
+
+        // The referential-id adapter pair stays resolvable for the differential and canary suites.
+        scope
+            .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
+            .Should()
+            .BeOfType<TestReferenceResolverAdapterFactory>();
+        scope
+            .ServiceProvider.GetRequiredService<IReferenceResolverAdapter>()
+            .Should()
+            .BeOfType<TestReferenceResolverAdapter>();
+    }
+
+    [Test]
     public void It_registers_the_relational_access_seam_for_dialect_composition()
     {
         var services = new ServiceCollection();

@@ -103,6 +103,55 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
     }
 
     [Test]
+    public void It_registers_the_natural_key_resolver_as_the_postgresql_production_reference_resolver()
+    {
+        var services = new ServiceCollection();
+
+        services.AddLogging();
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
+        services.AddSingleton<NpgsqlDataSourceCache>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.AddScoped<NpgsqlDataSourceProvider>();
+        services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
+        services.AddPostgresqlNaturalKeyReferenceResolver();
+
+        using var serviceProvider = BuildServiceProvider(services);
+        using var scope = serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IReferenceResolver>()
+            .Should()
+            .BeOfType<NaturalKeyReferenceResolver>();
+        scope
+            .ServiceProvider.GetRequiredService<INaturalKeyLookupAdapterFactory>()
+            .Should()
+            .BeOfType<PostgresqlNaturalKeyLookupAdapterFactory>();
+        scope
+            .ServiceProvider.GetRequiredService<INaturalKeyLookupAdapter>()
+            .Should()
+            .BeOfType<PostgresqlNaturalKeyLookupAdapter>();
+
+        // Delegating to the referential-id extension is what keeps the rest of the composition
+        // identical; the adapter pair it registers has no production consumer left.
+        scope
+            .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
+            .Should()
+            .BeOfType<PostgresqlReferenceResolverAdapterFactory>();
+        scope
+            .ServiceProvider.GetRequiredService<IReferenceResolverAdapter>()
+            .Should()
+            .BeOfType<PostgresqlReferenceResolverAdapter>();
+        scope
+            .ServiceProvider.GetRequiredService<IRelationalWriteExecutor>()
+            .Should()
+            .BeOfType<DefaultRelationalWriteExecutor>();
+        scope
+            .ServiceProvider.GetRequiredService<IDocumentHydrator>()
+            .Should()
+            .BeOfType<PostgresqlDocumentHydrator>();
+    }
+
+    [Test]
     public void It_extracts_postgresql_provider_failure_metadata_from_postgres_exception()
     {
         var extractor = new PostgresqlRelationshipAuthorizationProviderFailureExtractor();

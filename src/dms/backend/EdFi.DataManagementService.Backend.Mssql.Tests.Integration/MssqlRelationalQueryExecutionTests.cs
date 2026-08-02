@@ -696,7 +696,10 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddSingleton<MssqlRelationalQueryExecutionRecorder>();
-        services.AddMssqlReferenceResolver();
+
+        // The production registration: the query preprocessor's scoped IReferenceResolver is the
+        // natural-key resolver, so the descriptor-filter tests exercise the shipped composition.
+        services.AddMssqlNaturalKeyReferenceResolver();
         services.Replace(ServiceDescriptor.Scoped<IDocumentHydrator, RecordingMssqlDocumentHydrator>());
         services.Replace(
             ServiceDescriptor.Scoped<IRelationalReadMaterializer, RecordingRelationalReadMaterializer>()

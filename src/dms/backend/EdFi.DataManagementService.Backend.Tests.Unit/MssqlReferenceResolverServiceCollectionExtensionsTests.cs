@@ -100,6 +100,52 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
     }
 
     [Test]
+    public void It_registers_the_natural_key_resolver_as_the_mssql_production_reference_resolver()
+    {
+        var services = new ServiceCollection();
+
+        services.AddLogging();
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.AddMssqlNaturalKeyReferenceResolver();
+
+        using var serviceProvider = BuildServiceProvider(services);
+        using var scope = serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IReferenceResolver>()
+            .Should()
+            .BeOfType<NaturalKeyReferenceResolver>();
+        scope
+            .ServiceProvider.GetRequiredService<INaturalKeyLookupAdapterFactory>()
+            .Should()
+            .BeOfType<MssqlNaturalKeyLookupAdapterFactory>();
+        scope
+            .ServiceProvider.GetRequiredService<INaturalKeyLookupAdapter>()
+            .Should()
+            .BeOfType<MssqlNaturalKeyLookupAdapter>();
+
+        // Delegating to the referential-id extension is what keeps the rest of the composition
+        // identical; the adapter pair it registers has no production consumer left.
+        scope
+            .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
+            .Should()
+            .BeOfType<MssqlReferenceResolverAdapterFactory>();
+        scope
+            .ServiceProvider.GetRequiredService<IReferenceResolverAdapter>()
+            .Should()
+            .BeOfType<MssqlReferenceResolverAdapter>();
+        scope
+            .ServiceProvider.GetRequiredService<IRelationalWriteExecutor>()
+            .Should()
+            .BeOfType<DefaultRelationalWriteExecutor>();
+        scope
+            .ServiceProvider.GetRequiredService<IDocumentHydrator>()
+            .Should()
+            .BeOfType<MssqlDocumentHydrator>();
+    }
+
+    [Test]
     public void ServiceCollection_replaces_existing_relational_token_info_lookup_with_mssql_lookup()
     {
         var services = new ServiceCollection();

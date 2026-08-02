@@ -673,7 +673,10 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddSingleton<PostgresqlRelationalQueryExecutionRecorder>();
-        services.AddPostgresqlReferenceResolver();
+
+        // The production registration: the query preprocessor's scoped IReferenceResolver is the
+        // natural-key resolver, so the descriptor-filter tests exercise the shipped composition.
+        services.AddPostgresqlNaturalKeyReferenceResolver();
         services.Replace(ServiceDescriptor.Scoped<IDocumentHydrator, RecordingPostgresqlDocumentHydrator>());
         services.Replace(
             ServiceDescriptor.Scoped<IRelationalReadMaterializer, RecordingRelationalReadMaterializer>()

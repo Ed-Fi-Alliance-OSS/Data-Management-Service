@@ -144,10 +144,12 @@ public class WebApplicationBuilderExtensionsTests
             using var serviceProvider = CreateServices("postgresql");
             using var scope = serviceProvider.CreateScope();
 
+            // The production query path resolves descriptor-valued filters through the natural-key
+            // resolver; nothing in this composition reads dms.ReferentialIdentity.
             scope
                 .ServiceProvider.GetRequiredService<IReferenceResolver>()
                 .Should()
-                .BeOfType<ReferenceResolver>();
+                .BeOfType<NaturalKeyReferenceResolver>();
             scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteFlattener>()
                 .Should()
@@ -184,6 +186,16 @@ public class WebApplicationBuilderExtensionsTests
                 .ServiceProvider.GetRequiredService<IDocumentHydrator>()
                 .Should()
                 .BeOfType<PostgresqlDocumentHydrator>();
+            scope
+                .ServiceProvider.GetRequiredService<INaturalKeyLookupAdapterFactory>()
+                .Should()
+                .BeOfType<PostgresqlNaturalKeyLookupAdapterFactory>();
+            scope
+                .ServiceProvider.GetRequiredService<INaturalKeyLookupAdapter>()
+                .Should()
+                .BeOfType<PostgresqlNaturalKeyLookupAdapter>();
+            // The referential-id adapter pair is still composed — the differential and canary suites
+            // resolve through it — but no production code path constructs a resolver over it.
             scope
                 .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
                 .Should()
@@ -276,10 +288,12 @@ public class WebApplicationBuilderExtensionsTests
                 .ContainSingle()
                 .Which.Should()
                 .BeOfType<RelationalDocumentStoreRepository>();
+            // The production query path resolves descriptor-valued filters through the natural-key
+            // resolver; nothing in this composition reads dms.ReferentialIdentity.
             scope
                 .ServiceProvider.GetRequiredService<IReferenceResolver>()
                 .Should()
-                .BeOfType<ReferenceResolver>();
+                .BeOfType<NaturalKeyReferenceResolver>();
             scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteFlattener>()
                 .Should()
@@ -318,6 +332,20 @@ public class WebApplicationBuilderExtensionsTests
                 .ServiceProvider.GetRequiredService<IDocumentHydrator>()
                 .Should()
                 .Match<IDocumentHydrator>(hydrator => hydrator.GetType().Name == "MssqlDocumentHydrator");
+            scope
+                .ServiceProvider.GetRequiredService<INaturalKeyLookupAdapterFactory>()
+                .Should()
+                .Match<INaturalKeyLookupAdapterFactory>(factory =>
+                    factory.GetType().Name == "MssqlNaturalKeyLookupAdapterFactory"
+                );
+            scope
+                .ServiceProvider.GetRequiredService<INaturalKeyLookupAdapter>()
+                .Should()
+                .Match<INaturalKeyLookupAdapter>(adapter =>
+                    adapter.GetType().Name == "MssqlNaturalKeyLookupAdapter"
+                );
+            // The referential-id adapter pair is still composed — the differential and canary suites
+            // resolve through it — but no production code path constructs a resolver over it.
             scope
                 .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
                 .Should()
