@@ -19,7 +19,6 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -170,16 +169,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         RelationshipAuthorizationProviderFailure,
         RelationshipAuthorizationProviderFailure
     >? _providerFailureTransform;
-    private static readonly BaseResourceInfo SchoolResource = new(
-        new ProjectName("Ed-Fi"),
-        new ResourceName("School"),
-        false
-    );
-    private static readonly BaseResourceInfo ClassPeriodResource = new(
-        new ProjectName("Ed-Fi"),
-        new ResourceName("ClassPeriod"),
-        false
-    );
     private readonly Dictionary<
         (string ProjectEndpointName, string ResourceName),
         ResourceHandle
@@ -497,19 +486,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             mirrorMetadataForDocumentId: documentId
         );
 
-        await UpsertReferentialIdentityAsync(
-            CreateReferentialId(
-                "Authz",
-                "AuthorizationStudentAcademicRecordResource",
-                (
-                    "$.authorizationStudentAcademicRecordId",
-                    seed.AuthorizationStudentAcademicRecordId.ToString(CultureInfo.InvariantCulture)
-                )
-            ),
-            documentId,
-            resourceKeyId
-        );
-
         return new UpsertResult.InsertSuccess(seed.DocumentUuid, "\"test-etag\"");
     }
 
@@ -739,16 +715,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 ),
             mirrorMetadataForDocumentId: documentId
         );
-
-        await UpsertReferentialIdentityAsync(
-            CreateReferentialId(
-                "Ed-Fi",
-                "SchoolYearType",
-                ("$.schoolYear", seed.SchoolYear.ToString(CultureInfo.InvariantCulture))
-            ),
-            documentId,
-            resourceKeyId
-        );
     }
 
     public async Task SeedStudentAsync(StudentSeed seed)
@@ -784,12 +750,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     new SqlParameter("@studentUniqueId", seed.StudentUniqueId)
                 ),
             mirrorMetadataForDocumentId: documentId
-        );
-
-        await UpsertReferentialIdentityAsync(
-            CreateReferentialId("Ed-Fi", "Student", ("$.studentUniqueId", seed.StudentUniqueId)),
-            documentId,
-            resourceKeyId
         );
     }
 
@@ -888,12 +848,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 ),
             mirrorMetadataForDocumentId: documentId
         );
-
-        await UpsertReferentialIdentityAsync(
-            CreateStudentAcademicRecordReferentialId(seed),
-            documentId,
-            resourceKeyId
-        );
     }
 
     public async Task<UpsertResult> UpsertAuthorizationNullableAsync(
@@ -956,12 +910,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             mirrorMetadataForDocumentId: documentId
         );
 
-        await UpsertReferentialIdentityAsync(
-            CreateSchoolReferentialId(seed.SchoolId),
-            documentId,
-            resourceKeyId
-        );
-
         _schoolDocumentIdsBySchoolId[seed.SchoolId] = documentId;
     }
 
@@ -1003,8 +951,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 ),
             mirrorMetadataForDocumentId: documentId
         );
-
-        await UpsertReferentialIdentityAsync(CreateClassPeriodReferentialId(seed), documentId, resourceKeyId);
     }
 
     public async Task InsertAuthEdgeAsync(
@@ -1924,7 +1870,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", resourceName);
-        var documentId = await InsertDescriptorAsync(
+        await InsertDescriptorAsync(
             documentUuid,
             resourceKeyId,
             discriminator,
@@ -1932,12 +1878,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             @namespace,
             codeValue,
             shortDescription
-        );
-
-        await UpsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", resourceName, uri),
-            documentId,
-            resourceKeyId
         );
     }
 
@@ -2104,114 +2044,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
 
         return documentId;
-    }
-
-    private async Task UpsertReferentialIdentityAsync(
-        ReferentialId referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await Database.ExecuteNonQueryAsync(
-            """
-            IF EXISTS (
-                SELECT 1
-                FROM [dms].[ReferentialIdentity]
-                WHERE [DocumentId] = @documentId
-                  AND [ResourceKeyId] = @resourceKeyId
-            )
-            BEGIN
-                UPDATE [dms].[ReferentialIdentity]
-                SET [ReferentialId] = @referentialId
-                WHERE [DocumentId] = @documentId
-                  AND [ResourceKeyId] = @resourceKeyId;
-            END
-            ELSE IF NOT EXISTS (
-                SELECT 1
-                FROM [dms].[ReferentialIdentity]
-                WHERE [ReferentialId] = @referentialId
-            )
-            BEGIN
-                INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-                VALUES (@referentialId, @documentId, @resourceKeyId);
-            END;
-            """,
-            new SqlParameter("@referentialId", referentialId.Value),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
-            new DocumentIdentity([
-                new DocumentIdentityElement(
-                    DocumentIdentity.DescriptorIdentityJsonPath,
-                    descriptorUri.ToLowerInvariant()
-                ),
-            ])
-        );
-    }
-
-    private static ReferentialId CreateSchoolReferentialId(int schoolId)
-    {
-        var schoolIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(
-                new JsonPath("$.schoolId"),
-                schoolId.ToString(CultureInfo.InvariantCulture)
-            ),
-        ]);
-
-        return ReferentialIdCalculator.ReferentialIdFrom(SchoolResource, schoolIdentity);
-    }
-
-    private static ReferentialId CreateClassPeriodReferentialId(ClassPeriodSeed seed)
-    {
-        var classPeriodIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(new JsonPath("$.classPeriodName"), seed.ClassPeriodName),
-            new DocumentIdentityElement(
-                new JsonPath("$.schoolReference.schoolId"),
-                seed.SchoolId.ToString(CultureInfo.InvariantCulture)
-            ),
-        ]);
-
-        return ReferentialIdCalculator.ReferentialIdFrom(ClassPeriodResource, classPeriodIdentity);
-    }
-
-    private static ReferentialId CreateStudentAcademicRecordReferentialId(StudentAcademicRecordSeed seed) =>
-        CreateReferentialId(
-            "Ed-Fi",
-            "StudentAcademicRecord",
-            (
-                "$.educationOrganizationReference.educationOrganizationId",
-                seed.EducationOrganizationId.ToString(CultureInfo.InvariantCulture)
-            ),
-            ("$.schoolYearTypeReference.schoolYear", seed.SchoolYear.ToString(CultureInfo.InvariantCulture)),
-            ("$.studentReference.studentUniqueId", seed.StudentUniqueId),
-            ("$.termDescriptor", seed.TermDescriptor.ToLowerInvariant())
-        );
-
-    private static ReferentialId CreateReferentialId(
-        string projectName,
-        string resourceName,
-        params (string JsonPath, string Value)[] identityElements
-    )
-    {
-        return ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), false),
-            new DocumentIdentity([
-                .. identityElements.Select(static identityElement => new DocumentIdentityElement(
-                    new JsonPath(identityElement.JsonPath),
-                    identityElement.Value
-                )),
-            ])
-        );
     }
 
     private sealed record ResourceHandle(

@@ -887,10 +887,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
     private async Task<MssqlStudentSchoolAssociationSeedData> SeedReferenceDataAsync()
     {
         var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var educationOrganizationResourceKeyId = await GetResourceKeyIdAsync(
-            "Ed-Fi",
-            "EducationOrganization"
-        );
         var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
         var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
         var calendarResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Calendar");
@@ -916,8 +912,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         var calendarTypeDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("77777777-0000-0000-0000-000000000001"),
             calendarTypeDescriptorResourceKeyId,
-            "Ed-Fi",
-            "CalendarTypeDescriptor",
             "CalendarTypeDescriptor",
             CalendarTypeDescriptorUri,
             "uri://ed-fi.org/CalendarTypeDescriptor",
@@ -927,8 +921,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         await SeedDescriptorAsync(
             Guid.Parse("77777777-0000-0000-0000-000000000002"),
             gradeLevelDescriptorResourceKeyId,
-            "Ed-Fi",
-            "GradeLevelDescriptor",
             "GradeLevelDescriptor",
             NinthGradeLevelDescriptorUri,
             "uri://ed-fi.org/GradeLevelDescriptor",
@@ -938,8 +930,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         var graduationPlanTypeDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("77777777-0000-0000-0000-000000000003"),
             graduationPlanTypeDescriptorResourceKeyId,
-            "Ed-Fi",
-            "GraduationPlanTypeDescriptor",
             "GraduationPlanTypeDescriptor",
             GraduationPlanTypeDescriptorUri,
             "uri://ed-fi.org/GraduationPlanTypeDescriptor",
@@ -949,8 +939,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         await SeedDescriptorAsync(
             Guid.Parse("77777777-0000-0000-0000-000000000004"),
             educationPlanDescriptorResourceKeyId,
-            "Ed-Fi",
-            "EducationPlanDescriptor",
             "EducationPlanDescriptor",
             PathwayEducationPlanDescriptorUri,
             "uri://ed-fi.org/EducationPlanDescriptor",
@@ -960,8 +948,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         await SeedDescriptorAsync(
             Guid.Parse("77777777-0000-0000-0000-000000000005"),
             educationPlanDescriptorResourceKeyId,
-            "Ed-Fi",
-            "EducationPlanDescriptor",
             "EducationPlanDescriptor",
             InterventionEducationPlanDescriptorUri,
             "uri://ed-fi.org/EducationPlanDescriptor",
@@ -971,8 +957,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         await SeedDescriptorAsync(
             Guid.Parse("77777777-0000-0000-0000-000000000007"),
             membershipTypeDescriptorResourceKeyId,
-            "Sample",
-            "MembershipTypeDescriptor",
             "MembershipTypeDescriptor",
             ResidentMembershipTypeDescriptorUri,
             "uri://sample.org/MembershipTypeDescriptor",
@@ -985,14 +969,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             schoolYearTypeResourceKeyId
         );
         await InsertSchoolYearTypeAsync(studentSchoolYearTypeDocumentId, SchoolYear, true);
-        await UpsertReferentialIdentityAsync(
-            MssqlStudentSchoolAssociationIntegrationTestSupport.CreateReferentialId(
-                ("Ed-Fi", "SchoolYearType", false),
-                ("$.schoolYear", SchoolYear.ToString(CultureInfo.InvariantCulture))
-            ),
-            studentSchoolYearTypeDocumentId,
-            schoolYearTypeResourceKeyId
-        );
 
         var foundationGraduationSchoolYearTypeDocumentId = await InsertDocumentAsync(
             Guid.Parse("88888888-0000-0000-0000-000000000002"),
@@ -1003,14 +979,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             FoundationGraduationSchoolYear,
             false
         );
-        await UpsertReferentialIdentityAsync(
-            MssqlStudentSchoolAssociationIntegrationTestSupport.CreateReferentialId(
-                ("Ed-Fi", "SchoolYearType", false),
-                ("$.schoolYear", FoundationGraduationSchoolYear.ToString(CultureInfo.InvariantCulture))
-            ),
-            foundationGraduationSchoolYearTypeDocumentId,
-            schoolYearTypeResourceKeyId
-        );
 
         var endorsementGraduationSchoolYearTypeDocumentId = await InsertDocumentAsync(
             Guid.Parse("88888888-0000-0000-0000-000000000003"),
@@ -1020,14 +988,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             endorsementGraduationSchoolYearTypeDocumentId,
             EndorsementGraduationSchoolYear,
             false
-        );
-        await UpsertReferentialIdentityAsync(
-            MssqlStudentSchoolAssociationIntegrationTestSupport.CreateReferentialId(
-                ("Ed-Fi", "SchoolYearType", false),
-                ("$.schoolYear", EndorsementGraduationSchoolYear.ToString(CultureInfo.InvariantCulture))
-            ),
-            endorsementGraduationSchoolYearTypeDocumentId,
-            schoolYearTypeResourceKeyId
         );
 
         var schoolDocumentId = await InsertDocumentAsync(
@@ -1048,36 +1008,12 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             },
             mirrorMetadataForDocumentId: schoolDocumentId
         );
-        await UpsertReferentialIdentityAsync(
-            MssqlStudentSchoolAssociationIntegrationTestSupport.CreateReferentialId(
-                ("Ed-Fi", "School", false),
-                ("$.schoolId", SchoolId.ToString(CultureInfo.InvariantCulture))
-            ),
-            schoolDocumentId,
-            schoolResourceKeyId
-        );
-        await UpsertReferentialIdentityAsync(
-            MssqlStudentSchoolAssociationIntegrationTestSupport.CreateReferentialId(
-                ("Ed-Fi", "EducationOrganization", false),
-                ("$.educationOrganizationId", SchoolId.ToString(CultureInfo.InvariantCulture))
-            ),
-            schoolDocumentId,
-            educationOrganizationResourceKeyId
-        );
 
         var studentDocumentId = await InsertDocumentAsync(
             Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001"),
             studentResourceKeyId
         );
         await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Maya", "Lopez");
-        await UpsertReferentialIdentityAsync(
-            MssqlStudentSchoolAssociationIntegrationTestSupport.CreateReferentialId(
-                ("Ed-Fi", "Student", false),
-                ("$.studentUniqueId", StudentUniqueId)
-            ),
-            studentDocumentId,
-            studentResourceKeyId
-        );
 
         var calendarDocumentId = await InsertDocumentAsync(
             Guid.Parse("bbbbbbbb-0000-0000-0000-000000000001"),
@@ -1091,16 +1027,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             SchoolId,
             calendarTypeDescriptorId,
             CalendarCode
-        );
-        await UpsertReferentialIdentityAsync(
-            MssqlStudentSchoolAssociationIntegrationTestSupport.CreateReferentialId(
-                ("Ed-Fi", "Calendar", false),
-                ("$.calendarCode", CalendarCode),
-                ("$.schoolReference.schoolId", SchoolId.ToString(CultureInfo.InvariantCulture)),
-                ("$.schoolYearTypeReference.schoolYear", SchoolYear.ToString(CultureInfo.InvariantCulture))
-            ),
-            calendarDocumentId,
-            calendarResourceKeyId
         );
 
         var foundationGraduationPlanDocumentId = await InsertDocumentAsync(
@@ -1116,22 +1042,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             graduationPlanTypeDescriptorId,
             26.000m
         );
-        await UpsertReferentialIdentityAsync(
-            MssqlStudentSchoolAssociationIntegrationTestSupport.CreateReferentialId(
-                ("Ed-Fi", "GraduationPlan", false),
-                (
-                    "$.educationOrganizationReference.educationOrganizationId",
-                    SchoolId.ToString(CultureInfo.InvariantCulture)
-                ),
-                ("$.graduationPlanTypeDescriptor", GraduationPlanTypeDescriptorUri.ToLowerInvariant()),
-                (
-                    "$.graduationSchoolYearTypeReference.schoolYear",
-                    FoundationGraduationSchoolYear.ToString(CultureInfo.InvariantCulture)
-                )
-            ),
-            foundationGraduationPlanDocumentId,
-            graduationPlanResourceKeyId
-        );
 
         var endorsementGraduationPlanDocumentId = await InsertDocumentAsync(
             Guid.Parse("cccccccc-0000-0000-0000-000000000002"),
@@ -1145,22 +1055,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             EndorsementGraduationSchoolYear,
             graduationPlanTypeDescriptorId,
             27.500m
-        );
-        await UpsertReferentialIdentityAsync(
-            MssqlStudentSchoolAssociationIntegrationTestSupport.CreateReferentialId(
-                ("Ed-Fi", "GraduationPlan", false),
-                (
-                    "$.educationOrganizationReference.educationOrganizationId",
-                    SchoolId.ToString(CultureInfo.InvariantCulture)
-                ),
-                ("$.graduationPlanTypeDescriptor", GraduationPlanTypeDescriptorUri.ToLowerInvariant()),
-                (
-                    "$.graduationSchoolYearTypeReference.schoolYear",
-                    EndorsementGraduationSchoolYear.ToString(CultureInfo.InvariantCulture)
-                )
-            ),
-            endorsementGraduationPlanDocumentId,
-            graduationPlanResourceKeyId
         );
 
         return new(studentDocumentId, graduationPlanTypeDescriptorId);
@@ -1233,8 +1127,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
     private async Task<long> SeedDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string projectName,
-        string resourceName,
         string discriminator,
         string uri,
         string @namespace,
@@ -1250,16 +1142,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             @namespace,
             codeValue,
             shortDescription
-        );
-
-        await UpsertReferentialIdentityAsync(
-            MssqlStudentSchoolAssociationIntegrationTestSupport.CreateDescriptorReferentialId(
-                projectName,
-                resourceName,
-                uri
-            ),
-            documentId,
-            resourceKeyId
         );
 
         return documentId;
@@ -1472,47 +1354,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             new SqlParameter("@graduationSchoolYear", graduationSchoolYear),
             new SqlParameter("@graduationPlanTypeDescriptorId", graduationPlanTypeDescriptorId),
             new SqlParameter("@totalRequiredCredits", totalRequiredCredits)
-        );
-    }
-
-    private async Task UpsertReferentialIdentityAsync(
-        ReferentialId referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT [ReferentialId]
-            FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] = @documentId
-              AND [ResourceKeyId] = @resourceKeyId;
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-
-        if (rows.Count > 0)
-        {
-            rows.Should().ContainSingle();
-            var existingReferentialId = rows[0]["ReferentialId"] switch
-            {
-                Guid value => value,
-                _ => throw new InvalidOperationException("Expected ReferentialId to be a Guid."),
-            };
-
-            existingReferentialId.Should().Be(referentialId.Value);
-            return;
-        }
-
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            VALUES (@referentialId, @documentId, @resourceKeyId);
-            """,
-            new SqlParameter("@referentialId", referentialId.Value),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
         );
     }
 }

@@ -66,19 +66,6 @@ public sealed class ReferenceResolverIntegrationFixture
 
     public ReferentialId WideIdentityReferentialId { get; private init; }
 
-    public ReferentialId MissingWideIdentityReferentialId { get; private init; }
-
-    /// <summary>
-    /// A wide-identity reference whose only difference from the seeded row is the case of its string
-    /// identity part. Deliberately resolved differently per dialect: PostgreSQL compares strings
-    /// case-sensitively and misses, SQL Server's default CI collation matches.
-    /// </summary>
-    public ReferentialId CaseVariantWideIdentityReferentialId { get; private init; }
-
-    public ReferentialId MissingEducationOrganizationReferentialId { get; private init; }
-
-    public ReferentialId MissingLocalEducationAgencyReferentialId { get; private init; }
-
     public const long SchoolIdentityValue = 255901;
 
     public const long LocalEducationAgencyIdentityValue = 255901;
@@ -98,9 +85,6 @@ public sealed class ReferenceResolverIntegrationFixture
     public const string WideIdentityBooleanLiteral = "true";
 
     public const string WideIdentityStringValue = "Alpha-Beta";
-
-    /// <summary>The same string identity part with a different case; see <see cref="CaseVariantWideIdentityReferentialId"/>.</summary>
-    public const string WideIdentityCaseVariantStringValue = "alpha-beta";
 
     public static readonly DateOnly WideIdentityDateValue = new(2024, 3, 5);
 
@@ -152,16 +136,6 @@ public sealed class ReferenceResolverIntegrationFixture
         var wideIdentityResource = new QualifiedResourceName("Ed-Fi", "WideIdentityResource");
 
         var wideIdentityReferentialId = CreateReferentialId("00000000-0000-0000-0000-000000000888");
-        var missingWideIdentityReferentialId = CreateReferentialId("00000000-0000-0000-0000-000000000999");
-        var caseVariantWideIdentityReferentialId = CreateReferentialId(
-            "00000000-0000-0000-0000-000000000aaa"
-        );
-        var missingEducationOrganizationReferentialId = CreateReferentialId(
-            "00000000-0000-0000-0000-000000000bbb"
-        );
-        var missingLocalEducationAgencyReferentialId = CreateReferentialId(
-            "00000000-0000-0000-0000-000000000ccc"
-        );
 
         var schoolReferentialId = CreateReferentialId("00000000-0000-0000-0000-000000000111");
         var educationOrganizationAliasReferentialId = CreateReferentialId(
@@ -220,23 +194,6 @@ public sealed class ReferenceResolverIntegrationFixture
                         Guid.Parse("55000000-0000-0000-0000-000000000550"),
                         15
                     ),
-                ],
-                ReferentialIdentities:
-                [
-                    new ReferenceResolverReferentialIdentitySeed(schoolReferentialId, 101, 11),
-                    new ReferenceResolverReferentialIdentitySeed(
-                        educationOrganizationAliasReferentialId,
-                        101,
-                        30
-                    ),
-                    new ReferenceResolverReferentialIdentitySeed(localEducationAgencyReferentialId, 202, 12),
-                    new ReferenceResolverReferentialIdentitySeed(schoolTypeDescriptorReferentialId, 303, 13),
-                    new ReferenceResolverReferentialIdentitySeed(
-                        academicSubjectDescriptorReferentialId,
-                        404,
-                        14
-                    ),
-                    new ReferenceResolverReferentialIdentitySeed(wideIdentityReferentialId, 550, 15),
                 ],
                 Schools: [new ReferenceResolverSchoolSeed(101, SchoolIdentityValue)],
                 LocalEducationAgencies:
@@ -304,10 +261,6 @@ public sealed class ReferenceResolverIntegrationFixture
         {
             WideIdentityResource = wideIdentityResource,
             WideIdentityReferentialId = wideIdentityReferentialId,
-            MissingWideIdentityReferentialId = missingWideIdentityReferentialId,
-            CaseVariantWideIdentityReferentialId = caseVariantWideIdentityReferentialId,
-            MissingEducationOrganizationReferentialId = missingEducationOrganizationReferentialId,
-            MissingLocalEducationAgencyReferentialId = missingLocalEducationAgencyReferentialId,
         };
     }
 
@@ -873,7 +826,6 @@ public sealed class ReferenceResolverIntegrationFixture
 public sealed record ReferenceResolverSeedData(
     IReadOnlyList<ReferenceResolverResourceKeySeed> ResourceKeys,
     IReadOnlyList<ReferenceResolverDocumentSeed> Documents,
-    IReadOnlyList<ReferenceResolverReferentialIdentitySeed> ReferentialIdentities,
     IReadOnlyList<ReferenceResolverSchoolSeed> Schools,
     IReadOnlyList<ReferenceResolverLocalEducationAgencySeed> LocalEducationAgencies,
     IReadOnlyList<ReferenceResolverDescriptorSeed> Descriptors
@@ -924,24 +876,6 @@ public sealed record ReferenceResolverSeedData(
                     .Select(document =>
                         (IReadOnlyList<object?>)
                             [document.DocumentId, document.DocumentUuid, document.ResourceKeyId]
-                    )
-                    .ToArray()
-            ),
-            new(
-                new DbTableName(new DbSchemaName("dms"), "ReferentialIdentity"),
-                [
-                    new DbColumnName("ReferentialId"),
-                    new DbColumnName("DocumentId"),
-                    new DbColumnName("ResourceKeyId"),
-                ],
-                ReferentialIdentities
-                    .Select(referentialIdentity =>
-                        (IReadOnlyList<object?>)
-                            [
-                                referentialIdentity.ReferentialId.Value,
-                                referentialIdentity.DocumentId,
-                                referentialIdentity.ResourceKeyId,
-                            ]
                     )
                     .ToArray()
             ),
@@ -1044,12 +978,6 @@ public sealed record ReferenceResolverResourceKeySeed(
 );
 
 public sealed record ReferenceResolverDocumentSeed(long DocumentId, Guid DocumentUuid, short ResourceKeyId);
-
-public sealed record ReferenceResolverReferentialIdentitySeed(
-    ReferentialId ReferentialId,
-    long DocumentId,
-    short ResourceKeyId
-);
 
 public sealed record ReferenceResolverSchoolSeed(long DocumentId, long SchoolId);
 

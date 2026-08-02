@@ -455,23 +455,6 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             new SqlParameter("@uri", uri)
         );
 
-        var descriptorReference = CreateAddressTypeDescriptorReference(
-            uri,
-            "$.addresses[0].addressTypeDescriptor"
-        );
-        await database.ExecuteNonQueryAsync(
-            """
-            IF NOT EXISTS (
-                SELECT 1 FROM [dms].[ReferentialIdentity] WHERE [ReferentialId] = @referentialId
-            )
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            VALUES (@referentialId, @documentId, @resourceKeyId);
-            """,
-            new SqlParameter("@referentialId", descriptorReference.ReferentialId.Value),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-
         return documentId;
     }
 

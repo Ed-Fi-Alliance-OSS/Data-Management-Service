@@ -265,7 +265,7 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
     )
     {
         short resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", resourceName);
-        long documentId = await InsertDescriptorAsync(
+        await InsertDescriptorAsync(
             documentUuid,
             resourceKeyId,
             discriminator,
@@ -273,12 +273,6 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
             @namespace,
             codeValue,
             shortDescription
-        );
-
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", resourceName, uri),
-            documentId,
-            resourceKeyId
         );
     }
 
@@ -544,43 +538,5 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
         );
 
         return documentId;
-    }
-
-    private async Task InsertReferentialIdentityAsync(
-        ReferentialId referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            MERGE INTO [dms].[ReferentialIdentity] AS target
-            USING (SELECT @referentialId AS [ReferentialId]) AS source
-              ON target.[ReferentialId] = source.[ReferentialId]
-            WHEN NOT MATCHED THEN
-              INSERT ([ReferentialId], [DocumentId], [ResourceKeyId])
-              VALUES (@referentialId, @documentId, @resourceKeyId);
-            """,
-            new SqlParameter("@referentialId", referentialId.Value),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
-            new DocumentIdentity([
-                new DocumentIdentityElement(
-                    DocumentIdentity.DescriptorIdentityJsonPath,
-                    descriptorUri.ToLowerInvariant()
-                ),
-            ])
-        );
     }
 }

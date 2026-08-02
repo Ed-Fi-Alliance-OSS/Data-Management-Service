@@ -126,7 +126,6 @@ public class Given_MssqlReferenceResolverTestDatabase
                 {
                     ["dms.ResourceKey"] = _database.Fixture.SeedData.ResourceKeys.Count,
                     ["dms.Document"] = _database.Fixture.SeedData.Documents.Count,
-                    ["dms.ReferentialIdentity"] = _database.Fixture.SeedData.ReferentialIdentities.Count,
                     ["dms.Descriptor"] = _database.Fixture.SeedData.Descriptors.Count,
                 }
             );
