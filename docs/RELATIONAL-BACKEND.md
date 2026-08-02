@@ -520,14 +520,23 @@ almost always why.
   collation both already treat case variants as one identity, so the row that would have made the old
   409 *mean* something could never have coexisted in the first place.
 - **Stored descriptor casing is immutable through POST.** A POST-as-update writes every descriptive
-  field from the request but takes `Namespace`, `CodeValue` and `Uri` from the **persisted** row, which
-  preserves the pre-existing guarantee (a case-variant POST used to resolve to no target, insert, and
-  lose to the URI unique constraint) and the Ed-Fi rule that a resource echoes the first-created
-  canonical form. A POST that differs from the stored row *only* in identity casing is therefore a full
-  no-op: no `UPDATE`, no `ContentVersion` bump, no change event. PUT is unaffected — its `Ordinal` `Uri`
-  comparison rejects a case-only identity edit outright
+  field from the request but takes `Namespace`, `CodeValue` and `Uri` from the **persisted** row, so a
+  resource always echoes the first-created canonical form. A POST that differs from the stored row
+  *only* in identity casing is therefore a full no-op: no `UPDATE`, no `ContentVersion` bump, no change
+  event. PUT is unaffected — its `Ordinal` `Uri` comparison rejects a case-only identity edit outright
   ([`DescriptorWriteHandler.PreserveStoredDescriptorIdentity`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs),
   [`DescriptorNoOpComparer.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorNoOpComparer.cs)).
+
+  > This is a deliberate **behavior change** from the hash-resolver era, not a preservation. A
+  > descriptor's own `ReferentialId` was a UUIDv5 over the **lower-cased** URI
+  > ([`DescriptorDocument.ToDocumentIdentity`](../src/dms/core/EdFi.DataManagementService.Core/Model/DescriptorDocument.cs)),
+  > so a case-variant POST always **matched** the stored row — on both engines — and the old
+  > upsert-update then rewrote `Namespace`/`CodeValue`/`Uri` to the request's casing (request-wins,
+  > with a `ContentVersion` bump). The ODS/API on SQL Server behaves the same way (rewrite); ODS on
+  > PostgreSQL instead creates a case-variant duplicate row. Ruling (2026-08-02): the immutable
+  > behavior is accepted — a client that "fixes" descriptor casing via re-POST now gets a no-op
+  > instead of a silent rewrite. Reverting to request-wins, if ever wanted for ODS/legacy parity, is
+  > confined to the two files linked above.
 - **A NULL mirror is a miss, not an error.** Every probe predicate is an equality comparison and NULL
   matches nothing. A `dms.Descriptor` row written with triggers suppressed carries `NULL` in
   `ResourceKeyId`, so it is invisible to descriptor reads (a **404**, not an error) *and* invisible to
