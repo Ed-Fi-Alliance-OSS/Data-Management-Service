@@ -74,10 +74,10 @@ internal static class NaturalKeyLookupCommandSupport
     /// </summary>
     /// <remarks>
     /// The ordinal check is load bearing. PostgreSQL sources the ordinal from <c>WITH ORDINALITY</c>,
-    /// which can only ever produce the one-based array position, while SQL Server writes whatever the
-    /// entry declares as an inline literal. Accepting an arbitrary ordinal would let the two dialects
-    /// attribute the same result row to different references — a silent mis-resolution rather than a
-    /// failure — so a mismatch throws here instead.
+    /// which can only ever produce the one-based array position, while SQL Server carries whatever the
+    /// entry declares in the group's JSON payload and shreds it back out. Accepting an arbitrary ordinal
+    /// would let the two dialects attribute the same result row to different references — a silent
+    /// mis-resolution rather than a failure — so a mismatch throws here instead.
     /// </remarks>
     public static void ValidateBatch(NaturalKeyLookupBatch batch)
     {

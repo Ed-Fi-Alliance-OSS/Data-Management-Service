@@ -35,10 +35,11 @@ internal static class PostgresqlNaturalKeyLookupCommandBuilder
     /// The ordinal projection, narrowed to <c>integer</c>.
     /// </summary>
     /// <remarks>
-    /// <c>WITH ORDINALITY</c> emits <c>bigint</c>, while SQL Server's inline literal (and its empty-group
-    /// <c>CAST(NULL AS int)</c>) emit a 4-byte int. Without this cast a dialect-neutral reader could not
-    /// read the column the same way on both providers, and nothing would fail until an integration run.
-    /// The cast is a constant, so it does not disturb the shape-invariance of the emitted text.
+    /// <c>WITH ORDINALITY</c> emits <c>bigint</c>, while SQL Server's <c>OPENJSON … WITH</c> declares the
+    /// ordinal column as <c>int</c> and so emits a 4-byte int. Without this cast a dialect-neutral reader
+    /// could not read the column the same way on both providers, and nothing would fail until an
+    /// integration run. The cast is a constant, so it does not disturb the shape-invariance of the emitted
+    /// text.
     /// </remarks>
     private static readonly string OrdinalProjection =
         $"SELECT CAST(input.{Quote(NaturalKeyLookupColumns.Ordinal)} AS integer) AS {Quote(NaturalKeyLookupColumns.Ordinal)}";

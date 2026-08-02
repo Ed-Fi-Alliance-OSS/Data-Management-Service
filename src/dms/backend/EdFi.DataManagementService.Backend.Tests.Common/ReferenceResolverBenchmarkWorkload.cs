@@ -33,9 +33,10 @@ public sealed class ReferenceResolverBenchmarkWorkload
     public const string DeepIdentityCase = "deep-identity-and-descriptor-references";
 
     /// <summary>
-    /// Wide-identity references in the deep-identity batch. 256 × 6 probe columns + 256 descriptor
-    /// parameters = 1792, inside SQL Server's 2098-parameter per-command ceiling, so the deep-identity case
-    /// is exactly one round trip on both engines and the two arms are compared on equal terms.
+    /// Wide-identity references in the deep-identity batch. 256 × 6 probe columns plus 256 descriptor URIs
+    /// stay inside one round trip on both engines — PostgreSQL binds one array parameter per probe column
+    /// per group and SQL Server one <c>OPENJSON</c> payload per group, so neither dialect's parameter count
+    /// grows with the reference count — and the two arms are therefore compared on equal terms.
     /// </summary>
     public const int DeepIdentityReferenceCount = 256;
 

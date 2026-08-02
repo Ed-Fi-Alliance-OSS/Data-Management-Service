@@ -19,8 +19,7 @@ namespace EdFi.DataManagementService.Backend;
 /// </remarks>
 /// <param name="GroupIndex">The zero-based index of the group in <c>NaturalKeyLookupBatch.Groups</c>.</param>
 /// <param name="Ordinal">
-/// The one-based position of the matched entry within its group — <c>Entries[Ordinal - 1]</c>. Rows arrive
-/// in unspecified order, so this is the only safe way to attribute one.
+/// The one-based position of the matched entry within its group — <c>Entries[Ordinal - 1]</c>.
 /// </param>
 /// <param name="DocumentId">The matched document id.</param>
 /// <param name="Discriminator">

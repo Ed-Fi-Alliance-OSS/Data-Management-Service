@@ -83,11 +83,12 @@ public sealed record DescriptorLookupGroup(
 /// One reference lookup within a <see cref="NaturalKeyLookupGroup"/>.
 /// </summary>
 /// <param name="Ordinal">
-/// The entry's one-based position within its group's entry list. It is emitted verbatim: PostgreSQL
-/// derives it from <c>WITH ORDINALITY</c> over the parallel input arrays, SQL Server writes it as an
-/// inline <c>VALUES</c> literal (never <c>ROW_NUMBER()</c>). The builders reject a group whose ordinals
-/// are not exactly <c>1..Entries.Count</c>, because the PostgreSQL mechanism cannot express anything else
-/// and a silent divergence between the dialects would misattribute every resolved reference.
+/// The entry's one-based position within its group's entry list. It is carried verbatim: PostgreSQL
+/// derives it from <c>WITH ORDINALITY</c> over the parallel input arrays, SQL Server carries it inside the
+/// group's JSON payload as <c>$.o</c> and shreds it back out through <c>OPENJSON … WITH</c> (never
+/// <c>ROW_NUMBER()</c>). The builders reject a group whose ordinals are not exactly
+/// <c>1..Entries.Count</c>, because the PostgreSQL mechanism cannot express anything else and a silent
+/// divergence between the dialects would misattribute every resolved reference.
 /// </param>
 /// <param name="Values">
 /// The already-typed probe values, positionally parallel to the group's probe columns

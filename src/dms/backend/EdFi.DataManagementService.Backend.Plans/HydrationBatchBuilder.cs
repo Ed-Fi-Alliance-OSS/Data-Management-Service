@@ -308,9 +308,10 @@ public static class HydrationBatchBuilder
     }
 
     /// <summary>
-    /// Resolves the table the document metadata result set reads from. The read path sources the
-    /// root table's trigger-maintained mirror columns; the write path keeps reading the
-    /// <c>dms.Document</c> row it locked.
+    /// Resolves the table the document metadata result set reads from. Every production caller — the read
+    /// paths and the write path's current-state load alike — passes <c>RootTable</c> and sources the root
+    /// row's trigger-maintained mirror columns; the <c>DocumentTable</c> default survives only for callers
+    /// with no root row to read.
     /// </summary>
     private static DbTableName ResolveMetadataTable(
         ResourceReadPlan plan,
