@@ -64,10 +64,6 @@ public abstract record RelationalWriteTargetRequest
     /// <summary>
     /// POST may create a brand-new document or update an existing document resolved by natural key.
     /// </summary>
-    /// <param name="ReferentialId">
-    /// The hashed natural-identity key. Retained for diagnostics and for the referential-id probe that
-    /// unit tests still exercise; upsert detection no longer reads it.
-    /// </param>
     /// <param name="CandidateDocumentUuid">
     /// The caller-reserved document uuid to use when lookup resolves to a new document.
     /// </param>
@@ -75,11 +71,8 @@ public abstract record RelationalWriteTargetRequest
     /// The document's own ordered natural-key identity, which the in-session <c>UX_&lt;R&gt;_NK</c> probe
     /// binds together with the resolved reference document ids.
     /// </param>
-    public sealed record Post(
-        ReferentialId ReferentialId,
-        DocumentUuid CandidateDocumentUuid,
-        DocumentIdentity DocumentIdentity
-    ) : RelationalWriteTargetRequest;
+    public sealed record Post(DocumentUuid CandidateDocumentUuid, DocumentIdentity DocumentIdentity)
+        : RelationalWriteTargetRequest;
 
     /// <summary>
     /// PUT must resolve an already persisted document by external document uuid.

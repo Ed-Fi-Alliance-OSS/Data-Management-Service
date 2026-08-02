@@ -154,7 +154,6 @@ public sealed class RelationalDocumentStoreRepository(
                 upsertRequest.ResourceInfo,
                 RelationalWriteOperationKind.Post,
                 new RelationalWriteTargetRequest.Post(
-                    upsertRequest.DocumentInfo.ReferentialId,
                     upsertRequest.DocumentUuid,
                     upsertRequest.DocumentInfo.DocumentIdentity
                 ),

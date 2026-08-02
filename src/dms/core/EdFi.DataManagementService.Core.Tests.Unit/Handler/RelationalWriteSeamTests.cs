@@ -77,7 +77,6 @@ public class Given_Relational_Write_Seam
             .TargetRequest.Should()
             .BeEquivalentTo(
                 new RelationalWriteTargetRequest.Post(
-                    documentInfo.ReferentialId,
                     ((RelationalWriteTargetRequest.Post)request.TargetRequest).CandidateDocumentUuid,
                     documentInfo.DocumentIdentity
                 )
@@ -854,11 +853,7 @@ actual: {requestInfo.FrontendResponse.Body}
 
             return Task.FromResult(
                 (resultFactory ?? DefaultResultFactory)(
-                    new RelationalWriteTargetRequest.Post(
-                        new ReferentialId(Guid.Empty),
-                        candidateDocumentUuid,
-                        new DocumentIdentity([])
-                    )
+                    new RelationalWriteTargetRequest.Post(candidateDocumentUuid, new DocumentIdentity([]))
                 )
             );
         }
@@ -894,7 +889,7 @@ actual: {requestInfo.FrontendResponse.Body}
         {
             return request switch
             {
-                RelationalWriteTargetRequest.Post(_, var candidateDocumentUuid, _) =>
+                RelationalWriteTargetRequest.Post(var candidateDocumentUuid, _) =>
                     new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid),
                 RelationalWriteTargetRequest.Put(var documentUuid) =>
                     new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),

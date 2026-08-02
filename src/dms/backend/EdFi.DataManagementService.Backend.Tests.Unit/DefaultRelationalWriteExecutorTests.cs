@@ -3424,7 +3424,6 @@ public class Given_Default_Relational_Write_Executor
                 mappingSet,
                 RelationalWriteOperationKind.Put,
                 new RelationalWriteTargetRequest.Post(
-                    new ReferentialId(Guid.NewGuid()),
                     new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
                     CreateOwnDocumentIdentity(resourceModel)
                 ),
@@ -7719,7 +7718,6 @@ public class Given_Default_Relational_Write_Executor
             operationKind == RelationalWriteOperationKind.Put
                 ? new RelationalWriteTargetRequest.Put(updateDocumentUuid)
                 : new RelationalWriteTargetRequest.Post(
-                    new ReferentialId(Guid.NewGuid()),
                     createDocumentUuid,
                     CreateOwnDocumentIdentity(resourceModel)
                 ),

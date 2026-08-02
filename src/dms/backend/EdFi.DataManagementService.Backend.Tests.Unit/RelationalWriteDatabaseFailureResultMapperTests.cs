@@ -483,11 +483,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             operationKind,
             operationKind == RelationalWriteOperationKind.Put
                 ? new RelationalWriteTargetRequest.Put(updateDocumentUuid)
-                : new RelationalWriteTargetRequest.Post(
-                    new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
-                    createDocumentUuid,
-                    new DocumentIdentity([])
-                ),
+                : new RelationalWriteTargetRequest.Post(createDocumentUuid, new DocumentIdentity([])),
             resourceWritePlan,
             existingDocumentReadPlan: null,
             JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!,
@@ -661,11 +657,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             operationKind,
             operationKind == RelationalWriteOperationKind.Put
                 ? new RelationalWriteTargetRequest.Put(updateDocumentUuid)
-                : new RelationalWriteTargetRequest.Post(
-                    new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
-                    createDocumentUuid,
-                    new DocumentIdentity([])
-                ),
+                : new RelationalWriteTargetRequest.Post(createDocumentUuid, new DocumentIdentity([])),
             writePlan,
             existingDocumentReadPlan: null,
             JsonNode.Parse("""{"schoolId":155901,"nameOfInstitution":"School Test"}""")!,
@@ -689,11 +681,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
         return new RelationalWriteExecutorRequest(
             mappingSet,
             RelationalWriteOperationKind.Post,
-            new RelationalWriteTargetRequest.Post(
-                new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
-                createDocumentUuid,
-                new DocumentIdentity([])
-            ),
+            new RelationalWriteTargetRequest.Post(createDocumentUuid, new DocumentIdentity([])),
             writePlan,
             existingDocumentReadPlan: null,
             JsonNode.Parse("""{"localEducationAgencyId":155901,"nameOfInstitution":"Grand Bend ISD"}""")!,
@@ -715,11 +703,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
         return new RelationalWriteExecutorRequest(
             mappingSet,
             RelationalWriteOperationKind.Post,
-            new RelationalWriteTargetRequest.Post(
-                new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
-                createDocumentUuid,
-                new DocumentIdentity([])
-            ),
+            new RelationalWriteTargetRequest.Post(createDocumentUuid, new DocumentIdentity([])),
             writePlan,
             existingDocumentReadPlan: null,
             JsonNode.Parse(

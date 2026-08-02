@@ -5230,11 +5230,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest
             .TargetRequest.Should()
             .BeEquivalentTo(
-                new RelationalWriteTargetRequest.Post(
-                    documentInfo.ReferentialId,
-                    documentUuid,
-                    documentInfo.DocumentIdentity
-                )
+                new RelationalWriteTargetRequest.Post(documentUuid, documentInfo.DocumentIdentity)
             );
         _capturedExecutorRequest
             .TargetContext.Should()
@@ -5309,11 +5305,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest
             .TargetRequest.Should()
             .BeEquivalentTo(
-                new RelationalWriteTargetRequest.Post(
-                    documentInfo.ReferentialId,
-                    documentUuid,
-                    documentInfo.DocumentIdentity
-                )
+                new RelationalWriteTargetRequest.Post(documentUuid, documentInfo.DocumentIdentity)
             );
         // The pre-session pass proposes a create for every POST; the executor's in-session UX_<R>_NK
         // re-evaluation is what turns this attempt into an update, and it returns UpdateSuccess above.
@@ -6651,11 +6643,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Should()
             .OnlyContain(targetRequest =>
                 targetRequest.Equals(
-                    new RelationalWriteTargetRequest.Post(
-                        documentInfo.ReferentialId,
-                        documentUuid,
-                        documentInfo.DocumentIdentity
-                    )
+                    new RelationalWriteTargetRequest.Post(documentUuid, documentInfo.DocumentIdentity)
                 )
             );
         // Both attempts enter the executor proposing a create; the in-session UX_<R>_NK re-evaluation
