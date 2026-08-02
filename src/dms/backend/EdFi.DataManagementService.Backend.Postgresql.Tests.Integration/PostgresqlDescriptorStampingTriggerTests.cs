@@ -10,6 +10,12 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
+/// <summary>
+/// Behavior of the no-tombstone variant of <c>TR_Descriptor_Stamp_Document</c> (the
+/// <c>small/minimal</c> fixture carries no shared descriptor tracked-change table). The descriptor row
+/// is the authoritative stamp store: the trigger writes <c>dms.Descriptor</c>'s own columns and never
+/// touches <c>dms.Document</c>.
+/// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
@@ -54,15 +60,12 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         }
     }
 
-    private async Task<(long DocumentId, long ContentVersion, DateTime ContentLastModifiedAt)> SeedAsync(
-        string codeValue = "Female"
-    )
+    private async Task<(long DocumentId, StampValues Stamp)> SeedAsync(string codeValue = "Female")
     {
         var documentId = await InsertDocumentAsync();
         await InsertDescriptorAsync(documentId, codeValue);
 
-        var stamps = await ReadStampPairAsync(documentId);
-        return (documentId, stamps.Document.ContentVersion, stamps.Document.ContentLastModifiedAt);
+        return (documentId, await ReadDescriptorContentStampAsync(documentId));
     }
 
     private async Task<long> InsertDocumentAsync()
@@ -105,44 +108,51 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
 
     private async Task<StampValues> ReadDocumentStampAsync(long documentId)
     {
+        return await ReadStampAsync(
+            @"dms.""Document""",
+            "ContentVersion",
+            "ContentLastModifiedAt",
+            documentId
+        );
+    }
+
+    private async Task<StampValues> ReadDescriptorContentStampAsync(long documentId)
+    {
+        return await ReadStampAsync(
+            @"dms.""Descriptor""",
+            "ContentVersion",
+            "ContentLastModifiedAt",
+            documentId
+        );
+    }
+
+    private async Task<StampValues> ReadDescriptorIdentityStampAsync(long documentId)
+    {
+        return await ReadStampAsync(
+            @"dms.""Descriptor""",
+            "IdentityVersion",
+            "IdentityLastModifiedAt",
+            documentId
+        );
+    }
+
+    private async Task<StampValues> ReadStampAsync(
+        string table,
+        string versionColumn,
+        string lastModifiedColumn,
+        long documentId
+    )
+    {
         var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "ContentVersion", "ContentLastModifiedAt"
-            FROM dms."Document"
+            $"""
+            SELECT "{versionColumn}" AS "Version", "{lastModifiedColumn}" AS "LastModifiedAt"
+            FROM {table}
             WHERE "DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId)
         );
         var row = rows.Single();
-        return new(Convert.ToInt64(row["ContentVersion"]), Convert.ToDateTime(row["ContentLastModifiedAt"]));
-    }
-
-    private async Task<StampPair> ReadStampPairAsync(long documentId)
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT
-                doc."ContentVersion" AS "DocumentContentVersion",
-                doc."ContentLastModifiedAt" AS "DocumentContentLastModifiedAt",
-                descriptor."ContentVersion" AS "MirrorContentVersion",
-                descriptor."ContentLastModifiedAt" AS "MirrorContentLastModifiedAt"
-            FROM dms."Document" doc
-            INNER JOIN dms."Descriptor" descriptor ON descriptor."DocumentId" = doc."DocumentId"
-            WHERE doc."DocumentId" = @documentId;
-            """,
-            new NpgsqlParameter("documentId", documentId)
-        );
-        var row = rows.Single();
-        return new(
-            new(
-                Convert.ToInt64(row["DocumentContentVersion"]),
-                Convert.ToDateTime(row["DocumentContentLastModifiedAt"])
-            ),
-            new(
-                Convert.ToInt64(row["MirrorContentVersion"]),
-                Convert.ToDateTime(row["MirrorContentLastModifiedAt"])
-            )
-        );
+        return new(Convert.ToInt64(row["Version"]), Convert.ToDateTime(row["LastModifiedAt"]));
     }
 
     private async Task<long> ReadMaxChangeVersionAsync()
@@ -158,32 +168,42 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         await _database.ExecuteNonQueryAsync("SELECT pg_sleep(0.02);");
     }
 
-    private sealed record StampPair(StampValues Document, StampValues Mirror);
-
-    private sealed record StampValues(long ContentVersion, DateTime ContentLastModifiedAt);
+    private sealed record StampValues(long Version, DateTime LastModifiedAt);
 
     [Test]
-    public async Task It_copies_existing_document_stamp_on_descriptor_insert_without_allocating_version()
+    public async Task It_stamps_both_version_pairs_on_descriptor_insert()
     {
+        // A new descriptor row has no prior stamp to preserve, so the INSERT arm takes the identity
+        // stamp alongside the content stamp — two sequence values, both landing on the descriptor row.
         var documentId = await InsertDocumentAsync();
         var beforeDocument = await ReadDocumentStampAsync(documentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
 
         await InsertDescriptorAsync(documentId);
 
-        var after = await ReadStampPairAsync(documentId);
+        var contentStamp = await ReadDescriptorContentStampAsync(documentId);
+        var identityStamp = await ReadDescriptorIdentityStampAsync(documentId);
         var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        after.Document.Should().Be(beforeDocument);
-        after.Mirror.Should().Be(beforeDocument);
-        afterMaxChangeVersion.Should().Be(beforeMaxChangeVersion);
+
+        contentStamp.Version.Should().BeGreaterThan(beforeMaxChangeVersion);
+        identityStamp.Version.Should().BeGreaterThan(beforeMaxChangeVersion);
+        contentStamp.Version.Should().NotBe(identityStamp.Version);
+        (afterMaxChangeVersion - beforeMaxChangeVersion)
+            .Should()
+            .Be(2L, "a descriptor insert allocates one content stamp and one identity stamp");
+        (await ReadDocumentStampAsync(documentId))
+            .Should()
+            .Be(beforeDocument, "no trigger writes dms.Document any more");
     }
 
     [Test]
-    public async Task It_stamps_document_on_descriptor_delete()
+    public async Task It_does_not_stamp_on_descriptor_delete()
     {
+        // The descriptor row is the stamp store and it is the row going away, so the no-tombstone
+        // variant's DELETE arm has nothing left to write.
         var seed = await SeedAsync();
+        var beforeDocument = await ReadDocumentStampAsync(seed.DocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        await DelayForDistinctTimestampsAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -193,19 +213,16 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             new NpgsqlParameter("documentId", seed.DocumentId)
         );
 
-        var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        var afterDocument = await ReadDocumentStampAsync(seed.DocumentId);
-        afterDocument.ContentVersion.Should().BeGreaterThan(seed.ContentVersion);
-        afterDocument.ContentLastModifiedAt.Should().BeAfter(seed.ContentLastModifiedAt);
-        (afterMaxChangeVersion - beforeMaxChangeVersion)
-            .Should()
-            .Be(1L, "a descriptor delete must allocate exactly one content stamp");
+        (await ReadMaxChangeVersionAsync()).Should().Be(beforeMaxChangeVersion);
+        (await ReadDocumentStampAsync(seed.DocumentId)).Should().Be(beforeDocument);
     }
 
     [Test]
-    public async Task It_stamps_document_on_descriptor_value_change()
+    public async Task It_stamps_the_descriptor_row_on_descriptor_value_change()
     {
         var seed = await SeedAsync();
+        var beforeDocument = await ReadDocumentStampAsync(seed.DocumentId);
+        var beforeIdentity = await ReadDescriptorIdentityStampAsync(seed.DocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
         await DelayForDistinctTimestampsAsync();
 
@@ -219,17 +236,20 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         );
 
         var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        var after = await ReadStampPairAsync(seed.DocumentId);
-        after.Mirror.Should().Be(after.Document);
-        after.Document.ContentVersion.Should().BeGreaterThan(seed.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().BeAfter(seed.ContentLastModifiedAt);
+        var after = await ReadDescriptorContentStampAsync(seed.DocumentId);
+        after.Version.Should().BeGreaterThan(seed.Stamp.Version);
+        after.LastModifiedAt.Should().BeAfter(seed.Stamp.LastModifiedAt);
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(1L, "a single descriptor value change must allocate exactly one content stamp");
+        (await ReadDescriptorIdentityStampAsync(seed.DocumentId))
+            .Should()
+            .Be(beforeIdentity, "a content change must not bump the identity stamp");
+        (await ReadDocumentStampAsync(seed.DocumentId)).Should().Be(beforeDocument);
     }
 
     [Test]
-    public async Task It_does_not_stamp_document_on_descriptor_no_op_update()
+    public async Task It_does_not_stamp_on_descriptor_no_op_update()
     {
         var seed = await SeedAsync();
 
@@ -242,14 +262,11 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             new NpgsqlParameter("documentId", seed.DocumentId)
         );
 
-        var after = await ReadStampPairAsync(seed.DocumentId);
-        after.Document.ContentVersion.Should().Be(seed.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
-        after.Mirror.Should().Be(after.Document);
+        (await ReadDescriptorContentStampAsync(seed.DocumentId)).Should().Be(seed.Stamp);
     }
 
     [Test]
-    public async Task It_stamps_both_documents_on_multi_row_descriptor_update()
+    public async Task It_stamps_both_descriptor_rows_on_multi_row_descriptor_update()
     {
         var seedA = await SeedAsync(codeValue: "Female");
         var seedB = await SeedAsync(codeValue: "Male");
@@ -264,16 +281,14 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             new NpgsqlParameter("documentIdB", seedB.DocumentId)
         );
 
-        var afterA = await ReadStampPairAsync(seedA.DocumentId);
-        var afterB = await ReadStampPairAsync(seedB.DocumentId);
-        afterA.Mirror.Should().Be(afterA.Document);
-        afterB.Mirror.Should().Be(afterB.Document);
-        afterA.Document.ContentVersion.Should().BeGreaterThan(seedA.ContentVersion);
-        afterB.Document.ContentVersion.Should().BeGreaterThan(seedB.ContentVersion);
+        var afterA = await ReadDescriptorContentStampAsync(seedA.DocumentId);
+        var afterB = await ReadDescriptorContentStampAsync(seedB.DocumentId);
+        afterA.Version.Should().BeGreaterThan(seedA.Stamp.Version);
+        afterB.Version.Should().BeGreaterThan(seedB.Stamp.Version);
         afterA
-            .Document.ContentVersion.Should()
+            .Version.Should()
             .NotBe(
-                afterB.Document.ContentVersion,
+                afterB.Version,
                 "each row must pull a distinct nextval — a per-statement cache would collide"
             );
     }

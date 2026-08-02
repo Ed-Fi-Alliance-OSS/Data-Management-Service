@@ -1859,6 +1859,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "DocumentUuid",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -1868,6 +1870,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -1877,6 +1881,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
