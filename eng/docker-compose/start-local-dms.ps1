@@ -627,6 +627,20 @@ else {
         # poll before the phase commands need it. Default matches mssql.yml's compose default.
         $mssqlSaPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
         Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
+
+        if ($cmsParticipates) {
+            # Physical-identity check for the separate topology (the authority no-ops on a
+            # shared-mode file): the RUNNING SQL Server - the only authority on its own
+            # database-name semantics - decides whether the selected datastore is physically
+            # distinct from the dedicated Configuration Service database. Placed hard against
+            # readiness so a collision, or any inability to verify (it fails closed), stops
+            # the start after the database container exists but before OpenIddict, CMS, DMS,
+            # or any datastore work touches it.
+            Assert-MssqlPhysicalDatastoreDistinctness `
+                -EnvironmentFile $EnvironmentFile `
+                -ContainerName "dms-mssql" `
+                -SaPassword $mssqlSaPassword
+        }
     }
 
     # Engine-aware database parameters for the setup-openiddict.ps1 calls below. On both engines the
