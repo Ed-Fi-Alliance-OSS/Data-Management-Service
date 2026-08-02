@@ -2920,6 +2920,37 @@ function New-MssqlDistinctnessSqlcmdArgument {
     )
 }
 
+function Test-CmsSeparateTopologyDeclared {
+    <#
+    .SYNOPSIS
+        True when the effective environment file's own declarations carry the separate-topology
+        marker (DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true).
+
+    .DESCRIPTION
+        The wiring gate for the start scripts' server-backed physical-identity check: a
+        shared-mode run must not invoke the authority at all (the frozen zero-invocation
+        contract), and the marker in the EFFECTIVE file is the one signal that covers both ways
+        separate mode arrives - the -SeparateConfigDatabase switch (the topology resolver writes
+        the marker into the derived file it returns) and a marker-carrying continuation file
+        passed directly. Read raw from the file's own declarations, exactly as
+        Confirm-CmsDatabaseTopologyAgreement and the authority read it, so an unrelated ambient
+        variable can neither invoke nor suppress the check. The authority's identical internal
+        gate remains as defense in depth.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$EnvironmentFile
+    )
+
+    $sequential = Resolve-DotenvFileSequentially -Path $EnvironmentFile
+    $markerDeclaration = Get-DotenvLastDeclaration -Evaluation $sequential -Name "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
+    if ($null -eq $markerDeclaration) { return $false }
+    return [string]::Equals(
+        [string](ConvertFrom-ComposeEnvironmentValue -Value $markerDeclaration.RawValue),
+        "true",
+        [System.StringComparison]::Ordinal)
+}
+
 function Assert-MssqlPhysicalDatastoreDistinctness {
     <#
     .SYNOPSIS

@@ -611,14 +611,18 @@ else {
         $mssqlSaPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
         Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
 
-        if ($cmsParticipates) {
-            # Physical-identity check for the separate topology (the authority no-ops on a
-            # shared-mode file): the RUNNING SQL Server - the only authority on its own
-            # database-name semantics - decides whether the selected datastore is physically
-            # distinct from the dedicated Configuration Service database. Placed hard against
-            # readiness so a collision, or any inability to verify (it fails closed), stops
-            # the start after the database container exists but before OpenIddict, CMS, DMS,
-            # or the data-store registration below touches it. The registered candidate joins
+        if ($cmsParticipates -and (Test-CmsSeparateTopologyDeclared -EnvironmentFile $EnvironmentFile)) {
+            # Physical-identity check for the separate topology: the RUNNING SQL Server - the
+            # only authority on its own database-name semantics - decides whether the selected
+            # datastore is physically distinct from the dedicated Configuration Service
+            # database. Gated on the effective file's own topology marker, which covers both
+            # the explicit switch (the resolver writes the marker into the derived file) and a
+            # marker-carrying continuation file, so a shared-mode run never invokes the
+            # authority at all; its identical internal gate remains as defense in depth.
+            # Placed hard against readiness so a collision, or any inability to verify (it
+            # fails closed), stops the start after the database container exists but before
+            # OpenIddict, CMS, DMS, or the data-store registration below touches it. The
+            # registered candidate joins
             # only when that registration will actually run, and as the value a provider
             # RECEIVES - never the raw parameter text, which the connection-string transport
             # can differ from (a bare trailing line feed is removed by it).
