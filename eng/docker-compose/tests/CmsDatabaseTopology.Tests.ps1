@@ -1698,6 +1698,97 @@ Describe "reserved-CMS-database collision authorities (one per physical creation
     }
 }
 
+Describe "CMS-target agreement authority (ordinal-exact, pre-start)" {
+    # One conservative textual agreement rule for every CMS database-target comparison. It is NOT
+    # SQL Server physical-identity modeling: these checks run before any server exists to ask, and
+    # whether two DIFFERENT spellings denote one physical database is the running instance's
+    # collation's call (measured: a case variant folds on the default collation and is DISTINCT on
+    # a case-sensitive instance). Exact text - any Unicode text - is the safe sufficient condition.
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+    }
+
+    It "agrees on <Label>" -ForEach @(
+        @{ Label = 'identical ASCII text'; Actual = 'edfi_datamanagementservice'; Expected = 'edfi_datamanagementservice'; Agrees = $true }
+        @{ Label = 'identical non-ASCII text (U+00E9)'; Actual = "$([char]0xE9)dfi_datastore"; Expected = "$([char]0xE9)dfi_datastore"; Agrees = $true }
+        @{ Label = 'an ASCII case variant - refused'; Actual = 'EDFI_DATAMANAGEMENTSERVICE'; Expected = 'edfi_datamanagementservice'; Agrees = $false }
+        @{ Label = 'a non-ASCII case variant (U+00C9 vs U+00E9) - refused'; Actual = "$([char]0xC9)dfi_datastore"; Expected = "$([char]0xE9)dfi_datastore"; Agrees = $false }
+        @{ Label = 'a blank actual - never an agreement'; Actual = ''; Expected = 'edfi_datamanagementservice'; Agrees = $false }
+    ) {
+        Test-CmsTargetNameAgreement -ActualName $Actual -ExpectedName $Expected | Should -Be $Agrees
+    }
+
+    It "Assert-MssqlCmsDatabaseIsShared refuses the case split and names the exact-spelling requirement" {
+        $thrown = {
+            Assert-MssqlCmsDatabaseIsShared `
+                -ResolvedConnectionString 'Server=dms-mssql,1433;Database=EDFI_DATAMANAGEMENTSERVICE;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;' `
+                -ExpectedDatabaseName 'edfi_datamanagementservice'
+        } | Should -Throw "*shared-database configuration mismatch*" -PassThru
+        $thrown.Exception.Message | Should -BeLike "*exact configured spelling*" -Because "the diagnostic must say WHY a case variant cannot be accepted before the server exists"
+        $thrown.Exception.Message | Should -Not -BeLike "*Password*abcdefgh1*" -Because "the message never echoes credentials or the full connection string"
+    }
+
+    It "Assert-MssqlCmsDatabaseIsShared accepts identical non-ASCII text" {
+        $unicodeName = "$([char]0xE9)dfi_datastore"
+        {
+            Assert-MssqlCmsDatabaseIsShared `
+                -ResolvedConnectionString "Server=dms-mssql,1433;Database=$unicodeName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;" `
+                -ExpectedDatabaseName $unicodeName
+        } | Should -Not -Throw
+    }
+
+    It "routes every CMS-target agreement site through the one predicate - and no case-insensitive comparison remains at those sites" {
+        # The adopter sweep: exactly four production calls, one per required agreement site. A
+        # fifth call is a new adopter to review; a missing one is a site that grew its own rule
+        # back. The OrdinalIgnoreCase census then proves none of the owning functions kept a
+        # direct case-insensitive comparison - except Confirm's accepted-HOST check, which is
+        # deliberately case-insensitive and pinned to the host property here.
+        $modulePath = Join-Path $script:dockerComposeRoot "env-utility.psm1"
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($modulePath, [ref]$null, [ref]$null)
+
+        $adopterCalls = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.CommandAst] -and
+            $node.GetCommandName() -eq 'Test-CmsTargetNameAgreement'
+        }, $true))
+        $enclosingNames = @($adopterCalls | ForEach-Object {
+            $ancestor = $_.Parent
+            while ($null -ne $ancestor -and $ancestor -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { $ancestor = $ancestor.Parent }
+            if ($ancestor) { $ancestor.Name } else { '(none)' }
+        } | Sort-Object)
+        $enclosingNames | Should -Be @(
+            'Assert-MssqlCmsDatabaseIsShared',
+            'Confirm-CmsDatabaseTopologyAgreement',
+            'Confirm-CmsDatabaseTopologyAgreement',
+            'Resolve-DatabaseEngineEnvironmentFile'
+        ) -Because "the shared invariant, both Confirm comparisons (segments and ambient), and the continuation gate are the four required adopters"
+
+        foreach ($ownerName in @('Test-CmsTargetNameAgreement', 'Assert-MssqlCmsDatabaseIsShared', 'Resolve-DatabaseEngineEnvironmentFile', 'Confirm-CmsDatabaseTopologyAgreement')) {
+            $owner = $ast.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $ownerName
+            }, $true) | Select-Object -First 1
+            $owner | Should -Not -BeNullOrEmpty
+
+            $ignoreCaseUses = @($owner.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.MemberExpressionAst] -and
+                $node.Static -and $node.Member.Extent.Text -eq 'OrdinalIgnoreCase'
+            }, $true))
+            if ($ownerName -eq 'Confirm-CmsDatabaseTopologyAgreement') {
+                $ignoreCaseUses.Count | Should -Be 1 -Because "Confirm keeps exactly its deliberately case-insensitive accepted-HOST comparison"
+                $hostStatement = $ignoreCaseUses[0].Parent
+                while ($null -ne $hostStatement -and $hostStatement -isnot [System.Management.Automation.Language.StatementAst]) { $hostStatement = $hostStatement.Parent }
+                $hostStatement.Extent.Text | Should -BeLike "*.Host*" -Because "the surviving case-insensitive comparison must be the endpoint-host check, never a database name"
+            }
+            else {
+                $ignoreCaseUses.Count | Should -Be 0 -Because "$ownerName must not keep a direct case-insensitive comparison beside the exact-agreement predicate"
+            }
+        }
+    }
+}
+
 Describe "the registered datastore database name survives the transport that carries it" {
     # The registered name does not reach the server as text. Add-DataStore serializes it into a
     # connection string and SchemaTools PARSES that string back before quoting the identifier, so the
@@ -2423,12 +2514,107 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
     }
 
     Context "MSSQL-specific comparison rules" {
-        It "accepts a case-different database name (MSSQL is ordinal-case-insensitive)" {
+        It "rejects a case-different database name: pre-start agreement is exact, because physical equivalence is the instance's call" {
+            # The P1 this pins: the previous case-insensitive comparison accepted this shape, but on
+            # a CASE-SENSITIVE SQL Server (measured on the pinned image with
+            # MSSQL_COLLATION=SQL_Latin1_General_CP1_CS_AS) 'edfi_datamanagementservice' and
+            # 'EDFI_DATAMANAGEMENTSERVICE' are DISTINCT physical databases - accepting the split
+            # quietly points CMS at a different database than the datastore the shared topology
+            # promises it shares. No server exists to consult at this boundary, so only the exact
+            # spelling is a safe claim of agreement.
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value (@(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
                 'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=EDFI_DATAMANAGEMENTSERVICE;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
+                Should -Throw "*exact spelling*"
+        }
+
+        It "rejects an uppercase reserved target in separate mode: only the exact reserved literal agrees" {
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'MSSQL_DB_NAME=edfi_datamanagementservice',
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=EDFI_CONFIGURATIONSERVICE;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
+                Should -Throw "*exact spelling*"
+        }
+
+        It "rejects an ambient DMS_CONFIG_DATABASE_NAME case variant" {
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'MSSQL_DB_NAME=edfi_datamanagementservice',
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            ) -join "`n") -NoNewline
+
+            [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME", "EDFI_CONFIGURATIONSERVICE")
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
+                Should -Throw "*exact spelling*"
+        }
+
+        It "rejects a dual-segment connection string whose second synonym is a case variant" {
+            # Both Database and Initial Catalog segments must EACH agree exactly - a case-variant
+            # synonym would hand the provider a segment whose physical meaning only the running
+            # instance's collation can decide.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'MSSQL_DB_NAME=edfi_datamanagementservice',
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;Initial Catalog=EDFI_CONFIGURATIONSERVICE;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
+                Should -Throw "*exact spelling*"
+        }
+
+        It "accepts an exact non-ASCII database name when expected and actual text are identical" {
+            # The Unicode-preservation control: exact text denotes the same database under EVERY
+            # collation, so the exact-agreement rule must not regress valid Unicode names. The
+            # name is built from code points to keep this file ASCII-only.
+            $unicodeName = "$([char]0xE9)dfi_datastore"
+            $path = Join-Path $script:work ".env"
+            [System.IO.File]::WriteAllText($path, (@(
+                "MSSQL_DB_NAME=$unicodeName",
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                "DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$unicodeName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
+            ) -join "`n"), [System.Text.UTF8Encoding]::new($false))
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Not -Throw
+        }
+
+        It "rejects a mismatched non-ASCII database name" {
+            # The counterpart: a case variant of the accented letter is a DIFFERENT spelling, and
+            # different spellings are the running instance's call, not this boundary's.
+            $expectedName = "$([char]0xE9)dfi_datastore"
+            $actualName = "$([char]0xC9)dfi_datastore"
+            $path = Join-Path $script:work ".env"
+            [System.IO.File]::WriteAllText($path, (@(
+                "MSSQL_DB_NAME=$expectedName",
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                "DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$actualName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
+            ) -join "`n"), [System.Text.UTF8Encoding]::new($false))
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
+                Should -Throw "*exact spelling*"
+        }
+
+        It "still accepts a case-variant HOST, which stays deliberately case-insensitive" {
+            # The agreement rule governs database names only: hostnames are case-insensitive by
+            # nature and the accepted-host comparison keeps its existing semantics.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'MSSQL_DB_NAME=edfi_datamanagementservice',
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=DMS-MSSQL,1433;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Not -Throw

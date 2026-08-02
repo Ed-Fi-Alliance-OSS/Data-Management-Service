@@ -788,9 +788,13 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;$databaseKey=edfi_co
         }
     }
 
-    It "treats a case-variant of the reserved dedicated CMS database name as the same declaration" {
-        # SQL Server database names are case-insensitive, so a case-variant names the same physical
-        # database and must be recognized as the same separate-topology declaration.
+    It "does not treat a case-variant of the reserved dedicated CMS database name as an exact declaration" {
+        # The P1 flip: whether a case-variant even IS the reserved database depends on the running
+        # instance's collation (measured: distinct on a case-sensitive server), and this gate runs
+        # before any server exists to ask - so only the EXACT reserved literal is an unambiguous
+        # separate-topology declaration. A case-variant falls through to the shared-database
+        # invariant, which fails loudly with exact-spelling guidance instead of silently skipping
+        # the check for a name it cannot vouch for.
         $path = Join-Path $script:work ".env.reserved-case"
         Set-Content -LiteralPath $path -Value @"
 DMS_DATASTORE=mssql
@@ -805,7 +809,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=EDFI_Config
                 -DatabaseEngine "mssql" `
                 -BaseEnvironmentFile $path `
                 -DockerComposeRoot $script:composeRoot
-        } | Should -Not -Throw
+        } | Should -Throw "*shared-database configuration mismatch*exact configured spelling*"
     }
 
     It "still applies the shared-database invariant when neither separate-topology signal is present" {
