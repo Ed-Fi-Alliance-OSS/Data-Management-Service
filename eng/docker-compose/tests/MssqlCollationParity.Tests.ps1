@@ -1,13 +1,16 @@
-# Live parity suite for the MSSQL fail-closed reserved-name contract.
+# Live measured-evidence record for the pinned default collation (SQL_Latin1_General_CP1_CI_AS).
 #
-# WHAT THIS PROVES, against a real SQL Server: (1) every name the shared authority ADMITS is
-# genuinely a different database than the reserved 'edfi_configurationservice' under the live
-# collation - the invariant that makes a false negative impossible to reintroduce silently; (2)
-# every refusal the authority classifies as a measured collision really is the same database; and
-# (3) the three exhaustive scans the printable-ASCII admitted universe stands on still hold (the
-# only equal pairs are the 26 case pairs, no member is ignorable or folds onto a space, nothing
-# expands to or from a digraph). A future reviewer example becomes one added candidate row here;
-# the invariant does the arguing.
+# WHAT THIS PROVES, against a real SQL Server: the equivalence-class reality that motivated the
+# server-backed MSSQL physical-identity design still holds on the pinned fixture - (1) every
+# candidate row's measured verdict (same physical database as the reserved
+# 'edfi_configurationservice', or distinct from it) is still what the live collation answers, so
+# the design record cannot silently drift from the server it describes; and (2) the exhaustive
+# printable-ASCII scans that measured the class's shape still hold (the only equal pairs are the
+# 26 case pairs, no member is ignorable or folds onto a space, nothing expands to or from a
+# digraph). These are claims about the PINNED collation only. No offline predicate consumes this
+# table: production renders no offline MSSQL name verdict at all - the running instance, queried
+# by the stage-2 authority, is the sole authority - and no test here or anywhere asserts that any
+# name must be refused for MSSQL without asking the server.
 #
 # OPT-IN AND READ-ONLY BY CONSTRUCTION. The live probes run only when
 # DMS_MSSQL_COLLATION_FIXTURE_CONTAINER names a running SQL Server container (the sqlcmd inside
@@ -88,7 +91,7 @@ Describe "MSSQL collation parity: the emitted-SQL contract (no server required)"
     }
 }
 
-Describe "MSSQL collation parity: the fail-closed contract against a live server" -Skip:(-not $script:parityEnabled) {
+Describe "MSSQL collation parity: the measured-evidence record against a live server" -Skip:(-not $script:parityEnabled) {
     BeforeAll {
         # Re-read at RUN time: Pester's discovery phase (where BeforeDiscovery set the -Skip gate)
         # and its run phase do not share script variables, so the container name must be resolved
@@ -103,8 +106,8 @@ Describe "MSSQL collation parity: the fail-closed contract against a live server
             if ([string]::IsNullOrWhiteSpace($env:DMS_MSSQL_COLLATION_FIXTURE_SA_PASSWORD)) { 'EdFi_Dms1!' }
             else { $env:DMS_MSSQL_COLLATION_FIXTURE_SA_PASSWORD }
 
-        # One SQL Server expression per candidate, generated from the SAME string the predicate
-        # judges: each UTF-16 code unit becomes NCHAR(0xNNNN), so no encoding layer can diverge.
+        # One SQL Server expression per candidate, generated from the SAME string the candidate
+        # table holds: each UTF-16 code unit becomes NCHAR(0xNNNN), so no encoding layer can diverge.
         function Script:ConvertTo-NcharExpression([string]$Value) {
             @($Value.ToCharArray() | ForEach-Object { 'NCHAR(0x{0:X4})' -f [int]$_ }) -join ' + '
         }
@@ -174,21 +177,19 @@ Describe "MSSQL collation parity: the fail-closed contract against a live server
             'ascii-suffixed'       = 'edfi_configurationservice_v2'
         }
 
-        # The predicate's verdict and its classification. A refusal is "measured-rule" (step 3)
-        # exactly when the name is inside the printable-ASCII universe; every other refusal is the
-        # conservative kind, whose live verdict the contract deliberately leaves unconstrained.
-        $script:verdicts = @{}
-        foreach ($label in $script:candidates.Keys) {
-            $name = $script:candidates[$label]
-            $refused = Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase -DatabaseName $name
-            $insideUniverse = $name -match '\A[\x20-\x7E]*\z'
-            $script:verdicts[$label] = [pscustomobject]@{
-                Name           = $name
-                Refused        = $refused
-                MeasuredRule   = ($refused -and $insideUniverse)
-                Admitted       = (-not $refused)
-            }
-        }
+        # The MEASURED equivalence class on the pinned default collation - the evidence record that
+        # motivated the server-backed authority. Every label listed here was measured on the pinned
+        # image with three agreeing probes (explicit COLLATE equality, DB_ID resolution, CREATE
+        # DATABASE duplicate/file behavior) as the SAME physical database as the reserved name;
+        # every candidate NOT listed was measured DISTINCT there. No offline predicate consumes
+        # this table - production renders no offline MSSQL verdict - so its only job is to fail
+        # loudly if the fixture, the image, or the collation drifts from the recorded measurements.
+        $script:measuredEqualLabels = @(
+            'exact', 'case-upper', 'case-mixed', 'trail-space', 'trail-two-spaces', 'trail-ideo',
+            'fw-first-e', 'fw-first-E-caps', 'fw-all', 'fw-underscore-only', 'fw-trail-space',
+            'fw-trail-ideo', 'fw-case-mix-space', 'compat-fi-ligature', 'zw-zwj-embedded',
+            'zw-word-joiner-emb', 'zw-zwnbsp-emb', 'emoji-trail'
+        )
 
         # One read-only round trip for everything: collation, per-candidate COLLATE equality,
         # reserved-database presence, per-candidate DB_ID resolution, and the three universe scans.
@@ -236,21 +237,19 @@ Describe "MSSQL collation parity: the fail-closed contract against a live server
         $script:liveCollation | Should -BeExactly $script:pinnedCollation -Because "the fixture collation drifted; every parity claim below is scoped to $($script:pinnedCollation)"
     }
 
-    It "admits no candidate the live server folds onto the reserved name - the no-false-negative invariant" {
-        foreach ($label in $script:candidates.Keys) {
-            $verdict = $script:verdicts[$label]
-            if ($verdict.Admitted) {
-                $script:liveEqual[$label] | Should -BeFalse -Because "'$label' is admitted by the authority, so the live server must see a distinct name - a failure here is a physical-separation hole"
-            }
+    It "keeps the measured-equal table aligned with the candidate table" {
+        foreach ($label in $script:measuredEqualLabels) {
+            $script:candidates.Contains($label) | Should -BeTrue -Because "'$label' claims a measurement for a candidate row that no longer exists"
         }
     }
 
-    It "refuses as a MEASURED collision only names the live server really folds onto the reserved one" {
+    It "matches the measured equivalence class on the pinned collation, in both directions" {
+        # The whole evidence record in one drift detector: an 'equal' row going distinct or a
+        # 'distinct' row going equal both mean the live fixture no longer matches the measurements
+        # this design was reviewed against - the pinned image, the collation, or the fixture drifted.
         foreach ($label in $script:candidates.Keys) {
-            $verdict = $script:verdicts[$label]
-            if ($verdict.MeasuredRule) {
-                $script:liveEqual[$label] | Should -BeTrue -Because "'$label' is refused by the inside-universe measured rule, which claims live equality; conservative refusals make no such claim and are not asserted here"
-            }
+            $expectedEqual = $label -in $script:measuredEqualLabels
+            $script:liveEqual[$label] | Should -Be $expectedEqual -Because "'$label' was measured $(if ($expectedEqual) { 'EQUAL to' } else { 'DISTINCT from' }) the reserved name on the pinned collation, and the record must match the server it describes"
         }
     }
 
@@ -279,12 +278,11 @@ Describe "MSSQL collation parity: the fail-closed contract against a live server
             return
         }
         foreach ($label in $script:candidates.Keys) {
-            $verdict = $script:verdicts[$label]
-            if ($verdict.Admitted) {
-                $script:liveDbId[$label] | Should -Not -Be 'reserved' -Because "'$label' is admitted, so DB_ID must not resolve it to the reserved database"
+            if ($label -in $script:measuredEqualLabels) {
+                $script:liveDbId[$label] | Should -Be 'reserved' -Because "'$label' was measured as the reserved database, so DB_ID must resolve it there"
             }
-            elseif ($verdict.MeasuredRule) {
-                $script:liveDbId[$label] | Should -Be 'reserved' -Because "'$label' is refused as a measured collision, so DB_ID must resolve it to the reserved database"
+            else {
+                $script:liveDbId[$label] | Should -Not -Be 'reserved' -Because "'$label' was measured distinct, so DB_ID must not resolve it to the reserved database"
             }
         }
     }

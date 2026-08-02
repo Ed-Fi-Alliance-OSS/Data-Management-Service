@@ -11,6 +11,14 @@
 # Every non-ASCII candidate is built from [char] code points so this file stays ASCII-only.
 
 BeforeAll {
+    # Module-table hermeticity, same discipline as the ambient environment variables below: the
+    # boundary Describe's mocks bind with -ModuleName env-utility, and Pester REFUSES to bind
+    # when more than one same-named module is loaded ("Multiple script or manifest modules named
+    # 'env-utility' are currently loaded"). Earlier suites in the single-call CI lane stage
+    # per-test copies of env-utility.psm1 and leave their module-table instances behind after
+    # deleting the staged files (measured: 127 stale instances by this point in the lane), so
+    # this suite removes every instance it can and re-imports the one real module it is about.
+    Get-Module env-utility -All | Remove-Module -Force -ErrorAction SilentlyContinue
     Import-Module "$PSScriptRoot/../env-utility.psm1" -Force
 
     $script:reservedName = "edfi_configurationservice"
