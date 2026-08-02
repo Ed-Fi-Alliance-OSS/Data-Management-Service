@@ -10,34 +10,6 @@ namespace EdFi.DataManagementService.Backend;
 
 internal static class RelationalWriteSupport
 {
-    public static TriggerKindParameters.ReferentialIdentityMaintenance GetReferentialIdentityParametersOrThrow(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        DbTableName rootTable
-    )
-    {
-        ArgumentNullException.ThrowIfNull(mappingSet);
-
-        var referentialIdentityTrigger = mappingSet.Model.TriggersInCreateOrder.SingleOrDefault(trigger =>
-            trigger.Table.Equals(rootTable)
-            && trigger.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance parameters
-            && string.Equals(parameters.ProjectName, resource.ProjectName, StringComparison.Ordinal)
-            && string.Equals(parameters.ResourceName, resource.ResourceName, StringComparison.Ordinal)
-        );
-
-        if (
-            referentialIdentityTrigger?.Parameters
-            is TriggerKindParameters.ReferentialIdentityMaintenance referentialIdentityParameters
-        )
-        {
-            return referentialIdentityParameters;
-        }
-
-        throw new InvalidOperationException(
-            BuildMissingReferentialIdentityTriggerMetadataMessage(mappingSet.Key, resource)
-        );
-    }
-
     /// <summary>
     /// Resolves the compiled own-identity (<c>UX_&lt;R&gt;_NK</c>) probe for a relational-table resource.
     /// This is the 409 identity-conflict machinery's metadata source; it deliberately does NOT read the
@@ -122,13 +94,6 @@ internal static class RelationalWriteSupport
 
     public static string BuildImmutableIdentityFailureMessage(QualifiedResourceName resource) =>
         $"Identifying values for the {resource.ResourceName} resource cannot be changed. Delete and recreate the resource item instead.";
-
-    public static string BuildMissingReferentialIdentityTriggerMetadataMessage(
-        MappingSetKey mappingSetKey,
-        QualifiedResourceName resource
-    ) =>
-        $"Mapping set '{FormatMappingSetKey(mappingSetKey)}' "
-        + $"is missing referential-identity trigger metadata for resource '{FormatResource(resource)}'.";
 
     public static string BuildMissingNaturalKeyProbeMetadataMessage(
         MappingSetKey mappingSetKey,

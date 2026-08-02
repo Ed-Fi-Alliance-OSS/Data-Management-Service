@@ -374,12 +374,15 @@ computation.
 | Descriptor POST: same question | `UX_Descriptor_UriLowered_Discriminator` | `dms.Descriptor` |
 | PUT: which row is this uuid? | `UX_<Root>_DocumentUuid` / `UX_Descriptor_DocumentUuid` | root table / `dms.Descriptor` |
 
-- The column lists are **compiled**, not discovered at runtime, and are derived by the same sequence
-  that derives the constraints themselves — so a probe binds exactly the constraint's columns, in the
-  constraint's order, resolved to canonical storage columns (binding a unified-alias column would be
-  semantically correct but could not seek the index)
+- The column lists are **compiled**, not discovered at runtime. The probe compiler and the constraint
+  passes are *parallel* derivations from the same `identityJsonPaths` ordering — not one calling the
+  other — so a probe binds the constraint's columns, in the constraint's order, resolved to canonical
+  storage columns (binding a unified-alias column would be semantically correct but could not seek the
+  index). That the two agree is enforced by **parity tests**, not by construction, so if a probe ever
+  stops seeking, suspect a divergence between the two derivations first
   ([`NaturalKeyProbeCompiler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/NaturalKeyProbeCompiler.cs),
-  [`NaturalKeyProbeContracts.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.External/NaturalKeyProbeContracts.cs)).
+  [`NaturalKeyProbeContracts.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.External/NaturalKeyProbeContracts.cs),
+  and the `Given_NaturalKeyProbes_Over_Authoritative_MappingSets` RefKey-parity fixture).
 - **Reference resolution** batches every reference in a request into one command per round trip: one
   statement, and therefore one result set, per target resource, in group order. Each matched row is
   attributed back to its request reference by its one-based `Ordinal` *within its group* — never by row
@@ -469,11 +472,19 @@ almost always why.
 
 - **Descriptor URIs** are matched through `dms.Descriptor.UriLowered`, an engine-computed, persisted
   lower-cased projection of `Uri` (`lower("Uri")` / `LOWER([Uri])`). Nothing writes it, so it stays out
-  of every `INSERT` column list and out of the stamping trigger. Core already hands the backend a
-  lower-cased URI, so the probe binds the persisted column rather than wrapping the predicate in
-  `lower(…)`, which would be non-sargable on PostgreSQL
+  of every `INSERT` column list and out of the stamping trigger. The probe binds that persisted column
+  rather than wrapping the predicate in `lower(…)`, which would be non-sargable on PostgreSQL
   ([`CoreDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs),
   `RenderDescriptorUriLoweredColumn`).
+
+  The bound *value* is lower-cased by **three** suppliers, and knowing which one applies to the request
+  you are debugging matters: Core lower-cases descriptor **references** before the backend sees them
+  (`DescriptorExtractor.CreateDescriptorReference`); the backend lower-cases again for descriptor
+  **writes** (`DescriptorWriteHandler.DescriptorProbeUri`) and for descriptor **query filters** and
+  reference lookups (`RelationalQueryRequestPreprocessor` and `NaturalKeyReferenceResolver`). The last
+  two overlap deliberately for now — the Phase-4 cleanup that removes the referential-id machinery has
+  to keep exactly one of them, and dropping both would silently break case-insensitive descriptor
+  matching.
 - `UX_Descriptor_UriLowered_Discriminator` is a **genuinely new uniqueness rule on PostgreSQL**:
   case-variant spellings of one descriptor URI can no longer coexist. That is not a new *semantic* — the
   UUIDv5 it replaces was computed over the lower-cased URI, so those spellings always collapsed to a
@@ -483,13 +494,24 @@ almost always why.
 - **On SQL Server, string identity comparison is case-insensitive, on both lookups.** The generated DDL
   pins no collation on identity columns, so they inherit the database default — case-insensitive on a
   stock SQL Server install, whereas PostgreSQL's default (deterministic) collations compare text
-  byte-for-byte. For *reference resolution* that means a case-differing string identity value resolves
-  a reference PostgreSQL treats as a miss. For *upsert detection* it means a case-variant natural key
-  resolves to the existing row and the POST becomes a POST-as-update, where the hash probe produced
-  "create new" and the request then lost to the unique constraint as a **409**. Both follow from the
-  same fact: `UX_<R>_NK` under a
-  case-insensitive collation already treats case variants as one identity, so the row that would have
-  made the old 409 correct could never have coexisted in the first place.
+  byte-for-byte.
+  - For **reference resolution**, a case-differing string identity value resolves a reference that
+    PostgreSQL treats as a miss (`MssqlReferenceResolverDifferentialTests`,
+    `It_deliberately_diverges_from_the_hash_resolver_for_a_case_variant_string_identity`).
+  - For **upsert detection**, a POST whose string natural key differs from a stored row only by case
+    now seeks `UX_<R>_NK`, matches, and resolves to an **existing** document. The write then merges the
+    request's casing over the stored row, and the immutable-identity guard — which compares merged
+    against current **ordinally** — refuses it. The net effect on SQL Server is **409 → 400**: the old
+    flow resolved to no target, inserted, and lost to `UX_<R>_NK` as an identity conflict; the new flow
+    refuses up front as an immutable-identity violation. Both refuse the write, neither mutates stored
+    state, and the new outcome is what PUT already returned for a case-variant identity edit — so POST
+    and PUT are now consistent on this dialect. PostgreSQL still creates a second document
+    (`RelationalWriteIdentityStability.cs`; pinned by
+    `Given_A_Mssql_Relational_Post_With_A_Case_Variant_String_Natural_Key` and its PostgreSQL twin).
+
+  Both follow from the same fact: `UX_<R>_NK` under a case-insensitive collation already treats case
+  variants as one identity, so the row that would have made the old 409 *mean* something could never
+  have coexisted in the first place.
 - **Stored descriptor casing is immutable through POST.** A POST-as-update writes every descriptive
   field from the request but takes `Namespace`, `CodeValue` and `Uri` from the **persisted** row, which
   preserves the pre-existing guarantee (a case-variant POST used to resolve to no target, insert, and
@@ -531,17 +553,22 @@ At this point both tables are **write-only**:
   and descriptors ([`DescriptorWriteHandler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs)) —
   still `DELETE`d alongside the row it identifies
   ([`OrderedDeleteCommandBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/OrderedDeleteCommandBuilder.cs)),
-  and still `UPDATE`d by the generated stamping triggers. **No production code path reads it.** The
-  `SELECT`s and joins against it that remain in the source sit behind methods with no production
-  callers, kept until Phase 4 deletes them with the table.
+  and still `UPDATE`d by the generated stamping triggers. **No production code path reads it.** Two
+  kinds of reader remain in the source: methods with no callers at all (the PUT/DELETE uuid lookups,
+  the referential-id POST probe), and the UUIDv5 hash resolver's
+  `dms.ReferentialIdentity` ⋈ `dms.Document` join — which *does* have callers, but is unreachable in
+  production because the composition root registers the natural-key resolver into the
+  `IReferenceResolver` slot and only the differential and corruption-canary suites construct the old one
+  ([`WebApplicationBuilderExtensions.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs)).
+  Both kinds go in Phase 4 with the table.
 - `dms.ReferentialIdentity` is still maintained by the generated `TR_<Root>_ReferentialIdentity`
   triggers on non-descriptor **root** tables (`AFTER INSERT OR UPDATE`; deletes are handled by
   `FK_ReferentialIdentity_Document`'s `ON DELETE CASCADE`). **Descriptor rows in it are no longer
   maintained at all** — the descriptor write path dropped its `ReferentialIdentity` statements, and no
   descriptor trigger ever wrote them, so existing descriptor rows are only ever *removed*, by that
-  cascade. **No production code path reads it**: the UUIDv5 hash resolver that does is still registered
-  for the differential and corruption-canary test suites, but the natural-key resolver takes the
-  `IReferenceResolver` slot in the composition root.
+  cascade. **No production code path reads it**, for the DI reason just given: the hash resolver that
+  reads it is still *registrable*, and the differential and corruption-canary suites still register it,
+  but nothing in the composition root resolves to it.
 
 That means a stale or missing `dms.Document` / `dms.ReferentialIdentity` row can no longer explain a
 wrong *served* value or a failed lookup — if one of those tables looks wrong, look for what wrote it,

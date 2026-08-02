@@ -473,8 +473,9 @@ public class Given_NaturalKeyProbes_Over_Authoritative_MappingSets
             .ToArray();
 
     /// <summary>
-    /// Resolves a resource's <c>ReferentialIdentityMaintenance</c> trigger parameter block exactly the way
-    /// <c>RelationalWriteSupport.GetReferentialIdentityParametersOrThrow</c> does.
+    /// Resolves a resource's <c>ReferentialIdentityMaintenance</c> trigger parameter block the way the
+    /// production write path used to before natural-key probes replaced it. This guard is the only reader
+    /// left, and it dies with the trigger in Phase 4.
     /// </summary>
     private static TriggerKindParameters.ReferentialIdentityMaintenance LegacyReferentialIdentityParameters(
         MappingSet mappingSet,

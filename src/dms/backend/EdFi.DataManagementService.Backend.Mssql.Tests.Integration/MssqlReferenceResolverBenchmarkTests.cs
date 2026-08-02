@@ -25,8 +25,9 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// </summary>
 /// <remarks>
 /// The bulk batch is 2500 references rather than PostgreSQL's 4096: that is the size the differential venue
-/// already proves end to end here, and it is the size at which the old hash resolver escapes to its
-/// table-valued parameter, so both arms are measured at their set-valued shape. The natural-key arm binds a
+/// already proves end to end here, and it is above the 2000-id threshold at which the old hash resolver
+/// escapes to its table-valued parameter, so both arms are measured at their set-valued shape. The
+/// natural-key arm binds a
 /// single <c>nvarchar(max)</c> <c>OPENJSON</c> payload per target group whatever the batch size, so what
 /// this batch actually measures on that arm is payload size, not parameter count. The count is recorded in
 /// every CSV row.

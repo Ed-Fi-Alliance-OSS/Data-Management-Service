@@ -35,11 +35,17 @@ internal static class OrderedDeleteCommandBuilder
     /// mirror as the residual scoping predicate, so no <c>dms.Document</c> read is involved.
     /// </summary>
     /// <remarks>
-    /// The descriptor delete must precede the document delete: the descriptor stamping trigger's DELETE
-    /// branch stamps the owning <c>dms.Document</c> row with <c>RETURNING … INTO STRICT</c>, which raises
-    /// if that row is already gone. The trailing document delete stays in Phase 3 — it removes the
-    /// document row (cascading the referential-identity rows away) and its
-    /// <c>RETURNING</c>/<c>OUTPUT DELETED</c> is the affected-rows signal the delete executor reads.
+    /// Descriptor-row-first is a convention, not a requirement. It was load bearing while the descriptor
+    /// stamping trigger's DELETE branch stamped the owning <c>dms.Document</c> row with
+    /// <c>RETURNING … INTO STRICT</c> — that raised if the document row was already gone — but that branch
+    /// now takes its tombstone change version straight from the change-version sequence and reads
+    /// <c>dms.Document</c> zero times, so neither statement depends on the other's position any more.
+    /// <para>
+    /// The trailing document delete stays in Phase 3 for two reasons that survive: it removes the document
+    /// row (cascading the referential-identity rows away through
+    /// <c>FK_ReferentialIdentity_Document</c>), and its <c>RETURNING</c>/<c>OUTPUT DELETED</c> is the
+    /// affected-rows signal the delete executor reads.
+    /// </para>
     /// </remarks>
     public static RelationalCommand BuildDescriptorDeleteCommand(
         SqlDialect dialect,
