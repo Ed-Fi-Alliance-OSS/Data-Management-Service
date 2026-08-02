@@ -264,6 +264,45 @@ Describe "ConvertFrom-MssqlPhysicalDistinctnessQueryOutput strict parsing (mutan
                 Should -Be "unexpected-output" -Because "variant: $($case.Substring(0, [math]::Min(60, $case.Length)))"
         }
     }
+
+    It "removes at most one terminal CR per line: CRLF output is accepted, a CR CR LF token line is refused" {
+        $happy = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "MSSQL_DB_NAME" = "distinct" })
+
+        # Control: ordinary CRLF-terminated output must keep parsing ok.
+        $crlfOutput = $happy.Replace("`n", "`r`n")
+        (ConvertFrom-MssqlPhysicalDistinctnessQueryOutput -OutputText $crlfOutput -ExpectedSourceKey @("MSSQL_DB_NAME")).Category |
+            Should -Be "ok"
+
+        # A token line really ending CR CR LF carries a CR in its CONTENT. TrimEnd erased the
+        # whole run and accepted it (review-measured); at-most-one removal keeps the extra CR
+        # and refuses the line.
+        $doubleCrContext = $happy.Replace("collationAgreement=agree`n", "collationAgreement=agree`r`r`n")
+        (ConvertFrom-MssqlPhysicalDistinctnessQueryOutput -OutputText $doubleCrContext -ExpectedSourceKey @("MSSQL_DB_NAME")).Category |
+            Should -Be "unexpected-output"
+        $doubleCrCandidate = $happy.Replace("dbid=agree`n", "dbid=agree`r`r`n")
+        (ConvertFrom-MssqlPhysicalDistinctnessQueryOutput -OutputText $doubleCrCandidate -ExpectedSourceKey @("MSSQL_DB_NAME")).Category |
+            Should -Be "unexpected-output"
+    }
+
+    It "uses ordinal StartsWith overloads throughout the parser (structural - downstream exact checks shield behavior)" {
+        # Culture-sensitive StartsWith can match across ignorable characters, but every
+        # downstream check is an ordinal exact comparison on a length-based substring, so a
+        # culture-matched mangled line still classifies as unexpected-output - the mutant is
+        # behaviorally shielded, and this pin is its only killer, reported honestly.
+        $tokens = $null
+        $parseErrors = $null
+        $moduleAst = [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "$PSScriptRoot/../env-utility.psm1").Path, [ref]$tokens, [ref]$parseErrors)
+        $parserAst = $moduleAst.Find({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq "ConvertFrom-MssqlPhysicalDistinctnessQueryOutput"
+            }, $true)
+        $parserAst | Should -Not -BeNullOrEmpty
+        $bareStartsWith = @([regex]::Matches($parserAst.Extent.Text, '\.StartsWith\([^\)]*\)') |
+                Where-Object { $_.Value -notmatch 'Ordinal' })
+        $bareStartsWith.Count | Should -Be 0
+    }
 }
 
 Describe "New-MssqlDistinctnessSqlcmdArgument" {
