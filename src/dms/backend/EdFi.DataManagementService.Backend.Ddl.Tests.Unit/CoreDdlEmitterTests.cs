@@ -1999,7 +1999,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("SET r.[ContentVersion] = s.[ContentVersion],");
         _ddl.Should().Contain("r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]");
         _ddl.Should().Contain("FROM [dms].[Descriptor] r");
-        _ddl.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];");
+        _ddl.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]");
+        // The capture table's fixed cardinality estimate would otherwise scan the mirror table.
+        _ddl.Should().Contain("OPTION (RECOMPILE);");
     }
 
     [Test]

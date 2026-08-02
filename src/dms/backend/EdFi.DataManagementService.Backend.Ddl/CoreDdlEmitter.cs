@@ -1826,57 +1826,67 @@ public sealed class CoreDdlEmitter
             writer.Append("WHERE del.");
             writer.Append(quotedKeyColumn);
             writer.AppendLine(" IS NULL;");
-            writer.AppendLine(";WITH affectedDocs AS (");
+            // Both branches require a deleted row, so an insert-only statement yields an empty
+            // workset. Emitting the UPDATE anyway still makes the optimizer resolve its join by
+            // scanning the document table, taking update locks on rows it will never modify, and
+            // concurrent creates deadlock against one another on that scan.
+            writer.AppendLine("IF EXISTS (SELECT 1 FROM deleted)");
+            writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
-                writer.Append("SELECT i.");
-                writer.AppendLine(quotedKeyColumn);
-                writer.AppendLine("FROM inserted i");
-                writer.Append("LEFT JOIN deleted del ON del.");
-                writer.Append(quotedKeyColumn);
-                writer.Append(" = i.");
-                writer.AppendLine(quotedKeyColumn);
-                writer.Append("WHERE del.");
-                writer.Append(quotedKeyColumn);
-                writer.Append(" IS NOT NULL AND (");
-                EmitMssqlDescriptorColumnDiffDisjunction(writer, "i", "del");
-                writer.Append(")");
-                writer.AppendLine();
-                // Branches are disjoint (changed updates vs pure deletes), so UNION ALL
-                // skips the dedup sort.
-                writer.AppendLine("UNION ALL");
-                writer.Append("SELECT del.");
-                writer.AppendLine(quotedKeyColumn);
-                writer.AppendLine("FROM deleted del");
-                writer.Append("LEFT JOIN inserted i ON i.");
-                writer.Append(quotedKeyColumn);
-                writer.Append(" = del.");
-                writer.AppendLine(quotedKeyColumn);
-                writer.Append("WHERE i.");
-                writer.Append(quotedKeyColumn);
-                writer.AppendLine(" IS NULL");
-            }
-            writer.AppendLine(")");
+                writer.AppendLine(";WITH affectedDocs AS (");
+                using (writer.Indent())
+                {
+                    writer.Append("SELECT i.");
+                    writer.AppendLine(quotedKeyColumn);
+                    writer.AppendLine("FROM inserted i");
+                    writer.Append("LEFT JOIN deleted del ON del.");
+                    writer.Append(quotedKeyColumn);
+                    writer.Append(" = i.");
+                    writer.AppendLine(quotedKeyColumn);
+                    writer.Append("WHERE del.");
+                    writer.Append(quotedKeyColumn);
+                    writer.Append(" IS NOT NULL AND (");
+                    EmitMssqlDescriptorColumnDiffDisjunction(writer, "i", "del");
+                    writer.Append(")");
+                    writer.AppendLine();
+                    // Branches are disjoint (changed updates vs pure deletes), so UNION ALL
+                    // skips the dedup sort.
+                    writer.AppendLine("UNION ALL");
+                    writer.Append("SELECT del.");
+                    writer.AppendLine(quotedKeyColumn);
+                    writer.AppendLine("FROM deleted del");
+                    writer.Append("LEFT JOIN inserted i ON i.");
+                    writer.Append(quotedKeyColumn);
+                    writer.Append(" = del.");
+                    writer.AppendLine(quotedKeyColumn);
+                    writer.Append("WHERE i.");
+                    writer.Append(quotedKeyColumn);
+                    writer.AppendLine(" IS NULL");
+                }
+                writer.AppendLine(")");
 
-            writer.AppendLine("UPDATE d");
-            writer.Append("SET d.");
-            writer.Append(Quote("ContentVersion"));
-            writer.Append(" = NEXT VALUE FOR ");
-            writer.Append(sequenceName);
-            writer.Append(", d.");
-            writer.Append(Quote("ContentLastModifiedAt"));
-            writer.AppendLine(" = sysutcdatetime()");
-            writer.AppendLine(
-                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped"
-            );
-            writer.Append("FROM ");
-            writer.Append(documentTable);
-            writer.AppendLine(" d");
-            writer.Append("INNER JOIN affectedDocs a ON d.");
-            writer.Append(quotedKeyColumn);
-            writer.Append(" = a.");
-            writer.Append(quotedKeyColumn);
-            writer.AppendLine(";");
+                writer.AppendLine("UPDATE d");
+                writer.Append("SET d.");
+                writer.Append(Quote("ContentVersion"));
+                writer.Append(" = NEXT VALUE FOR ");
+                writer.Append(sequenceName);
+                writer.Append(", d.");
+                writer.Append(Quote("ContentLastModifiedAt"));
+                writer.AppendLine(" = sysutcdatetime()");
+                writer.AppendLine(
+                    "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped"
+                );
+                writer.Append("FROM ");
+                writer.Append(documentTable);
+                writer.AppendLine(" d");
+                writer.Append("INNER JOIN affectedDocs a ON d.");
+                writer.Append(quotedKeyColumn);
+                writer.Append(" = a.");
+                writer.Append(quotedKeyColumn);
+                writer.AppendLine(";");
+            }
+            writer.AppendLine("END");
             // The guard bounds direct recursion: without it the mirror self-UPDATE re-fires
             // this trigger even with an empty workset (statement triggers fire on 0 rows),
             // which recurses to the nesting limit on databases with RECURSIVE_TRIGGERS ON.
@@ -1901,8 +1911,13 @@ public sealed class CoreDdlEmitter
                 writer.Append("INNER JOIN @stamped s ON s.");
                 writer.Append(quotedKeyColumn);
                 writer.Append(" = r.");
-                writer.Append(quotedKeyColumn);
-                writer.AppendLine(";");
+                writer.AppendLine(quotedKeyColumn);
+                // @stamped is a table variable, and its fixed one-row estimate yields a plan that
+                // scans the mirror table rather than seeking its DocumentId primary key.
+                // Concurrent inserts then take update locks on one another's uncommitted rows and
+                // deadlock. Recompiling exposes the real cardinality, so the seek is chosen and
+                // each statement touches only the rows it stamps.
+                writer.AppendLine("OPTION (RECOMPILE);");
             }
             writer.AppendLine("END");
             if (_sharedDescriptorTrackedChangeTable is not null)

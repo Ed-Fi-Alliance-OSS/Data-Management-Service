@@ -1410,7 +1410,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         );
         var mirrorFromStart = triggerBody.IndexOf("FROM [edfi].[School] r", StringComparison.Ordinal);
         var mirrorJoinStart = triggerBody.IndexOf(
-            "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];",
+            "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]",
             StringComparison.Ordinal
         );
 
@@ -1676,13 +1676,19 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
                 "the School stamp trigger must mirror captured stamps to the target table"
             );
 
-        const string mirrorJoin = "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];";
+        const string mirrorJoin = "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]";
         var mirrorJoinStart = triggerBody.IndexOf(mirrorJoin, mirrorUpdateStart, StringComparison.Ordinal);
         mirrorJoinStart.Should().BeGreaterThan(mirrorUpdateStart);
 
+        // The mirror update runs to its recompile hint, which the capture table's fixed cardinality
+        // estimate makes necessary, so the extracted statement has to include it.
+        const string mirrorHint = "OPTION (RECOMPILE);";
+        var mirrorHintStart = triggerBody.IndexOf(mirrorHint, mirrorJoinStart, StringComparison.Ordinal);
+        mirrorHintStart.Should().BeGreaterThan(mirrorJoinStart);
+
         return triggerBody.Substring(
             mirrorUpdateStart,
-            mirrorJoinStart - mirrorUpdateStart + mirrorJoin.Length
+            mirrorHintStart - mirrorUpdateStart + mirrorHint.Length
         );
     }
 }
