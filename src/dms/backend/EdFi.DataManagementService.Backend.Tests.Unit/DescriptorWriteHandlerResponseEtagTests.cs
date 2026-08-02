@@ -82,7 +82,6 @@ public class Given_Descriptor_Write_Response_Etags
             _descriptorResource,
             CreateRequestBodyInNonCanonicalOrder(),
             new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-            new ReferentialId(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
             new TraceId("descriptor-post-trace")
         );
 
@@ -395,7 +394,6 @@ public class Given_Descriptor_Write_Response_Etags
             _descriptorResource,
             CreateRequestBody(description),
             documentUuid,
-            new ReferentialId(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
             new TraceId("descriptor-post-trace")
         );
     }
@@ -411,7 +409,6 @@ public class Given_Descriptor_Write_Response_Etags
             _descriptorResource,
             CreateRequestBody(description),
             documentUuid,
-            null,
             new TraceId("descriptor-put-trace")
         );
     }
@@ -700,23 +697,8 @@ public class Given_Descriptor_Write_Response_Etags
             return Task.FromResult(PutResult);
         }
 
-        // Descriptor writes resolve their targets from dms.Descriptor; the dms.Document and root-table
-        // surfaces belong to other callers. Throwing keeps that split honest.
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
-            MappingSet mappingSet,
-            QualifiedResourceName resource,
-            ReferentialId referentialId,
-            DocumentUuid candidateDocumentUuid,
-            CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
-
-        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
-            MappingSet mappingSet,
-            QualifiedResourceName resource,
-            DocumentUuid documentUuid,
-            CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
-
+        // Descriptor writes resolve their targets from dms.Descriptor; the root-table surface belongs to
+        // other callers. Throwing keeps that split honest.
         public Task<RelationalWriteTargetLookupResult> ResolveForPutByRootTableAsync(
             DbTableName rootTable,
             DocumentUuid documentUuid,

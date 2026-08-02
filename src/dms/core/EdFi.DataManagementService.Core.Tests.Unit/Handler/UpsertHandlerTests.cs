@@ -169,8 +169,6 @@ public class UpsertHandlerTests
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
-                var sharedReferentialId = new ReferentialId(Guid.NewGuid());
-
                 return Task.FromResult<UpsertResult>(
                     new UpsertFailureReference(
                         [
@@ -178,14 +176,12 @@ public class UpsertHandlerTests
                                 Path: new JsonPath("$.schoolReference"),
                                 TargetResource: _targetResource,
                                 DocumentIdentity: new([]),
-                                ReferentialId: sharedReferentialId,
                                 Reason: DocumentReferenceFailureReason.Missing
                             ),
                             new(
                                 Path: new JsonPath("$.sessionReference.schoolReference"),
                                 TargetResource: _targetResource,
                                 DocumentIdentity: new([]),
-                                ReferentialId: sharedReferentialId,
                                 Reason: DocumentReferenceFailureReason.Missing
                             ),
                         ],
@@ -451,7 +447,6 @@ public class UpsertHandlerTests
                                         "uri://ed-fi.org/schooltypedescriptor#elementary"
                                     ),
                                 ]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
                                 Reason: DescriptorReferenceFailureReason.Missing
                             ),
                         ]
@@ -518,7 +513,6 @@ public class UpsertHandlerTests
                                         "uri://ed-fi.org/gradeleveldescriptor#first-grade"
                                     ),
                                 ]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
                                 Reason: DescriptorReferenceFailureReason.DescriptorTypeMismatch
                             ),
                         ]
@@ -587,7 +581,6 @@ public class UpsertHandlerTests
                                 Path: new JsonPath("$.schoolReference"),
                                 TargetResource: _documentTargetResource,
                                 DocumentIdentity: new([]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
                                 Reason: DocumentReferenceFailureReason.Missing
                             ),
                         ],
@@ -601,7 +594,6 @@ public class UpsertHandlerTests
                                         "uri://ed-fi.org/schooltypedescriptor#elementary"
                                     ),
                                 ]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
                                 Reason: DescriptorReferenceFailureReason.Missing
                             ),
                         ]

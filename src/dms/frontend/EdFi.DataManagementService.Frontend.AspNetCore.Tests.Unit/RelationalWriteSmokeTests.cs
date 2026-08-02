@@ -591,21 +591,6 @@ public class Given_A_Host_Using_The_Relational_Backend
 
     private sealed class CapturingRelationalWriteTargetLookupService : IRelationalWriteTargetLookupService
     {
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
-            MappingSet mappingSet,
-            QualifiedResourceName resource,
-            ReferentialId referentialId,
-            DocumentUuid candidateDocumentUuid,
-            CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return Task.FromResult<RelationalWriteTargetLookupResult>(
-                new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
-            );
-        }
-
         public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
@@ -621,13 +606,6 @@ public class Given_A_Host_Using_The_Relational_Backend
                 new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
             );
         }
-
-        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
-            MappingSet mappingSet,
-            QualifiedResourceName resource,
-            DocumentUuid documentUuid,
-            CancellationToken cancellationToken = default
-        ) => ResolveExistingPutTarget(documentUuid, cancellationToken);
 
         public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPutAsync(
             MappingSet mappingSet,

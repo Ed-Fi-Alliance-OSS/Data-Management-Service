@@ -774,7 +774,6 @@ public class Given_Descriptor_Write_Preconditions
                 """
             )!,
             documentUuid,
-            null,
             new TraceId("descriptor-put-immutable-if-match")
         )
         {
@@ -1611,7 +1610,6 @@ public class Given_Descriptor_Write_Preconditions
             _descriptorResource,
             CreateRequestBody(description, @namespace, codeValue),
             documentUuid,
-            new ReferentialId(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
             new TraceId("descriptor-post-precondition")
         );
     }
@@ -1627,7 +1625,6 @@ public class Given_Descriptor_Write_Preconditions
             _descriptorResource,
             CreateRequestBody(description),
             documentUuid,
-            null,
             new TraceId("descriptor-put-precondition")
         );
     }
@@ -1913,23 +1910,8 @@ public class Given_Descriptor_Write_Preconditions
             return Task.FromResult(PutResult);
         }
 
-        // Descriptor writes resolve their targets from dms.Descriptor; the dms.Document and root-table
-        // surfaces belong to other callers. Throwing keeps that split honest.
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
-            MappingSet mappingSet,
-            QualifiedResourceName resource,
-            ReferentialId referentialId,
-            DocumentUuid candidateDocumentUuid,
-            CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
-
-        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
-            MappingSet mappingSet,
-            QualifiedResourceName resource,
-            DocumentUuid documentUuid,
-            CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
-
+        // Descriptor writes resolve their targets from dms.Descriptor; the root-table surface belongs to
+        // other callers. Throwing keeps that split honest.
         public Task<RelationalWriteTargetLookupResult> ResolveForPutByRootTableAsync(
             DbTableName rootTable,
             DocumentUuid documentUuid,

@@ -113,7 +113,6 @@ public sealed class RelationalDocumentStoreRepository(
                         resource,
                         upsertRequest.EdfiDoc,
                         upsertRequest.DocumentUuid,
-                        upsertRequest.DocumentInfo.ReferentialId,
                         upsertRequest.TraceId,
                         upsertRequest.AuthorizationStrategyEvaluators,
                         upsertRequest.AuthorizationContext
@@ -250,7 +249,6 @@ public sealed class RelationalDocumentStoreRepository(
                         resource,
                         updateRequest.EdfiDoc,
                         updateRequest.DocumentUuid,
-                        referentialId: null,
                         updateRequest.TraceId,
                         updateRequest.AuthorizationStrategyEvaluators,
                         updateRequest.AuthorizationContext

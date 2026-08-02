@@ -29,7 +29,6 @@ public class WriteResultReferenceFailureContractTests
                 ResourceName: new ResourceName("School"),
                 IsDescriptor: false
             );
-            var sharedReferentialId = new ReferentialId(Guid.NewGuid());
             DocumentIdentity documentIdentity = new([
                 new(new JsonPath("$.schoolReference.schoolId"), "255901001"),
             ]);
@@ -40,14 +39,12 @@ public class WriteResultReferenceFailureContractTests
                         Path: new JsonPath("$.schoolReference"),
                         TargetResource: targetResource,
                         DocumentIdentity: documentIdentity,
-                        ReferentialId: sharedReferentialId,
                         Reason: DocumentReferenceFailureReason.Missing
                     ),
                     new(
                         Path: new JsonPath("$.sessionReference.schoolReference"),
                         TargetResource: targetResource,
                         DocumentIdentity: documentIdentity,
-                        ReferentialId: sharedReferentialId,
                         Reason: DocumentReferenceFailureReason.Missing
                     ),
                 ],
@@ -106,7 +103,6 @@ public class WriteResultReferenceFailureContractTests
                                 "255901"
                             ),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Reason: DocumentReferenceFailureReason.IncompatibleTargetType
                     ),
                 ],
@@ -167,7 +163,6 @@ public class WriteResultReferenceFailureContractTests
                                 "uri://ed-fi.org/gradeleveldescriptor#first-grade"
                             ),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Reason: DescriptorReferenceFailureReason.DescriptorTypeMismatch
                     ),
                 ]
@@ -218,7 +213,6 @@ public class WriteResultReferenceFailureContractTests
                                 "uri://ed-fi.org/calendartypedescriptor#spring"
                             ),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Reason: DescriptorReferenceFailureReason.Missing
                     ),
                 ]
@@ -260,7 +254,6 @@ public class WriteResultReferenceFailureContractTests
                             false
                         ),
                         DocumentIdentity: new([]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Reason: DocumentReferenceFailureReason.Missing
                     ),
                 ],
@@ -278,7 +271,6 @@ public class WriteResultReferenceFailureContractTests
                                 "uri://ed-fi.org/schooltypedescriptor#elementary"
                             ),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Reason: DescriptorReferenceFailureReason.Missing
                     ),
                 ]
@@ -315,7 +307,6 @@ public class WriteResultReferenceFailureContractTests
                             false
                         ),
                         DocumentIdentity: new([]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Reason: DocumentReferenceFailureReason.IncompatibleTargetType
                     ),
                 ],
@@ -333,7 +324,6 @@ public class WriteResultReferenceFailureContractTests
                                 "uri://ed-fi.org/calendartypedescriptor#spring"
                             ),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Reason: DescriptorReferenceFailureReason.Missing
                     ),
                 ]

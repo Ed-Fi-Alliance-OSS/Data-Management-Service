@@ -5275,10 +5275,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
         var expectedReadPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
         var documentInfo = CreateDocumentInfo();
-        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        _targetLookupService.PostResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
-        );
 
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -5437,7 +5433,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
         AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
         _capturedExecutorRequests.Should().BeEmpty();
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -5469,7 +5464,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         failure.Errors.Should().Contain(error => error.Contains("Relational POST authorization metadata"));
         failure.Errors.Should().Contain(error => error.Contains("CustomAuthorizationStrategy"));
         _capturedExecutorRequests.Should().BeEmpty();
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -5524,7 +5518,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Hint.Should()
             .Be("Relationship authorization requires at least one claim EducationOrganizationId.");
         _capturedExecutorRequests.Should().BeEmpty();
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -5589,7 +5582,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Be(NamespaceAuthorizationCheckValueSource.Proposed);
         // POST no longer probes before the write session opens: the pre-session pass proposes a create
         // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -5717,7 +5709,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Be(RelationshipAuthorizationValueSource.Proposed);
         // POST no longer probes before the write session opens: the pre-session pass proposes a create
         // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -5725,9 +5716,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         var committedEtag = ComposedWriteResultEtag;
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        _targetLookupService.PostResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
-        );
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -5793,7 +5781,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Be(RelationshipAuthorizationValueSource.Proposed);
         // POST no longer probes before the write session opens: the pre-session pass proposes a create
         // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -5877,7 +5864,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Be(AuthNames.StudentDocumentId);
         // POST no longer probes before the write session opens: the pre-session pass proposes a create
         // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -5951,7 +5937,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Be(RelationshipAuthorizationPersonProposedAnchorKind.ExistingTargetDocumentId);
         // POST no longer probes before the write session opens: the pre-session pass proposes a create
         // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -6000,7 +5985,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest.ProposedNamespaceAuthorization.Should().BeNull();
         // POST no longer probes before the write session opens: the pre-session pass proposes a create
         // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -6061,7 +6045,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest.ProposedRelationshipAuthorization.Should().BeNull();
         // POST no longer probes before the write session opens: the pre-session pass proposes a create
         // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -6088,7 +6071,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
         failure.NamespaceFailure.StrategyName.Should().Be(AuthorizationStrategyNameConstants.NamespaceBased);
         _capturedExecutorRequests.Should().BeEmpty();
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -6123,7 +6105,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .And.Contain("NamespaceBased")
             .And.Contain("no Namespace securable element resolves to a root table column");
         _capturedExecutorRequests.Should().BeEmpty();
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -6154,7 +6135,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Contain("2000 namespace prefixes")
             .And.Contain("exceeds the SQL Server limit");
         _capturedExecutorRequests.Should().BeEmpty();
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -6626,12 +6606,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var expectedReadPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
         var executorCallCount = 0;
         var documentInfo = CreateDocumentInfo();
-        _targetLookupService.PostResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
-        );
-        _targetLookupService.PostResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
-        );
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -6693,7 +6667,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 new RelationalWriteTargetContext.CreateNew(documentUuid),
                 new RelationalWriteTargetContext.CreateNew(documentUuid),
             ]);
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -6816,9 +6789,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
         var documentInfo = CreateDocumentInfo();
-        _targetLookupService.PostResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
-        );
 
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -6852,7 +6822,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequests[0].WritePrecondition.Should().Be(writePrecondition);
         // POST no longer probes before the write session opens: the pre-session pass proposes a create
         // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -7081,7 +7050,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();
         _capturedExecutorRequests.Should().BeEmpty();
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -7153,7 +7121,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, descriptorResponseEtag));
         ((UpsertResult.InsertSuccess)result).ETag.Should().NotMatchRegex(StampStyleEtagPattern);
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         _targetLookupService.ResolveForPutCallCount.Should().Be(0);
         A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();
@@ -7250,7 +7217,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, descriptorResponseEtag));
         ((UpdateResult.UpdateSuccess)result).ETag.Should().NotMatchRegex(StampStyleEtagPattern);
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         _targetLookupService.ResolveForPutCallCount.Should().Be(0);
         A.CallTo(() => descriptorHandler.HandlePutAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();
@@ -9235,16 +9201,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_returns_the_missing_read_plan_guard_rail_for_existing_document_post_as_update_requests()
     {
         var candidateDocumentUuid = new DocumentUuid(Guid.NewGuid());
-        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var documentInfo = CreateDocumentInfo();
         const string expectedFailureMessage =
             "Read plan lookup failed for resource 'Ed-Fi.School' in mapping set "
             + "'schema-hash/Pgsql/v1': resource storage kind 'RelationalTables' should always have a compiled relational-table read plan, "
             + "but no entry was found. This indicates an internal compilation/selection bug.";
-
-        _targetLookupService.PostResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
-        );
 
         var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
@@ -9260,7 +9221,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequests.Should().BeEmpty();
         // POST no longer probes before the write session opens: the pre-session pass proposes a create
         // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -9291,7 +9251,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequests.Should().BeEmpty();
         // POST no longer probes before the write session opens: the pre-session pass proposes a create
         // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         _targetLookupService.ResolveForPutCallCount.Should().Be(0);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -9326,45 +9285,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private sealed class RecordingRelationalWriteTargetLookupService : IRelationalWriteTargetLookupService
     {
-        public Queue<RelationalWriteTargetLookupResult> PostResults { get; } = [];
-
         public Queue<RelationalWriteTargetLookupResult> PutResults { get; } = [];
-
-        public int ResolveForPostCallCount { get; private set; }
 
         public int ResolveForPutCallCount { get; private set; }
 
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
-            MappingSet mappingSet,
-            QualifiedResourceName resource,
-            ReferentialId referentialId,
-            DocumentUuid candidateDocumentUuid,
-            CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            ResolveForPostCallCount++;
-
-            return Task.FromResult(
-                PostResults.Count > 0
-                    ? PostResults.Dequeue()
-                    : new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
-            );
-        }
-
         public DbTableName? CapturedPutRootTable { get; private set; }
-
-        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
-            MappingSet mappingSet,
-            QualifiedResourceName resource,
-            DocumentUuid documentUuid,
-            CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return NextPutResult(documentUuid);
-        }
 
         // The repository routes descriptor writes to IDescriptorWriteHandler, so it never resolves a
         // descriptor target itself. Throwing keeps that routing honest.

@@ -8433,29 +8433,8 @@ public class Given_Default_Relational_Write_Executor
 
         public List<ResolvedReferenceSet> CapturedResolvedReferences { get; } = [];
 
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
-            MappingSet mappingSet,
-            QualifiedResourceName resource,
-            ReferentialId referentialId,
-            DocumentUuid candidateDocumentUuid,
-            DbConnection connection,
-            DbTransaction transaction,
-            CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            ResolveForPostCallCount++;
-            CapturedWriteSession = new CapturedRelationalWriteSession(connection, transaction);
-
-            return Task.FromResult(
-                PostResults.Count > 0
-                    ? PostResults.Dequeue()
-                    : new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
-            );
-        }
-
-        // The production POST upsert-detection seam. It shares the counter and the queued results with
-        // ResolveForPostAsync so the existing race/orchestration pins keep their meaning after the cutover.
+        // The production POST upsert-detection seam. It keeps the counter and the queued results the
+        // existing race/orchestration pins were written against.
         public Task<RelationalWriteTargetLookupResult> TryResolveByNaturalKeyAsync(
             MappingSet mappingSet,
             ResourceWritePlan writePlan,

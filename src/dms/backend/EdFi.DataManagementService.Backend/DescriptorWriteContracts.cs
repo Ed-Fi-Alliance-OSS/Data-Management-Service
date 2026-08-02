@@ -20,7 +20,6 @@ public sealed record DescriptorWriteRequest
         QualifiedResourceName resource,
         JsonNode requestBody,
         DocumentUuid documentUuid,
-        ReferentialId? referentialId,
         TraceId traceId,
         AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
         RelationalAuthorizationContext? relationalAuthorizationContext = null
@@ -30,7 +29,6 @@ public sealed record DescriptorWriteRequest
         Resource = resource;
         RequestBody = requestBody ?? throw new ArgumentNullException(nameof(requestBody));
         DocumentUuid = documentUuid;
-        ReferentialId = referentialId;
         TraceId = traceId;
         AuthorizationStrategyEvaluators = authorizationStrategyEvaluators ?? [];
         RelationalAuthorizationContext =
@@ -56,17 +54,6 @@ public sealed record DescriptorWriteRequest
     /// The document UUID: a candidate for POST inserts or the existing UUID for PUT.
     /// </summary>
     public DocumentUuid DocumentUuid { get; init; }
-
-    /// <summary>
-    /// The referential id Core computes for a descriptor POST; <c>null</c> for PUT requests.
-    /// </summary>
-    /// <remarks>
-    /// Unused by the write handler: POST upsert detection now seeks the descriptor's own
-    /// <c>(UriLowered, Discriminator)</c> index rather than <c>dms.ReferentialIdentity</c>. The property
-    /// stays on the contract until Phase 4 retires <c>ReferentialIdCalculator</c>, so Core's
-    /// <c>DocumentInfo</c> plumbing and the repository's routing keep compiling unchanged.
-    /// </remarks>
-    public ReferentialId? ReferentialId { get; init; }
 
     /// <summary>
     /// The request trace id for diagnostics.

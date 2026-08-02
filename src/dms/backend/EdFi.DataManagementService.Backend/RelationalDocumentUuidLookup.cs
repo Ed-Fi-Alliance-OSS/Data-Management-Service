@@ -13,86 +13,6 @@ internal static class RelationalDocumentUuidLookupSupport
     private const string DocumentUuidParameterName = "@documentUuid";
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
 
-    public static Task<ResolvedDocumentByUuid?> TryResolveByDocumentUuidAsync(
-        IRelationalCommandExecutor commandExecutor,
-        MappingSet mappingSet,
-        DocumentUuid documentUuid,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(commandExecutor);
-        ArgumentNullException.ThrowIfNull(mappingSet);
-
-        return ExecuteLookupAsync(
-            commandExecutor,
-            mappingSet.Key.Dialect switch
-            {
-                SqlDialect.Pgsql => BuildPostgresqlLookupByDocumentUuidCommand(documentUuid),
-                SqlDialect.Mssql => BuildMssqlLookupByDocumentUuidCommand(documentUuid),
-                _ => throw new NotSupportedException(
-                    $"Relational document UUID lookup does not support SQL dialect '{mappingSet.Key.Dialect}'."
-                ),
-            },
-            $"document uuid '{documentUuid.Value}'",
-            cancellationToken
-        );
-    }
-
-    /// <summary>
-    /// Resolves a document by (resource, DocumentUuid) through <c>dms.Document</c> and narrows it to
-    /// <see cref="ResolvedDeleteTarget"/>. No production caller remains — the regular DELETE resolves
-    /// its target from the resource root table (<see cref="TryResolveDeleteTargetByRootTableAsync"/>)
-    /// and the descriptor DELETE from <c>dms.Descriptor</c>
-    /// (<see cref="TryResolveDescriptorDeleteTargetAsync"/>). Kept until Phase 4 removes the table.
-    /// </summary>
-    public static async Task<ResolvedDeleteTarget?> TryResolveDeleteTargetAsync(
-        IRelationalCommandExecutor commandExecutor,
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        DocumentUuid documentUuid,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var resolved = await TryResolveByDocumentUuidAndResourceAsync(
-                commandExecutor,
-                mappingSet,
-                resource,
-                documentUuid,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        return resolved is null ? null : new ResolvedDeleteTarget(resolved.DocumentId);
-    }
-
-    public static Task<ResolvedDocumentByUuid?> TryResolveByDocumentUuidAndResourceAsync(
-        IRelationalCommandExecutor commandExecutor,
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        DocumentUuid documentUuid,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(commandExecutor);
-        ArgumentNullException.ThrowIfNull(mappingSet);
-
-        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
-
-        return ExecuteLookupAsync(
-            commandExecutor,
-            mappingSet.Key.Dialect switch
-            {
-                SqlDialect.Pgsql => BuildPostgresqlLookupByDocumentUuidCommand(documentUuid, resourceKeyId),
-                SqlDialect.Mssql => BuildMssqlLookupByDocumentUuidCommand(documentUuid, resourceKeyId),
-                _ => throw new NotSupportedException(
-                    $"Relational document UUID lookup does not support SQL dialect '{mappingSet.Key.Dialect}'."
-                ),
-            },
-            $"resource '{RelationalWriteSupport.FormatResource(resource)}' and document uuid '{documentUuid.Value}'",
-            cancellationToken
-        );
-    }
-
     /// <summary>
     /// Descriptor PUT/DELETE entry point. Descriptors share one physical table, so the route's resource
     /// cannot be scoped structurally the way a resource root table scopes its own uuid index; the probe
@@ -290,102 +210,6 @@ internal static class RelationalDocumentUuidLookupSupport
         );
     }
 
-    private static Task<ResolvedDocumentByUuid?> ExecuteLookupAsync(
-        IRelationalCommandExecutor commandExecutor,
-        RelationalCommand command,
-        string lookupDescription,
-        CancellationToken cancellationToken
-    )
-    {
-        return commandExecutor.ExecuteReaderAsync(
-            command,
-            async (reader, ct) =>
-            {
-                if (!await reader.ReadAsync(ct).ConfigureAwait(false))
-                {
-                    return null;
-                }
-
-                var resolvedDocument = new ResolvedDocumentByUuid(
-                    reader.GetRequiredFieldValue<long>("DocumentId"),
-                    new DocumentUuid(reader.GetRequiredFieldValue<Guid>("DocumentUuid")),
-                    reader.GetRequiredFieldValue<short>("ResourceKeyId"),
-                    reader.IsDBNull(reader.GetOrdinal("ContentVersion"))
-                        ? null
-                        : reader.GetRequiredFieldValue<long>("ContentVersion")
-                );
-
-                if (await reader.ReadAsync(ct).ConfigureAwait(false))
-                {
-                    throw new InvalidOperationException(
-                        $"Relational document UUID lookup returned multiple rows for {lookupDescription}."
-                    );
-                }
-
-                return resolvedDocument;
-            },
-            cancellationToken
-        );
-    }
-
-    private static RelationalCommand BuildPostgresqlLookupByDocumentUuidCommand(
-        DocumentUuid documentUuid,
-        short? resourceKeyId = null
-    )
-    {
-        var commandText =
-            """
-                SELECT
-                    document."DocumentId" AS "DocumentId",
-                    document."DocumentUuid" AS "DocumentUuid",
-                    document."ResourceKeyId" AS "ResourceKeyId",
-                    document."ContentVersion" AS "ContentVersion"
-                FROM dms."Document" document
-                WHERE document."DocumentUuid" = @documentUuid
-                """
-            + (
-                resourceKeyId is null ? string.Empty : "\n    AND document.\"ResourceKeyId\" = @resourceKeyId"
-            );
-
-        IReadOnlyList<RelationalParameter> parameters = resourceKeyId is null
-            ? [new RelationalParameter(DocumentUuidParameterName, documentUuid.Value)]
-            :
-            [
-                new RelationalParameter(DocumentUuidParameterName, documentUuid.Value),
-                new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId.Value),
-            ];
-
-        return new RelationalCommand(commandText, parameters);
-    }
-
-    private static RelationalCommand BuildMssqlLookupByDocumentUuidCommand(
-        DocumentUuid documentUuid,
-        short? resourceKeyId = null
-    )
-    {
-        var commandText =
-            """
-                SELECT
-                    document.[DocumentId] AS [DocumentId],
-                    document.[DocumentUuid] AS [DocumentUuid],
-                    document.[ResourceKeyId] AS [ResourceKeyId],
-                    document.[ContentVersion] AS [ContentVersion]
-                FROM [dms].[Document] document
-                WHERE document.[DocumentUuid] = @documentUuid
-                """
-            + (resourceKeyId is null ? string.Empty : "\n    AND document.[ResourceKeyId] = @resourceKeyId");
-
-        IReadOnlyList<RelationalParameter> parameters = resourceKeyId is null
-            ? [new RelationalParameter(DocumentUuidParameterName, documentUuid.Value)]
-            :
-            [
-                new RelationalParameter(DocumentUuidParameterName, documentUuid.Value),
-                new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId.Value),
-            ];
-
-        return new RelationalCommand(commandText, parameters);
-    }
-
     private static RelationalCommand BuildPostgresqlDescriptorLookupByDocumentUuidCommand(
         DocumentUuid documentUuid,
         short resourceKeyId
@@ -470,20 +294,12 @@ internal static class RelationalDocumentUuidLookupSupport
         );
     }
 
-    internal sealed record ResolvedDocumentByUuid(
-        long DocumentId,
-        DocumentUuid DocumentUuid,
-        short ResourceKeyId,
-        long? ContentVersion
-    );
-
     internal sealed record ResolvedDeleteTarget(long DocumentId);
 
     /// <summary>
-    /// Target resolved from the resource root table's document metadata mirror columns, by GET-by-id,
-    /// PUT, and the regular DELETE. <c>ContentVersion</c> is non-null there (the stamping triggers
-    /// maintain it), so unlike <see cref="ResolvedDocumentByUuid"/> this target needs no nullable
-    /// content version.
+    /// Target resolved from a table that carries the document-metadata mirror columns — the resource root
+    /// table for GET-by-id, PUT, and the regular DELETE, or <c>dms.Descriptor</c> for the descriptor
+    /// routes. <c>ContentVersion</c> is non-null there because the stamping triggers maintain it.
     /// </summary>
     internal sealed record ResolvedRootTarget(long DocumentId, Guid DocumentUuid, long ContentVersion);
 }

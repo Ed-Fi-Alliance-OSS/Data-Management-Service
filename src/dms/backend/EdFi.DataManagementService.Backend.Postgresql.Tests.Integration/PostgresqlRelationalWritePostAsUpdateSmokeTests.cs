@@ -67,34 +67,10 @@ internal sealed class BlockingPostTargetLookupResolver(ConcurrentPostCreateRaceC
 
     private readonly RelationalWriteTargetLookupResolver _innerResolver = new();
 
-    public async Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        ReferentialId referentialId,
-        DocumentUuid candidateDocumentUuid,
-        DbConnection connection,
-        DbTransaction transaction,
-        CancellationToken cancellationToken = default
-    )
-    {
-        await _coordinator.WaitForFirstResolverCallWindowAsync(cancellationToken);
-
-        return await _innerResolver.ResolveForPostAsync(
-            mappingSet,
-            resource,
-            referentialId,
-            candidateDocumentUuid,
-            connection,
-            transaction,
-            cancellationToken
-        );
-    }
-
     /// <summary>
-    /// The in-session POST upsert-detection seam the write path actually calls. Gating it holds the first
-    /// racing attempt open inside its transaction after it has decided "create", which is the window the
-    /// create race needs; the coordinator's call counter is shared with
-    /// <see cref="ResolveForPostAsync"/> so "first resolver call" keeps its meaning.
+    /// The in-session POST upsert-detection seam the write path calls. Gating it holds the first racing
+    /// attempt open inside its transaction after it has decided "create", which is the window the create
+    /// race needs; the coordinator counts calls to this one seam, so "first resolver call" is unambiguous.
     /// </summary>
     public async Task<RelationalWriteTargetLookupResult> TryResolveByNaturalKeyAsync(
         MappingSet mappingSet,

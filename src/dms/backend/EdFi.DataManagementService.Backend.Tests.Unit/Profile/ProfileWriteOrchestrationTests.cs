@@ -45,17 +45,6 @@ public class Given_No_Profile_Relational_Post
         var requestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
 
         A.CallTo(() =>
-                _targetLookupService.ResolveForPostAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
-                    A<ReferentialId>._,
-                    A<DocumentUuid>._,
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(new RelationalWriteTargetLookupResult.CreateNew(_documentUuid));
-
-        A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
             .ReturnsLazily(
@@ -106,16 +95,6 @@ public class Given_No_Profile_Relational_Post
         _result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(_documentUuid, "\"51\""));
         // POST target resolution moved into the write session, so the pre-session lookup service is never
         // called. The executor still receives one request carrying the caller-reserved candidate uuid.
-        A.CallTo(() =>
-                _targetLookupService.ResolveForPostAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
-                    A<ReferentialId>._,
-                    A<DocumentUuid>._,
-                    A<CancellationToken>._
-                )
-            )
-            .MustNotHaveHappened();
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -273,17 +252,6 @@ public class Given_A_Profiled_Relational_Post
         var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan, readPlan);
         var edfiDoc = JsonNode.Parse("""{"schoolId":255901,"nameOfInstitution":"Lincoln High"}""")!;
         var writableRequestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
-
-        A.CallTo(() =>
-                _targetLookupService.ResolveForPostAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
-                    A<ReferentialId>._,
-                    A<DocumentUuid>._,
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(new RelationalWriteTargetLookupResult.CreateNew(documentUuid));
 
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)

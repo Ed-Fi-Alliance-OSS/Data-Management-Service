@@ -1127,7 +1127,6 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody("uri://ed-fi.org/SchoolTypeDescriptor", "Charter"),
             _documentUuid,
-            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
             new TraceId("descriptor-write-contract"),
             evaluators,
             context
@@ -1146,7 +1145,6 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody("uri://ed-fi.org/SchoolTypeDescriptor", "Charter"),
             _documentUuid,
-            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
             new TraceId("descriptor-write-contract-default")
         );
 
@@ -1201,7 +1199,6 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody(@namespace, codeValue),
             _documentUuid,
-            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
             new TraceId("descriptor-post-namespace"),
             [authorizationStrategy],
             new RelationalAuthorizationContext([], namespacePrefixes)
@@ -1219,7 +1216,6 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody(@namespace, codeValue),
             _documentUuid,
-            referentialId: null,
             new TraceId("descriptor-put-namespace"),
             [authorizationStrategy],
             new RelationalAuthorizationContext([], namespacePrefixes)
@@ -1272,23 +1268,8 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             return Task.FromResult(PutResult);
         }
 
-        // Descriptor writes resolve their targets from dms.Descriptor; the dms.Document and root-table
-        // surfaces belong to other callers. Throwing keeps that split honest.
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
-            MappingSet mappingSet,
-            QualifiedResourceName resource,
-            ReferentialId referentialId,
-            DocumentUuid candidateDocumentUuid,
-            CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
-
-        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
-            MappingSet mappingSet,
-            QualifiedResourceName resource,
-            DocumentUuid documentUuid,
-            CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
-
+        // Descriptor writes resolve their targets from dms.Descriptor; the root-table surface belongs to
+        // other callers. Throwing keeps that split honest.
         public Task<RelationalWriteTargetLookupResult> ResolveForPutByRootTableAsync(
             DbTableName rootTable,
             DocumentUuid documentUuid,

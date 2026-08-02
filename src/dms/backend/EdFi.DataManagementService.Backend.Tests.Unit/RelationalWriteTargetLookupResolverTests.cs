@@ -21,66 +21,6 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
     private static readonly QualifiedResourceName _requestResource = new("Ed-Fi", "Student");
     private static readonly DbTableName _requestRootTable = new(new DbSchemaName("edfi"), "Student");
 
-    [Test]
-    public async Task It_returns_create_new_for_post_re_evaluation_when_request_referential_id_does_not_match_an_existing_document()
-    {
-        var referentialId = new ReferentialId(Guid.NewGuid());
-        var candidateDocumentUuid = new DocumentUuid(Guid.NewGuid());
-        var writeSession = CreateWriteSession(CreateLookupReader());
-        var sut = new RelationalWriteTargetLookupResolver();
-
-        var result = await sut.ResolveForPostAsync(
-            CreateMappingSet(SqlDialect.Pgsql),
-            _requestResource,
-            referentialId,
-            candidateDocumentUuid,
-            writeSession.Connection,
-            writeSession.Transaction
-        );
-
-        result
-            .Should()
-            .BeEquivalentTo(new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid));
-        writeSession.Connection.CreateCommandCallCount.Should().Be(1);
-        writeSession.Connection.Command.CommandText.Should().Contain("dms.\"ReferentialIdentity\"");
-        writeSession
-            .Connection.Command.Parameters.Select(parameter => parameter.Value)
-            .Should()
-            .Equal(referentialId.Value, (short)1);
-    }
-
-    [Test]
-    public async Task It_returns_existing_document_for_post_re_evaluation_when_request_referential_id_matches_a_persisted_document()
-    {
-        var referentialId = new ReferentialId(Guid.NewGuid());
-        var candidateDocumentUuid = new DocumentUuid(Guid.NewGuid());
-        var existingDocumentUuid = new DocumentUuid(Guid.NewGuid());
-        const long observedContentVersion = 701L;
-        var writeSession = CreateWriteSession(
-            CreateLookupReader((101L, existingDocumentUuid.Value, observedContentVersion))
-        );
-        var sut = new RelationalWriteTargetLookupResolver();
-
-        var result = await sut.ResolveForPostAsync(
-            CreateMappingSet(SqlDialect.Pgsql),
-            _requestResource,
-            referentialId,
-            candidateDocumentUuid,
-            writeSession.Connection,
-            writeSession.Transaction
-        );
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new RelationalWriteTargetLookupResult.ExistingDocument(
-                    101L,
-                    existingDocumentUuid,
-                    observedContentVersion
-                )
-            );
-    }
-
     [TestCase(SqlDialect.Pgsql, "FROM \"edfi\".\"Student\" root", "dms.\"Document\"")]
     [TestCase(SqlDialect.Mssql, "FROM [edfi].[Student] root", "[dms].[Document]")]
     public async Task It_returns_not_found_for_repository_put_lookup_when_requested_document_uuid_does_not_match_a_persisted_document(

@@ -565,21 +565,11 @@ public class Given_MssqlDescriptorWriteHandler
     )
     {
         var body = JsonNode.Parse(bodyJson)!;
-        var descriptorDoc = new Core.Model.DescriptorDocument(body);
-        var resourceInfo = new BaseResourceInfo(
-            new ProjectName(resource.ProjectName),
-            new ResourceName(resource.ResourceName),
-            true
-        );
-        var identity = descriptorDoc.ToDocumentIdentity();
-        var referentialId = Core.Extraction.ReferentialIdCalculator.ReferentialIdFrom(resourceInfo, identity);
-
         return new DescriptorWriteRequest(
             _database.MappingSet,
             resource,
             body,
             new DocumentUuid(Guid.NewGuid()),
-            referentialId,
             new TraceId("test-trace")
         )
         {
@@ -599,7 +589,6 @@ public class Given_MssqlDescriptorWriteHandler
             resource,
             JsonNode.Parse(bodyJson)!,
             documentUuid,
-            referentialId: null,
             new TraceId("test-trace")
         )
         {

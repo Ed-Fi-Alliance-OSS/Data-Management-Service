@@ -841,27 +841,6 @@ actual: {requestInfo.FrontendResponse.Body}
         Func<RelationalWriteTargetRequest, RelationalWriteTargetLookupResult>? resultFactory
     ) : IRelationalWriteTargetLookupService
     {
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
-            MappingSet mappingSet,
-            QualifiedResourceName resource,
-            ReferentialId referentialId,
-            DocumentUuid candidateDocumentUuid,
-            CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return Task.FromResult(
-                (resultFactory ?? DefaultResultFactory)(
-                    new RelationalWriteTargetRequest.Post(
-                        referentialId,
-                        candidateDocumentUuid,
-                        new DocumentIdentity([])
-                    )
-                )
-            );
-        }
-
         public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
@@ -883,13 +862,6 @@ actual: {requestInfo.FrontendResponse.Body}
                 )
             );
         }
-
-        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
-            MappingSet mappingSet,
-            QualifiedResourceName resource,
-            DocumentUuid documentUuid,
-            CancellationToken cancellationToken = default
-        ) => ResolvePutTarget(documentUuid, cancellationToken);
 
         public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPutAsync(
             MappingSet mappingSet,
