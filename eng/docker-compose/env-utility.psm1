@@ -2392,88 +2392,11 @@ $script:PostgresUnquotedIdentifierTrimCharacter = [char[]]@(
     [char]0x20, [char]0x09, [char]0x0A, [char]0x0D, [char]0x0C
 )
 
-# The SQL Server reserved-name rule is a two-part, fail-closed admissibility contract, measured against
-# the pinned mcr.microsoft.com/mssql/server:2025-latest image under its default server collation
-# (SQL_Latin1_General_CP1_CI_AS). It is deliberately NOT an emulation of that collation.
-#
-# Part 1 - the admissible universe: only a name made entirely of printable ASCII (0x20..0x7E) is
-# compared at all. Within that universe the collation was measured EXHAUSTIVELY: the only equal pairs
-# are the 26 letter case pairs, no character is ignorable or folds onto a space, and nothing expands to
-# or from a digraph of the reserved name's alphabet. OUTSIDE the universe the equivalence class is
-# open-ended - measured names that all resolve to the physical edfi_configurationservice include
-# full-width letterforms (0xFF45 for 'e', 0xFF3F for '_'), the 0xFB01 ligature expanding to "fi", and
-# zero-weight characters anywhere in the name (0x200D, 0x2060, 0xFEFF, a trailing U+1F600; 19,178 code
-# points in the scanned BMP range are zero-weight) - and no in-process comparer reproduces that class,
-# so every such name is REFUSED as not provably distinct. The asymmetry is intended: a false positive
-# costs a rename, a false negative silently lands the datastore in the dedicated CMS database.
-#
-# Part 2 - inside the universe: TrimEnd with exactly the space character, then OrdinalIgnoreCase.
-# Trailing spaces are comparison semantics on this engine (sys.databases stores them; N'a' = N'a ' is
-# TRUE), leading spaces are significant and stay meaningful, and case folds. Never TrimEnd() with no
-# argument: the space is the only .NET whitespace inside the universe, and the explicit set keeps that
-# true by inspection instead of by coincidence.
-$script:MssqlTrailingNameTrimCharacter = [char[]]@([char]0x20)
-
-# Part 1's universe check, over UTF-16 code units - a surrogate half, and therefore any
-# supplementary-plane character, is outside 0x20..0x7E and is refused. Anchored \A and \z ON PURPOSE:
-# .NET '$' and '\Z' also match immediately BEFORE a final line feed (measured:
-# ('safe_name' + [char]0x0A) -match '^[\x20-\x7e]*$' is True), which would readmit exactly the
-# trailing-line-feed names this rule fails closed. Do not "simplify" the anchors.
-$script:MssqlPrintableAsciiNamePattern = '\A[\x20-\x7E]*\z'
-
-function Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase {
-    <#
-    .SYNOPSIS
-        True when a SQL Server datastore name must be refused against the dedicated
-        'edfi_configurationservice': it either measurably denotes that same physical database, or it
-        cannot be proven distinct from it without the server.
-
-    .DESCRIPTION
-        The single SQL Server physical-name authority, shared by BOTH MSSQL collision paths - MSSQL_DB_NAME
-        through the local initialization path and -DataStoreDatabaseName through the registered path -
-        because both end at the same server-side name lookup. Sharing it is correct precisely because
-        quoting decides nothing here: the identifier is bracket-quoted on either path, and the server
-        matches the name under its collation regardless.
-
-        The verdict is fail-closed rather than an emulation of the server collation: a name made only of
-        printable ASCII is judged by the measured rule (trailing spaces ignored, then case-insensitive),
-        and every other name is refused because its distinctness cannot be proven offline - the measured
-        equivalence class under the default collation reaches width variants, ligature expansions and
-        zero-weight characters, and no in-process comparison reproduces it. See
-        $script:MssqlTrailingNameTrimCharacter and $script:MssqlPrintableAsciiNamePattern for what was
-        measured, what the universe admits, and why the regex anchors are load-bearing.
-
-        Narrow on purpose. It is a SQL-Server-only rule and must not be reused for PostgreSQL, whose two
-        paths disagree with each other and with this one; and it is not a general name comparison - the
-        resolved CMS connection-string check keeps its own semantics.
-
-    .PARAMETER DatabaseName
-        A database name already reduced to what SQL Server will look up: the resolved datastore-name
-        environment value, or the parsed database value from a registered connection string. A blank name
-        is not a match - callers report absence separately.
-    #>
-    param(
-        [Parameter(Mandatory)] [AllowEmptyString()] [string]$DatabaseName
-    )
-
-    if ([string]::IsNullOrWhiteSpace($DatabaseName)) { return $false }
-
-    # Fail closed outside the measured universe. For some names refusal is also the measured truth of
-    # "the same database" (a trailing ideographic space, an embedded zero-width joiner); for the rest it
-    # means exactly what it says: not provably distinct.
-    if ($DatabaseName -notmatch $script:MssqlPrintableAsciiNamePattern) { return $true }
-
-    return [string]::Equals(
-        $DatabaseName.TrimEnd($script:MssqlTrailingNameTrimCharacter),
-        "edfi_configurationservice",
-        [System.StringComparison]::OrdinalIgnoreCase)
-}
-
 function Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase {
     <#
     .SYNOPSIS
-        True when the datastore database the LOCAL INITIALIZATION path creates from POSTGRES_DB_NAME /
-        MSSQL_DB_NAME would be the SAME physical database as 'edfi_configurationservice', the dedicated
+        True when the datastore database the LOCAL INITIALIZATION path creates from POSTGRES_DB_NAME
+        would be the SAME physical database as 'edfi_configurationservice', the dedicated
         Configuration Service database that -SeparateConfigDatabase establishes.
 
     .DESCRIPTION
@@ -2482,46 +2405,40 @@ function Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase {
         and it is NOT the authority for -DataStoreDatabaseName - that value never reaches this mechanism
         and has its own predicate, Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase.
 
-        PostgreSQL: postgresql-init.sh runs `CREATE DATABASE ${POSTGRES_DB_NAME};` with the identifier NOT
-        SQL-quoted. PostgreSQL folds an unquoted identifier to lower case AND its lexer discards the
-        whitespace around it, so POSTGRES_DB_NAME=EDFI_ConfigurationService and
+        PostgreSQL only, on purpose: postgresql-init.sh runs `CREATE DATABASE ${POSTGRES_DB_NAME};` with
+        the identifier NOT SQL-quoted. PostgreSQL folds an unquoted identifier to lower case AND its lexer
+        discards the whitespace around it, so POSTGRES_DB_NAME=EDFI_ConfigurationService and
         POSTGRES_DB_NAME='EDFI_ConfigurationService ' both create edfi_configurationservice. The comparison
         therefore trims the measured lexer-whitespace set - see
         $script:PostgresUnquotedIdentifierTrimCharacter for exactly what was measured, and for the two
-        characters deliberately excluded - and then ignores case.
+        characters deliberately excluded - and then ignores case. An offline verdict is sound here
+        because the rule is an exact model of that one lexer.
 
-        SQL Server: the identifier is bracket-quoted, so it does not fold - but quoting is not what decides
-        identity there. The server matches the name under its collation, whose equivalences reach far past
-        letter case and trailing spaces, so that answer is owned by
-        Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase and shared with the registered path: a
-        name made only of printable ASCII is judged by the measured rule, and every other name is refused
-        fail-closed as not provably distinct. The two engines' rules are measured separately and are not
-        interchangeable: PostgreSQL's is an exact model of its lexer, SQL Server's is a deliberately
-        conservative admissibility contract.
-
-        -DatabaseEngine is mandatory. The engine selects a physical creation mechanism and the mechanisms
-        answer differently; an engine-neutral answer covering both call sites is what previously accepted a
-        colliding PostgreSQL name here while rejecting a distinct one at the other call site.
+        SQL Server has NO offline verdict, here or anywhere: database names inherit the INSTANCE
+        collation, and the equivalence class differs between instances (measured: a case variant that
+        collides under the default collation is a genuinely distinct database on a case-sensitive
+        instance), so no fixed rule answers for every server. MSSQL physical distinctness is decided by
+        the server-backed authority, Assert-MssqlPhysicalDatastoreDistinctness, against the RUNNING
+        instance - which is why -DatabaseEngine refuses "mssql" at parameter binding instead of handing
+        back a silent non-verdict.
 
     .PARAMETER DatabaseEngine
-        "postgresql" or "mssql" - which local initialization mechanism creates the datastore database.
+        "postgresql" - the only creation mechanism with a sound offline verdict. Any other value fails
+        parameter binding loudly.
 
     .PARAMETER DatastoreDatabaseName
-        The datastore database name resolved with Compose precedence from POSTGRES_DB_NAME or
-        MSSQL_DB_NAME. A blank name is not a collision - callers report absence separately.
+        The datastore database name resolved with Compose precedence from POSTGRES_DB_NAME. A blank
+        name is not a collision - callers report absence separately.
     #>
     param(
-        [Parameter(Mandatory)] [ValidateSet("postgresql", "mssql")] [string]$DatabaseEngine,
+        [Parameter(Mandatory)] [ValidateSet("postgresql")] [string]$DatabaseEngine,
         [Parameter(Mandatory)] [AllowEmptyString()] [string]$DatastoreDatabaseName
     )
+    # -DatabaseEngine is consumed by its ValidateSet alone: the engine gate IS the contract, so the
+    # binding failure for "mssql" is the behavior, not an accident of an unused parameter.
+    $null = $DatabaseEngine
 
     if ([string]::IsNullOrWhiteSpace($DatastoreDatabaseName)) { return $false }
-
-    if ($DatabaseEngine -eq "mssql") {
-        # Not a local rule: the server-side lookup decides identity here, and the registered path reaches
-        # the same lookup, so both go through the one SQL Server authority.
-        return Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase -DatabaseName $DatastoreDatabaseName
-    }
 
     return [string]::Equals(
         $DatastoreDatabaseName.Trim($script:PostgresUnquotedIdentifierTrimCharacter),
@@ -2599,45 +2516,44 @@ function Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase {
         registered connection string is serialized and parsed. Comparing the raw text was wrong for the
         transport that existed: it judged one string while the provider consumed another.
 
-        PostgreSQL: the parsed database value is passed to the server as-is and SchemaTools creates it
-        with a QUOTED identifier (PgsqlDatabaseProvisioner emits `CREATE DATABASE "<name>"`), so nothing
-        folds. EDFI_ConfigurationService is a genuinely distinct physical database from
-        edfi_configurationservice - measured, both coexisting in pg_database - and so is a name whose only
-        difference is surrounding whitespace, for every measured whitespace shape except one: a bare
-        trailing LINE FEED is removed by serialization+parsing before the provider sees it, so that name
-        correctly collides. The comparison is therefore ORDINAL and exact against the parsed value, and
-        the LF case is caught precisely because it is the PARSED value being compared.
+        PostgreSQL only, on purpose: the parsed database value is passed to the server as-is and
+        SchemaTools creates it with a QUOTED identifier (PgsqlDatabaseProvisioner emits
+        `CREATE DATABASE "<name>"`), so nothing folds. EDFI_ConfigurationService is a genuinely distinct
+        physical database from edfi_configurationservice - measured, both coexisting in pg_database - and
+        so is a name whose only difference is surrounding whitespace, for every measured whitespace shape
+        except one: a bare trailing LINE FEED is removed by serialization+parsing before the provider sees
+        it, so that name correctly collides. The comparison is therefore ORDINAL and exact against the
+        parsed value, and the LF case is caught precisely because it is the PARSED value being compared.
 
-        SQL Server: quoting does not decide identity at all; the server matches database names under its
-        collation. That rule is owned by Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase and
-        shared with the initialized path, because both MSSQL inputs reach the same server lookup - here it
-        judges the PARSED database value, and it is fail-closed: a printable-ASCII name gets the measured
-        comparison, every other name is refused as not provably distinct. Sharing it with the other MSSQL
-        path is safe; sharing anything with the PostgreSQL paths is not.
-
-        -DatabaseEngine is mandatory: on this path the two engines genuinely disagree, so there is no
-        engine-neutral answer to give.
+        SQL Server has NO offline verdict: quoting does not decide identity there, the server matches
+        database names under the INSTANCE collation, and that class differs between instances - so MSSQL
+        physical distinctness is decided by the server-backed authority,
+        Assert-MssqlPhysicalDatastoreDistinctness, against the RUNNING instance. The transport rule is
+        preserved on that path too: the wired start script hands the authority the PARSED value
+        (Get-RegisteredDatastoreDatabaseValue) when the registration will run, never the raw parameter
+        text. -DatabaseEngine therefore refuses "mssql" at parameter binding instead of handing back a
+        silent non-verdict.
 
     .PARAMETER DatabaseEngine
-        "postgresql" or "mssql" - which provider selects or creates the registered database.
+        "postgresql" - the only provider transport with a sound offline verdict. Any other value fails
+        parameter binding loudly.
 
     .PARAMETER DatastoreDatabaseName
         The caller's explicit -DataStoreDatabaseName value. A blank name means the datastore name was not
         overridden at all and is never a collision.
     #>
     param(
-        [Parameter(Mandatory)] [ValidateSet("postgresql", "mssql")] [string]$DatabaseEngine,
+        [Parameter(Mandatory)] [ValidateSet("postgresql")] [string]$DatabaseEngine,
         [Parameter(Mandatory)] [AllowEmptyString()] [string]$DatastoreDatabaseName
     )
+    # -DatabaseEngine is consumed by its ValidateSet alone: the engine gate IS the contract, so the
+    # binding failure for "mssql" is the behavior, not an accident of an unused parameter.
+    $null = $DatabaseEngine
 
     if ([string]::IsNullOrWhiteSpace($DatastoreDatabaseName)) { return $false }
 
     # The value the provider will actually receive, not the parameter text.
     $registeredDatabaseValue = Get-RegisteredDatastoreDatabaseValue -DatastoreDatabaseName $DatastoreDatabaseName
-
-    if ($DatabaseEngine -eq "mssql") {
-        return Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase -DatabaseName $registeredDatabaseValue
-    }
 
     return [string]::Equals(
         $registeredDatabaseValue,
@@ -3596,9 +3512,10 @@ function Confirm-CmsDatabaseTopologyAgreement {
     # Governs the RESOLVED database names compared below - the connection string's own database segments
     # and an ambient DMS_CONFIG_DATABASE_NAME override. Neither is an unquoted SQL identifier, so neither
     # folds, and PostgreSQL stays case-sensitive for both. It deliberately does NOT govern the
-    # datastore-versus-reserved-CMS-name collision: that answer is fixed by the mechanism that physically
-    # CREATES the datastore database, which is
-    # Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase.
+    # datastore-versus-reserved-CMS-name collision: on PostgreSQL that answer is fixed by the mechanism
+    # that physically CREATES the datastore database
+    # (Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase), and on SQL Server it is decided by
+    # the RUNNING instance through Assert-MssqlPhysicalDatastoreDistinctness, not by this function.
     $nameComparison = if ($DatabaseEngine -eq "mssql") { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
 
     # The marker comes from its own raw declaration through the shared assignment model, then through
@@ -3631,7 +3548,7 @@ function Confirm-CmsDatabaseTopologyAgreement {
         throw "Confirm-CmsDatabaseTopologyAgreement: could not resolve a non-blank expected database name for '$datastoreNameKey'."
     }
 
-    if ($isSeparate) {
+    if ($isSeparate -and $DatabaseEngine -eq "postgresql") {
         # Separate mode's whole promise is two physically distinct databases. A datastore name that would
         # land in the dedicated CMS database would pass every equality check below while both services
         # silently share one database, so distinctness is proven explicitly - and it is proven by the
@@ -3640,20 +3557,15 @@ function Confirm-CmsDatabaseTopologyAgreement {
         # call site's -DataStoreDatabaseName reaches a different mechanism and has its own predicate.
         # Resolved with the same Compose precedence as everything else here, so an ambient datastore-name
         # override that collides is caught too.
+        #
+        # PostgreSQL only: this offline verdict is an exact model of postgresql-init.sh's unquoted
+        # CREATE DATABASE lexer. SQL Server renders NO offline verdict here - database names inherit the
+        # INSTANCE collation, so MSSQL physical distinctness is decided by the server-backed authority
+        # (Assert-MssqlPhysicalDatastoreDistinctness) against the running instance, after the database
+        # container starts and before anything consumes it.
         $datastoreDatabaseName = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name $datastoreNameKey)
         if (Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine $DatabaseEngine -DatastoreDatabaseName $datastoreDatabaseName) {
-            # Engine-specific, because the two mechanisms refuse for different reasons and a single
-            # sentence covering both is what made this check look interchangeable with the other one.
-            # The MSSQL sentence deliberately claims a POLICY, not collation emulation: refusal there
-            # covers both a measured collision and a name that merely cannot be proven distinct.
-            $collisionReason =
-                if ($DatabaseEngine -eq "mssql") {
-                    "SQL Server matches database names under its server collation, whose equivalences reach far beyond letter case and trailing spaces - measured examples include full-width letterforms, ligature expansions, and characters with no collation weight at all. A name made only of printable ASCII is judged by the measured rule, case-insensitive with trailing spaces ignored; any other name is refused because its distinctness cannot be proven without the server"
-                }
-                else {
-                    "postgresql-init.sh creates that database with an unquoted CREATE DATABASE, and PostgreSQL discards the whitespace around an unquoted identifier and folds it to lower case"
-                }
-            throw "CMS database topology mismatch: -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct, but '$datastoreNameKey' resolves to a name that cannot be a separate DMS datastore alongside the dedicated 'edfi_configurationservice' ($collisionReason). The resolved value is withheld. Rename the datastore database or use shared mode."
+            throw "CMS database topology mismatch: -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct, but '$datastoreNameKey' resolves to a name that cannot be a separate DMS datastore alongside the dedicated 'edfi_configurationservice' (postgresql-init.sh creates that database with an unquoted CREATE DATABASE, and PostgreSQL discards the whitespace around an unquoted identifier and folds it to lower case). The resolved value is withheld. Rename the datastore database or use shared mode."
         }
     }
 

@@ -320,11 +320,13 @@ string's database, host, and port must agree with the selected topology, and a h
 `DMS_CONFIG_DATABASE_CONNECTION_STRING` that disagrees fails fast with a
 `CMS database topology mismatch` error rather than silently starting CMS against the wrong
 database. In separate mode the datastore database must also be genuinely distinct from
-`edfi_configurationservice`, so a datastore name (or `-DataStoreDatabaseName`) that collides with it
+`edfi_configurationservice`, so a datastore name (or `-DataStoreDatabaseName`) that would land in it
 is rejected rather than quietly re-sharing the database the switch exists to split.
 
-What counts as a collision follows the whole path a name travels to the database server, so the two
-inputs are not checked identically.
+What counts as a collision follows the whole path a name travels to the database server, so the
+inputs are not checked identically — and the two engines answer at different moments: PostgreSQL's
+rules are exact models of its creation mechanisms and are applied before any container starts, while
+SQL Server's answer can only come from the running instance itself.
 
 `POSTGRES_DB_NAME` reaches `postgresql-init.sh`, which runs an unquoted `CREATE DATABASE`: PostgreSQL
 folds the identifier to lower case and discards the whitespace around it, so
@@ -339,19 +341,21 @@ one differing only by surrounding whitespace, is a genuinely separate database y
 exception is a trailing newline, which connection-string parsing drops; such a name is rejected because
 the server really would receive the reserved database.
 
-On SQL Server, quoting decides nothing: the server matches database names under its collation, and
-that collation's equivalences reach far beyond letter case and trailing spaces — measured examples
-that all resolve to the reserved database include full-width letterforms, the `fi` ligature, and
-characters with no collation weight at all. The guard therefore does not try to emulate the
-collation; it applies a deliberate fail-closed policy instead. A datastore name made only of
-printable ASCII is judged by the measured rule: `EDFI_ConfigurationService`,
-`'edfi_configurationservice '` and `'EDFI_ConfigurationService  '` are all the reserved database and
-all rejected, for either input, while a *leading* space is significant and stays allowed. Any name
-containing characters outside printable ASCII is rejected conservatively — not necessarily the
-reserved database, but not provably distinct from it without asking the server — and the remedy is
-renaming the datastore to a printable-ASCII name. The trade is intentional: a rejection costs a
-rename, while an admitted look-alike would silently re-share the one database the switch exists to
-split.
+On SQL Server, quoting decides nothing, and no name is pre-judged offline: database-name identity is
+decided by the *instance's* collation semantics, whose equivalences reach far beyond letter case and
+trailing spaces — measured examples that all resolve to the reserved database under the default
+collation include full-width letterforms, the `fi` ligature, and characters with no collation weight
+at all — and which differ between instances: a case variant that collides under the default
+collation is a genuinely distinct database on a case-sensitive one. The only entity that can answer
+is the SQL Server that will host both databases, so a separate-mode start verifies distinctness
+against the running instance itself: after the database container starts and reports ready, and
+before OpenIddict, CMS, DMS, or the data-store registration touch it, the datastore name — and any
+`-DataStoreDatabaseName`, as the value the provider actually receives — is checked on the server.
+All SQL Server distinctness verdicts happen there. Valid Unicode datastore names are fully supported
+and no longer require renaming: a name is refused only when the instance itself reports that it
+denotes the reserved database, or when the verification cannot be completed, in which case the start
+fails closed rather than proceeding unverified. A verification failure names the offending key or
+parameter and never prints the configured value.
 
 Shared-mode environment files on non-CMS shapes keep today's shared-database check unchanged. That
 check asserts a shared-mode invariant, so it does not apply to a configuration that has declared
