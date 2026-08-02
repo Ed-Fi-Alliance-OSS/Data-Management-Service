@@ -177,6 +177,42 @@ Start-Sleep -Seconds 120
         $result.FailureTypeName | Should -Match "IOException"
     }
 
+    It "keeps a delivery timeout classified as TimedOut even when the child exits before the deadline (mutant M-R12l)" {
+        # The child hands its inherited stdin pipe to a grandchild (whose own stdout/stderr are
+        # redirected away) and then exits with a clean code BEFORE the delivery deadline. The
+        # oversized write therefore stays pending - no broken-pipe fault - while HasExited turns
+        # true: exactly the race in which a fall-through exit poll would erase the delivery
+        # timeout and report TimedOut = false beside exit code 9. The spent delivery budget must
+        # win: TimedOut stays true, StdinCompleted stays false, and no exit code converts the
+        # result into success.
+        $childCommand = @'
+$outFile = [System.IO.Path]::GetTempFileName()
+$errFile = [System.IO.Path]::GetTempFileName()
+$grandchild = Start-Process -FilePath ([Environment]::ProcessPath) -ArgumentList @("-NoProfile", "-Command", "Start-Sleep -Seconds 120") -RedirectStandardOutput $outFile -RedirectStandardError $errFile -PassThru
+Write-Output ("PIPEHOLDER:" + $grandchild.Id)
+exit 9
+'@
+        $result = Invoke-RunnerWithPowerShellChild `
+            -ChildCommand $childCommand `
+            -InputText $script:oversizedPayload `
+            -TimeoutSeconds 8
+        try {
+            # The scenario only exists if the child really exited early with the pipe held
+            # open: a broken pipe would have produced StdinFailure instead of a timeout.
+            $result.StandardOutput | Should -Match "PIPEHOLDER:\d+"
+            $result.FailureKind | Should -Not -Be "StdinFailure"
+            $result.TimedOut | Should -BeTrue
+            $result.StdinCompleted | Should -BeFalse
+            $result.ExitCode | Should -BeNullOrEmpty
+        }
+        finally {
+            $pipeHolderMatch = [regex]::Match([string]$result.StandardOutput, "PIPEHOLDER:(\d+)")
+            if ($pipeHolderMatch.Success) {
+                Stop-Process -Id ([int]$pipeHolderMatch.Groups[1].Value) -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
     It "maps a missing executable to a structured StartFailure instead of a raw exception (contract test 7)" {
         # Measured: unhandled, this surfaces as Win32Exception whose MESSAGE embeds the working
         # directory. The runner must convert it to a kind plus a bare type name.
@@ -257,22 +293,32 @@ Describe "Invoke-NativeCommandWithInput structural pins" {
         $script:runnerText | Should -Not -Match 'StandardInput\.Write'
     }
 
-    It "computes the deadline exactly once (single end-to-end deadline)" {
-        [regex]::Matches($script:runnerText, '\.AddSeconds\(').Count | Should -Be 1
+    It "uses one monotonic stopwatch budget and no wall-clock deadline (structural - no reliable clock-adjustment oracle exists)" {
+        # A DateTime-based deadline stretches or collapses when the system clock is adjusted
+        # mid-run; the monotonic stopwatch does not. Behaviorally indistinguishable without
+        # adjusting the host clock, so the requirement is pinned structurally, honestly.
+        [regex]::Matches($script:runnerText, '\[System\.Diagnostics\.Stopwatch\]::StartNew\(').Count | Should -Be 1
+        $script:runnerText | Should -Not -Match 'UtcNow'
+        $script:runnerText | Should -Not -Match '\.AddSeconds\('
+        $script:runnerText | Should -Not -Match '\.Restart\('
     }
 
-    It "kills before any stdin close on the timeout path (contract test 12, mutant M-R12i - structural)" {
-        # The behavioral kill is not reliable here: a mutant that closes first but swallows the
-        # thrown InvalidOperationException still returns within the ceiling, because the grace
-        # bound abandons the poisoned task. The ordering is therefore pinned structurally.
-        $timeoutRegionStart = $script:runnerText.IndexOf('$result.TimedOut = $true')
-        $timeoutRegionStart | Should -BeGreaterThan 0
-        $timeoutRegion = $script:runnerText.Substring($timeoutRegionStart)
-        $killIndex = $timeoutRegion.IndexOf('.Kill(')
-        $closeIndex = $timeoutRegion.IndexOf('StandardInput.Close(')
+    It "orders the timeout path as kill, then exit confirmation, then stdin close (contract test 12, corrected M-R12i - structural)" {
+        # Kill only INITIATES termination, so kill-before-close alone is not enough: the close
+        # must also follow an exit-confirmation wait, or it races the still-pending write (the
+        # measured poison). The behavioral kill is not reliable here - a wrong-order mutant
+        # that swallows the thrown exception still returns within the ceiling because the grace
+        # bound abandons the poisoned task - so the full ordering is pinned.
+        $terminationRegionStart = $script:runnerText.LastIndexOf('$result.TimedOut = $true')
+        $terminationRegionStart | Should -BeGreaterThan 0
+        $terminationRegion = $script:runnerText.Substring($terminationRegionStart)
+        $killIndex = $terminationRegion.IndexOf('.Kill(')
         $killIndex | Should -BeGreaterThan 0
-        $closeIndex | Should -BeGreaterThan 0
-        $killIndex | Should -BeLessThan $closeIndex
+        $terminationRegion.Substring(0, $killIndex) | Should -Not -Match 'StandardInput\.Close\('
+        $exitConfirmationIndex = $terminationRegion.IndexOf('WaitForExit(', $killIndex)
+        $closeIndex = $terminationRegion.IndexOf('StandardInput.Close(', $killIndex)
+        $exitConfirmationIndex | Should -BeGreaterThan $killIndex
+        $closeIndex | Should -BeGreaterThan $exitConfirmationIndex
     }
 
     It "kills the entire tree, not only the root" {
@@ -284,11 +330,11 @@ Describe "Invoke-NativeCommandWithInput structural pins" {
         # gating is pinned structurally: the kill-failed branch must return BEFORE the
         # parameterless WaitForExit()/drains, carrying the TerminationFailure kind.
         $script:runnerText | Should -Match '"TerminationFailure"'
-        $script:runnerText | Should -Match '(?s)if \(-not \$terminationConfirmed\) \{[^{}]*return \[pscustomobject\]\$result'
+        $script:runnerText | Should -Match '(?s)if \(-not \$exitConfirmed\) \{.*?return \[pscustomobject\]\$result'
     }
 
     It "never awaits the stdin task unbounded (bounded grace only)" {
-        $script:runnerText | Should -Match '\$stdinDrainGraceMs'
+        $script:runnerText | Should -Match '\$cleanupGraceMs'
         $script:runnerText | Should -Not -Match '\$stdinTask\.GetAwaiter'
         $script:runnerText | Should -Not -Match '\$stdinTask\.Wait\(\)'
     }
