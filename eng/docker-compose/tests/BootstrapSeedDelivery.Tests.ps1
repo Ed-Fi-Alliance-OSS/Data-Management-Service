@@ -2586,7 +2586,11 @@ EdFi.BulkLoadClient.Console fake
             $wrapperParams | Should -Not -Contain "DataStoreId"
         }
 
-        It "bootstrap-local-dms.ps1 gates the seed phase on -LoadSeedData" {
+        # ModuleOwnershipProbe: one of the two tests the whole-file ownership children run - it
+        # provably exercises the dms-seed staged-import family: New-TestDirectory creates a
+        # recorded workspace, Copy-WrapperCompositionPrerequisites stages env-utility.psm1 (and
+        # siblings) into it, and executing the staged wrapper imports them FROM the staged path.
+        It "bootstrap-local-dms.ps1 gates the seed phase on -LoadSeedData" -Tag "ModuleOwnershipProbe" {
             # Use an isolated copy so we can stub both downstream phase scripts.
             $wrapperScript = Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1"
             $tmpRoot = New-TestDirectory
@@ -3286,7 +3290,11 @@ CUSTOM_KEY=preserved
             Remove-Item -LiteralPath $fixture.TmpRoot -Recurse -Force
         }
 
-        It "wrapper -InfraOnly (primary shape): runs infra, configure, provision then stops — does NOT invoke DMS-only startup" {
+        # ModuleOwnershipProbe: the other test the whole-file ownership children run - it
+        # provably exercises the dms-ide staged-import family: New-IdeWrapperFixture creates a
+        # recorded workspace, stages env-utility.psm1 (and siblings) into it, and executing the
+        # staged wrapper imports them FROM the staged path.
+        It "wrapper -InfraOnly (primary shape): runs infra, configure, provision then stops — does NOT invoke DMS-only startup" -Tag "ModuleOwnershipProbe" {
             $fixture = New-IdeWrapperFixture
             $sequencePath = Join-Path $fixture.TmpRoot "sequence.txt"
 
@@ -3619,11 +3627,13 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "Import-Module `$seedModulePath -Force",
             "Import-Module `$ideModulePath -Force",
             "try {",
-            "    `$result = Invoke-Pester -Path '$PSCommandPath' -ExcludeTagFilter 'WholeFileModuleOwnership' -Output None -PassThru",
+            "    `$result = Invoke-Pester -Path '$PSCommandPath' -TagFilter 'ModuleOwnershipProbe' -ExcludeTagFilter 'WholeFileModuleOwnership' -Output None -PassThru",
             "    `$seedSurvivor = @(Get-Module -Name CallerOwnedSeed -All)",
             "    `$ideSurvivor = @(Get-Module -Name CallerOwnedIde -All)",
             "    [pscustomobject]@{",
-            "        Total = `$result.TotalCount",
+            "        Failed = `$result.FailedCount",
+            "        PassedCount = `$result.PassedCount",
+            "        PassedName = @(`$result.Passed | ForEach-Object { `$_.ExpandedPath }) -join ';'",
             "        SeedSurvivorCount = `$seedSurvivor.Count",
             "        SeedSurvivorPath = @(`$seedSurvivor | ForEach-Object { `$_.Path }) -join ';'",
             "        SeedExpectedPath = `$seedModulePath",
@@ -3641,7 +3651,12 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
         $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
-        $childState.Total | Should -BeGreaterThan 20 -Because "the suite must actually have run around the caller's modules"
+        # Execution proof first: both family probes must have RUN and PASSED - discovery counts
+        # prove nothing, and probes that never reached their staged imports make survival vacuous.
+        $childState.Failed | Should -Be 0 -Because "both staged-import probes must complete cleanly around the caller's modules"
+        $childState.PassedCount | Should -Be 2 -Because "exactly the two tagged staged-import probes (dms-seed and dms-ide families) run in the child"
+        $childState.PassedName | Should -BeLike "*gates the seed phase on -LoadSeedData*" -Because "the dms-seed family probe must be among the passing tests"
+        $childState.PassedName | Should -BeLike "*runs infra, configure, provision then stops*" -Because "the dms-ide family probe must be among the passing tests"
         $childState.SeedSurvivorCount | Should -Be 1 -Because "a lookalike dms-seed-* directory name establishes no ownership"
         $childState.SeedSurvivorPath | Should -Be $childState.SeedExpectedPath
         $childState.SeedSentinelOutput | Should -Be 'caller-owned-seed'
@@ -3661,7 +3676,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
         @(
             "`$before = @{}",
             "foreach (`$m in @(Get-Module -All)) { if (`$m.Path) { `$before[[string]`$m.Path] = `$true } }",
-            "`$result = Invoke-Pester -Path '$PSCommandPath' -ExcludeTagFilter 'WholeFileModuleOwnership' -Output None -PassThru",
+            "`$result = Invoke-Pester -Path '$PSCommandPath' -TagFilter 'ModuleOwnershipProbe' -ExcludeTagFilter 'WholeFileModuleOwnership' -Output None -PassThru",
             "`$comparison = if (`$IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }",
             "`$tempRoot = [System.IO.Path]::GetTempPath()",
             "`$newResidue = @(Get-Module -All | Where-Object {",
@@ -3670,14 +3685,21 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "    ([System.IO.Path]::GetFullPath(`$p)).StartsWith(`$tempRoot, `$comparison)",
             "})",
             "[pscustomobject]@{",
-            "    Total = `$result.TotalCount",
+            "    Failed = `$result.FailedCount",
+            "    PassedCount = `$result.PassedCount",
+            "    PassedName = @(`$result.Passed | ForEach-Object { `$_.ExpandedPath }) -join ';'",
             "    ResidueCount = `$newResidue.Count",
             "    ResiduePath = @(`$newResidue | ForEach-Object { `$_.Path }) -join ';'",
             "} | ConvertTo-Json -Compress"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
         $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
-        $childState.Total | Should -BeGreaterThan 20
+        # Execution proof first: the residue check is meaningful only if both family probes
+        # really ran and passed - a run that never imported staged modules has nothing to clean.
+        $childState.Failed | Should -Be 0 -Because "both staged-import probes must complete cleanly"
+        $childState.PassedCount | Should -Be 2 -Because "exactly the two tagged staged-import probes (dms-seed and dms-ide families) run in the child"
+        $childState.PassedName | Should -BeLike "*gates the seed phase on -LoadSeedData*" -Because "the dms-seed family probe must be among the passing tests"
+        $childState.PassedName | Should -BeLike "*runs infra, configure, provision then stops*" -Because "the dms-ide family probe must be among the passing tests"
         $childState.ResidueCount | Should -Be 0 -Because "every instance staged under this run's recorded workspaces must be unloaded before the file hands the session back (residue: $($childState.ResiduePath))"
     }
 }

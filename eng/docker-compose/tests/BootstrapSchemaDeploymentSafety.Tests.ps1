@@ -1990,7 +1990,11 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
     }
 
     Context "shared env-file helpers" {
-        It "Resolve-LocalSettingsEnvironmentFile throws on missing file" {
+        # ModuleOwnershipProbe: the whole-file ownership children run exactly this test, because
+        # it provably exercises the staged-import lifecycle - the Describe's BeforeEach creates
+        # the recorded isolated-repo workspace, and this It's first statement imports
+        # env-utility.psm1 FROM that staged path.
+        It "Resolve-LocalSettingsEnvironmentFile throws on missing file" -Tag "ModuleOwnershipProbe" {
             Import-Module (Join-Path $script:repo.DockerComposeRoot "env-utility.psm1") -Force
 
             { Resolve-LocalSettingsEnvironmentFile -Path "/does/not/exist.env" -DockerComposeRoot $script:repo.DockerComposeRoot } |
@@ -3827,11 +3831,13 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "Set-Content -LiteralPath `$callerModulePath -Value 'function Get-CallerOwnedSentinel { ''caller-owned'' }'",
             "Import-Module `$callerModulePath -Force",
             "try {",
-            "    `$result = Invoke-Pester -Path '$PSCommandPath' -ExcludeTagFilter 'WholeFileModuleOwnership' -Output None -PassThru",
+            "    `$result = Invoke-Pester -Path '$PSCommandPath' -TagFilter 'ModuleOwnershipProbe' -ExcludeTagFilter 'WholeFileModuleOwnership' -Output None -PassThru",
             "    `$survivor = @(Get-Module -Name CallerOwned -All)",
             "    `$command = Get-Command Get-CallerOwnedSentinel -ErrorAction SilentlyContinue",
             "    [pscustomobject]@{",
-            "        Total = `$result.TotalCount",
+            "        Failed = `$result.FailedCount",
+            "        PassedCount = `$result.PassedCount",
+            "        PassedName = @(`$result.Passed | ForEach-Object { `$_.ExpandedPath }) -join ';'",
             "        SurvivorCount = `$survivor.Count",
             "        SurvivorPath = @(`$survivor | ForEach-Object { `$_.Path }) -join ';'",
             "        ExpectedPath = `$callerModulePath",
@@ -3843,7 +3849,11 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
         $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
-        $childState.Total | Should -BeGreaterThan 20 -Because "the suite must actually have run around the caller's module"
+        # Execution proof first: the probe must have RUN and PASSED - discovery counts prove
+        # nothing, and a probe that never reached its staged import would make survival vacuous.
+        $childState.Failed | Should -Be 0 -Because "the staged-import probe must complete cleanly around the caller's module"
+        $childState.PassedCount | Should -Be 1 -Because "exactly the one tagged staged-import probe runs in the child"
+        $childState.PassedName | Should -BeLike "*Resolve-LocalSettingsEnvironmentFile throws on missing file*" -Because "the passing test must be the staged-import probe itself"
         $childState.SurvivorCount | Should -Be 1 -Because "a lookalike directory name establishes no ownership; the caller's module is not this file's to remove"
         $childState.SurvivorPath | Should -Be $childState.ExpectedPath -Because "the surviving instance must be the caller's own, at its own path"
         $childState.ExportsSentinel | Should -BeTrue
@@ -3861,7 +3871,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
         @(
             "`$before = @{}",
             "foreach (`$m in @(Get-Module -All)) { if (`$m.Path) { `$before[[string]`$m.Path] = `$true } }",
-            "`$result = Invoke-Pester -Path '$PSCommandPath' -ExcludeTagFilter 'WholeFileModuleOwnership' -Output None -PassThru",
+            "`$result = Invoke-Pester -Path '$PSCommandPath' -TagFilter 'ModuleOwnershipProbe' -ExcludeTagFilter 'WholeFileModuleOwnership' -Output None -PassThru",
             "`$comparison = if (`$IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }",
             "`$tempRoot = [System.IO.Path]::GetTempPath()",
             "`$newResidue = @(Get-Module -All | Where-Object {",
@@ -3870,14 +3880,20 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "    ([System.IO.Path]::GetFullPath(`$p)).StartsWith(`$tempRoot, `$comparison)",
             "})",
             "[pscustomobject]@{",
-            "    Total = `$result.TotalCount",
+            "    Failed = `$result.FailedCount",
+            "    PassedCount = `$result.PassedCount",
+            "    PassedName = @(`$result.Passed | ForEach-Object { `$_.ExpandedPath }) -join ';'",
             "    ResidueCount = `$newResidue.Count",
             "    ResiduePath = @(`$newResidue | ForEach-Object { `$_.Path }) -join ';'",
             "} | ConvertTo-Json -Compress"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
         $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
-        $childState.Total | Should -BeGreaterThan 20
+        # Execution proof first: the residue check is meaningful only if the staged-import probe
+        # really ran and passed - a run that never imported a staged module has nothing to clean.
+        $childState.Failed | Should -Be 0 -Because "the staged-import probe must complete cleanly"
+        $childState.PassedCount | Should -Be 1 -Because "exactly the one tagged staged-import probe runs in the child"
+        $childState.PassedName | Should -BeLike "*Resolve-LocalSettingsEnvironmentFile throws on missing file*" -Because "the passing test must be the staged-import probe itself"
         $childState.ResidueCount | Should -Be 0 -Because "every instance staged under this run's recorded workspaces must be unloaded before the file hands the session back (residue: $($childState.ResiduePath))"
     }
 }
