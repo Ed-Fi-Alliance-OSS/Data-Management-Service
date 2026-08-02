@@ -7,6 +7,23 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Pester stubs intentionally shadow production plural-noun helpers.')]
 param()
 
+# Exact workspace ownership, recorded at creation. Fixtures below stage copies of repository
+# scripts and modules inside temp workspaces this run creates, and EXECUTING a staged script
+# imports env-utility (and siblings) from the staged path - module-table instances that outlive
+# the deleted workspace and break any later suite in the same session that binds -ModuleName
+# mocks. The file-level cleanup at the bottom may unload ONLY module instances rooted beneath a
+# workspace this same run created and recorded through this registrar. Nothing else establishes
+# ownership: not a directory-name prefix, not a module name, not living under the system temp
+# directory - a caller-owned module beneath a lookalike-named directory is not this file's to
+# touch, and the whole-file lifecycle tests at the bottom pin exactly that.
+BeforeAll {
+    $script:ownedWorkspaceRoot = [System.Collections.Generic.List[string]]::new()
+    function script:Register-OwnedWorkspaceRoot {
+        param([Parameter(Mandatory)] [string]$Path)
+        $script:ownedWorkspaceRoot.Add([System.IO.Path]::GetFullPath($Path))
+    }
+}
+
 Describe "DMS-1152 API seed delivery bootstrap" {
     BeforeAll {
         $script:sourceRepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
@@ -16,6 +33,9 @@ Describe "DMS-1152 API seed delivery bootstrap" {
         function script:New-TestDirectory {
             $path = Join-Path ([System.IO.Path]::GetTempPath()) "dms-seed-$([Guid]::NewGuid().ToString('N'))"
             New-Item -ItemType Directory -Path $path -Force | Out-Null
+            # Recorded before any staged code can import from it: this exact root is what the
+            # file-level cleanup is allowed to unload module instances from.
+            Register-OwnedWorkspaceRoot -Path $path
             return $path
         }
 
@@ -682,6 +702,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             $stagingRoot = Join-Path ([System.IO.Path]::GetTempPath()) "fake-ds-stage-$([Guid]::NewGuid().ToString('N'))"
             $innerDir = Join-Path $stagingRoot $InnerDirName
             New-Item -ItemType Directory -Path $innerDir -Force | Out-Null
+            Register-OwnedWorkspaceRoot -Path $stagingRoot
 
             foreach ($relPath in $Contents.Keys) {
                 $abs = Join-Path $innerDir $relPath
@@ -757,6 +778,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 $secondDir = Join-Path $stagingRoot "SecondDir"
                 New-Item -ItemType Directory -Path $firstDir -Force | Out-Null
                 New-Item -ItemType Directory -Path $secondDir -Force | Out-Null
+                Register-OwnedWorkspaceRoot -Path $stagingRoot
                 Set-Content -LiteralPath (Join-Path $firstDir "placeholder.txt") -Value "a" -Encoding utf8
                 Set-Content -LiteralPath (Join-Path $secondDir "placeholder.txt") -Value "b" -Encoding utf8
                 Compress-Archive -Path (Join-Path $stagingRoot "*") -DestinationPath $dest -Force
@@ -3093,6 +3115,7 @@ EdFi.BulkLoadClient.Console fake
                 $script:engineTokenWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-seed-enginetoken-$([Guid]::NewGuid().ToString('N'))"
                 $script:engineTokenComposeRoot = Join-Path $script:engineTokenWork "compose"
                 New-Item -ItemType Directory -Path $script:engineTokenComposeRoot -Force | Out-Null
+                Register-OwnedWorkspaceRoot -Path $script:engineTokenWork
 
                 Set-Content -LiteralPath (Join-Path $script:engineTokenComposeRoot ".env.mssql") -Value @"
 MSSQL_SA_PASSWORD=Abcdefgh1!
@@ -3188,6 +3211,9 @@ CUSTOM_KEY=preserved
             $tmpRoot = Join-Path ([System.IO.Path]::GetTempPath()) "dms-ide-$([Guid]::NewGuid().ToString('N'))"
             $tmpDockerCompose = Join-Path $tmpRoot "eng/docker-compose"
             New-Item -ItemType Directory -Path $tmpDockerCompose -Force | Out-Null
+            # Recorded before any staged code can import from it: this exact root is what the
+            # file-level cleanup is allowed to unload module instances from.
+            Register-OwnedWorkspaceRoot -Path $tmpRoot
 
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1") -Destination $tmpDockerCompose
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
@@ -3526,23 +3552,132 @@ Set-Content -LiteralPath '$seedArgsPath' -Value "url=`$DmsBaseUrl ids=`$(`$DataS
     }
 }
 
-# The isolated fixtures above stage copies of repository scripts and modules under this file's
-# own GUID-named temp workspaces (dms-seed-*, dms-ide-*), and EXECUTING a staged script imports
-# env-utility (and its siblings) from the staged path - a module-table instance that outlives
-# the deleted workspace. Left loaded, those stale instances break any later suite in the same
-# single-call lane that binds -ModuleName mocks: Pester refuses when multiple same-named
-# modules are loaded. This file owns those workspaces, so it unloads exactly the instances
-# rooted under them - and nothing else: a same-named module anyone else loaded is not this
-# file's to remove.
+# Unload exactly the module instances staged under the workspaces THIS run created and
+# recorded - the roots in $script:ownedWorkspaceRoot - and nothing else. Containment respects
+# directory boundaries (exact root, or root plus a separator), so a lookalike sibling such as
+# '<owned-root>-other' or a caller's own 'dms-seed-*' / 'dms-ide-*' directory never matches.
+# The staged instances are usually NESTED inside a staged wrapper module, so enumeration must
+# be Get-Module -All. Cleanup failure is loud: owned residue fails this suite with the
+# surviving paths named, because later suites that bind -ModuleName mocks would otherwise fail
+# on state this file left behind.
 AfterAll {
-    $ownStagedPrefix = @(
-        (Join-Path ([System.IO.Path]::GetTempPath()) "dms-seed-"),
-        (Join-Path ([System.IO.Path]::GetTempPath()) "dms-ide-")
-    )
-    foreach ($staleModule in @(Get-Module -All)) {
-        $stalePath = [string]$staleModule.Path
-        if ($stalePath -and @($ownStagedPrefix | Where-Object { $stalePath.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
-            $staleModule | Remove-Module -Force -ErrorAction SilentlyContinue
+    $ownedRoots = @($script:ownedWorkspaceRoot | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    # Windows paths compare case-insensitively; elsewhere they do not.
+    $pathComparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+    function Test-PathWithinOwnedRoot {
+        param([string]$CandidatePath)
+        if ([string]::IsNullOrEmpty($CandidatePath) -or -not [System.IO.Path]::IsPathRooted($CandidatePath)) { return $false }
+        $canonical = [System.IO.Path]::GetFullPath($CandidatePath)
+        foreach ($root in $ownedRoots) {
+            if ([string]::Equals($canonical, $root, $pathComparison)) { return $true }
+            if ($canonical.StartsWith($root + [System.IO.Path]::DirectorySeparatorChar, $pathComparison)) { return $true }
         }
+        return $false
+    }
+    foreach ($module in @(Get-Module -All)) {
+        if (Test-PathWithinOwnedRoot -CandidatePath ([string]$module.Path)) {
+            $module | Remove-Module -Force -ErrorAction SilentlyContinue
+        }
+    }
+    $ownedResidue = @(Get-Module -All | Where-Object { Test-PathWithinOwnedRoot -CandidatePath ([string]$_.Path) })
+    if ($ownedResidue.Count -gt 0) {
+        $residueList = @($ownedResidue | ForEach-Object { "'$($_.Path)'" }) -join ", "
+        throw "BootstrapSeedDelivery.Tests.ps1 cleanup: module instances staged under this run's own recorded workspaces survived removal ($residueList). Refusing to hand the session back dirty."
+    }
+}
+
+Describe "whole-file module-table ownership (post-Invoke-Pester, isolated children)" {
+    # Both halves of the exact-ownership invariant, proven AFTER Invoke-Pester returns: owned
+    # staged instances are gone, and caller-owned modules beneath LOOKALIKE-named directories -
+    # one per namespace this file stages under - survive untouched. The children exclude this
+    # tag, so there is no recursion; launches go through [Environment]::ProcessPath, never a
+    # literal executable name.
+
+    BeforeAll {
+        $script:ownershipChildWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-seed-ownership-child-$([Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $script:ownershipChildWork -Force | Out-Null
+    }
+
+    AfterAll {
+        Remove-Item -LiteralPath $script:ownershipChildWork -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It "caller-owned modules beneath lookalike dms-seed-* AND dms-ide-* directories survive the complete file lifecycle" -Tag "WholeFileModuleOwnership" {
+        # The review-measured regression this pins, for BOTH namespaces this file stages under:
+        # a cleanup that inferred ownership from directory-name prefixes deleted exactly these
+        # modules while the suite stayed green.
+        $childScript = Join-Path $script:ownershipChildWork "lookalike-survival.ps1"
+        @(
+            "`$seedRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('dms-seed-callerowned-' + [Guid]::NewGuid().ToString('N'))",
+            "`$ideRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('dms-ide-callerowned-' + [Guid]::NewGuid().ToString('N'))",
+            "New-Item -ItemType Directory -Path `$seedRoot -Force | Out-Null",
+            "New-Item -ItemType Directory -Path `$ideRoot -Force | Out-Null",
+            "`$seedModulePath = Join-Path `$seedRoot 'CallerOwnedSeed.psm1'",
+            "`$ideModulePath = Join-Path `$ideRoot 'CallerOwnedIde.psm1'",
+            "Set-Content -LiteralPath `$seedModulePath -Value 'function Get-CallerOwnedSeedSentinel { ''caller-owned-seed'' }'",
+            "Set-Content -LiteralPath `$ideModulePath -Value 'function Get-CallerOwnedIdeSentinel { ''caller-owned-ide'' }'",
+            "Import-Module `$seedModulePath -Force",
+            "Import-Module `$ideModulePath -Force",
+            "try {",
+            "    `$result = Invoke-Pester -Path '$PSCommandPath' -ExcludeTagFilter 'WholeFileModuleOwnership' -Output None -PassThru",
+            "    `$seedSurvivor = @(Get-Module -Name CallerOwnedSeed -All)",
+            "    `$ideSurvivor = @(Get-Module -Name CallerOwnedIde -All)",
+            "    [pscustomobject]@{",
+            "        Total = `$result.TotalCount",
+            "        SeedSurvivorCount = `$seedSurvivor.Count",
+            "        SeedSurvivorPath = @(`$seedSurvivor | ForEach-Object { `$_.Path }) -join ';'",
+            "        SeedExpectedPath = `$seedModulePath",
+            "        SeedSentinelOutput = if (Get-Command Get-CallerOwnedSeedSentinel -ErrorAction SilentlyContinue) { Get-CallerOwnedSeedSentinel } else { 'command-gone' }",
+            "        IdeSurvivorCount = `$ideSurvivor.Count",
+            "        IdeSurvivorPath = @(`$ideSurvivor | ForEach-Object { `$_.Path }) -join ';'",
+            "        IdeExpectedPath = `$ideModulePath",
+            "        IdeSentinelOutput = if (Get-Command Get-CallerOwnedIdeSentinel -ErrorAction SilentlyContinue) { Get-CallerOwnedIdeSentinel } else { 'command-gone' }",
+            "    } | ConvertTo-Json -Compress",
+            "}",
+            "finally {",
+            "    Remove-Item -LiteralPath `$seedRoot -Recurse -Force -ErrorAction SilentlyContinue",
+            "    Remove-Item -LiteralPath `$ideRoot -Recurse -Force -ErrorAction SilentlyContinue",
+            "}"
+        ) -join "`n" | Set-Content -LiteralPath $childScript
+
+        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState.Total | Should -BeGreaterThan 20 -Because "the suite must actually have run around the caller's modules"
+        $childState.SeedSurvivorCount | Should -Be 1 -Because "a lookalike dms-seed-* directory name establishes no ownership"
+        $childState.SeedSurvivorPath | Should -Be $childState.SeedExpectedPath
+        $childState.SeedSentinelOutput | Should -Be 'caller-owned-seed'
+        $childState.IdeSurvivorCount | Should -Be 1 -Because "a lookalike dms-ide-* directory name establishes no ownership"
+        $childState.IdeSurvivorPath | Should -Be $childState.IdeExpectedPath
+        $childState.IdeSentinelOutput | Should -Be 'caller-owned-ide'
+    }
+
+    It "removes every module instance beneath the exact roots this run created" -Tag "WholeFileModuleOwnership" {
+        # The other half: after the run, no NEW module instance rooted under the temp root -
+        # where every workspace this run creates lives - may survive. New instances elsewhere
+        # (repository modules, engine modules the run loads lazily) are legitimate. The temp
+        # filter is a DETECTION oracle in a controlled clean child, never an ownership rule,
+        # and the before/after set difference makes this fail even if the in-file cleanup
+        # postcondition is deleted outright.
+        $childScript = Join-Path $script:ownershipChildWork "own-removal.ps1"
+        @(
+            "`$before = @{}",
+            "foreach (`$m in @(Get-Module -All)) { if (`$m.Path) { `$before[[string]`$m.Path] = `$true } }",
+            "`$result = Invoke-Pester -Path '$PSCommandPath' -ExcludeTagFilter 'WholeFileModuleOwnership' -Output None -PassThru",
+            "`$comparison = if (`$IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }",
+            "`$tempRoot = [System.IO.Path]::GetTempPath()",
+            "`$newResidue = @(Get-Module -All | Where-Object {",
+            "    `$p = [string]`$_.Path",
+            "    `$p -and [System.IO.Path]::IsPathRooted(`$p) -and -not `$before.ContainsKey(`$p) -and",
+            "    ([System.IO.Path]::GetFullPath(`$p)).StartsWith(`$tempRoot, `$comparison)",
+            "})",
+            "[pscustomobject]@{",
+            "    Total = `$result.TotalCount",
+            "    ResidueCount = `$newResidue.Count",
+            "    ResiduePath = @(`$newResidue | ForEach-Object { `$_.Path }) -join ';'",
+            "} | ConvertTo-Json -Compress"
+        ) -join "`n" | Set-Content -LiteralPath $childScript
+
+        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState.Total | Should -BeGreaterThan 20
+        $childState.ResidueCount | Should -Be 0 -Because "every instance staged under this run's recorded workspaces must be unloaded before the file hands the session back (residue: $($childState.ResiduePath))"
     }
 }
