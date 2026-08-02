@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -39,94 +38,24 @@ public sealed record ReferenceResolverRequest(
 );
 
 /// <summary>
-/// Narrow adapter seam for resolving deduped referential ids through a dialect-specific backend.
+/// Raw lookup result for one resolved reference.
 /// </summary>
-public interface IReferenceResolverAdapter
-{
-    /// <summary>
-    /// Resolves deduped referential ids for the active request context.
-    /// </summary>
-    Task<IReadOnlyList<ReferenceLookupResult>> ResolveAsync(
-        ReferenceLookupRequest request,
-        CancellationToken cancellationToken = default
-    );
-}
-
-/// <summary>
-/// Creates the request-scoped dialect adapter used by <see cref="IReferenceResolver" />.
-/// </summary>
-public interface IReferenceResolverAdapterFactory
-{
-    /// <summary>
-    /// Creates the adapter for the current request scope.
-    /// </summary>
-    IReferenceResolverAdapter CreateAdapter();
-
-    /// <summary>
-    /// Creates an adapter bound to an already-open write connection and transaction.
-    /// </summary>
-    IReferenceResolverAdapter CreateSessionAdapter(DbConnection connection, DbTransaction transaction);
-}
-
-/// <summary>
-/// Deduped relational lookup request emitted by <see cref="IReferenceResolver" />.
-/// </summary>
-/// <param name="MappingSet">The resolved runtime mapping set for the active request.</param>
-/// <param name="RequestResource">The resource being written.</param>
-/// <param name="Lookups">Deduped lookups in first-seen request order.</param>
-public sealed record ReferenceLookupRequest(
-    MappingSet MappingSet,
-    QualifiedResourceName RequestResource,
-    IReadOnlyList<ReferenceLookupRequestEntry> Lookups
-)
-{
-    public IReadOnlyList<ReferentialId> ReferentialIds { get; } =
-        Lookups.Select(static lookup => lookup.ReferentialId).ToArray();
-}
-
-/// <summary>
-/// One deduped reference lookup request carrying the target identity needed to verify a resolved hit.
-/// </summary>
-/// <param name="ReferentialId">The deduped requested referential id.</param>
-/// <param name="RequestedResource">The target resource requested by the caller.</param>
-/// <param name="RequestedIdentity">
-/// The ordered requested natural-key identity for the target resource.
-/// </param>
-/// <param name="ExpectedVerificationIdentityKey">
-/// The normalized expected identity key derived from <paramref name="RequestedIdentity" />.
-/// </param>
-public sealed record ReferenceLookupRequestEntry(
-    ReferentialId ReferentialId,
-    QualifiedResourceName RequestedResource,
-    DocumentIdentity RequestedIdentity,
-    string ExpectedVerificationIdentityKey
-);
-
-/// <summary>
-/// Raw lookup result for one resolved referential id.
-/// </summary>
-/// <param name="ReferentialId">The resolved referential id.</param>
+/// <param name="ReferentialId">The requested referential id the result is keyed by.</param>
 /// <param name="DocumentId">The matched document id.</param>
-/// <param name="ResourceKeyId">
-/// The matched document resource key id from <c>dms.Document</c>.
-/// </param>
+/// <param name="ResourceKeyId">The matched document's own resource key id.</param>
 /// <param name="ReferentialIdentityResourceKeyId">
-/// The resource key id from the matched <c>dms.ReferentialIdentity</c> row.
-/// This may differ from <paramref name="ResourceKeyId" /> for alias rows.
+/// The requested target's resource key id. This may differ from <paramref name="ResourceKeyId" /> when the
+/// reference addresses an abstract resource that a concrete document satisfies.
 /// </param>
 /// <param name="IsDescriptor">
 /// Whether the matched document is present in <c>dms.Descriptor</c>.
-/// </param>
-/// <param name="VerificationIdentityKey">
-/// The authoritative natural-key witness projected from the matched document or descriptor.
 /// </param>
 public sealed record ReferenceLookupResult(
     ReferentialId ReferentialId,
     long DocumentId,
     short ResourceKeyId,
     short ReferentialIdentityResourceKeyId,
-    bool IsDescriptor,
-    string? VerificationIdentityKey = null
+    bool IsDescriptor
 );
 
 /// <summary>

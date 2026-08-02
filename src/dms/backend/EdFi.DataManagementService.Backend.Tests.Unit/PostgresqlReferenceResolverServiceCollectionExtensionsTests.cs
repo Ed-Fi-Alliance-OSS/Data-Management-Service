@@ -56,8 +56,8 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         var writeExecutor = scope.ServiceProvider.GetRequiredService<IRelationalWriteExecutor>();
         var writeSessionFactory = scope.ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>();
         var documentHydrator = scope.ServiceProvider.GetRequiredService<IDocumentHydrator>();
-        var factory = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>();
-        var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
+        var factory = scope.ServiceProvider.GetRequiredService<INaturalKeyLookupAdapterFactory>();
+        var adapter = scope.ServiceProvider.GetRequiredService<INaturalKeyLookupAdapter>();
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
         var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
         var readTargetLookupService =
@@ -75,7 +75,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         var relationshipAuthorizationProviderFailureExtractor =
             scope.ServiceProvider.GetRequiredService<IRelationshipAuthorizationProviderFailureExtractor>();
 
-        resolver.Should().BeOfType<ReferenceResolver>();
+        resolver.Should().BeOfType<NaturalKeyReferenceResolver>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
         writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
@@ -86,8 +86,8 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
         writeSessionFactory.Should().BeOfType<PostgresqlRelationalWriteSessionFactory>();
         documentHydrator.Should().BeOfType<PostgresqlDocumentHydrator>();
-        factory.Should().BeOfType<PostgresqlReferenceResolverAdapterFactory>();
-        adapter.Should().BeOfType<PostgresqlReferenceResolverAdapter>();
+        factory.Should().BeOfType<PostgresqlNaturalKeyLookupAdapterFactory>();
+        adapter.Should().BeOfType<PostgresqlNaturalKeyLookupAdapter>();
         commandExecutor.Should().BeOfType<PostgresqlRelationalCommandExecutor>();
         readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
@@ -131,16 +131,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             .Should()
             .BeOfType<PostgresqlNaturalKeyLookupAdapter>();
 
-        // Delegating to the referential-id extension is what keeps the rest of the composition
-        // identical; the adapter pair it registers has no production consumer left.
-        scope
-            .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
-            .Should()
-            .BeOfType<PostgresqlReferenceResolverAdapterFactory>();
-        scope
-            .ServiceProvider.GetRequiredService<IReferenceResolverAdapter>()
-            .Should()
-            .BeOfType<PostgresqlReferenceResolverAdapter>();
+        // The named alias composes exactly the same graph as the base extension.
         scope
             .ServiceProvider.GetRequiredService<IRelationalWriteExecutor>()
             .Should()

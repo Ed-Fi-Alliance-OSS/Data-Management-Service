@@ -34,7 +34,6 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
         );
 
         return services.AddReferenceResolver<
-            PostgresqlReferenceResolverAdapterFactory,
             PostgresqlNaturalKeyLookupAdapterFactory,
             PostgresqlRelationalCommandExecutor,
             PostgresqlRelationalWriteSessionFactory,
@@ -57,25 +56,6 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
         );
 
         return services;
-    }
-}
-
-internal sealed class PostgresqlReferenceResolverAdapterFactory(IRelationalCommandExecutor commandExecutor)
-    : IReferenceResolverAdapterFactory
-{
-    private readonly IRelationalCommandExecutor _commandExecutor =
-        commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
-
-    public IReferenceResolverAdapter CreateAdapter()
-    {
-        return new PostgresqlReferenceResolverAdapter(_commandExecutor);
-    }
-
-    public IReferenceResolverAdapter CreateSessionAdapter(DbConnection connection, DbTransaction transaction)
-    {
-        return new PostgresqlReferenceResolverAdapter(
-            new SessionRelationalCommandExecutor(connection, transaction)
-        );
     }
 }
 

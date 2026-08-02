@@ -41,8 +41,7 @@ public sealed record NaturalKeyLookupRow(
 /// Narrow adapter seam for executing one natural-key lookup batch through a dialect-specific backend.
 /// </summary>
 /// <remarks>
-/// The counterpart of <see cref="IReferenceResolverAdapter" /> for the natural-key resolver. One call is
-/// one round trip on both dialects: each adapter issues exactly one command, because neither binds a
+/// One call is one round trip on both dialects: each adapter issues exactly one command, because neither binds a
 /// parameter per entry — PostgreSQL passes one array parameter per probe column per group and SQL Server
 /// passes one JSON payload per group.
 /// </remarks>
@@ -61,9 +60,8 @@ public interface INaturalKeyLookupAdapter
 /// Creates the request-scoped dialect adapter used by <see cref="NaturalKeyReferenceResolver" />.
 /// </summary>
 /// <remarks>
-/// Mirrors <see cref="IReferenceResolverAdapterFactory" /> and exists for the same reason: the query path
-/// consumes the DI-scoped ambient adapter, while the write path news the resolver up against an already
-/// open write connection and transaction.
+/// Two creation modes because the two paths differ: the query path consumes the DI-scoped ambient adapter,
+/// while the write path news the resolver up against an already open write connection and transaction.
 /// </remarks>
 public interface INaturalKeyLookupAdapterFactory
 {

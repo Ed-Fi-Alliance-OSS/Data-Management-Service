@@ -27,15 +27,8 @@ public class Given_PostgresqlRelationalCommandExecutor
             new RecordingDbCommand(
                 CreateReader(
                     CreateLookupTable(
-                        (documentReferentialId.Value, 101L, (short)11, (short)11, false, "$.schoolId=255901"),
-                        (
-                            descriptorReferentialId.Value,
-                            202L,
-                            (short)12,
-                            (short)12,
-                            true,
-                            "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
-                        )
+                        (documentReferentialId.Value, 101L, (short)11, (short)11, false),
+                        (descriptorReferentialId.Value, 202L, (short)12, (short)12, true)
                     )
                 )
             )
@@ -59,7 +52,7 @@ public class Given_PostgresqlRelationalCommandExecutor
                     new RelationalParameter("@p1", descriptorReferentialId.Value),
                 ]
             ),
-            ReferenceLookupResultReader.ReadAsync
+            ReadLookupResultsAsync
         );
 
         openConnectionCallCount.Should().Be(1);
@@ -78,15 +71,8 @@ public class Given_PostgresqlRelationalCommandExecutor
         result
             .Should()
             .BeEquivalentTo([
-                new ReferenceLookupResult(documentReferentialId, 101L, 11, 11, false, "$.schoolId=255901"),
-                new ReferenceLookupResult(
-                    descriptorReferentialId,
-                    202L,
-                    12,
-                    12,
-                    true,
-                    "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
-                ),
+                new ReferenceLookupResult(documentReferentialId, 101L, 11, 11, false),
+                new ReferenceLookupResult(descriptorReferentialId, 202L, 12, 12, true),
             ]);
     }
 
@@ -151,8 +137,7 @@ public class Given_PostgresqlRelationalCommandExecutor
             long DocumentId,
             short ResourceKeyId,
             short ReferentialIdentityResourceKeyId,
-            bool IsDescriptor,
-            string? VerificationIdentityKey
+            bool IsDescriptor
         )[] rows
     )
     {
@@ -162,7 +147,6 @@ public class Given_PostgresqlRelationalCommandExecutor
         table.Columns.Add("ResourceKeyId", typeof(short));
         table.Columns.Add("ReferentialIdentityResourceKeyId", typeof(short));
         table.Columns.Add("IsDescriptor", typeof(bool));
-        table.Columns.Add("VerificationIdentityKey", typeof(string));
 
         foreach (var row in rows)
         {
@@ -171,12 +155,41 @@ public class Given_PostgresqlRelationalCommandExecutor
                 row.DocumentId,
                 row.ResourceKeyId,
                 row.ReferentialIdentityResourceKeyId,
-                row.IsDescriptor,
-                row.VerificationIdentityKey
+                row.IsDescriptor
             );
         }
 
         return table;
+    }
+
+    /// <summary>
+    /// A representative multi-column projection, used to pin that the executor hands the open reader to the
+    /// caller's projection and returns its product unchanged. Local to these tests: the executor is
+    /// dialect plumbing and owns no lookup shape of its own.
+    /// </summary>
+    private static async Task<IReadOnlyList<ReferenceLookupResult>> ReadLookupResultsAsync(
+        IRelationalCommandReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        List<ReferenceLookupResult> lookupResults = [];
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            lookupResults.Add(
+                new ReferenceLookupResult(
+                    ReferentialId: new ReferentialId(reader.GetRequiredFieldValue<Guid>("ReferentialId")),
+                    DocumentId: reader.GetRequiredFieldValue<long>("DocumentId"),
+                    ResourceKeyId: reader.GetRequiredFieldValue<short>("ResourceKeyId"),
+                    ReferentialIdentityResourceKeyId: reader.GetRequiredFieldValue<short>(
+                        "ReferentialIdentityResourceKeyId"
+                    ),
+                    IsDescriptor: reader.GetRequiredFieldValue<bool>("IsDescriptor")
+                )
+            );
+        }
+
+        return lookupResults;
     }
 }
 

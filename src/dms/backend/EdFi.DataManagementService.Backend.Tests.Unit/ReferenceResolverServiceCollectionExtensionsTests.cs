@@ -23,39 +23,45 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_ReferenceResolver_Service_Collection_Extensions
 {
     [Test]
-    public void It_registers_the_shared_resolver_composition_surface()
+    public void It_registers_the_narrow_reference_resolver_surface()
     {
         var services = new ServiceCollection();
 
-        services.AddReferenceResolver<TestReferenceResolverAdapterFactory>();
+        services.AddLogging();
+        services.AddNaturalKeyReferenceResolver<TestNaturalKeyLookupAdapterFactory>();
 
         using var serviceProvider = BuildServiceProvider(services);
         using var scope = serviceProvider.CreateScope();
 
         var resolver = scope.ServiceProvider.GetRequiredService<IReferenceResolver>();
-        var factory = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>();
-        var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
+        var factory = scope.ServiceProvider.GetRequiredService<INaturalKeyLookupAdapterFactory>();
+        var adapter = scope.ServiceProvider.GetRequiredService<INaturalKeyLookupAdapter>();
 
-        resolver.Should().BeOfType<ReferenceResolver>();
+        resolver.Should().BeOfType<NaturalKeyReferenceResolver>();
         scope.ServiceProvider.GetService<IDescriptorReadHandler>().Should().BeNull();
         scope.ServiceProvider.GetService<IDescriptorWriteHandler>().Should().BeNull();
         scope.ServiceProvider.GetService<IRelationalWriteTargetLookupService>().Should().BeNull();
         scope.ServiceProvider.GetService<IRelationalWriteTargetLookupResolver>().Should().BeNull();
-        factory.Should().BeOfType<TestReferenceResolverAdapterFactory>();
-        adapter.Should().BeOfType<TestReferenceResolverAdapter>();
+        factory.Should().BeOfType<TestNaturalKeyLookupAdapterFactory>();
+        adapter.Should().BeOfType<TestNaturalKeyLookupAdapter>();
     }
 
     [Test]
-    public void It_lets_the_natural_key_registration_win_the_shared_reference_resolver_slot()
+    public void It_registers_the_natural_key_resolver_from_the_shared_composition_surface()
     {
-        // The dialect entry points production hosts call register the natural-key resolver first and
-        // then delegate to the referential-id surface verbatim. Because the shared surface uses TryAdd,
-        // ordering alone decides which resolver the query path consumes — pin it.
+        // The dialect entry points production hosts call delegate to this shared surface, and it is the
+        // surface that decides which resolver the query path consumes — pin it.
         var services = new ServiceCollection();
 
         services.AddLogging();
-        services.AddNaturalKeyReferenceResolver<TestNaturalKeyLookupAdapterFactory>();
-        services.AddReferenceResolver<TestReferenceResolverAdapterFactory>();
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
+        services.AddReferenceResolver<
+            TestNaturalKeyLookupAdapterFactory,
+            TestRelationalCommandExecutor,
+            TestRelationalWriteSessionFactory,
+            TestDocumentHydrator,
+            TestSessionDocumentHydrator
+        >();
 
         using var serviceProvider = BuildServiceProvider(services);
         using var scope = serviceProvider.CreateScope();
@@ -72,16 +78,6 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             .ServiceProvider.GetRequiredService<INaturalKeyLookupAdapter>()
             .Should()
             .BeOfType<TestNaturalKeyLookupAdapter>();
-
-        // The referential-id adapter pair stays resolvable for the differential and canary suites.
-        scope
-            .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
-            .Should()
-            .BeOfType<TestReferenceResolverAdapterFactory>();
-        scope
-            .ServiceProvider.GetRequiredService<IReferenceResolverAdapter>()
-            .Should()
-            .BeOfType<TestReferenceResolverAdapter>();
     }
 
     [Test]
@@ -93,8 +89,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         services.AddSingleton(A.Fake<IReadableProfileProjector>());
 
         services.AddReferenceResolver<
-            ExecutorBackedReferenceResolverAdapterFactory,
-            TestNaturalKeyLookupAdapterFactory,
+            ExecutorBackedNaturalKeyLookupAdapterFactory,
             TestRelationalCommandExecutor,
             TestRelationalWriteSessionFactory,
             TestDocumentHydrator,
@@ -145,14 +140,14 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var edOrgAuthorizationSubjectSelector =
             scope.ServiceProvider.GetRequiredService<RelationalEdOrgAuthorizationSubjectSelector>();
         var factory = scope
-            .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
+            .ServiceProvider.GetRequiredService<INaturalKeyLookupAdapterFactory>()
             .Should()
-            .BeOfType<ExecutorBackedReferenceResolverAdapterFactory>()
+            .BeOfType<ExecutorBackedNaturalKeyLookupAdapterFactory>()
             .Subject;
         var adapter = scope
-            .ServiceProvider.GetRequiredService<IReferenceResolverAdapter>()
+            .ServiceProvider.GetRequiredService<INaturalKeyLookupAdapter>()
             .Should()
-            .BeOfType<ExecutorBackedReferenceResolverAdapter>()
+            .BeOfType<ExecutorBackedNaturalKeyLookupAdapter>()
             .Subject;
 
         commandExecutor.Should().BeOfType<TestRelationalCommandExecutor>();
@@ -203,8 +198,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         services.AddSingleton(A.Fake<IReadableProfileProjector>());
 
         services.AddReferenceResolver<
-            ExecutorBackedReferenceResolverAdapterFactory,
-            TestNaturalKeyLookupAdapterFactory,
+            ExecutorBackedNaturalKeyLookupAdapterFactory,
             TestRelationalCommandExecutor,
             TestRelationalWriteSessionFactory,
             TestDocumentHydrator,
@@ -268,62 +262,41 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         }
     }
 
-    private sealed class TestReferenceResolverAdapterFactory : IReferenceResolverAdapterFactory
-    {
-        public IReferenceResolverAdapter CreateAdapter() => new TestReferenceResolverAdapter();
-
-        public IReferenceResolverAdapter CreateSessionAdapter(
-            DbConnection connection,
-            DbTransaction transaction
-        ) => new TestReferenceResolverAdapter();
-    }
-
-    private sealed class TestReferenceResolverAdapter : IReferenceResolverAdapter
-    {
-        public Task<IReadOnlyList<ReferenceLookupResult>> ResolveAsync(
-            ReferenceLookupRequest request,
-            CancellationToken cancellationToken = default
-        )
-        {
-            return Task.FromResult<IReadOnlyList<ReferenceLookupResult>>([]);
-        }
-    }
-
-    private sealed class ExecutorBackedReferenceResolverAdapterFactory(
+    private sealed class ExecutorBackedNaturalKeyLookupAdapterFactory(
         IRelationalCommandExecutor commandExecutor
-    ) : IReferenceResolverAdapterFactory
+    ) : INaturalKeyLookupAdapterFactory
     {
         public IRelationalCommandExecutor CommandExecutor { get; } =
             commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
 
-        public IReferenceResolverAdapter CreateAdapter()
+        public INaturalKeyLookupAdapter CreateAdapter()
         {
-            return new ExecutorBackedReferenceResolverAdapter(CommandExecutor);
+            return new ExecutorBackedNaturalKeyLookupAdapter(CommandExecutor);
         }
 
-        public IReferenceResolverAdapter CreateSessionAdapter(
+        public INaturalKeyLookupAdapter CreateSessionAdapter(
             DbConnection connection,
             DbTransaction transaction
         )
         {
-            return new ExecutorBackedReferenceResolverAdapter(
+            return new ExecutorBackedNaturalKeyLookupAdapter(
                 new SessionRelationalCommandExecutor(connection, transaction)
             );
         }
     }
 
-    private sealed class ExecutorBackedReferenceResolverAdapter(IRelationalCommandExecutor commandExecutor)
-        : IReferenceResolverAdapter
+    private sealed class ExecutorBackedNaturalKeyLookupAdapter(IRelationalCommandExecutor commandExecutor)
+        : INaturalKeyLookupAdapter
     {
         public IRelationalCommandExecutor CommandExecutor { get; } =
             commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
 
-        public Task<IReadOnlyList<ReferenceLookupResult>> ResolveAsync(
-            ReferenceLookupRequest request,
+        public Task<IReadOnlyList<NaturalKeyLookupRow>> ResolveAsync(
+            NaturalKeyLookupBatch batch,
             CancellationToken cancellationToken = default
         )
         {
-            return Task.FromResult<IReadOnlyList<ReferenceLookupResult>>([]);
+            return Task.FromResult<IReadOnlyList<NaturalKeyLookupRow>>([]);
         }
     }
 

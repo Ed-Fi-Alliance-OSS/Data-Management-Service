@@ -16,21 +16,16 @@ public static class PostgresqlNaturalKeyReferenceResolverServiceCollectionExtens
     /// the request-scoped <see cref="IReferenceResolver" />.
     /// </summary>
     /// <remarks>
-    /// This is the composition production hosts register. A sibling of
+    /// Retained as a named alias of
     /// <see cref="PostgresqlReferenceResolverServiceCollectionExtensions.AddPostgresqlReferenceResolver" />,
-    /// not a replacement: the natural-key registration is added first so it wins the shared surface's
-    /// <c>TryAdd</c> for <see cref="IReferenceResolver" />, and everything else — command executor, write
-    /// session factory, hydrators, write executor — is the same composition. The referential-id resolver's
-    /// adapter factory stays registered but has no production consumer; only the differential and canary
-    /// integration suites still resolve through it, and both it and this delegation die in Phase 4.
+    /// which now registers the natural-key resolver itself — there is no second resolver arm to choose
+    /// between, so the two entry points compose exactly the same graph.
     /// </remarks>
     public static IServiceCollection AddPostgresqlNaturalKeyReferenceResolver(
         this IServiceCollection services
     )
     {
         ArgumentNullException.ThrowIfNull(services);
-
-        services.AddNaturalKeyReferenceResolver<PostgresqlNaturalKeyLookupAdapterFactory>();
 
         return services.AddPostgresqlReferenceResolver();
     }

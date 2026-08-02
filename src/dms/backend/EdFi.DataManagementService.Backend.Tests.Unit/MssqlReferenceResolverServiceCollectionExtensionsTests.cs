@@ -50,8 +50,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         var writeExecutor = scope.ServiceProvider.GetRequiredService<IRelationalWriteExecutor>();
         var writeSessionFactory = scope.ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>();
         var documentHydrator = scope.ServiceProvider.GetRequiredService<IDocumentHydrator>();
-        var factory = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>();
-        var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
+        var factory = scope.ServiceProvider.GetRequiredService<INaturalKeyLookupAdapterFactory>();
+        var adapter = scope.ServiceProvider.GetRequiredService<INaturalKeyLookupAdapter>();
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
         var parameterConfigurator =
             scope.ServiceProvider.GetRequiredService<IRelationalParameterConfigurator>();
@@ -71,7 +71,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         var relationshipAuthorizationProviderFailureExtractor =
             scope.ServiceProvider.GetRequiredService<IRelationshipAuthorizationProviderFailureExtractor>();
 
-        resolver.Should().BeOfType<ReferenceResolver>();
+        resolver.Should().BeOfType<NaturalKeyReferenceResolver>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
         writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
@@ -82,8 +82,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
         writeSessionFactory.Should().BeOfType<MssqlRelationalWriteSessionFactory>();
         documentHydrator.Should().BeOfType<MssqlDocumentHydrator>();
-        factory.Should().BeOfType<MssqlReferenceResolverAdapterFactory>();
-        adapter.Should().BeOfType<MssqlReferenceResolverAdapter>();
+        factory.Should().BeOfType<MssqlNaturalKeyLookupAdapterFactory>();
+        adapter.Should().BeOfType<MssqlNaturalKeyLookupAdapter>();
         commandExecutor.Should().BeOfType<MssqlRelationalCommandExecutor>();
         parameterConfigurator.Should().BeOfType<MssqlRelationalParameterConfigurator>();
         readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
@@ -125,16 +125,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             .Should()
             .BeOfType<MssqlNaturalKeyLookupAdapter>();
 
-        // Delegating to the referential-id extension is what keeps the rest of the composition
-        // identical; the adapter pair it registers has no production consumer left.
-        scope
-            .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
-            .Should()
-            .BeOfType<MssqlReferenceResolverAdapterFactory>();
-        scope
-            .ServiceProvider.GetRequiredService<IReferenceResolverAdapter>()
-            .Should()
-            .BeOfType<MssqlReferenceResolverAdapter>();
+        // The named alias composes exactly the same graph as the base extension.
         scope
             .ServiceProvider.GetRequiredService<IRelationalWriteExecutor>()
             .Should()

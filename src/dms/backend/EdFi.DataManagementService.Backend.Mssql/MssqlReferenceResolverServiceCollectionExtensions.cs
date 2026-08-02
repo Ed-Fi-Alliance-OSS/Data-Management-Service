@@ -32,7 +32,6 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
         );
 
         return services.AddReferenceResolver<
-            MssqlReferenceResolverAdapterFactory,
             MssqlNaturalKeyLookupAdapterFactory,
             MssqlRelationalCommandExecutor,
             MssqlRelationalWriteSessionFactory,
@@ -55,25 +54,6 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
         );
 
         return services;
-    }
-}
-
-internal sealed class MssqlReferenceResolverAdapterFactory(IRelationalCommandExecutor commandExecutor)
-    : IReferenceResolverAdapterFactory
-{
-    private readonly IRelationalCommandExecutor _commandExecutor =
-        commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
-
-    public IReferenceResolverAdapter CreateAdapter()
-    {
-        return new MssqlReferenceResolverAdapter(_commandExecutor);
-    }
-
-    public IReferenceResolverAdapter CreateSessionAdapter(DbConnection connection, DbTransaction transaction)
-    {
-        return new MssqlReferenceResolverAdapter(
-            new SessionRelationalCommandExecutor(connection, transaction)
-        );
     }
 }
 

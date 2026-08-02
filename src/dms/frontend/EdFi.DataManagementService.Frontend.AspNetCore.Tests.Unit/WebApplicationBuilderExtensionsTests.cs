@@ -194,16 +194,6 @@ public class WebApplicationBuilderExtensionsTests
                 .ServiceProvider.GetRequiredService<INaturalKeyLookupAdapter>()
                 .Should()
                 .BeOfType<PostgresqlNaturalKeyLookupAdapter>();
-            // The referential-id adapter pair is still composed — the differential and canary suites
-            // resolve through it — but no production code path constructs a resolver over it.
-            scope
-                .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
-                .Should()
-                .BeOfType<PostgresqlReferenceResolverAdapterFactory>();
-            scope
-                .ServiceProvider.GetRequiredService<IReferenceResolverAdapter>()
-                .Should()
-                .BeOfType<PostgresqlReferenceResolverAdapter>();
             scope
                 .ServiceProvider.GetRequiredService<IRelationalCommandExecutor>()
                 .Should()
@@ -343,20 +333,6 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .Match<INaturalKeyLookupAdapter>(adapter =>
                     adapter.GetType().Name == "MssqlNaturalKeyLookupAdapter"
-                );
-            // The referential-id adapter pair is still composed — the differential and canary suites
-            // resolve through it — but no production code path constructs a resolver over it.
-            scope
-                .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
-                .Should()
-                .Match<IReferenceResolverAdapterFactory>(factory =>
-                    factory.GetType().Name == "MssqlReferenceResolverAdapterFactory"
-                );
-            scope
-                .ServiceProvider.GetRequiredService<IReferenceResolverAdapter>()
-                .Should()
-                .Match<IReferenceResolverAdapter>(adapter =>
-                    adapter.GetType().Name == "MssqlReferenceResolverAdapter"
                 );
             scope
                 .ServiceProvider.GetRequiredService<IRelationalCommandExecutor>()

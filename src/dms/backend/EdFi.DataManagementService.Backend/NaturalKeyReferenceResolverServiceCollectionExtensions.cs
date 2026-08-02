@@ -13,11 +13,11 @@ namespace EdFi.DataManagementService.Backend;
 /// Registers the natural-key reference resolver as the request-scoped <see cref="IReferenceResolver" />.
 /// </summary>
 /// <remarks>
-/// Deliberately separate from <see cref="ReferenceResolverServiceCollectionExtensions" />: through Phase 3
-/// both resolvers are registerable, and the dialect entry points
-/// (<c>Add&lt;Dialect&gt;NaturalKeyReferenceResolver</c>) call this first so its
-/// <see cref="IReferenceResolver" /> registration wins the subsequent <c>TryAdd</c> in the shared
-/// composition surface, which is otherwise reused verbatim.
+/// The natural-key resolver is the only resolver arm: the shared composition surface in
+/// <see cref="ReferenceResolverServiceCollectionExtensions" /> calls this, so every host that composes a
+/// dialect surface gets it. Kept as its own entry point because it is the smallest registration set that
+/// makes an <see cref="IReferenceResolver" /> resolvable, independent of the rest of the relational
+/// composition.
 /// </remarks>
 public static class NaturalKeyReferenceResolverServiceCollectionExtensions
 {

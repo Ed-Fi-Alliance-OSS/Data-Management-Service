@@ -29,7 +29,7 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
 {
     public const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
 
-    public static ServiceProvider CreateServiceProvider(bool useNaturalKeyResolver = false)
+    public static ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
 
@@ -41,14 +41,7 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
 
-        if (useNaturalKeyResolver)
-        {
-            services.AddPostgresqlNaturalKeyReferenceResolver();
-        }
-        else
-        {
-            services.AddPostgresqlReferenceResolver();
-        }
+        services.AddPostgresqlReferenceResolver();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -546,7 +539,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     private MappingSet _mappingSet = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
-    private ServiceProvider _naturalKeyResolverServiceProvider = null!;
     private ResourceInfo _resourceInfo = null!;
     private ResourceInfo _extensionResourceInfo = null!;
     private ResourceSchema _baseResourceSchema = null!;
@@ -571,10 +563,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider =
             AuthoritativeSampleStudentSectionAssociationIntegrationTestSupport.CreateServiceProvider();
-        _naturalKeyResolverServiceProvider =
-            AuthoritativeSampleStudentSectionAssociationIntegrationTestSupport.CreateServiceProvider(
-                useNaturalKeyResolver: true
-            );
         _relatedGeneralStudentProgramAssociationsTable =
             PostgresqlGeneratedDdlModelLookup.RequireTableByScopeAndColumns(
                 _fixture.ModelSet,
@@ -653,11 +641,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         if (_serviceProvider is not null)
         {
             await _serviceProvider.DisposeAsync();
-        }
-
-        if (_naturalKeyResolverServiceProvider is not null)
-        {
-            await _naturalKeyResolverServiceProvider.DisposeAsync();
         }
 
         if (_database is not null)
@@ -916,20 +899,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             ),
         ];
 
-        var hashResult = await ResolveReferencesAsync(
+        var naturalKeyResult = await ResolveReferencesAsync(
             _serviceProvider,
             documentReferences,
             descriptorReferences
-        );
-        var naturalKeyResult = await ResolveReferencesAsync(
-            _naturalKeyResolverServiceProvider,
-            documentReferences,
-            descriptorReferences
-        );
-
-        naturalKeyResult.ShouldResolveIdenticallyTo(
-            hashResult,
-            "authoritative wide RefKey / key unification / descriptor-bearing identity"
         );
 
         naturalKeyResult

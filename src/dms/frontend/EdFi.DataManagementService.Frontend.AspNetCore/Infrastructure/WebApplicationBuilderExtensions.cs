@@ -202,7 +202,7 @@ public static class WebApplicationBuilderExtensions
             );
             webAppBuilder.Services.AddPostgresqlDatastore(webAppBuilder.Configuration);
             logger.Information("Injecting PostgreSQL relational write runtime services");
-            webAppBuilder.Services.AddPostgresqlNaturalKeyReferenceResolver();
+            webAppBuilder.Services.AddPostgresqlReferenceResolver();
             webAppBuilder.Services.AddPostgresqlRelationalTokenInfoEducationOrganizationLookup();
             webAppBuilder.Services.AddSingleton<
                 IDatabaseFingerprintReader,
@@ -269,7 +269,7 @@ public static class WebApplicationBuilderExtensions
     )
     {
         services.AddRelationalMappingSetServices(configuration, SqlDialect.Mssql, new MssqlDialectRules());
-        services.AddMssqlNaturalKeyReferenceResolver();
+        services.AddMssqlReferenceResolver();
     }
 }
 

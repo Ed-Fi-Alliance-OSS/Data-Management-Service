@@ -15,35 +15,13 @@ namespace EdFi.DataManagementService.Backend;
 
 public static class ReferenceResolverServiceCollectionExtensions
 {
-    public static IServiceCollection AddReferenceResolver<TReferenceResolverAdapterFactory>(
-        this IServiceCollection services
-    )
-        where TReferenceResolverAdapterFactory : class, IReferenceResolverAdapterFactory
-    {
-        ArgumentNullException.ThrowIfNull(services);
-
-        services.TryAdd(ServiceDescriptor.Scoped<IReferenceResolver, ReferenceResolver>());
-        services.TryAdd(
-            ServiceDescriptor.Scoped<IReferenceResolverAdapterFactory, TReferenceResolverAdapterFactory>()
-        );
-        services.TryAdd(
-            ServiceDescriptor.Scoped<IReferenceResolverAdapter>(static serviceProvider =>
-                serviceProvider.GetRequiredService<IReferenceResolverAdapterFactory>().CreateAdapter()
-            )
-        );
-
-        return services;
-    }
-
     internal static IServiceCollection AddReferenceResolver<
-        TReferenceResolverAdapterFactory,
         TNaturalKeyLookupAdapterFactory,
         TRelationalCommandExecutor,
         TRelationalWriteSessionFactory,
         TDocumentHydrator,
         TSessionDocumentHydrator
     >(this IServiceCollection services)
-        where TReferenceResolverAdapterFactory : class, IReferenceResolverAdapterFactory
         where TNaturalKeyLookupAdapterFactory : class, INaturalKeyLookupAdapterFactory
         where TRelationalCommandExecutor : class, IRelationalCommandExecutor
         where TRelationalWriteSessionFactory : class, IRelationalWriteSessionFactory
@@ -52,12 +30,10 @@ public static class ReferenceResolverServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // The write executor resolves references and seeks POST upsert targets by natural key, so the
-        // natural-key adapter factory belongs to the same composition that registers the executor - not
-        // only to the compositions that also swap the query-path IReferenceResolver.
-        services.TryAdd(
-            ServiceDescriptor.Scoped<INaturalKeyLookupAdapterFactory, TNaturalKeyLookupAdapterFactory>()
-        );
+        // The natural-key resolver IS the query-path IReferenceResolver, and the write executor seeks
+        // POST upsert targets through the same natural-key adapter, so the whole natural-key registration
+        // set belongs to this one composition surface - there is no second resolver arm to order against.
+        services.AddNaturalKeyReferenceResolver<TNaturalKeyLookupAdapterFactory>();
 
         services.AddOptions();
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalCommandExecutor, TRelationalCommandExecutor>());
@@ -192,6 +168,6 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalWriteExecutor, DefaultRelationalWriteExecutor>());
         services.AddRelationalRelationshipAuthorizationServices();
 
-        return services.AddReferenceResolver<TReferenceResolverAdapterFactory>();
+        return services;
     }
 }
