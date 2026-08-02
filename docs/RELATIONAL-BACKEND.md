@@ -572,27 +572,39 @@ At this point both tables are **write-only**:
   and descriptors ([`DescriptorWriteHandler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs)) —
   still `DELETE`d alongside the row it identifies
   ([`OrderedDeleteCommandBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/OrderedDeleteCommandBuilder.cs)),
-  and still `UPDATE`d by the generated stamping triggers. **Nothing reads it, anywhere.** The UUIDv5
-  hash resolver and its `dms.ReferentialIdentity` ⋈ `dms.Document` join are **deleted** — every dialect
-  composition now registers the natural-key resolver into the `IReferenceResolver` slot
+  and still `UPDATE`d by the generated stamping triggers. **No production code path reads it** — and
+  no *dead* production reader is left either. The UUIDv5 hash resolver and its
+  `dms.ReferentialIdentity` ⋈ `dms.Document` join are **deleted** — every dialect composition now
+  registers the natural-key resolver into the `IReferenceResolver` slot
   ([`WebApplicationBuilderExtensions.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs)) —
-  and the caller-less probes that survived it (the PUT/DELETE uuid lookups, the referential-id POST
-  probe) are deleted with their dialect builders and result records. What is left in
+  and so are the caller-less probes that outlived it (the PUT/DELETE uuid lookups, the referential-id
+  POST probe), together with their dialect builders and result records. What is left in
   [`RelationalDocumentUuidLookup.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentUuidLookup.cs)
-  seeks `dms.Descriptor` or a resource root table, never `dms.Document`.
+  seeks `dms.Descriptor` or a resource root table, never `dms.Document`. The **test tree still reads
+  it**, in dozens of integration suites that assert on what the write path and the stamping triggers
+  put there; those assertions are what has to be re-pointed or deleted when the table goes.
 - `dms.ReferentialIdentity` is still maintained by the generated `TR_<Root>_ReferentialIdentity`
   triggers on non-descriptor **root** tables (`AFTER INSERT OR UPDATE`; deletes are handled by
   `FK_ReferentialIdentity_Document`'s `ON DELETE CASCADE`). **Descriptor rows in it are no longer
   maintained at all** — the descriptor write path dropped its `ReferentialIdentity` statements, and no
   descriptor trigger ever wrote them, so existing descriptor rows are only ever *removed*, by that
-  cascade. **No code path reads it**: the hash resolver that read it has been deleted, so no
-  registration anywhere — production or test — can resolve to it, and no fixture seeds it either. The
-  only remaining direct writers in the test tree are `{Postgresql,Mssql}ReferentialIdentityTests`, where
-  the table is the subject under test rather than a fixture dependency; they die with it.
+  cascade. **No production code path reads it**: the hash resolver that read it has been deleted, so no
+  registration — production or test — can resolve a reference through it. **No fixture seeds it**
+  either; every row in it now comes from a trigger. The test tree still touches it in two ways, both of
+  which die with the table and its triggers:
+  - **writers** — `{Postgresql,Mssql}ReferentialIdentityTests`, where the table *is* the subject under
+    test (PK and unique-constraint pins), not a fixture dependency;
+  - **readers** — twelve suites asserting trigger side effects:
+    `{Postgresql,Mssql}GeneratedDdlAuthoritativeSmokeTests` (via the `dms_test.ReferentialIdentityAudit`
+    capture table), `{Postgresql,Mssql}RelationalQueryAuthorizationTests`,
+    `{Postgresql,Mssql}RelationalPostAuthorizationTests`, `{Postgresql,Mssql}RelationalDeleteByIdTests`,
+    `PostgresqlRelationalWrite{PostAsUpdate,GuardedNoOp}Tests`, and the two
+    `*ReferentialIdentityTests` files above.
 
 That means a stale or missing `dms.Document` / `dms.ReferentialIdentity` row can no longer explain a
 wrong *served* value or a failed lookup — if one of those tables looks wrong, look for what wrote it,
-not for what read it.
+not for what read it. It can still explain a failing **test**, since the suites listed above assert on
+trigger output directly.
 
 These columns, the read-path re-point, and the natural-key write path above are the first three phases
 of the planned removal of `dms.Document` and `dms.ReferentialIdentity` as the read/write path's central
