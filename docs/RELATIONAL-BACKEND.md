@@ -233,7 +233,7 @@ endpoints, which are still a placeholder shim (see the note below).
 - [`RelationalQueryPageKeysetPlanner.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalQueryPageKeysetPlanner.cs) — the change-version range predicate (`ChangeVersionFilterConstants`, `AppendChangeVersionPredicates`)
 - [`DescriptorQueryPageKeysetPlanner.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorQueryPageKeysetPlanner.cs) — the descriptor equivalent. Descriptor pages now root on `dms.Descriptor` itself, so the range predicate reads the descriptor row's own mirrored `ContentVersion` with no `dms.Document` join
 
-#### Document-metadata mirror columns (dual-write)
+#### Document-metadata mirror columns
 
 Alongside the two change-version mirrors, every resource **root** table now carries five more
 `dms.Document` metadata columns — `DocumentUuid`, `IdentityVersion`, `IdentityLastModifiedAt`,
@@ -255,17 +255,18 @@ to the phase that makes these columns authoritative.
 - [`DeriveDocumentMetadataColumnsPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveDocumentMetadataColumnsPass.cs) — derives the five metadata columns onto root tables, including their non-writable classification
 - [`CoreDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs) — the `dms.Descriptor` copies, including `ResourceKeyId` and the `IX_Descriptor_ResourceKeyId_DocumentId` index that serves the descriptor page keyset
 
-This is a **dual-write**, but the two sides no longer serve the same traffic. `dms.Document` remains
-the **write** path's anchor — writes lock its row, load current state from it, and detect insert versus
-update there — while the **read** path has moved off it for everything it serves: each read below now
-takes its metadata from a row it was already reading, so a wrong *served* value points at the mirror,
-not at `dms.Document`.
+These columns are still written twice — once onto `dms.Document`, once onto the mirror — but **only the
+mirror is ever read**. Both the read paths and the write path now take a document's metadata from a row
+they were already reading, so a wrong *served* value points at the mirror, not at `dms.Document`. The
+read side moved first; the list below is where each read gets its metadata. The write side followed
+(see [Locking and write-side metadata reads](#locking-and-write-side-metadata-reads) below), which
+leaves `dms.Document` **written by everything and read by nothing**.
 
 - **GET metadata** (`id`, `_etag`, `_lastModifiedDate`) — the hydration batch's metadata `SELECT` reads
-  the root table when the caller asks for it, per
-  [`HydrationExecutionOptions.DocumentMetadataSource`](../src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/HydrationExecutionOptions.cs):
-  the GET path passes `RootTable`, while the write path's current-state loader keeps the default
-  `DocumentTable` and reads the `dms.Document` row it just locked
+  whichever table [`HydrationExecutionOptions.DocumentMetadataSource`](../src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/HydrationExecutionOptions.cs)
+  names. Every production caller — GET-by-id, the query page, and the write path's current-state
+  loader — passes `RootTable`; the `DocumentTable` default survives only for a caller with no root row
+  to read, and no production caller is left in that position
   ([`HydrationBatchBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs)).
 - **GET-by-id target resolution** — probes the root table's `UX_<Root>_DocumentUuid` unique index.
   Resource scoping is now structural (a uuid belonging to another resource is simply absent from this
@@ -301,13 +302,16 @@ not at `dms.Document`.
 
 No plan-layer reader touches `dms.Document` anymore. On a relationship-authorized GET-by-id, the
 authorization boundary's version and the representation it authorizes now **both** come from the root
-row — still read by two separate statements, so the two-attempt comparison keeps doing its original
-job: a concurrent mutation between the two reads makes them disagree and the read re-resolves its
-target instead of serving a torn view. What the comparison no longer does is cross-check the mirror
-against `dms.Document`. A root mirror tampered with out of band now agrees with itself on both
-attempts, so the tampered `ContentVersion` is **served** rather than failing the request closed. That
-tripwire only ever existed for relationship-authorized GETs on PostgreSQL — the one dialect where a
-root mirror gets no tamper repair (below); every other read already trusted the mirror.
+row — but they are read by *separate statements*, up to four of them per attempt: the target lookup,
+the authorization boundary's stored-target CTE, the hydration metadata `SELECT`, and the post-hydration
+re-resolve that re-reads the target ([`RelationalDocumentStoreRepository.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs),
+`GetDocumentByIdAsync` / `ShouldRetryPostHydrationReadBoundaryAsync`). The comparison across them keeps
+doing its original job: a concurrent mutation between any two of those reads makes them disagree and
+the read re-resolves its target instead of serving a torn view. What the comparison no longer does is
+cross-check the mirror against `dms.Document`. A root mirror tampered with out of band now agrees with
+itself on every read, so the tampered `ContentVersion` is **served** rather than failing the request
+closed. That tripwire only ever existed for relationship-authorized GETs on PostgreSQL — the one
+dialect where a root mirror gets no tamper repair (below); every other read already trusted the mirror.
 
 Caveats when debugging a mismatch — all of them concern rows written **out of band**, since the
 generated triggers are the only legitimate writers of these columns:
@@ -332,28 +336,221 @@ generated triggers are the only legitimate writers of these columns:
   values ever disagreed the GET fails with a conflicting-rows exception rather than serving a wrong
   link ([`PageReconstitutionContext.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageReconstitutionContext.cs)).
   A divergence there means the database was written to behind the triggers' back.
-- An out-of-band **document-first delete** — removing the `dms.Document` row while the root row still
-  exists and letting the FK cascade take the root row with it — no longer behaves the same in both
-  dialects: PostgreSQL fails loudly (the trigger's `RETURNING … INTO STRICT` finds no stamp row for the
-  vanished root row) while SQL Server silently writes no tombstone. Production deletes remove the root
-  row first and are unaffected; this is the same family of out-of-band asymmetry as the tamper-repair
-  difference above.
+- A **tombstone's `ChangeVersion` is allocated from the change-version sequence**, not read back from
+  `dms.Document`: PostgreSQL's stamping trigger fills its `_stampedContentVersion` local with a
+  `nextval` on the `DELETE` branch and SQL Server inlines `NEXT VALUE FOR` into the tombstone
+  `INSERT … SELECT`, once per deleted row. Nothing survives a delete to carry a post-delete stamp, so
+  sourcing one from `dms.Document` would have made the *order* of the statements inside a delete
+  load-bearing. It no longer is — both dialects tombstone correctly regardless of which row goes first,
+  including an out-of-band document-first delete that lets the FK cascade take the root row
+  ([`TrackedChangeTriggerBodyEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/TrackedChangeTriggerBodyEmitter.cs),
+  `EmitPgsqlTombstoneInsert` / `EmitMssqlTombstoneInsert`).
 
 > [!IMPORTANT]
 > **Re-provision only.** Re-applying the generated DDL over a database provisioned before these
 > columns existed does **not** migrate it. It applies partially: the `CREATE TABLE` statements are
 > skipped (`IF NOT EXISTS`), so the new columns never appear on the existing tables, while the
 > triggers *are* replaced (`CREATE OR REPLACE` / `CREATE OR ALTER`) and the guarded `ALTER TABLE ...
-> ADD CONSTRAINT UX_Descriptor_DocumentUuid` *is* attempted against a column that does not exist — so
+> ADD CONSTRAINT` statements *are* attempted against columns that do not exist —
+> `UX_Descriptor_DocumentUuid` against `dms.Descriptor.DocumentUuid`, and
+> `UX_Descriptor_UriLowered_Discriminator` against the engine-computed `dms.Descriptor.UriLowered` — so
 > the run fails loudly partway through, leaving the database half-updated. Provision a fresh database
 > instead, and remember the first-use fingerprint check in
 > [§3](#3-schema-fingerprint-validation--how-dms-validates-schema-on-first-use) turns any leftover
 > drift into an **HTTP 503**.
 
-These columns, and the read-path re-point above, are the first two phases of the planned removal of
-`dms.Document` and `dms.ReferentialIdentity` as the read/write path's central tables: the reads have
-moved, the writes have not, and the mirrors' permanent shape (defaults, foreign keys, indexes) is
-settled by the phase that drops the originals. For the design context on why that removal is hard, see
+#### Resolving references and detecting upserts by natural key
+
+A write no longer identifies anything by hash. Both of the write path's lookups — *"what document does
+this reference point at?"* and *"does a document with this identity already exist?"* — are now **index
+seeks on stored identity values**, so a debugging session starts from the index, not from a UUIDv5
+computation.
+
+| Question | Index sought | Table |
+|---|---|---|
+| Reference → target document | `UX_<Target>_RefKey` | the target's root table, or its `<Abstract>Identity` table for a polymorphic target (never the abstract union view — it carries no index) |
+| Descriptor reference → descriptor document | `UX_Descriptor_UriLowered_Discriminator` | `dms.Descriptor` |
+| POST: does this identity already exist? | `UX_<R>_NK` | the resource's own root table |
+| Descriptor POST: same question | `UX_Descriptor_UriLowered_Discriminator` | `dms.Descriptor` |
+| PUT: which row is this uuid? | `UX_<Root>_DocumentUuid` / `UX_Descriptor_DocumentUuid` | root table / `dms.Descriptor` |
+
+- The column lists are **compiled**, not discovered at runtime, and are derived by the same sequence
+  that derives the constraints themselves — so a probe binds exactly the constraint's columns, in the
+  constraint's order, resolved to canonical storage columns (binding a unified-alias column would be
+  semantically correct but could not seek the index)
+  ([`NaturalKeyProbeCompiler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/NaturalKeyProbeCompiler.cs),
+  [`NaturalKeyProbeContracts.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.External/NaturalKeyProbeContracts.cs)).
+- **Reference resolution** batches every reference in a request into one command per round trip: one
+  statement, and therefore one result set, per target resource, in group order. Each matched row is
+  attributed back to its request reference by its one-based `Ordinal` *within its group* — never by row
+  position, because rows arrive in unspecified order. Every statement is an `INNER JOIN`, so an entry
+  with no row is a miss ([`NaturalKeyReferenceResolver.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/NaturalKeyReferenceResolver.cs)).
+- A probe column that is itself a **descriptor foreign key** gets an inner join to `dms.Descriptor`
+  ahead of the target join, so the target's `ON` clause still carries every `RefKey` column and can
+  still seek. A URI that resolves to nothing makes the whole reference a miss, which is correct.
+- The **descriptor** statement deliberately carries *no* discriminator predicate: seeking `UriLowered`
+  alone is a prefix seek of `UX_Descriptor_UriLowered_Discriminator` and still returns the row for a URI
+  that names a descriptor of the wrong type. That is what lets the caller report `DescriptorTypeMismatch`
+  instead of a bare `Missing` — the projection returns the matched row's `Discriminator` and
+  `ResourceKeyId` for exactly that comparison.
+- **Upsert detection** runs *after* reference resolution inside the same write session, because a
+  reference-sourced natural-key part binds the already-resolved reference's `DocumentId`. If any part
+  of the key has no resolvable stored value for this request, no persisted row can carry the request's
+  natural key, so the probe short-circuits to "create new" **without issuing SQL**
+  ([`RelationalWriteTargetLookupResolver.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteTargetLookupResolver.cs),
+  `TryResolveByNaturalKeyAsync`). It returns the `(DocumentId, DocumentUuid, ContentVersion)` triple
+  straight from the root row's mirrors — the same row the session then locks.
+- The descriptor upsert probe adds `ResourceKeyId` as a **residual predicate**, because the stored
+  `Discriminator` is a *bare* resource name with no project qualifier and so does not by itself scope
+  the seek to the routed resource.
+
+The two dialects differ only in how the batch's values reach the server, and the difference is
+performance-critical:
+
+- **PostgreSQL** passes **parallel arrays** — one array parameter per probe column per group — expanded
+  with `unnest(…) WITH ORDINALITY`. The ordinal is the array position, cast to `integer` so a
+  dialect-neutral reader reads the same type on both providers
+  ([`PostgresqlNaturalKeyLookupCommandBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlNaturalKeyLookupCommandBuilder.cs)).
+- **SQL Server** passes **one `nvarchar(max)` JSON payload per group**, shredded by `OPENJSON … WITH`
+  into a typed relation; the ordinal rides inside the JSON as `$.o` rather than being fabricated by
+  `ROW_NUMBER()`. The JSON is written with `Utf8JsonWriter`, never string concatenation, so identity
+  values are escaped by construction and can never alter the SQL text
+  ([`MssqlNaturalKeyLookupCommandBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Mssql/MssqlNaturalKeyLookupCommandBuilder.cs)).
+
+Neither dialect's parameter count grows with the number of references, so the emitted text is identical
+for one reference and for five thousand and caches per shape. The set-valued input on SQL Server is not
+a stylistic choice: an earlier per-value `VALUES` binding measured 2.65×–3.76× *slower* than the hash
+resolver it replaces, because `SqlClient` costs roughly 17 µs per bound parameter and the cost grows
+faster than linearly.
+
+> [!WARNING]
+> **Every SQL Server natural-key statement ends with `OPTION (FORCE ORDER)`, and the `OPENJSON` input
+> must stay leftmost in the join order.** `OPENJSON` is a table-valued function: it carries no
+> statistics and its cardinality is always guessed at 50 rows, so without the hint the optimizer places
+> it on the *inner* side of a nested loop against `dms.Descriptor` and re-parses the whole payload once
+> per descriptor row. Measured on SQL Server 2022 against a 257-row descriptor table: 32 entries cost
+> 5.6 ms unhinted versus 0.25 ms hinted; 256 entries cost 44 ms versus 0.5 ms. The hint pins only the
+> join *order*, which these statements already write in the only sensible sequence (shred the small key
+> set → resolve descriptor-valued parts → seek the target's `RefKey` index). **Any future edit to these
+> statements must keep the `OPENJSON` relation first and must keep the hint** — see
+> `MssqlNaturalKeyLookupCommandBuilder.AppendJoinOrderHint`'s remarks for the measurement.
+
+#### Locking and write-side metadata reads
+
+**The locked row and the read row are the same row.** `RelationalDocumentLockCommandBuilder` takes the
+table to lock as a parameter, and every production caller passes the row the rest of the write will
+read: the resource **root** table for a non-descriptor write, `dms.Descriptor` for a descriptor write.
+Neither passes `dms.Document`. The statement selects only `ContentVersion`, under `FOR UPDATE` on
+PostgreSQL and `WITH (UPDLOCK, HOLDLOCK, ROWLOCK)` on SQL Server
+([`RelationalDocumentLockCommandBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentLockCommandBuilder.cs)).
+
+The same statement is reused for the guarded-no-op freshness re-check and for the post-persist stamp
+read-back, and the write path's current-state load passes `DocumentMetadataSource.RootTable` for the
+same reason — so a stale-versus-fresh comparison never straddles two tables
+([`RelationalWriteCurrentState.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteCurrentState.cs),
+[`RelationalWriteNoProfilePersister.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs)).
+
+> [!NOTE]
+> **Known lock-ordering hazard (non-descriptor writes).** Locking the root row inverts this writer's
+> lock order relative to the stamping/propagation cascades — the writer takes `Root(D)` first and only
+> reaches `dms.Document(D)` later through the stamping trigger, while a cascade from another
+> transaction still takes `dms.Document(D)` before `Root(D)`. Under that narrow contention pattern the
+> two orders can deadlock, which was impossible while both sides locked `dms.Document` first. It is
+> absorbed rather than prevented: deadlock and serialization failures classify as transient and Core's
+> Polly pipeline replays the **whole write transaction**. Phase 4 dissolves it outright by removing the
+> `dms.Document` write. The full analysis lives in `RelationalDocumentLockCommandBuilder`'s remarks; the
+> descriptor path has no such cycle (`DescriptorWriteHandler._descriptorLockTable`'s remarks).
+
+#### Case sensitivity and fail-closed postures
+
+Moving from a hash to an index seek moves identity comparison from .NET into the database, which makes
+**collation** part of the contract. When a lookup behaves differently on the two engines, this is
+almost always why.
+
+- **Descriptor URIs** are matched through `dms.Descriptor.UriLowered`, an engine-computed, persisted
+  lower-cased projection of `Uri` (`lower("Uri")` / `LOWER([Uri])`). Nothing writes it, so it stays out
+  of every `INSERT` column list and out of the stamping trigger. Core already hands the backend a
+  lower-cased URI, so the probe binds the persisted column rather than wrapping the predicate in
+  `lower(…)`, which would be non-sargable on PostgreSQL
+  ([`CoreDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs),
+  `RenderDescriptorUriLoweredColumn`).
+- `UX_Descriptor_UriLowered_Discriminator` is a **genuinely new uniqueness rule on PostgreSQL**:
+  case-variant spellings of one descriptor URI can no longer coexist. That is not a new *semantic* — the
+  UUIDv5 it replaces was computed over the lower-cased URI, so those spellings always collapsed to a
+  single document anyway. On SQL Server the default case-insensitive collation already made the
+  original-case `UX_Descriptor_Uri_Discriminator` case-blind, so the new constraint is redundant there;
+  it is emitted on both dialects so the compiled probe binds one column name everywhere.
+- **On SQL Server, string identity comparison is case-insensitive, on both lookups.** The generated DDL
+  pins no collation on identity columns, so they inherit the database default — case-insensitive on a
+  stock SQL Server install, whereas PostgreSQL compares `text` byte-for-byte. For *reference
+  resolution* that means a case-differing string identity value resolves a reference PostgreSQL treats
+  as a miss. For *upsert detection* it means a case-variant natural key resolves to the existing row
+  and the POST becomes a POST-as-update, where the hash probe produced "create new" and the request
+  then lost to the unique constraint as a **409**. Both follow from the same fact: `UX_<R>_NK` under a
+  case-insensitive collation already treats case variants as one identity, so the row that would have
+  made the old 409 correct could never have coexisted in the first place.
+- **Stored descriptor casing is immutable through POST.** A POST-as-update writes every descriptive
+  field from the request but takes `Namespace`, `CodeValue` and `Uri` from the **persisted** row, which
+  preserves the pre-existing guarantee (a case-variant POST used to resolve to no target, insert, and
+  lose to the URI unique constraint) and the Ed-Fi rule that a resource echoes the first-created
+  canonical form. A POST that differs from the stored row *only* in identity casing is therefore a full
+  no-op: no `UPDATE`, no `ContentVersion` bump, no change event. PUT is unaffected — its `Ordinal` `Uri`
+  comparison rejects a case-only identity edit outright
+  ([`DescriptorWriteHandler.PreserveStoredDescriptorIdentity`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs),
+  [`DescriptorNoOpComparer.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorNoOpComparer.cs)).
+- **A NULL mirror is a miss, not an error.** Every probe predicate is an equality comparison and NULL
+  matches nothing. A `dms.Descriptor` row written with triggers suppressed carries `NULL` in
+  `ResourceKeyId`, so it is invisible to descriptor reads (a **404**, not an error) *and* invisible to
+  the descriptor upsert probe — in which case the POST attempts an insert and the URI unique constraint
+  rejects it as a write conflict. Both directions fail closed by construction.
+
+#### Behavior deltas worth knowing when debugging
+
+Two reference-failure classifications changed with the cutover. Neither is a bug; both are worth
+recognizing before hunting one.
+
+- **`DescriptorTypeMismatch` is now reachable where the hash resolver reported `Missing`.** A URI that
+  names a real descriptor of the *wrong* type used to hash to nothing; the probe finds the row and
+  compares its `ResourceKeyId`. On **writes** this is the same `400` family with a more accurate detail
+  message. On **reads** it is invisible: a descriptor-filtered query returns the same empty page either
+  way — the reason only selects an internal diagnostic string that nothing serves
+  ([`RelationalQueryRequestPreprocessor.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalQueryRequestPreprocessor.cs),
+  `BuildDescriptorLookupFailureMessage`).
+- **`IncompatibleTargetType` is unreachable for a concrete document reference.** The probe seeks the
+  target's own table, so a hit is a member of that resource by construction; there is no longer a way
+  for a resolved id to belong to some other resource.
+
+#### What is left on `dms.Document` and `dms.ReferentialIdentity`
+
+At this point both tables are **write-only**:
+
+- `dms.Document` is still `INSERT`ed — it is what **originates `DocumentId`**, through `RETURNING` on
+  PostgreSQL and `SCOPE_IDENTITY()` on SQL Server, for both resources
+  ([`RelationalWriteNoProfilePersister.BuildInsertDocumentCommand`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs))
+  and descriptors ([`DescriptorWriteHandler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs)) —
+  still `DELETE`d alongside the row it identifies
+  ([`OrderedDeleteCommandBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/OrderedDeleteCommandBuilder.cs)),
+  and still `UPDATE`d by the generated stamping triggers. **No production code path reads it.** The
+  `SELECT`s and joins against it that remain in the source sit behind methods with no production
+  callers, kept until Phase 4 deletes them with the table.
+- `dms.ReferentialIdentity` is still maintained by the generated `TR_<Root>_ReferentialIdentity`
+  triggers on non-descriptor **root** tables (`AFTER INSERT OR UPDATE`; deletes are handled by
+  `FK_ReferentialIdentity_Document`'s `ON DELETE CASCADE`). **Descriptor rows in it are no longer
+  maintained at all** — the descriptor write path dropped its `ReferentialIdentity` statements, and no
+  descriptor trigger ever wrote them, so existing descriptor rows are only ever *removed*, by that
+  cascade. **No production code path reads it**: the UUIDv5 hash resolver that does is still registered
+  for the differential and corruption-canary test suites, but the natural-key resolver takes the
+  `IReferenceResolver` slot in the composition root.
+
+That means a stale or missing `dms.Document` / `dms.ReferentialIdentity` row can no longer explain a
+wrong *served* value or a failed lookup — if one of those tables looks wrong, look for what wrote it,
+not for what read it.
+
+These columns, the read-path re-point, and the natural-key write path above are the first three phases
+of the planned removal of `dms.Document` and `dms.ReferentialIdentity` as the read/write path's central
+tables: nothing reads them any more, both are still written, and the mirrors' permanent shape
+(defaults, foreign keys, indexes) is settled by the phase that drops the originals. For the design
+context on why that removal is hard, see
 [`the-problem-with-removing-referentialids.md`](../reference/design/backend-redesign/design-docs/the-problem-with-removing-referentialids.md).
 
 > [!NOTE]
