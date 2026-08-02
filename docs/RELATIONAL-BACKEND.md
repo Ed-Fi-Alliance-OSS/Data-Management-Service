@@ -496,8 +496,8 @@ almost always why.
   stock SQL Server install, whereas PostgreSQL's default (deterministic) collations compare text
   byte-for-byte.
   - For **reference resolution**, a case-differing string identity value resolves a reference that
-    PostgreSQL treats as a miss (`MssqlReferenceResolverDifferentialTests`,
-    `It_deliberately_diverges_from_the_hash_resolver_for_a_case_variant_string_identity`).
+    PostgreSQL treats as a miss. (No suite pins this directly since the old-vs-new differential suites
+    were retired with the UUIDv5 resolver; the upsert-detection twin below is the live pin.)
   - For **upsert detection**, a POST whose string natural key differs from a stored row only by case
     now seeks `UX_<R>_NK`, matches, and resolves to an **existing** document. The write then merges the
     request's casing over the stored row, and the immutable-identity guard

@@ -369,8 +369,8 @@ public sealed class ReferenceResolverIntegrationFixture
                 ),
                 CreateConcreteResource(wideIdentityKey, "WideIdentityResource"),
             ],
-            // The abstract identity TABLE is what the natural-key probe seeks; the union view below stays
-            // for the hash resolver's verification projection, so both resolvers see their own source.
+            // The abstract identity TABLE is what the natural-key probe seeks; the union view below is
+            // what the read path projects an abstract reference through.
             AbstractIdentityTablesInNameOrder:
             [
                 new AbstractIdentityTableInfo(
@@ -531,9 +531,8 @@ public sealed class ReferenceResolverIntegrationFixture
     }
 
     /// <summary>
-    /// A School reference. <paramref name="schoolId"/> is additive for differential coverage: the hash
-    /// resolver misses on an unseeded referential id alone, but the natural-key resolver only misses when
-    /// the identity VALUE is absent, so a differential "missing" case must vary both.
+    /// A School reference. <paramref name="schoolId"/> is separately overridable because the resolver
+    /// misses on the identity VALUE, not on the referential id: a "missing" case has to vary the value.
     /// </summary>
     public DocumentReference CreateSchoolReference(
         string path,
@@ -584,8 +583,7 @@ public sealed class ReferenceResolverIntegrationFixture
 
     /// <summary>
     /// A reference to the synthetic wide-identity resource: one identity element per scalar kind, in the
-    /// probe's column order. Each part can be overridden so a differential test can miss on exactly one
-    /// kind.
+    /// probe's column order. Each part can be overridden so a test can miss on exactly one kind.
     /// </summary>
     public DocumentReference CreateWideIdentityReference(
         string path,
@@ -699,8 +697,8 @@ public sealed class ReferenceResolverIntegrationFixture
         }
 
         // The natural-key probe seeks UX_<T>_RefKey: identity storage columns leading, DocumentId
-        // trailing. Without it the synthetic schema would have nothing to seek and the differential tests
-        // would prove nothing about the mechanism they exist to prove.
+        // trailing. Without it the synthetic schema would have nothing to seek, and the suites built on
+        // this fixture would prove nothing about the mechanism they exist to prove.
         var identityColumns = columns.Skip(1).Select(column => column.ColumnName).ToArray();
         List<TableConstraint> constraints = [];
 

@@ -470,9 +470,9 @@ internal static class RelationalAccessTestData
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Natural-key probe fixtures (Phase 3). These describe the compiled probe metadata the natural-key
-    // lookup command builders consume; they are deliberately independent of the ReferentialId-based
-    // lookup fixtures above, which serve the old resolver.
+    // Natural-key probe fixtures. These describe the compiled probe metadata the natural-key lookup
+    // command builders consume; they are deliberately independent of the mapping-set and reference
+    // fixtures above, which serve the resolver's request shape rather than its probe metadata.
     // ---------------------------------------------------------------------------------------------
 
     public static readonly QualifiedResourceName StudentSectionAssociationResource = new(
