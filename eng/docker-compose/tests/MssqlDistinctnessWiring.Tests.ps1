@@ -34,6 +34,33 @@ BeforeAll {
 
     $script:authoritySentinel = "WIRING-AUTHORITY-SENTINEL"
 
+    # Scalar snapshot of a Function:/Alias: item - presence, the definition needed to recreate
+    # it, and its options. Never a live FunctionInfo/AliasInfo, which mutates with the table.
+    function script:Get-CommandStateSnapshot {
+        param([Parameter(Mandatory)] [string]$ItemPath)
+        $item = Get-Item $ItemPath -ErrorAction SilentlyContinue
+        if ($null -eq $item) { return @{ Present = $false } }
+        if ($item -is [System.Management.Automation.AliasInfo]) {
+            return @{ Present = $true; Definition = [string]$item.Definition; Options = $item.Options }
+        }
+        return @{ Present = $true; ScriptBlock = $item.ScriptBlock; Options = $item.Options }
+    }
+
+    # Runs every restoration step even when one fails: the session is repaired as far as
+    # possible FIRST, and a single aggregate error reports the failures afterwards. Factored
+    # out so the fault tolerance itself is unit-testable.
+    function script:Invoke-WiringStateRestoration {
+        param([Parameter(Mandatory)] [object[]]$Step)
+        $failures = [System.Collections.Generic.List[string]]::new()
+        foreach ($restoreStep in $Step) {
+            try { & $restoreStep.Action }
+            catch { $failures.Add("$($restoreStep.Description): $($_.Exception.Message)") }
+        }
+        if ($failures.Count -gt 0) {
+            throw "Session-state restoration reported failures (all other state was still restored): $($failures -join ' | ')"
+        }
+    }
+
     function script:Invoke-WiringRun {
         param(
             [Parameter(Mandatory)] [scriptblock]$ScriptBlock,
@@ -42,40 +69,47 @@ BeforeAll {
             [switch]$AllowKeycloakUp
         )
 
-        # ---- Transactional interception: reject what cannot be shadowed or restored, snapshot
-        # ---- everything this run will touch, stage GUID-named shims, and in finally remove
-        # ---- ONLY what this invocation created and put back everything that pre-existed.
-        $constantOption = [System.Management.Automation.ScopedItemOptions]::Constant
+        # ---- Transactional interception: reject what cannot be shadowed AND restored, take
+        # ---- scalar snapshots of everything this run will touch, stage GUID-named shims, and
+        # ---- in finally remove ONLY what this invocation created before restoring every
+        # ---- snapshot - with each restoration step fault-isolated from the others.
+        #
+        # Option support is MEASURED, not assumed: None and ReadOnly are supported (-Force
+        # replaces a ReadOnly command and the saved Options reapply on restore); AllScope is
+        # rejected before any mutation (Set-Item -Force cannot replace an AllScope function -
+        # 'The AllScope option cannot be removed' - while Remove-Item CAN delete it, so any
+        # partial handling would destroy the caller's command); Constant can be neither
+        # replaced nor removed.
+        $unsupportedOptions = [System.Management.Automation.ScopedItemOptions]::AllScope -bor
+            [System.Management.Automation.ScopedItemOptions]::Constant
 
         # An effective `docker` ALIAS outranks any function stand-in: with one in place the
         # scripts' docker calls would resolve through it - to real Docker, if that is its
-        # target. Refuse before staging anything.
+        # target. Refuse before staging anything, leaving the alias untouched.
         if (Get-Command docker -CommandType Alias -ErrorAction SilentlyContinue) {
             throw "Refusing to run: an effective 'docker' alias is defined in this session and would outrank the function stand-in, so the scripts could reach real Docker."
         }
         $interceptedAliasNames = @('Test-NativeCommandWithTimeout', 'Assert-MssqlPhysicalDatastoreDistinctness', 'Start-Sleep')
         $savedAliases = @{}
         foreach ($aliasName in $interceptedAliasNames) {
-            $existingAlias = Get-Item "Alias:\$aliasName" -ErrorAction SilentlyContinue
-            if ($null -ne $existingAlias) {
-                if ($existingAlias.Options -band $constantOption) {
-                    throw "Refusing to run: a constant '$aliasName' alias cannot be shadowed or restored."
-                }
-                $savedAliases[$aliasName] = @{ Definition = $existingAlias.Definition; Options = $existingAlias.Options }
+            $aliasSnapshot = Get-CommandStateSnapshot -ItemPath "Alias:\$aliasName"
+            if ($aliasSnapshot.Present -and ($aliasSnapshot.Options -band $unsupportedOptions)) {
+                throw "Refusing to run: the pre-existing '$aliasName' alias carries option '$($aliasSnapshot.Options)' and cannot be shadowed and exactly restored."
             }
-            else {
-                $savedAliases[$aliasName] = $null
-            }
+            $savedAliases[$aliasName] = $aliasSnapshot
         }
-        $savedDockerFunction = $null
-        $existingDockerFunction = Get-Item Function:\docker -ErrorAction SilentlyContinue
-        if ($null -ne $existingDockerFunction) {
-            if ($existingDockerFunction.Options -band $constantOption) {
-                throw "Refusing to run: a constant 'docker' function cannot be shadowed or restored."
-            }
-            $savedDockerFunction = @{ ScriptBlock = $existingDockerFunction.ScriptBlock; Options = $existingDockerFunction.Options }
+        $savedDockerFunction = Get-CommandStateSnapshot -ItemPath "Function:\docker"
+        if ($savedDockerFunction.Present -and ($savedDockerFunction.Options -band $unsupportedOptions)) {
+            throw "Refusing to run: the pre-existing 'docker' function carries option '$($savedDockerFunction.Options)' and cannot be shadowed and exactly restored."
         }
-        $savedLastExitCode = $global:LASTEXITCODE
+
+        # Presence and value are separate state: a fresh session has NO LASTEXITCODE at all,
+        # and restoring absence means removal, never a created null-valued variable.
+        $lastExitCodeVariable = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+        $savedLastExitCode = @{
+            Present = ($null -ne $lastExitCodeVariable)
+            Value   = if ($null -ne $lastExitCodeVariable) { $lastExitCodeVariable.Value } else { $null }
+        }
 
         $derivedDir = Join-Path $script:dockerComposeRoot ".derived"
         $before = @{}
@@ -170,42 +204,81 @@ BeforeAll {
             $caught = $_
         }
         finally {
-            # Remove ONLY what this invocation created, then restore what pre-existed, exactly.
+            # Remove ONLY what this invocation created, then restore every snapshot exactly.
+            # Each step is fault-isolated: one failed restoration never prevents the others
+            # (the driver repairs the session first, then reports).
+            $restorationSteps = [System.Collections.Generic.List[object]]::new()
             foreach ($aliasName in $interceptedAliasNames) {
-                Remove-Item "Alias:\$aliasName" -Force -ErrorAction SilentlyContinue
-                if ($null -ne $savedAliases[$aliasName]) {
-                    Set-Alias -Name $aliasName -Value $savedAliases[$aliasName].Definition -Scope Global -Force
-                    (Get-Item "Alias:\$aliasName").Options = $savedAliases[$aliasName].Options
-                }
+                $savedAlias = $savedAliases[$aliasName]
+                $restorationSteps.Add(@{
+                        Description = "intercept alias '$aliasName'"
+                        Action      = {
+                            Remove-Item "Alias:\$aliasName" -Force -ErrorAction SilentlyContinue
+                            if ($savedAlias.Present) {
+                                Set-Alias -Name $aliasName -Value $savedAlias.Definition -Scope Global -Force
+                                if ($savedAlias.Options -ne [System.Management.Automation.ScopedItemOptions]::None) {
+                                    (Get-Item "Alias:\$aliasName").Options = $savedAlias.Options
+                                }
+                            }
+                        }.GetNewClosure()
+                    })
             }
-            Remove-Item "Function:\$readinessShimName" -Force -ErrorAction SilentlyContinue
-            Remove-Item "Function:\$authorityShimName" -Force -ErrorAction SilentlyContinue
-            Remove-Item "Function:\$sleepShimName" -Force -ErrorAction SilentlyContinue
-            Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue
-
-            # A STAGED run imports the module siblings from the stage path, which loads SECOND
-            # same-name module instances alongside the real ones - and duplicate module names
-            # break Pester's -ModuleName mocking for every suite that runs later in the same
-            # process (measured: 'Multiple script or manifest modules named env-utility are
-            # currently loaded'). Unload exactly the instances this run staged.
-            foreach ($stagedModule in @(Get-Module | Where-Object { $_.Path -like "$($script:work)*" })) {
-                Remove-Module -ModuleInfo $stagedModule -Force -ErrorAction SilentlyContinue
+            foreach ($shimName in @($readinessShimName, $authorityShimName, $sleepShimName)) {
+                $restorationSteps.Add(@{
+                        Description = "shim function '$shimName'"
+                        Action      = { Remove-Item "Function:\$shimName" -Force -ErrorAction SilentlyContinue }.GetNewClosure()
+                    })
             }
-            if ($null -ne $savedDockerFunction) {
-                Set-Item -Path Function:\global:docker -Force -Value $savedDockerFunction.ScriptBlock
-                (Get-Item Function:\docker).Options = $savedDockerFunction.Options
-            }
-            $global:LASTEXITCODE = $savedLastExitCode
-
+            $restorationSteps.Add(@{
+                    Description = "docker function"
+                    Action      = {
+                        Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue
+                        if ($savedDockerFunction.Present) {
+                            Set-Item -Path Function:\global:docker -Force -Value $savedDockerFunction.ScriptBlock
+                            if ($savedDockerFunction.Options -ne [System.Management.Automation.ScopedItemOptions]::None) {
+                                (Get-Item Function:\docker).Options = $savedDockerFunction.Options
+                            }
+                        }
+                    }.GetNewClosure()
+                })
+            $restorationSteps.Add(@{
+                    Description = "staged module instances"
+                    Action      = {
+                        # A STAGED run imports the module siblings from the stage path, loading
+                        # SECOND same-name module instances - which break Pester's -ModuleName
+                        # mocking for suites later in the same process. Unload exactly the
+                        # instances this run staged.
+                        foreach ($stagedModule in @(Get-Module | Where-Object { $_.Path -like "$($script:work)*" })) {
+                            Remove-Module -ModuleInfo $stagedModule -Force -ErrorAction SilentlyContinue
+                        }
+                    }
+                })
+            $restorationSteps.Add(@{
+                    Description = "LASTEXITCODE"
+                    Action      = {
+                        if ($savedLastExitCode.Present) {
+                            $global:LASTEXITCODE = $savedLastExitCode.Value
+                        }
+                        else {
+                            Remove-Variable -Name LASTEXITCODE -Scope Global -Force -ErrorAction SilentlyContinue
+                        }
+                    }.GetNewClosure()
+                })
             foreach ($name in $identityEnvironmentName) {
-                $saved = $identityEnvironmentState[$name]
-                if ($saved.Present) {
-                    [System.Environment]::SetEnvironmentVariable($name, $saved.Value)
-                }
-                else {
-                    Remove-Item -LiteralPath "Env:\$name" -Force -ErrorAction SilentlyContinue
-                }
+                $savedEnvironment = $identityEnvironmentState[$name]
+                $restorationSteps.Add(@{
+                        Description = "environment variable '$name'"
+                        Action      = {
+                            if ($savedEnvironment.Present) {
+                                [System.Environment]::SetEnvironmentVariable($name, $savedEnvironment.Value)
+                            }
+                            else {
+                                Remove-Item -LiteralPath "Env:\$name" -Force -ErrorAction SilentlyContinue
+                            }
+                        }.GetNewClosure()
+                    })
             }
+            Invoke-WiringStateRestoration -Step $restorationSteps.ToArray()
         }
 
         # The stand-ins must be gone; a pre-existing docker function is back; nothing of this
@@ -215,7 +288,7 @@ BeforeAll {
                 throw "The $shimName stand-in outlived the run."
             }
         }
-        if ($null -eq $savedDockerFunction -and (Get-Command docker -CommandType Function -ErrorAction SilentlyContinue)) {
+        if (-not $savedDockerFunction.Present -and (Get-Command docker -CommandType Function -ErrorAction SilentlyContinue)) {
             throw "The docker stand-in outlived the run; refusing to continue with a live docker on PATH."
         }
 
@@ -277,14 +350,12 @@ BeforeAll {
     }
 }
 
-AfterAll {
-    # Defensive: Invoke-WiringRun removes these itself, including on failure.
-    Remove-Item Alias:\Assert-MssqlPhysicalDatastoreDistinctness -Force -ErrorAction SilentlyContinue
-    Remove-Item Alias:\Test-NativeCommandWithTimeout -Force -ErrorAction SilentlyContinue
-    Remove-Item Function:\__WiringAuthorityShim -Force -ErrorAction SilentlyContinue
-    Remove-Item Function:\__WiringReadinessShim -Force -ErrorAction SilentlyContinue
-    Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue
-}
+# Deliberately NO file-level AfterAll over docker/alias/shim names: an unconditional deletion
+# by NAME destroys caller-owned resources that merely share a name the harness uses
+# (review-measured: a seeded docker function and intercept alias were gone after a green run).
+# Every run's own finally removes exactly the GUID-named resources it created and restores each
+# snapshot; the whole-file postcondition tests below prove the complete Pester lifecycle -
+# including every AfterEach - hands the caller's session back intact.
 
 Describe "MSSQL physical-distinctness wiring" {
 
@@ -629,6 +700,56 @@ Describe "MSSQL physical-distinctness wiring" {
 
     Context "harness safety (the interception itself)" {
 
+    BeforeEach {
+        # These tests seed the very resources the harness intercepts, so they snapshot and
+        # exactly restore them THEMSELVES - a safety test that blindly deletes by name would
+        # commit the same offense it exists to prevent.
+        $script:safetySnapshots = @{
+            DockerFunction = Get-CommandStateSnapshot -ItemPath "Function:\docker"
+            DockerAlias    = Get-CommandStateSnapshot -ItemPath "Alias:\docker"
+            InterceptAlias = Get-CommandStateSnapshot -ItemPath "Alias:\Test-NativeCommandWithTimeout"
+        }
+        $exitVariable = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+        $script:safetyExitSnapshot = @{
+            Present = ($null -ne $exitVariable)
+            Value   = if ($null -ne $exitVariable) { $exitVariable.Value } else { $null }
+        }
+    }
+
+    AfterEach {
+        $steps = [System.Collections.Generic.List[object]]::new()
+        $dockerFunctionSnapshot = $script:safetySnapshots.DockerFunction
+        $steps.Add(@{ Description = "docker function"; Action = {
+                    Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue
+                    if ($dockerFunctionSnapshot.Present) {
+                        Set-Item -Path Function:\global:docker -Force -Value $dockerFunctionSnapshot.ScriptBlock
+                        if ($dockerFunctionSnapshot.Options -ne [System.Management.Automation.ScopedItemOptions]::None) {
+                            (Get-Item Function:\docker).Options = $dockerFunctionSnapshot.Options
+                        }
+                    }
+                }.GetNewClosure() })
+        $dockerAliasSnapshot = $script:safetySnapshots.DockerAlias
+        $steps.Add(@{ Description = "docker alias"; Action = {
+                    Remove-Item Alias:\docker -Force -ErrorAction SilentlyContinue
+                    if ($dockerAliasSnapshot.Present) {
+                        Set-Alias -Name docker -Value $dockerAliasSnapshot.Definition -Scope Global -Force
+                    }
+                }.GetNewClosure() })
+        $interceptAliasSnapshot = $script:safetySnapshots.InterceptAlias
+        $steps.Add(@{ Description = "intercept alias"; Action = {
+                    Remove-Item Alias:\Test-NativeCommandWithTimeout -Force -ErrorAction SilentlyContinue
+                    if ($interceptAliasSnapshot.Present) {
+                        Set-Alias -Name Test-NativeCommandWithTimeout -Value $interceptAliasSnapshot.Definition -Scope Global -Force
+                    }
+                }.GetNewClosure() })
+        $exitSnapshot = $script:safetyExitSnapshot
+        $steps.Add(@{ Description = "LASTEXITCODE"; Action = {
+                    if ($exitSnapshot.Present) { $global:LASTEXITCODE = $exitSnapshot.Value }
+                    else { Remove-Variable -Name LASTEXITCODE -Scope Global -Force -ErrorAction SilentlyContinue }
+                }.GetNewClosure() })
+        Invoke-WiringStateRestoration -Step $steps.ToArray()
+    }
+
     It "refuses to run when an effective docker alias exists, without invoking its target" {
         # An alias outranks a function stand-in; a hostile session alias pointing at real
         # Docker would let the scripts reach it. The harness must refuse BEFORE staging
@@ -646,17 +767,16 @@ Describe "MSSQL physical-distinctness wiring" {
             (Get-Item Alias:\docker).Definition | Should -Be $recorderName -Because "the pre-existing alias must be left untouched"
         }
         finally {
-            Remove-Item Alias:\docker -Force -ErrorAction SilentlyContinue
             Remove-Item "Function:\$recorderName" -Force -ErrorAction SilentlyContinue
         }
     }
 
-    It "restores hostile pre-existing state exactly: docker function (body and options), intercept alias, and LASTEXITCODE" {
+    It "restores hostile pre-existing state exactly: docker function (body and options), intercept alias, and LASTEXITCODE presence + value" {
         $preexistingDockerBody = { 'wiring-preexisting-docker-sentinel' }
         $preexistingTargetName = "__WiringPreexistingTarget_$([Guid]::NewGuid().ToString('N'))"
-        Set-Item -Path Function:\global:docker -Value $preexistingDockerBody
+        Set-Item -Path Function:\global:docker -Force -Value $preexistingDockerBody
         Set-Item -Path "Function:\global:$preexistingTargetName" -Value { return $true }
-        Set-Alias -Name Test-NativeCommandWithTimeout -Value $preexistingTargetName -Scope Global
+        Set-Alias -Name Test-NativeCommandWithTimeout -Value $preexistingTargetName -Scope Global -Force
         $global:LASTEXITCODE = 37
         try {
             $envFile = New-WiringEnvFile
@@ -668,17 +788,206 @@ Describe "MSSQL physical-distinctness wiring" {
             $run.AuthorityCalls | Should -HaveCount 1
             $run.ErrorMessage | Should -Be $script:authoritySentinel
 
-            # Exact restoration afterwards.
+            # Exact restoration afterwards - options asserted, not merely definitions.
             (Get-Item Function:\docker).ScriptBlock.ToString() | Should -Be $preexistingDockerBody.ToString()
+            (Get-Item Function:\docker).Options | Should -Be ([System.Management.Automation.ScopedItemOptions]::None)
             (Get-Item Alias:\Test-NativeCommandWithTimeout).Definition | Should -Be $preexistingTargetName
-            $global:LASTEXITCODE | Should -Be 37
+            (Get-Variable -Name LASTEXITCODE -Scope Global).Value | Should -Be 37
             @(Get-Command "__WiringReadinessShim_*", "__WiringAuthorityShim_*", "__WiringSleepShim_*" -ErrorAction SilentlyContinue) |
                 Should -HaveCount 0 -Because "only resources this invocation created may be removed, and all of them must be"
         }
         finally {
-            Remove-Item Alias:\Test-NativeCommandWithTimeout -Force -ErrorAction SilentlyContinue
             Remove-Item "Function:\$preexistingTargetName" -Force -ErrorAction SilentlyContinue
-            Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "supports a ReadOnly docker function: shadowed with -Force, restored with body AND the ReadOnly option (measured contract)" {
+        $preexistingDockerBody = { 'wiring-readonly-docker-sentinel' }
+        Set-Item -Path Function:\global:docker -Force -Value $preexistingDockerBody
+        (Get-Item Function:\docker).Options = [System.Management.Automation.ScopedItemOptions]::ReadOnly
+
+        $envFile = New-WiringEnvFile
+        $run = Invoke-WiringRun -ScriptBlock {
+            & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile -InfraOnly *>$null
+        }
+
+        $run.AuthorityCalls | Should -HaveCount 1
+        $restored = Get-Item Function:\docker
+        $restored.ScriptBlock.ToString() | Should -Be $preexistingDockerBody.ToString()
+        ($restored.Options -band [System.Management.Automation.ScopedItemOptions]::ReadOnly) |
+            Should -Be ([System.Management.Automation.ScopedItemOptions]::ReadOnly)
+    }
+
+    It "refuses an AllScope docker function BEFORE any mutation (measured: it cannot be shadowed, only destroyed)" {
+        # Scope-local so the AllScope function vanishes with this It's scope either way.
+        Set-Item -Path Function:\docker -Value { 'wiring-allscope-docker-sentinel' } -Options AllScope
+        $envFile = New-WiringEnvFile
+        { Invoke-WiringRun -ScriptBlock {
+                & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile -InfraOnly *>$null
+            } } | Should -Throw "*'docker' function carries option*"
+        $survivor = Get-Item Function:\docker
+        $survivor.ScriptBlock.ToString() | Should -Match "wiring-allscope-docker-sentinel"
+        ($survivor.Options -band [System.Management.Automation.ScopedItemOptions]::AllScope) |
+            Should -Be ([System.Management.Automation.ScopedItemOptions]::AllScope)
+    }
+
+    It "refuses a Constant docker function BEFORE any mutation" {
+        # Scope-local: a Constant function cannot be removed for the life of its scope, so it
+        # must live in this It's scope, which ends with the test.
+        Set-Item -Path Function:\docker -Value { 'wiring-constant-docker-sentinel' } -Options Constant
+        $envFile = New-WiringEnvFile
+        { Invoke-WiringRun -ScriptBlock {
+                & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile -InfraOnly *>$null
+            } } | Should -Throw "*'docker' function carries option*"
+        (Get-Item Function:\docker).ScriptBlock.ToString() | Should -Match "wiring-constant-docker-sentinel"
+    }
+
+    It "restores LASTEXITCODE ABSENCE by removal, never by creating a null-valued variable" {
+        Remove-Variable -Name LASTEXITCODE -Scope Global -Force -ErrorAction SilentlyContinue
+        $envFile = New-WiringEnvFile
+        $run = Invoke-WiringRun -ScriptBlock {
+            & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile -InfraOnly *>$null
+        }
+        $run.AuthorityCalls | Should -HaveCount 1
+        (Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue) |
+            Should -BeNullOrEmpty -Because "presence and value are separate state; absence restores as absence"
+    }
+
+    It "keeps restoring the remaining state when one restoration step fails, then reports the failure once" {
+        $firstRan = [System.Collections.Generic.List[string]]::new()
+        $thirdRan = [System.Collections.Generic.List[string]]::new()
+        $steps = @(
+            @{ Description = "first"; Action = { $firstRan.Add("yes") }.GetNewClosure() }
+            @{ Description = "poisoned"; Action = { throw "deliberate restoration failure" } }
+            @{ Description = "third"; Action = { $thirdRan.Add("yes") }.GetNewClosure() }
+        )
+        { Invoke-WiringStateRestoration -Step $steps } | Should -Throw "*poisoned: deliberate restoration failure*"
+        $firstRan | Should -HaveCount 1
+        $thirdRan | Should -HaveCount 1 -Because "a failed step must never prevent the steps after it"
+    }
+
+    It "hands the caller's session back intact after the COMPLETE file lifecycle, hostile seeded state (post-AfterAll, isolated child)" -Tag "WholeFileSafety" {
+        # A green in-file assertion proves nothing about the file's own AfterEach/AfterAll -
+        # only inspecting the session AFTER Invoke-Pester returns does. The child excludes this
+        # tag, so there is no recursion.
+        # LASTEXITCODE caveat, measured: Invoke-Pester ITSELF assigns FailedCount to
+        # $global:LASTEXITCODE after every run (a trivial one-It control file turns a seeded 37
+        # into 0, and creates the variable when absent). That is the RUNNER's contract, outside
+        # this file's control - so the postcondition is runner-relative: after the wiring file,
+        # LASTEXITCODE must equal exactly what the trivial control leaves behind.
+        $childScript = Join-Path $script:work "wholefile-seeded.ps1"
+        $controlFile = Join-Path $script:work "wholefile-control.Tests.ps1"
+        'Describe "control" { It "passes" { 1 | Should -Be 1 } }' | Set-Content -LiteralPath $controlFile
+        @(
+            "`$global:LASTEXITCODE = 37",
+            "`$null = Invoke-Pester -Path '$controlFile' -Output None -PassThru",
+            "`$controlExit = (Get-Variable -Name LASTEXITCODE -Scope Global).Value",
+            "Set-Item -Path Function:\global:docker -Value { 'wholefile-docker-sentinel' }",
+            "Set-Item -Path Function:\global:__WholeFileTarget -Value { return `$true }",
+            "Set-Alias -Name Test-NativeCommandWithTimeout -Value __WholeFileTarget -Scope Global",
+            "`$global:LASTEXITCODE = 37",
+            "`$result = Invoke-Pester -Path '$PSCommandPath' -ExcludeTagFilter 'WholeFileSafety' -Output None -PassThru",
+            "`$fn = Get-Item Function:\docker -ErrorAction SilentlyContinue",
+            "`$alias = Get-Item Alias:\Test-NativeCommandWithTimeout -ErrorAction SilentlyContinue",
+            "`$exitVariable = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue",
+            "[pscustomobject]@{",
+            "    Failed = `$result.FailedCount; Total = `$result.TotalCount; ControlExit = `$controlExit",
+            "    DockerBodyMatch = (`$null -ne `$fn -and `$fn.ScriptBlock.ToString().Contains('wholefile-docker-sentinel'))",
+            "    DockerOptions = if (`$fn) { [string]`$fn.Options } else { 'absent' }",
+            "    AliasDefinition = if (`$alias) { [string]`$alias.Definition } else { 'absent' }",
+            "    ExitPresent = (`$null -ne `$exitVariable)",
+            "    ExitValue = if (`$exitVariable) { `$exitVariable.Value } else { `$null }",
+            "} | ConvertTo-Json -Compress"
+        ) -join "`n" | Set-Content -LiteralPath $childScript
+
+        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState.Failed | Should -Be 0 -Because "the suite must pass under the hostile state"
+        $childState.Total | Should -BeGreaterThan 20
+        $childState.DockerBodyMatch | Should -BeTrue -Because "the caller's docker function must survive the whole lifecycle"
+        $childState.DockerOptions | Should -Be "None"
+        $childState.AliasDefinition | Should -Be "__WholeFileTarget"
+        $childState.ExitPresent | Should -BeTrue
+        $childState.ExitValue | Should -Be $childState.ControlExit -Because "the file may leave exactly what the Pester runner itself leaves, and nothing else"
+    }
+
+    It "creates nothing in a clean session across the COMPLETE file lifecycle (post-AfterAll, isolated child)" -Tag "WholeFileSafety" {
+        # Same runner-relative LASTEXITCODE contract as above: Invoke-Pester itself creates the
+        # variable in a fresh session (measured on a trivial control), so the assertion is that
+        # this file leaves exactly the runner's own footprint and nothing more.
+        $childScript = Join-Path $script:work "wholefile-clean.ps1"
+        $controlFile = Join-Path $script:work "wholefile-clean-control.Tests.ps1"
+        'Describe "control" { It "passes" { 1 | Should -Be 1 } }' | Set-Content -LiteralPath $controlFile
+        @(
+            "`$null = Invoke-Pester -Path '$controlFile' -Output None -PassThru",
+            "# Scalars captured IMMEDIATELY: a PSVariable object is live, and a later",
+            "# Remove-Variable inside the suite detaches it, nulling its .Value.",
+            "`$controlExitVariable = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue",
+            "`$controlExitPresent = (`$null -ne `$controlExitVariable)",
+            "`$controlExitValue = if (`$controlExitPresent) { `$controlExitVariable.Value } else { `$null }",
+            "`$result = Invoke-Pester -Path '$PSCommandPath' -ExcludeTagFilter 'WholeFileSafety' -Output None -PassThru",
+            "`$fn = Get-Item Function:\docker -ErrorAction SilentlyContinue",
+            "`$alias = Get-Item Alias:\Test-NativeCommandWithTimeout -ErrorAction SilentlyContinue",
+            "`$exitVariable = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue",
+            "[pscustomobject]@{",
+            "    Failed = `$result.FailedCount; Total = `$result.TotalCount",
+            "    ControlExitPresent = `$controlExitPresent",
+            "    ControlExitValue = `$controlExitValue",
+            "    DockerPresent = (`$null -ne `$fn); AliasPresent = (`$null -ne `$alias)",
+            "    ExitPresent = (`$null -ne `$exitVariable)",
+            "    ExitValue = if (`$exitVariable) { `$exitVariable.Value } else { `$null }",
+            "} | ConvertTo-Json -Compress"
+        ) -join "`n" | Set-Content -LiteralPath $childScript
+
+        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState.Failed | Should -Be 0
+        $childState.DockerPresent | Should -BeFalse
+        $childState.AliasPresent | Should -BeFalse
+        $childState.ExitPresent | Should -Be $childState.ControlExitPresent -Because "the file may leave exactly the runner's own LASTEXITCODE footprint"
+        $childState.ExitValue | Should -Be $childState.ControlExitValue
+    }
+    }
+
+    Context "raw-marker gate semantics" {
+
+    It "ambient marker 'true' cannot invoke the authority for a shared-mode file (kills the effective-value lookup mutant)" {
+        # Measured gap: a helper mutated to Compose-effective lookup (ambient wins) behaves
+        # identically when ambient is absent - this matched pair is what kills it.
+        $env:DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = "true"
+        $envFile = New-WiringEnvFile
+        $run = Invoke-WiringRun -ScriptBlock {
+            & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -EnvironmentFile $envFile -InfraOnly *>$null
+        }
+        $run.AuthorityCalls | Should -HaveCount 0
+        $run.ErrorMessage | Should -Be "WIRING-POSTBOUNDARY-SENTINEL"
+    }
+
+    It "ambient marker 'false' cannot suppress the authority for a separate effective file" {
+        $env:DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = "false"
+        $envFile = New-WiringEnvFile
+        $run = Invoke-WiringRun -ScriptBlock {
+            & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile -InfraOnly *>$null
+        }
+        $run.AuthorityCalls | Should -HaveCount 1
+        $run.ErrorMessage | Should -Be $script:authoritySentinel
+    }
+
+    It "interprets raw marker spellings exactly like the topology validator: only a declared ordinal 'true' is separate" {
+        $rows = @(
+            @{ Line = $null; Ambient = $null; Expected = $false; Label = "no declaration" }
+            @{ Line = "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false"; Ambient = $null; Expected = $false; Label = "declared false" }
+            @{ Line = "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=TRUE"; Ambient = $null; Expected = $false; Label = "case variant is not a topology declaration (ordinal)" }
+            @{ Line = "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true"; Ambient = $null; Expected = $true; Label = "declared true" }
+            @{ Line = 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE="true"'; Ambient = $null; Expected = $true; Label = "double-quoted true unwraps like Compose" }
+            @{ Line = $null; Ambient = "true"; Expected = $false; Label = "ambient-only value is not a file declaration" }
+        )
+        foreach ($row in $rows) {
+            if ($null -ne $row.Ambient) { $env:DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = $row.Ambient }
+            $lines = @("MSSQL_DB_NAME=edfi_datamanagementservice")
+            if ($null -ne $row.Line) { $lines = @($row.Line) + $lines }
+            $path = Join-Path $script:work ".env.marker-$([Guid]::NewGuid().ToString('N'))"
+            Set-Content -LiteralPath $path -NoNewline -Value ($lines -join "`n")
+            Test-CmsSeparateTopologyDeclared -EnvironmentFile $path | Should -Be $row.Expected -Because $row.Label
+            Remove-Item -LiteralPath "Env:\DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE" -Force -ErrorAction SilentlyContinue
         }
     }
     }
