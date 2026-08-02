@@ -632,10 +632,13 @@ else {
             # Physical-identity check for the separate topology: the RUNNING SQL Server - the
             # only authority on its own database-name semantics - decides whether the selected
             # datastore is physically distinct from the dedicated Configuration Service
-            # database. Gated on the effective file's own topology marker, which covers both
-            # the explicit switch (the resolver writes the marker into the derived file) and a
-            # marker-carrying continuation file, so a shared-mode run never invokes the
-            # authority at all; its identical internal gate remains as defense in depth.
+            # database. Gated on the effective file's own topology marker, read raw: on this
+            # participating path the topology resolver above just recomputed the topology from
+            # the switch, so the marker in the file it RETURNED is the current declaration
+            # (measured: a marker-carrying derived file passed back WITHOUT the switch is
+            # re-resolved to shared mode before this point). A shared-mode run therefore never
+            # invokes the authority at all; its identical internal gate remains as defense in
+            # depth.
             # Placed hard against readiness so a collision, or any inability to verify (it
             # fails closed), stops the start after the database container exists but before
             # OpenIddict, CMS, DMS, or any datastore work touches it.

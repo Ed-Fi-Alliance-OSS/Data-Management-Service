@@ -2929,13 +2929,13 @@ function Test-CmsSeparateTopologyDeclared {
     .DESCRIPTION
         The wiring gate for the start scripts' server-backed physical-identity check: a
         shared-mode run must not invoke the authority at all (the frozen zero-invocation
-        contract), and the marker in the EFFECTIVE file is the one signal that covers both ways
-        separate mode arrives - the -SeparateConfigDatabase switch (the topology resolver writes
-        the marker into the derived file it returns) and a marker-carrying continuation file
-        passed directly. Read raw from the file's own declarations, exactly as
-        Confirm-CmsDatabaseTopologyAgreement and the authority read it, so an unrelated ambient
-        variable can neither invoke nor suppress the check. The authority's identical internal
-        gate remains as defense in depth.
+        contract). On the participating path the topology resolver has just recomputed the
+        topology from the -SeparateConfigDatabase switch, so the marker in the EFFECTIVE file
+        it returned is the current declaration (measured: a marker-carrying derived file passed
+        back WITHOUT the switch is re-resolved to shared mode before this gate runs). Read raw
+        from the file's own declarations, exactly as Confirm-CmsDatabaseTopologyAgreement and
+        the authority read it, so an unrelated ambient variable can neither invoke nor suppress
+        the check. The authority's identical internal gate remains as defense in depth.
     #>
     param(
         [Parameter(Mandatory)]
