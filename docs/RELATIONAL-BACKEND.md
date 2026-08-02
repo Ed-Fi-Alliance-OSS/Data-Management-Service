@@ -500,18 +500,25 @@ almost always why.
     `It_deliberately_diverges_from_the_hash_resolver_for_a_case_variant_string_identity`).
   - For **upsert detection**, a POST whose string natural key differs from a stored row only by case
     now seeks `UX_<R>_NK`, matches, and resolves to an **existing** document. The write then merges the
-    request's casing over the stored row, and the immutable-identity guard — which compares merged
-    against current **ordinally** — refuses it. The net effect on SQL Server is **409 → 400**: the old
-    flow resolved to no target, inserted, and lost to `UX_<R>_NK` as an identity conflict; the new flow
-    refuses up front as an immutable-identity violation. Both refuse the write, neither mutates stored
-    state, and the new outcome is what PUT already returned for a case-variant identity edit — so POST
-    and PUT are now consistent on this dialect. PostgreSQL still creates a second document
-    (`RelationalWriteIdentityStability.cs`; pinned by
-    `Given_A_Mssql_Relational_Post_With_A_Case_Variant_String_Natural_Key` and its PostgreSQL twin).
+    request's casing over the stored row, and the immutable-identity guard
+    ([`RelationalWriteIdentityStability.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteIdentityStability.cs)) —
+    which compares merged against current **ordinally** — refuses it. The net effect on SQL Server is
+    **409 → 400**: the old flow resolved to no target, inserted, and lost to `UX_<R>_NK` as an identity
+    conflict; the new flow refuses up front as an immutable-identity violation. Both refuse the write,
+    neither mutates stored state, and the new outcome is what PUT already returned for a case-variant
+    identity edit — so POST and PUT are now consistent on this dialect. PostgreSQL still creates a
+    second document. Pinned by `Given_A_Mssql_Relational_Post_With_A_Case_Variant_String_Natural_Key`
+    and its PostgreSQL twin.
 
-  Both follow from the same fact: `UX_<R>_NK` under a case-insensitive collation already treats case
-  variants as one identity, so the row that would have made the old 409 *mean* something could never
-  have coexisted in the first place.
+    > This is the **only** way the POST arm of the immutable-identity guard is reachable. Natural-key
+    > selection was ruled to make it structurally unreachable, and on PostgreSQL that holds — but SQL
+    > Server's case-insensitive match reaches it, so a later cleanup must not treat that arm as dead
+    > code and delete it.
+
+  Each side follows from its own index: reference resolution from `UX_<T>_RefKey` on the *target*, and
+  upsert detection from `UX_<R>_NK` on the resource's *own* root table. Under a case-insensitive
+  collation both already treat case variants as one identity, so the row that would have made the old
+  409 *mean* something could never have coexisted in the first place.
 - **Stored descriptor casing is immutable through POST.** A POST-as-update writes every descriptive
   field from the request but takes `Namespace`, `CodeValue` and `Uri` from the **persisted** row, which
   preserves the pre-existing guarantee (a case-variant POST used to resolve to no target, insert, and

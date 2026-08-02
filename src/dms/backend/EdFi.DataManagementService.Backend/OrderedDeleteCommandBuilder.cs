@@ -35,16 +35,18 @@ internal static class OrderedDeleteCommandBuilder
     /// mirror as the residual scoping predicate, so no <c>dms.Document</c> read is involved.
     /// </summary>
     /// <remarks>
-    /// Descriptor-row-first is a convention, not a requirement. It was load bearing while the descriptor
-    /// stamping trigger's DELETE branch stamped the owning <c>dms.Document</c> row with
-    /// <c>RETURNING … INTO STRICT</c> — that raised if the document row was already gone — but that branch
-    /// now takes its tombstone change version straight from the change-version sequence and reads
-    /// <c>dms.Document</c> zero times, so neither statement depends on the other's position any more.
+    /// Descriptor-row-first is a convention, not a requirement, and the reason is structural rather than
+    /// anything about trigger bodies. The two statements have <b>no data dependency</b>: each is keyed
+    /// independently by <c>@documentUuid</c> plus <c>@resourceKeyId</c>, so neither needs the other to have
+    /// run. And <c>FK_Descriptor_Document</c> is <c>ON DELETE CASCADE</c> on both dialects, so deleting the
+    /// <c>dms.Document</c> row first would take the descriptor row with it and leave the descriptor
+    /// statement matching nothing rather than erroring. Neither order can fail; this one is kept because it
+    /// is the order every other delete path uses.
     /// <para>
-    /// The trailing document delete stays in Phase 3 for two reasons that survive: it removes the document
-    /// row (cascading the referential-identity rows away through
-    /// <c>FK_ReferentialIdentity_Document</c>), and its <c>RETURNING</c>/<c>OUTPUT DELETED</c> is the
-    /// affected-rows signal the delete executor reads.
+    /// The trailing document delete stays in Phase 3 for two reasons: it removes the document row
+    /// (cascading the referential-identity rows away through <c>FK_ReferentialIdentity_Document</c>), and
+    /// its <c>RETURNING</c>/<c>OUTPUT DELETED</c> is the affected-rows signal the delete executor reads —
+    /// which is also why it must stay the <em>second</em> statement.
     /// </para>
     /// </remarks>
     public static RelationalCommand BuildDescriptorDeleteCommand(
