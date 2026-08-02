@@ -35,15 +35,43 @@ BeforeAll {
     $script:authoritySentinel = "WIRING-AUTHORITY-SENTINEL"
 
     # Scalar snapshot of a Function:/Alias: item - presence, the definition needed to recreate
-    # it, and its options. Never a live FunctionInfo/AliasInfo, which mutates with the table.
+    # it, its OPTIONS, and its DESCRIPTION (review-measured: a restoration that stops at the
+    # definition silently strips ReadOnly and empties the description). Never a live
+    # FunctionInfo/AliasInfo, which mutates with the table.
     function script:Get-CommandStateSnapshot {
         param([Parameter(Mandatory)] [string]$ItemPath)
         $item = Get-Item $ItemPath -ErrorAction SilentlyContinue
         if ($null -eq $item) { return @{ Present = $false } }
         if ($item -is [System.Management.Automation.AliasInfo]) {
-            return @{ Present = $true; Definition = [string]$item.Definition; Options = $item.Options }
+            return @{ Present = $true; Definition = [string]$item.Definition; Options = $item.Options; Description = [string]$item.Description }
         }
-        return @{ Present = $true; ScriptBlock = $item.ScriptBlock; Options = $item.Options }
+        return @{ Present = $true; ScriptBlock = $item.ScriptBlock; Options = $item.Options; Description = [string]$item.Description }
+    }
+
+    # The ONE alias/function restoration implementation - every cleanup path goes through it,
+    # so fidelity cannot fork between the harness and the safety tests. Order matters: the
+    # definition is recreated first, the description applied second, and the options LAST,
+    # because a ReadOnly option would refuse the description write.
+    function script:Restore-CommandFromSnapshot {
+        param(
+            [Parameter(Mandatory)] [ValidateSet("Function", "Alias")] [string]$Kind,
+            [Parameter(Mandatory)] [string]$Name,
+            [Parameter(Mandatory)] [hashtable]$Snapshot
+        )
+        Remove-Item "$($Kind):\$Name" -Force -ErrorAction SilentlyContinue
+        if (-not $Snapshot.Present) { return }
+        if ($Kind -eq "Alias") {
+            Set-Alias -Name $Name -Value $Snapshot.Definition -Scope Global -Force -Description ([string]$Snapshot.Description)
+        }
+        else {
+            Set-Item -Path "Function:\global:$Name" -Force -Value $Snapshot.ScriptBlock
+            if (-not [string]::IsNullOrEmpty([string]$Snapshot.Description)) {
+                (Get-Item "Function:\$Name").Description = [string]$Snapshot.Description
+            }
+        }
+        if ($Snapshot.Options -ne [System.Management.Automation.ScopedItemOptions]::None) {
+            (Get-Item "$($Kind):\$Name").Options = $Snapshot.Options
+        }
     }
 
     # Runs every restoration step even when one fails: the session is repaired as far as
@@ -207,19 +235,17 @@ BeforeAll {
             # Remove ONLY what this invocation created, then restore every snapshot exactly.
             # Each step is fault-isolated: one failed restoration never prevents the others
             # (the driver repairs the session first, then reports).
+            # A .GetNewClosure() scriptblock cannot resolve script:-scoped FUNCTIONS (the same
+            # closure-scope rule the module mocks hit), so the central restorer travels into
+            # the steps as a captured scriptblock VARIABLE invoked with '&'.
+            $restoreCommand = ${function:Restore-CommandFromSnapshot}
             $restorationSteps = [System.Collections.Generic.List[object]]::new()
             foreach ($aliasName in $interceptedAliasNames) {
                 $savedAlias = $savedAliases[$aliasName]
                 $restorationSteps.Add(@{
                         Description = "intercept alias '$aliasName'"
                         Action      = {
-                            Remove-Item "Alias:\$aliasName" -Force -ErrorAction SilentlyContinue
-                            if ($savedAlias.Present) {
-                                Set-Alias -Name $aliasName -Value $savedAlias.Definition -Scope Global -Force
-                                if ($savedAlias.Options -ne [System.Management.Automation.ScopedItemOptions]::None) {
-                                    (Get-Item "Alias:\$aliasName").Options = $savedAlias.Options
-                                }
-                            }
+                            & $restoreCommand -Kind Alias -Name $aliasName -Snapshot $savedAlias
                         }.GetNewClosure()
                     })
             }
@@ -232,13 +258,7 @@ BeforeAll {
             $restorationSteps.Add(@{
                     Description = "docker function"
                     Action      = {
-                        Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue
-                        if ($savedDockerFunction.Present) {
-                            Set-Item -Path Function:\global:docker -Force -Value $savedDockerFunction.ScriptBlock
-                            if ($savedDockerFunction.Options -ne [System.Management.Automation.ScopedItemOptions]::None) {
-                                (Get-Item Function:\docker).Options = $savedDockerFunction.Options
-                            }
-                        }
+                        & $restoreCommand -Kind Function -Name docker -Snapshot $savedDockerFunction
                     }.GetNewClosure()
                 })
             $restorationSteps.Add(@{
@@ -717,30 +737,22 @@ Describe "MSSQL physical-distinctness wiring" {
     }
 
     AfterEach {
+        # Same central restoration implementation as the harness itself - the safety tests must
+        # not maintain a second, lower-fidelity copy (review-measured: a separate AfterEach lost
+        # alias options and descriptions the harness preserved).
+        $restoreCommand = ${function:Restore-CommandFromSnapshot}
         $steps = [System.Collections.Generic.List[object]]::new()
         $dockerFunctionSnapshot = $script:safetySnapshots.DockerFunction
         $steps.Add(@{ Description = "docker function"; Action = {
-                    Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue
-                    if ($dockerFunctionSnapshot.Present) {
-                        Set-Item -Path Function:\global:docker -Force -Value $dockerFunctionSnapshot.ScriptBlock
-                        if ($dockerFunctionSnapshot.Options -ne [System.Management.Automation.ScopedItemOptions]::None) {
-                            (Get-Item Function:\docker).Options = $dockerFunctionSnapshot.Options
-                        }
-                    }
+                    & $restoreCommand -Kind Function -Name docker -Snapshot $dockerFunctionSnapshot
                 }.GetNewClosure() })
         $dockerAliasSnapshot = $script:safetySnapshots.DockerAlias
         $steps.Add(@{ Description = "docker alias"; Action = {
-                    Remove-Item Alias:\docker -Force -ErrorAction SilentlyContinue
-                    if ($dockerAliasSnapshot.Present) {
-                        Set-Alias -Name docker -Value $dockerAliasSnapshot.Definition -Scope Global -Force
-                    }
+                    & $restoreCommand -Kind Alias -Name docker -Snapshot $dockerAliasSnapshot
                 }.GetNewClosure() })
         $interceptAliasSnapshot = $script:safetySnapshots.InterceptAlias
         $steps.Add(@{ Description = "intercept alias"; Action = {
-                    Remove-Item Alias:\Test-NativeCommandWithTimeout -Force -ErrorAction SilentlyContinue
-                    if ($interceptAliasSnapshot.Present) {
-                        Set-Alias -Name Test-NativeCommandWithTimeout -Value $interceptAliasSnapshot.Definition -Scope Global -Force
-                    }
+                    & $restoreCommand -Kind Alias -Name Test-NativeCommandWithTimeout -Snapshot $interceptAliasSnapshot
                 }.GetNewClosure() })
         $exitSnapshot = $script:safetyExitSnapshot
         $steps.Add(@{ Description = "LASTEXITCODE"; Action = {
@@ -798,6 +810,29 @@ Describe "MSSQL physical-distinctness wiring" {
         }
         finally {
             Remove-Item "Function:\$preexistingTargetName" -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "restores a caller-owned intercept alias with its definition, DESCRIPTION, and ReadOnly OPTION exactly (review-measured fidelity)" {
+        $targetName = "__WiringAliasFidelityTarget_$([Guid]::NewGuid().ToString('N'))"
+        Set-Item -Path "Function:\global:$targetName" -Value { return $true }
+        Set-Alias -Name Test-NativeCommandWithTimeout -Value $targetName -Scope Global -Force `
+            -Description "outer-alias-description" -Option ReadOnly
+        try {
+            $envFile = New-WiringEnvFile
+            $run = Invoke-WiringRun -ScriptBlock {
+                & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile -InfraOnly *>$null
+            }
+            $run.AuthorityCalls | Should -HaveCount 1
+
+            $restored = Get-Item Alias:\Test-NativeCommandWithTimeout
+            $restored.Definition | Should -Be $targetName
+            $restored.Description | Should -Be "outer-alias-description" -Because "a restoration that stops at the definition silently empties the description"
+            ($restored.Options -band [System.Management.Automation.ScopedItemOptions]::ReadOnly) |
+                Should -Be ([System.Management.Automation.ScopedItemOptions]::ReadOnly) -Because "options are caller state too"
+        }
+        finally {
+            Remove-Item "Function:\$targetName" -Force -ErrorAction SilentlyContinue
         }
     }
 
@@ -884,7 +919,7 @@ Describe "MSSQL physical-distinctness wiring" {
             "`$controlExit = (Get-Variable -Name LASTEXITCODE -Scope Global).Value",
             "Set-Item -Path Function:\global:docker -Value { 'wholefile-docker-sentinel' }",
             "Set-Item -Path Function:\global:__WholeFileTarget -Value { return `$true }",
-            "Set-Alias -Name Test-NativeCommandWithTimeout -Value __WholeFileTarget -Scope Global",
+            "Set-Alias -Name Test-NativeCommandWithTimeout -Value __WholeFileTarget -Scope Global -Description 'outer-alias-description' -Option ReadOnly",
             "`$global:LASTEXITCODE = 37",
             "`$result = Invoke-Pester -Path '$PSCommandPath' -ExcludeTagFilter 'WholeFileSafety' -Output None -PassThru",
             "`$fn = Get-Item Function:\docker -ErrorAction SilentlyContinue",
@@ -895,6 +930,8 @@ Describe "MSSQL physical-distinctness wiring" {
             "    DockerBodyMatch = (`$null -ne `$fn -and `$fn.ScriptBlock.ToString().Contains('wholefile-docker-sentinel'))",
             "    DockerOptions = if (`$fn) { [string]`$fn.Options } else { 'absent' }",
             "    AliasDefinition = if (`$alias) { [string]`$alias.Definition } else { 'absent' }",
+            "    AliasOptions = if (`$alias) { [string]`$alias.Options } else { 'absent' }",
+            "    AliasDescription = if (`$alias) { [string]`$alias.Description } else { 'absent' }",
             "    ExitPresent = (`$null -ne `$exitVariable)",
             "    ExitValue = if (`$exitVariable) { `$exitVariable.Value } else { `$null }",
             "} | ConvertTo-Json -Compress"
@@ -906,6 +943,8 @@ Describe "MSSQL physical-distinctness wiring" {
         $childState.DockerBodyMatch | Should -BeTrue -Because "the caller's docker function must survive the whole lifecycle"
         $childState.DockerOptions | Should -Be "None"
         $childState.AliasDefinition | Should -Be "__WholeFileTarget"
+        $childState.AliasOptions | Should -Be "ReadOnly" -Because "a non-default alias option must survive the whole lifecycle"
+        $childState.AliasDescription | Should -Be "outer-alias-description" -Because "the description is caller state too"
         $childState.ExitPresent | Should -BeTrue
         $childState.ExitValue | Should -Be $childState.ControlExit -Because "the file may leave exactly what the Pester runner itself leaves, and nothing else"
     }
