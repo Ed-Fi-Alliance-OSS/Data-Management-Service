@@ -482,11 +482,12 @@ almost always why.
   it is emitted on both dialects so the compiled probe binds one column name everywhere.
 - **On SQL Server, string identity comparison is case-insensitive, on both lookups.** The generated DDL
   pins no collation on identity columns, so they inherit the database default — case-insensitive on a
-  stock SQL Server install, whereas PostgreSQL compares `text` byte-for-byte. For *reference
-  resolution* that means a case-differing string identity value resolves a reference PostgreSQL treats
-  as a miss. For *upsert detection* it means a case-variant natural key resolves to the existing row
-  and the POST becomes a POST-as-update, where the hash probe produced "create new" and the request
-  then lost to the unique constraint as a **409**. Both follow from the same fact: `UX_<R>_NK` under a
+  stock SQL Server install, whereas PostgreSQL's default (deterministic) collations compare text
+  byte-for-byte. For *reference resolution* that means a case-differing string identity value resolves
+  a reference PostgreSQL treats as a miss. For *upsert detection* it means a case-variant natural key
+  resolves to the existing row and the POST becomes a POST-as-update, where the hash probe produced
+  "create new" and the request then lost to the unique constraint as a **409**. Both follow from the
+  same fact: `UX_<R>_NK` under a
   case-insensitive collation already treats case variants as one identity, so the row that would have
   made the old 409 correct could never have coexisted in the first place.
 - **Stored descriptor casing is immutable through POST.** A POST-as-update writes every descriptive
