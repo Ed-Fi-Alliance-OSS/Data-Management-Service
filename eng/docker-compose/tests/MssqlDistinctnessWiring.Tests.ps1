@@ -37,10 +37,45 @@ BeforeAll {
     function script:Invoke-WiringRun {
         param(
             [Parameter(Mandatory)] [scriptblock]$ScriptBlock,
-            # When set, `compose ... up ... db` fails like every other compose call - used to
-            # prove non-mssql runs never reach the authority even at their earliest boundary.
-            [switch]$FailDbUp
+            # Lets `compose ... up ... keycloak` succeed too, for the staged participating
+            # keycloak rows; the default policy succeeds ONLY the db-up call.
+            [switch]$AllowKeycloakUp
         )
+
+        # ---- Transactional interception: reject what cannot be shadowed or restored, snapshot
+        # ---- everything this run will touch, stage GUID-named shims, and in finally remove
+        # ---- ONLY what this invocation created and put back everything that pre-existed.
+        $constantOption = [System.Management.Automation.ScopedItemOptions]::Constant
+
+        # An effective `docker` ALIAS outranks any function stand-in: with one in place the
+        # scripts' docker calls would resolve through it - to real Docker, if that is its
+        # target. Refuse before staging anything.
+        if (Get-Command docker -CommandType Alias -ErrorAction SilentlyContinue) {
+            throw "Refusing to run: an effective 'docker' alias is defined in this session and would outrank the function stand-in, so the scripts could reach real Docker."
+        }
+        $interceptedAliasNames = @('Test-NativeCommandWithTimeout', 'Assert-MssqlPhysicalDatastoreDistinctness', 'Start-Sleep')
+        $savedAliases = @{}
+        foreach ($aliasName in $interceptedAliasNames) {
+            $existingAlias = Get-Item "Alias:\$aliasName" -ErrorAction SilentlyContinue
+            if ($null -ne $existingAlias) {
+                if ($existingAlias.Options -band $constantOption) {
+                    throw "Refusing to run: a constant '$aliasName' alias cannot be shadowed or restored."
+                }
+                $savedAliases[$aliasName] = @{ Definition = $existingAlias.Definition; Options = $existingAlias.Options }
+            }
+            else {
+                $savedAliases[$aliasName] = $null
+            }
+        }
+        $savedDockerFunction = $null
+        $existingDockerFunction = Get-Item Function:\docker -ErrorAction SilentlyContinue
+        if ($null -ne $existingDockerFunction) {
+            if ($existingDockerFunction.Options -band $constantOption) {
+                throw "Refusing to run: a constant 'docker' function cannot be shadowed or restored."
+            }
+            $savedDockerFunction = @{ ScriptBlock = $existingDockerFunction.ScriptBlock; Options = $existingDockerFunction.Options }
+        }
+        $savedLastExitCode = $global:LASTEXITCODE
 
         $derivedDir = Join-Path $script:dockerComposeRoot ".derived"
         $before = @{}
@@ -63,24 +98,28 @@ BeforeAll {
 
         $events = [System.Collections.Generic.List[string]]::new()
         $authorityCalls = [System.Collections.Generic.List[object]]::new()
-        $allowDbUp = -not $FailDbUp
-        $hadRealDocker = $null -ne (Get-Command docker -CommandType Application -ErrorAction SilentlyContinue)
+        $allowKeycloak = [bool]$AllowKeycloakUp
+        $shimSuffix = [Guid]::NewGuid().ToString('N')
+        $readinessShimName = "__WiringReadinessShim_$shimSuffix"
+        $authorityShimName = "__WiringAuthorityShim_$shimSuffix"
+        $sleepShimName = "__WiringSleepShim_$shimSuffix"
         $caught = $null
         try {
-            Set-Item -Path Function:\global:docker -Value {
+            Set-Item -Path Function:\global:docker -Force -Value {
                 $flattened = @($args | ForEach-Object { $_ })
                 $joined = $flattened -join " "
                 $events.Add("docker: $joined")
                 if ($flattened.Count -gt 0 -and $flattened[0] -eq "compose") {
                     $isDbUp = ($joined -match " up ") -and ($flattened[-1] -eq "db")
-                    $global:LASTEXITCODE = if ($isDbUp -and $allowDbUp) { 0 } else { 1 }
+                    $isKeycloakUp = ($joined -match " up ") -and ($flattened[-1] -eq "keycloak")
+                    $global:LASTEXITCODE = if ($isDbUp -or ($isKeycloakUp -and $allowKeycloak)) { 0 } else { 1 }
                 }
                 else {
                     $global:LASTEXITCODE = 0
                 }
             }.GetNewClosure()
 
-            Set-Item -Path Function:\global:__WiringReadinessShim -Value {
+            Set-Item -Path "Function:\global:$readinessShimName" -Value {
                 # The parameters exist only to bind the readiness probe's named arguments; the
                 # shim answers "ready" unconditionally. The $null assignment consumes them,
                 # which is what the analyzer's unused-parameter rule wants stated explicitly.
@@ -89,9 +128,9 @@ BeforeAll {
                 $events.Add("readiness")
                 return $true
             }.GetNewClosure()
-            Set-Alias -Name Test-NativeCommandWithTimeout -Value __WiringReadinessShim -Scope Global
+            Set-Alias -Name Test-NativeCommandWithTimeout -Value $readinessShimName -Scope Global -Force
 
-            Set-Item -Path Function:\global:__WiringAuthorityShim -Value {
+            Set-Item -Path "Function:\global:$authorityShimName" -Value {
                 param(
                     [string]$EnvironmentFile,
                     [string]$ContainerName,
@@ -109,7 +148,21 @@ BeforeAll {
                     })
                 throw "WIRING-AUTHORITY-SENTINEL"
             }.GetNewClosure()
-            Set-Alias -Name Assert-MssqlPhysicalDatastoreDistinctness -Value __WiringAuthorityShim -Scope Global
+            Set-Alias -Name Assert-MssqlPhysicalDatastoreDistinctness -Value $authorityShimName -Scope Global -Force
+
+            # The first Start-Sleep past the readiness/authority boundary is the scripts' next
+            # statement on every gated-off path, so throwing there gives negative runs a
+            # deterministic terminus that PROVES they passed through the boundary region -
+            # instead of letting the real setup-openiddict sibling execute. Positive runs never
+            # reach it (the authority sentinel fires first), and the readiness waits never
+            # sleep because the readiness shim succeeds on the first probe.
+            Set-Item -Path "Function:\global:$sleepShimName" -Value {
+                param($Seconds, $Milliseconds)
+                $null = $Seconds, $Milliseconds
+                $events.Add("sleep")
+                throw "WIRING-POSTBOUNDARY-SENTINEL"
+            }.GetNewClosure()
+            Set-Alias -Name Start-Sleep -Value $sleepShimName -Scope Global -Force
 
             & $ScriptBlock
         }
@@ -117,11 +170,32 @@ BeforeAll {
             $caught = $_
         }
         finally {
-            Remove-Item Alias:\Assert-MssqlPhysicalDatastoreDistinctness -Force -ErrorAction SilentlyContinue
-            Remove-Item Alias:\Test-NativeCommandWithTimeout -Force -ErrorAction SilentlyContinue
-            Remove-Item Function:\__WiringAuthorityShim -Force -ErrorAction SilentlyContinue
-            Remove-Item Function:\__WiringReadinessShim -Force -ErrorAction SilentlyContinue
+            # Remove ONLY what this invocation created, then restore what pre-existed, exactly.
+            foreach ($aliasName in $interceptedAliasNames) {
+                Remove-Item "Alias:\$aliasName" -Force -ErrorAction SilentlyContinue
+                if ($null -ne $savedAliases[$aliasName]) {
+                    Set-Alias -Name $aliasName -Value $savedAliases[$aliasName].Definition -Scope Global -Force
+                    (Get-Item "Alias:\$aliasName").Options = $savedAliases[$aliasName].Options
+                }
+            }
+            Remove-Item "Function:\$readinessShimName" -Force -ErrorAction SilentlyContinue
+            Remove-Item "Function:\$authorityShimName" -Force -ErrorAction SilentlyContinue
+            Remove-Item "Function:\$sleepShimName" -Force -ErrorAction SilentlyContinue
             Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue
+
+            # A STAGED run imports the module siblings from the stage path, which loads SECOND
+            # same-name module instances alongside the real ones - and duplicate module names
+            # break Pester's -ModuleName mocking for every suite that runs later in the same
+            # process (measured: 'Multiple script or manifest modules named env-utility are
+            # currently loaded'). Unload exactly the instances this run staged.
+            foreach ($stagedModule in @(Get-Module | Where-Object { $_.Path -like "$($script:work)*" })) {
+                Remove-Module -ModuleInfo $stagedModule -Force -ErrorAction SilentlyContinue
+            }
+            if ($null -ne $savedDockerFunction) {
+                Set-Item -Path Function:\global:docker -Force -Value $savedDockerFunction.ScriptBlock
+                (Get-Item Function:\docker).Options = $savedDockerFunction.Options
+            }
+            $global:LASTEXITCODE = $savedLastExitCode
 
             foreach ($name in $identityEnvironmentName) {
                 $saved = $identityEnvironmentState[$name]
@@ -134,11 +208,15 @@ BeforeAll {
             }
         }
 
-        if ($hadRealDocker -and (Get-Command docker -CommandType Function -ErrorAction SilentlyContinue)) {
-            throw "The docker stand-in outlived the run; refusing to continue with a live docker on PATH."
+        # The stand-ins must be gone; a pre-existing docker function is back; nothing of this
+        # run may leak into the session.
+        foreach ($shimName in @($readinessShimName, $authorityShimName, $sleepShimName)) {
+            if (Get-Command $shimName -ErrorAction SilentlyContinue) {
+                throw "The $shimName stand-in outlived the run."
+            }
         }
-        if (Get-Command Assert-MssqlPhysicalDatastoreDistinctness -CommandType Alias -ErrorAction SilentlyContinue) {
-            throw "The authority alias shim outlived the run."
+        if ($null -eq $savedDockerFunction -and (Get-Command docker -CommandType Function -ErrorAction SilentlyContinue)) {
+            throw "The docker stand-in outlived the run; refusing to continue with a live docker on PATH."
         }
 
         $after = if (Test-Path $derivedDir) { @(Get-ChildItem $derivedDir -Name -Force) } else { @() }
@@ -153,6 +231,28 @@ BeforeAll {
             NewDerivedFiles = $newDerived
             TopologyFile    = ($newDerived | Where-Object { $_ -like "*.topology" } | Select-Object -First 1)
         }
+    }
+
+    # Stages a disposable copy of the compose root (top-level files only, dotfiles included)
+    # with setup-keycloak.ps1 replaced by an inert stub, so a participating keycloak run can
+    # proceed PAST its identity-provider phase to the database boundary without executing the
+    # real Keycloak admin calls. The staged scripts resolve everything - modules, overlays,
+    # compose files, .derived - against their own directory, so nothing touches the real root.
+    function script:New-StagedComposeRoot {
+        $stageRoot = Join-Path $script:work "stage-$([Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
+        foreach ($file in (Get-ChildItem -Path $script:dockerComposeRoot -File -Force)) {
+            Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $stageRoot $file.Name)
+        }
+        $stubLines = @(
+            '# Inert stand-in staged by MssqlDistinctnessWiring.Tests.ps1: accepts anything,',
+            '# does nothing, so the identity-provider phase completes without real Keycloak.',
+            'param([Parameter(ValueFromRemainingArguments = $true)] $IgnoredArgument)',
+            '$null = $IgnoredArgument',
+            'return'
+        )
+        Set-Content -LiteralPath (Join-Path $stageRoot "setup-keycloak.ps1") -Value ($stubLines -join "`n")
+        return $stageRoot
     }
 
     function script:New-WiringEnvFile {
@@ -288,25 +388,28 @@ Describe "MSSQL physical-distinctness wiring" {
         @($run.Events | Select-Object -Skip ($authorityIndex + 1) | Where-Object { $_ -like "docker:*" }) | Should -HaveCount 0
     }
 
-    It "mssql shared mode: the script still hands the authority the shared-mode file, whose marker gates it off (transport no-op is unit-proven)" {
+    It "mssql shared mode: ZERO authority invocations, proven by a run that passes THROUGH the boundary region" {
+        # The post-boundary sentinel (the sleep shim) fires only after the gate decision, so
+        # reaching it with zero authority calls proves the shared-mode run genuinely traversed
+        # the boundary rather than dying earlier for an unrelated reason.
         $envFile = New-WiringEnvFile
         $run = Invoke-WiringRun -ScriptBlock {
             & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -EnvironmentFile $envFile -InfraOnly *>$null
         }
 
-        $run.AuthorityCalls | Should -HaveCount 1
-        $sharedValues = ReadValuesFromEnvFile $run.AuthorityCalls[0].EnvironmentFile
-        ($sharedValues["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] -eq "true") | Should -BeFalse -Because "the marker is what gates the authority off in shared mode"
+        $run.AuthorityCalls | Should -HaveCount 0
+        (Get-EventIndex -Run $run -Pattern "readiness") | Should -BeGreaterOrEqual 0 -Because "the run must have passed the readiness wait"
+        $run.ErrorMessage | Should -Be "WIRING-POSTBOUNDARY-SENTINEL"
     }
 
-    It "postgresql: the authority is never invoked, even in separate mode (engine gate)" {
+    It "postgresql: ZERO authority invocations even in separate mode (engine gate), proven past the boundary region" {
         $envFile = New-WiringEnvFile
-        $run = Invoke-WiringRun -FailDbUp -ScriptBlock {
+        $run = Invoke-WiringRun -ScriptBlock {
             & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine postgresql -SeparateConfigDatabase -EnvironmentFile $envFile -InfraOnly *>$null
         }
 
         $run.AuthorityCalls | Should -HaveCount 0
-        $run.ErrorMessage | Should -BeLike "*Failed to start Postgresql*"
+        $run.ErrorMessage | Should -Be "WIRING-POSTBOUNDARY-SENTINEL" -Because "the run must have reached the statement after the boundary, not died earlier"
     }
 
     It "-DbOnly (both engines): the readiness wait is NOT followed by the authority, and the phase completes cleanly" {
@@ -340,7 +443,7 @@ Describe "MSSQL physical-distinctness wiring" {
         $run.AuthorityCalls | Should -HaveCount 0
     }
 
-    It "keycloak identity: Keycloak work precedes the database and is not gated; the authority still guards everything after readiness" {
+    It "keycloak identity: Keycloak work precedes the database and is not gated; the authority is not consulted for it" {
         # The keycloak container start fails at the compose boundary here (it is not the db-up
         # call), which proves the authority was not consulted for identity-provider work.
         $envFile = New-WiringEnvFile
@@ -350,6 +453,22 @@ Describe "MSSQL physical-distinctness wiring" {
 
         $run.AuthorityCalls | Should -HaveCount 0
         $run.ErrorMessage | Should -BeLike "*Failed to start Keycloak*"
+    }
+
+    It "keycloak separate mode reaches the authority (staged sibling stub): a future identity-provider gate cannot slip in" {
+        # Staged copy: setup-keycloak.ps1 is an inert stub, the keycloak-up compose call is
+        # allowed to succeed, so the run proceeds through its whole identity-provider phase to
+        # the database boundary - and must still hit the authority exactly once.
+        $stage = New-StagedComposeRoot
+        $envFile = New-WiringEnvFile
+        $run = Invoke-WiringRun -AllowKeycloakUp -ScriptBlock {
+            & "$stage/start-local-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -IdentityProvider keycloak -EnvironmentFile $envFile -InfraOnly *>$null
+        }
+
+        $run.AuthorityCalls | Should -HaveCount 1
+        $run.ErrorMessage | Should -Be $script:authoritySentinel
+        $readinessIndex = Get-EventIndex -Run $run -Pattern "readiness"
+        (Get-EventIndex -Run $run -Pattern "authority") | Should -Be ($readinessIndex + 1)
     }
     }
 
@@ -429,6 +548,49 @@ Describe "MSSQL physical-distinctness wiring" {
 
         $run.AuthorityCalls | Should -HaveCount 0
     }
+
+    It "postgresql: ZERO authority invocations even in separate mode, proven past the boundary region" {
+        $envFile = New-WiringEnvFile
+        $run = Invoke-WiringRun -ScriptBlock {
+            & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine postgresql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
+        }
+
+        $run.AuthorityCalls | Should -HaveCount 0
+        $run.ErrorMessage | Should -Be "WIRING-POSTBOUNDARY-SENTINEL"
+    }
+
+    It "mssql shared self-contained: ZERO authority invocations, proven past the boundary region" {
+        $envFile = New-WiringEnvFile
+        $run = Invoke-WiringRun -ScriptBlock {
+            & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
+        }
+
+        $run.AuthorityCalls | Should -HaveCount 0
+        (Get-EventIndex -Run $run -Pattern "readiness") | Should -BeGreaterOrEqual 0
+        $run.ErrorMessage | Should -Be "WIRING-POSTBOUNDARY-SENTINEL"
+    }
+
+    It "-DmsOnly with -SeparateConfigDatabase: non-participating, zero authority invocations" {
+        $envFile = New-WiringEnvFile
+        $run = Invoke-WiringRun -ScriptBlock {
+            & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -DmsOnly -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
+        }
+
+        $run.AuthorityCalls | Should -HaveCount 0
+    }
+
+    It "keycloak separate mode reaches the authority (staged sibling stub): the compose-set participation includes it" {
+        $stage = New-StagedComposeRoot
+        $envFile = New-WiringEnvFile
+        $run = Invoke-WiringRun -AllowKeycloakUp -ScriptBlock {
+            & "$stage/start-published-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -IdentityProvider keycloak -EnvironmentFile $envFile *>$null
+        }
+
+        $run.AuthorityCalls | Should -HaveCount 1
+        $run.ErrorMessage | Should -Be $script:authoritySentinel
+        $readinessIndex = Get-EventIndex -Run $run -Pattern "readiness"
+        (Get-EventIndex -Run $run -Pattern "authority") | Should -Be ($readinessIndex + 1)
+    }
     }
 
     Context "structural pins" {
@@ -438,15 +600,17 @@ Describe "MSSQL physical-distinctness wiring" {
         $script:publishedText = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "start-published-dms.ps1") -Raw
     }
 
-    It "each script calls the authority exactly once, inside the mssql readiness block, gated on cmsParticipates" {
+    It "each script calls the authority exactly once, inside the mssql readiness block, gated on participating separate topology" {
         foreach ($scriptText in @($script:localText, $script:publishedText)) {
             [regex]::Matches($scriptText, [regex]::Escape("Assert-MssqlPhysicalDatastoreDistinctness")).Count | Should -Be 1
 
             # Region: the main-flow mssql readiness block. The call must sit after the readiness
-            # wait and before the identity/OpenIddict parameter construction that follows it.
+            # wait and before the identity/OpenIddict parameter construction that follows it,
+            # and the gate must require BOTH CMS participation and the declared separate
+            # topology - shared mode has a frozen zero-invocation contract.
             $callIndex = $scriptText.IndexOf("Assert-MssqlPhysicalDatastoreDistinctness")
             $waitIndex = $scriptText.LastIndexOf("Wait-MssqlReady -ContainerName", $callIndex)
-            $gateIndex = $scriptText.LastIndexOf('if ($cmsParticipates)', $callIndex)
+            $gateIndex = $scriptText.LastIndexOf('if ($cmsParticipates -and (Test-CmsSeparateTopologyDeclared -EnvironmentFile $EnvironmentFile))', $callIndex)
             $identityIndex = $scriptText.IndexOf('$identityDbParams =', $callIndex)
             $waitIndex | Should -BeGreaterThan 0
             $gateIndex | Should -BeGreaterThan $waitIndex
@@ -460,6 +624,62 @@ Describe "MSSQL physical-distinctness wiring" {
         # The parsed value - never the raw parameter - reaches the authority.
         $script:publishedText | Should -Match ([regex]::Escape('-RegisteredDatastoreDatabaseName $registeredDatastoreDatabaseValue'))
         $script:publishedText | Should -Not -Match ([regex]::Escape('-RegisteredDatastoreDatabaseName $DataStoreDatabaseName'))
+    }
+    }
+
+    Context "harness safety (the interception itself)" {
+
+    It "refuses to run when an effective docker alias exists, without invoking its target" {
+        # An alias outranks a function stand-in; a hostile session alias pointing at real
+        # Docker would let the scripts reach it. The harness must refuse BEFORE staging
+        # anything, and must not touch the alias.
+        $recorderName = "__WiringAliasBypassRecorder_$([Guid]::NewGuid().ToString('N'))"
+        $bypassInvocations = [System.Collections.Generic.List[string]]::new()
+        Set-Item -Path "Function:\global:$recorderName" -Value { $bypassInvocations.Add("hit") }.GetNewClosure()
+        Set-Alias -Name docker -Value $recorderName -Scope Global
+        try {
+            $envFile = New-WiringEnvFile
+            { Invoke-WiringRun -ScriptBlock {
+                    & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile -InfraOnly *>$null
+                } } | Should -Throw "*effective 'docker' alias*"
+            $bypassInvocations | Should -HaveCount 0 -Because "nothing may be invoked through the bypassing alias"
+            (Get-Item Alias:\docker).Definition | Should -Be $recorderName -Because "the pre-existing alias must be left untouched"
+        }
+        finally {
+            Remove-Item Alias:\docker -Force -ErrorAction SilentlyContinue
+            Remove-Item "Function:\$recorderName" -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "restores hostile pre-existing state exactly: docker function (body and options), intercept alias, and LASTEXITCODE" {
+        $preexistingDockerBody = { 'wiring-preexisting-docker-sentinel' }
+        $preexistingTargetName = "__WiringPreexistingTarget_$([Guid]::NewGuid().ToString('N'))"
+        Set-Item -Path Function:\global:docker -Value $preexistingDockerBody
+        Set-Item -Path "Function:\global:$preexistingTargetName" -Value { return $true }
+        Set-Alias -Name Test-NativeCommandWithTimeout -Value $preexistingTargetName -Scope Global
+        $global:LASTEXITCODE = 37
+        try {
+            $envFile = New-WiringEnvFile
+            $run = Invoke-WiringRun -ScriptBlock {
+                & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile -InfraOnly *>$null
+            }
+
+            # The run itself must still have worked end to end under the hostile state.
+            $run.AuthorityCalls | Should -HaveCount 1
+            $run.ErrorMessage | Should -Be $script:authoritySentinel
+
+            # Exact restoration afterwards.
+            (Get-Item Function:\docker).ScriptBlock.ToString() | Should -Be $preexistingDockerBody.ToString()
+            (Get-Item Alias:\Test-NativeCommandWithTimeout).Definition | Should -Be $preexistingTargetName
+            $global:LASTEXITCODE | Should -Be 37
+            @(Get-Command "__WiringReadinessShim_*", "__WiringAuthorityShim_*", "__WiringSleepShim_*" -ErrorAction SilentlyContinue) |
+                Should -HaveCount 0 -Because "only resources this invocation created may be removed, and all of them must be"
+        }
+        finally {
+            Remove-Item Alias:\Test-NativeCommandWithTimeout -Force -ErrorAction SilentlyContinue
+            Remove-Item "Function:\$preexistingTargetName" -Force -ErrorAction SilentlyContinue
+            Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue
+        }
     }
     }
 }
