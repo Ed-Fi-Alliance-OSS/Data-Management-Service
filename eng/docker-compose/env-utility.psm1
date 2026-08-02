@@ -2810,9 +2810,14 @@ function ConvertFrom-MssqlPhysicalDistinctnessQueryOutput {
         Verdict         = [ordered]@{}
     }
 
+    # Non-blank line content is preserved EXACTLY - only the terminal CR of a CRLF ending is
+    # removed - so a padded or case-mangled token is not the vocabulary and fails closed. Only
+    # genuinely empty lines (sqlcmd's result-set separators) are dropped; a whitespace-only
+    # line is content, and refused. Every token comparison below is ORDINAL: PowerShell's
+    # default string operators fold case, which would admit vocabulary this parser never emits.
     $meaningfulLines = @(
         $OutputText -split "`n" |
-            ForEach-Object { $_.TrimEnd([char]13).Trim() } |
+            ForEach-Object { $_.TrimEnd([char]13) } |
             Where-Object { $_ -ne "" }
     )
 
@@ -2824,7 +2829,10 @@ function ConvertFrom-MssqlPhysicalDistinctnessQueryOutput {
         return [pscustomobject]$classification
     }
 
-    if ($contextLines[0] -ne "$($script:MssqlDistinctnessContextTokenPrefix)db=master|collationAgreement=agree") {
+    if (-not [string]::Equals(
+            $contextLines[0],
+            "$($script:MssqlDistinctnessContextTokenPrefix)db=master|collationAgreement=agree",
+            [System.StringComparison]::Ordinal)) {
         # Distinguish a well-formed assertion FAILURE from a malformed line (unexpected-output).
         $contextPayload = $contextLines[0].Substring($script:MssqlDistinctnessContextTokenPrefix.Length)
         if ([regex]::IsMatch($contextPayload, '\Adb=(master|other)\|collationAgreement=(agree|disagree)\z')) {
@@ -2834,10 +2842,11 @@ function ConvertFrom-MssqlPhysicalDistinctnessQueryOutput {
     }
 
     $reservedValue = $reservedLines[0].Substring($script:MssqlDistinctnessReservedTokenPrefix.Length)
-    if ($reservedValue -notin @("present", "absent")) {
+    $reservedIsPresentToken = [string]::Equals($reservedValue, "present", [System.StringComparison]::Ordinal)
+    if (-not ($reservedIsPresentToken -or [string]::Equals($reservedValue, "absent", [System.StringComparison]::Ordinal))) {
         return [pscustomobject]$classification
     }
-    $classification.ReservedPresent = $reservedValue -eq "present"
+    $classification.ReservedPresent = $reservedIsPresentToken
 
     if ($candidateLines.Count -ne $ExpectedSourceKey.Count) {
         return [pscustomobject]$classification
@@ -2859,10 +2868,10 @@ function ConvertFrom-MssqlPhysicalDistinctnessQueryOutput {
         $corroboration = $payloadMatch.Groups[2].Value
 
         # 'skipped' is only coherent when the reserved database is absent, and vice versa.
-        if (($corroboration -eq "skipped") -ne (-not $classification.ReservedPresent)) {
+        if (([string]::Equals($corroboration, "skipped", [System.StringComparison]::Ordinal)) -ne (-not $classification.ReservedPresent)) {
             return [pscustomobject]$classification
         }
-        if ($corroboration -eq "disagree") {
+        if ([string]::Equals($corroboration, "disagree", [System.StringComparison]::Ordinal)) {
             $classification.Category = "oracle-disagreement"
             return [pscustomobject]$classification
         }
@@ -2960,8 +2969,9 @@ function Assert-MssqlPhysicalDatastoreDistinctness {
     )
 
     # Topology gate: the marker is this design's internal record, read raw from the file's own
-    # declarations exactly as Confirm-CmsDatabaseTopologyAgreement reads it. Shared mode has two
-    # databases by alias, not by contract - nothing to verify.
+    # declarations exactly as Confirm-CmsDatabaseTopologyAgreement reads it. In shared mode CMS
+    # is deliberately aliased to the selected datastore - ONE physical database by design - so
+    # there is no distinctness contract to verify.
     $sequential = Resolve-DotenvFileSequentially -Path $EnvironmentFile
     $markerDeclaration = Get-DotenvLastDeclaration -Evaluation $sequential -Name "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
     $markerValue =
@@ -3008,7 +3018,7 @@ function Assert-MssqlPhysicalDatastoreDistinctness {
     }
 
     foreach ($sourceKey in $sourceKeys) {
-        if ($parsed.Verdict[$sourceKey] -eq "collides") {
+        if ([string]::Equals([string]$parsed.Verdict[$sourceKey], "collides", [System.StringComparison]::Ordinal)) {
             throw "CMS database topology mismatch: SQL Server reports that the datastore name resolved from '$sourceKey' denotes the SAME physical database as the dedicated 'edfi_configurationservice' (server-collation name comparison on the running instance). -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct. The resolved value is withheld. Rename the datastore database or use shared mode."
         }
     }
