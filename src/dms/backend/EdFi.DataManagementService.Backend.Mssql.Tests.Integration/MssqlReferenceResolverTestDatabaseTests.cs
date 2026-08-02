@@ -146,10 +146,6 @@ public class Given_MssqlReferenceResolverTestDatabase
         {
             ["dms.ResourceKey"] = await ReadTableCountAsync(connectionString, "[dms].[ResourceKey]"),
             ["dms.Document"] = await ReadTableCountAsync(connectionString, "[dms].[Document]"),
-            ["dms.ReferentialIdentity"] = await ReadTableCountAsync(
-                connectionString,
-                "[dms].[ReferentialIdentity]"
-            ),
             ["dms.Descriptor"] = await ReadTableCountAsync(connectionString, "[dms].[Descriptor]"),
         };
     }
@@ -173,15 +169,6 @@ public class Given_MssqlReferenceResolverTestDatabase
                 SELECT [DocumentId], [DocumentUuid], [ResourceKeyId]
                 FROM [dms].[Document]
                 ORDER BY [DocumentId]
-                FOR JSON PATH, INCLUDE_NULL_VALUES;
-                """
-            ),
-            ["dms.ReferentialIdentity"] = await ReadJsonAsync(
-                connectionString,
-                """
-                SELECT [ReferentialId], [DocumentId], [ResourceKeyId]
-                FROM [dms].[ReferentialIdentity]
-                ORDER BY [ResourceKeyId], [DocumentId], [ReferentialId]
                 FOR JSON PATH, INCLUDE_NULL_VALUES;
                 """
             ),

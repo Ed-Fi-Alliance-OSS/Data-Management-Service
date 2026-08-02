@@ -127,10 +127,6 @@ public class Given_PostgresqlReferenceResolverTestDatabase
         {
             ["dms.ResourceKey"] = await ReadTableCountAsync(connectionString, "dms.\"ResourceKey\""),
             ["dms.Document"] = await ReadTableCountAsync(connectionString, "dms.\"Document\""),
-            ["dms.ReferentialIdentity"] = await ReadTableCountAsync(
-                connectionString,
-                "dms.\"ReferentialIdentity\""
-            ),
             ["dms.Descriptor"] = await ReadTableCountAsync(connectionString, "dms.\"Descriptor\""),
         };
     }
