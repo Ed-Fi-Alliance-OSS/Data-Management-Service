@@ -358,6 +358,8 @@ internal abstract record WriteValueSourceDto
 {
     public sealed record DocumentId : WriteValueSourceDto;
 
+    public sealed record DocumentUuid : WriteValueSourceDto;
+
     public sealed record ParentKeyPart(int Index) : WriteValueSourceDto;
 
     public sealed record Ordinal : WriteValueSourceDto;

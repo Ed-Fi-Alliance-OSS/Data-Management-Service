@@ -2002,11 +2002,11 @@ internal sealed class DescriptorWriteHandler(
     }
 
     /// <summary>
-    /// Executes a descriptor write whose final statement surfaces the owning document's
+    /// Executes a descriptor write whose final statement surfaces the descriptor row's
     /// <c>ContentVersion</c> and returns that value for etag composition. Every descriptor write whose
-    /// success result carries an etag (INSERT plus both UPDATE variants) surfaces ContentVersion:
-    /// the INSERT returns the insert-time value (the stamp trigger only mirrors it on descriptor
-    /// insert), and each UPDATE re-selects the post-trigger bumped value that a later GET reads.
+    /// success result carries an etag (INSERT plus both UPDATE variants) surfaces ContentVersion by
+    /// re-selecting it from <c>dms.Descriptor</c> after the AFTER-trigger stamp has landed, so the etag
+    /// is exactly what a later GET reads.
     /// </summary>
     private static Task<long> ExecuteWriteReturningContentVersionAsync(
         IRelationalCommandExecutor commandExecutor,
@@ -2046,29 +2046,29 @@ internal sealed class DescriptorWriteHandler(
         short resourceKeyId
     )
     {
-        // The Document CTE originates the DocumentId and surfaces the insert-time ContentVersion (the
-        // descriptor stamp trigger only mirrors that value on INSERT and does not bump it), so the final
-        // SELECT returns exactly what a later GET reads. It reads new_doc rather than the descriptor row
-        // because the stamp trigger has not fired at CTE-evaluation time.
+        // The Document CTE originates the DocumentId and nothing else: the descriptor row carries its own
+        // DocumentUuid and ResourceKeyId, bound here, and its own ContentVersion, stamped by the descriptor
+        // stamp trigger. That trigger is AFTER INSERT, so the stamp is not visible to anything inside the
+        // insert statement; the trailing SELECT is a separate statement and therefore re-reads the
+        // post-trigger value a later GET reads.
         const string Sql = """
             WITH new_doc AS (
                 INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
                 VALUES (@documentUuid, @resourceKeyId)
-                RETURNING "DocumentId", "ContentVersion"
+                RETURNING "DocumentId"
             )
-            , new_descriptor AS (
-                INSERT INTO dms."Descriptor" (
-                    "DocumentId", "Namespace", "CodeValue", "ShortDescription",
-                    "Description", "EffectiveBeginDate", "EffectiveEndDate",
-                    "Discriminator", "Uri"
-                )
-                SELECT
-                    "DocumentId", @namespace, @codeValue, @shortDescription,
-                    @description, @effectiveBeginDate::date, @effectiveEndDate::date,
-                    @discriminator, @uri
-                FROM new_doc
+            INSERT INTO dms."Descriptor" (
+                "DocumentId", "DocumentUuid", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription",
+                "Description", "EffectiveBeginDate", "EffectiveEndDate",
+                "Discriminator", "Uri"
             )
-            SELECT "ContentVersion" FROM new_doc;
+            SELECT
+                "DocumentId", @documentUuid, @resourceKeyId, @namespace, @codeValue, @shortDescription,
+                @description, @effectiveBeginDate::date, @effectiveEndDate::date,
+                @discriminator, @uri
+            FROM new_doc;
+
+            SELECT "ContentVersion" FROM dms."Descriptor" WHERE "DocumentUuid" = @documentUuid;
             """;
 
         return new RelationalCommand(Sql, BuildInsertParameters(body, documentUuid, resourceKeyId));
@@ -2080,35 +2080,32 @@ internal sealed class DescriptorWriteHandler(
         short resourceKeyId
     )
     {
-        // Capture the insert-time ContentVersion into a table variable via OUTPUT ... INTO, run every
-        // insert, then return it with a trailing SELECT so the row-producing statement is the final
-        // one (matching the PG insert CTE and every UPDATE builder). This keeps the reader's single
-        // result set unambiguous rather than relying on the batch fully executing after the first
-        // statement's OUTPUT is read. [dms].[Document] carries no trigger, so OUTPUT is legal there,
-        // and the descriptor stamp trigger only mirrors (never bumps) ContentVersion on descriptor
-        // INSERT, so the captured value is exactly what a later GET reads.
+        // The [dms].[Document] insert originates the DocumentId and nothing else: the descriptor row
+        // carries its own DocumentUuid and ResourceKeyId, bound here, and its own ContentVersion, stamped
+        // by the descriptor stamp trigger. That trigger is AFTER INSERT, so OUTPUT on the descriptor
+        // insert would return the pre-trigger value (and SQL Server disallows a plain OUTPUT on a
+        // trigger-bearing table anyway); the trailing SELECT re-reads the post-trigger value a later GET
+        // reads, and keeps the row-producing statement last so the reader's result set is unambiguous.
         const string Sql = """
             DECLARE @newDocumentId BIGINT;
-            DECLARE @insertedContentVersion TABLE ([ContentVersion] BIGINT);
 
             INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[ContentVersion] INTO @insertedContentVersion ([ContentVersion])
             VALUES (@documentUuid, @resourceKeyId);
 
             SET @newDocumentId = SCOPE_IDENTITY();
 
             INSERT INTO [dms].[Descriptor] (
-                [DocumentId], [Namespace], [CodeValue], [ShortDescription],
+                [DocumentId], [DocumentUuid], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription],
                 [Description], [EffectiveBeginDate], [EffectiveEndDate],
                 [Discriminator], [Uri]
             )
             VALUES (
-                @newDocumentId, @namespace, @codeValue, @shortDescription,
+                @newDocumentId, @documentUuid, @resourceKeyId, @namespace, @codeValue, @shortDescription,
                 @description, @effectiveBeginDate, @effectiveEndDate,
                 @discriminator, @uri
             );
 
-            SELECT [ContentVersion] FROM @insertedContentVersion;
+            SELECT [ContentVersion] FROM [dms].[Descriptor] WHERE [DocumentId] = @newDocumentId;
             """;
 
         return new RelationalCommand(Sql, BuildInsertParameters(body, documentUuid, resourceKeyId));

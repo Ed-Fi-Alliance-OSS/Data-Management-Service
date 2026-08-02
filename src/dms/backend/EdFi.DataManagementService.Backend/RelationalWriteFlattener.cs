@@ -819,6 +819,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return columnBinding.Source switch
         {
             WriteValueSource.DocumentId => ResolveRootDocumentIdValue(flatteningInput.TargetContext),
+            WriteValueSource.DocumentUuid => ResolveRootDocumentUuidValue(flatteningInput.TargetContext),
             WriteValueSource.ParentKeyPart parentKeyPart => ResolveParentKeyPart(
                 tableWritePlan,
                 columnBinding,
@@ -1860,6 +1861,29 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             RelationalWriteTargetContext.CreateNew => FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
             RelationalWriteTargetContext.ExistingDocument existingDocument => new FlattenedWriteValue.Literal(
                 existingDocument.DocumentId
+            ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported relational write target context '{targetContext.GetType().Name}'."
+            ),
+        };
+    }
+
+    /// <summary>
+    /// Resolves the root row's <c>DocumentUuid</c> from the write target. A create binds the
+    /// service-generated uuid the response reports; an update re-asserts the stored uuid, so the
+    /// document's public API id can never drift on a write.
+    /// </summary>
+    private static FlattenedWriteValue ResolveRootDocumentUuidValue(
+        RelationalWriteTargetContext targetContext
+    )
+    {
+        return targetContext switch
+        {
+            RelationalWriteTargetContext.CreateNew createNew => new FlattenedWriteValue.Literal(
+                createNew.DocumentUuid.Value
+            ),
+            RelationalWriteTargetContext.ExistingDocument existingDocument => new FlattenedWriteValue.Literal(
+                existingDocument.DocumentUuid.Value
             ),
             _ => throw new InvalidOperationException(
                 $"Unsupported relational write target context '{targetContext.GetType().Name}'."

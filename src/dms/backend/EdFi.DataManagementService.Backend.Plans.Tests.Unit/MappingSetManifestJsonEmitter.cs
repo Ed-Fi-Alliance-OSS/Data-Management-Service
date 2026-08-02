@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -802,6 +802,10 @@ internal static class MappingSetManifestJsonEmitter
                 writer.WriteString("kind", "document_id");
                 break;
 
+            case WriteValueSource.DocumentUuid:
+                writer.WriteString("kind", "document_uuid");
+                break;
+
             case WriteValueSource.ParentKeyPart parentKeyPart:
                 writer.WriteString("kind", "parent_key_part");
                 writer.WriteNumber("index", parentKeyPart.Index);
@@ -951,6 +955,7 @@ internal static class MappingSetManifestJsonEmitter
             ColumnKind.Ordinal => "ordinal",
             ColumnKind.CollectionKey => "collection_key",
             ColumnKind.ParentKeyPart => "parent_key_part",
+            ColumnKind.DocumentUuid => "document_uuid",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(columnKind),
                 columnKind,

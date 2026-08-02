@@ -19,13 +19,13 @@
                   "schema": "edfi",
                   "name": "ProjectionExample"
                 },
-                "insert_sql_sha256": "5924f5602151f5447d88efa6cb1bd1b6fec94cef706cdc4dcb6ea363b27ee6f1",
-                "update_sql_sha256": "7a17b62476e1512b80349962be145bb7cb34d0a98885517cf481240ddcabf071",
+                "insert_sql_sha256": "3509ad70f4757af8b40d2fa65cec8cf028455f14d3f7a047bc74ef4e69b21a9a",
+                "update_sql_sha256": "dedfb38027f0df4015f86beaf8cc1d2c3161b70402ae39e9e4bcab7d34cd6f40",
                 "delete_by_parent_sql_sha256": null,
                 "collection_merge_plan": null,
                 "bulk_insert_batching": {
-                  "max_rows_per_batch": 233,
-                  "parameters_per_row": 9,
+                  "max_rows_per_batch": 210,
+                  "parameters_per_row": 10,
                   "max_parameters_per_command": 2100
                 },
                 "column_bindings_in_order": [
@@ -35,6 +35,14 @@
                     "parameter_name": "documentId",
                     "write_value_source": {
                       "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "DocumentUuid",
+                    "column_kind": "document_uuid",
+                    "parameter_name": "documentUuid",
+                    "write_value_source": {
+                      "kind": "document_uuid"
                     }
                   },
                   {
@@ -291,13 +299,13 @@
                   "schema": "edfi",
                   "name": "SessionTerm"
                 },
-                "insert_sql_sha256": "dc427e59baf1b3e8ebc0c6b1db908c73dc88c1d7006a301e70a8990c7f3215cc",
-                "update_sql_sha256": "21887d38a32c45ff114de24c1816f06d18b41c4a91027e72a9c0fe6890bd0a73",
+                "insert_sql_sha256": "7e84c3fbc61e592ab60f3719940d333cc0211d92dd9e8b6e70e741fc2f093562",
+                "update_sql_sha256": "271d042210f9a49a13ab3186a137158670f1d4fe65fc2bcc289fbe262bd2351f",
                 "delete_by_parent_sql_sha256": null,
                 "collection_merge_plan": null,
                 "bulk_insert_batching": {
-                  "max_rows_per_batch": 525,
-                  "parameters_per_row": 4,
+                  "max_rows_per_batch": 420,
+                  "parameters_per_row": 5,
                   "max_parameters_per_command": 2100
                 },
                 "column_bindings_in_order": [
@@ -307,6 +315,14 @@
                     "parameter_name": "documentId",
                     "write_value_source": {
                       "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "DocumentUuid",
+                    "column_kind": "document_uuid",
+                    "parameter_name": "documentUuid",
+                    "write_value_source": {
+                      "kind": "document_uuid"
                     }
                   },
                   {
@@ -403,13 +419,13 @@
                   "schema": "edfi",
                   "name": "ProjectionExample"
                 },
-                "insert_sql_sha256": "b3d95cd26b1624c6d52c40f96aaabe414959426b1157ee878b7a16202f33ca5b",
-                "update_sql_sha256": "d324ba6aa7b892fe64ae000a950bcf0d002ff5759eba186a6959049e6ab830aa",
+                "insert_sql_sha256": "1970ef38f0a45d2b6703451a8b307353cc9b6a15b86b7ca8cd78cbfcc9153369",
+                "update_sql_sha256": "1a129b2e685457c12ab4e64c96c453271bd9f2bf5c66b9100850681f8f8c23f0",
                 "delete_by_parent_sql_sha256": null,
                 "collection_merge_plan": null,
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
-                  "parameters_per_row": 9,
+                  "parameters_per_row": 10,
                   "max_parameters_per_command": 65535
                 },
                 "column_bindings_in_order": [
@@ -419,6 +435,14 @@
                     "parameter_name": "documentId",
                     "write_value_source": {
                       "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "DocumentUuid",
+                    "column_kind": "document_uuid",
+                    "parameter_name": "documentUuid",
+                    "write_value_source": {
+                      "kind": "document_uuid"
                     }
                   },
                   {
@@ -675,13 +699,13 @@
                   "schema": "edfi",
                   "name": "SessionTerm"
                 },
-                "insert_sql_sha256": "893c39a4ac831a3ac4b202dae36575f1ea0f4d5913c306f00a05332e8258c963",
-                "update_sql_sha256": "072cf0be392120f2ded52b8af036d1cb774d2ec865d215613a927ef47d3274f7",
+                "insert_sql_sha256": "f8a51f328753fcc9eb7144636f66813d47d63fe849f45175d7b7a5f10464abb1",
+                "update_sql_sha256": "cf0734cb1e234ad3a17c4ea5c7ff26a3e520d46152439d4d42b8b463dcf51556",
                 "delete_by_parent_sql_sha256": null,
                 "collection_merge_plan": null,
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
-                  "parameters_per_row": 4,
+                  "parameters_per_row": 5,
                   "max_parameters_per_command": 65535
                 },
                 "column_bindings_in_order": [
@@ -691,6 +715,14 @@
                     "parameter_name": "documentId",
                     "write_value_source": {
                       "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "DocumentUuid",
+                    "column_kind": "document_uuid",
+                    "parameter_name": "documentUuid",
+                    "write_value_source": {
+                      "kind": "document_uuid"
                     }
                   },
                   {

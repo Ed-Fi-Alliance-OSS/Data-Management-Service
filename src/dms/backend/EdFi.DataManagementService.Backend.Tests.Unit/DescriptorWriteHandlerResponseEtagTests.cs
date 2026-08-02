@@ -59,10 +59,15 @@ public class Given_Descriptor_Write_Response_Etags
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
         sessionFactory.Session.Executor.Commands.Should().ContainSingle();
+        // The Document CTE originates only the DocumentId now; the etag's ContentVersion comes from the
+        // trailing re-select of the descriptor row, after its AFTER-INSERT stamp has landed.
         sessionFactory
             .Session.Executor.Commands[0]
             .CommandText.Should()
-            .Contain("RETURNING \"DocumentId\", \"ContentVersion\"");
+            .Contain("RETURNING \"DocumentId\"")
+            .And.Contain(
+                "SELECT \"ContentVersion\" FROM dms.\"Descriptor\" WHERE \"DocumentUuid\" = @documentUuid;"
+            );
     }
 
     [Test]

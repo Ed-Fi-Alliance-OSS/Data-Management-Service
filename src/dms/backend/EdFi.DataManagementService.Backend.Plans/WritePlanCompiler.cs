@@ -610,6 +610,16 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     {
         var requiredBindingColumns = new HashSet<DbColumnName>(keyColumnNames);
 
+        // The root row is the authoritative store for the document's public API id, and no trigger can
+        // originate it, so the write path binds it even though the column is not client-writable.
+        foreach (var column in tableModel.Columns)
+        {
+            if (column.Storage is ColumnStorage.Stored && IsRootDocumentUuidColumn(column))
+            {
+                requiredBindingColumns.Add(column.ColumnName);
+            }
+        }
+
         if (!RelationalResourceModelCompileValidator.UsesExplicitIdentityMetadata(tableModel))
         {
             return requiredBindingColumns;
@@ -1014,6 +1024,11 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             return new WriteValueSource.DocumentId();
         }
 
+        if (IsRootDocumentUuidColumn(column))
+        {
+            return new WriteValueSource.DocumentUuid();
+        }
+
         if (IsImmediateParentScopeLocatorColumn(tableModel, column))
         {
             return new WriteValueSource.ParentKeyPart(
@@ -1074,6 +1089,14 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                 keyColumn.Kind == ColumnKind.ParentKeyPart && keyColumn.ColumnName.Equals(column.ColumnName)
             );
     }
+
+    /// <summary>
+    /// Returns <see langword="true" /> when the column is the resource root's <c>DocumentUuid</c>. The
+    /// column kind is synthesized only onto resource roots (and onto trigger-maintained abstract identity
+    /// tables, which carry no write plan), so the kind alone identifies it.
+    /// </summary>
+    private static bool IsRootDocumentUuidColumn(DbColumnModel column) =>
+        column.Kind == ColumnKind.DocumentUuid;
 
     /// <summary>
     /// Returns <see langword="true" /> when the column is an explicit immediate-parent scope locator.

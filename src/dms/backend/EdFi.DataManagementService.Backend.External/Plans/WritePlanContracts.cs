@@ -529,6 +529,13 @@ public abstract record WriteValueSource
     public sealed record DocumentId : WriteValueSource;
 
     /// <summary>
+    /// Uses the write target's externally visible <c>DocumentUuid</c>. The service originates the value on
+    /// a create and carries the stored value on an update, so the root row records the same public API id
+    /// the response reports.
+    /// </summary>
+    public sealed record DocumentUuid : WriteValueSource;
+
+    /// <summary>
     /// Uses one parent-key part by index.
     /// </summary>
     /// <param name="Index">The index in the parent-key parts array.</param>

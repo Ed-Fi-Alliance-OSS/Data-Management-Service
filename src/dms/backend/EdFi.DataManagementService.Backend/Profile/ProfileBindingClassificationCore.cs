@@ -454,6 +454,7 @@ internal static class ProfileBindingClassificationCore
         {
             case WriteValueSource.Precomputed:
             case WriteValueSource.DocumentId:
+            case WriteValueSource.DocumentUuid:
                 return RootBindingDisposition.StorageManaged;
             case WriteValueSource.ParentKeyPart:
                 // Root-attached separate tables legitimately carry ParentKeyPart bindings

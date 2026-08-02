@@ -19,13 +19,13 @@
                   "schema": "edfi",
                   "name": "PresenceGateExample"
                 },
-                "insert_sql_sha256": "564cadc980a6e1d33482d70740e4975ba725c6368a93f2b95e7ca669a3783e99",
-                "update_sql_sha256": "91400a12037d34e0421cb2939465ce49f88b132fb10fa1281d68ef7db6ed345f",
+                "insert_sql_sha256": "0ac8437bed9fa92e77b5960219aeafd9a4391906a4bc7ce61dcf16bf88918943",
+                "update_sql_sha256": "1ddd6cc0e785fa0451d51c3e5e6446782a37035dcf14c7cac7561a8565758c78",
                 "delete_by_parent_sql_sha256": null,
                 "collection_merge_plan": null,
                 "bulk_insert_batching": {
-                  "max_rows_per_batch": 420,
-                  "parameters_per_row": 5,
+                  "max_rows_per_batch": 350,
+                  "parameters_per_row": 6,
                   "max_parameters_per_command": 2100
                 },
                 "column_bindings_in_order": [
@@ -35,6 +35,14 @@
                     "parameter_name": "documentId",
                     "write_value_source": {
                       "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "DocumentUuid",
+                    "column_kind": "document_uuid",
+                    "parameter_name": "documentUuid",
+                    "write_value_source": {
+                      "kind": "document_uuid"
                     }
                   },
                   {
@@ -75,14 +83,14 @@
                 "key_unification_plans": [
                   {
                     "canonical_column_name": "PrimarySchoolTypeDescriptor_Unified_DescriptorId",
-                    "canonical_binding_index": 2,
+                    "canonical_binding_index": 3,
                     "members_in_order": [
                       {
                         "kind": "descriptor",
                         "member_path_column_name": "PrimarySchoolTypeDescriptor_DescriptorId",
                         "relative_path": "$.primarySchoolTypeDescriptor",
                         "presence_column_name": "PrimarySchoolTypeDescriptor_DescriptorId_Present",
-                        "presence_binding_index": 1,
+                        "presence_binding_index": 2,
                         "presence_is_synthetic": true,
                         "descriptor_resource": {
                           "project_name": "Ed-Fi",
@@ -94,7 +102,7 @@
                         "member_path_column_name": "SecondarySchoolTypeDescriptor_DescriptorId",
                         "relative_path": "$.secondarySchoolTypeDescriptor",
                         "presence_column_name": "SecondarySchoolTypeDescriptor_DescriptorId_Present",
-                        "presence_binding_index": 3,
+                        "presence_binding_index": 4,
                         "presence_is_synthetic": true,
                         "descriptor_resource": {
                           "project_name": "Ed-Fi",
@@ -229,13 +237,13 @@
                   "schema": "edfi",
                   "name": "PresenceGateExample"
                 },
-                "insert_sql_sha256": "db09e0dbdaad0376ee085ebf7c81fe4f130595fcaa4e1c7f2f649d35b0630308",
-                "update_sql_sha256": "6dd6fa4478b267062fbae278fa9c52a756e6d17bfedb88ea1dc570acf3d54e80",
+                "insert_sql_sha256": "406e8b1bedd92bcfb4e3b0f44528b660730f1f4a2e8ebdd8b102470bbdd8a276",
+                "update_sql_sha256": "b392660ecfbb8d0073747625899370ceda86751185506245dfe842f759295153",
                 "delete_by_parent_sql_sha256": null,
                 "collection_merge_plan": null,
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
-                  "parameters_per_row": 5,
+                  "parameters_per_row": 6,
                   "max_parameters_per_command": 65535
                 },
                 "column_bindings_in_order": [
@@ -245,6 +253,14 @@
                     "parameter_name": "documentId",
                     "write_value_source": {
                       "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "DocumentUuid",
+                    "column_kind": "document_uuid",
+                    "parameter_name": "documentUuid",
+                    "write_value_source": {
+                      "kind": "document_uuid"
                     }
                   },
                   {
@@ -285,14 +301,14 @@
                 "key_unification_plans": [
                   {
                     "canonical_column_name": "PrimarySchoolTypeDescriptor_Unified_DescriptorId",
-                    "canonical_binding_index": 2,
+                    "canonical_binding_index": 3,
                     "members_in_order": [
                       {
                         "kind": "descriptor",
                         "member_path_column_name": "PrimarySchoolTypeDescriptor_DescriptorId",
                         "relative_path": "$.primarySchoolTypeDescriptor",
                         "presence_column_name": "PrimarySchoolTypeDescriptor_DescriptorId_Present",
-                        "presence_binding_index": 1,
+                        "presence_binding_index": 2,
                         "presence_is_synthetic": true,
                         "descriptor_resource": {
                           "project_name": "Ed-Fi",
@@ -304,7 +320,7 @@
                         "member_path_column_name": "SecondarySchoolTypeDescriptor_DescriptorId",
                         "relative_path": "$.secondarySchoolTypeDescriptor",
                         "presence_column_name": "SecondarySchoolTypeDescriptor_DescriptorId_Present",
-                        "presence_binding_index": 3,
+                        "presence_binding_index": 4,
                         "presence_is_synthetic": true,
                         "descriptor_resource": {
                           "project_name": "Ed-Fi",

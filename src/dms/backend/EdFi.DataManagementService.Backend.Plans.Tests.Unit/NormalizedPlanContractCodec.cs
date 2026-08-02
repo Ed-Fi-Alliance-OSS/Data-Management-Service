@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -954,6 +954,7 @@ internal static class NormalizedPlanContractCodec
         return sourceDto switch
         {
             WriteValueSourceDto.DocumentId => new ExternalPlans.WriteValueSource.DocumentId(),
+            WriteValueSourceDto.DocumentUuid => new ExternalPlans.WriteValueSource.DocumentUuid(),
             WriteValueSourceDto.ParentKeyPart parentKeyPart =>
                 new ExternalPlans.WriteValueSource.ParentKeyPart(
                     ValidateNonNegative(
@@ -1335,6 +1336,7 @@ internal static class NormalizedPlanContractCodec
         return source switch
         {
             ExternalPlans.WriteValueSource.DocumentId => new WriteValueSourceDto.DocumentId(),
+            ExternalPlans.WriteValueSource.DocumentUuid => new WriteValueSourceDto.DocumentUuid(),
             ExternalPlans.WriteValueSource.ParentKeyPart parentKeyPart =>
                 new WriteValueSourceDto.ParentKeyPart(parentKeyPart.Index),
             ExternalPlans.WriteValueSource.Ordinal => new WriteValueSourceDto.Ordinal(),
