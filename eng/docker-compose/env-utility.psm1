@@ -2645,6 +2645,375 @@ function Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase {
         [System.StringComparison]::Ordinal)
 }
 
+function ConvertTo-MssqlUtf16HexLiteral {
+    <#
+    .SYNOPSIS
+        Encodes a string as a SQL Server binary literal (0x...) of its raw UTF-16 code units,
+        little-endian, so `CONVERT(nvarchar(max), <literal>)` reconstructs it byte-for-byte on
+        the server.
+
+    .DESCRIPTION
+        The lossless, injection-safe candidate transport for the SQL Server physical-name
+        authority: caller-authored database names never appear as text inside emitted SQL - only
+        as hex digits - so there is nothing to escape and nothing to mis-quote, for arbitrary
+        UTF-16 content.
+
+        The hex is produced per CODE UNIT by this function's own loop, never through
+        System.Text.Encoding: measured, Encoding.Unicode.GetBytes replaces an unpaired surrogate
+        with U+FFFD (`a`+U+D800+`b` encodes 6100fdff6200), while the per-code-unit form preserves
+        it (610000d86200) and the server round-trips it losslessly. An empty string encodes as
+        the empty binary literal 0x.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    $builder = [System.Text.StringBuilder]::new("0x", 2 + ($Value.Length * 4))
+    foreach ($codeUnit in $Value.ToCharArray()) {
+        $unitValue = [int]$codeUnit
+        $null = $builder.AppendFormat("{0:X2}{1:X2}", $unitValue -band 0xFF, ($unitValue -shr 8) -band 0xFF)
+    }
+    return $builder.ToString()
+}
+
+# The fixed vocabulary of the physical-distinctness batch. One prefix per output line kind; the
+# strict parser accepts nothing else. Shared between the generator and the parser so the two can
+# never drift.
+$script:MssqlDistinctnessContextTokenPrefix = "CMSTOPOLOGYCTX|"
+$script:MssqlDistinctnessReservedTokenPrefix = "CMSTOPOLOGYRESERVED|"
+$script:MssqlDistinctnessCandidateTokenPrefix = "CMSTOPOLOGYCAND|"
+
+function New-MssqlPhysicalDistinctnessQuery {
+    <#
+    .SYNOPSIS
+        Builds the read-only, ASCII-only T-SQL batch that asks the RUNNING SQL Server whether
+        each candidate datastore name denotes the same physical database as the dedicated
+        'edfi_configurationservice'.
+
+    .DESCRIPTION
+        The single SQL-generation authority for the server-backed physical-identity check; the
+        strict parser consumes exactly what this emits, and no other production code may build
+        this SQL. Shape, in order:
+
+        - `SET NOCOUNT ON` so row-count chatter never pollutes the token stream.
+        - A context line proving the batch really runs in master and that master's collation
+          equals the server collation (master is rebuilt with the server collation, so
+          disagreement means a broken instance): both are asserted IN the batch as a second
+          layer under the explicit `-d master` on the sqlcmd invocation.
+        - A reserved-presence line: `DB_ID` corroboration is presence-GATED - on a fresh stack
+          neither database exists yet, and a null DB_ID is absence, never evidence.
+        - One line per candidate carrying its source key, the master-context `=` verdict
+          (`collides`/`distinct` - the same oracle the ground-truth measurements proved agrees
+          with DB_ID and CREATE on every row), and the DB_ID corroboration
+          (`agree`/`disagree`/`skipped`): equal names must resolve to the same database id and
+          distinct names must not, so any disagreement between the two oracles fails closed.
+
+        Candidates travel exclusively as UTF-16 hex literals (ConvertTo-MssqlUtf16HexLiteral);
+        their text NEVER appears in the emitted SQL, which stays pure ASCII by construction. NO
+        collation name is hardcoded anywhere: the server's own master context supplies the
+        comparison semantics, which is the entire point of asking the server.
+
+    .PARAMETER Candidate
+        Ordered dictionary of source key (the parameter or environment key a diagnostic may
+        name, e.g. MSSQL_DB_NAME) to the resolved candidate database name. Source keys become
+        output tokens, so they must be simple ASCII identifiers; caller-authored VALUES have no
+        such restriction.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Returns a SQL string; changes no state. The New- verb describes the artifact, matching New-MssqlCreateDatabaseStatement.')]
+    param(
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]$Candidate
+    )
+
+    if ($Candidate.Count -eq 0) {
+        throw "New-MssqlPhysicalDistinctnessQuery: at least one candidate is required."
+    }
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $null = $lines.Add("SET NOCOUNT ON;")
+    $null = $lines.Add("DECLARE @reserved nvarchar(max) = N'edfi_configurationservice';")
+    $null = $lines.Add("SELECT '$($script:MssqlDistinctnessContextTokenPrefix)db='")
+    $null = $lines.Add("     + CASE WHEN DB_NAME() = 'master' THEN 'master' ELSE 'other' END")
+    $null = $lines.Add("     + '|collationAgreement='")
+    $null = $lines.Add("     + CASE WHEN CONVERT(nvarchar(128), DATABASEPROPERTYEX('master', 'Collation')) = CONVERT(nvarchar(128), SERVERPROPERTY('Collation'))")
+    $null = $lines.Add("            THEN 'agree' ELSE 'disagree' END;")
+    $null = $lines.Add("SELECT '$($script:MssqlDistinctnessReservedTokenPrefix)'")
+    $null = $lines.Add("     + CASE WHEN DB_ID(@reserved) IS NULL THEN 'absent' ELSE 'present' END;")
+
+    $candidateIndex = 0
+    foreach ($sourceKey in $Candidate.Keys) {
+        if ($sourceKey -notmatch '\A[A-Za-z0-9_.-]+\z') {
+            throw "New-MssqlPhysicalDistinctnessQuery: source key must be a simple ASCII identifier."
+        }
+        $hexLiteral = ConvertTo-MssqlUtf16HexLiteral -Value ([string]$Candidate[$sourceKey])
+        $variableName = "@candidate$candidateIndex"
+        $null = $lines.Add("DECLARE $variableName nvarchar(max) = CONVERT(nvarchar(max), $hexLiteral);")
+        $null = $lines.Add("SELECT '$($script:MssqlDistinctnessCandidateTokenPrefix)$sourceKey|'")
+        $null = $lines.Add("     + CASE WHEN $variableName = @reserved THEN 'collides' ELSE 'distinct' END")
+        $null = $lines.Add("     + '|dbid='")
+        $null = $lines.Add("     + CASE WHEN DB_ID(@reserved) IS NULL THEN 'skipped'")
+        $null = $lines.Add("            WHEN $variableName = @reserved THEN CASE WHEN DB_ID($variableName) = DB_ID(@reserved) THEN 'agree' ELSE 'disagree' END")
+        $null = $lines.Add("            ELSE CASE WHEN DB_ID($variableName) IS NULL OR DB_ID($variableName) <> DB_ID(@reserved) THEN 'agree' ELSE 'disagree' END")
+        $null = $lines.Add("       END;")
+        $candidateIndex++
+    }
+    $null = $lines.Add("GO")
+
+    return ($lines -join "`n") + "`n"
+}
+
+function ConvertFrom-MssqlPhysicalDistinctnessQueryOutput {
+    <#
+    .SYNOPSIS
+        Strictly parses the output of the physical-distinctness batch into a classification -
+        never a guess: anything other than the exact expected token set is UNVERIFIABLE.
+
+    .DESCRIPTION
+        Pure and throw-free so every outcome is testable: the caller (the authority) decides
+        what throws. Classification categories:
+
+        - 'ok'                    - exact token set, context proven, oracles agree; Verdict per
+                                    source key is 'collides' or 'distinct'.
+        - 'unexpected-output'     - missing/duplicated/unknown lines, unknown verdict tokens, or
+                                    corroboration tokens inconsistent with reserved presence.
+                                    Exit code zero alone is never success; the tokens are.
+        - 'context-assertion'     - the batch did not run in master, or master's collation
+                                    disagreed with the server collation.
+        - 'oracle-disagreement'   - the equality verdict and the DB_ID corroboration contradict
+                                    each other for some candidate.
+
+        Blank lines are tolerated (sqlcmd separates result sets with them); everything else is
+        matched exactly. Line CONTENT is never copied into the classification, so a hostile or
+        garbled output cannot smuggle text into diagnostics.
+
+    .PARAMETER OutputText
+        The captured standard output of the sqlcmd invocation.
+
+    .PARAMETER ExpectedSourceKey
+        The source keys the batch was generated with, in order; exactly one candidate line per
+        key is required.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$OutputText,
+
+        [Parameter(Mandatory)]
+        [string[]]$ExpectedSourceKey
+    )
+
+    $classification = [ordered]@{
+        Category        = "unexpected-output"
+        ReservedPresent = $false
+        Verdict         = [ordered]@{}
+    }
+
+    $meaningfulLines = @(
+        $OutputText -split "`n" |
+            ForEach-Object { $_.TrimEnd([char]13).Trim() } |
+            Where-Object { $_ -ne "" }
+    )
+
+    $contextLines = @($meaningfulLines | Where-Object { $_.StartsWith($script:MssqlDistinctnessContextTokenPrefix) })
+    $reservedLines = @($meaningfulLines | Where-Object { $_.StartsWith($script:MssqlDistinctnessReservedTokenPrefix) })
+    $candidateLines = @($meaningfulLines | Where-Object { $_.StartsWith($script:MssqlDistinctnessCandidateTokenPrefix) })
+    if ($contextLines.Count -ne 1 -or $reservedLines.Count -ne 1 -or
+        $meaningfulLines.Count -ne (2 + $candidateLines.Count)) {
+        return [pscustomobject]$classification
+    }
+
+    if ($contextLines[0] -ne "$($script:MssqlDistinctnessContextTokenPrefix)db=master|collationAgreement=agree") {
+        # Distinguish a well-formed assertion FAILURE from a malformed line (unexpected-output).
+        $contextPayload = $contextLines[0].Substring($script:MssqlDistinctnessContextTokenPrefix.Length)
+        if ([regex]::IsMatch($contextPayload, '\Adb=(master|other)\|collationAgreement=(agree|disagree)\z')) {
+            $classification.Category = "context-assertion"
+        }
+        return [pscustomobject]$classification
+    }
+
+    $reservedValue = $reservedLines[0].Substring($script:MssqlDistinctnessReservedTokenPrefix.Length)
+    if ($reservedValue -notin @("present", "absent")) {
+        return [pscustomobject]$classification
+    }
+    $classification.ReservedPresent = $reservedValue -eq "present"
+
+    if ($candidateLines.Count -ne $ExpectedSourceKey.Count) {
+        return [pscustomobject]$classification
+    }
+
+    for ($index = 0; $index -lt $ExpectedSourceKey.Count; $index++) {
+        $sourceKey = $ExpectedSourceKey[$index]
+        $expectedLinePrefix = "$($script:MssqlDistinctnessCandidateTokenPrefix)$sourceKey|"
+        $line = $candidateLines[$index]
+        if (-not $line.StartsWith($expectedLinePrefix)) {
+            return [pscustomobject]$classification
+        }
+        $payload = $line.Substring($expectedLinePrefix.Length)
+        $payloadMatch = [regex]::Match($payload, '\A(collides|distinct)\|dbid=(agree|disagree|skipped)\z')
+        if (-not $payloadMatch.Success) {
+            return [pscustomobject]$classification
+        }
+        $verdict = $payloadMatch.Groups[1].Value
+        $corroboration = $payloadMatch.Groups[2].Value
+
+        # 'skipped' is only coherent when the reserved database is absent, and vice versa.
+        if (($corroboration -eq "skipped") -ne (-not $classification.ReservedPresent)) {
+            return [pscustomobject]$classification
+        }
+        if ($corroboration -eq "disagree") {
+            $classification.Category = "oracle-disagreement"
+            return [pscustomobject]$classification
+        }
+        $classification.Verdict[$sourceKey] = $verdict
+    }
+
+    $classification.Category = "ok"
+    return [pscustomobject]$classification
+}
+
+function New-MssqlDistinctnessSqlcmdArgument {
+    <#
+    .SYNOPSIS
+        The exact docker argument vector that carries the physical-distinctness batch to the
+        database container's sqlcmd - one argument per element, no shell, no candidate text.
+
+    .DESCRIPTION
+        `-i` attaches stdin so the batch travels over the pipe (the zero-write transport: no
+        file is copied into the container). `-d master` is load-bearing and explicit: measured,
+        without it the batch runs in the LOGIN'S DEFAULT database, whose collation then silently
+        supplies the comparison semantics; the in-batch context assertion is the independent
+        second layer. The SA password rides in the single `-e SQLCMDPASSWORD=` element - the
+        established Wait-MssqlReady trade-off (visible in host-side docker argv, kept out of the
+        sqlcmd argv inside the container). `-b` makes SQL errors exit nonzero, `-h -1` drops
+        headers, and `-W` trims trailing whitespace so tokens parse exactly.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Returns an argument array; changes no state.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ContainerName,
+
+        [Parameter(Mandatory)]
+        [string]$SaPassword
+    )
+
+    return @(
+        "exec", "-i", "-e", "SQLCMDPASSWORD=$SaPassword", $ContainerName,
+        "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa",
+        "-d", "master", "-C", "-b", "-h", "-1", "-W"
+    )
+}
+
+function Assert-MssqlPhysicalDatastoreDistinctness {
+    <#
+    .SYNOPSIS
+        The stage-2 boundary: asks the RUNNING SQL Server whether the separate-topology
+        datastore candidates are physically distinct from the dedicated
+        'edfi_configurationservice', and throws unless every candidate is verified distinct.
+
+    .DESCRIPTION
+        The single final MSSQL physical-identity authority. No offline predicate renders any
+        MSSQL name verdict: database names inherit the INSTANCE collation (measured: a
+        case-sensitive instance keeps case variants distinct that any offline case-folding rule
+        would refuse), so only the server this stack actually runs against can answer, and it
+        answers for EVERY candidate - printable ASCII included.
+
+        Runs only for the separate topology: the marker
+        (DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE) is read RAW from the effective environment
+        file's own declarations - the same source Confirm-CmsDatabaseTopologyAgreement uses -
+        so an unrelated ambient variable cannot invoke or suppress the check; in shared mode
+        this function is a no-op. Callers gate shape, engine, and CMS participation; the
+        placement contract (after the database readiness wait, before OpenIddict/CMS/DMS/
+        registration work) belongs to the calling scripts.
+
+        The initialized candidate (MSSQL_DB_NAME) is resolved with the same sequential Compose
+        precedence the topology validator uses, so an ambient override is checked as the value
+        the stack will actually receive. A registered candidate, when supplied, must already be
+        the PROVIDER-PARSED value (Get-RegisteredDatastoreDatabaseValue), never raw parameter
+        text. Candidates travel to the server as UTF-16 hex only; diagnostics name the source
+        key and the reserved literal and never echo a caller-authored value; failure detail is
+        limited to a category and an exception TYPE name.
+
+        Fail-closed throughout: a collision throws, and ANY inability to verify - transport
+        failure, timeout, incomplete stdin delivery, nonzero exit, unexpected output, a failed
+        context assertion, or oracle disagreement - also throws. Startup never proceeds
+        unverified, and exit code zero alone is never success.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
+    param(
+        [Parameter(Mandatory)]
+        [string]$EnvironmentFile,
+
+        [Parameter(Mandatory)]
+        [string]$ContainerName,
+
+        [Parameter(Mandatory)]
+        [string]$SaPassword,
+
+        [AllowEmptyString()]
+        [string]$RegisteredDatastoreDatabaseName = "",
+
+        [ValidateRange(1, 600)]
+        [int]$TimeoutSeconds = 60
+    )
+
+    # Topology gate: the marker is this design's internal record, read raw from the file's own
+    # declarations exactly as Confirm-CmsDatabaseTopologyAgreement reads it. Shared mode has two
+    # databases by alias, not by contract - nothing to verify.
+    $sequential = Resolve-DotenvFileSequentially -Path $EnvironmentFile
+    $markerDeclaration = Get-DotenvLastDeclaration -Evaluation $sequential -Name "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
+    $markerValue =
+        if ($null -eq $markerDeclaration) { "false" }
+        else { [string](ConvertFrom-ComposeEnvironmentValue -Value $markerDeclaration.RawValue) }
+    if (-not [string]::Equals($markerValue, "true", [System.StringComparison]::Ordinal)) {
+        return
+    }
+
+    $initializedDatastoreName = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name "MSSQL_DB_NAME")
+    if ([string]::IsNullOrWhiteSpace($initializedDatastoreName)) {
+        throw "Assert-MssqlPhysicalDatastoreDistinctness: could not resolve a non-blank datastore database name for 'MSSQL_DB_NAME'."
+    }
+
+    $candidate = [ordered]@{ "MSSQL_DB_NAME" = $initializedDatastoreName }
+    if (-not [string]::IsNullOrWhiteSpace($RegisteredDatastoreDatabaseName)) {
+        $candidate["-DataStoreDatabaseName"] = $RegisteredDatastoreDatabaseName
+    }
+    $sourceKeys = @($candidate.Keys)
+    $sourceKeyList = ($sourceKeys | ForEach-Object { "'$_'" }) -join ", "
+
+    $query = New-MssqlPhysicalDistinctnessQuery -Candidate $candidate
+    $transport = Invoke-NativeCommandWithInput `
+        -FilePath "docker" `
+        -ArgumentList (New-MssqlDistinctnessSqlcmdArgument -ContainerName $ContainerName -SaPassword $SaPassword) `
+        -InputText $query `
+        -TimeoutSeconds $TimeoutSeconds
+
+    $transportProblem =
+        if (-not $transport.Started) { "transport: process start failed" }
+        elseif ($transport.TimedOut) { "transport: timed out" }
+        elseif ($transport.FailureKind -ne "None") { "transport: $($transport.FailureKind)" }
+        elseif (-not $transport.StdinCompleted) { "transport: stdin delivery incomplete" }
+        elseif ($transport.ExitCode -ne 0) { "transport: exit code $($transport.ExitCode)" }
+        else { $null }
+    if ($null -ne $transportProblem) {
+        $failureDetail = if ([string]::IsNullOrEmpty($transport.FailureTypeName)) { "" } else { " [$($transport.FailureTypeName)]" }
+        throw "CMS database topology verification failed: the physical distinctness of the datastore name resolved from $sourceKeyList against 'edfi_configurationservice' could not be confirmed on the running SQL Server ($transportProblem$failureDetail). Startup does not proceed unverified. The resolved value is withheld."
+    }
+
+    $parsed = ConvertFrom-MssqlPhysicalDistinctnessQueryOutput -OutputText $transport.StandardOutput -ExpectedSourceKey $sourceKeys
+    if ($parsed.Category -ne "ok") {
+        throw "CMS database topology verification failed: the physical distinctness of the datastore name resolved from $sourceKeyList against 'edfi_configurationservice' could not be confirmed on the running SQL Server ($($parsed.Category)). Startup does not proceed unverified. The resolved value is withheld."
+    }
+
+    foreach ($sourceKey in $sourceKeys) {
+        if ($parsed.Verdict[$sourceKey] -eq "collides") {
+            throw "CMS database topology mismatch: SQL Server reports that the datastore name resolved from '$sourceKey' denotes the SAME physical database as the dedicated 'edfi_configurationservice' (server-collation name comparison on the running instance). -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct. The resolved value is withheld. Rename the datastore database or use shared mode."
+        }
+    }
+}
+
 function Resolve-CmsDatabaseTopologyEnvironmentFile {
     <#
     .SYNOPSIS
