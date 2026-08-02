@@ -241,6 +241,29 @@ Describe "ConvertFrom-MssqlPhysicalDistinctnessQueryOutput strict parsing (mutan
         (ConvertFrom-MssqlPhysicalDistinctnessQueryOutput -OutputText $noCandidates -ExpectedSourceKey @("MSSQL_DB_NAME")).Category |
             Should -Be "unexpected-output"
     }
+
+    It "refuses case-mangled and padded token variants - the vocabulary is ordinal-exact" {
+        # PowerShell's default string operators fold case, and a lenient trim would accept
+        # padded lines: both were review-measured fail-open holes. Every variant below must be
+        # unexpected-output - a case-mangled context line is GARBAGE, not a well-formed
+        # assertion failure. String.Replace is used deliberately: it is ordinal, so the
+        # replacement provably lands on the intended text.
+        $happy = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "MSSQL_DB_NAME" = "distinct" })
+        $cases = @(
+            $happy.Replace("db=master|collationAgreement=agree", "db=MASTER|collationAgreement=AGREE")
+            $happy.Replace("CMSTOPOLOGYRESERVED|present", "CMSTOPOLOGYRESERVED|PRESENT")
+            $happy.Replace("|distinct|", "|DISTINCT|")
+            $happy.Replace("dbid=agree", "dbid=AGREE")
+            $happy.Replace("CMSTOPOLOGYCTX|", " CMSTOPOLOGYCTX|")                       # leading pad
+            $happy.Replace("dbid=agree", "dbid=agree ")                                 # trailing pad
+            $happy.Replace("CMSTOPOLOGYRESERVED|present", " CMSTOPOLOGYRESERVED|present ")
+            ($happy + "   `n")                                                          # whitespace-only line is content
+        )
+        foreach ($case in $cases) {
+            (ConvertFrom-MssqlPhysicalDistinctnessQueryOutput -OutputText $case -ExpectedSourceKey @("MSSQL_DB_NAME")).Category |
+                Should -Be "unexpected-output" -Because "variant: $($case.Substring(0, [math]::Min(60, $case.Length)))"
+        }
+    }
 }
 
 Describe "New-MssqlDistinctnessSqlcmdArgument" {
@@ -261,8 +284,39 @@ Describe "New-MssqlDistinctnessSqlcmdArgument" {
 
 Describe "Assert-MssqlPhysicalDatastoreDistinctness boundary" {
 
-    AfterEach {
-        Remove-Item Env:\DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE -ErrorAction SilentlyContinue
+    BeforeAll {
+        # Ambient hermeticity. Production deliberately gives an ambient MSSQL_DB_NAME Compose
+        # precedence over the file, and deliberately IGNORES an ambient marker (raw file read) -
+        # so this Describe must control both variables per test AND hand back the caller's exact
+        # pre-existing state afterwards: present with its value, absent, or (where the platform
+        # can represent it) present-empty. SetEnvironmentVariable is used for the restore
+        # because it preserves a present-empty value on Windows; on Unix a blank variable cannot
+        # exist, so absent is the faithful representation there.
+        $script:ambientNames = @("DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE", "MSSQL_DB_NAME")
+        $script:ambientSnapshot = @{}
+        foreach ($name in $script:ambientNames) {
+            $script:ambientSnapshot[$name] = @{
+                Present = [bool](Test-Path "Env:\$name")
+                Value   = [System.Environment]::GetEnvironmentVariable($name)
+            }
+        }
+    }
+
+    BeforeEach {
+        foreach ($name in $script:ambientNames) {
+            Remove-Item "Env:\$name" -ErrorAction SilentlyContinue
+        }
+    }
+
+    AfterAll {
+        foreach ($name in $script:ambientNames) {
+            if ($script:ambientSnapshot[$name].Present) {
+                [System.Environment]::SetEnvironmentVariable($name, $script:ambientSnapshot[$name].Value)
+            }
+            else {
+                Remove-Item "Env:\$name" -ErrorAction SilentlyContinue
+            }
+        }
     }
 
     It "is a no-op in shared mode and never touches the transport - even with an ambient marker set" {
@@ -357,6 +411,22 @@ Describe "Assert-MssqlPhysicalDatastoreDistinctness boundary" {
             { Assert-MssqlPhysicalDatastoreDistinctness -EnvironmentFile $envFile -ContainerName "dms-mssql" -SaPassword "pw" } |
                 Should -Throw "*($($shape.Category))*" -Because $shape.Label
         }
+    }
+
+    It "resolves the initialized candidate with ambient Compose precedence - the checked name is what the stack will receive" {
+        $ambientName = [char]0x00E9 + "dfi_ambient_datastore"
+        $happy = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "MSSQL_DB_NAME" = "distinct" })
+        Mock Invoke-NativeCommandWithInput -ModuleName env-utility -MockWith {
+            $script:capturedInputText = $InputText
+            New-TransportResult -StandardOutput $happy
+        }
+
+        $env:MSSQL_DB_NAME = $ambientName
+        $envFile = New-TopologyEnvFile -FileName "sep-ambient-name.env" -Marker "true" -DatastoreName "edfi_file_value"
+        { Assert-MssqlPhysicalDatastoreDistinctness -EnvironmentFile $envFile -ContainerName "dms-mssql" -SaPassword "pw" } |
+            Should -Not -Throw
+        $script:capturedInputText | Should -Match ([regex]::Escape((ConvertTo-MssqlUtf16HexLiteral -Value $ambientName)))
+        $script:capturedInputText | Should -Not -Match ([regex]::Escape((ConvertTo-MssqlUtf16HexLiteral -Value "edfi_file_value")))
     }
 
     It "reports a blank initialized datastore name as a configuration failure naming the key" {
