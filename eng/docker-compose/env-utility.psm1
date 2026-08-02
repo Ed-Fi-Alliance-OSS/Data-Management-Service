@@ -2810,20 +2810,25 @@ function ConvertFrom-MssqlPhysicalDistinctnessQueryOutput {
         Verdict         = [ordered]@{}
     }
 
-    # Non-blank line content is preserved EXACTLY - only the terminal CR of a CRLF ending is
-    # removed - so a padded or case-mangled token is not the vocabulary and fails closed. Only
-    # genuinely empty lines (sqlcmd's result-set separators) are dropped; a whitespace-only
-    # line is content, and refused. Every token comparison below is ORDINAL: PowerShell's
-    # default string operators fold case, which would admit vocabulary this parser never emits.
+    # Non-blank line content is preserved EXACTLY - at most the ONE terminal CR belonging to a
+    # CRLF line ending is removed. Never TrimEnd: it erases a whole RUN of trailing CRs, so a
+    # token line that really ended CR CR LF was laundered into the exact vocabulary
+    # (review-measured fail-open). A padded, case-mangled, or CR-bearing token is not the
+    # vocabulary and fails closed. Only genuinely empty lines (sqlcmd's result-set separators)
+    # are dropped; a whitespace-only line is content, and refused. Every token comparison below
+    # is ORDINAL - PowerShell's default string operators fold case, and the culture-sensitive
+    # String overloads are avoided for the same reason.
     $meaningfulLines = @(
         $OutputText -split "`n" |
-            ForEach-Object { $_.TrimEnd([char]13) } |
+            ForEach-Object {
+                if ($_.Length -gt 0 -and [int]$_[$_.Length - 1] -eq 13) { $_.Substring(0, $_.Length - 1) } else { $_ }
+            } |
             Where-Object { $_ -ne "" }
     )
 
-    $contextLines = @($meaningfulLines | Where-Object { $_.StartsWith($script:MssqlDistinctnessContextTokenPrefix) })
-    $reservedLines = @($meaningfulLines | Where-Object { $_.StartsWith($script:MssqlDistinctnessReservedTokenPrefix) })
-    $candidateLines = @($meaningfulLines | Where-Object { $_.StartsWith($script:MssqlDistinctnessCandidateTokenPrefix) })
+    $contextLines = @($meaningfulLines | Where-Object { $_.StartsWith($script:MssqlDistinctnessContextTokenPrefix, [System.StringComparison]::Ordinal) })
+    $reservedLines = @($meaningfulLines | Where-Object { $_.StartsWith($script:MssqlDistinctnessReservedTokenPrefix, [System.StringComparison]::Ordinal) })
+    $candidateLines = @($meaningfulLines | Where-Object { $_.StartsWith($script:MssqlDistinctnessCandidateTokenPrefix, [System.StringComparison]::Ordinal) })
     if ($contextLines.Count -ne 1 -or $reservedLines.Count -ne 1 -or
         $meaningfulLines.Count -ne (2 + $candidateLines.Count)) {
         return [pscustomobject]$classification
@@ -2856,7 +2861,7 @@ function ConvertFrom-MssqlPhysicalDistinctnessQueryOutput {
         $sourceKey = $ExpectedSourceKey[$index]
         $expectedLinePrefix = "$($script:MssqlDistinctnessCandidateTokenPrefix)$sourceKey|"
         $line = $candidateLines[$index]
-        if (-not $line.StartsWith($expectedLinePrefix)) {
+        if (-not $line.StartsWith($expectedLinePrefix, [System.StringComparison]::Ordinal)) {
             return [pscustomobject]$classification
         }
         $payload = $line.Substring($expectedLinePrefix.Length)
