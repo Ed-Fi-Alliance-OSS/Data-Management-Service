@@ -1240,6 +1240,43 @@ function Get-MssqlComposedEnvContent {
     return , @($composed)
 }
 
+function Test-CmsTargetNameAgreement {
+    <#
+    .SYNOPSIS
+        True when a CMS database-target name textually agrees with the expected topology name - the
+        one conservative, ordinal-exact pre-start agreement rule every CMS-target comparison uses.
+
+    .DESCRIPTION
+        A PRE-START TEXTUAL AGREEMENT rule, deliberately NOT SQL Server physical-identity modeling.
+        The agreement checks that consume this predicate run before any SQL Server exists to ask,
+        and database-name equivalence on SQL Server is decided by the running INSTANCE's collation
+        (measured: a case variant that a case-insensitive collation folds onto the expected name is
+        a genuinely DISTINCT physical database on a case-sensitive instance), so no offline
+        comparison can claim that two DIFFERENT spellings name the same physical database. Exact
+        text is the safe sufficient condition: identical text - any Unicode text - denotes the same
+        database under every collation, so an exactly-spelled configuration (valid Unicode datastore
+        names included) always passes; any non-exact spelling is refused regardless of the selected
+        MSSQL collation, and the remedy is to use the exact configured spelling. Physical
+        distinctness of the DMS datastore from the reserved CMS database remains owned by
+        Assert-MssqlPhysicalDatastoreDistinctness against the running server; this rule never
+        stands in for it.
+
+    .PARAMETER ActualName
+        The target name as configured - a parsed connection-string database segment, or an ambient
+        override value. A blank value never agrees; callers report absence separately.
+
+    .PARAMETER ExpectedName
+        The database name the effective topology expects.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$ActualName,
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$ExpectedName
+    )
+
+    if ([string]::IsNullOrEmpty($ActualName) -or [string]::IsNullOrEmpty($ExpectedName)) { return $false }
+    return [string]::Equals($ActualName, $ExpectedName, [System.StringComparison]::Ordinal)
+}
+
 function Assert-MssqlCmsDatabaseIsShared {
     <#
     .SYNOPSIS
@@ -1255,6 +1292,11 @@ function Assert-MssqlCmsDatabaseIsShared {
         "unsupported environment expression" on anything else - so a connection string using a
         documented Compose operator, including the ${A:-${B}} form the checked-in .yml fallbacks
         themselves use, could not be validated at all.
+
+        Agreement is ordinal-exact through Test-CmsTargetNameAgreement. The previous case-insensitive
+        comparison silently accepted a case variant that a CASE-SENSITIVE SQL Server keeps as a
+        distinct physical database - splitting CMS or OpenIddict away from the datastore the shared
+        topology promises they share.
     #>
     param(
         [Parameter(Mandatory)]
@@ -1289,12 +1331,8 @@ function Assert-MssqlCmsDatabaseIsShared {
     }
 
     foreach ($actualDatabaseName in $databaseNames) {
-        if (-not [string]::Equals(
-            $actualDatabaseName,
-            $expectedDatabaseName,
-            [System.StringComparison]::OrdinalIgnoreCase
-        )) {
-            throw "MSSQL shared-database configuration mismatch: DMS_CONFIG_DATABASE_CONNECTION_STRING targets '$actualDatabaseName', but MSSQL_DB_NAME resolves to '$expectedDatabaseName'. DMS-1255 requires CMS and OpenIddict to share MSSQL_DB_NAME; align the values. Separate CMS database support is tracked by DMS-1270."
+        if (-not (Test-CmsTargetNameAgreement -ActualName $actualDatabaseName -ExpectedName $expectedDatabaseName)) {
+            throw "MSSQL shared-database configuration mismatch: DMS_CONFIG_DATABASE_CONNECTION_STRING targets '$actualDatabaseName', but MSSQL_DB_NAME resolves to '$expectedDatabaseName'. CMS and OpenIddict must share MSSQL_DB_NAME, and pre-start agreement accepts only the exact configured spelling: whether two different spellings are the same physical database depends on the running instance's collation, which cannot be consulted at this boundary. Align the values character-for-character, or opt into the dedicated CMS database with -SeparateConfigDatabase (DMS-1270)."
         }
     }
 }
@@ -1530,8 +1568,12 @@ function Resolve-DatabaseEngineEnvironmentFile {
             # against the SAME caller-authored source file) reaches this gate with no switch and no
             # marker (the marker lives only in the start script's derived file), and the reserved
             # name is the only signal left. Only an unambiguous declaration skips the invariant:
-            # every recognized database-name segment must resolve to 'edfi_configurationservice'; a
-            # mixed or unparseable connection string still runs the invariant and fails loudly there.
+            # every recognized database-name segment must be EXACTLY the reserved literal
+            # 'edfi_configurationservice' (ordinal - a case variant is not an unambiguous
+            # declaration, because whether it even IS the reserved database depends on the running
+            # instance's collation, and this gate runs before any server exists to ask); a mixed,
+            # case-variant, or unparseable connection string still runs the invariant and fails
+            # loudly there with exact-spelling guidance.
             #
             # Resolution uses the SAME Compose-equivalent semantics as the start path, not the legacy
             # single-${NAME} grammar. Those two disagreed, and the disagreement split a run in half: a
@@ -1545,7 +1587,7 @@ function Resolve-DatabaseEngineEnvironmentFile {
             $targetsDedicatedCmsDatabase =
                 $candidateDatabaseNames.Count -gt 0 -and
                 @($candidateDatabaseNames | Where-Object {
-                    -not [string]::Equals($_, "edfi_configurationservice", [System.StringComparison]::OrdinalIgnoreCase)
+                    -not (Test-CmsTargetNameAgreement -ActualName $_ -ExpectedName "edfi_configurationservice")
                 }).Count -eq 0
 
             if (-not $targetsDedicatedCmsDatabase) {
@@ -3509,14 +3551,17 @@ function Confirm-CmsDatabaseTopologyAgreement {
     # none, so it must be the exact host that fallback names. A test pins it to a real Compose render.
     $inlineFallbackHost = if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
     $expectedPort = if ($DatabaseEngine -eq "mssql") { "1433" } else { "5432" }
-    # Governs the RESOLVED database names compared below - the connection string's own database segments
-    # and an ambient DMS_CONFIG_DATABASE_NAME override. Neither is an unquoted SQL identifier, so neither
-    # folds, and PostgreSQL stays case-sensitive for both. It deliberately does NOT govern the
+    # The RESOLVED database names compared below - the connection string's own database segments and an
+    # ambient DMS_CONFIG_DATABASE_NAME override - agree through Test-CmsTargetNameAgreement: ordinal
+    # exact for BOTH engines. On PostgreSQL neither value is an unquoted SQL identifier, so nothing
+    # folds; on SQL Server whether two DIFFERENT spellings are the same physical database depends on the
+    # running instance's collation, which this pre-start check cannot consult - the previous
+    # case-insensitive comparison accepted a case variant that a case-sensitive instance keeps as a
+    # distinct database. The agreement rule deliberately does NOT govern the
     # datastore-versus-reserved-CMS-name collision: on PostgreSQL that answer is fixed by the mechanism
     # that physically CREATES the datastore database
     # (Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase), and on SQL Server it is decided by
     # the RUNNING instance through Assert-MssqlPhysicalDatastoreDistinctness, not by this function.
-    $nameComparison = if ($DatabaseEngine -eq "mssql") { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
 
     # The marker comes from its own raw declaration through the shared assignment model, then through
     # Compose's value semantics. Read raw and never from the ambient environment: the marker is this
@@ -3596,8 +3641,8 @@ function Confirm-CmsDatabaseTopologyAgreement {
         throw "Confirm-CmsDatabaseTopologyAgreement: DMS_CONFIG_DATABASE_CONNECTION_STRING must include Database or Initial Catalog and target '$expectedDatabaseName'."
     }
     foreach ($actualDatabaseName in $actualDatabaseNames) {
-        if (-not [string]::Equals($actualDatabaseName, $expectedDatabaseName, $nameComparison)) {
-            throw "CMS database topology mismatch: DMS_CONFIG_DATABASE_CONNECTION_STRING targets database '$actualDatabaseName', but the effective topology contract requires '$expectedDatabaseName'. Align the connection string or the -SeparateConfigDatabase selection."
+        if (-not (Test-CmsTargetNameAgreement -ActualName $actualDatabaseName -ExpectedName $expectedDatabaseName)) {
+            throw "CMS database topology mismatch: DMS_CONFIG_DATABASE_CONNECTION_STRING targets database '$actualDatabaseName', but the effective topology contract requires '$expectedDatabaseName'. Agreement is by exact spelling - on SQL Server, whether two different spellings denote the same physical database depends on the running instance's collation, which cannot be consulted before startup. Align the connection string or the -SeparateConfigDatabase selection."
         }
     }
 
@@ -3630,7 +3675,7 @@ function Confirm-CmsDatabaseTopologyAgreement {
     }
 
     $ambientDatabaseName = [System.Environment]::GetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME")
-    if (-not [string]::IsNullOrWhiteSpace($ambientDatabaseName) -and -not [string]::Equals($ambientDatabaseName, $expectedDatabaseName, $nameComparison)) {
-        throw "CMS database topology mismatch: an ambient DMS_CONFIG_DATABASE_NAME='$ambientDatabaseName' conflicts with the effective topology contract, which requires '$expectedDatabaseName'. Unset it or align it before running."
+    if (-not [string]::IsNullOrWhiteSpace($ambientDatabaseName) -and -not (Test-CmsTargetNameAgreement -ActualName $ambientDatabaseName -ExpectedName $expectedDatabaseName)) {
+        throw "CMS database topology mismatch: an ambient DMS_CONFIG_DATABASE_NAME='$ambientDatabaseName' conflicts with the effective topology contract, which requires '$expectedDatabaseName'. Agreement is by exact spelling - on SQL Server, physical equivalence of different spellings depends on the running instance's collation. Unset it or align it character-for-character before running."
     }
 }
