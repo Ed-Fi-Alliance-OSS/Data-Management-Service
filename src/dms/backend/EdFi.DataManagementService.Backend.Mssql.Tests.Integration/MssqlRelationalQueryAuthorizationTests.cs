@@ -176,6 +176,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     private readonly Dictionary<int, long> _schoolDocumentIdsBySchoolId = [];
 
     private MssqlGeneratedDdlFixture _fixture = null!;
+    private string _documentStateQuery = null!;
     private ServiceProvider _serviceProvider = null!;
     private MssqlRelationalQueryExecutionRecorder _recorder = null!;
     private MssqlRelationalQueryAuthorizationWriteSessionRecorder _writeSessionRecorder = null!;
@@ -208,6 +209,9 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
         _databaseLease = await baseline.AcquireRestoredDatabaseAsync();
         Database = _databaseLease.Database;
+        _documentStateQuery = DocumentStampSourceSql.BuildMssqlDocumentStateQuery(
+            MssqlGeneratedDdlModelLookup.EnumerateStampTables(_fixture.ModelSet)
+        );
         _serviceProvider = CreateServiceProvider(replaceReadTargetLookup);
         _recorder = _serviceProvider.GetRequiredService<MssqlRelationalQueryExecutionRecorder>();
         _writeSessionRecorder =
@@ -1595,25 +1599,11 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     )
     {
         var rows = await Database.QueryRowsAsync(
-            """
-            SELECT
-                [DocumentId],
-                [DocumentUuid],
-                [ResourceKeyId],
-                [ContentVersion],
-                [IdentityVersion],
-                [ContentLastModifiedAt],
-                [IdentityLastModifiedAt],
-                [CreatedAt]
-            FROM [dms].[Document]
-            WHERE [DocumentUuid] = @documentUuid
-              AND [ResourceKeyId] = @resourceKeyId;
-            """,
-            new SqlParameter("@documentUuid", documentUuid.Value),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
+            _documentStateQuery,
+            new SqlParameter("@documentUuid", documentUuid.Value)
         );
 
-        return rows.Count == 1
+        return rows.Count == 1 && GetRequiredInt16(rows[0], "ResourceKeyId") == resourceKeyId
             ? new AuthorizationDocumentState(
                 GetRequiredInt64(rows[0], "DocumentId"),
                 GetRequiredGuid(rows[0], "DocumentUuid"),

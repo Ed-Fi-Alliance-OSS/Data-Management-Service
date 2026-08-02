@@ -637,7 +637,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             await _database.QueryRowsAsync(
                 """
                 SELECT [ContentVersion], [ContentLastModifiedAt]
-                FROM [dms].[Document]
+                FROM [edfi].[Survey]
                 WHERE [DocumentUuid] = @documentUuid;
                 """,
                 new SqlParameter("@documentUuid", documentUuid)

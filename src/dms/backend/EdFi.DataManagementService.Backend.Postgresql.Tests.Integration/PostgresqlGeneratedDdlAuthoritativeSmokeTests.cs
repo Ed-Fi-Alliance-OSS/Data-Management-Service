@@ -1273,14 +1273,13 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     }
 
     [Test]
-    public async Task It_should_keep_extension_project_root_resource_mirrors_in_lock_step()
+    public async Task It_should_stamp_extension_project_root_resource_rows_across_every_write_path()
     {
         var busResourceKeyId = await GetResourceKeyIdAsync("Sample", "Bus");
         var busDocumentId = await InsertDocumentAsync(
             Guid.Parse("abababab-abab-abab-abab-abababababab"),
             busResourceKeyId
         );
-        var beforeInsert = await GetDocumentStampStateAsync(busDocumentId);
         var beforeInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
         var initialBusId = $"BUS-{busDocumentId}-001";
         var updatedBusId = $"BUS-{busDocumentId}-002";
@@ -1288,10 +1287,17 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         await DelayForDistinctTimestampsAsync();
         await InsertBusAsync(busDocumentId, initialBusId);
 
+        // The root row is the stamp store, so it only exists to be read once the insert lands. A new
+        // row has no prior stamp to preserve, so the INSERT branch allocates both the content and the
+        // identity change version.
         var afterInsert = await GetDocumentStampStateAsync(busDocumentId);
         var afterInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        afterInsert.Should().Be(beforeInsert);
-        afterInsertMaxChangeVersion.Should().Be(beforeInsertMaxChangeVersion);
+        afterInsert.ContentVersion.Should().BeGreaterThan(beforeInsertMaxChangeVersion);
+        afterInsert.IdentityVersion.Should().BeGreaterThan(beforeInsertMaxChangeVersion);
+        afterInsert.ContentVersion.Should().NotBe(afterInsert.IdentityVersion);
+        (afterInsertMaxChangeVersion - beforeInsertMaxChangeVersion)
+            .Should()
+            .Be(2L, "a root insert allocates one content stamp and one identity stamp");
 
         await DelayForDistinctTimestampsAsync();
         var updateRowsAffected = await _database.ExecuteNonQueryAsync(
@@ -1364,9 +1370,14 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             """SELECT COUNT(*) FROM "tracked_changes_sample"."Bus";"""
         );
 
-        afterDocument.Should().Be(beforeDocument);
+        // A stamp-only update must not re-enter the stamping trigger: the manual +1 is the only change,
+        // no change version is allocated off the sequence, and no tracked-change row is written.
         afterMaxChangeVersion.Should().Be(beforeMaxChangeVersion);
         trackedChangeRowsAfter.Should().Be(trackedChangeRowsBefore);
+        afterDocument.ContentVersion.Should().Be(beforeDocument.ContentVersion + 1);
+        afterDocument.ContentLastModifiedAt.Should().Be(beforeDocument.ContentLastModifiedAt);
+        afterDocument.IdentityVersion.Should().Be(beforeDocument.IdentityVersion);
+        afterDocument.IdentityLastModifiedAt.Should().Be(beforeDocument.IdentityLastModifiedAt);
         afterMirror.ContentVersion.Should().Be(beforeMirror.ContentVersion + 1);
         afterMirror.ContentLastModifiedAt.Should().Be(beforeMirror.ContentLastModifiedAt);
     }

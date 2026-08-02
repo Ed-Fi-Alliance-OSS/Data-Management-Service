@@ -167,6 +167,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     > _resourceCache = [];
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private string _documentStateQuery = null!;
     private ServiceProvider _serviceProvider = null!;
     private PostgresqlRelationalQueryExecutionRecorder _recorder = null!;
     private PostgresqlRelationalQueryAuthorizationWriteSessionRecorder _writeSessionRecorder = null!;
@@ -196,6 +197,9 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             strict
         );
         Database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _documentStateQuery = DocumentStampSourceSql.BuildPostgresqlDocumentStateQuery(
+            PostgresqlGeneratedDdlModelLookup.EnumerateStampTables(_fixture.ModelSet)
+        );
         _serviceProvider = CreateServiceProvider(replaceReadTargetLookup);
         _recorder = _serviceProvider.GetRequiredService<PostgresqlRelationalQueryExecutionRecorder>();
         _writeSessionRecorder =
@@ -1428,40 +1432,22 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             .UpdateDocumentById(request);
     }
 
+    /// <summary>
+    /// Reads a document's identity and stamp state. The owning resource root row is the stamp store, so
+    /// the read selects across every root the fixture's model set declares (plus dms.Descriptor) keyed by
+    /// DocumentUuid, and joins dms.Document for ResourceKeyId — the one column only that table carries.
+    /// </summary>
     private async Task<AuthorizationDocumentState> ReadDocumentStateAsync(
         DocumentUuid documentUuid,
         short resourceKeyId
     )
     {
         var rows = await Database.QueryRowsAsync(
-            """
-            SELECT
-                root."DocumentId",
-                root."DocumentUuid",
-                document."ResourceKeyId",
-                root."ContentVersion",
-                root."IdentityVersion",
-                root."ContentLastModifiedAt",
-                root."IdentityLastModifiedAt",
-                root."CreatedAt"
-            FROM (
-                SELECT "DocumentId", "DocumentUuid", "ContentVersion", "IdentityVersion",
-                       "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt"
-                FROM "authz"."AuthorizationRootChildResource"
-                UNION ALL
-                SELECT "DocumentId", "DocumentUuid", "ContentVersion", "IdentityVersion",
-                       "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt"
-                FROM "authz"."AuthorizationStudentAcademicRecordResource"
-            ) root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
-            WHERE root."DocumentUuid" = @documentUuid
-              AND document."ResourceKeyId" = @resourceKeyId;
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid.Value),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            _documentStateQuery,
+            new NpgsqlParameter("documentUuid", documentUuid.Value)
         );
 
-        return rows.Count == 1
+        return rows.Count == 1 && GetRequiredInt16(rows[0], "ResourceKeyId") == resourceKeyId
             ? new AuthorizationDocumentState(
                 GetRequiredInt64(rows[0], "DocumentId"),
                 GetRequiredGuid(rows[0], "DocumentUuid"),
@@ -1473,7 +1459,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 GetRequiredDateTime(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
-                $"Expected one AuthorizationRootChildResource document row for '{documentUuid.Value}', but found {rows.Count}."
+                $"Expected one resource-root document row for '{documentUuid.Value}' with resource key "
+                    + $"'{resourceKeyId}', but found {rows.Count}."
             );
     }
 

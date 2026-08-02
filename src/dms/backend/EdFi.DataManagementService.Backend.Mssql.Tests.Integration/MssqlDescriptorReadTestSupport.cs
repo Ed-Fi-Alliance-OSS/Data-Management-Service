@@ -138,6 +138,36 @@ internal static class MssqlDescriptorReadTestSupport
         return GetSingleRowOrThrow(rows, "Document", documentId);
     }
 
+    /// <summary>
+    /// Reads the descriptor row's authoritative stamps. The descriptor row owns
+    /// <c>ContentVersion</c>/<c>IdentityVersion</c> and their timestamps; the <c>dms.Document</c> row
+    /// carries only the id it dispensed.
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<string, object?>> ReadDescriptorStampRowAsync(
+        MssqlGeneratedDdlTestDatabase database,
+        long documentId
+    )
+    {
+        var rows = await database.QueryRowsAsync(
+            """
+            SELECT
+                [DocumentId],
+                [DocumentUuid],
+                [ResourceKeyId],
+                [ContentVersion],
+                [IdentityVersion],
+                [ContentLastModifiedAt],
+                [IdentityLastModifiedAt],
+                [CreatedAt]
+            FROM [dms].[Descriptor]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", documentId)
+        );
+
+        return GetSingleRowOrThrow(rows, "Descriptor", documentId);
+    }
+
     public static async Task<IReadOnlyDictionary<string, object?>> ReadDescriptorRowAsync(
         MssqlGeneratedDdlTestDatabase database,
         long documentId

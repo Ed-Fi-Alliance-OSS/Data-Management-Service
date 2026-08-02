@@ -482,6 +482,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
             """
             INSERT INTO "edfi"."ProfileRootOnlyMergeItem" (
                 "DocumentId",
+                "DocumentUuid",
                 "ProfileRootOnlyMergeItemId",
                 "DisplayName",
                 "ProfileScopeClearableText",
@@ -494,6 +495,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @profileRootOnlyMergeItemId,
                 @displayName,
                 @clearableText,
@@ -506,6 +508,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("profileRootOnlyMergeItemId", profileRootOnlyMergeItemId),
             new NpgsqlParameter("displayName", (object?)displayName ?? DBNull.Value),
             new NpgsqlParameter("clearableText", (object?)clearableText ?? DBNull.Value),

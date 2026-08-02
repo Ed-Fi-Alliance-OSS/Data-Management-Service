@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -82,6 +82,7 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level
         _stateBeforeUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
         _addressCountBefore = await MssqlProfileTopLevelCollectionMergeSupport.ReadAddressCountAsync(
@@ -97,6 +98,7 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level
         _stateAfterUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
         _addressCountAfter = await MssqlProfileTopLevelCollectionMergeSupport.ReadAddressCountAsync(

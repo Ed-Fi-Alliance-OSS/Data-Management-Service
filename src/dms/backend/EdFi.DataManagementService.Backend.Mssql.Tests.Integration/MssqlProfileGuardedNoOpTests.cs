@@ -119,6 +119,7 @@ internal static class MssqlProfileGuardedNoOpIntegrationTestSupport
     public static async Task<ProfileGuardedNoOpPersistedState> ReadPersistedStateAsync(
         MssqlGeneratedDdlTestDatabase database,
         Guid documentUuid,
+        (string Schema, string Table) shapeRootTable,
         Func<
             MssqlGeneratedDdlTestDatabase,
             long,
@@ -126,21 +127,33 @@ internal static class MssqlProfileGuardedNoOpIntegrationTestSupport
         > readRootRowByDocumentId
     ) =>
         await ProfileGuardedNoOpPersistedStateSupport
-            .ReadPersistedStateAsync(database, documentUuid, ReadDocumentRowsAsync, readRootRowByDocumentId)
+            .ReadPersistedStateAsync(
+                database,
+                documentUuid,
+                (db, uuid) => ReadDocumentRowsAsync(db, shapeRootTable, uuid),
+                readRootRowByDocumentId
+            )
             .ConfigureAwait(false);
 
+    /// <summary>
+    /// Reads the document's identity and stamp state. The shape's own resource root row is the stamp
+    /// store, so the read scopes to that table; <c>ResourceKeyId</c> is the one column only
+    /// <c>dms.Document</c> carries and is joined in.
+    /// </summary>
     private static async Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> ReadDocumentRowsAsync(
         MssqlGeneratedDdlTestDatabase database,
+        (string Schema, string Table) shapeRootTable,
         Guid documentUuid
     ) =>
         await database
             .QueryRowsAsync(
-                """
-                SELECT [DocumentId], [DocumentUuid], [ResourceKeyId],
-                       [ContentVersion], [ContentLastModifiedAt],
-                       [IdentityVersion], [IdentityLastModifiedAt]
-                FROM [dms].[Document]
-                WHERE [DocumentUuid] = @documentUuid;
+                $"""
+                SELECT root.[DocumentId], root.[DocumentUuid], document.[ResourceKeyId],
+                       root.[ContentVersion], root.[ContentLastModifiedAt],
+                       root.[IdentityVersion], root.[IdentityLastModifiedAt]
+                FROM [{shapeRootTable.Schema}].[{shapeRootTable.Table}] root
+                INNER JOIN [dms].[Document] document ON document.[DocumentId] = root.[DocumentId]
+                WHERE root.[DocumentUuid] = @documentUuid;
                 """,
                 new SqlParameter("@documentUuid", documentUuid)
             )
@@ -197,6 +210,12 @@ internal abstract class MssqlProfileGuardedNoOpGeneratedDdlFixtureTestBase
         MssqlGeneratedDdlTestDatabase database,
         long documentId
     );
+
+    /// <summary>
+    /// The resource root table this shape writes. The root row owns the document stamps, so the
+    /// state reader has to name it rather than falling back to a table-agnostic lookup.
+    /// </summary>
+    protected abstract (string Schema, string Table) ShapeRootTable { get; }
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -444,6 +463,8 @@ internal abstract class MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
         return await repository.UpsertDocument(upsertRequest);
     }
 
+    protected override (string Schema, string Table) ShapeRootTable => ("edfi", "ProfileRootOnlyMergeItem");
+
     protected override Task<IReadOnlyDictionary<string, object?>> ReadShapeRootRowByDocumentIdAsync(
         MssqlGeneratedDdlTestDatabase database,
         long documentId
@@ -516,6 +537,7 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only
         _stateBeforeUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
 
@@ -523,6 +545,7 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only
         _stateAfterUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
     }
@@ -607,6 +630,7 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Post_As_Update_Wit
             await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
                 _database,
                 ExistingDocumentUuid.Value,
+                ShapeRootTable,
                 ReadShapeRootRowByDocumentIdAsync
             );
 
@@ -615,6 +639,7 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Post_As_Update_Wit
         _stateAfterPostAsUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             ExistingDocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
         _incomingDocumentUuidRowCount = await CountDocumentRowsByUuidAsync(IncomingDocumentUuid.Value);
@@ -712,6 +737,7 @@ internal class Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Put
         _stateBeforeUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
 
@@ -720,6 +746,7 @@ internal class Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Put
         _stateAfterUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
     }
@@ -797,6 +824,7 @@ internal class Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Post_As_Upda
             await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
                 _database,
                 ExistingDocumentUuid.Value,
+                ShapeRootTable,
                 ReadShapeRootRowByDocumentIdAsync
             );
 
@@ -805,6 +833,7 @@ internal class Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Post_As_Upda
         _stateAfterPostAsUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             ExistingDocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
         _incomingDocumentUuidRowCount = await CountDocumentRowsByUuidAsync(IncomingDocumentUuid.Value);
@@ -925,6 +954,9 @@ internal abstract class MssqlSeparateTableShapeProfileGuardedNoOpFixtureBase
         );
     }
 
+    protected override (string Schema, string Table) ShapeRootTable =>
+        ("edfi", "ProfileSeparateTableMergeItem");
+
     protected override async Task<IReadOnlyDictionary<string, object?>> ReadShapeRootRowByDocumentIdAsync(
         MssqlGeneratedDdlTestDatabase database,
         long documentId
@@ -1043,6 +1075,8 @@ internal abstract class MssqlCollectionShapeProfileGuardedNoOpFixtureBase
         );
     }
 
+    protected override (string Schema, string Table) ShapeRootTable => ("edfi", "School");
+
     protected override async Task<IReadOnlyDictionary<string, object?>> ReadShapeRootRowByDocumentIdAsync(
         MssqlGeneratedDdlTestDatabase database,
         long documentId
@@ -1107,6 +1141,7 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Separate_
         _stateBeforeUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
         _extRowCountBefore = await MssqlProfileSeparateTableMergeSupport.CountExtRowsAsync(
@@ -1120,6 +1155,7 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Separate_
         _stateAfterUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
         _extRowCountAfter = await MssqlProfileSeparateTableMergeSupport.CountExtRowsAsync(
@@ -1247,6 +1283,7 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level
         _stateBeforeUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
         _addressCountBefore = await MssqlProfileTopLevelCollectionMergeSupport.ReadAddressCountAsync(
@@ -1262,6 +1299,7 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level
         _stateAfterUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
         _addressCountAfter = await MssqlProfileTopLevelCollectionMergeSupport.ReadAddressCountAsync(

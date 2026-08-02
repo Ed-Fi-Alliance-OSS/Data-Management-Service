@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -31,6 +31,106 @@ public static class DocumentStampSourceSql
     /// </summary>
     public static string BuildMssqlStampQuery(IEnumerable<(string Schema, string Table)> stampTables) =>
         BuildStampQuery(stampTables, bracketQuoted: true);
+
+    /// <summary>
+    /// Builds a PostgreSQL query for the whole document-state row keyed by <c>@documentUuid</c>: the
+    /// identity and stamp columns come from whichever stamp table owns the uuid, and
+    /// <c>ResourceKeyId</c> — the one column only <c>dms.Document</c> carries — is joined in.
+    /// </summary>
+    public static string BuildPostgresqlDocumentStateQuery(
+        IEnumerable<(string Schema, string Table)> stampTables
+    )
+    {
+        ArgumentNullException.ThrowIfNull(stampTables);
+
+        var builder = new StringBuilder();
+        var first = true;
+
+        foreach (var (schema, table) in stampTables)
+        {
+            if (!first)
+            {
+                builder.Append("\n    UNION ALL\n");
+            }
+            first = false;
+
+            builder.Append(
+                "    SELECT \"DocumentId\", \"DocumentUuid\", \"ContentVersion\", \"IdentityVersion\", "
+                    + "\"ContentLastModifiedAt\", \"IdentityLastModifiedAt\", \"CreatedAt\"\n    FROM "
+            );
+            builder.Append($"\"{schema}\".\"{table}\"");
+        }
+
+        if (first)
+        {
+            throw new ArgumentException("At least one stamp table must be supplied.", nameof(stampTables));
+        }
+
+        return $"""
+            SELECT
+                root."DocumentId",
+                root."DocumentUuid",
+                document."ResourceKeyId",
+                root."ContentVersion",
+                root."IdentityVersion",
+                root."ContentLastModifiedAt",
+                root."IdentityLastModifiedAt",
+                root."CreatedAt"
+            FROM (
+            {builder}
+            ) root
+            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
+            WHERE root."DocumentUuid" = @documentUuid;
+            """;
+    }
+
+    /// <summary>
+    /// The SQL Server equivalent of <see cref="BuildPostgresqlDocumentStateQuery" />.
+    /// </summary>
+    public static string BuildMssqlDocumentStateQuery(IEnumerable<(string Schema, string Table)> stampTables)
+    {
+        ArgumentNullException.ThrowIfNull(stampTables);
+
+        var builder = new StringBuilder();
+        var first = true;
+
+        foreach (var (schema, table) in stampTables)
+        {
+            if (!first)
+            {
+                builder.Append("\n    UNION ALL\n");
+            }
+            first = false;
+
+            builder.Append(
+                "    SELECT [DocumentId], [DocumentUuid], [ContentVersion], [IdentityVersion], "
+                    + "[ContentLastModifiedAt], [IdentityLastModifiedAt], [CreatedAt]\n    FROM "
+            );
+            builder.Append($"[{schema}].[{table}]");
+        }
+
+        if (first)
+        {
+            throw new ArgumentException("At least one stamp table must be supplied.", nameof(stampTables));
+        }
+
+        return $"""
+            SELECT
+                root.[DocumentId],
+                root.[DocumentUuid],
+                document.[ResourceKeyId],
+                root.[ContentVersion],
+                root.[IdentityVersion],
+                root.[ContentLastModifiedAt],
+                root.[IdentityLastModifiedAt],
+                root.[CreatedAt]
+            FROM (
+            {builder}
+            ) root
+            INNER JOIN [dms].[Document] document ON document.[DocumentId] = root.[DocumentId]
+            WHERE root.[DocumentUuid] = @documentUuid;
+            """;
+    }
 
     private static string BuildStampQuery(
         IEnumerable<(string Schema, string Table)> stampTables,

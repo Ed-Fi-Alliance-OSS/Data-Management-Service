@@ -395,8 +395,16 @@ public class MssqlChildBindingIdentityPropagationTests
         return await _database.ExecuteScalarAsync<long>(
             """
             SELECT [ContentVersion]
-            FROM [dms].[Document]
-            WHERE [DocumentId] = @documentId;
+            FROM (
+                SELECT [DocumentId], [ContentVersion] FROM [edfi].[BellSchedule]
+                UNION ALL
+                SELECT [DocumentId], [ContentVersion] FROM [edfi].[Section]
+                UNION ALL
+                SELECT [DocumentId], [ContentVersion] FROM [edfi].[ClassPeriod]
+                UNION ALL
+                SELECT [DocumentId], [ContentVersion] FROM [edfi].[School]
+            ) root
+            WHERE root.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId)
         );

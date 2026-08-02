@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -99,11 +99,11 @@ public class Given_A_Postgresql_DescriptorRead_Get_Request
             SchoolTypeDescriptorResource,
             seed
         );
-        var documentRow = await PostgresqlDescriptorReadTestSupport.ReadDocumentRowAsync(
+        var descriptorRow = await PostgresqlDescriptorReadTestSupport.ReadDescriptorStampRowAsync(
             _database,
             documentId
         );
-        var expectedLastModifiedAt = GetRequiredDateTimeOffset(documentRow, "ContentLastModifiedAt");
+        var expectedLastModifiedAt = GetRequiredDateTimeOffset(descriptorRow, "ContentLastModifiedAt");
 
         var result = await ExecuteGetByIdAsync(seed.DocumentUuid, "pg-descriptor-get-external");
 
@@ -260,11 +260,11 @@ public class Given_A_Postgresql_DescriptorRead_Get_Request
             SchoolTypeDescriptorResource,
             seed
         );
-        var documentRow = await PostgresqlDescriptorReadTestSupport.ReadDocumentRowAsync(
+        var descriptorRow = await PostgresqlDescriptorReadTestSupport.ReadDescriptorStampRowAsync(
             _database,
             documentId
         );
-        var expectedLastModifiedAt = GetRequiredDateTimeOffset(documentRow, "ContentLastModifiedAt");
+        var expectedLastModifiedAt = GetRequiredDateTimeOffset(descriptorRow, "ContentLastModifiedAt");
 
         var result = await ExecuteGetByIdAsync(seed.DocumentUuid, "pg-descriptor-get-null-optional");
 

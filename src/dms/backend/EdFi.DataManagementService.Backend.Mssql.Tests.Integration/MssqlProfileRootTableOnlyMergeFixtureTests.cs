@@ -434,6 +434,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
             """
             INSERT INTO [edfi].[ProfileRootOnlyMergeItem] (
                 [DocumentId],
+                [DocumentUuid],
                 [ProfileRootOnlyMergeItemId],
                 [DisplayName],
                 [ProfileScopeClearableText],
@@ -446,6 +447,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @profileRootOnlyMergeItemId,
                 @displayName,
                 @clearableText,
@@ -458,6 +460,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@profileRootOnlyMergeItemId", profileRootOnlyMergeItemId),
             new SqlParameter("@displayName", (object?)displayName ?? DBNull.Value),
             new SqlParameter("@clearableText", (object?)clearableText ?? DBNull.Value),

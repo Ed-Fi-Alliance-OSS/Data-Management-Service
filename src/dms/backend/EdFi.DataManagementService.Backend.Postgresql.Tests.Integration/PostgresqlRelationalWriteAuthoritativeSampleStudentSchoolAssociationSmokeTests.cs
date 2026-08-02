@@ -1106,7 +1106,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var rows = await _database.QueryRowsAsync(
             """
             SELECT "ContentLastModifiedAt"
-            FROM "dms"."Document"
+            FROM "edfi"."StudentSchoolAssociation"
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)

@@ -1078,7 +1078,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             await _database.QueryRowsAsync(
                 """
                 SELECT [DocumentUuid], [ContentVersion], [ContentLastModifiedAt]
-                FROM [dms].[Document]
+                FROM [edfi].[StudentSchoolAssociation]
                 WHERE [DocumentUuid] = @documentUuid;
                 """,
                 new SqlParameter("@documentUuid", documentUuid)

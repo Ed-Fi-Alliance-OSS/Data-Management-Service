@@ -1730,8 +1730,38 @@ public class MssqlReferentialIdentityTests
         cmd.Transaction = transaction;
         cmd.CommandText = """
             SELECT [IdentityVersion], [IdentityLastModifiedAt]
-            FROM [dms].[Document]
-            WHERE [DocumentId] = @documentId;
+            FROM (
+                SELECT [IdentityVersion], [IdentityLastModifiedAt], [DocumentId]
+                FROM [edfi].[DateTimeKeyResource]
+                UNION ALL
+                SELECT [IdentityVersion], [IdentityLastModifiedAt], [DocumentId]
+                FROM [edfi].[DecimalKeyResource]
+                UNION ALL
+                SELECT [IdentityVersion], [IdentityLastModifiedAt], [DocumentId]
+                FROM [edfi].[DecimalRefResource]
+                UNION ALL
+                SELECT [IdentityVersion], [IdentityLastModifiedAt], [DocumentId]
+                FROM [edfi].[EdOrgDependentChildResource]
+                UNION ALL
+                SELECT [IdentityVersion], [IdentityLastModifiedAt], [DocumentId]
+                FROM [edfi].[EdOrgDependentResource]
+                UNION ALL
+                SELECT [IdentityVersion], [IdentityLastModifiedAt], [DocumentId]
+                FROM [edfi].[KeyUnifiedResource]
+                UNION ALL
+                SELECT [IdentityVersion], [IdentityLastModifiedAt], [DocumentId]
+                FROM [edfi].[ResourceA]
+                UNION ALL
+                SELECT [IdentityVersion], [IdentityLastModifiedAt], [DocumentId]
+                FROM [edfi].[ResourceB]
+                UNION ALL
+                SELECT [IdentityVersion], [IdentityLastModifiedAt], [DocumentId]
+                FROM [edfi].[School]
+                UNION ALL
+                SELECT [IdentityVersion], [IdentityLastModifiedAt], [DocumentId]
+                FROM [edfi].[Student]
+            ) root
+            WHERE root.[DocumentId] = @documentId;
             """;
         cmd.Parameters.Add(new SqlParameter("@documentId", documentId));
 

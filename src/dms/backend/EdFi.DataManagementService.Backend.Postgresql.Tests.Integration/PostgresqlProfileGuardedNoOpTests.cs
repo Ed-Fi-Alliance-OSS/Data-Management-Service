@@ -114,6 +114,7 @@ internal static class ProfileGuardedNoOpIntegrationTestSupport
     public static async Task<ProfileGuardedNoOpPersistedState> ReadPersistedStateAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         Guid documentUuid,
+        (string Schema, string Table) shapeRootTable,
         Func<
             PostgresqlGeneratedDdlTestDatabase,
             long,
@@ -121,21 +122,33 @@ internal static class ProfileGuardedNoOpIntegrationTestSupport
         > readRootRowByDocumentId
     ) =>
         await ProfileGuardedNoOpPersistedStateSupport
-            .ReadPersistedStateAsync(database, documentUuid, ReadDocumentRowsAsync, readRootRowByDocumentId)
+            .ReadPersistedStateAsync(
+                database,
+                documentUuid,
+                (db, uuid) => ReadDocumentRowsAsync(db, shapeRootTable, uuid),
+                readRootRowByDocumentId
+            )
             .ConfigureAwait(false);
 
+    /// <summary>
+    /// Reads the document's identity and stamp state. The shape's own resource root row is the stamp
+    /// store, so the read scopes to that table; <c>ResourceKeyId</c> is the one column only
+    /// <c>dms.Document</c> carries and is joined in.
+    /// </summary>
     private static async Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> ReadDocumentRowsAsync(
         PostgresqlGeneratedDdlTestDatabase database,
+        (string Schema, string Table) shapeRootTable,
         Guid documentUuid
     ) =>
         await database
             .QueryRowsAsync(
-                """
-                SELECT "DocumentId", "DocumentUuid", "ResourceKeyId",
-                       "ContentVersion", "ContentLastModifiedAt",
-                       "IdentityVersion", "IdentityLastModifiedAt"
-                FROM "dms"."Document"
-                WHERE "DocumentUuid" = @documentUuid;
+                $"""
+                SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId",
+                       root."ContentVersion", root."ContentLastModifiedAt",
+                       root."IdentityVersion", root."IdentityLastModifiedAt"
+                FROM "{shapeRootTable.Schema}"."{shapeRootTable.Table}" root
+                INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
+                WHERE root."DocumentUuid" = @documentUuid;
                 """,
                 new NpgsqlParameter("documentUuid", documentUuid)
             )
@@ -201,6 +214,12 @@ internal abstract class ProfileGuardedNoOpGeneratedDdlFixtureTestBase
         PostgresqlGeneratedDdlTestDatabase database,
         long documentId
     );
+
+    /// <summary>
+    /// The resource root table this shape writes. The root row owns the document stamps, so the
+    /// state reader has to name it rather than falling back to a table-agnostic lookup.
+    /// </summary>
+    protected abstract (string Schema, string Table) ShapeRootTable { get; }
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -446,6 +465,8 @@ internal abstract class RootOnlyShapeProfileGuardedNoOpFixtureBase
         return await repository.UpsertDocument(upsertRequest);
     }
 
+    protected override (string Schema, string Table) ShapeRootTable => ("edfi", "ProfileRootOnlyMergeItem");
+
     protected override Task<IReadOnlyDictionary<string, object?>> ReadShapeRootRowByDocumentIdAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         long documentId
@@ -569,6 +590,9 @@ internal abstract class SeparateTableShapeProfileGuardedNoOpFixtureBase
         );
     }
 
+    protected override (string Schema, string Table) ShapeRootTable =>
+        ("edfi", "ProfileSeparateTableMergeItem");
+
     protected override async Task<IReadOnlyDictionary<string, object?>> ReadShapeRootRowByDocumentIdAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         long documentId
@@ -690,6 +714,8 @@ internal abstract class CollectionShapeProfileGuardedNoOpFixtureBase
         );
     }
 
+    protected override (string Schema, string Table) ShapeRootTable => ("edfi", "School");
+
     protected override async Task<IReadOnlyDictionary<string, object?>> ReadShapeRootRowByDocumentIdAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         long documentId
@@ -737,6 +763,7 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Root
         _stateBeforeUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
 
@@ -744,6 +771,7 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Root
         _stateAfterUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
     }
@@ -827,6 +855,7 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Post_As_Updat
         _stateBeforePostAsUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             ExistingDocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
 
@@ -835,6 +864,7 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Post_As_Updat
         _stateAfterPostAsUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             ExistingDocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
         _incomingDocumentUuidRowCount = await CountDocumentRowsByUuidAsync(IncomingDocumentUuid.Value);
@@ -937,6 +967,7 @@ internal class Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Put
         _stateBeforeUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
 
@@ -945,6 +976,7 @@ internal class Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Put
         _stateAfterUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
     }
@@ -1026,6 +1058,7 @@ internal class Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Post_As
         _stateBeforePostAsUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             ExistingDocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
 
@@ -1034,6 +1067,7 @@ internal class Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Post_As
         _stateAfterPostAsUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             ExistingDocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
         _incomingDocumentUuidRowCount = await CountDocumentRowsByUuidAsync(IncomingDocumentUuid.Value);
@@ -1121,6 +1155,7 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Sepa
         _stateBeforeUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
         _extRowCountBefore = await PostgresqlProfileSeparateTableMergeSupport.CountExtRowsAsync(
@@ -1134,6 +1169,7 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Sepa
         _stateAfterUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
         _extRowCountAfter = await PostgresqlProfileSeparateTableMergeSupport.CountExtRowsAsync(
@@ -1263,6 +1299,7 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Top_
         _stateBeforeUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
         _addressCountBefore = await PostgresqlProfileTopLevelCollectionMergeSupport.ReadAddressCountAsync(
@@ -1278,6 +1315,7 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Top_
         _stateAfterUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
             DocumentUuid.Value,
+            ShapeRootTable,
             ReadShapeRootRowByDocumentIdAsync
         );
         _addressCountAfter = await PostgresqlProfileTopLevelCollectionMergeSupport.ReadAddressCountAsync(
