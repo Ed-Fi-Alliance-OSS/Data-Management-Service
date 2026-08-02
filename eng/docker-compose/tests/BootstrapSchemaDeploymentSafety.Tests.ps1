@@ -3746,3 +3746,23 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_O
         }
     }
 }
+
+# The isolated fixtures above stage copies of repository scripts and modules under this file's
+# own GUID-named temp workspaces (dms-1151-*), and EXECUTING a staged script imports
+# env-utility (and its siblings) from the staged path - a module-table instance that outlives
+# the deleted workspace. Left loaded, those stale instances break any later suite in the same
+# single-call lane that binds -ModuleName mocks: Pester refuses when multiple same-named
+# modules are loaded. This file owns those workspaces, so it unloads exactly the instances
+# rooted under them - and nothing else: a same-named module anyone else loaded is not this
+# file's to remove.
+AfterAll {
+    $ownStagedPrefix = @(
+        (Join-Path ([System.IO.Path]::GetTempPath()) "dms-1151-")
+    )
+    foreach ($staleModule in @(Get-Module -All)) {
+        $stalePath = [string]$staleModule.Path
+        if ($stalePath -and @($ownStagedPrefix | Where-Object { $stalePath.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
+            $staleModule | Remove-Module -Force -ErrorAction SilentlyContinue
+        }
+    }
+}

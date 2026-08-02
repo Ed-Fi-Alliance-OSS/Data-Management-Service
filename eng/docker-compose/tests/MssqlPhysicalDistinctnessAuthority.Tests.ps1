@@ -11,15 +11,27 @@
 # Every non-ASCII candidate is built from [char] code points so this file stays ASCII-only.
 
 BeforeAll {
-    # Module-table hermeticity, same discipline as the ambient environment variables below: the
-    # boundary Describe's mocks bind with -ModuleName env-utility, and Pester REFUSES to bind
-    # when more than one same-named module is loaded ("Multiple script or manifest modules named
-    # 'env-utility' are currently loaded"). Earlier suites in the single-call CI lane stage
-    # per-test copies of env-utility.psm1 and leave their module-table instances behind after
-    # deleting the staged files (measured: 127 stale instances by this point in the lane), so
-    # this suite removes every instance it can and re-imports the one real module it is about.
-    Get-Module env-utility -All | Remove-Module -Force -ErrorAction SilentlyContinue
     Import-Module "$PSScriptRoot/../env-utility.psm1" -Force
+
+    # Fail-safe module-table precondition - REFUSE, never repair. The boundary Describe's mocks
+    # bind with -ModuleName env-utility, and Pester cannot bind them while more than one
+    # same-named module is loaded. Whoever loaded another env-utility instance owns it - a
+    # caller's own module, or a staging suite's leftover import - so this suite never removes a
+    # module it did not load; it refuses to run and NAMES the foreign instances, attributing
+    # the leak to its source instead of destroying caller state to keep itself green. The
+    # staging suites unload their own staged imports in their own AfterAll; the whole-file
+    # provenance Describe at the bottom of this file proves both halves of this contract.
+    # -All, because that is the resolution the mocks live or die by: Pester refuses on
+    # duplicates found with -All, and a staged wrapper module nests its staged env-utility
+    # import - invisible to a top-level Get-Module, fatal to the mock binding (measured).
+    $script:realModulePath = (Resolve-Path "$PSScriptRoot/../env-utility.psm1").Path
+    $foreignInstances = @(Get-Module -Name env-utility -All | Where-Object {
+            -not [string]::Equals($_.Path, $script:realModulePath, [System.StringComparison]::OrdinalIgnoreCase)
+        })
+    if ($foreignInstances.Count -gt 0) {
+        $foreignList = @($foreignInstances | ForEach-Object { "'$($_.Path)'" }) -join ", "
+        throw "MssqlPhysicalDistinctnessAuthority.Tests.ps1 precondition: additional env-utility module instances are loaded ($foreignList). Pester -ModuleName mocks cannot bind while same-named duplicates exist, and this suite does not remove modules it does not own - unload the extra instances at their source and re-run."
+    }
 
     $script:reservedName = "edfi_configurationservice"
     $script:reviewerName = [char]0x00E9 + "dfi_configurationservice"
@@ -498,5 +510,75 @@ Describe "single SQL-generation authority (mutant M-R7)" {
             $content | Should -Not -Match "CMSTOPOLOGYCAND" -Because $file.Name
             $content | Should -Not -Match ([regex]::Escape("CONVERT(nvarchar(max), 0x")) -Because $file.Name
         }
+    }
+}
+
+Describe "whole-file module-table provenance (post-Invoke-Pester, isolated children)" {
+    # A green in-file assertion proves nothing about what the file leaves in - or takes from -
+    # the caller's module table; only inspecting the session AFTER Invoke-Pester returns does.
+    # Both children exclude this tag, so there is no recursion. Child processes launch via
+    # [Environment]::ProcessPath, never a literal executable name.
+
+    BeforeAll {
+        $script:childWork = Join-Path $TestDrive "module-provenance"
+        New-Item -ItemType Directory -Path $script:childWork -Force | Out-Null
+    }
+
+    It "leaves exactly the one real env-utility instance after an ordinary run" -Tag "WholeFileModuleProvenance" {
+        $childScript = Join-Path $script:childWork "provenance-ordinary.ps1"
+        @(
+            "`$result = Invoke-Pester -Path '$PSCommandPath' -ExcludeTagFilter 'WholeFileModuleProvenance' -Output None -PassThru",
+            "`$instances = @(Get-Module -Name env-utility -All)",
+            "[pscustomobject]@{",
+            "    Failed = `$result.FailedCount; Total = `$result.TotalCount",
+            "    InstanceCount = `$instances.Count",
+            "    InstancePath = @(`$instances | ForEach-Object { `$_.Path }) -join ';'",
+            "} | ConvertTo-Json -Compress"
+        ) -join "`n" | Set-Content -LiteralPath $childScript
+
+        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState.Failed | Should -Be 0
+        $childState.Total | Should -BeGreaterThan 25
+        $childState.InstanceCount | Should -Be 1 -Because "the suite imports the one real module and nothing else survives it"
+        $childState.InstancePath | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../env-utility.psm1"))) -Because "provenance: the surviving instance must be the repository module"
+    }
+
+    It "refuses to run beside a caller-owned same-name module and hands it back untouched" -Tag "WholeFileModuleProvenance" {
+        # The review-measured regression this pins: a suite that deletes every env-utility
+        # instance to make its mocks bindable runs green while destroying a caller-owned
+        # module. The contract is the opposite - with a caller-owned env-utility loaded, the
+        # suite FAILS on its own named precondition (never Pester's raw duplicate-module
+        # error), and the caller's module, its exported command, and its provenance all
+        # survive the complete Pester lifecycle.
+        $childScript = Join-Path $script:childWork "provenance-sentinel.ps1"
+        @(
+            "`$null = New-Module -Name env-utility -ScriptBlock {",
+            "    function Get-EnvUtilityCallerSentinel { 'caller-owned-sentinel' }",
+            "    Export-ModuleMember -Function Get-EnvUtilityCallerSentinel",
+            "} | Import-Module -PassThru",
+            "`$result = Invoke-Pester -Path '$PSCommandPath' -ExcludeTagFilter 'WholeFileModuleProvenance' -Output None -PassThru",
+            "# A root-BeforeAll throw is recorded on the CONTAINER's error record (measured), so the",
+            "# attribution probe reads both the per-test and the container records.",
+            "`$errorText = @(",
+            "    @(`$result.Failed | ForEach-Object { `$_.ErrorRecord } | ForEach-Object { [string]`$_ }) +",
+            "    @(`$result.Containers | ForEach-Object { `$_.ErrorRecord } | ForEach-Object { [string]`$_ })",
+            ") -join ' '",
+            "`$sentinelModule = @(Get-Module -Name env-utility | Where-Object { `$_.ExportedCommands.ContainsKey('Get-EnvUtilityCallerSentinel') })",
+            "`$sentinelCommand = Get-Command Get-EnvUtilityCallerSentinel -ErrorAction SilentlyContinue",
+            "[pscustomobject]@{",
+            "    Failed = `$result.FailedCount",
+            "    PreconditionNamed = `$errorText.Contains('does not remove modules it does not own')",
+            "    SentinelModulePresent = (`$sentinelModule.Count -eq 1)",
+            "    SentinelOutput = if (`$sentinelCommand) { Get-EnvUtilityCallerSentinel } else { 'command-gone' }",
+            "    SentinelProvenance = if (`$sentinelCommand) { [string]`$sentinelCommand.Module.Name } else { 'command-gone' }",
+            "} | ConvertTo-Json -Compress"
+        ) -join "`n" | Set-Content -LiteralPath $childScript
+
+        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState.Failed | Should -BeGreaterThan 0 -Because "the suite must refuse rather than run beside an unbindable duplicate"
+        $childState.PreconditionNamed | Should -BeTrue -Because "the refusal must be this suite's own attributing precondition, not Pester's raw duplicate-module error"
+        $childState.SentinelModulePresent | Should -BeTrue -Because "a caller-owned module is not this suite's to remove"
+        $childState.SentinelOutput | Should -Be 'caller-owned-sentinel'
+        $childState.SentinelProvenance | Should -Be 'env-utility' -Because "the surviving command must still come from the caller's own module"
     }
 }
