@@ -1629,7 +1629,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var rows = await _database.QueryRowsAsync(
             """
             SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
-            FROM "edfi"."School" root
+            FROM "edfi"."StudentAcademicRecord" root
             INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
@@ -3139,7 +3139,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var rows = await _database.QueryRowsAsync(
             """
             SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
-            FROM "edfi"."School" root
+            FROM "edfi"."SchoolYearType" root
             INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
@@ -4276,7 +4276,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var rows = await _database.QueryRowsAsync(
             """
             SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
-            FROM "edfi"."School" root
+            FROM "edfi"."StudentAcademicRecord" root
             INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
