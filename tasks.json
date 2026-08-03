@@ -810,7 +810,7 @@
       "dotnet csharpier format src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit",
       "dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~StartupStatus|FullyQualifiedName~WebApplicationBuilderExtensions|FullyQualifiedName~Configuration\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "administrative-command-runner",
