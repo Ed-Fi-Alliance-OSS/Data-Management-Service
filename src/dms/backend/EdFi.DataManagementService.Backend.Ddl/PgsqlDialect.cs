@@ -319,9 +319,6 @@ public sealed class PgsqlDialect : SqlDialectBase
     public override string JsonColumnType => "jsonb";
 
     /// <inheritdoc />
-    public override string IdentityBigintColumnType => "bigint GENERATED ALWAYS AS IDENTITY";
-
-    /// <inheritdoc />
     public override string CurrentTimestampDefaultExpression => "now()";
 
     /// <inheritdoc />

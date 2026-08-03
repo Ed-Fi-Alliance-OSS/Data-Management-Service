@@ -699,16 +699,17 @@ public sealed class NaturalKeyReferenceResolver : IReferenceResolver
 
         var outcome = GetOutcome(plan);
 
-        // LookupsByReferentialId stays keyed by the Core-computed hash for Phase 3: it is a public
-        // ResolvedReferenceSet member with live consumers. ReferentialIdentityResourceKeyId is the
-        // requested target's own key id, which is exactly what the dms.ReferentialIdentity row carried.
+        // LookupsByReferentialId stays keyed by the Core-computed hash: it is a public
+        // ResolvedReferenceSet member with live consumers, and the key is request-scoped -- nothing
+        // persists a ReferentialId. RequestedTargetResourceKeyId is the key id of the resource the
+        // reference addressed, which differs from ResourceKeyId when that target is abstract.
         var result =
             outcome.DocumentId is { } documentId && outcome.ResourceKeyId is { } resourceKeyId
                 ? new ReferenceLookupResult(
                     ReferentialId: referentialId,
                     DocumentId: documentId,
                     ResourceKeyId: resourceKeyId,
-                    ReferentialIdentityResourceKeyId: GetResourceKeyIdOrThrow(mappingSet, plan.Target),
+                    RequestedTargetResourceKeyId: GetResourceKeyIdOrThrow(mappingSet, plan.Target),
                     IsDescriptor: isDescriptor
                 )
                 : null;

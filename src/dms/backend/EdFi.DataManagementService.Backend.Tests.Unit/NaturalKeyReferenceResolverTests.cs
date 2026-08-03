@@ -322,7 +322,7 @@ public class Given_NaturalKeyReferenceResolver
             .Be(202L);
         result
             .LookupsByReferentialId[aliasReferentialId]
-            .Result!.ReferentialIdentityResourceKeyId.Should()
+            .Result!.RequestedTargetResourceKeyId.Should()
             .Be(30, because: "the requested abstract target's key id is what the alias row carried");
     }
 

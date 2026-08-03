@@ -387,9 +387,6 @@ public sealed class MssqlDialect : SqlDialectBase
     public override string JsonColumnType => "nvarchar(max)";
 
     /// <inheritdoc />
-    public override string IdentityBigintColumnType => "bigint IDENTITY(1,1)";
-
-    /// <inheritdoc />
     public override string CurrentTimestampDefaultExpression => "(sysutcdatetime())";
 
     /// <inheritdoc />

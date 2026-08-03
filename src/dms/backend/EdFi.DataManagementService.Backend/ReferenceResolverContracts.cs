@@ -43,7 +43,7 @@ public sealed record ReferenceResolverRequest(
 /// <param name="ReferentialId">The requested referential id the result is keyed by.</param>
 /// <param name="DocumentId">The matched document id.</param>
 /// <param name="ResourceKeyId">The matched document's own resource key id.</param>
-/// <param name="ReferentialIdentityResourceKeyId">
+/// <param name="RequestedTargetResourceKeyId">
 /// The requested target's resource key id. This may differ from <paramref name="ResourceKeyId" /> when the
 /// reference addresses an abstract resource that a concrete document satisfies.
 /// </param>
@@ -54,7 +54,7 @@ public sealed record ReferenceLookupResult(
     ReferentialId ReferentialId,
     long DocumentId,
     short ResourceKeyId,
-    short ReferentialIdentityResourceKeyId,
+    short RequestedTargetResourceKeyId,
     bool IsDescriptor
 );
 

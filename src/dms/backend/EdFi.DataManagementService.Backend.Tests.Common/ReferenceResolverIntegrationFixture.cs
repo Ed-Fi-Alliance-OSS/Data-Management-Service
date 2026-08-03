@@ -171,28 +171,23 @@ public sealed class ReferenceResolverIntegrationFixture
                 [
                     new ReferenceResolverDocumentSeed(
                         101,
-                        Guid.Parse("10000000-0000-0000-0000-000000000101"),
-                        11
+                        Guid.Parse("10000000-0000-0000-0000-000000000101")
                     ),
                     new ReferenceResolverDocumentSeed(
                         202,
-                        Guid.Parse("20000000-0000-0000-0000-000000000202"),
-                        12
+                        Guid.Parse("20000000-0000-0000-0000-000000000202")
                     ),
                     new ReferenceResolverDocumentSeed(
                         303,
-                        Guid.Parse("30000000-0000-0000-0000-000000000303"),
-                        13
+                        Guid.Parse("30000000-0000-0000-0000-000000000303")
                     ),
                     new ReferenceResolverDocumentSeed(
                         404,
-                        Guid.Parse("40000000-0000-0000-0000-000000000404"),
-                        14
+                        Guid.Parse("40000000-0000-0000-0000-000000000404")
                     ),
                     new ReferenceResolverDocumentSeed(
                         550,
-                        Guid.Parse("55000000-0000-0000-0000-000000000550"),
-                        15
+                        Guid.Parse("55000000-0000-0000-0000-000000000550")
                     ),
                 ],
                 Schools: [new ReferenceResolverSchoolSeed(101, SchoolIdentityValue)],
@@ -978,7 +973,7 @@ public sealed record ReferenceResolverResourceKeySeed(
     bool IsAbstractResource
 );
 
-public sealed record ReferenceResolverDocumentSeed(long DocumentId, Guid DocumentUuid, short ResourceKeyId);
+public sealed record ReferenceResolverDocumentSeed(long DocumentId, Guid DocumentUuid);
 
 public sealed record ReferenceResolverSchoolSeed(long DocumentId, long SchoolId);
 

@@ -283,13 +283,6 @@ public interface ISqlDialect
     string JsonColumnType { get; }
 
     /// <summary>
-    /// Gets the dialect's identity bigint column type declaration.
-    /// PostgreSQL: <c>bigint GENERATED ALWAYS AS IDENTITY</c>.
-    /// SQL Server: <c>bigint IDENTITY(1,1)</c>.
-    /// </summary>
-    string IdentityBigintColumnType { get; }
-
-    /// <summary>
     /// Gets the dialect's DEFAULT expression for the current UTC timestamp.
     /// PostgreSQL: <c>now()</c>. SQL Server: <c>(sysutcdatetime())</c>.
     /// </summary>

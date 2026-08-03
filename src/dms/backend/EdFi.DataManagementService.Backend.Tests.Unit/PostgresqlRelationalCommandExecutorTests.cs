@@ -136,7 +136,7 @@ public class Given_PostgresqlRelationalCommandExecutor
             Guid ReferentialId,
             long DocumentId,
             short ResourceKeyId,
-            short ReferentialIdentityResourceKeyId,
+            short RequestedTargetResourceKeyId,
             bool IsDescriptor
         )[] rows
     )
@@ -145,7 +145,7 @@ public class Given_PostgresqlRelationalCommandExecutor
         table.Columns.Add("ReferentialId", typeof(Guid));
         table.Columns.Add("DocumentId", typeof(long));
         table.Columns.Add("ResourceKeyId", typeof(short));
-        table.Columns.Add("ReferentialIdentityResourceKeyId", typeof(short));
+        table.Columns.Add("RequestedTargetResourceKeyId", typeof(short));
         table.Columns.Add("IsDescriptor", typeof(bool));
 
         foreach (var row in rows)
@@ -154,7 +154,7 @@ public class Given_PostgresqlRelationalCommandExecutor
                 row.ReferentialId,
                 row.DocumentId,
                 row.ResourceKeyId,
-                row.ReferentialIdentityResourceKeyId,
+                row.RequestedTargetResourceKeyId,
                 row.IsDescriptor
             );
         }
@@ -181,8 +181,8 @@ public class Given_PostgresqlRelationalCommandExecutor
                     ReferentialId: new ReferentialId(reader.GetRequiredFieldValue<Guid>("ReferentialId")),
                     DocumentId: reader.GetRequiredFieldValue<long>("DocumentId"),
                     ResourceKeyId: reader.GetRequiredFieldValue<short>("ResourceKeyId"),
-                    ReferentialIdentityResourceKeyId: reader.GetRequiredFieldValue<short>(
-                        "ReferentialIdentityResourceKeyId"
+                    RequestedTargetResourceKeyId: reader.GetRequiredFieldValue<short>(
+                        "RequestedTargetResourceKeyId"
                     ),
                     IsDescriptor: reader.GetRequiredFieldValue<bool>("IsDescriptor")
                 )
