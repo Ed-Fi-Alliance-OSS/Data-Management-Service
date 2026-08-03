@@ -718,13 +718,46 @@ public sealed class DocumentCacheProjectionSupervisor(
         await RefreshAsync(DocumentCacheTargetRefreshReason.Startup, stoppingToken).ConfigureAwait(false);
         await RunReadyTargetsUntilIdleAsync(stoppingToken).ConfigureAwait(false);
 
-        using PeriodicTimer timer = new(options.Value.Projector.PollInterval, timeProvider);
-        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
+        TimeSpan pollInterval = options.Value.Projector.PollInterval;
+        DateTimeOffset nextPollTickAt = timeProvider.GetUtcNow() + pollInterval;
+        while (true)
         {
-            await RefreshAsync(DocumentCacheTargetRefreshReason.SupervisorTriggered, stoppingToken)
-                .ConfigureAwait(false);
+            DateTimeOffset now = timeProvider.GetUtcNow();
+            DateTimeOffset nextWakeAt = GetNextSupervisorWakeAt(now, nextPollTickAt);
+            TimeSpan waitDuration = nextWakeAt > now ? nextWakeAt - now : TimeSpan.Zero;
+            if (waitDuration > TimeSpan.Zero)
+            {
+                await Task.Delay(waitDuration, timeProvider, stoppingToken).ConfigureAwait(false);
+            }
+
+            DateTimeOffset wakeObservedAt = timeProvider.GetUtcNow();
+            if (wakeObservedAt >= nextPollTickAt)
+            {
+                await RefreshAsync(DocumentCacheTargetRefreshReason.SupervisorTriggered, stoppingToken)
+                    .ConfigureAwait(false);
+                nextPollTickAt = timeProvider.GetUtcNow() + pollInterval;
+            }
+
             await RunReadyTargetsUntilIdleAsync(stoppingToken).ConfigureAwait(false);
         }
+    }
+
+    private DateTimeOffset GetNextSupervisorWakeAt(DateTimeOffset now, DateTimeOffset nextPollTickAt)
+    {
+        DateTimeOffset? nextSchedulingWakeAt = CurrentTargetContexts
+            .Select(context =>
+                context.SchedulingState.GetNextSchedulingWakeAt(
+                    now,
+                    context.CancellationRequested,
+                    context.DrainExecutor
+                )
+            )
+            .Where(wakeAt => wakeAt is not null)
+            .Min();
+
+        return nextSchedulingWakeAt is not null && nextSchedulingWakeAt < nextPollTickAt
+            ? nextSchedulingWakeAt.Value
+            : nextPollTickAt;
     }
 
     private async Task RunReadyTargetsUntilIdleAsync(CancellationToken stoppingToken)

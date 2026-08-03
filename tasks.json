@@ -845,7 +845,7 @@
       "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionSupervisor|FullyQualifiedName~DocumentCacheProjectionScheduler|FullyQualifiedName~DocumentCacheProjectionFailureBackoff\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "baseline-seeding",

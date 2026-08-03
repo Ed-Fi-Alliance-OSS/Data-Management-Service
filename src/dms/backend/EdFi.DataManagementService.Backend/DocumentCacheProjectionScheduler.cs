@@ -682,6 +682,45 @@ public sealed class DocumentCacheProjectionTargetSchedulingState
         }
     }
 
+    public DateTimeOffset? GetNextSchedulingWakeAt(
+        DateTimeOffset now,
+        bool cancellationRequested,
+        DocumentCacheProjectionTargetDrainExecutor drainExecutor
+    )
+    {
+        ArgumentNullException.ThrowIfNull(drainExecutor);
+
+        if (cancellationRequested || drainExecutor.IsOwned)
+        {
+            return null;
+        }
+
+        lock (_sync)
+        {
+            if (_targetPaused || _lifecycleFencePaused)
+            {
+                return null;
+            }
+
+            DateTimeOffset? wakeAt = null;
+            if (TargetBackoffUntil is not null)
+            {
+                wakeAt = TargetBackoffUntil > now ? TargetBackoffUntil : now;
+            }
+
+            if (PollSleepUntil is not null)
+            {
+                DateTimeOffset pollSleepWakeAt = PollSleepUntil > now ? PollSleepUntil.Value : now;
+                if (wakeAt is null || pollSleepWakeAt < wakeAt)
+                {
+                    wakeAt = pollSleepWakeAt;
+                }
+            }
+
+            return wakeAt;
+        }
+    }
+
     public void RecordOrdinaryDrainStarted(DateTimeOffset startedAt)
     {
         lock (_sync)

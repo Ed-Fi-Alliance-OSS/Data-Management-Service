@@ -45,6 +45,12 @@ public class Given_DocumentCacheProjectionSupervisor
         "Enqueue trigger satisfied."
     );
 
+    public enum SchedulerWakeKind
+    {
+        PollSleep,
+        TargetBackoff,
+    }
+
     [Test]
     public async Task It_starts_no_projection_workers_when_no_targets_are_configured()
     {
@@ -599,12 +605,105 @@ public class Given_DocumentCacheProjectionSupervisor
         }
     }
 
+    [TestCase(SchedulerWakeKind.PollSleep)]
+    [TestCase(SchedulerWakeKind.TargetBackoff)]
+    [NonParallelizable]
+    public async Task It_dispatches_again_when_a_scheduler_deadline_arrives_before_the_next_poll_tick(
+        SchedulerWakeKind wakeKind
+    )
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            DocumentCacheTargetKey.Create("TenantA", 7),
+            generation: 1
+        );
+        RecordingObservationSink observationSink = new();
+        RecordingTargetContextFactory targetContextFactory = new(observationSink);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(executionContext)]),
+            RuntimeSnapshot([executionContext])
+        );
+        ControlledTimeProvider timeProvider = new(ObservedAt);
+        RecordingProjectionScheduler scheduler = new(
+            contexts =>
+            {
+                DateTimeOffset wakeAt = timeProvider.GetUtcNow().AddSeconds(2);
+                foreach (DocumentCacheProjectionTargetRuntimeContext context in contexts)
+                {
+                    if (wakeKind == SchedulerWakeKind.PollSleep)
+                    {
+                        context.SchedulingState.SetPollSleepUntil(wakeAt);
+                    }
+                    else
+                    {
+                        context.SchedulingState.SetTargetBackoffUntil(wakeAt);
+                    }
+                }
+
+                return [];
+            },
+            contexts =>
+            {
+                foreach (DocumentCacheProjectionTargetRuntimeContext context in contexts)
+                {
+                    context.SchedulingState.GetReadinessBlock(
+                        timeProvider.GetUtcNow(),
+                        context.CancellationRequested,
+                        context.DrainExecutor
+                    );
+                }
+
+                return [];
+            }
+        );
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationSink,
+            OptionsFor([executionContext.TargetKey]),
+            scheduler,
+            timeProvider
+        );
+
+        try
+        {
+            await supervisor.StartAsync(CancellationToken.None);
+            await scheduler.WaitForCallCountAsync(1);
+
+            DocumentCacheProjectionTargetRuntimeContext runtimeContext = targetContextFactory
+                .CreatedContexts.Should()
+                .ContainSingle()
+                .Subject;
+            scheduler.CallBatches.Should().ContainSingle().Which.Should().Equal(runtimeContext.ContextKey);
+            runtimeContext
+                .SchedulingState.GetNextSchedulingWakeAt(
+                    timeProvider.GetUtcNow(),
+                    runtimeContext.CancellationRequested,
+                    runtimeContext.DrainExecutor
+                )
+                .Should()
+                .Be(ObservedAt.AddSeconds(2));
+
+            await timeProvider.WaitForTimerCountAsync(1);
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
+            await scheduler.WaitForCallCountAsync(2);
+
+            scheduler.CallBatches.Should().HaveCount(2);
+            registry.RefreshReasons.Should().Equal(DocumentCacheTargetRefreshReason.Startup);
+        }
+        finally
+        {
+            await supervisor.StopAsync(CancellationToken.None);
+        }
+    }
+
     private static DocumentCacheProjectionSupervisor CreateSupervisor(
         IDocumentCacheTargetRegistry registry,
         IDocumentCacheProjectionTargetRuntimeContextFactory targetContextFactory,
         IDocumentCacheProjectionObservationSink observationSink,
         IOptions<DocumentCacheOptions> options,
-        IDocumentCacheProjectionScheduler? scheduler = null
+        IDocumentCacheProjectionScheduler? scheduler = null,
+        TimeProvider? timeProvider = null
     ) =>
         new(
             registry,
@@ -613,7 +712,7 @@ public class Given_DocumentCacheProjectionSupervisor
             options,
             scheduler ?? new NoOpDocumentCacheProjectionScheduler(),
             new StubDocumentCacheLifecycleReader(),
-            new FixedTimeProvider(ObservedAt),
+            timeProvider ?? new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheProjectionSupervisor>.Instance
         );
 
@@ -1256,5 +1355,237 @@ public class Given_DocumentCacheProjectionSupervisor
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private sealed class ControlledTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        private readonly object _sync = new();
+        private readonly List<ControlledTimer> _timers = [];
+        private readonly List<TimerWaiter> _timerWaiters = [];
+        private DateTimeOffset _utcNow = utcNow;
+        private int _createdTimerCount;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            lock (_sync)
+            {
+                return _utcNow;
+            }
+        }
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period
+        )
+        {
+            ArgumentNullException.ThrowIfNull(callback);
+
+            ControlledTimer timer = new(this, callback, state, dueTime, period);
+            ImmutableArray<TimerCallbackRegistration> dueCallbacks;
+            lock (_sync)
+            {
+                _timers.Add(timer);
+                _createdTimerCount++;
+                CompleteTimerWaitersNoLock();
+                dueCallbacks = CollectDueCallbacksNoLock();
+            }
+
+            QueueCallbacks(dueCallbacks);
+            return timer;
+        }
+
+        public void Advance(TimeSpan delay)
+        {
+            if (delay < TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(delay), "Delay must be nonnegative.");
+            }
+
+            ImmutableArray<TimerCallbackRegistration> dueCallbacks;
+            lock (_sync)
+            {
+                _utcNow += delay;
+                dueCallbacks = CollectDueCallbacksNoLock();
+            }
+
+            QueueCallbacks(dueCallbacks);
+        }
+
+        public Task WaitForTimerCountAsync(int count)
+        {
+            if (count <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(count), "Timer count must be positive.");
+            }
+
+            lock (_sync)
+            {
+                if (_createdTimerCount >= count)
+                {
+                    return Task.CompletedTask;
+                }
+
+                TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                _timerWaiters.Add(new TimerWaiter(count, completion));
+                return completion.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+
+        private ImmutableArray<TimerCallbackRegistration> CollectDueCallbacksNoLock()
+        {
+            ImmutableArray<TimerCallbackRegistration>.Builder callbacks =
+                ImmutableArray.CreateBuilder<TimerCallbackRegistration>();
+
+            foreach (ControlledTimer timer in _timers.ToArray())
+            {
+                if (!timer.TryConsumeDueNoLock(_utcNow, out TimerCallbackRegistration? callback))
+                {
+                    continue;
+                }
+
+                callbacks.Add(callback);
+                if (timer.IsDisposedNoLock)
+                {
+                    _timers.Remove(timer);
+                }
+            }
+
+            return callbacks.ToImmutable();
+        }
+
+        private void CompleteTimerWaitersNoLock()
+        {
+            foreach (
+                TimerWaiter waiter in _timerWaiters
+                    .Where(waiter => _createdTimerCount >= waiter.Count)
+                    .ToArray()
+            )
+            {
+                waiter.Completion.SetResult();
+                _timerWaiters.Remove(waiter);
+            }
+        }
+
+        private static void QueueCallbacks(ImmutableArray<TimerCallbackRegistration> callbacks)
+        {
+            foreach (TimerCallbackRegistration callback in callbacks)
+            {
+                ThreadPool.QueueUserWorkItem(
+                    static state =>
+                    {
+                        TimerCallbackRegistration registration = (TimerCallbackRegistration)state!;
+                        registration.Callback(registration.State);
+                    },
+                    callback
+                );
+            }
+        }
+
+        private sealed class ControlledTimer(
+            ControlledTimeProvider timeProvider,
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period
+        ) : ITimer
+        {
+            private DateTimeOffset? _dueAt = CalculateDueAtNoLock(timeProvider, dueTime);
+            private TimeSpan _period = RequireValidPeriod(period);
+            private bool _disposed;
+
+            public bool IsDisposedNoLock => _disposed;
+
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                ImmutableArray<TimerCallbackRegistration> dueCallbacks;
+                lock (timeProvider._sync)
+                {
+                    if (_disposed)
+                    {
+                        return false;
+                    }
+
+                    _dueAt = CalculateDueAtNoLock(timeProvider, dueTime);
+                    _period = RequireValidPeriod(period);
+                    dueCallbacks = timeProvider.CollectDueCallbacksNoLock();
+                }
+
+                QueueCallbacks(dueCallbacks);
+                return true;
+            }
+
+            public bool TryConsumeDueNoLock(
+                DateTimeOffset now,
+                out TimerCallbackRegistration callbackRegistration
+            )
+            {
+                callbackRegistration = null!;
+                if (_disposed || _dueAt is null || _dueAt > now)
+                {
+                    return false;
+                }
+
+                callbackRegistration = new TimerCallbackRegistration(callback, state);
+                if (_period > TimeSpan.Zero)
+                {
+                    _dueAt = now + _period;
+                }
+                else
+                {
+                    _disposed = true;
+                }
+
+                return true;
+            }
+
+            public void Dispose()
+            {
+                lock (timeProvider._sync)
+                {
+                    _disposed = true;
+                    timeProvider._timers.Remove(this);
+                }
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+
+            private static DateTimeOffset? CalculateDueAtNoLock(
+                ControlledTimeProvider timeProvider,
+                TimeSpan dueTime
+            )
+            {
+                if (dueTime == Timeout.InfiniteTimeSpan)
+                {
+                    return null;
+                }
+
+                if (dueTime < TimeSpan.Zero)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(dueTime), "Due time must be nonnegative.");
+                }
+
+                return timeProvider._utcNow + dueTime;
+            }
+
+            private static TimeSpan RequireValidPeriod(TimeSpan period)
+            {
+                if (period < TimeSpan.Zero && period != Timeout.InfiniteTimeSpan)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(period), "Period must be nonnegative.");
+                }
+
+                return period;
+            }
+        }
+
+        private sealed record TimerCallbackRegistration(TimerCallback Callback, object? State);
+
+        private sealed record TimerWaiter(int Count, TaskCompletionSource Completion);
     }
 }
