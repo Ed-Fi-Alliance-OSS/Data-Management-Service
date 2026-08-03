@@ -711,59 +711,32 @@ function Get-LocalComposeDatabaseHostSideEndpoint {
     }
 }
 
-function Test-PortNumberEquivalent {
+function Test-LocalComposeLoopbackHostSpelling {
     <#
     .SYNOPSIS
-    True when two port spellings denote the same TCP port under the providers' own parsing rules.
+    True when a host spelling denotes the loopback address the Compose database services publish on.
+    ENGINE-NEUTRAL: the one rule both the PostgreSQL and SQL Server classification paths use.
 
     .DESCRIPTION
-    NumberStyles::Integer, invariant culture, and a 1-65535 range check - the settled rules from the
-    padded/signed-port correction, extracted so every candidate endpoint is compared the same way.
-    Anything that is not a port on either side is never claimed equivalent.
-    #>
-    param(
-        [string]
-        $Left,
+    Shared on purpose. This rule was PostgreSQL-only, so the same spelling that made a PostgreSQL target
+    local left the identical SQL Server target looking external - 'Server=127.1,<MSSQL_PORT>' reached the
+    local Compose server while the separate-topology guard was skipped. One rule for both engines is what
+    stops the two paths diverging again.
 
-        [string]
-        $Right
-    )
+    Recognized, all deterministic transformations of the known Compose endpoint:
 
-    [int]$leftNumber = 0
-    [int]$rightNumber = 0
+      - 'localhost', case-insensitively.
+      - The absolute DNS spelling 'localhost.', case-insensitively. One trailing dot is the root-label
+        marker, so it names the same host (measured: it resolves to 127.0.0.1).
+      - IPv4 text that canonicalizes EXACTLY to 127.0.0.1, which is what recognizes the short forms the
+        runtime accepts, such as 127.1.
 
-    return (
-        [int]::TryParse(
-            ([string]$Left).Trim(),
-            [System.Globalization.NumberStyles]::Integer,
-            [System.Globalization.CultureInfo]::InvariantCulture,
-            [ref]$leftNumber) -and
-        [int]::TryParse(
-            ([string]$Right).Trim(),
-            [System.Globalization.NumberStyles]::Integer,
-            [System.Globalization.CultureInfo]::InvariantCulture,
-            [ref]$rightNumber) -and
-        $leftNumber -ge 1 -and $leftNumber -le 65535 -and
-        $rightNumber -ge 1 -and $rightNumber -le 65535 -and
-        $leftNumber -eq $rightNumber
-    )
-}
+    Deliberately NOT IPAddress.IsLoopback: that predicate is true for the whole 127/8 block, but these
+    services bind specifically to 127.0.0.1, so 127.0.0.2 is a different listener and must stay external
+    (measured: IsLoopback('127.0.0.2') is true, exactly the over-broad answer this avoids).
 
-function Test-PostgresLocalComposeHostSpelling {
-    <#
-    .SYNOPSIS
-    True when a PostgreSQL host spelling denotes the loopback address the Compose database service
-    publishes on.
-
-    .DESCRIPTION
-    'localhost' case-insensitively, or IPv4 text that canonicalizes EXACTLY to 127.0.0.1 - which is what
-    recognizes the short forms the runtime accepts, such as 127.1.
-
-    Deliberately NOT IPAddress.IsLoopback: that predicate is true for the whole 127/8 block, but only
-    127.0.0.1 is the address postgresql.yml publishes on, so 127.0.0.2 is a different listener and must
-    stay external (measured: IsLoopback('127.0.0.2') is true, which is exactly the over-broad answer this
-    avoids). Comparing the canonical form rather than a list of literal spellings is what makes the rule
-    deterministic without resolving DNS or attempting a connection.
+    No DNS resolution, no connection attempt, no new authority - only deterministic spellings of an
+    endpoint this environment already defines.
     #>
     param(
         [string]
@@ -773,6 +746,14 @@ function Test-PostgresLocalComposeHostSpelling {
     $text = ([string]$HostName).Trim()
     if ([string]::IsNullOrEmpty($text)) {
         return $false
+    }
+
+    # One trailing dot marks an absolute (rooted) DNS name and does not change which host it names.
+    if ($text.EndsWith(".", [System.StringComparison]::Ordinal)) {
+        $text = $text.Substring(0, $text.Length - 1).Trim()
+        if ([string]::IsNullOrEmpty($text)) {
+            return $false
+        }
     }
 
     if ([string]::Equals($text, "localhost", [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -785,53 +766,6 @@ function Test-PostgresLocalComposeHostSpelling {
     }
 
     return [string]::Equals($address.ToString(), "127.0.0.1", [System.StringComparison]::Ordinal)
-}
-
-function Get-PostgresHostCandidateEndpoint {
-    <#
-    .SYNOPSIS
-    Expands an Npgsql Host value into the endpoints it can actually connect to: the documented
-    comma-separated host list, each entry optionally carrying its own "host:port".
-
-    .DESCRIPTION
-    Npgsql supports an ordered multi-host list with failover and load balancing
-    (npgsql.org/doc/failover-and-load-balancing.html), so the value is not one scalar hostname. An entry
-    without its own port uses the standalone Port value, which is the global default for the list.
-
-    A trailing ":<port>" is only taken as a port when the suffix really is one, so a host spelling that
-    merely contains a colon is left whole rather than split into a bogus host and port.
-    #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the collection of candidate endpoints in the host list; the singular noun names one element of the return shape.')]
-    param(
-        [string]
-        $HostValue,
-
-        [string]
-        $DefaultPort
-    )
-
-    return @(
-        foreach ($entry in ([string]$HostValue).Split(',')) {
-            $text = $entry.Trim()
-            if ([string]::IsNullOrEmpty($text)) { continue }
-
-            $separatorIndex = $text.LastIndexOf(':')
-            $suffix = if ($separatorIndex -gt 0) { $text.Substring($separatorIndex + 1).Trim() } else { "" }
-
-            if ($separatorIndex -gt 0 -and (Test-PortNumberEquivalent -Left $suffix -Right $suffix)) {
-                [pscustomobject]@{
-                    HostName = $text.Substring(0, $separatorIndex).Trim()
-                    Port = $suffix
-                }
-            }
-            else {
-                [pscustomobject]@{
-                    HostName = $text
-                    Port = $DefaultPort
-                }
-            }
-        }
-    )
 }
 
 function Test-ProvisionTargetIsLocalComposeDatabase {
@@ -882,13 +816,12 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
         # SQL Server carries host and port in one value ("host,port") and may carry a "tcp:" protocol
         # prefix; Split-MssqlServerEndpoint yields the host part alone from either spelling, so
         # "tcp:localhost,<port>" is recognized as the same server "localhost,<port>" is rather than read
-        # as a hostname of its own. One endpoint per target here - SqlClient's failover partner is a
-        # separate keyword this phase does not interpret - and the literal loopback spellings are
-        # unchanged.
+        # as a hostname of its own. One endpoint per target - SqlClient's failover partner is a separate
+        # keyword this phase does not interpret - judged by the SAME loopback rule PostgreSQL uses, so a
+        # spelling like 127.1 or localhost. cannot be local on one engine and external on the other.
         $targetHostName = (Split-MssqlServerEndpoint -DataSource $Target.Host).HostName
-        $isLoopbackHost = @("localhost", "127.0.0.1") -contains $targetHostName.ToLowerInvariant()
 
-        return ($isLoopbackHost -and
+        return ((Test-LocalComposeLoopbackHostSpelling -HostName $targetHostName) -and
             (Test-PortNumberEquivalent -Left $Target.Port -Right $localEndpoint.Port))
     }
 
@@ -900,7 +833,7 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
     # separate-topology guard before it ever compared the database name, leaving DMS DDL free to land in
     # the local Configuration Service database.
     foreach ($candidate in (Get-PostgresHostCandidateEndpoint -HostValue $Target.Host -DefaultPort ([string]$Target.Port))) {
-        if ((Test-PostgresLocalComposeHostSpelling -HostName $candidate.HostName) -and
+        if ((Test-LocalComposeLoopbackHostSpelling -HostName $candidate.Host) -and
             (Test-PortNumberEquivalent -Left $candidate.Port -Right $localEndpoint.Port)) {
             return $true
         }

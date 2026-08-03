@@ -3600,28 +3600,11 @@ function Confirm-CmsDatabaseTopologyAgreement {
         # An omitted port still defaults to the engine's expected one, exactly as before.
         $actualPort = if ([string]::IsNullOrWhiteSpace($actualEndpoint.Port)) { $expectedPort } else { $actualEndpoint.Port }
 
-        # Ports compare NUMERICALLY, by the providers' own parsing rules: Npgsql resolves '05432' and
-        # '+5432' to port 5432, so an Ordinal text comparison rejected a CMS connection string that names
-        # exactly the composed service on exactly the right port. Invariant NumberStyles::Integer with a
-        # 1-65535 range check, so a value that is not a port - and a genuinely different port - still
-        # fails, as does anything outside the range.
-        [int]$actualPortNumber = 0
-        [int]$expectedPortNumber = 0
-        $portIsAccepted =
-            [int]::TryParse(
-                ([string]$actualPort).Trim(),
-                [System.Globalization.NumberStyles]::Integer,
-                [System.Globalization.CultureInfo]::InvariantCulture,
-                [ref]$actualPortNumber) -and
-            [int]::TryParse(
-                ([string]$expectedPort).Trim(),
-                [System.Globalization.NumberStyles]::Integer,
-                [System.Globalization.CultureInfo]::InvariantCulture,
-                [ref]$expectedPortNumber) -and
-            $actualPortNumber -ge 1 -and $actualPortNumber -le 65535 -and
-            $expectedPortNumber -ge 1 -and $expectedPortNumber -le 65535 -and
-            $actualPortNumber -eq $expectedPortNumber
-        if (-not $portIsAccepted) {
+        # Ports compare NUMERICALLY through the one shared comparer, so this boundary cannot drift into
+        # its own reading: Npgsql resolves '05432' and '+5432' to port 5432, and an Ordinal text
+        # comparison rejected a CMS connection string naming exactly the composed service on exactly the
+        # right port. A value that is not a port, and a genuinely different port, still fail.
+        if (-not (Test-PortNumberEquivalent -Left $actualPort -Right $expectedPort)) {
             throw "CMS database topology mismatch: DMS_CONFIG_DATABASE_CONNECTION_STRING targets port '$actualPort', but the effective topology contract requires '$expectedPort'."
         }
     }

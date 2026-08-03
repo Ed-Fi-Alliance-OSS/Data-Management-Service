@@ -727,6 +727,99 @@ function Get-DatabaseNameFromResolvedConnectionString {
     }
 }
 
+function Test-PortNumberEquivalent {
+    <#
+    .SYNOPSIS
+        True when two port spellings denote the same TCP port under the providers' own parsing rules.
+
+    .DESCRIPTION
+        The single interpretation both endpoint boundaries use - the provisioning phase's local-target
+        classification and the CMS pre-start endpoint agreement - so neither can drift into its own
+        reading of a port. Invariant NumberStyles::Integer (a leading sign and surrounding whitespace,
+        but no thousands separator and no decimal point, both of which Npgsql rejects outright) plus a
+        1-65535 range check, so '05432', '+5432' and '5432' are the same port while anything that is not
+        a port is never claimed equivalent to one.
+    #>
+    param(
+        [string]$Left,
+        [string]$Right
+    )
+
+    [int]$leftNumber = 0
+    [int]$rightNumber = 0
+
+    return (
+        [int]::TryParse(
+            ([string]$Left).Trim(),
+            [System.Globalization.NumberStyles]::Integer,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [ref]$leftNumber) -and
+        [int]::TryParse(
+            ([string]$Right).Trim(),
+            [System.Globalization.NumberStyles]::Integer,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [ref]$rightNumber) -and
+        $leftNumber -ge 1 -and $leftNumber -le 65535 -and
+        $rightNumber -ge 1 -and $rightNumber -le 65535 -and
+        $leftNumber -eq $rightNumber
+    )
+}
+
+function Get-PostgresHostCandidateEndpoint {
+    <#
+    .SYNOPSIS
+        Expands an Npgsql Host value into the endpoints it can actually connect to: the documented
+        comma-separated candidate list, each entry optionally carrying its own "host:port".
+
+    .DESCRIPTION
+        The ONE parser for this grammar, shared by every caller that has to reason about a PostgreSQL
+        Host value, so the provisioning classifier and the CMS endpoint validator cannot drift into
+        different readings of the same string again.
+
+        Npgsql's Host is not a scalar hostname: it supports an ordered comma-separated host list with
+        failover and load balancing (npgsql.org/doc/failover-and-load-balancing.html). An entry without
+        its own port uses the standalone Port value, which is the list's global default; when that is
+        absent too the port is reported as $null and the caller applies its own default.
+
+        A trailing ":<port>" is only taken as a port when the suffix really is one, so a host spelling
+        that merely contains a colon is left whole rather than split into a bogus host and port.
+
+        Note what this does NOT decide: whether a candidate is acceptable. The provisioning classifier
+        asks whether ANY candidate is the local Compose endpoint (a local member anywhere means the
+        reserved-database guard must run); CMS validation requires EVERY candidate to be the composed
+        service (Npgsql may fail over to any member, so one external member is a real misconfiguration).
+        Same grammar, deliberately opposite quantifiers.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the collection of candidate endpoints in the host list; the singular noun names one element of the return shape.')]
+    param(
+        [string]$HostValue,
+        [string]$DefaultPort
+    )
+
+    return @(
+        foreach ($entry in ([string]$HostValue).Split(',')) {
+            $text = $entry.Trim()
+            if ([string]::IsNullOrEmpty($text)) { continue }
+
+            $separatorIndex = $text.LastIndexOf(':')
+            $suffix = if ($separatorIndex -gt 0) { $text.Substring($separatorIndex + 1).Trim() } else { "" }
+
+            if ($separatorIndex -gt 0 -and (Test-PortNumberEquivalent -Left $suffix -Right $suffix)) {
+                [pscustomobject]@{
+                    Host = $text.Substring(0, $separatorIndex).Trim()
+                    Port = $suffix
+                }
+            }
+            else {
+                [pscustomobject]@{
+                    Host = $text
+                    Port = $DefaultPort
+                }
+            }
+        }
+    )
+}
+
 function Get-EndpointFromResolvedConnectionString {
     <#
     .SYNOPSIS
@@ -744,16 +837,22 @@ function Get-EndpointFromResolvedConnectionString {
         valid endpoint under the other engine's rules - the runtime ADO.NET provider would reject it
         too.
 
-        Port parsing is also engine-specific, not applied uniformly (Round 9 Blocker 2): MSSQL's
-        Server=host,port compound is real SqlClient syntax, but Npgsql has no such compound - a comma
-        in a PostgreSQL Host= value is just part of the (almost certainly invalid) host string, never a
-        port separator, so it is never split there. Conversely, PostgreSQL's own connection-string
-        shape (see local-config.yml / published-config.yml's checked-in nested fallback) carries port
-        as a standalone "port" key that SqlClient does not support as a keyword at all, so it is only
-        honored for PostgreSQL, never for MSSQL. Splitting the comma-compound for PostgreSQL would
-        silently hide an explicit standalone Port= key behind whatever port a coincidental comma in the
-        host value produced; honoring a standalone Port= for MSSQL would accept a keyword the real
-        runtime provider does not recognize.
+        Port parsing is also engine-specific, because the two grammars genuinely differ:
+
+          - MSSQL encodes host and port together in one "host,port" value (optionally behind a "tcp:"
+            protocol prefix), and does not recognize a standalone Port keyword at all, so honoring one
+            there would accept a keyword the real provider rejects. One endpoint per host key.
+          - PostgreSQL carries port as a standalone Port key AND accepts a comma-separated candidate
+            list whose entries may each carry their own "host:port"
+            (npgsql.org/doc/failover-and-load-balancing.html). So a comma there is a candidate
+            separator, not part of one hostname: the list is expanded through
+            Get-PostgresHostCandidateEndpoint, giving one reported endpoint per candidate.
+
+        An earlier revision of this function treated a comma-bearing PostgreSQL Host as a single
+        malformed hostname. That was wrong about the provider - the syntax is valid and documented - and
+        it made a correctly configured multi-host CMS connection string unvalidatable. The concern behind
+        it was real, though, and is preserved by the expansion: a candidate without its own port takes
+        the standalone Port, so an explicit Port= can never be hidden behind a coincidental comma.
 
     .PARAMETER ConnectionString
         An already Compose-precedence-resolved connection string.
@@ -822,10 +921,10 @@ function Get-EndpointFromResolvedConnectionString {
                         }
                     }
                     else {
-                        [pscustomobject]@{
-                            Host = $value.Trim()
-                            Port = $standalonePort
-                        }
+                        # One reported endpoint per Npgsql candidate. A single-host value yields exactly
+                        # one, so existing behavior is unchanged; a list yields one per member, each
+                        # carrying its own port or the standalone one.
+                        Get-PostgresHostCandidateEndpoint -HostValue $value -DefaultPort $standalonePort
                     }
                 }
             }
@@ -1092,6 +1191,8 @@ Export-ModuleMember -Function `
     Get-DatabaseNameFromConnectionString, `
     Get-DatabaseNameFromResolvedConnectionString, `
     Get-EndpointFromResolvedConnectionString, `
+    Get-PostgresHostCandidateEndpoint, `
+    Test-PortNumberEquivalent, `
     Get-CmsDatabaseTopologyDefaultConnectionString, `
     Test-PostgresDuplicateDatabaseError, `
     Test-MssqlDuplicateDatabaseError, `
