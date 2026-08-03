@@ -220,6 +220,19 @@ public class WebApplicationBuilderExtensionsTests
 
         [Test]
         [Category("DocumentCacheServiceRegistration")]
+        public void It_registers_the_data_store_provider_with_DocumentCache_refresh_notification()
+        {
+            using ServiceProvider serviceProvider = CreateServices("postgresql");
+
+            serviceProvider
+                .GetRequiredService<IDataStoreProvider>()
+                .Should()
+                .BeOfType<DocumentCacheRefreshNotifyingDataStoreProvider>();
+            serviceProvider.GetRequiredService<ConfigurationServiceDataStoreProvider>().Should().NotBeNull();
+        }
+
+        [Test]
+        [Category("DocumentCacheServiceRegistration")]
         public void It_registers_the_DocumentCache_projection_observation_provider_and_sink()
         {
             using ServiceProvider serviceProvider = CreateServices("postgresql");

@@ -188,7 +188,11 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.AddSingleton<IConnectionStringDecryptionService>(
             new ConnectionStringDecryptionService(configServiceSettings.EncryptionKey)
         );
-        webAppBuilder.Services.AddSingleton<IDataStoreProvider, ConfigurationServiceDataStoreProvider>();
+        webAppBuilder.Services.AddSingleton<ConfigurationServiceDataStoreProvider>();
+        webAppBuilder.Services.AddSingleton<
+            IDataStoreProvider,
+            DocumentCacheRefreshNotifyingDataStoreProvider
+        >();
         webAppBuilder.Services.AddSingleton<IConnectionStringProvider, DmsConnectionStringProvider>();
         webAppBuilder.Services.AddSingleton<DocumentCacheProcessProviderToken>(_ =>
         {
@@ -211,7 +215,15 @@ public static class WebApplicationBuilderExtensions
             IDocumentCacheTargetContextBuilder,
             DocumentCacheTargetContextBuilder
         >();
-        webAppBuilder.Services.AddSingleton<IDocumentCacheTargetRegistry, DocumentCacheTargetRegistry>();
+        webAppBuilder.Services.AddSingleton<IDocumentCacheTargetRegistry>(
+            serviceProvider => new DocumentCacheTargetRegistry(
+                serviceProvider.GetRequiredService<ConfigurationServiceDataStoreProvider>(),
+                serviceProvider.GetRequiredService<IDocumentCacheTargetContextBuilder>(),
+                serviceProvider.GetRequiredService<IOptions<DocumentCacheOptions>>(),
+                serviceProvider.GetRequiredService<TimeProvider>(),
+                serviceProvider.GetRequiredService<ILogger<DocumentCacheTargetRegistry>>()
+            )
+        );
         webAppBuilder.Services.AddSingleton<DocumentCacheProjectionSupervisor>();
         webAppBuilder.Services.AddSingleton<IDocumentCacheProjectionSupervisor>(serviceProvider =>
             serviceProvider.GetRequiredService<DocumentCacheProjectionSupervisor>()

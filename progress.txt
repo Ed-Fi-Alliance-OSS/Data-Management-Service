@@ -227,3 +227,8 @@ Completed projection-supervisor ordinary-retention follow-up task for reference/
 Key decisions: replaced/removed/ineligible current contexts with ordinary DrainExecutor ownership are cancelled and removed from CurrentTargetContexts but retained until the owned slice exits; command-owned retained context path remains separate; retained contexts are marked noncurrent and excluded from ready planning/current health before final end/dispose.
 Files changed: DocumentCacheProjectionSupervisor.cs; DocumentCacheProjectionSupervisorTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Verified focused supervisor/scheduler/shutdown unit filter.
+
+Completed target-refresh follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: frontend IDataStoreProvider now wraps the production ConfigurationServiceDataStoreProvider and notifies the existing projection supervisor with CmsRefreshNotification after post-startup loads or metadata-changing refreshes; target registry uses the underlying provider directly to avoid recursive refresh; notification failures log and do not fail request data-store refresh.
+Files changed: DocumentCacheRefreshNotifyingDataStoreProvider.cs; WebApplicationBuilderExtensions.cs; DocumentCacheRefreshNotifyingDataStoreProviderTests.cs; WebApplicationBuilderExtensionsTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Verified focused frontend DocumentCache/Configuration and backend supervisor/registry unit filters.
