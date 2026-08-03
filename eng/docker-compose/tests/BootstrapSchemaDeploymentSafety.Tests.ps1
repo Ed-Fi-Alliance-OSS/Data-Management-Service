@@ -5394,6 +5394,17 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             @{ Name = "MSSQL (local) behind tcp:"; ServerSegment = 'Server=tcp:(local),15433'; ExpectLocal = $true }
             @{ Name = "MSSQL (LOCAL) case variant"; ServerSegment = 'Server=(LOCAL),15433'; ExpectLocal = $true }
             @{ Name = "MSSQL (local) on the wrong port"; ServerSegment = 'Server=(local),19999'; ExpectLocal = $false }
+            @{ Name = "MSSQL '.' local token behind tcp:"; ServerSegment = 'Server=tcp:.,15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL '.' local token bare"; ServerSegment = 'Server=.,15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL '.' on the wrong port"; ServerSegment = 'Server=tcp:.,19999'; ExpectLocal = $false }
+            @{ Name = "MSSQL instance suffix ignored beside an explicit port"; ServerSegment = 'Server=tcp:localhost\ignored,15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL (local) with an ignored instance suffix"; ServerSegment = 'Server=tcp:(local)\ignored,15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL '.' with an ignored instance suffix"; ServerSegment = 'Server=tcp:.\ignored,15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL named instance with NO explicit port stays external"; ServerSegment = 'Server=tcp:localhost\ignored'; ExpectLocal = $false }
+            @{ Name = "MSSQL external host with an instance suffix"; ServerSegment = 'Server=tcp:sql.example.com\ignored,15433'; ExpectLocal = $false }
+            @{ Name = "MSSQL named pipes np: is not a local token"; ServerSegment = 'Server=np:.'; ExpectLocal = $false }
+            @{ Name = "MSSQL shared memory lpc: is not a local token"; ServerSegment = 'Server=lpc:.'; ExpectLocal = $false }
+            @{ Name = "MSSQL LocalDB is not a local token"; ServerSegment = 'Server=(localdb)\x,15433'; ExpectLocal = $false }
             @{ Name = "MSSQL native IPv6 [::1] is not the IPv4 listener"; ServerSegment = 'Server=[::1],15433'; ExpectLocal = $false }
             @{ Name = "MSSQL mapped 127.0.0.2 is a different listener"; ServerSegment = 'Server=[::ffff:127.0.0.2],15433'; ExpectLocal = $false }
             @{ Name = "MSSQL 127.0.0.2 is a different listener"; ServerSegment = 'Server=127.0.0.2,15433'; ExpectLocal = $false }
@@ -5408,6 +5419,13 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             # stays external for the same reason its plain form does. '(local)' is a SqlClient
             # data-source token for the local SQL Server and is therefore recognized on THIS engine only -
             # a PostgreSQL row asserting it stays external lives in the Npgsql host-value table.
+            #
+            # The token set is SqlClient's own closed set - '.', '(local)', 'localhost' - and the instance
+            # rows follow its TCP server-name parsing: with an EXPLICIT comma port the provider uses that
+            # port and does not resolve the suffix through SSRP, so 'localhost\ignored,<port>' reaches the
+            # same listener 'localhost,<port>' does. With NO explicit port the suffix stays attached and
+            # the target is not treated as this listener, because resolving a named instance is not
+            # something this phase can do. np:, lpc: and LocalDB are outside the set and stay external.
             #
             # The loopback rule was PostgreSQL-only, so 'Server=127.1,<MSSQL_PORT>' reached the local
             # Compose server while classifying as external - the reserved-database guard was skipped
@@ -5478,6 +5496,11 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             @{ Name = "native IPv6 [::1] is not the IPv4 listener"; HostSegment = 'host=[::1]:5544;port=5432'; ExpectRefused = $false }
             @{ Name = "IPv4-mapped 127.0.0.2 is a different listener"; HostSegment = 'host=::ffff:127.0.0.2;port=5544'; ExpectRefused = $false }
             @{ Name = "SqlClient (local) is not an Npgsql local host"; HostSegment = 'host=(local);port=5544'; ExpectRefused = $false }
+            @{ Name = "SqlClient '.' is not an Npgsql local host"; HostSegment = 'host=.;port=5544'; ExpectRefused = $false }
+            @{ Name = "unbracketed hex-form mapped address on the global port"; HostSegment = 'host=::ffff:7f00:1;port=5544'; ExpectRefused = $true }
+            @{ Name = "unbracketed hex-form mapped address in a host list"; HostSegment = 'host=pg.example.com:5432,::ffff:7f00:1;port=5544'; ExpectRefused = $true }
+            @{ Name = "bracketed hex-form mapped address with a per-host port"; HostSegment = 'host=[::ffff:7f00:1]:5544;port=5432'; ExpectRefused = $true }
+            @{ Name = "unbracketed native IPv6 is not the IPv4 listener"; HostSegment = 'host=2001:db8::1;port=5544'; ExpectRefused = $false }
             @{ Name = "plain localhost (control)"; HostSegment = 'host=localhost;port=5544'; ExpectRefused = $true }
             @{ Name = "external-only list keeps the reserved name"; HostSegment = 'host=pg.example.com:5432,other.example.com;port=5432'; ExpectRefused = $false }
             @{ Name = "localhost on another port"; HostSegment = 'host=localhost;port=9999'; ExpectRefused = $false }
@@ -5500,9 +5523,15 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             # The mapped-IPv6 rows carry that same reasoning into the other address family: an
             # IPv4-mapped IPv6 address represents an IPv4 node and so reaches the IPv4-published listener,
             # bracketed or not and wherever it sits in the list, while native [::1] is not mapped and
-            # mapped 127.0.0.2 maps to a different listener - both stay external. '(local)' is a
-            # SqlClient-only token: Npgsql would treat it as an ordinary hostname, so it must NOT be
-            # local here even though the SQL Server table accepts it.
+            # mapped 127.0.0.2 maps to a different listener - both stay external. '(local)' and '.' are
+            # SqlClient-only tokens: Npgsql would treat either as an ordinary hostname, so neither may be
+            # local here even though the SQL Server table accepts both.
+            #
+            # The hex-form rows are the ones that need Npgsql's real host/port split. '::ffff:7f00:1' is
+            # one unbracketed IPv6 host taking the standalone port; splitting on its final ':1' produced
+            # host '::ffff:7f00' and port 1, and because that address maps to 127.0.0.1 the provider
+            # reached the local database while classification called it external. '2001:db8::1' is the
+            # control that keeping the entry whole does not make ordinary IPv6 local.
             $capturePath = Initialize-CanonicalMssqlWorkspace
             try {
                 . $script:repo.ProvisionScript

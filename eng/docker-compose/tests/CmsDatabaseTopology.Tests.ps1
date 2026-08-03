@@ -3503,6 +3503,37 @@ Describe "Get-DatabaseNameFromResolvedConnectionString / Get-EndpointFromResolve
         $endpoints[0].Port | Should -BeNullOrEmpty
     }
 
+    # ExpectedHost, not Host: $Host is a read-only PowerShell automatic variable, and a -ForEach key of
+    # that name fails the whole row at data-binding time.
+    It "splits a PostgreSQL host entry the way Npgsql does: <Entry> with global <Global>" -ForEach @(
+        @{ Entry = 'localhost:5544';       Global = '5432'; ExpectedHost = 'localhost';          ExpectedPort = '5544' }
+        @{ Entry = '[::ffff:7f00:1]:5544'; Global = '5432'; ExpectedHost = '[::ffff:7f00:1]';    ExpectedPort = '5544' }
+        @{ Entry = '::ffff:7f00:1';        Global = '5544'; ExpectedHost = '::ffff:7f00:1';      ExpectedPort = '5544' }
+        @{ Entry = '[::ffff:7f00:1]';      Global = '5544'; ExpectedHost = '[::ffff:7f00:1]';    ExpectedPort = '5544' }
+        @{ Entry = '2001:db8::1';          Global = '5544'; ExpectedHost = '2001:db8::1';        ExpectedPort = '5544' }
+        @{ Entry = '[::1]:5544';           Global = '5432'; ExpectedHost = '[::1]';              ExpectedPort = '5544' }
+        @{ Entry = '[2001:db8::1]:5544';   Global = '5432'; ExpectedHost = '[2001:db8::1]';      ExpectedPort = '5544' }
+        @{ Entry = 'localhost';            Global = '5432'; ExpectedHost = 'localhost';          ExpectedPort = '5432' }
+        @{ Entry = 'localhost:notaport';   Global = '5432'; ExpectedHost = 'localhost:notaport'; ExpectedPort = '5432' }
+    ) {
+        # The decision is Npgsql's TrySplitHostPort, not a heuristic of ours
+        # (github.com/npgsql/npgsql/blob/v8.0.4/src/Npgsql/NpgsqlConnectionStringBuilder.cs): given the
+        # last colon, the last ']' and the last colon before it, the final colon is a port separator only
+        # when there is no earlier colon, or it sits after ']' while the earlier colon sits inside the
+        # brackets.
+        #
+        # The unbracketed IPv6 rows are why this matters: '::ffff:7f00:1' is ONE host and takes the
+        # standalone port. Reading its final ':1' as a port yielded host '::ffff:7f00' and port 1, and
+        # since that address maps to 127.0.0.1 the provider reached the local Compose database while the
+        # provisioning guard classified the target as external. A final numeric IPv6 segment is not a port
+        # merely because it parses as an integer.
+        $result = @(Get-PostgresHostCandidateEndpoint -HostValue $Entry -DefaultPort $Global)
+
+        $result.Count | Should -Be 1 -Because "a single entry yields a single candidate"
+        $result[0].Host | Should -Be $ExpectedHost
+        $result[0].Port | Should -Be $ExpectedPort
+    }
+
     It "expands a comma in a PostgreSQL Host= value as a candidate separator, never as a host,port compound" {
         # Npgsql's comma is a CANDIDATE separator, not the MSSQL-style host,port compound: this value is
         # two candidates, 'dms-postgresql' and the (nonsensical) host '5432'. Neither carries its own
