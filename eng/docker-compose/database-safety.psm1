@@ -804,8 +804,20 @@ function Get-EndpointFromResolvedConnectionString {
                     $value = [string]$connectionStringBuilder.PSBase.get_Item($key)
                     if ($DatabaseEngine -eq "mssql") {
                         $parts = $value.Split(',', 2)
+                        # "tcp:host,port" is documented SqlClient syntax
+                        # (learn.microsoft.com/troubleshoot/sql/connect/use-server-name-parameter-connection-string)
+                        # naming the same server "host,port" does, so exactly one leading "tcp:" is removed
+                        # case-insensitively before the host is reported. Without this the caller compared
+                        # "tcp:dms-mssql" against the Compose service aliases and rejected a valid CMS
+                        # connection string. Reporting only - the caller's connection string is never
+                        # rewritten - and no other protocol prefix is stripped, so np:, lpc: and the rest
+                        # still fail the alias comparison as they must.
+                        $mssqlHost = $parts[0].Trim()
+                        if ($mssqlHost.StartsWith("tcp:", [System.StringComparison]::OrdinalIgnoreCase)) {
+                            $mssqlHost = $mssqlHost.Substring(4).Trim()
+                        }
                         [pscustomobject]@{
-                            Host = $parts[0].Trim()
+                            Host = $mssqlHost
                             Port = if ($parts.Count -gt 1) { $parts[1].Trim() } else { $null }
                         }
                     }
