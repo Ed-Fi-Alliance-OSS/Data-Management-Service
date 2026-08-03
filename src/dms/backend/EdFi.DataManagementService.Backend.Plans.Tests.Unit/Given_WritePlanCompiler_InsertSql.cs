@@ -91,6 +91,81 @@ public class Given_WritePlanCompiler_InsertSql : WritePlanCompilerTestBase
         tablePlan.InsertSql.Should().Be(expectedInsertSql);
     }
 
+    [Test]
+    public void It_should_omit_document_id_and_return_it_from_the_pgsql_root_insert()
+    {
+        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateRootKindClassifiedRootOnlyModel()
+        );
+        var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
+
+        tablePlan
+            .InsertSql.Should()
+            .Be(
+                """
+                INSERT INTO "edfi"."Student"
+                (
+                    "SchoolYear",
+                    "LocalEducationAgencyId"
+                )
+                VALUES
+                (
+                    @schoolYear,
+                    @localEducationAgencyId
+                )
+                RETURNING "DocumentId";
+
+                """
+            );
+    }
+
+    [Test]
+    public void It_should_omit_document_id_and_output_it_from_the_mssql_root_insert()
+    {
+        var writePlan = new WritePlanCompiler(SqlDialect.Mssql).Compile(
+            CreateRootKindClassifiedRootOnlyModel()
+        );
+        var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
+
+        tablePlan
+            .InsertSql.Should()
+            .Be(
+                """
+                DECLARE @newDocumentId TABLE ([DocumentId] bigint);
+
+                INSERT INTO [edfi].[Student]
+                (
+                    [SchoolYear],
+                    [LocalEducationAgencyId]
+                )
+                OUTPUT INSERTED.[DocumentId] INTO @newDocumentId
+                VALUES
+                (
+                    @schoolYear,
+                    @localEducationAgencyId
+                )
+                ;
+
+                SELECT [DocumentId] FROM @newDocumentId;
+
+                """
+            );
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_keep_the_document_id_binding_on_the_root_plan(SqlDialect dialect)
+    {
+        var tablePlan = new WritePlanCompiler(dialect)
+            .Compile(CreateRootKindClassifiedRootOnlyModel())
+            .TablePlansInDependencyOrder.Single();
+
+        // The binding stays: the root UPDATE keys on it and merge comparison is positional.
+        tablePlan
+            .ColumnBindings.Should()
+            .ContainSingle(binding => binding.Source is WriteValueSource.DocumentId);
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public void It_should_emit_identical_insert_sql_across_repeated_compilation_and_permuted_non_writable_column_order(

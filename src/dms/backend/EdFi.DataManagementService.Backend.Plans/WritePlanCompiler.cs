@@ -272,13 +272,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             collectionKeyPreallocationPlan
         );
 
-        var insertSql = _insertSqlEmitter.Emit(
-            tableModel.Table,
-            tableCompilationContext
-                .ColumnBindings.Select(static binding => binding.Column.ColumnName)
-                .ToArray(),
-            tableCompilationContext.ColumnBindings.Select(static binding => binding.ParameterName).ToArray()
-        );
+        var insertSql = EmitInsertSql(tableModel, tableCompilationContext);
         var updateSql = TryEmitUpdateSql(tableCompilationContext);
         var collectionMergePlan = TryCompileCollectionMergePlan(tableCompilationContext);
         var deleteByParentSql = collectionMergePlan is null
@@ -300,6 +294,86 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             CollectionMergePlan: collectionMergePlan,
             CollectionKeyPreallocationPlan: collectionKeyPreallocationPlan
         );
+    }
+
+    /// <summary>
+    /// Emits a table's <c>INSERT</c>. Every table but the resource root binds every compiled column. The
+    /// root omits its <c>DocumentId</c>: the <c>dms.DocumentIdSequence</c> column default originates the
+    /// value and the statement returns it, because nothing upstream of the root insert knows it yet. The
+    /// binding itself stays in <see cref="TableWritePlan.ColumnBindings"/> — the root <c>UPDATE</c> keys on
+    /// it, and the merge comparison is positional across bindings.
+    /// </summary>
+    private string EmitInsertSql(
+        DbTableModel tableModel,
+        WritePlanTableCompilationContext tableCompilationContext
+    )
+    {
+        var columnBindings = tableCompilationContext.ColumnBindings;
+
+        if (tableModel.IdentityMetadata.TableKind != DbTableKind.Root)
+        {
+            return _insertSqlEmitter.Emit(
+                tableModel.Table,
+                columnBindings.Select(static binding => binding.Column.ColumnName).ToArray(),
+                columnBindings.Select(static binding => binding.ParameterName).ToArray()
+            );
+        }
+
+        var documentIdBindings = columnBindings
+            .Where(static binding => binding.Source is WriteValueSource.DocumentId)
+            .ToArray();
+
+        if (documentIdBindings.Length != 1)
+        {
+            throw new InvalidOperationException(
+                $"Cannot emit INSERT SQL for root table '{tableModel.Table}': expected exactly one DocumentId binding, but found {documentIdBindings.Length}."
+            );
+        }
+
+        var retainedBindings = columnBindings
+            .Where(static binding => binding.Source is not WriteValueSource.DocumentId)
+            .ToArray();
+
+        ValidateNoDocumentIdTableVariableCollision(tableModel, retainedBindings);
+
+        return _insertSqlEmitter.EmitRootInsert(
+            tableModel.Table,
+            retainedBindings.Select(static binding => binding.Column.ColumnName).ToArray(),
+            retainedBindings.Select(static binding => binding.ParameterName).ToArray(),
+            documentIdBindings[0].Column.ColumnName
+        );
+    }
+
+    /// <summary>
+    /// Rejects a root table whose write parameters would collide with the SQL Server table variable the
+    /// root insert declares to carry <c>DocumentId</c> out of its <c>OUTPUT</c> clause. SQL Server rejects
+    /// a batch that declares a variable already supplied as a parameter, so the collision must fail at
+    /// plan-compile time rather than at write time. Variable names are compared case-insensitively because
+    /// SQL Server matches them that way.
+    /// </summary>
+    private static void ValidateNoDocumentIdTableVariableCollision(
+        DbTableModel tableModel,
+        IReadOnlyList<WriteColumnBinding> retainedBindings
+    )
+    {
+        foreach (var binding in retainedBindings)
+        {
+            if (
+                !string.Equals(
+                    binding.ParameterName,
+                    WriteBatchSqlSupport.NewDocumentIdTableVariableName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                continue;
+            }
+
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for root table '{tableModel.Table}': column '{binding.Column.ColumnName.Value}' derives write parameter "
+                    + $"'@{binding.ParameterName}', which collides with the '@{WriteBatchSqlSupport.NewDocumentIdTableVariableName}' table variable the root insert declares."
+            );
+        }
     }
 
     private CollectionMergePlan? TryCompileCollectionMergePlan(

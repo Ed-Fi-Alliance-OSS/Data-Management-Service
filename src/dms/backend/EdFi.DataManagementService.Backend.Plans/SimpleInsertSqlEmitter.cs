@@ -45,6 +45,48 @@ public sealed class SimpleInsertSqlEmitter(SqlDialect dialect)
     }
 
     /// <summary>
+    /// Emits the resource root <c>INSERT</c>, which omits <c>DocumentId</c> (the
+    /// <c>dms.DocumentIdSequence</c> column default originates it) and returns the drawn value as its own
+    /// result set.
+    /// </summary>
+    /// <param name="table">Root table.</param>
+    /// <param name="orderedColumns">Ordered column list, already stripped of <paramref name="documentIdColumn"/>.</param>
+    /// <param name="orderedParameterNames">Ordered bare parameter-name list aligned to <paramref name="orderedColumns"/>.</param>
+    /// <param name="documentIdColumn">The root table's <c>DocumentId</c> column.</param>
+    /// <returns>Canonical SQL ending with <c>;\n</c>.</returns>
+    public string EmitRootInsert(
+        DbTableName table,
+        IReadOnlyList<DbColumnName> orderedColumns,
+        IReadOnlyList<string> orderedParameterNames,
+        DbColumnName documentIdColumn
+    )
+    {
+        ArgumentNullException.ThrowIfNull(orderedColumns);
+        ArgumentNullException.ThrowIfNull(orderedParameterNames);
+
+        if (orderedColumns.Count != orderedParameterNames.Count)
+        {
+            throw new ArgumentException(
+                $"Column and parameter counts must match. Column count: {orderedColumns.Count}. Parameter count: {orderedParameterNames.Count}.",
+                nameof(orderedParameterNames)
+            );
+        }
+
+        foreach (var bareName in orderedParameterNames)
+        {
+            PlanSqlWriterExtensions.ValidateBareParameterName(bareName, nameof(bareName));
+        }
+
+        return WriteBatchSqlSupport.EmitRootInsertSql(
+            dialect,
+            table,
+            orderedColumns,
+            orderedParameterNames,
+            documentIdColumn
+        );
+    }
+
+    /// <summary>
     /// Emits canonical multi-line multi-row <c>INSERT</c> SQL using ordered columns and per-row ordered bare
     /// parameter names.
     /// </summary>

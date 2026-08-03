@@ -96,6 +96,31 @@ public abstract class WritePlanCompilerTestBase
         );
     }
 
+    /// <summary>
+    /// The supported root-only model classified as a resource root, which is how every derived production
+    /// model arrives. Only this classification takes the sequence-originated <c>DocumentId</c> insert shape.
+    /// </summary>
+    protected static RelationalResourceModel CreateRootKindClassifiedRootOnlyModel()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var rootTable = model.Root with
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
     protected static RelationalResourceModel CreateSupportedRootOnlyModelWithNonWritableSchoolYear()
     {
         var model = CreateSupportedRootOnlyModel();

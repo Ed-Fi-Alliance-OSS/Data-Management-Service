@@ -19,7 +19,7 @@
                   "schema": "edfi",
                   "name": "School"
                 },
-                "insert_sql_sha256": "47b7fd0cd0bcc720ba875c06a2d80216ea4dfe1ffa0754c94c7cc71d3254dbd7",
+                "insert_sql_sha256": "88ae050f6e9d45263f5ca4a916d07a844153f72016979576f748795ed4b86923",
                 "update_sql_sha256": "c1edf5d22e0f086da9bd9e2270e754ae5484469d25b787ce4a65d6a7a4a5d5c6",
                 "delete_by_parent_sql_sha256": null,
                 "collection_merge_plan": null,
@@ -268,7 +268,7 @@
                   "schema": "edfi",
                   "name": "School"
                 },
-                "insert_sql_sha256": "a8c5f7612604bf5ba5bc6181373f1bddfaa36dc613239791fa886fb3d8d30df8",
+                "insert_sql_sha256": "dc9bb7dae794cdc3cc54d52e099d2a769cafabd994678a5e5637a3ff83105c91",
                 "update_sql_sha256": "fe83157f0a4ca5290c6abf8dd70700fff95edaa995ef8d16681942026f55c064",
                 "delete_by_parent_sql_sha256": null,
                 "collection_merge_plan": null,

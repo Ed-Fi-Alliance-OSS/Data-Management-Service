@@ -73,7 +73,8 @@ internal sealed class RelationalWriteNoProfilePersister(
                 "Relational no-profile persistence requires an executor-resolved target context."
             );
 
-        var rootDocumentId = await ResolveRootDocumentIdAsync(
+        var dialect = request.MappingSet.Key.Dialect;
+        var rootInsert = await ResolveRootDocumentIdAsync(
                 request.MappingSet,
                 request.WritePlan,
                 targetContext,
@@ -82,11 +83,12 @@ internal sealed class RelationalWriteNoProfilePersister(
                 cancellationToken
             )
             .ConfigureAwait(false);
+        var rootDocumentId = rootInsert.RootDocumentId;
 
         Dictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds = [];
 
         await ExecuteDeletesAsync(
-                request.MappingSet.Key.Dialect,
+                dialect,
                 mergeResult,
                 rootDocumentId,
                 reservedCollectionItemIds,
@@ -95,17 +97,18 @@ internal sealed class RelationalWriteNoProfilePersister(
             )
             .ConfigureAwait(false);
         await ExecuteUpsertsAsync(
-                request.MappingSet.Key.Dialect,
+                dialect,
                 mergeResult,
                 rootDocumentId,
                 reservedCollectionItemIds,
+                rootInsert.InsertedRootTableState,
                 writeSession,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
         var contentVersion = await ReadCommittedContentVersionAsync(
-                request.MappingSet.Key.Dialect,
+                dialect,
                 request.WritePlan.Model.Root.Table,
                 rootDocumentId,
                 writeSession,
@@ -229,11 +232,17 @@ internal sealed class RelationalWriteNoProfilePersister(
         }
     }
 
+    /// <summary>
+    /// Persists every merged table. <paramref name="insertedRootTableState"/> names the root table already
+    /// written by the id-originating root insert on a create; it is skipped here so the row is not written
+    /// twice.
+    /// </summary>
     private static async Task ExecuteUpsertsAsync(
         SqlDialect dialect,
         RelationalWriteMergeResult mergeResult,
         long rootDocumentId,
         Dictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        RelationalWriteMergedTableState? insertedRootTableState,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -248,6 +257,12 @@ internal sealed class RelationalWriteNoProfilePersister(
 
             foreach (var tableState in pendingTableStates)
             {
+                if (ReferenceEquals(tableState, insertedRootTableState))
+                {
+                    persistedTableCount++;
+                    continue;
+                }
+
                 if (HasBlockingUnresolvedCollectionItemIds(tableState, reservedCollectionItemIds))
                 {
                     deferredTableStates.Add(tableState);
@@ -360,7 +375,18 @@ internal sealed class RelationalWriteNoProfilePersister(
         return false;
     }
 
-    private async Task<long> ResolveRootDocumentIdAsync(
+    /// <summary>
+    /// The root <c>DocumentId</c> every subsequent statement in the write binds, plus the root table state
+    /// already written, if any. A create writes the root row here — it is the statement that originates the
+    /// id — so the upsert pass must not write that row a second time. An update carries the stored id and
+    /// leaves the root row to the upsert pass, which routes it to <c>UpdateSql</c>.
+    /// </summary>
+    private readonly record struct RootDocumentIdResolution(
+        long RootDocumentId,
+        RelationalWriteMergedTableState? InsertedRootTableState
+    );
+
+    private async Task<RootDocumentIdResolution> ResolveRootDocumentIdAsync(
         MappingSet mappingSet,
         ResourceWritePlan writePlan,
         RelationalWriteTargetContext targetContext,
@@ -369,43 +395,99 @@ internal sealed class RelationalWriteNoProfilePersister(
         CancellationToken cancellationToken
     )
     {
-        return targetContext switch
+        if (targetContext is RelationalWriteTargetContext.ExistingDocument(var documentId, _, _))
         {
-            RelationalWriteTargetContext.CreateNew(var documentUuid) => await InsertDocumentAsync(
-                    mappingSet,
-                    writePlan,
-                    documentUuid,
-                    mergeResult,
-                    writeSession,
-                    cancellationToken
-                )
-                .ConfigureAwait(false),
-            RelationalWriteTargetContext.ExistingDocument(var documentId, _, _) => documentId,
-            _ => throw new ArgumentOutOfRangeException(nameof(targetContext), targetContext, null),
-        };
+            return new RootDocumentIdResolution(documentId, null);
+        }
+
+        if (targetContext is not RelationalWriteTargetContext.CreateNew)
+        {
+            throw new ArgumentOutOfRangeException(nameof(targetContext), targetContext, null);
+        }
+
+        var rootTableState = GetRootTableStateOrThrow(writePlan, mergeResult);
+        var rootDocumentId = await InsertRootRowAsync(
+                mappingSet,
+                writePlan,
+                mergeResult,
+                rootTableState,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return new RootDocumentIdResolution(rootDocumentId, rootTableState);
     }
 
-    private async Task<long> InsertDocumentAsync(
+    /// <summary>
+    /// Resolves the merged state of the resource root table — the one table whose <c>INSERT</c> originates
+    /// <c>DocumentId</c> from <c>dms.DocumentIdSequence</c> and returns it.
+    /// </summary>
+    private static RelationalWriteMergedTableState GetRootTableStateOrThrow(
+        ResourceWritePlan writePlan,
+        RelationalWriteMergeResult mergeResult
+    )
+    {
+        RelationalWriteMergedTableState? rootTableState = null;
+
+        foreach (var tableState in mergeResult.TablesInDependencyOrder)
+        {
+            if (tableState.TableWritePlan.TableModel.IdentityMetadata.TableKind != DbTableKind.Root)
+            {
+                continue;
+            }
+
+            if (rootTableState is not null)
+            {
+                throw new InvalidOperationException(
+                    $"Relational write persistence for resource '{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}' merged more than one root table."
+                );
+            }
+
+            rootTableState = tableState;
+        }
+
+        return rootTableState
+            ?? throw new InvalidOperationException(
+                $"Relational write persistence for resource '{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}' merged no root table."
+            );
+    }
+
+    /// <summary>
+    /// Writes the root row of a create and captures the <c>DocumentId</c> the row's sequence default drew.
+    /// The compiled root <c>InsertSql</c> omits the column and returns the value (PostgreSQL
+    /// <c>RETURNING</c>; SQL Server <c>OUTPUT … INTO</c> a table variable plus a trailing <c>SELECT</c>,
+    /// because a plain <c>OUTPUT</c> is illegal on the trigger-bearing root table). When a proposed
+    /// relationship authorization rides along, its SQL is prefixed and the id is read from the second
+    /// result set.
+    /// </summary>
+    private async Task<long> InsertRootRowAsync(
         MappingSet mappingSet,
         ResourceWritePlan writePlan,
-        DocumentUuid documentUuid,
         RelationalWriteMergeResult mergeResult,
+        RelationalWriteMergedTableState rootTableState,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
     {
         var resource = writePlan.Model.Resource;
-        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
-        var command = BuildInsertDocumentCommand(mappingSet.Key.Dialect, documentUuid, resourceKeyId);
+        var tableWritePlan = rootTableState.TableWritePlan;
+        var mergedRow =
+            GetSingleRowOrThrow(rootTableState.MergedRows, "merged", tableWritePlan)
+            ?? throw new InvalidOperationException(
+                $"Table '{FormatTable(tableWritePlan)}' produced no merged row for a document create."
+            );
+
+        var command = BuildRootInsertCommand(tableWritePlan, mergedRow);
         var relationshipAuthorizationRuntimeCheck = mergeResult.ProposedRelationshipAuthorizationRuntimeCheck;
 
         try
         {
             if (relationshipAuthorizationRuntimeCheck is not null)
             {
-                return await ExecuteAuthorizedInsertDocumentAsync(
+                return await ExecuteAuthorizedRootInsertAsync(
                         writeSession,
-                        BuildAuthorizedInsertDocumentCommand(mappingSet, writePlan, mergeResult, command),
+                        BuildAuthorizedRootInsertCommand(mappingSet, writePlan, mergeResult, command),
                         resource,
                         cancellationToken
                     )
@@ -428,12 +510,47 @@ internal sealed class RelationalWriteNoProfilePersister(
         }
     }
 
+    /// <summary>
+    /// Builds the root <c>INSERT</c> command, binding every compiled column except <c>DocumentId</c> — the
+    /// statement omits that column so the sequence default originates it, and nothing has resolved it yet.
+    /// </summary>
+    private static RelationalCommand BuildRootInsertCommand(
+        TableWritePlan tableWritePlan,
+        RelationalWriteMergedTableRow row
+    )
+    {
+        List<RelationalParameter> parameters = new(tableWritePlan.ColumnBindings.Length);
+
+        for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
+        {
+            var binding = tableWritePlan.ColumnBindings[bindingIndex];
+
+            if (binding.Source is WriteValueSource.DocumentId)
+            {
+                continue;
+            }
+
+            if (row.Values[bindingIndex] is not FlattenedWriteValue.Literal(var literalValue))
+            {
+                throw new InvalidOperationException(
+                    $"Table '{FormatTable(tableWritePlan)}' cannot insert its root row: column '{binding.Column.ColumnName.Value}' is not a resolved literal."
+                );
+            }
+
+            parameters.Add(
+                new RelationalParameter(NormalizeParameterName(binding.ParameterName), literalValue)
+            );
+        }
+
+        return new RelationalCommand(tableWritePlan.InsertSql, parameters);
+    }
+
     private static long RequireDocumentId(object? scalarResult, QualifiedResourceName resource)
     {
         if (scalarResult is null or DBNull)
         {
             throw new InvalidOperationException(
-                $"Document insert for resource '{RelationalWriteSupport.FormatResource(resource)}' did not return a DocumentId."
+                $"Root insert for resource '{RelationalWriteSupport.FormatResource(resource)}' did not return a DocumentId."
             );
         }
 
@@ -473,7 +590,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         return Convert.ToInt64(scalarResult, CultureInfo.InvariantCulture);
     }
 
-    private static async Task<long> ExecuteAuthorizedInsertDocumentAsync(
+    private static async Task<long> ExecuteAuthorizedRootInsertAsync(
         IRelationalWriteSession writeSession,
         RelationalCommand command,
         QualifiedResourceName resource,
@@ -492,7 +609,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         )
         {
             throw new InvalidOperationException(
-                $"Document insert for resource '{RelationalWriteSupport.FormatResource(resource)}' did not return a DocumentId."
+                $"Root insert for resource '{RelationalWriteSupport.FormatResource(resource)}' did not return a DocumentId."
             );
         }
 
@@ -555,11 +672,11 @@ internal sealed class RelationalWriteNoProfilePersister(
         );
     }
 
-    private RelationalCommand BuildAuthorizedInsertDocumentCommand(
+    private RelationalCommand BuildAuthorizedRootInsertCommand(
         MappingSet mappingSet,
         ResourceWritePlan writePlan,
         RelationalWriteMergeResult mergeResult,
-        RelationalCommand insertDocumentCommand
+        RelationalCommand rootInsertCommand
     )
     {
         var proposedAuthorizationCommand = BuildProposedRelationshipAuthorizationCommandParts(
@@ -569,8 +686,8 @@ internal sealed class RelationalWriteNoProfilePersister(
         );
 
         return new RelationalCommand(
-            $"{proposedAuthorizationCommand.AuthorizationSql}{Environment.NewLine}{insertDocumentCommand.CommandText}",
-            CombineParameters(proposedAuthorizationCommand.Parameters, insertDocumentCommand.Parameters)
+            $"{proposedAuthorizationCommand.AuthorizationSql}{Environment.NewLine}{rootInsertCommand.CommandText}",
+            CombineParameters(proposedAuthorizationCommand.Parameters, rootInsertCommand.Parameters)
         );
     }
 
@@ -823,40 +940,6 @@ internal sealed class RelationalWriteNoProfilePersister(
 
         ExceptionDispatchInfo.Capture(exception).Throw();
         throw new InvalidOperationException("Unreachable relationship authorization failure mapping state.");
-    }
-
-    private static RelationalCommand BuildInsertDocumentCommand(
-        SqlDialect dialect,
-        DocumentUuid documentUuid,
-        short resourceKeyId
-    )
-    {
-        return dialect switch
-        {
-            SqlDialect.Pgsql => new RelationalCommand(
-                """
-                INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
-                VALUES (@documentUuid, @resourceKeyId)
-                RETURNING "DocumentId";
-                """,
-                [
-                    new RelationalParameter("@documentUuid", documentUuid.Value),
-                    new RelationalParameter("@resourceKeyId", resourceKeyId),
-                ]
-            ),
-            SqlDialect.Mssql => new RelationalCommand(
-                """
-                INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-                VALUES (@documentUuid, @resourceKeyId);
-                SELECT SCOPE_IDENTITY();
-                """,
-                [
-                    new RelationalParameter("@documentUuid", documentUuid.Value),
-                    new RelationalParameter("@resourceKeyId", resourceKeyId),
-                ]
-            ),
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
-        };
     }
 
     private static async Task DeleteOmittedNonCollectionRowAsync(

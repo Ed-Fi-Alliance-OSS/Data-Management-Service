@@ -36,7 +36,7 @@ public class Given_Relational_Write_No_Profile_Persister
     }
 
     [Test]
-    public async Task It_inserts_document_root_and_root_extension_rows_for_create_requests()
+    public async Task It_inserts_root_and_root_extension_rows_for_create_requests()
     {
         var rootPlan = CreateRootPlan();
         var rootExtensionPlan = CreateRootExtensionPlan();
@@ -60,7 +60,6 @@ public class Given_Relational_Write_No_Profile_Persister
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(ScalarResult: 910L),
             new CommandResponse(),
-            new CommandResponse(),
             new CommandResponse(ScalarResult: 77L),
         ]);
 
@@ -75,32 +74,34 @@ public class Given_Relational_Write_No_Profile_Persister
                     77L
                 )
             );
-        writeSession.Commands.Should().HaveCount(4);
-        writeSession.Commands[0].CommandText.Should().Contain("INSERT INTO dms.\"Document\"");
-        GetParameterValue(writeSession.Commands[0], "@documentUuid")
+        writeSession.Commands.Should().HaveCount(3);
+
+        // The root insert is the id-producing statement: it binds no DocumentId and returns the value the
+        // sequence default drew. Nothing writes dms."Document".
+        writeSession.Commands[0].CommandText.Should().Be(rootPlan.InsertSql);
+        writeSession.Commands[0].CommandText.Should().NotContain("dms.\"Document\"");
+        writeSession
+            .Commands[0]
+            .Parameters.Select(static parameter => parameter.Name)
             .Should()
-            .Be(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
-        GetParameterValue(writeSession.Commands[0], "@resourceKeyId").Should().Be((short)1);
+            .NotContain("@DocumentId");
+        GetParameterValue(writeSession.Commands[0], "@SchoolId").Should().Be(255901);
+        GetParameterValue(writeSession.Commands[0], "@Name").Should().Be("Lincoln High");
 
-        writeSession.Commands[1].CommandText.Should().Be(rootPlan.InsertSql);
+        writeSession.Commands[1].CommandText.Should().Be(rootExtensionPlan.InsertSql);
         GetParameterValue(writeSession.Commands[1], "@DocumentId").Should().Be(910L);
-        GetParameterValue(writeSession.Commands[1], "@SchoolId").Should().Be(255901);
-        GetParameterValue(writeSession.Commands[1], "@Name").Should().Be("Lincoln High");
-
-        writeSession.Commands[2].CommandText.Should().Be(rootExtensionPlan.InsertSql);
-        GetParameterValue(writeSession.Commands[2], "@DocumentId").Should().Be(910L);
-        GetParameterValue(writeSession.Commands[2], "@ExtensionCode").Should().Be("BLUE");
+        GetParameterValue(writeSession.Commands[1], "@ExtensionCode").Should().Be("BLUE");
 
         // The committed stamp is read back from the root row the write just stamped, not from
         // dms."Document" — the same row every other write-path metadata read now targets.
-        writeSession.Commands[3].CommandText.Should().Contain("ContentVersion");
-        writeSession.Commands[3].CommandText.Should().Contain("FROM \"edfi\".\"School\" document");
-        writeSession.Commands[3].CommandText.Should().NotContain("dms.\"Document\"");
-        GetParameterValue(writeSession.Commands[3], "@documentId").Should().Be(910L);
+        writeSession.Commands[2].CommandText.Should().Contain("ContentVersion");
+        writeSession.Commands[2].CommandText.Should().Contain("FROM \"edfi\".\"School\" document");
+        writeSession.Commands[2].CommandText.Should().NotContain("dms.\"Document\"");
+        GetParameterValue(writeSession.Commands[2], "@documentId").Should().Be(910L);
     }
 
     [Test]
-    public async Task It_runs_proposed_relationship_authorization_before_document_insert_for_create_requests()
+    public async Task It_runs_proposed_relationship_authorization_before_the_root_insert_for_create_requests()
     {
         var rootPlan = CreateRootPlan();
         var writePlan = CreateWritePlan([rootPlan]);
@@ -125,7 +126,6 @@ public class Given_Relational_Write_No_Profile_Persister
                     CreateSingleValueResultSet("DocumentId", typeof(long), 910L),
                 ]
             ),
-            new CommandResponse(),
             new CommandResponse(ScalarResult: 77L),
         ]);
 
@@ -133,37 +133,36 @@ public class Given_Relational_Write_No_Profile_Persister
 
         result.DocumentId.Should().Be(910L);
         result.ContentVersion.Should().Be(77L);
-        writeSession.Commands.Should().HaveCount(3);
-        var authorizationAndDocumentInsertCommand = writeSession.Commands[0];
-        authorizationAndDocumentInsertCommand
+        writeSession.Commands.Should().HaveCount(2);
+
+        // The authorization SQL rides in front of the root insert, and the id comes back from the insert's
+        // own result set — the second one.
+        var authorizationAndRootInsertCommand = writeSession.Commands[0];
+        authorizationAndRootInsertCommand
             .CommandText.IndexOf("AUTH1", StringComparison.Ordinal)
             .Should()
             .BeLessThan(
-                authorizationAndDocumentInsertCommand.CommandText.IndexOf(
-                    "INSERT INTO dms.\"Document\"",
+                authorizationAndRootInsertCommand.CommandText.IndexOf(
+                    rootPlan.InsertSql,
                     StringComparison.Ordinal
                 )
             );
-        GetParameterValue(authorizationAndDocumentInsertCommand, "@relationshipAuthorization_0_0_SchoolId")
+        authorizationAndRootInsertCommand.CommandText.Should().NotContain("dms.\"Document\"");
+        GetParameterValue(authorizationAndRootInsertCommand, "@relationshipAuthorization_0_0_SchoolId")
             .Should()
             .Be(255901);
-        GetParameterValue(authorizationAndDocumentInsertCommand, "@ClaimEducationOrganizationIds")
+        GetParameterValue(authorizationAndRootInsertCommand, "@ClaimEducationOrganizationIds")
             .Should()
             .BeEquivalentTo(new long[] { 1234L });
-        GetParameterValue(authorizationAndDocumentInsertCommand, "@documentUuid")
-            .Should()
-            .Be(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
-        GetParameterValue(authorizationAndDocumentInsertCommand, "@resourceKeyId").Should().Be((short)1);
+        GetParameterValue(authorizationAndRootInsertCommand, "@SchoolId").Should().Be(255901);
+        GetParameterValue(authorizationAndRootInsertCommand, "@Name").Should().Be("Lincoln High");
 
-        writeSession.Commands[1].CommandText.Should().Be(rootPlan.InsertSql);
-        GetParameterValue(writeSession.Commands[1], "@DocumentId").Should().Be(910L);
-
-        writeSession.Commands[2].CommandText.Should().Contain("ContentVersion");
-        GetParameterValue(writeSession.Commands[2], "@documentId").Should().Be(910L);
+        writeSession.Commands[1].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[1], "@documentId").Should().Be(910L);
     }
 
     [Test]
-    public async Task It_can_authorize_proposed_relationship_values_without_document_insert()
+    public async Task It_can_authorize_proposed_relationship_values_without_the_root_insert()
     {
         var rootPlan = CreateRootPlan();
         var writePlan = CreateWritePlan([rootPlan]);
@@ -191,13 +190,13 @@ public class Given_Relational_Write_No_Profile_Persister
         writeSession.Commands.Should().ContainSingle();
         var command = writeSession.Commands[0];
         command.CommandText.Should().Contain("AUTH1");
-        command.CommandText.Should().NotContain("INSERT INTO dms.\"Document\"");
+        command.CommandText.Should().NotContain(rootPlan.InsertSql);
         GetParameterValue(command, "@relationshipAuthorization_0_0_SchoolId").Should().Be(255901);
         GetParameterValue(command, "@ClaimEducationOrganizationIds")
             .Should()
             .BeEquivalentTo(new long[] { 1234L });
-        command.Parameters.Select(static parameter => parameter.Name).Should().NotContain("@documentUuid");
-        command.Parameters.Select(static parameter => parameter.Name).Should().NotContain("@resourceKeyId");
+        command.Parameters.Select(static parameter => parameter.Name).Should().NotContain("@SchoolId");
+        command.Parameters.Select(static parameter => parameter.Name).Should().NotContain("@Name");
     }
 
     [Test]
@@ -330,7 +329,7 @@ public class Given_Relational_Write_No_Profile_Persister
             .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         writeSession.Commands.Should().ContainSingle();
         writeSession.Commands[0].CommandText.Should().Contain("AUTH1");
-        writeSession.Commands[0].CommandText.Should().Contain("INSERT INTO [dms].[Document]");
+        writeSession.Commands[0].CommandText.Should().Contain(rootPlan.InsertSql);
     }
 
     [Test]
@@ -379,7 +378,7 @@ public class Given_Relational_Write_No_Profile_Persister
             );
         writeSession.Commands.Should().ContainSingle();
         writeSession.Commands[0].CommandText.Should().Contain("AUTH1");
-        writeSession.Commands[0].CommandText.Should().Contain("INSERT INTO [dms].[Document]");
+        writeSession.Commands[0].CommandText.Should().Contain(rootPlan.InsertSql);
     }
 
     [Test]
@@ -417,7 +416,7 @@ public class Given_Relational_Write_No_Profile_Persister
         exception.Which.FailureMessage.Should().NotContain("2|0|1|0:0:n");
         writeSession.Commands.Should().ContainSingle();
         writeSession.Commands[0].CommandText.Should().Contain("AUTH1");
-        writeSession.Commands[0].CommandText.Should().Contain("INSERT INTO [dms].[Document]");
+        writeSession.Commands[0].CommandText.Should().Contain(rootPlan.InsertSql);
 
         var logRecord = _logger.Records.Should().ContainSingle().Subject;
         logRecord.Level.Should().Be(LogLevel.Error);
@@ -2178,12 +2177,14 @@ public class Given_Relational_Write_No_Profile_Persister
 
         return new TableWritePlan(
             tableModel,
+            // The root insert omits DocumentId (the dms.DocumentIdSequence default originates it) and
+            // returns the drawn value.
             InsertSql: includeShortName
                 ? """
-                insert into edfi."School" values (@DocumentId, @SchoolId, @Name, @ShortName)
+                insert into edfi."School" values (@SchoolId, @Name, @ShortName) returning "DocumentId"
                 """
                 : """
-                insert into edfi."School" values (@DocumentId, @SchoolId, @Name)
+                insert into edfi."School" values (@SchoolId, @Name) returning "DocumentId"
                 """,
             UpdateSql: includeShortName
                 ? """

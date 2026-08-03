@@ -9,6 +9,93 @@ namespace EdFi.DataManagementService.Backend.External;
 
 internal static class WriteBatchSqlSupport
 {
+    /// <summary>
+    /// The SQL Server table variable that carries the root insert's generated <c>DocumentId</c> out of the
+    /// <c>OUTPUT</c> clause. A plain <c>OUTPUT</c> is illegal on a trigger-bearing table and every root
+    /// table carries the stamping trigger, so the value has to land in a table variable and be selected
+    /// back in a trailing statement.
+    /// </summary>
+    public const string NewDocumentIdTableVariableName = "newDocumentId";
+
+    /// <summary>
+    /// Emits the resource root <c>INSERT</c>: the <c>DocumentId</c> column is absent (the
+    /// <c>dms.DocumentIdSequence</c> default originates it) and the statement returns the drawn value as
+    /// its own result set, which the persister binds onto every child row.
+    /// </summary>
+    public static string EmitRootInsertSql(
+        SqlDialect dialect,
+        DbTableName table,
+        IReadOnlyList<DbColumnName> orderedColumns,
+        IReadOnlyList<string> orderedParameterNames,
+        DbColumnName documentIdColumn
+    )
+    {
+        ArgumentNullException.ThrowIfNull(orderedColumns);
+        ArgumentNullException.ThrowIfNull(orderedParameterNames);
+
+        IReadOnlyList<IReadOnlyList<string>> orderedParameterNamesByRow = [orderedParameterNames];
+
+        ValidateInsertShape(orderedColumns, orderedParameterNamesByRow);
+
+        var quotedDocumentIdColumn = QuoteIdentifier(dialect, documentIdColumn.Value);
+
+        StringBuilder builder = new();
+
+        if (dialect == SqlDialect.Mssql)
+        {
+            builder
+                .Append("DECLARE @")
+                .Append(NewDocumentIdTableVariableName)
+                .Append(" TABLE (")
+                .Append(quotedDocumentIdColumn)
+                .Append(" bigint);\n\n");
+        }
+
+        builder.Append("INSERT INTO ");
+        AppendQualifiedTable(builder, dialect, table);
+        builder.Append('\n');
+        AppendParenthesizedLines(
+            builder,
+            orderedColumns.Count,
+            index => builder.Append(QuoteIdentifier(dialect, orderedColumns[index].Value))
+        );
+
+        if (dialect == SqlDialect.Mssql)
+        {
+            builder
+                .Append("OUTPUT INSERTED.")
+                .Append(quotedDocumentIdColumn)
+                .Append(" INTO @")
+                .Append(NewDocumentIdTableVariableName)
+                .Append('\n');
+        }
+
+        builder.Append("VALUES\n");
+        AppendParenthesizedValueLines(
+            builder,
+            orderedParameterNames.Count,
+            index => builder.Append('@').Append(orderedParameterNames[index]),
+            appendTrailingComma: false
+        );
+
+        if (dialect == SqlDialect.Pgsql)
+        {
+            builder.Append("RETURNING ").Append(quotedDocumentIdColumn).Append(";\n");
+
+            return builder.ToString();
+        }
+
+        builder.Append(";\n\n");
+        builder
+            .Append("SELECT ")
+            .Append(quotedDocumentIdColumn)
+            .Append(" FROM @")
+            .Append(NewDocumentIdTableVariableName)
+            .Append(";\n");
+
+        return builder.ToString();
+    }
+
     public static string EmitInsertSql(
         SqlDialect dialect,
         DbTableName table,
