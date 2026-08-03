@@ -33,6 +33,24 @@ public static class DocumentStampSourceSql
         BuildStampQuery(stampTables, bracketQuoted: true);
 
     /// <summary>
+    /// Builds a PostgreSQL query counting the documents carrying <c>@documentUuid</c> across every stamp
+    /// table. The resource root row (or the <c>dms.Descriptor</c> row) <em>is</em> the document now —
+    /// <c>DocumentId</c> comes from <c>dms.DocumentIdSequence</c> and nothing writes <c>dms.Document</c> —
+    /// so "does this document exist" is answered by the owning table, and each table's
+    /// <c>UX_&lt;Root&gt;_DocumentUuid</c> keeps the count at most 1 per branch.
+    /// </summary>
+    public static string BuildPostgresqlDocumentExistsQuery(
+        IEnumerable<(string Schema, string Table)> stampTables
+    ) => BuildDocumentExistsQuery(stampTables, bracketQuoted: false);
+
+    /// <summary>
+    /// The SQL Server equivalent of <see cref="BuildPostgresqlDocumentExistsQuery" />.
+    /// </summary>
+    public static string BuildMssqlDocumentExistsQuery(
+        IEnumerable<(string Schema, string Table)> stampTables
+    ) => BuildDocumentExistsQuery(stampTables, bracketQuoted: true);
+
+    /// <summary>
     /// Builds a PostgreSQL query for the whole document-state row keyed by <c>@documentUuid</c>: the
     /// identity and stamp columns come from whichever stamp table owns the uuid, and
     /// <c>ResourceKeyId</c> — the one column only <c>dms.Document</c> carries — is joined in.
@@ -129,6 +147,49 @@ public static class DocumentStampSourceSql
             ) root
             INNER JOIN [dms].[Document] document ON document.[DocumentId] = root.[DocumentId]
             WHERE root.[DocumentUuid] = @documentUuid;
+            """;
+    }
+
+    private static string BuildDocumentExistsQuery(
+        IEnumerable<(string Schema, string Table)> stampTables,
+        bool bracketQuoted
+    )
+    {
+        ArgumentNullException.ThrowIfNull(stampTables);
+
+        var builder = new StringBuilder();
+        var first = true;
+
+        foreach (var (schema, table) in stampTables)
+        {
+            if (!first)
+            {
+                builder.Append("\n    UNION ALL\n");
+            }
+            first = false;
+
+            builder.Append("    SELECT ");
+            builder.Append(Quote("DocumentUuid", bracketQuoted));
+            builder.Append(" FROM ");
+            builder.Append(Quote(schema, bracketQuoted));
+            builder.Append('.');
+            builder.Append(Quote(table, bracketQuoted));
+        }
+
+        if (first)
+        {
+            throw new ArgumentException("At least one stamp table must be supplied.", nameof(stampTables));
+        }
+
+        var count = bracketQuoted ? "COUNT_BIG(*)" : "COUNT(*)::bigint";
+        var documentUuid = Quote("DocumentUuid", bracketQuoted);
+
+        return $"""
+            SELECT {count}
+            FROM (
+            {builder}
+            ) document
+            WHERE document.{documentUuid} = @documentUuid;
             """;
     }
 

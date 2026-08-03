@@ -182,7 +182,7 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
         var success = result.Should().BeOfType<UpsertResult.InsertSuccess>().Subject;
         success.NewDocumentUuid.Should().Be(seed.DocumentUuid);
         await AssertPersistedRowsAsync(seed);
-        _context.AssertPostCreateRelationshipAuthorizationBeforeDocumentInsert();
+        _context.AssertPostCreateRelationshipAuthorizationBeforeRootInsert();
     }
 
     [Test]
@@ -205,7 +205,7 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
         var success = result.Should().BeOfType<UpsertResult.InsertSuccess>().Subject;
         success.NewDocumentUuid.Should().Be(seed.DocumentUuid);
         await AssertPersistedRowsAsync(seed);
-        _context.AssertPostCreateDirectClaimMatchAuthorizationBeforeDocumentInsert();
+        _context.AssertPostCreateDirectClaimMatchAuthorizationBeforeRootInsert();
     }
 
     [Test]
@@ -223,7 +223,7 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
 
         AssertRelationshipDenied(result, RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         await AssertNoCreateSideEffectsAsync(seed);
-        _context.AssertPostCreateRelationshipAuthorizationBeforeDocumentInsert();
+        _context.AssertPostCreateRelationshipAuthorizationBeforeRootInsert();
     }
 
     [Test]
@@ -263,7 +263,7 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
             .Should()
             .Equal(("$.classPeriods[0].classPeriodReference", DocumentReferenceFailureReason.Missing));
         await AssertNoCreateSideEffectsAsync(seed);
-        _context.AssertPostCreateStandaloneRelationshipAuthorizationWithoutDocumentInsert();
+        _context.AssertPostCreateStandaloneRelationshipAuthorizationWithoutRootInsert();
     }
 
     [Test]
@@ -284,7 +284,7 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
 
         result.Should().BeOfType<UpsertResult.InsertSuccess>();
         await AssertPersistedRowsAsync(seed);
-        _context.AssertPostCreateRelationshipAuthorizationBeforeDocumentInsert();
+        _context.AssertPostCreateRelationshipAuthorizationBeforeRootInsert();
     }
 
     [Test]
@@ -336,7 +336,7 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
         var success = result.Should().BeOfType<UpsertResult.InsertSuccess>().Subject;
         success.NewDocumentUuid.Should().Be(seed.DocumentUuid);
         await AssertPeoplePersistedRowsAsync(seed);
-        _context.AssertPostCreatePeopleAuthorizationBeforeDocumentInsert();
+        _context.AssertPostCreatePeopleAuthorizationBeforeRootInsert();
     }
 
     [Test]
@@ -357,7 +357,7 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
             [ClaimEducationOrganizationId]
         );
         await AssertNoPeopleCreateSideEffectsAsync(seed);
-        _context.AssertPostCreatePeopleAuthorizationBeforeDocumentInsert();
+        _context.AssertPostCreatePeopleAuthorizationBeforeRootInsert();
     }
 
     [Test]

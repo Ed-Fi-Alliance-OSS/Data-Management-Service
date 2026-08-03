@@ -177,6 +177,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private string _documentStateQuery = null!;
+    private string _documentExistsQuery = null!;
     private ServiceProvider _serviceProvider = null!;
     private MssqlRelationalQueryExecutionRecorder _recorder = null!;
     private MssqlRelationalQueryAuthorizationWriteSessionRecorder _writeSessionRecorder = null!;
@@ -210,6 +211,10 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         _databaseLease = await baseline.AcquireRestoredDatabaseAsync();
         Database = _databaseLease.Database;
         _documentStateQuery = DocumentStampSourceSql.BuildMssqlDocumentStateQuery(
+            MssqlGeneratedDdlModelLookup.EnumerateStampTables(_fixture.ModelSet)
+        );
+
+        _documentExistsQuery = DocumentStampSourceSql.BuildMssqlDocumentExistsQuery(
             MssqlGeneratedDdlModelLookup.EnumerateStampTables(_fixture.ModelSet)
         );
         _serviceProvider = CreateServiceProvider(replaceReadTargetLookup);
@@ -1157,11 +1162,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     public async Task<long> CountDocumentRowsAsync(DocumentUuid documentUuid)
     {
         return await Database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT_BIG(*)
-            FROM [dms].[Document]
-            WHERE [DocumentUuid] = @documentUuid;
-            """,
+            _documentExistsQuery,
             new SqlParameter("@documentUuid", documentUuid.Value)
         );
     }
@@ -1176,9 +1177,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             $"""
             SELECT COUNT_BIG(*)
             FROM [{physicalSchema}].[{resourceName}] root
-            INNER JOIN [dms].[Document] document
-                ON document.[DocumentId] = root.[DocumentId]
-            WHERE document.[DocumentUuid] = @documentUuid;
+            WHERE root.[DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid.Value)
         );
@@ -1277,17 +1276,17 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
-    public void AssertPostCreateRelationshipAuthorizationBeforeDocumentInsert()
+    public void AssertPostCreateRelationshipAuthorizationBeforeRootInsert()
     {
         var command = GetRequiredPostCreateRelationshipAuthorizationCommand();
 
         command
             .IndexOf("AUTH1", StringComparison.Ordinal)
             .Should()
-            .BeLessThan(command.IndexOf("INSERT INTO [dms].[Document]", StringComparison.Ordinal));
+            .BeLessThan(command.IndexOf("INSERT INTO [", StringComparison.Ordinal));
     }
 
-    public void AssertPostCreateStandaloneRelationshipAuthorizationWithoutDocumentInsert()
+    public void AssertPostCreateStandaloneRelationshipAuthorizationWithoutRootInsert()
     {
         var commands = _writeSessionRecorder
             .Commands.Select(static recorded => recorded.CommandText)
@@ -1299,13 +1298,16 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             .NotBeEmpty("deferred reference writes should force proposed authorization before returning 409");
         commands
             .Where(static commandText =>
-                commandText.Contains("INSERT INTO [dms].[Document]", StringComparison.Ordinal)
+                commandText.Contains(
+                    "OUTPUT INSERTED.[DocumentId] INTO @newDocumentId",
+                    StringComparison.Ordinal
+                )
             )
             .Should()
-            .BeEmpty("deferred missing references should stop before inserting the document");
+            .BeEmpty("deferred missing references should stop before inserting the root row");
     }
 
-    public void AssertPostCreateDirectClaimMatchAuthorizationBeforeDocumentInsert()
+    public void AssertPostCreateDirectClaimMatchAuthorizationBeforeRootInsert()
     {
         var command = GetRequiredPostCreateRelationshipAuthorizationCommand();
 
@@ -1314,10 +1316,10 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         command
             .IndexOf("AUTH1", StringComparison.Ordinal)
             .Should()
-            .BeLessThan(command.IndexOf("INSERT INTO [dms].[Document]", StringComparison.Ordinal));
+            .BeLessThan(command.IndexOf("INSERT INTO [", StringComparison.Ordinal));
     }
 
-    public void AssertPostCreatePeopleAuthorizationBeforeDocumentInsert()
+    public void AssertPostCreatePeopleAuthorizationBeforeRootInsert()
     {
         var command = GetRequiredPostCreateRelationshipAuthorizationCommand();
 
@@ -1326,7 +1328,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         command
             .IndexOf("AUTH1", StringComparison.Ordinal)
             .Should()
-            .BeLessThan(command.IndexOf("INSERT INTO [dms].[Document]", StringComparison.Ordinal));
+            .BeLessThan(command.IndexOf("INSERT INTO [", StringComparison.Ordinal));
     }
 
     public void AssertPeopleUpdateRunsStoredThenProposedRelationshipAuthorization()
@@ -1678,7 +1680,10 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             .Commands.Select(static recorded => recorded.CommandText)
             .Where(static commandText =>
                 commandText.Contains("AUTH1", StringComparison.Ordinal)
-                && !commandText.Contains("INSERT INTO [dms].[Document]", StringComparison.Ordinal)
+                && !commandText.Contains(
+                    "OUTPUT INSERTED.[DocumentId] INTO @newDocumentId",
+                    StringComparison.Ordinal
+                )
             )
             .ToArray();
 
@@ -2114,16 +2119,25 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     private static bool IsMssqlDocumentDeleteCommand(string commandText) =>
         commandText.Contains("DELETE FROM [dms].[Document]", StringComparison.Ordinal);
 
+    /// <summary>
+    /// The POST-create composition: the proposed-relationship authorization SQL concatenated in front of
+    /// the resource ROOT insert, which is the id-producing statement now. The root insert is identified
+    /// by the OUTPUT clause that carries DocumentId out to the batch's table variable — a plain OUTPUT is
+    /// illegal on the trigger-bearing root table, so this shape is unique to it.
+    /// </summary>
     private string GetRequiredPostCreateRelationshipAuthorizationCommand()
     {
         var command = _writeSessionRecorder
             .Commands.Select(static recorded => recorded.CommandText)
             .FirstOrDefault(commandText =>
                 commandText.Contains("AUTH1", StringComparison.Ordinal)
-                && commandText.Contains("INSERT INTO [dms].[Document]", StringComparison.Ordinal)
+                && commandText.Contains(
+                    "OUTPUT INSERTED.[DocumentId] INTO @newDocumentId",
+                    StringComparison.Ordinal
+                )
             );
 
-        command.Should().NotBeNull("POST create should compose authorization and dms.Document insert");
+        command.Should().NotBeNull("POST create should compose authorization and the root insert");
         return command!;
     }
 }

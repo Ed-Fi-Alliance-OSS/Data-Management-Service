@@ -168,6 +168,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private string _documentStateQuery = null!;
+    private string _documentExistsQuery = null!;
     private ServiceProvider _serviceProvider = null!;
     private PostgresqlRelationalQueryExecutionRecorder _recorder = null!;
     private PostgresqlRelationalQueryAuthorizationWriteSessionRecorder _writeSessionRecorder = null!;
@@ -198,6 +199,9 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
         Database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _documentStateQuery = DocumentStampSourceSql.BuildPostgresqlDocumentStateQuery(
+            PostgresqlGeneratedDdlModelLookup.EnumerateStampTables(_fixture.ModelSet)
+        );
+        _documentExistsQuery = DocumentStampSourceSql.BuildPostgresqlDocumentExistsQuery(
             PostgresqlGeneratedDdlModelLookup.EnumerateStampTables(_fixture.ModelSet)
         );
         _serviceProvider = CreateServiceProvider(replaceReadTargetLookup);
@@ -1044,11 +1048,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     public async Task<long> CountDocumentRowsAsync(DocumentUuid documentUuid)
     {
         return await Database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT(*)::bigint
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
-            """,
+            _documentExistsQuery,
             new NpgsqlParameter("documentUuid", documentUuid.Value)
         );
     }
@@ -1063,9 +1063,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             $"""
             SELECT COUNT(*)::bigint
             FROM "{physicalSchema}"."{resourceName}" root
-            INNER JOIN "dms"."Document" document
-                ON document."DocumentId" = root."DocumentId"
-            WHERE document."DocumentUuid" = @documentUuid;
+            WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid.Value)
         );
@@ -1164,17 +1162,17 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
-    public void AssertPostCreateRelationshipAuthorizationBeforeDocumentInsert()
+    public void AssertPostCreateRelationshipAuthorizationBeforeRootInsert()
     {
         var command = GetPostCreateRelationshipAuthorizationCommand();
 
         command!
             .IndexOf("AUTH1", StringComparison.Ordinal)
             .Should()
-            .BeLessThan(command.IndexOf("INSERT INTO dms.\"Document\"", StringComparison.Ordinal));
+            .BeLessThan(command.IndexOf("INSERT INTO \"", StringComparison.Ordinal));
     }
 
-    public void AssertPostCreateStandaloneRelationshipAuthorizationWithoutDocumentInsert()
+    public void AssertPostCreateStandaloneRelationshipAuthorizationWithoutRootInsert()
     {
         var commands = _writeSessionRecorder
             .Commands.Select(static recorded => recorded.CommandText)
@@ -1186,13 +1184,13 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             .NotBeEmpty("deferred reference writes should force proposed authorization before returning 409");
         commands
             .Where(static commandText =>
-                commandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
+                commandText.Contains("RETURNING \"DocumentId\"", StringComparison.Ordinal)
             )
             .Should()
-            .BeEmpty("deferred missing references should stop before inserting the document");
+            .BeEmpty("deferred missing references should stop before inserting the root row");
     }
 
-    public void AssertPostCreateDirectClaimMatchAuthorizationBeforeDocumentInsert()
+    public void AssertPostCreateDirectClaimMatchAuthorizationBeforeRootInsert()
     {
         var command = GetPostCreateRelationshipAuthorizationCommand();
 
@@ -1201,10 +1199,10 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         command
             .IndexOf("AUTH1", StringComparison.Ordinal)
             .Should()
-            .BeLessThan(command.IndexOf("INSERT INTO dms.\"Document\"", StringComparison.Ordinal));
+            .BeLessThan(command.IndexOf("INSERT INTO \"", StringComparison.Ordinal));
     }
 
-    public void AssertPostCreatePeopleAuthorizationBeforeDocumentInsert()
+    public void AssertPostCreatePeopleAuthorizationBeforeRootInsert()
     {
         var command = GetPostCreateRelationshipAuthorizationCommand();
 
@@ -1213,7 +1211,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         command
             .IndexOf("AUTH1", StringComparison.Ordinal)
             .Should()
-            .BeLessThan(command.IndexOf("INSERT INTO dms.\"Document\"", StringComparison.Ordinal));
+            .BeLessThan(command.IndexOf("INSERT INTO \"", StringComparison.Ordinal));
     }
 
     public void AssertPeopleUpdateRunsStoredThenProposedRelationshipAuthorization()
@@ -1517,6 +1515,11 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    /// <summary>
+    /// The POST-create composition: the proposed-relationship authorization SQL concatenated in front of
+    /// the resource ROOT insert, which is the id-producing statement now. The root insert is identified
+    /// by its <c>RETURNING "DocumentId"</c> tail — the authorization SELECT cannot produce one.
+    /// </summary>
     private string GetPostCreateRelationshipAuthorizationCommand()
     {
         var commands = _writeSessionRecorder.Commands;
@@ -1524,10 +1527,10 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             .Select(static recorded => recorded.CommandText)
             .FirstOrDefault(commandText =>
                 commandText.Contains("AUTH1", StringComparison.Ordinal)
-                && commandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
+                && commandText.Contains("RETURNING \"DocumentId\"", StringComparison.Ordinal)
             );
 
-        command.Should().NotBeNull("POST create should compose authorization and dms.Document insert");
+        command.Should().NotBeNull("POST create should compose authorization and the root insert");
         return command!;
     }
 
