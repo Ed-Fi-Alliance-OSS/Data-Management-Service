@@ -15,13 +15,6 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
 {
     private static readonly ISqlDialect _dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
 
-    private static readonly IReadOnlyList<CdcSourceTableKind> _publicationTableOrder =
-    [
-        CdcSourceTableKind.DocumentCache,
-        CdcSourceTableKind.Document,
-        CdcSourceTableKind.CdcHeartbeat,
-    ];
-
     public CdcProvider Provider => CdcProvider.Postgresql;
 
     public IReadOnlyList<CdcProviderSetupStep> BuildSetupSteps(CdcProviderSetupRequest request)
@@ -713,7 +706,9 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             : "WITH (publish = 'insert, update, delete')";
         var tableList = string.Join(
             ", ",
-            _publicationTableOrder.Select(kind => SourceTable(request, kind).EmittedQuotedTableName)
+            CdcSourceInventoryContract.RequiredSourceTableKinds.Select(kind =>
+                SourceTable(request, kind).EmittedQuotedTableName
+            )
         );
 
         return $"CREATE PUBLICATION {_dialect.QuoteIdentifier(publicationName.Value)} FOR TABLE {tableList} {publicationOptions};";
@@ -1086,8 +1081,8 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             .QueryAsync(PublicationTablesSql(publicationName), cancellationToken)
             .ConfigureAwait(false);
 
-        var expectedTables = _publicationTableOrder
-            .Select(kind => SourceTable(request, kind))
+        var expectedTables = CdcSourceInventoryContract
+            .RequiredSourceTableKinds.Select(kind => SourceTable(request, kind))
             .Select(table => $"{table.TableName.Schema.Value}.{table.TableName.Name}")
             .ToArray();
         var observedTables = tableRows

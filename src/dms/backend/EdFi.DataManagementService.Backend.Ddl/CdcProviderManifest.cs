@@ -315,14 +315,8 @@ internal static class CdcProviderManifestEmitter
         IReadOnlyList<CdcSourceTableInventory> sourceTables
     )
     {
-        var kindOrder = CdcSourceInventoryContract
-            .RequiredSourceTableKinds.Select((kind, ordinal) => (kind, ordinal))
-            .ToDictionary(entry => entry.kind, entry => entry.ordinal);
-
         return sourceTables
-            .OrderBy(table =>
-                kindOrder.TryGetValue(table.TableKind, out var ordinal) ? ordinal : int.MaxValue
-            )
+            .OrderBy(table => CdcSourceInventoryContract.RequiredSourceTableOrdinal(table.TableKind))
             .ThenBy(table => table.TableName.Schema.Value, StringComparer.Ordinal)
             .ThenBy(table => table.TableName.Name, StringComparer.Ordinal)
             .Select(table => new CdcSourceTableInventory(
@@ -364,12 +358,8 @@ internal static class CdcProviderManifestEmitter
         IReadOnlyList<CdcExpectedMessageKeyColumns> keyColumns
     )
     {
-        var kindOrder = CdcSourceInventoryContract
-            .RequiredSourceTableKinds.Select((kind, ordinal) => (kind, ordinal))
-            .ToDictionary(entry => entry.kind, entry => entry.ordinal);
-
         return keyColumns
-            .OrderBy(key => kindOrder.TryGetValue(key.TableKind, out var ordinal) ? ordinal : int.MaxValue)
+            .OrderBy(key => CdcSourceInventoryContract.RequiredSourceTableOrdinal(key.TableKind))
             .ThenBy(key => SourceTableKindToken(key.TableKind), StringComparer.Ordinal)
             .ToArray();
     }

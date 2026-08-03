@@ -271,7 +271,7 @@ public class Given_CdcProviderSetupContract_Request
         action
             .Should()
             .Throw<ArgumentException>()
-            .WithMessage("*dms.Document, dms.DocumentCache, and dms.CdcHeartbeat*");
+            .WithMessage("*dms.DocumentCache, dms.Document, and dms.CdcHeartbeat*");
     }
 
     [Test]

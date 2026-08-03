@@ -902,7 +902,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcSourceInventory",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"PostgresqlCdcHeartbeatPublication|MssqlCdcCaptureInstances|CdcProviderManifest\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "postgresql-heartbeat-publication",

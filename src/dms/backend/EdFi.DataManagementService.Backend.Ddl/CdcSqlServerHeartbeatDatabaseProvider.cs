@@ -16,12 +16,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     private static readonly CdcSafeName _databaseCdcSafeName = new("sqlserver_database_cdc");
     private static readonly CdcSafeName _captureInstancesSafeName = new("sqlserver_cdc_capture_instances");
 
-    private static readonly IReadOnlyList<CdcSourceTableKind> _captureTableOrder =
-    [
-        CdcSourceTableKind.DocumentCache,
-        CdcSourceTableKind.Document,
-        CdcSourceTableKind.CdcHeartbeat,
-    ];
+    private static IReadOnlyList<CdcSourceTableKind> CaptureTableOrder =>
+        CdcSourceInventoryContract.RequiredSourceTableKinds;
 
     public CdcProvider Provider => CdcProvider.SqlServer;
 
@@ -429,7 +425,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     return GatingRolePreCaptureResult(context.Request, gatingRole);
                 }
 
-                foreach (var tableKind in _captureTableOrder.Where(missingKinds.Contains))
+                foreach (var tableKind in CaptureTableOrder.Where(missingKinds.Contains))
                 {
                     await executor
                         .ExecuteNonQueryAsync(
@@ -788,7 +784,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var gatingRoleDirectMembershipIsGrantable =
             gatingRoleDirectMembers.Count == 0
             || gatingRoleDirectMembers.SequenceEqual([connectorPrincipal.Value], StringComparer.Ordinal);
-        var expectedCdcObjectInventoryIsReadable = expectedCdcObjectCount >= _captureTableOrder.Count;
+        var expectedCdcObjectInventoryIsReadable = expectedCdcObjectCount >= CaptureTableOrder.Count;
         var gatingRoleCdcObjectSelectsAreExact =
             expectedCdcObjectInventoryIsReadable
             && gatingRoleCdcObjectSelectCount == expectedCdcObjectCount
@@ -800,7 +796,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             && gatingRoleParentRoles.Count == 0
             && gatingRoleOwnedObjects.Count == 0
             && gatingRoleExplicitPermissions.Count == 0
-            && expectedCaptureInstancesUsingRole == _captureTableOrder.Count
+            && expectedCaptureInstancesUsingRole == CaptureTableOrder.Count
             && unexpectedCaptureInstancesUsingRole.Count == 0
             && gatingRoleCdcObjectSelectsAreExact;
         var connectorIdentityIsGrantable =
@@ -831,7 +827,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             && gatingRoleParentRoles.Count == 0
             && gatingRoleOwnedObjects.Count == 0
             && gatingRoleExplicitPermissions.Count == 0
-            && expectedCaptureInstancesUsingRole == _captureTableOrder.Count
+            && expectedCaptureInstancesUsingRole == CaptureTableOrder.Count
             && unexpectedCaptureInstancesUsingRole.Count == 0
             && gatingRoleCdcObjectSelectsAreExact
             && !hasForbiddenPrivileges
@@ -843,7 +839,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             && gatingRoleParentRoles.Count == 0
             && gatingRoleOwnedObjects.Count == 0
             && gatingRoleExplicitPermissions.Count == 0
-            && expectedCaptureInstancesUsingRole == _captureTableOrder.Count
+            && expectedCaptureInstancesUsingRole == CaptureTableOrder.Count
             && unexpectedCaptureInstancesUsingRole.Count == 0
             && gatingRoleCdcObjectSelectsAreExact;
 
@@ -962,7 +958,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var authSchema = EscapeSqlLiteral(AuthNames.AuthSchema.Value);
         var expectedCaptureInstances = string.Join(
             ",\n            ",
-            _captureTableOrder.Select(kind =>
+            CaptureTableOrder.Select(kind =>
                 $"(N'{EscapeSqlLiteral(request.ArtifactNames.SqlServer.CaptureInstanceNames[kind].Value)}')"
             )
         );
@@ -1792,7 +1788,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var gatingRoleLiteral = EscapeSqlLiteral(request.ArtifactNames.SqlServer!.GatingRoleName.Value);
         var expectedCaptureInstances = string.Join(
             ",\n            ",
-            _captureTableOrder.Select(kind =>
+            CaptureTableOrder.Select(kind =>
                 $"(N'{EscapeSqlLiteral(request.ArtifactNames.SqlServer.CaptureInstanceNames[kind].Value)}')"
             )
         );
@@ -2372,7 +2368,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             .ConfigureAwait(false);
         var rowsByCaptureInstance = rows.GroupBy(row => ReadRequired(row, "capture_instance"))
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
-        var expectedDefinitions = _captureTableOrder
+        var expectedDefinitions = CaptureTableOrder
             .Select(kind => ExpectedCaptureDefinition(request, kind))
             .ToArray();
         var expectedCaptureNames = expectedDefinitions
@@ -2429,7 +2425,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     {
         var expectedValues = string.Join(
             ",\n                    ",
-            _captureTableOrder.Select(
+            CaptureTableOrder.Select(
                 (kind, index) =>
                 {
                     var sourceTable = SourceTable(request, kind);
@@ -3341,8 +3337,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             && gatingRoleDirectMembers.Count > 0
             && !gatingRoleDirectMembers.SequenceEqual([connectorPrincipal.Value], StringComparer.Ordinal);
         var gatingRoleMissingAfterExpectedCaptures =
-            !gatingRoleExists && expectedCaptureInstancesUsingRole == _captureTableOrder.Count;
-        var expectedCdcObjectInventoryIsReadable = expectedCdcObjectCount >= _captureTableOrder.Count;
+            !gatingRoleExists && expectedCaptureInstancesUsingRole == CaptureTableOrder.Count;
+        var expectedCdcObjectInventoryIsReadable = expectedCdcObjectCount >= CaptureTableOrder.Count;
         var gatingRoleCdcObjectSelectMismatch =
             !expectedCdcObjectInventoryIsReadable
             || gatingRoleCdcObjectSelectCount != expectedCdcObjectCount
@@ -3356,7 +3352,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     || gatingRoleParentRoles.Count > 0
                     || gatingRoleOwnedObjects.Count > 0
                     || gatingRoleExplicitPermissions.Count > 0
-                    || expectedCaptureInstancesUsingRole != _captureTableOrder.Count
+                    || expectedCaptureInstancesUsingRole != CaptureTableOrder.Count
                     || unexpectedCaptureInstancesUsingRole.Count > 0
                     || gatingRoleCdcObjectSelectMismatch
                 )
@@ -3384,7 +3380,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         gatingRoleExplicitPermissions.Count == 0
                             ? null
                             : $"permissions:{CsvOrNone(gatingRoleExplicitPermissions)}",
-                        expectedCaptureInstancesUsingRole == _captureTableOrder.Count
+                        expectedCaptureInstancesUsingRole == CaptureTableOrder.Count
                             ? null
                             : $"expected_capture_count:{expectedCaptureInstancesUsingRole}",
                         unexpectedCaptureInstancesUsingRole.Count == 0

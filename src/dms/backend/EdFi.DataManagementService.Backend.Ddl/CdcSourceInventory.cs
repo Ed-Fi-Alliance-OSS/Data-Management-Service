@@ -14,21 +14,24 @@ internal static class CdcSourceInventoryBuilder
     {
         ArgumentNullException.ThrowIfNull(dialect);
 
-        return
-        [
-            BuildTable(CdcSourceTableKind.Document, DmsCoreTableDefinitions.Document(dialect), dialect),
-            BuildTable(
-                CdcSourceTableKind.DocumentCache,
-                DmsCoreTableDefinitions.DocumentCache(dialect),
-                dialect
-            ),
-            BuildTable(
-                CdcSourceTableKind.CdcHeartbeat,
-                DmsCoreTableDefinitions.CdcHeartbeat(dialect),
-                dialect
-            ),
-        ];
+        return CdcSourceInventoryContract
+            .RequiredSourceTableKinds.Select(kind =>
+                BuildTable(kind, CoreTableDefinition(kind, dialect), dialect)
+            )
+            .ToArray();
     }
+
+    private static DmsCoreTableDefinition CoreTableDefinition(
+        CdcSourceTableKind tableKind,
+        ISqlDialect dialect
+    ) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.DocumentCache => DmsCoreTableDefinitions.DocumentCache(dialect),
+            CdcSourceTableKind.Document => DmsCoreTableDefinitions.Document(dialect),
+            CdcSourceTableKind.CdcHeartbeat => DmsCoreTableDefinitions.CdcHeartbeat(dialect),
+            _ => throw new InvalidOperationException("Unsupported CDC source table kind."),
+        };
 
     private static CdcSourceTableInventory BuildTable(
         CdcSourceTableKind tableKind,

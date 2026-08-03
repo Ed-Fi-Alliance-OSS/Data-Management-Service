@@ -9,6 +9,26 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 
+[TestFixture]
+public class Given_CdcSourceInventoryContract
+{
+    [Test]
+    public void It_should_name_the_fixed_cdc_source_table_order()
+    {
+        CdcSourceInventoryContract
+            .RequiredSourceTableKinds.Should()
+            .Equal(
+                CdcSourceTableKind.DocumentCache,
+                CdcSourceTableKind.Document,
+                CdcSourceTableKind.CdcHeartbeat
+            );
+        CdcSourceInventoryContract
+            .RequiredSourceTableOrdinal((CdcSourceTableKind)999)
+            .Should()
+            .Be(int.MaxValue);
+    }
+}
+
 [TestFixture(SqlDialect.Pgsql)]
 [TestFixture(SqlDialect.Mssql)]
 public class Given_CdcSourceInventoryBuilder(SqlDialect dialect)
@@ -29,11 +49,7 @@ public class Given_CdcSourceInventoryBuilder(SqlDialect dialect)
         _inventory
             .Select(table => table.TableKind)
             .Should()
-            .Equal(
-                CdcSourceTableKind.Document,
-                CdcSourceTableKind.DocumentCache,
-                CdcSourceTableKind.CdcHeartbeat
-            );
+            .Equal(CdcSourceInventoryContract.RequiredSourceTableKinds);
 
         _inventory.Select(table => table.TableName).Should().NotContain(DmsTableNames.DocumentProjectionWork);
     }

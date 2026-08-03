@@ -650,7 +650,15 @@ internal readonly record struct CdcSafeName
 internal static class CdcSourceInventoryContract
 {
     public static IReadOnlyList<CdcSourceTableKind> RequiredSourceTableKinds { get; } =
-    [CdcSourceTableKind.Document, CdcSourceTableKind.DocumentCache, CdcSourceTableKind.CdcHeartbeat];
+    [CdcSourceTableKind.DocumentCache, CdcSourceTableKind.Document, CdcSourceTableKind.CdcHeartbeat];
+
+    private static readonly IReadOnlyDictionary<CdcSourceTableKind, int> _requiredSourceTableOrdinalByKind =
+        RequiredSourceTableKinds
+            .Select((kind, ordinal) => (kind, ordinal))
+            .ToDictionary(entry => entry.kind, entry => entry.ordinal);
+
+    public static int RequiredSourceTableOrdinal(CdcSourceTableKind tableKind) =>
+        _requiredSourceTableOrdinalByKind.TryGetValue(tableKind, out var ordinal) ? ordinal : int.MaxValue;
 
     public static IReadOnlyList<CdcSourceTableInventory> ValidateRequiredSourceInventory(
         IReadOnlyList<CdcSourceTableInventory> sourceInventory,
@@ -672,7 +680,7 @@ internal static class CdcSourceInventoryContract
         if (missingKinds.Length > 0 || extraKinds.Length > 0 || duplicateKinds.Length > 0)
         {
             throw new ArgumentException(
-                "CDC source inventory must contain exactly dms.Document, dms.DocumentCache, and dms.CdcHeartbeat.",
+                "CDC source inventory must contain exactly dms.DocumentCache, dms.Document, and dms.CdcHeartbeat.",
                 parameterName
             );
         }
