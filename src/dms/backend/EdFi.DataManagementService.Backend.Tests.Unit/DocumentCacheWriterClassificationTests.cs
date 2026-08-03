@@ -309,20 +309,18 @@ public class Given_DocumentCacheWriterClassification
     }
 
     [Test]
-    public void It_applies_same_no_dml_rules_for_direct_fill_when_no_current_matching_work_exists()
+    public void It_returns_work_anomaly_when_no_current_matching_work_exists()
     {
         DocumentCacheWriterClassificationSelection missingWork = Select(
             sourceContentVersion: 11,
             cacheContentVersion: 10,
             workRequiredContentVersion: null,
-            purpose: DocumentCacheWriterPurpose.DirectFill,
             candidateObservation: CandidateMatches(CreateCandidate(contentVersion: 11))
         );
         DocumentCacheWriterClassificationSelection mismatchedWork = Select(
             sourceContentVersion: 11,
             cacheContentVersion: 10,
             workRequiredContentVersion: 12,
-            purpose: DocumentCacheWriterPurpose.DirectFill,
             candidateObservation: CandidateMatches(CreateCandidate(contentVersion: 11))
         );
 
@@ -335,7 +333,7 @@ public class Given_DocumentCacheWriterClassification
     }
 
     [Test]
-    public void It_uses_the_same_action_and_result_model_for_direct_fill_when_current_work_exists()
+    public void It_uses_the_common_action_and_result_model_when_current_work_exists()
     {
         DocumentCacheMaterializationCandidate currentCandidate = CreateCandidate(contentVersion: 11);
 
@@ -343,33 +341,28 @@ public class Given_DocumentCacheWriterClassification
             sourceContentVersion: 11,
             cacheContentVersion: 10,
             workRequiredContentVersion: 11,
-            purpose: DocumentCacheWriterPurpose.DirectFill,
             candidateObservation: CandidateMatches(currentCandidate)
         );
         DocumentCacheWriterClassificationSelection equalVersion = Select(
             sourceContentVersion: 11,
             cacheContentVersion: 11,
-            workRequiredContentVersion: 11,
-            purpose: DocumentCacheWriterPurpose.DirectFill
+            workRequiredContentVersion: 11
         );
         DocumentCacheWriterClassificationSelection needsMaterialization = Select(
             sourceContentVersion: 11,
             cacheContentVersion: null,
-            workRequiredContentVersion: 11,
-            purpose: DocumentCacheWriterPurpose.DirectFill
+            workRequiredContentVersion: 11
         );
         DocumentCacheWriterClassificationSelection staleCandidate = Select(
             sourceContentVersion: 11,
             cacheContentVersion: null,
             workRequiredContentVersion: 11,
-            purpose: DocumentCacheWriterPurpose.DirectFill,
             candidateObservation: CandidateMatches(CreateCandidate(contentVersion: 10))
         );
         DocumentCacheWriterClassificationSelection invariantFailure = Select(
             sourceContentVersion: 11,
             cacheContentVersion: null,
             workRequiredContentVersion: 11,
-            purpose: DocumentCacheWriterPurpose.DirectFill,
             candidateObservation: CandidateWithMetadataMismatch(
                 currentCandidate,
                 DocumentCacheWriterCandidateMetadataComparison.TargetMappingMismatch
@@ -429,7 +422,6 @@ public class Given_DocumentCacheWriterClassification
         DocumentCacheWriterClassificationSelection missingState =
             DocumentCacheWriterClassificationSelector.Select(
                 new DocumentCacheWriterClassificationRequest(
-                    DocumentCacheWriterPurpose.DurableWorkProjection,
                     DocumentCacheLifecycleReadResult.Failure(
                         DocumentCacheLifecycleReadStatus.Missing,
                         "missing"
@@ -477,13 +469,6 @@ public class Given_DocumentCacheWriterClassification
     [Test]
     public void It_rejects_invalid_classification_inputs()
     {
-        Action invalidPurpose = () =>
-            _ = new DocumentCacheWriterClassificationRequest(
-                (DocumentCacheWriterPurpose)0,
-                Lifecycle(),
-                new DocumentCacheWriterCurrentStateObservation(11, 10, 11),
-                DocumentCacheWriterCandidateObservation.Absent
-            );
         Action invalidVersion = () => _ = new DocumentCacheWriterCurrentStateObservation(11, 0, 11);
         Action missingCandidateWithMetadataComparison = () =>
             _ = new DocumentCacheWriterCandidateObservation(
@@ -501,7 +486,6 @@ public class Given_DocumentCacheWriterClassification
                 (DocumentCacheWriterCandidateMetadataComparison)0
             );
 
-        invalidPurpose.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*purpose*");
         invalidVersion.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*cacheContentVersion*");
         missingCandidateWithMetadataComparison
             .Should()
@@ -520,12 +504,10 @@ public class Given_DocumentCacheWriterClassification
         long? workRequiredContentVersion,
         DocumentCacheLifecycleState lifecycleState = DocumentCacheLifecycleState.Tracking,
         bool cacheAheadRecoveryRequired = false,
-        DocumentCacheWriterPurpose purpose = DocumentCacheWriterPurpose.DurableWorkProjection,
         DocumentCacheWriterCandidateObservation? candidateObservation = null
     ) =>
         DocumentCacheWriterClassificationSelector.Select(
             new DocumentCacheWriterClassificationRequest(
-                purpose,
                 Lifecycle(lifecycleState, cacheAheadRecoveryRequired),
                 new DocumentCacheWriterCurrentStateObservation(
                     sourceContentVersion,

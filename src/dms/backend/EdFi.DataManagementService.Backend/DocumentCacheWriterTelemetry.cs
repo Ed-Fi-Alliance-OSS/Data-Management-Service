@@ -5,6 +5,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.Utilities;
@@ -103,6 +104,19 @@ internal sealed record DocumentCacheWriterMetricContext
             outcome
         );
 
+    public static DocumentCacheWriterMetricContext ForCanonicalWriter(
+        SqlDialect dialect,
+        IDataStoreSelection? dataStoreSelection,
+        string purpose,
+        string outcome
+    ) =>
+        ForCanonicalWriter(
+            ProviderTokenForDialect(dialect),
+            TryGetSelectedDataStoreId(dataStoreSelection),
+            purpose,
+            outcome
+        );
+
     public TagList ToTags()
     {
         return
@@ -129,6 +143,26 @@ internal sealed record DocumentCacheWriterMetricContext
 
     private static string SelectedDataStoreTargetKey(long? dataStoreId) =>
         dataStoreId is > 0 ? $"(selected):{dataStoreId.Value}" : DocumentCacheWriterTelemetryLabel.Unknown;
+
+    private static long? TryGetSelectedDataStoreId(IDataStoreSelection? dataStoreSelection)
+    {
+        try
+        {
+            return dataStoreSelection?.IsSet == true ? dataStoreSelection.GetSelectedDataStore().Id : null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static RelationalProviderToken ProviderTokenForDialect(SqlDialect dialect) =>
+        dialect switch
+        {
+            SqlDialect.Pgsql => RelationalProviderToken.Postgresql,
+            SqlDialect.Mssql => RelationalProviderToken.SqlServer,
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
+        };
 
     private static string LifecycleLabel(DocumentCacheLifecycleState? lifecycleState) =>
         lifecycleState?.ToString() ?? DocumentCacheWriterTelemetryLabel.Unknown;

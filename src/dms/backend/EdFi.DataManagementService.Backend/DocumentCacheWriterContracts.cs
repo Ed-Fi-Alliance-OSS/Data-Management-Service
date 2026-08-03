@@ -343,21 +343,13 @@ public abstract record DocumentCacheWriterResult
     {
         public CacheAheadLatchSet(long sourceContentVersion, long cacheContentVersion)
         {
-            SourceContentVersion = RequirePositiveContentVersion(
+            DocumentCacheMaterializerGuards.RequireCacheAheadLatchVersions(
                 sourceContentVersion,
-                nameof(sourceContentVersion)
+                cacheContentVersion
             );
-            CacheContentVersion = RequirePositiveContentVersion(
-                cacheContentVersion,
-                nameof(cacheContentVersion)
-            );
-            if (CacheContentVersion <= SourceContentVersion)
-            {
-                throw new ArgumentException(
-                    "Cache-ahead latch outcomes require cache ContentVersion to be greater than source ContentVersion.",
-                    nameof(cacheContentVersion)
-                );
-            }
+
+            SourceContentVersion = sourceContentVersion;
+            CacheContentVersion = cacheContentVersion;
         }
 
         public override DocumentCacheWriterOutcome Outcome => DocumentCacheWriterOutcome.CacheAheadLatchSet;

@@ -108,7 +108,6 @@ internal sealed class PostgresqlDocumentCacheWriter(
             telemetryLifecycleState = lifecycleReadResult.Lifecycle?.State;
 
             DocumentCacheWriterResult? lifecycleFence = DocumentCacheWriterSupport.SelectLifecycleFence(
-                request.Purpose,
                 lifecycleReadResult
             );
             if (lifecycleFence is not null)
@@ -135,7 +134,6 @@ internal sealed class PostgresqlDocumentCacheWriter(
             DocumentCacheWriterClassificationSelection selection =
                 DocumentCacheWriterClassificationSelector.Select(
                     new DocumentCacheWriterClassificationRequest(
-                        request.Purpose,
                         lifecycleReadResult,
                         currentObservation.ToCurrentState(),
                         DocumentCacheWriterSupport.BuildCandidateObservation(request, currentObservation)
@@ -420,7 +418,6 @@ internal sealed class PostgresqlDocumentCacheWriter(
                 .ConfigureAwait(false);
             telemetryLifecycleState = lifecycleReadResult.Lifecycle?.State;
             DocumentCacheWriterResult? lifecycleFence = DocumentCacheWriterSupport.SelectLifecycleFence(
-                request.Purpose,
                 lifecycleReadResult
             );
             if (lifecycleFence is not null)
@@ -440,7 +437,6 @@ internal sealed class PostgresqlDocumentCacheWriter(
                 .ConfigureAwait(false);
             DocumentCacheWriterCacheAheadIncidentDecision recheckDecision =
                 DocumentCacheWriterCacheAheadIncidentFlow.SelectRecheckDecision(
-                    request.Purpose,
                     lifecycleReadResult,
                     currentObservation.ToCurrentState(),
                     DocumentCacheWriterSupport.BuildCandidateObservation(request, currentObservation)

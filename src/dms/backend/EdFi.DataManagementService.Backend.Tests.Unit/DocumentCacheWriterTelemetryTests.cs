@@ -148,6 +148,28 @@ public class Given_DocumentCacheWriterTelemetry
     }
 
     [Test]
+    public void It_builds_canonical_writer_context_from_dialect_and_selected_data_store()
+    {
+        DocumentCacheWriterMetricContext context = DocumentCacheWriterMetricContext.ForCanonicalWriter(
+            SqlDialect.Mssql,
+            CreateSelectedDataStoreSelection(),
+            DocumentCacheWriterTelemetryLabel.CanonicalWrite,
+            DocumentCacheWriterTelemetryLabel.AppliedWrite
+        );
+
+        var tags = context.ToTags();
+
+        tags.First(tag => tag.Key == "provider").Value.Should().Be("sqlserver");
+        tags.First(tag => tag.Key == "target_key").Value.Should().Be("selected:99");
+        tags.First(tag => tag.Key == "purpose")
+            .Value.Should()
+            .Be(DocumentCacheWriterTelemetryLabel.CanonicalWrite);
+        tags.First(tag => tag.Key == "outcome")
+            .Value.Should()
+            .Be(DocumentCacheWriterTelemetryLabel.AppliedWrite);
+    }
+
+    [Test]
     public void It_sanitizes_and_bounds_labels_without_document_identifiers_payloads_or_resource_labels()
     {
         const string sensitiveDocumentUuid = "11111111-1111-1111-1111-111111111111";

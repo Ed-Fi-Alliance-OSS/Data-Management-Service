@@ -1989,11 +1989,8 @@ internal sealed class DescriptorWriteHandler(
     }
 
     /// <summary>
-    /// Executes a descriptor write whose final statement surfaces the owning document's
-    /// <c>ContentVersion</c> and returns that value for etag composition. Every descriptor write whose
-    /// success result carries an etag (INSERT plus both UPDATE variants) surfaces ContentVersion:
-    /// the INSERT returns the insert-time value (the stamp trigger only mirrors it on descriptor
-    /// insert), and each UPDATE re-selects the post-trigger bumped value that a later GET reads.
+    /// Executes a descriptor write and records canonical writer wait telemetry for the applied or
+    /// failed outcome.
     /// </summary>
     private async Task<long> ExecuteDescriptorWriteReturningContentVersionWithTelemetryAsync(
         DescriptorWriteRequest request,
@@ -2040,8 +2037,8 @@ internal sealed class DescriptorWriteHandler(
     {
         _documentCacheWriterTelemetry.RecordSameDocumentWait(
             DocumentCacheWriterMetricContext.ForCanonicalWriter(
-                ProviderTokenForDialect(request.MappingSet.Key.Dialect),
-                TryGetSelectedDataStoreId(),
+                request.MappingSet.Key.Dialect,
+                _dataStoreSelection,
                 DocumentCacheWriterTelemetryLabel.CanonicalWrite,
                 outcome
             ),
@@ -2051,26 +2048,13 @@ internal sealed class DescriptorWriteHandler(
         );
     }
 
-    private long? TryGetSelectedDataStoreId()
-    {
-        try
-        {
-            return _dataStoreSelection?.IsSet == true ? _dataStoreSelection.GetSelectedDataStore().Id : null;
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
-    }
-
-    private static RelationalProviderToken ProviderTokenForDialect(SqlDialect dialect) =>
-        dialect switch
-        {
-            SqlDialect.Pgsql => RelationalProviderToken.Postgresql,
-            SqlDialect.Mssql => RelationalProviderToken.SqlServer,
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
-        };
-
+    /// <summary>
+    /// Executes a descriptor write whose final statement surfaces the owning document's
+    /// <c>ContentVersion</c> and returns that value for etag composition. Every descriptor write whose
+    /// success result carries an etag (INSERT plus both UPDATE variants) surfaces ContentVersion:
+    /// the INSERT returns the insert-time value (the stamp trigger only mirrors it on descriptor
+    /// insert), and each UPDATE re-selects the post-trigger bumped value that a later GET reads.
+    /// </summary>
     private static Task<long> ExecuteWriteReturningContentVersionAsync(
         IRelationalCommandExecutor commandExecutor,
         RelationalCommand command,

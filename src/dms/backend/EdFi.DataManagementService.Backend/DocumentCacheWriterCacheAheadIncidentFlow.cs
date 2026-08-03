@@ -150,7 +150,7 @@ internal sealed record DocumentCacheWriterCacheAheadIncidentDecision
                 );
             }
 
-            _ = new DocumentCacheWriterResult.CacheAheadLatchSet(
+            DocumentCacheMaterializerGuards.RequireCacheAheadLatchVersions(
                 SourceContentVersion.Value,
                 CacheContentVersion.Value
             );
@@ -254,7 +254,6 @@ internal static class DocumentCacheWriterCacheAheadIncidentFlow
     }
 
     public static DocumentCacheWriterCacheAheadIncidentDecision SelectRecheckDecision(
-        DocumentCacheWriterPurpose purpose,
         DocumentCacheLifecycleReadResult lifecycleReadResult,
         DocumentCacheWriterCurrentStateObservation currentState,
         DocumentCacheWriterCandidateObservation candidateObservation
@@ -263,7 +262,6 @@ internal static class DocumentCacheWriterCacheAheadIncidentFlow
         DocumentCacheWriterClassificationSelection selection =
             DocumentCacheWriterClassificationSelector.Select(
                 new DocumentCacheWriterClassificationRequest(
-                    purpose,
                     lifecycleReadResult,
                     currentState,
                     candidateObservation

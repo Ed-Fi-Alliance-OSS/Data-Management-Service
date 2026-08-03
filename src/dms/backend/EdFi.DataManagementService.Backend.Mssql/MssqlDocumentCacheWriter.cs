@@ -111,7 +111,6 @@ internal sealed class MssqlDocumentCacheWriter(
             telemetryLifecycleState = lifecycleReadResult.Lifecycle?.State;
 
             DocumentCacheWriterResult? lifecycleFence = DocumentCacheWriterSupport.SelectLifecycleFence(
-                request.Purpose,
                 lifecycleReadResult
             );
             if (lifecycleFence is not null)
@@ -138,7 +137,6 @@ internal sealed class MssqlDocumentCacheWriter(
             DocumentCacheWriterClassificationSelection selection =
                 DocumentCacheWriterClassificationSelector.Select(
                     new DocumentCacheWriterClassificationRequest(
-                        request.Purpose,
                         lifecycleReadResult,
                         currentObservation.ToCurrentState(),
                         DocumentCacheWriterSupport.BuildCandidateObservation(request, currentObservation)
@@ -424,7 +422,6 @@ internal sealed class MssqlDocumentCacheWriter(
                 .ConfigureAwait(false);
             telemetryLifecycleState = lifecycleReadResult.Lifecycle?.State;
             DocumentCacheWriterResult? lifecycleFence = DocumentCacheWriterSupport.SelectLifecycleFence(
-                request.Purpose,
                 lifecycleReadResult
             );
             if (lifecycleFence is not null)
@@ -444,7 +441,6 @@ internal sealed class MssqlDocumentCacheWriter(
                 .ConfigureAwait(false);
             DocumentCacheWriterCacheAheadIncidentDecision recheckDecision =
                 DocumentCacheWriterCacheAheadIncidentFlow.SelectRecheckDecision(
-                    request.Purpose,
                     lifecycleReadResult,
                     currentObservation.ToCurrentState(),
                     DocumentCacheWriterSupport.BuildCandidateObservation(request, currentObservation)

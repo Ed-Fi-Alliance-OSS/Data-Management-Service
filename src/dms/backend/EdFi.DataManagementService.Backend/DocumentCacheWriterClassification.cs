@@ -103,25 +103,17 @@ internal sealed record DocumentCacheWriterCurrentStateObservation
 internal sealed record DocumentCacheWriterClassificationRequest
 {
     public DocumentCacheWriterClassificationRequest(
-        DocumentCacheWriterPurpose purpose,
         DocumentCacheLifecycleReadResult lifecycleReadResult,
         DocumentCacheWriterCurrentStateObservation currentState,
         DocumentCacheWriterCandidateObservation candidateObservation
     )
     {
-        Purpose = DocumentCacheMaterializerGuards.RequireDefined(
-            purpose,
-            nameof(purpose),
-            "Unsupported cache-writer purpose."
-        );
         LifecycleReadResult =
             lifecycleReadResult ?? throw new ArgumentNullException(nameof(lifecycleReadResult));
         CurrentState = currentState ?? throw new ArgumentNullException(nameof(currentState));
         CandidateObservation =
             candidateObservation ?? throw new ArgumentNullException(nameof(candidateObservation));
     }
-
-    public DocumentCacheWriterPurpose Purpose { get; }
 
     public DocumentCacheLifecycleReadResult LifecycleReadResult { get; }
 
@@ -274,7 +266,10 @@ internal sealed record DocumentCacheWriterClassificationSelection
         long cacheContentVersion
     )
     {
-        _ = new DocumentCacheWriterResult.CacheAheadLatchSet(sourceContentVersion, cacheContentVersion);
+        DocumentCacheMaterializerGuards.RequireCacheAheadLatchVersions(
+            sourceContentVersion,
+            cacheContentVersion
+        );
 
         return new(
             DocumentCacheWriterSelectedAction.RequestCacheAheadLatchFlow,

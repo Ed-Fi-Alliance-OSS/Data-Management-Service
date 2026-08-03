@@ -119,14 +119,12 @@ internal static class DocumentCacheWriterSupport
     }
 
     public static DocumentCacheWriterResult? SelectLifecycleFence(
-        DocumentCacheWriterPurpose purpose,
         DocumentCacheLifecycleReadResult lifecycleReadResult
     )
     {
         DocumentCacheWriterClassificationSelection selection =
             DocumentCacheWriterClassificationSelector.Select(
                 new DocumentCacheWriterClassificationRequest(
-                    purpose,
                     lifecycleReadResult,
                     new DocumentCacheWriterCurrentStateObservation(
                         sourceContentVersion: null,

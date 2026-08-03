@@ -737,8 +737,8 @@ public class Given_A_Postgresql_DocumentCacheWriter
     }
 
     [Test]
-    [Category("DocumentCacheWriterPerformance")]
-    public async Task DocumentCacheWriterPerformance_it_records_DMS_1313_component_evidence()
+    [Category("DocumentCacheWriterTelemetry")]
+    public async Task DocumentCacheWriterTelemetry_it_records_DMS_1313_metric_coverage()
     {
         var telemetry = new RecordingDocumentCacheWriterTelemetry();
         _writer = CreateWriter(telemetry: telemetry, maxRetryAttempts: 1);
@@ -885,7 +885,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
             .BeOfType<DocumentCacheWriterResult.CacheAheadLatchSet>();
         (await ReadCacheAheadLatchAsync()).Should().BeTrue();
 
-        AssertDms1313PerformanceTelemetry(telemetry, "postgresql");
+        AssertDms1313TelemetryCoverage(telemetry, "postgresql");
     }
 
     private async Task<DocumentCacheWriterResult> WriteAsync(
@@ -1383,7 +1383,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
         return fenced;
     }
 
-    private static void AssertDms1313PerformanceTelemetry(
+    private static void AssertDms1313TelemetryCoverage(
         RecordingDocumentCacheWriterTelemetry telemetry,
         string provider
     )
@@ -1416,6 +1416,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
         telemetry
             .Records.Should()
             .Contain(record => record.Name == RecordingDocumentCacheWriterTelemetry.AcknowledgementDuration);
+        AssertDurationCoverageByPurpose(telemetry);
         telemetry
             .Records.Should()
             .Contain(record =>
@@ -1463,6 +1464,25 @@ public class Given_A_Postgresql_DocumentCacheWriter
         labels.Should().NotContain("DocumentJson");
         labels.Should().NotContain("authorization");
         labels.Should().NotContain("Person");
+    }
+
+    private static void AssertDurationCoverageByPurpose(RecordingDocumentCacheWriterTelemetry telemetry)
+    {
+        var totalDurationByPurpose = telemetry
+            .Records.Where(record => record.Duration is not null)
+            .GroupBy(record => record.Context.Purpose)
+            .ToDictionary(
+                group => group.Key,
+                group => TimeSpan.FromTicks(group.Sum(record => record.Duration!.Value.Ticks))
+            );
+
+        totalDurationByPurpose
+            .Keys.Should()
+            .Contain([
+                nameof(DocumentCacheWriterPurpose.DurableWorkProjection),
+                nameof(DocumentCacheWriterPurpose.DirectFill),
+            ]);
+        totalDurationByPurpose.Values.Should().OnlyContain(duration => duration >= TimeSpan.Zero);
     }
 
     private static bool IsExpectedTelemetryContext(DocumentCacheWriterMetricContext context, string provider)

@@ -17,6 +17,20 @@ internal static class DocumentCacheMaterializerGuards
         return value;
     }
 
+    public static void RequireCacheAheadLatchVersions(long sourceContentVersion, long cacheContentVersion)
+    {
+        RequirePositive(sourceContentVersion, nameof(sourceContentVersion));
+        RequirePositive(cacheContentVersion, nameof(cacheContentVersion));
+
+        if (cacheContentVersion <= sourceContentVersion)
+        {
+            throw new ArgumentException(
+                "Cache-ahead latch outcomes require cache ContentVersion to be greater than source ContentVersion.",
+                nameof(cacheContentVersion)
+            );
+        }
+    }
+
     public static TEnum RequireDefined<TEnum>(TEnum value, string parameterName, string message)
         where TEnum : struct, Enum
     {

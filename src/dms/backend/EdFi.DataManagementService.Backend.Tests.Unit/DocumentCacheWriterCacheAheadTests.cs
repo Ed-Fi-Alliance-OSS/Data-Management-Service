@@ -243,7 +243,6 @@ public class Given_DocumentCacheWriterCacheAhead
         long? workRequiredContentVersion
     ) =>
         DocumentCacheWriterCacheAheadIncidentFlow.SelectRecheckDecision(
-            DocumentCacheWriterPurpose.DurableWorkProjection,
             lifecycleReadResult,
             new DocumentCacheWriterCurrentStateObservation(
                 sourceContentVersion,

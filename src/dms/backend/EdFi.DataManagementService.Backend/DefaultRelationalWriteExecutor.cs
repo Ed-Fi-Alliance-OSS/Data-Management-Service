@@ -512,8 +512,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     {
         _documentCacheWriterTelemetry.RecordSameDocumentWait(
             DocumentCacheWriterMetricContext.ForCanonicalWriter(
-                ProviderTokenForDialect(request.MappingSet.Key.Dialect),
-                TryGetSelectedDataStoreId(),
+                request.MappingSet.Key.Dialect,
+                _dataStoreSelection,
                 DocumentCacheWriterTelemetryLabel.CanonicalWrite,
                 outcome
             ),
@@ -522,24 +522,4 @@ internal sealed class DefaultRelationalWriteExecutor(
             DocumentCacheWriterTelemetry.GetElapsedTime(startTimestamp)
         );
     }
-
-    private long? TryGetSelectedDataStoreId()
-    {
-        try
-        {
-            return _dataStoreSelection?.IsSet == true ? _dataStoreSelection.GetSelectedDataStore().Id : null;
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
-    }
-
-    private static RelationalProviderToken ProviderTokenForDialect(SqlDialect dialect) =>
-        dialect switch
-        {
-            SqlDialect.Pgsql => RelationalProviderToken.Postgresql,
-            SqlDialect.Mssql => RelationalProviderToken.SqlServer,
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
-        };
 }
