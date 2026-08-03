@@ -2300,6 +2300,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             )
         );
         var dmsSchema = EscapeSqlLiteral(DmsTableNames.DmsSchema.Value);
+        var authSchema = EscapeSqlLiteral(AuthNames.AuthSchema.Value);
+        var gatingRoleName = EscapeSqlLiteral(request.ArtifactNames.SqlServer!.GatingRoleName.Value);
         var workTableSchema = EscapeSqlLiteral(DmsTableNames.DocumentProjectionWork.Schema.Value);
         var workTableName = EscapeSqlLiteral(DmsTableNames.DocumentProjectionWork.Name);
 
@@ -2332,7 +2334,58 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             END
             ELSE
             BEGIN
-                WITH expected_capture_instances(table_order, table_kind, source_schema, source_name, capture_instance) AS (
+                WITH character_positions(position) AS (
+                    SELECT TOP (128) ROW_NUMBER() OVER (ORDER BY (SELECT NULL))
+                    FROM sys.all_objects
+                ),
+                active_project_endpoints(project_endpoint_name) AS (
+                    SELECT schema_component.[ProjectEndpointName]
+                    FROM [dms].[SchemaComponent] schema_component
+                    INNER JOIN [dms].[EffectiveSchema] effective_schema
+                        ON effective_schema.[EffectiveSchemaHash] = schema_component.[EffectiveSchemaHash]
+                    WHERE effective_schema.[EffectiveSchemaSingletonId] = 1
+                ),
+                project_schemas(schema_name) AS (
+                    SELECT
+                        CASE
+                            WHEN normalized_schema_name = N''
+                                OR UNICODE(LEFT(normalized_schema_name, 1)) NOT BETWEEN 97 AND 122
+                                THEN N'p' + normalized_schema_name
+                            ELSE normalized_schema_name
+                        END
+                    FROM active_project_endpoints project_endpoint
+                    CROSS APPLY (
+                        SELECT
+                            COALESCE(
+                                (
+                                    SELECT LOWER(endpoint_character.character)
+                                    FROM character_positions character_position
+                                    CROSS APPLY (
+                                        SELECT SUBSTRING(
+                                            project_endpoint.project_endpoint_name,
+                                            character_position.position,
+                                            1
+                                        ) AS character
+                                    ) endpoint_character
+                                    WHERE character_position.position <= LEN(project_endpoint.project_endpoint_name)
+                                    AND (
+                                        UNICODE(endpoint_character.character) BETWEEN 48 AND 57
+                                        OR UNICODE(endpoint_character.character) BETWEEN 65 AND 90
+                                        OR UNICODE(endpoint_character.character) BETWEEN 97 AND 122
+                                    )
+                                    ORDER BY character_position.position
+                                    FOR XML PATH(N''), TYPE
+                                ).value(N'.', N'nvarchar(128)'),
+                                N''
+                            ) AS normalized_schema_name
+                    ) normalized
+                ),
+                dms_document_owned_sources(source_object_id) AS (
+                    SELECT DISTINCT foreign_key.parent_object_id
+                    FROM sys.foreign_keys foreign_key
+                    WHERE foreign_key.referenced_object_id = OBJECT_ID(N'dms.Document', N'U')
+                ),
+                expected_capture_instances(table_order, table_kind, source_schema, source_name, capture_instance) AS (
                     SELECT *
                     FROM (VALUES
                     {expectedValues}
@@ -2390,7 +2443,22 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 LEFT JOIN expected_capture_instances expected_by_source
                     ON expected_by_source.source_schema = source_schema.name
                     AND expected_by_source.source_name = source_table.name
-                WHERE source_schema.name = N'{dmsSchema}'
+                WHERE expected_by_instance.capture_instance IS NOT NULL
+                OR expected_by_source.capture_instance IS NOT NULL
+                OR capture_info.role_name = N'{gatingRoleName}'
+                OR source_schema.name = N'{dmsSchema}'
+                OR source_schema.name = N'{authSchema}'
+                OR source_schema.name LIKE N'tracked[_]changes[_]%'
+                OR EXISTS (
+                    SELECT 1
+                    FROM project_schemas project_schema
+                    WHERE project_schema.schema_name = source_schema.name
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM dms_document_owned_sources dms_document_owned_source
+                    WHERE dms_document_owned_source.source_object_id = source_table.object_id
+                )
                 ORDER BY
                     COALESCE(expected_by_instance.table_order, expected_by_source.table_order, 1000),
                     capture_info.capture_instance,

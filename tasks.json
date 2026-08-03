@@ -767,5 +767,46 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase"
     ],
     "completed": true
+  },
+  {
+    "category": "sqlserver-capture-instances",
+    "description": "Medium: Narrowly fail closed when current-database SQL Server CDC metadata contains a DMS-owned capture instance outside dms.DocumentCache, dms.Document, and dms.CdcHeartbeat, including per-resource, authorization, tracked-change, descriptor, and projection-work sources. Keep this as provider setup validation and reporting only; do not turn it into a general SQL Server CDC auditor or repair workflow.",
+    "acceptance-criteria": [
+      "SQL Server capture-instance inspection reads current-database cdc.change_tables broadly enough to see DMS-owned generated schemas and DMS-owned tables outside the dms schema, instead of using source_schema = dms as the validation boundary.",
+      "Validation fails closed for any observed DMS-owned/generated source capture whose source object is not exactly dms.DocumentCache, dms.Document, or dms.CdcHeartbeat, including edfi or extension resource tables, auth tables, tracked_changes_* tables, dms.Descriptor, and dms.DocumentProjectionWork.",
+      "dms.DocumentProjectionWork keeps a WorkTableCaptureViolation diagnostic, while other unexpected DMS-owned source captures use a stable provider-artifact mismatch diagnostic with safe source and capture names.",
+      "Provider artifact inventory, provider-history observations, and cdc-provider.mssql.manifest.json include unexpected DMS-owned capture instances so ValidateOnly output cannot hide unsupported CDC sources.",
+      "Unrelated non-DMS capture instances in the same database are not audited unless they use binding-derived DMS provider artifacts, DMS/project schemas, DMS-owned tables, or the DMS CDC gating role.",
+      "InitialCreateOrExactMatch and ValidateOnly do not drop, disable, rename, recreate, retune, or repair unexpected capture instances and do not adapt the source inventory or connector scope to include them.",
+      "The implementation does not inspect other databases or server-level CDC state, does not call Kafka Connect, does not create connector JSON or Kafka resources, and does not add a second hard-coded resource-table inventory solely for this check.",
+      "Focused coverage updates the existing non-dms capture fixture so an edfi.School or equivalent DMS-owned non-dms capture instance is diagnosed rather than explicitly ignored."
+    ],
+    "steps-to-verify": [
+      "Review CaptureInstancesSql and capture-instance classification in CdcSqlServerHeartbeatDatabaseProvider to confirm current-database CDC metadata is not limited to the dms schema when enforcing the fixed DMS source list, and that unrelated non-DMS capture instances remain out of scope.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcCaptureInstances",
+      "With ConnectionStrings__MssqlAdmin pointing at a disposable SQL Server 2025 instance, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderArtifacts"
+    ],
+    "completed": true
+  },
+  {
+    "category": "manifest",
+    "description": "Medium: Redact or tokenize provider catalog identifiers at the CDC provider observed-values source instead of treating SafeText character sanitization as a privacy boundary. Keep this as targeted manifest/result/diagnostic hygiene for known database-derived identifiers; do not add a generic PII scanner, reversible masking scheme, or manifest-wide scrubber.",
+    "acceptance-criteria": [
+      "PostgreSQL provider artifact and history observations do not serialize raw current_database(), slot.database, expected_database, or initial-slot-proof database identity values to setup results, manifests, or diagnostics.",
+      "SQL Server database CDC observations do not serialize raw DB_NAME()-derived capture or cleanup job names such as cdc.<database>_capture or cdc.<database>_cleanup to setup results, manifests, or diagnostics.",
+      "Provider setup still exact-matches database-local PostgreSQL slots and SQL Server CDC jobs internally, but externally reports non-sensitive booleans, classifications, provider object types, fixed role labels, or non-reversible tokens when identity evidence is needed.",
+      "Binding-derived provider artifact names such as publication, replication-slot, capture-instance, and gating-role names remain visible where the design explicitly treats them as safe artifact names.",
+      "Source table names and column names for the fixed CDC source inventory remain visible as design-owned DMS identifiers; only database/catalog-derived physical identities and DB_NAME()-derived job names are redacted or tokenized by this task.",
+      "SafeText remains an identifier-format sanitizer, not a privacy classifier; provider code must avoid adding sensitive raw observed values before CdcProviderManifest.WriteObservedValues serializes them.",
+      "Focused unit or snapshot coverage uses tenant-like database/catalog names and proves the generated CDC provider manifest and diagnostics do not contain those raw names."
+    ],
+    "steps-to-verify": [
+      "Review CdcPostgresqlHeartbeatPublicationProvider replication-slot observed values, initial-slot-proof diagnostics, and SafeText usage for database identity fields.",
+      "Review CdcSqlServerHeartbeatDatabaseProvider database CDC observed values and job-runtime metadata for DB_NAME()-derived job names.",
+      "Review CdcProviderManifest.WriteObservedValues to confirm provider observed values arrive already sanitized or tokenized before serialization, without adding a manifest-wide scrubber.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderManifest",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderMetadata"
+    ],
+    "completed": false
   }
 ]

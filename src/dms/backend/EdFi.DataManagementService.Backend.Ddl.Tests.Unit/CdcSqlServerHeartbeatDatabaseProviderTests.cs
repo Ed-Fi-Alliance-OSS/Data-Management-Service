@@ -1033,7 +1033,7 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     }
 
     [Test]
-    public async Task MssqlCdcCaptureInstances_should_fail_closed_when_extra_dms_schema_capture_instance_is_present()
+    public async Task MssqlCdcCaptureInstances_should_fail_closed_when_extra_dms_owned_capture_instances_are_present()
     {
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
             captureJobPresent: true,
@@ -1042,6 +1042,7 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
                 .Expected()
                 .Append(RecordingSqlServerCaptureInstance.UnexpectedDmsTable())
                 .Append(RecordingSqlServerCaptureInstance.NonDmsTable())
+                .Append(RecordingSqlServerCaptureInstance.UnrelatedThirdPartyTable())
                 .ToArray()
         );
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
@@ -1056,15 +1057,25 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
         result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
         result
             .Diagnostics.Should()
-            .ContainSingle(diagnostic =>
+            .Contain(diagnostic =>
                 diagnostic.Code == "CDC_SQLSERVER_UNEXPECTED_DMS_CAPTURE_INSTANCE"
                 && diagnostic.Category == CdcProviderDiagnosticCategory.ValidationMismatch
                 && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
                 && diagnostic.SafeName.Value == "dms_unexpected_descriptor"
                 && diagnostic.ExpectedValue == "only-dms.DocumentCache-dms.Document-dms.CdcHeartbeat-captured"
                 && diagnostic.ObservedValue == "dms.Descriptor_capture_dms_unexpected_descriptor"
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_UNEXPECTED_DMS_CAPTURE_INSTANCE"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ValidationMismatch
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && diagnostic.SafeName.Value == "edfi_school_cdc"
+                && diagnostic.ExpectedValue == "only-dms.DocumentCache-dms.Document-dms.CdcHeartbeat-captured"
+                && diagnostic.ObservedValue == "edfi.School_capture_edfi_school_cdc"
             );
-        result.Diagnostics.Should().NotContain(diagnostic => diagnostic.SafeName.Value == "edfi_school_cdc");
+        result
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.SafeName.Value == "external_school_cdc");
         result
             .ArtifactInventory.Should()
             .Contain(observation =>
@@ -1074,7 +1085,14 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
                 && observation.SafeObservedValues["source_object"] == "dms.Descriptor"
                 && observation.SafeObservedValues["role_name"] == "other_cdc_gate"
             )
-            .And.NotContain(observation => observation.SafeArtifactName.Value == "edfi_school_cdc");
+            .And.Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "edfi_school_cdc"
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["source_object"] == "edfi.School"
+                && observation.SafeObservedValues["role_name"] == "other_cdc_gate"
+            )
+            .And.NotContain(observation => observation.SafeArtifactName.Value == "external_school_cdc");
         result
             .ProviderHistoryObservations.Should()
             .Contain(observation =>
@@ -1083,10 +1101,18 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
                 && observation.SafeObservedValues["source_object"] == "dms.Descriptor"
                 && observation.Classification == CdcProviderRetryContinuityClassification.FailClosed
             )
-            .And.NotContain(observation => observation.SafeArtifactName.Value == "edfi_school_cdc");
+            .And.Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "edfi_school_cdc"
+                && observation.SafeObservedValues["source_object"] == "edfi.School"
+                && observation.Classification == CdcProviderRetryContinuityClassification.FailClosed
+            )
+            .And.NotContain(observation => observation.SafeArtifactName.Value == "external_school_cdc");
         result.ManifestPayload!.Json.Should().Contain("dms_unexpected_descriptor");
         result.ManifestPayload.Json.Should().Contain("dms.Descriptor");
-        result.ManifestPayload.Json.Should().NotContain("edfi_school_cdc");
+        result.ManifestPayload.Json.Should().Contain("edfi_school_cdc");
+        result.ManifestPayload.Json.Should().Contain("edfi.School");
+        result.ManifestPayload.Json.Should().NotContain("external_school_cdc");
         executor.ExecutedSql.Should().BeEmpty();
     }
 }
@@ -2177,13 +2203,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         List<IReadOnlyDictionary<string, string?>> rows = [];
         foreach (
             var capture in _captureInstances
-                .Values.Where(capture =>
-                    string.Equals(
-                        capture.SourceTable.Schema.Value,
-                        DmsTableNames.DmsSchema.Value,
-                        StringComparison.Ordinal
-                    )
-                )
+                .Values.Where(IsInSqlServerCdcProviderValidationScope)
                 .OrderBy(capture => capture.CaptureInstanceName.Value)
         )
         {
@@ -2217,6 +2237,22 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         }
 
         return rows;
+    }
+
+    private static bool IsInSqlServerCdcProviderValidationScope(RecordingSqlServerCaptureInstance capture)
+    {
+        var expectedCaptureInstanceNames = SqlServerCaptureInstanceTestData
+            .Expected()
+            .Select(expected => expected.CaptureInstanceName.Value)
+            .ToHashSet(StringComparer.Ordinal);
+        var sourceSchema = capture.SourceTable.Schema.Value;
+
+        return expectedCaptureInstanceNames.Contains(capture.CaptureInstanceName.Value)
+            || string.Equals(capture.GatingRoleName.Value, "dms_binding_gate", StringComparison.Ordinal)
+            || string.Equals(sourceSchema, DmsTableNames.DmsSchema.Value, StringComparison.Ordinal)
+            || string.Equals(sourceSchema, AuthNames.AuthSchema.Value, StringComparison.Ordinal)
+            || sourceSchema.StartsWith("tracked_changes_", StringComparison.Ordinal)
+            || sourceSchema is "edfi" or "sample";
     }
 
     private static IReadOnlyDictionary<string, string?> Row(params (string Key, string? Value)[] values) =>
@@ -2311,6 +2347,15 @@ internal sealed record RecordingSqlServerCaptureInstance(
             "unexpected",
             new DbTableName(new DbSchemaName("edfi"), "School"),
             new CdcSafeName("edfi_school_cdc"),
+            new CdcSafeName("other_cdc_gate"),
+            ["SchoolId", "NameOfInstitution"]
+        );
+
+    public static RecordingSqlServerCaptureInstance UnrelatedThirdPartyTable() =>
+        new(
+            "unexpected",
+            new DbTableName(new DbSchemaName("external"), "School"),
+            new CdcSafeName("external_school_cdc"),
             new CdcSafeName("other_cdc_gate"),
             ["SchoolId", "NameOfInstitution"]
         );

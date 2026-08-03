@@ -104,7 +104,7 @@ public class Given_MssqlCdcProviderArtifacts
     }
 
     [Test]
-    public async Task It_should_fail_closed_when_an_extra_dms_schema_capture_instance_exists()
+    public async Task It_should_fail_closed_when_extra_dms_owned_capture_instances_exist()
     {
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
@@ -118,6 +118,7 @@ public class Given_MssqlCdcProviderArtifacts
                 .Be(CdcProviderSetupOutcome.CreatedOrMatched, DescribeDiagnostics(initialResult.Diagnostics));
 
             await EnableUnexpectedDescriptorCaptureAsync(connection);
+            await EnableUnexpectedProjectSchemaCaptureAsync(connection);
 
             var validationResult = await RunSetupAsync(
                 connection,
@@ -133,12 +134,19 @@ public class Given_MssqlCdcProviderArtifacts
                 .Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(validationResult.Diagnostics));
             validationResult
                 .Diagnostics.Should()
-                .ContainSingle(diagnostic =>
+                .Contain(diagnostic =>
                     diagnostic.Code == "CDC_SQLSERVER_UNEXPECTED_DMS_CAPTURE_INSTANCE"
                     && diagnostic.Category == CdcProviderDiagnosticCategory.ValidationMismatch
                     && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
                     && diagnostic.SafeName.Value == "dms_unexpected_descriptor"
                     && diagnostic.ObservedValue == "dms.Descriptor_capture_dms_unexpected_descriptor"
+                )
+                .And.Contain(diagnostic =>
+                    diagnostic.Code == "CDC_SQLSERVER_UNEXPECTED_DMS_CAPTURE_INSTANCE"
+                    && diagnostic.Category == CdcProviderDiagnosticCategory.ValidationMismatch
+                    && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                    && diagnostic.SafeName.Value == "edfi_school_cdc"
+                    && diagnostic.ObservedValue == "edfi.School_capture_edfi_school_cdc"
                 );
             validationResult
                 .ArtifactInventory.Should()
@@ -148,6 +156,13 @@ public class Given_MssqlCdcProviderArtifacts
                     && observation.State == CdcProviderArtifactState.Mismatched
                     && observation.SafeObservedValues["source_object"] == "dms.Descriptor"
                     && observation.SafeObservedValues["role_name"] == "other_cdc_gate"
+                )
+                .And.Contain(observation =>
+                    observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                    && observation.SafeArtifactName.Value == "edfi_school_cdc"
+                    && observation.State == CdcProviderArtifactState.Mismatched
+                    && observation.SafeObservedValues["source_object"] == "edfi.School"
+                    && observation.SafeObservedValues["role_name"] == "other_cdc_gate"
                 );
             validationResult
                 .ProviderHistoryObservations.Should()
@@ -156,9 +171,17 @@ public class Given_MssqlCdcProviderArtifacts
                     && observation.SafeArtifactName.Value == "dms_unexpected_descriptor"
                     && observation.SafeObservedValues["source_object"] == "dms.Descriptor"
                     && observation.Classification == CdcProviderRetryContinuityClassification.FailClosed
+                )
+                .And.Contain(observation =>
+                    observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                    && observation.SafeArtifactName.Value == "edfi_school_cdc"
+                    && observation.SafeObservedValues["source_object"] == "edfi.School"
+                    && observation.Classification == CdcProviderRetryContinuityClassification.FailClosed
                 );
             validationResult.ManifestPayload!.Json.Should().Contain("dms_unexpected_descriptor");
             validationResult.ManifestPayload.Json.Should().Contain("dms.Descriptor");
+            validationResult.ManifestPayload.Json.Should().Contain("edfi_school_cdc");
+            validationResult.ManifestPayload.Json.Should().Contain("edfi.School");
             validationResult.ManifestPayload.Json.Should().Contain("other_cdc_gate");
             validationResult.ManifestPayload.Json.Should().NotContain(_database.ConnectionString);
         }
@@ -218,6 +241,29 @@ public class Given_MssqlCdcProviderArtifacts
                 @source_schema = N'dms',
                 @source_name = N'Descriptor',
                 @capture_instance = N'dms_unexpected_descriptor',
+                @supports_net_changes = 0,
+                @role_name = N'other_cdc_gate',
+                @index_name = NULL,
+                @captured_column_list = NULL,
+                @filegroup_name = NULL,
+                @allow_partition_switch = 0;
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task EnableUnexpectedProjectSchemaCaptureAsync(SqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            IF DATABASE_PRINCIPAL_ID(N'other_cdc_gate') IS NULL
+            BEGIN
+                CREATE ROLE [other_cdc_gate];
+            END;
+
+            EXEC sys.sp_cdc_enable_table
+                @source_schema = N'edfi',
+                @source_name = N'School',
+                @capture_instance = N'edfi_school_cdc',
                 @supports_net_changes = 0,
                 @role_name = N'other_cdc_gate',
                 @index_name = NULL,
