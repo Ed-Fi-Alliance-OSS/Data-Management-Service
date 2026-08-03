@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -29,6 +30,9 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         DocumentCacheAdministrativeTargetKey.FromTargetKey(TargetKey);
     private static readonly DocumentCachePhysicalSourceFingerprint Fingerprint = new(
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    );
+    private static readonly DocumentCachePhysicalSourceFingerprint OtherFingerprint = new(
+        "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
     );
     private static readonly DocumentCacheLifecycleObservation TrackingLifecycle = new(
         DocumentCacheLifecycleState.Tracking,
@@ -72,6 +76,35 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             .ContainSingle()
             .Which.CurrentPhase.Should()
             .Be(DocumentCacheAdministrativeCommandPhase.ResolveTarget);
+        mutex.AcquireCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_rejects_expected_source_mismatch_before_acquiring_the_mutex()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        var mutex = new RecordingAdministrativeMutex();
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            mutex
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            new DocumentCacheAdministrativeCommandRunnerRequest(
+                DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+                AdministrativeTargetKey,
+                OtherFingerprint
+            ),
+            SucceedingWorkflow.Instance
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.ExpectedSourceMismatch);
+        result.Mutated.Should().BeFalse();
+        result.ElapsedCommandTime.Should().BeNull();
         mutex.AcquireCount.Should().Be(0);
     }
 
@@ -545,6 +578,110 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     }
 
     [Test]
+    public async Task It_preserves_the_pinned_target_when_replaced_while_waiting_for_mutex()
+    {
+        DocumentCacheTargetExecutionContext firstGeneration = ExecutionContext(generation: 1);
+        DocumentCacheTargetExecutionContext replacementGeneration = ExecutionContext(generation: 2);
+        DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+        var targetContextFactory = new RecordingTargetContextFactory(observationStore);
+        MutableTargetRegistry registry = RegistryFor(firstGeneration);
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationStore
+        );
+        await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+        DocumentCacheProjectionTargetRuntimeContext oldContext =
+            targetContextFactory.CreatedContexts.Single();
+        TaskCompletionSource mutexWaitStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource releaseMutex = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var mutex = new RecordingAdministrativeMutex(beforeAcquireCompletes: async cancellationToken =>
+        {
+            mutexWaitStarted.SetResult();
+            await releaseMutex.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        });
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            registry,
+            supervisor,
+            mutex,
+            observationStore
+        );
+
+        Task<DocumentCacheAdministrativeCommandResult> resultTask = runner.ExecuteAsync(
+            Request(),
+            SucceedingWorkflow.Instance
+        );
+        await mutexWaitStarted.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+
+        SetCurrentTarget(registry, replacementGeneration);
+        await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.SupervisorTriggered);
+
+        oldContext.CancellationRequested.Should().BeFalse();
+        supervisor.CurrentTargetContexts.Should().ContainSingle().Which.Generation.Value.Should().Be(2);
+
+        releaseMutex.SetResult();
+        DocumentCacheAdministrativeCommandResult result = await resultTask
+            .WaitAsync(TimeSpan.FromSeconds(5))
+            .ConfigureAwait(false);
+
+        AssertCompletedAgainstPinnedNoncurrentGeneration(result);
+        oldContext.CancellationRequested.Should().BeTrue();
+        observationStore
+            .CurrentSnapshot.LastEndedTargetDiagnostics.Values.Should()
+            .Contain(diagnostic =>
+                diagnostic.ContextKey.Equals(oldContext.ContextKey)
+                && diagnostic.EndReason == DocumentCacheProjectionTargetEndReason.Replaced
+            );
+    }
+
+    [Test]
+    public async Task It_does_not_reject_target_replacement_after_mutex_acquisition_before_workflow_execution()
+    {
+        DocumentCacheTargetExecutionContext firstGeneration = ExecutionContext(generation: 1);
+        DocumentCacheTargetExecutionContext replacementGeneration = ExecutionContext(generation: 2);
+        DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+        var targetContextFactory = new RecordingTargetContextFactory(observationStore);
+        MutableTargetRegistry registry = RegistryFor(firstGeneration);
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationStore
+        );
+        await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+        DocumentCacheProjectionTargetRuntimeContext oldContext =
+            targetContextFactory.CreatedContexts.Single();
+        bool workflowRan = false;
+        var workflow = new DelegatingWorkflow(
+            preflight: (context, _) =>
+            {
+                workflowRan = true;
+                return Task.FromResult(context.EligiblePreflightResult());
+            },
+            execute: static (context, _) => Task.FromResult(context.Completed())
+        );
+        var mutex = new RecordingAdministrativeMutex(afterAcquireCompletes: async cancellationToken =>
+        {
+            SetCurrentTarget(registry, replacementGeneration);
+            await supervisor
+                .RefreshAsync(DocumentCacheTargetRefreshReason.SupervisorTriggered, cancellationToken)
+                .ConfigureAwait(false);
+        });
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            registry,
+            supervisor,
+            mutex,
+            observationStore
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        workflowRan.Should().BeTrue();
+        AssertCompletedAgainstPinnedNoncurrentGeneration(result);
+        oldContext.CancellationRequested.Should().BeTrue();
+        supervisor.CurrentTargetContexts.Should().ContainSingle().Which.Generation.Value.Should().Be(2);
+    }
+
+    [Test]
     public async Task It_classifies_mutex_acquisition_failure_before_mutation()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
@@ -596,6 +733,46 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
         );
+    }
+
+    private static DocumentCacheProjectionSupervisor CreateSupervisor(
+        IDocumentCacheTargetRegistry registry,
+        IDocumentCacheProjectionTargetRuntimeContextFactory targetContextFactory,
+        IDocumentCacheProjectionObservationSink observationSink
+    ) =>
+        new(
+            registry,
+            targetContextFactory,
+            observationSink,
+            OptionsFor([TargetKey]),
+            new NoOpDocumentCacheProjectionScheduler(),
+            new StubDocumentCacheLifecycleReader(),
+            new FixedTimeProvider(ObservedAt),
+            NullLogger<DocumentCacheProjectionSupervisor>.Instance
+        );
+
+    private static void SetCurrentTarget(
+        MutableTargetRegistry registry,
+        DocumentCacheTargetExecutionContext executionContext
+    )
+    {
+        registry.CurrentSnapshot = Snapshot([EligibleObservation(executionContext)]);
+        registry.CurrentRuntimeSnapshot = RuntimeSnapshot([executionContext]);
+    }
+
+    private static void AssertCompletedAgainstPinnedNoncurrentGeneration(
+        DocumentCacheAdministrativeCommandResult result
+    )
+    {
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+        result.Mutated.Should().BeFalse();
+        result.TargetGeneration.Should().Be(1);
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.TargetReplaced
+            );
     }
 
     private static DocumentCacheAdministrativeCommandRunnerRequest Request() =>
@@ -654,6 +831,22 @@ public class Given_DocumentCacheAdministrativeCommandRunner
 
     private static MutableTargetRegistry RegistryFor(DocumentCacheTargetExecutionContext executionContext) =>
         new(Snapshot([EligibleObservation(executionContext)]), RuntimeSnapshot([executionContext]));
+
+    private static IOptions<DocumentCacheOptions> OptionsFor(IEnumerable<DocumentCacheTargetKey> targetKeys)
+    {
+        DocumentCacheOptions options = new()
+        {
+            Targets = targetKeys
+                .Select(targetKey => new DocumentCacheTargetOptions
+                {
+                    TenantKey = targetKey.TenantKey,
+                    DataStoreId = targetKey.DataStoreId,
+                })
+                .ToList(),
+        };
+
+        return Options.Create(options);
+    }
 
     private static DocumentCacheTargetRegistrySnapshot Snapshot(
         IEnumerable<DocumentCacheTargetObservation> observations
@@ -779,7 +972,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         );
 
     private static DocumentCacheProjectionTargetRuntimeContext RuntimeContext(
-        DocumentCacheTargetExecutionContext executionContext
+        DocumentCacheTargetExecutionContext executionContext,
+        IDocumentCacheProjectionObservationSink? observationSink = null
     ) =>
         new(
             executionContext,
@@ -789,7 +983,7 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 new ThrowingDocumentCacheMaterializer(),
                 new ThrowingDocumentCacheWriter()
             ),
-            new DocumentCacheProjectionObservationStore(new FixedTimeProvider(ObservedAt))
+            observationSink ?? new DocumentCacheProjectionObservationStore(new FixedTimeProvider(ObservedAt))
         );
 
     private static DocumentCacheProjectionTargetHealthSnapshot TargetHealth(
@@ -894,6 +1088,27 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         ) => throw new NotSupportedException();
     }
 
+    private sealed class RecordingTargetContextFactory(
+        IDocumentCacheProjectionObservationSink observationSink
+    ) : IDocumentCacheProjectionTargetRuntimeContextFactory
+    {
+        public List<DocumentCacheProjectionTargetRuntimeContext> CreatedContexts { get; } = [];
+
+        public Task<DocumentCacheProjectionTargetRuntimeContext> CreateAsync(
+            DocumentCacheTargetExecutionContext executionContext,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            DocumentCacheProjectionTargetRuntimeContext context = RuntimeContext(
+                executionContext,
+                observationSink
+            );
+            CreatedContexts.Add(context);
+            return Task.FromResult(context);
+        }
+    }
+
     private sealed class MutableTargetRegistry(
         DocumentCacheTargetRegistrySnapshot currentSnapshot,
         DocumentCacheTargetRuntimeSnapshot currentRuntimeSnapshot
@@ -912,7 +1127,9 @@ public class Given_DocumentCacheAdministrativeCommandRunner
 
     private sealed class RecordingAdministrativeMutex(
         TimeSpan? acquireDelay = null,
-        Exception? acquireException = null
+        Exception? acquireException = null,
+        Func<CancellationToken, Task>? beforeAcquireCompletes = null,
+        Func<CancellationToken, Task>? afterAcquireCompletes = null
     ) : IDocumentCacheAdministrativeMutex
     {
         public int AcquireCount { get; private set; }
@@ -931,9 +1148,19 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 await Task.Delay(acquireDelay.Value, cancellationToken).ConfigureAwait(false);
             }
 
+            if (beforeAcquireCompletes is not null)
+            {
+                await beforeAcquireCompletes(cancellationToken).ConfigureAwait(false);
+            }
+
             if (acquireException is not null)
             {
                 throw acquireException;
+            }
+
+            if (afterAcquireCompletes is not null)
+            {
+                await afterAcquireCompletes(cancellationToken).ConfigureAwait(false);
             }
 
             return new RecordingMutexLease();
@@ -1062,6 +1289,33 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     {
         public Task<DocumentCacheWriterResult> WriteAsync(DocumentCacheWriterRequest request) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class StubDocumentCacheLifecycleReader : IDocumentCacheLifecycleReader
+    {
+        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+
+        public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
+            string connectionString,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(DocumentCacheLifecycleReadResult.Success(TrackingLifecycle));
+        }
+    }
+
+    private sealed class NoOpDocumentCacheProjectionScheduler : IDocumentCacheProjectionScheduler
+    {
+        public Task<ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>> RunReadyTargetsOnceAsync(
+            IEnumerable<DocumentCacheProjectionTargetRuntimeContext> targetContexts,
+            CancellationToken cancellationToken = default
+        ) => Task.FromResult(ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>.Empty);
+
+        public Task<DocumentCacheProjectionSchedulerDispatchResult> RunAdministrativeDrainSliceAsync(
+            DocumentCacheProjectionTargetRuntimeContext targetContext,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

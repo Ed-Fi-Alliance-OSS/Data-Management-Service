@@ -192,3 +192,8 @@ Completed transaction-cancellation follow-up task for reference/design/backend-r
 Key decisions: active admin/writer transactions now use uncancelable in-transaction tokens after cancellable begin; runner reclassifies caller/workflow cancellation after active transaction returns using true mutated flag; provider writer cancellation-hook tests now expect commit/ack after transaction start.
 Files changed: DocumentCacheAdministrativeWorkflow.cs; DocumentCacheAdministrativeCommandRunner.cs; admin workflow callers; PG/MSSQL DocumentCacheWriter.cs; focused unit and PG/MSSQL writer integration tests; tasks.json; progress.txt.
 Blockers/notes: MSSQL first failed before tests because container was stopped; started dms-mssql-integration-2025 and reran with ConnectionStrings__MssqlAdmin localhost,14333. Remaining follow-up tasks still open in tasks.json.
+
+Completed administrative-runner follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: runner retains resolved target context before mutex acquisition; supervisor treats that retention as command ownership for replacement/removal reconciliation; removed post-mutex snapshot/current-generation rejection so accepted commands continue on pinned context and report noncurrent diagnostics.
+Files changed: DocumentCacheAdministrativeCommandRunner.cs; DocumentCacheProjectionSupervisor.cs; DocumentCacheAdministrativeCommandRunnerTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Remaining follow-up tasks still open in tasks.json.

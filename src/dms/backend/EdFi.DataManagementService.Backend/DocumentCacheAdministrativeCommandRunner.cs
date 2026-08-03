@@ -452,234 +452,235 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
         DocumentCacheAdministrativeCommandExecutionId executionId =
             DocumentCacheAdministrativeCommandExecutionId.New();
 
-        IDocumentCacheAdministrativeMutexLease mutexLease;
-        long mutexStartedAt = Stopwatch.GetTimestamp();
+        IDisposable pinnedTargetRetention = targetContext.RetainForAdministrativeCommand();
         try
         {
-            mutexLease = await administrativeMutex
-                .AcquireAsync(targetContext.TargetExecutionContext.ConnectionInput, cancellationToken)
-                .ConfigureAwait(false);
-            RecordAdministrativeMutexOutcome(
-                request,
-                targetContext,
-                DocumentCacheAdministrativeCommandClassification.Succeeded.ToString(),
-                category: null,
-                mutexStartedAt
-            );
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            RecordAdministrativeMutexOutcome(
-                request,
-                targetContext,
-                DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled.ToString(),
-                DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
-                mutexStartedAt
-            );
-            return RecordAdministrativeCommandResult(
-                CreateAcquireMutexFailure(
-                    request,
-                    targetContext,
-                    DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled,
-                    DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
-                    "DocumentCache administrative mutex acquisition was cancelled."
-                ),
-                targetContext
-            );
-        }
-        catch (OperationCanceledException)
-        {
-            RecordAdministrativeMutexOutcome(
-                request,
-                targetContext,
-                DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled.ToString(),
-                DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
-                mutexStartedAt
-            );
-            return RecordAdministrativeCommandResult(
-                CreateAcquireMutexFailure(
-                    request,
-                    targetContext,
-                    DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled,
-                    DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
-                    "DocumentCache administrative mutex acquisition was cancelled by the provider."
-                ),
-                targetContext,
-                DocumentCacheAdministrativeCommandPhase.AcquireMutex
-            );
-        }
-        catch (Exception exception)
-        {
-            logger.LogWarning(
-                exception,
-                "DocumentCache administrative mutex acquisition failed for command {Command} and target {TargetKey}.",
-                request.Command,
-                request.TargetKey.TargetKey
-            );
-            RecordAdministrativeMutexOutcome(
-                request,
-                targetContext,
-                DocumentCacheAdministrativeCommandClassification.MutexAcquisitionFailed.ToString(),
-                DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionFailed,
-                mutexStartedAt
-            );
-            return RecordAdministrativeCommandResult(
-                CreateAcquireMutexFailure(
-                    request,
-                    targetContext,
-                    DocumentCacheAdministrativeCommandClassification.MutexAcquisitionFailed,
-                    DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionFailed,
-                    "DocumentCache administrative mutex acquisition failed."
-                ),
-                targetContext
-            );
-        }
-
-        await using (mutexLease.ConfigureAwait(false))
-        using (
-            CancellationTokenSource workflowTimeout = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken
-            )
-        )
-        {
-            DocumentCacheAdministrativeCommandResult? pinnedTargetRejection =
-                TryCreatePinnedTargetRejectionAfterMutexAcquisition(request, targetContext);
-            if (pinnedTargetRejection is not null)
-            {
-                return RecordAdministrativeCommandResult(pinnedTargetRejection, targetContext);
-            }
-
-            DateTimeOffset startedAt = timeProvider.GetUtcNow();
-            workflowTimeout.CancelAfter(
-                targetContext.TargetExecutionContext.EffectiveSettings.AdministrationWorkflowTimeout
-            );
-
-            DocumentCacheAdministrativeCommandExecutionContext commandContext = new(
-                executionId,
-                request,
-                targetContext,
-                mutexLease,
-                primitives,
-                observationSink,
-                timeProvider,
-                startedAt,
-                workflowTimeout.Token,
-                _telemetry
-            );
-
-            IDisposable activeCommandTracking = targetContext.TrackActiveAdministrativeCommand(
-                commandContext
-            );
-            commandContext.Observe();
-
+            IDocumentCacheAdministrativeMutexLease mutexLease;
+            long mutexStartedAt = Stopwatch.GetTimestamp();
             try
             {
-                DocumentCacheAdministrativeCommandResult result = await targetContext
-                    .DrainExecutor.RunAdministrativeCommandAsync(
-                        async drainCancellationToken =>
-                        {
-                            using IDisposable commandBinding = targetContext.BindAdministrativeCommand(
-                                commandContext
-                            );
-
-                            return await ExecutePinnedCommandAsync(
-                                    commandContext,
-                                    workflow,
-                                    drainCancellationToken
-                                )
-                                .ConfigureAwait(false);
-                        },
-                        workflowTimeout.Token
-                    )
+                mutexLease = await administrativeMutex
+                    .AcquireAsync(targetContext.TargetExecutionContext.ConnectionInput, cancellationToken)
                     .ConfigureAwait(false);
+                RecordAdministrativeMutexOutcome(
+                    request,
+                    targetContext,
+                    DocumentCacheAdministrativeCommandClassification.Succeeded.ToString(),
+                    category: null,
+                    mutexStartedAt
+                );
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                RecordAdministrativeMutexOutcome(
+                    request,
+                    targetContext,
+                    DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled.ToString(),
+                    DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
+                    mutexStartedAt
+                );
+                return RecordAdministrativeCommandResult(
+                    CreateAcquireMutexFailure(
+                        request,
+                        targetContext,
+                        DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled,
+                        DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
+                        "DocumentCache administrative mutex acquisition was cancelled."
+                    ),
+                    targetContext
+                );
+            }
+            catch (OperationCanceledException)
+            {
+                RecordAdministrativeMutexOutcome(
+                    request,
+                    targetContext,
+                    DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled.ToString(),
+                    DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
+                    mutexStartedAt
+                );
+                return RecordAdministrativeCommandResult(
+                    CreateAcquireMutexFailure(
+                        request,
+                        targetContext,
+                        DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled,
+                        DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
+                        "DocumentCache administrative mutex acquisition was cancelled by the provider."
+                    ),
+                    targetContext,
+                    DocumentCacheAdministrativeCommandPhase.AcquireMutex
+                );
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(
+                    exception,
+                    "DocumentCache administrative mutex acquisition failed for command {Command} and target {TargetKey}.",
+                    request.Command,
+                    request.TargetKey.TargetKey
+                );
+                RecordAdministrativeMutexOutcome(
+                    request,
+                    targetContext,
+                    DocumentCacheAdministrativeCommandClassification.MutexAcquisitionFailed.ToString(),
+                    DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionFailed,
+                    mutexStartedAt
+                );
+                return RecordAdministrativeCommandResult(
+                    CreateAcquireMutexFailure(
+                        request,
+                        targetContext,
+                        DocumentCacheAdministrativeCommandClassification.MutexAcquisitionFailed,
+                        DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionFailed,
+                        "DocumentCache administrative mutex acquisition failed."
+                    ),
+                    targetContext
+                );
+            }
 
-                if (cancellationToken.IsCancellationRequested)
+            await using (mutexLease.ConfigureAwait(false))
+            using (
+                CancellationTokenSource workflowTimeout = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken
+                )
+            )
+            {
+                DateTimeOffset startedAt = timeProvider.GetUtcNow();
+                workflowTimeout.CancelAfter(
+                    targetContext.TargetExecutionContext.EffectiveSettings.AdministrationWorkflowTimeout
+                );
+
+                DocumentCacheAdministrativeCommandExecutionContext commandContext = new(
+                    executionId,
+                    request,
+                    targetContext,
+                    mutexLease,
+                    primitives,
+                    observationSink,
+                    timeProvider,
+                    startedAt,
+                    workflowTimeout.Token,
+                    _telemetry
+                );
+
+                IDisposable activeCommandTracking = targetContext.TrackActiveAdministrativeCommand(
+                    commandContext
+                );
+                commandContext.Observe();
+
+                try
+                {
+                    DocumentCacheAdministrativeCommandResult result = await targetContext
+                        .DrainExecutor.RunAdministrativeCommandAsync(
+                            async drainCancellationToken =>
+                            {
+                                using IDisposable commandBinding = targetContext.BindAdministrativeCommand(
+                                    commandContext
+                                );
+
+                                return await ExecutePinnedCommandAsync(
+                                        commandContext,
+                                        workflow,
+                                        drainCancellationToken
+                                    )
+                                    .ConfigureAwait(false);
+                            },
+                            workflowTimeout.Token
+                        )
+                        .ConfigureAwait(false);
+
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return RecordAdministrativeCommandResult(
+                            CreateCancellationResult(commandContext),
+                            commandContext
+                        );
+                    }
+
+                    if (workflowTimeout.IsCancellationRequested)
+                    {
+                        return RecordAdministrativeCommandResult(
+                            CreateWorkflowTimeoutResult(commandContext),
+                            commandContext
+                        );
+                    }
+
+                    return RecordAdministrativeCommandResult(
+                        AddRuntimeResultFields(result, commandContext),
+                        commandContext
+                    );
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                     return RecordAdministrativeCommandResult(
                         CreateCancellationResult(commandContext),
                         commandContext
                     );
                 }
-
-                if (workflowTimeout.IsCancellationRequested)
+                catch (OperationCanceledException) when (workflowTimeout.IsCancellationRequested)
                 {
                     return RecordAdministrativeCommandResult(
                         CreateWorkflowTimeoutResult(commandContext),
                         commandContext
                     );
                 }
-
-                return RecordAdministrativeCommandResult(
-                    AddRuntimeResultFields(result, commandContext),
-                    commandContext
-                );
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                return RecordAdministrativeCommandResult(
-                    CreateCancellationResult(commandContext),
-                    commandContext
-                );
-            }
-            catch (OperationCanceledException) when (workflowTimeout.IsCancellationRequested)
-            {
-                return RecordAdministrativeCommandResult(
-                    CreateWorkflowTimeoutResult(commandContext),
-                    commandContext
-                );
-            }
-            catch (DocumentCacheAdministrativeMutexSessionLostException exception)
-            {
-                logger.LogWarning(
-                    exception,
-                    "DocumentCache administrative mutex session was lost for command {Command} and target {TargetKey}.",
-                    request.Command,
-                    request.TargetKey.TargetKey
-                );
-                return RecordAdministrativeCommandResult(
-                    CreateSessionLossResult(commandContext),
-                    commandContext
-                );
-            }
-            catch (TimeoutException exception)
-            {
-                logger.LogWarning(
-                    exception,
-                    "DocumentCache administrative provider command timed out for command {Command} and target {TargetKey}.",
-                    request.Command,
-                    request.TargetKey.TargetKey
-                );
-                return RecordAdministrativeCommandResult(
-                    CreateProviderTimeoutResult(commandContext),
-                    commandContext
-                );
-            }
-            catch (Exception exception)
-            {
-                logger.LogError(
-                    exception,
-                    "DocumentCache administrative command {Command} failed unexpectedly for target {TargetKey}.",
-                    request.Command,
-                    request.TargetKey.TargetKey
-                );
-                return RecordAdministrativeCommandResult(
-                    CreateUnexpectedFailureResult(commandContext),
-                    commandContext
-                );
-            }
-            finally
-            {
-                activeCommandTracking.Dispose();
-                observationSink.EndAdministrativeCommand(executionId);
-                if (
-                    projectionSupervisor
-                    is IDocumentCacheProjectionRetainedTargetContextReleaser retainedTargetContextReleaser
-                )
+                catch (DocumentCacheAdministrativeMutexSessionLostException exception)
                 {
-                    await retainedTargetContextReleaser
-                        .ReleaseRetainedCommandOwnedTargetContextAsync(targetContext, CancellationToken.None)
-                        .ConfigureAwait(false);
+                    logger.LogWarning(
+                        exception,
+                        "DocumentCache administrative mutex session was lost for command {Command} and target {TargetKey}.",
+                        request.Command,
+                        request.TargetKey.TargetKey
+                    );
+                    return RecordAdministrativeCommandResult(
+                        CreateSessionLossResult(commandContext),
+                        commandContext
+                    );
                 }
+                catch (TimeoutException exception)
+                {
+                    logger.LogWarning(
+                        exception,
+                        "DocumentCache administrative provider command timed out for command {Command} and target {TargetKey}.",
+                        request.Command,
+                        request.TargetKey.TargetKey
+                    );
+                    return RecordAdministrativeCommandResult(
+                        CreateProviderTimeoutResult(commandContext),
+                        commandContext
+                    );
+                }
+                catch (Exception exception)
+                {
+                    logger.LogError(
+                        exception,
+                        "DocumentCache administrative command {Command} failed unexpectedly for target {TargetKey}.",
+                        request.Command,
+                        request.TargetKey.TargetKey
+                    );
+                    return RecordAdministrativeCommandResult(
+                        CreateUnexpectedFailureResult(commandContext),
+                        commandContext
+                    );
+                }
+                finally
+                {
+                    activeCommandTracking.Dispose();
+                    observationSink.EndAdministrativeCommand(executionId);
+                }
+            }
+        }
+        finally
+        {
+            pinnedTargetRetention.Dispose();
+            if (
+                projectionSupervisor
+                is IDocumentCacheProjectionRetainedTargetContextReleaser retainedTargetContextReleaser
+            )
+            {
+                await retainedTargetContextReleaser
+                    .ReleaseRetainedCommandOwnedTargetContextAsync(targetContext, CancellationToken.None)
+                    .ConfigureAwait(false);
             }
         }
     }
@@ -867,47 +868,6 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
         }
 
         return PinnedTargetResolution.Pinned(targetContext);
-    }
-
-    private DocumentCacheAdministrativeCommandResult? TryCreatePinnedTargetRejectionAfterMutexAcquisition(
-        DocumentCacheAdministrativeCommandRunnerRequest request,
-        DocumentCacheProjectionTargetRuntimeContext targetContext
-    )
-    {
-        DocumentCacheTargetKey targetKey = request.TargetKey.TargetKey;
-        DocumentCacheTargetObservation? targetObservation = targetRegistry.CurrentSnapshot.GetTarget(
-            targetKey
-        );
-
-        if (
-            targetObservation is not null
-            && targetObservation.EligibilityState != DocumentCacheTargetEligibilityState.Eligible
-        )
-        {
-            return CreateTargetObservationRejection(request, targetObservation);
-        }
-
-        DocumentCacheTargetExecutionContext? currentExecutionContext =
-            targetRegistry.CurrentRuntimeSnapshot.GetExecutionContext(targetKey);
-        if (
-            currentExecutionContext is null
-            || currentExecutionContext.Generation != targetContext.Generation
-            || targetContext.CancellationRequested
-        )
-        {
-            return CreateTargetReplacedResult(request, targetObservation, targetContext);
-        }
-
-        if (
-            request.ExpectedPhysicalSourceFingerprint is not null
-            && targetContext.TargetExecutionContext.PhysicalSourceFingerprint
-                != request.ExpectedPhysicalSourceFingerprint
-        )
-        {
-            return CreateExpectedSourceMismatchResult(request, targetObservation, targetContext);
-        }
-
-        return null;
     }
 
     private DocumentCacheAdministrativeCommandResult AddRuntimeResultFields(

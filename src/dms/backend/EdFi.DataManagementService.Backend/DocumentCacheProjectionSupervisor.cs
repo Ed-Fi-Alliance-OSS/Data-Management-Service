@@ -322,6 +322,7 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
     private readonly Func<ValueTask>? _disposeScopeAsync;
     private readonly IDocumentCacheSessionBoundWriter? _sessionBoundWriter;
     private int _cancelled;
+    private int _administrativeCommandRetentions;
     private DocumentCacheAdministrativeCommandExecutionContext? _activeAdministrativeCommandContext;
     private DocumentCacheAdministrativeCommandExecutionContext? _administrativeCommandContext;
 
@@ -398,6 +399,9 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
     internal bool HasActiveAdministrativeCommand =>
         Volatile.Read(ref _activeAdministrativeCommandContext) is not null;
 
+    internal bool HasAdministrativeCommandRetention =>
+        HasActiveAdministrativeCommand || Volatile.Read(ref _administrativeCommandRetentions) > 0;
+
     public DocumentCacheMaterializationTargetContext MaterializationTargetContext =>
         ProviderAdapters.MaterializationTargetContext;
 
@@ -421,6 +425,12 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
         {
             _cancellationTokenSource.Cancel();
         }
+    }
+
+    internal IDisposable RetainForAdministrativeCommand()
+    {
+        Interlocked.Increment(ref _administrativeCommandRetentions);
+        return new AdministrativeCommandRetention(this);
     }
 
     internal IDisposable TrackActiveAdministrativeCommand(
@@ -510,6 +520,23 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
                 null,
                 commandContext
             );
+        }
+    }
+
+    private sealed class AdministrativeCommandRetention(
+        DocumentCacheProjectionTargetRuntimeContext targetContext
+    ) : IDisposable
+    {
+        private int _disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            Interlocked.Decrement(ref targetContext._administrativeCommandRetentions);
         }
     }
 }
@@ -927,7 +954,7 @@ public sealed class DocumentCacheProjectionSupervisor(
     }
 
     private static bool IsCommandOwned(DocumentCacheProjectionTargetRuntimeContext context) =>
-        context.HasActiveAdministrativeCommand || context.DrainExecutor.IsCommandOwned;
+        context.HasAdministrativeCommandRetention || context.DrainExecutor.IsCommandOwned;
 
     private static DocumentCacheProjectionTargetEndReason DetermineEndReason(
         DocumentCacheProjectionTargetRuntimeContext currentContext,
