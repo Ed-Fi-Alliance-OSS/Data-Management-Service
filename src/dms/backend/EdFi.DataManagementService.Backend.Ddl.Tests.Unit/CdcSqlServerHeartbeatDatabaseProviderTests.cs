@@ -49,6 +49,8 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
                 && observation.SafeObservedValues["capture_instance_count"] == "3"
                 && observation.SafeObservedValues["capture_job_present"] == "True"
                 && observation.SafeObservedValues["cleanup_job_present"] == "True"
+                && observation.SafeObservedValues["capture_job_name"] == "database.current.capture"
+                && observation.SafeObservedValues["cleanup_job_name"] == "database.current.cleanup"
             );
         _result
             .ArtifactInventory.Should()
@@ -77,7 +79,13 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
                     == "True"
                 && artifact.GetProperty("observed_values").GetProperty("cleanup_job_present").GetString()
                     == "True"
+                && artifact.GetProperty("observed_values").GetProperty("capture_job_name").GetString()
+                    == "database.current.capture"
+                && artifact.GetProperty("observed_values").GetProperty("cleanup_job_name").GetString()
+                    == "database.current.cleanup"
             );
+        _result.ManifestPayload.Json.Should().NotContain("cdc.tenant_EastHigh_2026_capture");
+        _result.ManifestPayload.Json.Should().NotContain("cdc.tenant_EastHigh_2026_cleanup");
     }
 
     [Test]
@@ -548,19 +556,28 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
             .Contain(diagnostic =>
                 diagnostic.Code == "CDC_SQLSERVER_CDC_JOB_DISABLED"
                 && diagnostic.Severity == CdcProviderDiagnosticSeverity.Warning
+                && diagnostic.ObservedValue == "database.current.capture"
             );
         result
             .Diagnostics.Should()
             .Contain(diagnostic =>
                 diagnostic.Code == "CDC_SQLSERVER_CAPTURE_JOB_NOT_RUNNING"
                 && diagnostic.Severity == CdcProviderDiagnosticSeverity.Warning
+                && diagnostic.ObservedValue == "database.current.capture"
             );
         result
             .Diagnostics.Should()
             .Contain(diagnostic =>
                 diagnostic.Code == "CDC_SQLSERVER_CDC_JOB_LAST_RUN_FAILED"
                 && diagnostic.Severity == CdcProviderDiagnosticSeverity.Warning
+                && diagnostic.ObservedValue == "database.current.capture"
             );
+        result.ManifestPayload!.Json.Should().NotContain("cdc.tenant_EastHigh_2026_capture");
+        result.ManifestPayload.Json.Should().NotContain("cdc.tenant_EastHigh_2026_cleanup");
+        result
+            .Diagnostics.Select(diagnostic => diagnostic.ObservedValue ?? "")
+            .Should()
+            .OnlyContain(value => !value.Contains("cdc.tenant_EastHigh_2026", StringComparison.Ordinal));
         executor.ExecutedSql.Should().BeEmpty();
     }
 
@@ -2027,7 +2044,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             rows.Add(
                 Row(
                     ("job_type", "capture"),
-                    ("job_name", "cdc.dms_test_capture"),
+                    ("job_name", "cdc.tenant_EastHigh_2026_capture"),
                     ("maxtrans", "500"),
                     ("maxscans", "10"),
                     ("continuous", "1"),
@@ -2043,7 +2060,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             rows.Add(
                 Row(
                     ("job_type", "cleanup"),
-                    ("job_name", "cdc.dms_test_cleanup"),
+                    ("job_name", "cdc.tenant_EastHigh_2026_cleanup"),
                     ("maxtrans", ""),
                     ("maxscans", ""),
                     ("continuous", ""),
@@ -2136,7 +2153,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             rows.Add(
                 Row(
                     ("job_type", "capture"),
-                    ("job_name", "cdc.dms_test_capture"),
+                    ("job_name", "cdc.tenant_EastHigh_2026_capture"),
                     ("job_id", "capture-job"),
                     ("enabled", _captureJobEnabled),
                     ("running", _captureJobRunning),
@@ -2150,7 +2167,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             rows.Add(
                 Row(
                     ("job_type", "cleanup"),
-                    ("job_name", "cdc.dms_test_cleanup"),
+                    ("job_name", "cdc.tenant_EastHigh_2026_cleanup"),
                     ("job_id", "cleanup-job"),
                     ("enabled", _cleanupJobEnabled),
                     ("running", _cleanupJobRunning),

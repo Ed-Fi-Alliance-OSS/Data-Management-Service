@@ -130,7 +130,14 @@ public class Given_CdcProviderManifest_Emitter
                     CdcProviderArtifactKind.PostgresqlReplicationSlot,
                     new CdcSafeName("dms_binding_slot"),
                     CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string> { ["plugin"] = "pgoutput", ["database"] = "current" }
+                    new Dictionary<string, string>
+                    {
+                        ["plugin"] = "pgoutput",
+                        ["database_matches_current"] = "True",
+                        ["database_identity_token"] = CdcPostgresqlInitialReplicationSlotProof
+                            .CreateDatabaseIdentityToken("dms_test")
+                            .Value,
+                    }
                 ),
                 new CdcProviderArtifactObservation(
                     CdcProviderArtifactKind.PostgresqlPublication,

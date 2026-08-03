@@ -3624,7 +3624,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ["nested_triggers_value"] = SafeText(inspection.NestedTriggersValue),
             ["capture_instance_count"] = inspection.CaptureInstanceCount.ToString(),
             ["capture_job_present"] = (captureJob is not null || captureRuntime is not null).ToString(),
-            ["capture_job_name"] = SafeText(captureJob?.JobName ?? captureRuntime?.JobName ?? ""),
+            ["capture_job_name"] = JobIdentityLabel(captureJob, captureRuntime, "capture"),
             ["capture_job_enabled"] = SafeText(captureRuntime?.Enabled ?? ""),
             ["capture_job_running"] = SafeText(captureRuntime?.Running ?? ""),
             ["capture_job_last_run_status"] = SafeText(captureRuntime?.LastRunStatus ?? ""),
@@ -3633,7 +3633,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ["capture_job_continuous"] = SafeText(captureJob?.Continuous ?? ""),
             ["capture_job_pollinginterval"] = SafeText(captureJob?.PollingInterval ?? ""),
             ["cleanup_job_present"] = (cleanupJob is not null || cleanupRuntime is not null).ToString(),
-            ["cleanup_job_name"] = SafeText(cleanupJob?.JobName ?? cleanupRuntime?.JobName ?? ""),
+            ["cleanup_job_name"] = JobIdentityLabel(cleanupJob, cleanupRuntime, "cleanup"),
             ["cleanup_job_enabled"] = SafeText(cleanupRuntime?.Enabled ?? ""),
             ["cleanup_job_running"] = SafeText(cleanupRuntime?.Running ?? ""),
             ["cleanup_job_last_run_status"] = SafeText(cleanupRuntime?.LastRunStatus ?? ""),
@@ -3683,7 +3683,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     ProviderHistoryWarning(
                         "CDC_SQLSERVER_CDC_JOB_DISABLED",
                         expectedValue: "cdc-job-enabled",
-                        observedValue: $"{runtime.JobType}:{runtime.JobName}"
+                        observedValue: JobRuntimeDiagnosticLabel(runtime)
                     )
                 );
             }
@@ -3694,7 +3694,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     ProviderHistoryWarning(
                         "CDC_SQLSERVER_CAPTURE_JOB_NOT_RUNNING",
                         expectedValue: "capture-job-running",
-                        observedValue: runtime.JobName
+                        observedValue: JobRuntimeDiagnosticLabel(runtime)
                     )
                 );
             }
@@ -3705,7 +3705,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     ProviderHistoryWarning(
                         "CDC_SQLSERVER_CDC_JOB_LAST_RUN_FAILED",
                         expectedValue: "last-run-succeeded-or-no-history",
-                        observedValue: $"{runtime.JobType}:{runtime.JobName}"
+                        observedValue: JobRuntimeDiagnosticLabel(runtime)
                     )
                 );
             }
@@ -3773,6 +3773,15 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         );
 
     private static string MissingOrPresent(bool missing) => missing ? "missing" : "present";
+
+    private static string JobIdentityLabel(
+        JobHelpObservation? helpObservation,
+        JobRuntimeObservation? runtimeObservation,
+        string jobType
+    ) => helpObservation is null && runtimeObservation is null ? "none" : $"database.current.{jobType}";
+
+    private static string JobRuntimeDiagnosticLabel(JobRuntimeObservation runtime) =>
+        $"database.current.{SafeText(runtime.JobType)}";
 
     private static JobHelpObservation ReadJobHelp(IReadOnlyDictionary<string, string?> row) =>
         new(

@@ -1253,10 +1253,11 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             retainedPositionsReadable
             && !string.Equals(walStatus, "lost", StringComparison.OrdinalIgnoreCase)
             && string.IsNullOrWhiteSpace(invalidationReason);
+        var databaseMatchesCurrent = string.Equals(database, expectedDatabase, StringComparison.Ordinal);
         var exactShape =
             string.Equals(plugin, "pgoutput", StringComparison.Ordinal)
             && string.Equals(slotType, "logical", StringComparison.Ordinal)
-            && string.Equals(database, expectedDatabase, StringComparison.Ordinal)
+            && databaseMatchesCurrent
             && !temporary
             && (
                 string.Equals(twoPhase, "unsupported", StringComparison.Ordinal)
@@ -1267,8 +1268,9 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         {
             ["plugin"] = SafeText(plugin),
             ["slot_type"] = SafeText(slotType),
-            ["database"] = SafeText(database),
-            ["expected_database"] = SafeText(expectedDatabase),
+            ["database_matches_current"] = databaseMatchesCurrent.ToString(),
+            ["database_identity_token"] = DatabaseIdentityTokenOrMissing(database),
+            ["expected_database_identity_token"] = DatabaseIdentityTokenOrMissing(expectedDatabase),
             ["temporary"] = temporary.ToString(),
             ["active"] = active.ToString(),
             ["two_phase"] = SafeText(twoPhase),
@@ -2291,10 +2293,17 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             );
         }
 
-        if (!string.Equals(proof.DatabaseIdentity.Value, slot.DatabaseIdentity, StringComparison.Ordinal))
+        var slotDatabaseIdentityToken = DatabaseIdentityTokenOrMissing(slot.DatabaseIdentity);
+        if (
+            !string.Equals(
+                proof.DatabaseIdentityToken.Value,
+                slotDatabaseIdentityToken,
+                StringComparison.Ordinal
+            )
+        )
         {
             mismatches.Add(
-                $"database_identity={SafeText(proof.DatabaseIdentity.Value)};expected={SafeText(slot.DatabaseIdentity ?? "<missing>")}"
+                $"database_identity_token={SafeText(proof.DatabaseIdentityToken.Value)};expected={SafeText(slotDatabaseIdentityToken)}"
             );
         }
 
@@ -2377,7 +2386,9 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             ["initial_slot_proof_source_fingerprint"] = SafeText(
                 request.BoundPhysicalSourceFingerprint.Value
             ),
-            ["initial_slot_proof_database_identity"] = SafeText(slot.DatabaseIdentity ?? ""),
+            ["initial_slot_proof_database_identity_token"] = DatabaseIdentityTokenOrMissing(
+                slot.DatabaseIdentity
+            ),
             ["initial_slot_proof_restart_lsn"] = SafeText(slot.RestartLsn ?? ""),
             ["initial_slot_proof_confirmed_flush_lsn"] = SafeText(slot.ConfirmedFlushLsn ?? ""),
         };
@@ -2461,6 +2472,11 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
 
     private static string FingerprintValue(CdcSourceFingerprint fingerprint) =>
         $"{SafeText(fingerprint.Version)}:{SafeText(fingerprint.Value)}";
+
+    private static string DatabaseIdentityTokenOrMissing(string? databaseIdentity) =>
+        string.IsNullOrWhiteSpace(databaseIdentity)
+            ? "missing"
+            : CdcPostgresqlInitialReplicationSlotProof.CreateDatabaseIdentityToken(databaseIdentity).Value;
 
     private static string ReplicaIdentityDisplayName(string? relReplicaIdentity) =>
         relReplicaIdentity switch

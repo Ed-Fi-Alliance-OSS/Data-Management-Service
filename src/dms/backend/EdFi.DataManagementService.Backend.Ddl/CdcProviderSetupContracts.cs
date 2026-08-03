@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Backend.External;
@@ -181,10 +182,12 @@ internal sealed record CdcPostgresqlProviderArtifactNames(
 
 internal sealed record CdcPostgresqlInitialReplicationSlotProof
 {
+    private const string DatabaseIdentityTokenPrefix = "postgresql_database_identity_sha256:";
+
     public CdcPostgresqlInitialReplicationSlotProof(
         CdcSafeName replicationSlotName,
         CdcSourceFingerprint sourceFingerprint,
-        CdcSafeName databaseIdentity,
+        CdcSafeName databaseIdentityToken,
         string retainedRestartLsn,
         string retainedConfirmedFlushLsn
     )
@@ -193,7 +196,10 @@ internal sealed record CdcPostgresqlInitialReplicationSlotProof
 
         ReplicationSlotName = replicationSlotName;
         SourceFingerprint = sourceFingerprint;
-        DatabaseIdentity = databaseIdentity;
+        DatabaseIdentityToken = ValidateDatabaseIdentityToken(
+            databaseIdentityToken,
+            nameof(databaseIdentityToken)
+        );
         RetainedRestartLsn = ValidateRetainedPosition(retainedRestartLsn, nameof(retainedRestartLsn));
         RetainedConfirmedFlushLsn = ValidateRetainedPosition(
             retainedConfirmedFlushLsn,
@@ -205,11 +211,61 @@ internal sealed record CdcPostgresqlInitialReplicationSlotProof
 
     public CdcSourceFingerprint SourceFingerprint { get; }
 
-    public CdcSafeName DatabaseIdentity { get; }
+    public CdcSafeName DatabaseIdentityToken { get; }
 
     public string RetainedRestartLsn { get; }
 
     public string RetainedConfirmedFlushLsn { get; }
+
+    public static CdcSafeName CreateDatabaseIdentityToken(string databaseIdentity)
+    {
+        if (string.IsNullOrWhiteSpace(databaseIdentity))
+        {
+            throw new ArgumentException(
+                "PostgreSQL CDC database identity token source must be supplied.",
+                nameof(databaseIdentity)
+            );
+        }
+
+        if (databaseIdentity.Any(char.IsControl))
+        {
+            throw new ArgumentException(
+                "PostgreSQL CDC database identity token source must not contain control characters.",
+                nameof(databaseIdentity)
+            );
+        }
+
+        var scopedIdentity = $"postgresql-database-identity:{databaseIdentity}";
+        var hash = Convert
+            .ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(scopedIdentity)))
+            .ToLowerInvariant();
+
+        return new CdcSafeName($"{DatabaseIdentityTokenPrefix}{hash}");
+    }
+
+    private static CdcSafeName ValidateDatabaseIdentityToken(CdcSafeName token, string parameterName)
+    {
+        if (!token.Value.StartsWith(DatabaseIdentityTokenPrefix, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "PostgreSQL CDC database identity proof must use a database identity token.",
+                parameterName
+            );
+        }
+
+        var hash = token.Value[DatabaseIdentityTokenPrefix.Length..];
+        if (hash.Length != 64 || hash.Any(character => !IsLowerHex(character)))
+        {
+            throw new ArgumentException(
+                "PostgreSQL CDC database identity token must be a lowercase SHA-256 token.",
+                parameterName
+            );
+        }
+
+        return token;
+    }
+
+    private static bool IsLowerHex(char character) => character is >= '0' and <= '9' or >= 'a' and <= 'f';
 
     private static string ValidateRetainedPosition(string value, string parameterName)
     {

@@ -553,7 +553,7 @@ public class Given_PostgresqlCdcProviderAccessRetry
         return new CdcPostgresqlInitialReplicationSlotProof(
             new CdcSafeName(_replicationSlotName),
             result.ObservedSourceFingerprint!,
-            new CdcSafeName(observation.SafeObservedValues["initial_slot_proof_database_identity"]),
+            new CdcSafeName(observation.SafeObservedValues["initial_slot_proof_database_identity_token"]),
             observation.SafeObservedValues["initial_slot_proof_restart_lsn"],
             observation.SafeObservedValues["initial_slot_proof_confirmed_flush_lsn"]
         );

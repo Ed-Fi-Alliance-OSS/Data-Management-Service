@@ -304,6 +304,10 @@ public class Given_PostgresqlCdcSlotHistory_Initial_Setup
                 && observation.SafeObservedValues["slot_type"] == "logical"
                 && observation.SafeObservedValues["temporary"] == "False"
                 && observation.SafeObservedValues["initial_slot_proof"] == "available"
+                && observation.SafeObservedValues["database_matches_current"] == "True"
+                && observation
+                    .SafeObservedValues["initial_slot_proof_database_identity_token"]
+                    .StartsWith("postgresql_database_identity_sha256:", StringComparison.Ordinal)
                 && observation.SafeObservedValues["initial_slot_proof_restart_lsn"] == "0_16B6C50"
                 && observation.SafeObservedValues["initial_slot_proof_confirmed_flush_lsn"] == "0_16B6C50"
             );
@@ -313,6 +317,11 @@ public class Given_PostgresqlCdcSlotHistory_Initial_Setup
                 observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
                 && observation.SafeArtifactName.Value == "dms_binding_slot"
                 && observation.Classification == CdcProviderRetryContinuityClassification.None
+                && observation
+                    .SafeObservedValues["database_identity_token"]
+                    .StartsWith("postgresql_database_identity_sha256:", StringComparison.Ordinal)
+                && !observation.SafeObservedValues.ContainsKey("database")
+                && !observation.SafeObservedValues.ContainsKey("expected_database")
                 && observation.SafeObservedValues["restart_lsn"] == "0_16B6C50"
                 && observation.SafeObservedValues["confirmed_flush_lsn"] == "0_16B6C50"
             );
@@ -499,6 +508,45 @@ public class Given_PostgresqlCdcSlotHistory_ValidateOnly
                 diagnostic.Code == "CDC_POSTGRESQL_REPLICATION_SLOT_MISMATCH"
                 && diagnostic.Category == CdcProviderDiagnosticCategory.ValidationMismatch
             );
+    }
+
+    [Test]
+    public async Task It_should_redact_database_identity_from_slot_manifest_and_diagnostics()
+    {
+        const string TenantDatabaseName = "tenant_EastHigh_2026";
+        var executor = RecordingPostgresqlCdcExecutor.WithExistingProviderArtifacts(
+            slotDatabase: TenantDatabaseName
+        );
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        var diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "CDC_POSTGRESQL_REPLICATION_SLOT_MISMATCH")
+            .Which;
+        diagnostic.ObservedValue.Should().NotBeNull();
+        diagnostic.ObservedValue!.Should().NotContain(TenantDatabaseName);
+        diagnostic.ObservedValue.Should().NotContain("dms_test");
+        result
+            .ProviderHistoryObservations.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
+                && observation.SafeObservedValues["database_matches_current"] == "False"
+                && observation
+                    .SafeObservedValues["database_identity_token"]
+                    .StartsWith("postgresql_database_identity_sha256:", StringComparison.Ordinal)
+                && !observation.SafeObservedValues.ContainsKey("database")
+                && !observation.SafeObservedValues.ContainsKey("expected_database")
+            );
+        result.ManifestPayload!.Json.Should().NotContain(TenantDatabaseName);
+        result.ManifestPayload.Json.Should().NotContain("dms_test");
     }
 
     [Test]

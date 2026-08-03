@@ -161,14 +161,17 @@ internal static class CdcProviderSetupContractTestData
     internal static CdcPostgresqlInitialReplicationSlotProof BuildPostgresqlInitialSlotProof(
         string replicationSlotName = "dms_binding_slot",
         CdcSourceFingerprint? sourceFingerprint = null,
-        string databaseIdentity = "dms_test",
+        string? databaseIdentityToken = null,
         string retainedRestartLsn = "0_16B6C50",
         string retainedConfirmedFlushLsn = "0_16B6C50"
     ) =>
         new(
             new CdcSafeName(replicationSlotName),
             sourceFingerprint ?? PostgresqlSourceFingerprint,
-            new CdcSafeName(databaseIdentity),
+            new CdcSafeName(
+                databaseIdentityToken
+                    ?? CdcPostgresqlInitialReplicationSlotProof.CreateDatabaseIdentityToken("dms_test").Value
+            ),
             retainedRestartLsn,
             retainedConfirmedFlushLsn
         );
@@ -236,6 +239,8 @@ public class Given_CdcProviderSetupContract_Request
         );
 
         request.PostgresqlInitialReplicationSlotProof.Should().Be(proof);
+        proof.DatabaseIdentityToken.Value.Should().StartWith("postgresql_database_identity_sha256:");
+        proof.DatabaseIdentityToken.Value.Should().NotContain("dms_test");
     }
 
     [Test]
@@ -412,6 +417,8 @@ public class Given_CdcProviderSetupContract_Serialization
         json.Should().Contain(nameof(CdcProviderSetupRequest.PostgresqlInitialReplicationSlotProof));
         json.Should().Contain("dms_binding_slot");
         json.Should().Contain("0_16B6C50");
+        json.Should().Contain("postgresql_database_identity_sha256");
+        json.Should().NotContain("dms_test");
         json.Should().NotContain("Credential");
         json.Should().NotContain("ConnectionString");
         json.Should().NotContain("Password");
