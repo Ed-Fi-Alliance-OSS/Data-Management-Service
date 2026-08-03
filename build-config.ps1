@@ -230,12 +230,7 @@ function RunTests {
         $TestFilter
     )
 
-    $testAssemblyPath = "$solutionRoot/*/$Filter/bin/$Configuration/"
-    $testAssemblies = Get-ChildItem -Path $testAssemblyPath -Filter "$Filter.dll" -Recurse
-
-    if ($testAssemblies.Length -eq 0) {
-        Write-Output "no test assemblies found in $testAssemblyPath"
-    }
+    $testAssemblies = @(Get-RequiredTestAssembly -SolutionRoot $solutionRoot -Filter $Filter -Configuration $Configuration)
 
     Write-Output "Tests Assemblies List"
     Write-Output $testAssemblies
