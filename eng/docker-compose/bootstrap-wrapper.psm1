@@ -507,8 +507,6 @@ function Invoke-BootstrapWrapper {
         [ValidateSet("keycloak", "self-contained")]
         [string]$IdentityProvider,
 
-        [Switch]$EnableKafkaUI,
-
         [Switch]$EnableSwaggerUI,
 
         [Switch]$EnableConfig,
@@ -824,7 +822,6 @@ function Invoke-BootstrapWrapper {
             InfraOnly = $true
             EnableConfig = $true
         }
-        if ($EnableKafkaUI) { $startArgs.EnableKafkaUI = $true }
         if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
         $startArgs.DatabaseEngine = $DatabaseEngine
@@ -942,7 +939,6 @@ function Invoke-BootstrapWrapper {
                 EnvironmentFile = $effectiveEnvFile
                 DmsBaseUrl = $DmsBaseUrl
             }
-            if ($EnableKafkaUI) { $healthWaitArgs.EnableKafkaUI = $true }
             if ($EnableSwaggerUI) { $healthWaitArgs.EnableSwaggerUI = $true }
             if ($AddExtensionSecurityMetadata) { $healthWaitArgs.AddExtensionSecurityMetadata = $true }
             $healthWaitArgs.DatabaseEngine = $DatabaseEngine
@@ -981,7 +977,6 @@ function Invoke-BootstrapWrapper {
             DmsOnly = $true
             EnvironmentFile = $effectiveEnvFile
         }
-        if ($EnableKafkaUI) { $dmsStartArgs.EnableKafkaUI = $true }
         if ($EnableSwaggerUI) { $dmsStartArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $dmsStartArgs.AddExtensionSecurityMetadata = $true }
         $dmsStartArgs.DatabaseEngine = $DatabaseEngine

@@ -56,9 +56,6 @@
 .PARAMETER IdentityProvider
     Forwarded to both phase commands for OAuth endpoint selection.
 
-.PARAMETER EnableKafkaUI
-    Forwarded to `start-published-dms.ps1`.
-
 .PARAMETER EnableSwaggerUI
     Forwarded to `start-published-dms.ps1`.
 
@@ -113,8 +110,6 @@ param(
     # only to override the env-file resolution.
     [ValidateSet("keycloak", "self-contained")]
     [string]$IdentityProvider,
-
-    [Switch]$EnableKafkaUI,
 
     [Switch]$EnableSwaggerUI,
 

@@ -26,8 +26,8 @@
     against it) and the failure propagates. Teardown short-circuits to that delegation and
     returns before any staging, configure, provision, DMS-startup, or seed orchestration. Only the
     options that shape the Docker compose set (`-EnvironmentFile`, `-IdentityProvider`,
-    `-EnableKafkaUI`, `-EnableSwaggerUI`, `-DatabaseEngine`) are forwarded to teardown; pass the
-    same infrastructure flags used at start so teardown targets the same compose shape.
+    `-EnableSwaggerUI`, `-DatabaseEngine`) are forwarded to teardown; pass the same
+    infrastructure flags used at start so teardown targets the same compose shape.
 
     Seed loading is wrapper-level opt-in: when `-LoadSeedData` is absent the wrapper does
     not invoke `load-dms-seed-data.ps1`. Direct invocation of `load-dms-seed-data.ps1`
@@ -101,9 +101,6 @@
 
 .PARAMETER IdentityProvider
     Forwarded to all phase commands for OAuth endpoint selection.
-
-.PARAMETER EnableKafkaUI
-    Forwarded to `start-local-dms.ps1`.
 
 .PARAMETER EnableSwaggerUI
     Forwarded to `start-local-dms.ps1`.
@@ -218,8 +215,6 @@ param(
     [ValidateSet("keycloak", "self-contained")]
     [string]$IdentityProvider,
 
-    [Switch]$EnableKafkaUI,
-
     [Switch]$EnableSwaggerUI,
 
     [Switch]$EnableConfig,
@@ -279,12 +274,12 @@ if ($d) {
     # Forward only the flags that shape the compose-file set start-local-dms.ps1 rebuilds for
     # `docker compose ... down`, so teardown targets the same containers/volumes and env the stack
     # started with: -DatabaseEngine (postgresql.yml vs mssql.yml), -IdentityProvider (keycloak.yml),
-    # -EnableKafkaUI (kafka.yml + kafka-ui.yml), -EnableSwaggerUI (swagger-ui.yml), and the env file.
+    # -EnableSwaggerUI (swagger-ui.yml), and the env file.
     # Seed/configure/IDE options and -DataStandardVersion do not change the compose-file set (the DS
     # overlay only rewrites env values such as SCHEMA_PACKAGES), so they are omitted. Each is forwarded
     # only when the caller bound it; the unbound defaults (postgresql, no switches) match
     # start-local-dms.ps1's own, so an omitted flag and its default forward identically.
-    foreach ($name in 'EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableSwaggerUI', 'DatabaseEngine') {
+    foreach ($name in 'EnvironmentFile', 'IdentityProvider', 'EnableSwaggerUI', 'DatabaseEngine') {
         if ($PSBoundParameters.ContainsKey($name)) {
             $teardownArgs[$name] = $PSBoundParameters[$name]
         }

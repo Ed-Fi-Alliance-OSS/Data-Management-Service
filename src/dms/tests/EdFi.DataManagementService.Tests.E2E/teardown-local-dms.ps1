@@ -39,8 +39,6 @@ try {
         "keycloak.yml",
         "local-dms.yml",
         "local-config.yml",
-        "kafka.yml",
-        "kafka-ui.yml",
         "swagger-ui.yml",
         "published-dms.yml",
         "published-config.yml"
@@ -170,9 +168,9 @@ try {
         Write-Warning "Error stopping containers: $_"
     }
 
-    # Force stop any remaining containers with dms or kafka in the name
+    # Force stop any remaining containers with dms in the name
     Write-Host "`nForce stopping any remaining containers..." -ForegroundColor Yellow
-    $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "(dms|kafka|ed-fi-api)" }
+    $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "(dms|ed-fi-api)" }
     if ($remainingContainers) {
         foreach ($container in $remainingContainers) {
             Write-Host "- Force removing container: $container" -ForegroundColor Gray
@@ -344,7 +342,7 @@ try {
     $verificationFailed = $false
 
     # Check for any remaining containers
-    $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "(dms|kafka|ed-fi-api)" }
+    $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "(dms|ed-fi-api)" }
     if ($remainingContainers) {
         Write-Warning "Found remaining containers that were not removed:"
         foreach ($container in $remainingContainers) {

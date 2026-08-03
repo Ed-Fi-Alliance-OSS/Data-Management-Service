@@ -322,12 +322,11 @@ param(
     [switch] `$RemoveBootstrap,
     [string] `$EnvironmentFile,
     [string] `$IdentityProvider,
-    [switch] `$EnableKafkaUI,
     [switch] `$EnableSwaggerUI,
     [string] `$DatabaseEngine,
     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
 )
-Add-Content -LiteralPath '$CallLogPath' -Value "teardown d=`$d v=`$v RemoveBootstrap=`$RemoveBootstrap EnvironmentFile=`$EnvironmentFile IdentityProvider=`$IdentityProvider EnableKafkaUI=`$EnableKafkaUI EnableSwaggerUI=`$EnableSwaggerUI DatabaseEngine=`$DatabaseEngine Rest=`$Rest"
+Add-Content -LiteralPath '$CallLogPath' -Value "teardown d=`$d v=`$v RemoveBootstrap=`$RemoveBootstrap EnvironmentFile=`$EnvironmentFile IdentityProvider=`$IdentityProvider EnableSwaggerUI=`$EnableSwaggerUI DatabaseEngine=`$DatabaseEngine Rest=`$Rest"
 $failureStatement
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
@@ -865,21 +864,15 @@ $failureStatement
             }
         }
 
-        It "start-local-dms.ps1 gates Kafka on the PostgreSQL engine (no Debezium CDC on the MSSQL path)" {
+        It "start-local-dms.ps1 selects no Kafka compose files on either engine" {
+            # The Debezium/Kafka CDC direction was abandoned with the relational backend, so there is
+            # no longer an engine-gated Kafka opt-in to select: neither engine composes any Kafka
+            # file and the script carries no Kafka plumbing at all.
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            $startScript | Should -Match 'if \(\$enableKafkaInfrastructure -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*\$files \+= @\("-f", "kafka\.yml"\)'
-        }
-
-        It "start-local-dms.ps1 gates the Kafka UI startup on the PostgreSQL engine (no Debezium CDC on the MSSQL path)" {
-            $startScript = Get-Content -LiteralPath (
-                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
-            ) -Raw
-
-            $startScript | Should -Match 'if \(\$EnableKafkaUI -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*up \$upArgs kafka-ui'
-            $startScript | Should -Match 'elseif \(\$EnableKafkaUI -and \$DatabaseEngine -eq "mssql"\)\s*\{[^}]*Skipping Kafka UI'
+            $startScript | Should -Not -Match 'kafka'
         }
 
         It "start-local-dms.ps1 composes the MSSQL engine overlay after the data-standard overlay and before reading env values" {
@@ -1316,7 +1309,6 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             & $script:repo.WrapperScript `
                 -EnvironmentFile $script:repo.EnvFile `
                 -IdentityProvider self-contained `
-                -EnableKafkaUI `
                 -EnableSwaggerUI `
                 -DatabaseEngine mssql `
                 -d
@@ -1325,7 +1317,6 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
 
             $log.Count | Should -Be 1
             $log[0] | Should -Match "IdentityProvider=self-contained"
-            $log[0] | Should -Match "EnableKafkaUI=True"
             $log[0] | Should -Match "EnableSwaggerUI=True"
             $log[0] | Should -Match "DatabaseEngine=mssql"
             $log[0] | Should -Match ([regex]::Escape("EnvironmentFile=$($script:repo.EnvFile)"))
@@ -1335,7 +1326,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             # Guards the teardown forwarding whitelist. Options that do not change the compose-file set
             # must never reach the delegation; the stub records anything outside the whitelist in Rest=,
             # so an accidental addition to the forwarding loop surfaces here instead of passing silently.
-            $forwarded = @('EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableSwaggerUI', 'DatabaseEngine')
+            $forwarded = @('EnvironmentFile', 'IdentityProvider', 'EnableSwaggerUI', 'DatabaseEngine')
             $excluded = @(
                 'LoadSeedData', 'SeedTemplate', 'SeedDataPath', 'AdditionalNamespacePrefix',
                 'SchoolYearRange', 'DataStandardVersion', 'InfraOnly', 'DmsBaseUrl',

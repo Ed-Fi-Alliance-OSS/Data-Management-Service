@@ -329,7 +329,8 @@ exit $ExitCode
 
                 $params | Should -Contain "InfraOnly"
                 $params | Should -Contain "DmsOnly"
-                $params | Should -Contain "EnableKafka"
+                $params | Should -Not -Contain "EnableKafka"
+                $params | Should -Not -Contain "EnableKafkaUI"
                 $params | Should -Not -Contain "SkipConnectorSetup"
                 $params | Should -Not -Contain "ApiSchemaPath"
                 $params | Should -Not -Contain "ClaimsDirectoryPath"
@@ -337,19 +338,21 @@ exit $ExitCode
             }
         }
 
-        It "start scripts keep Kafka compose files behind explicit opt-in" {
+        It "start scripts reference no Kafka compose surface" {
+            # The Debezium/Kafka CDC direction was abandoned with the relational backend: the
+            # kafka.yml/kafka-ui.yml compose files and the -EnableKafka/-EnableKafkaUI opt-in
+            # plumbing are gone, so the start scripts must carry no Kafka reference at all.
             foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
                 $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot $name) -Raw
 
-                ([regex]::Matches($content, '"kafka\.yml"')).Count | Should -Be 1
-                $content | Should -Match '\$enableKafkaInfrastructure\s*=\s*\$EnableKafka\s+-or\s+\$EnableKafkaUI'
-                # The MSSQL relational path does not use Debezium CDC, so start-local-dms.ps1 additionally
-                # gates the kafka.yml/kafka-ui.yml compose files on $DatabaseEngine -eq "postgresql"; that
-                # extra clause is optional here so both start-local-dms.ps1 and start-published-dms.ps1 match.
-                $content | Should -Match 'if \(\$enableKafkaInfrastructure( -and \$DatabaseEngine -eq "postgresql")?\) \{\s*\$files \+= @\("-f", "kafka\.yml"\)\s*\}'
-                $content | Should -Match 'if \(\$EnableKafkaUI( -and \$DatabaseEngine -eq "postgresql")?\) \{\s*\$files \+= @\("-f", "kafka-ui\.yml"\)\s*\}'
-                $content | Should -Match 'docker compose \$files --env-file \$EnvironmentFile -p dms-(local|published) up \$upArgs kafka kafka-postgresql-source'
+                $content | Should -Not -Match 'kafka'
+                # Teardown must still prune containers orphaned by removed compose files.
                 $content | Should -Match '"--remove-orphans"'
+            }
+
+            foreach ($removedComposeFile in @("kafka.yml", "kafka-ui.yml")) {
+                Test-Path -LiteralPath (Join-Path $script:sourceDockerComposeRoot $removedComposeFile) |
+                    Should -BeFalse
             }
         }
 

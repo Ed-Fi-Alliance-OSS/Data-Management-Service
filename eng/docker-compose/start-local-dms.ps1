@@ -9,7 +9,7 @@
 .DESCRIPTION
     This script is the infrastructure-lifecycle phase. It starts or stops the Docker
     services that underpin local DMS development (PostgreSQL or SQL Server, Config Service,
-    optional Keycloak/SwaggerUI/Kafka/KafkaUI). The wrapper bootstrap-local-dms.ps1
+    optional Keycloak/SwaggerUI). The wrapper bootstrap-local-dms.ps1
     orchestrates prepare -> infra -> configure -> provision -> DMS-only, so by the
     time the wrapper calls into here a .bootstrap/ workspace and a provisioned database
     already exist.
@@ -98,14 +98,6 @@ param (
     [Switch]
     $r,
 
-    # Enable Kafka and Kafka Connect infrastructure
-    [Switch]
-    $EnableKafka,
-
-    # Enable Kafka UI. This also enables Kafka infrastructure.
-    [Switch]
-    $EnableKafkaUI,
-
     # Enable the DMS Configuration Service.
     # Retained for backward compatibility; Config Service is now always included in the compose set.
     # Per the bootstrap entry-point spec (DMS-1153), every non-teardown run starts Config Service,
@@ -170,8 +162,7 @@ param (
     # Database engine for the whole stack. "postgresql" (default) uses postgresql.yml.
     # "mssql" swaps in mssql.yml: SQL Server hosts the DMS datastore, the Configuration
     # Service (CMS SQL Server backend), and the self-contained OpenIddict identity stores —
-    # no PostgreSQL container runs. The relational backend has no Debezium CDC (Kafka is
-    # PostgreSQL-only and omitted). The .env.mssql overlay (DMS_DATASTORE=mssql,
+    # no PostgreSQL container runs. The .env.mssql overlay (DMS_DATASTORE=mssql,
     # DMS_CONFIG_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings)
     # is composed automatically onto -EnvironmentFile. See mssql.yml and
     # Resolve-DatabaseEngineEnvironmentFile.
@@ -335,21 +326,9 @@ if (-not $databaseOnlyStartup) {
         $files += @("-f", "local-dms-diagnostics.yml")
     }
 
-    # Kafka (and KafkaUI) back the PostgreSQL Debezium CDC path only and are opt-in via
-    # -EnableKafka / -EnableKafkaUI. The relational MSSQL path serves writes and queries directly
-    # from SQL and registers no connector, so Kafka is omitted.
-    $enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI
-    if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
-        $files += @("-f", "kafka.yml")
-    }
-
     if ($IdentityProvider -eq "keycloak") {
         # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full environment.
         $files += @("-f", "keycloak.yml")
-    }
-
-    if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
-        $files += @("-f", "kafka-ui.yml")
     }
 
     # Config Service is always included in the managed compose set outside the dedicated
@@ -633,28 +612,6 @@ else {
             ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
             ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
             ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile @identityDbParams
-        }
-
-        if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
-            Write-Output "Starting Kafka infrastructure..."
-            docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs kafka kafka-postgresql-source
-            if ($LASTEXITCODE -ne 0) {
-                throw "Failed to start Kafka infrastructure. Exit code $LASTEXITCODE"
-            }
-        }
-        elseif ($enableKafkaInfrastructure -and $DatabaseEngine -eq "mssql") {
-            Write-Output "Skipping Kafka infrastructure: the MSSQL relational path does not use Debezium CDC (PostgreSQL-only)."
-        }
-
-        if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
-            Write-Output "Starting Kafka UI..."
-            docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs kafka-ui
-            if ($LASTEXITCODE -ne 0) {
-                throw "Failed to start Kafka UI. Exit code $LASTEXITCODE"
-            }
-        }
-        elseif ($EnableKafkaUI -and $DatabaseEngine -eq "mssql") {
-            Write-Output "Skipping Kafka UI: the MSSQL relational path does not use Debezium CDC (PostgreSQL-only)."
         }
 
         # Claims-ready gate: prove CMS has applied the expected claims content before

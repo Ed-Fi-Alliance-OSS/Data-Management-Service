@@ -1510,14 +1510,9 @@ jobs:
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider self-contained
 
-      - name: Add Kafka hostname to /etc/hosts
-        run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
-
       - name: Run DS 6.1 DMS E2E (version-coupled scenarios)
         id: e2e_ds61
         if: success()
-        env:
-          KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
           ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
 
@@ -2105,7 +2100,7 @@ jobs:
       - name: Fresh rebuild DMS and Config Docker images
         working-directory: eng/docker-compose
         run: |
-          docker compose -f postgresql.yml -f local-dms.yml -f kafka.yml -f local-config.yml --env-file "./.env.e2e" -p dms-local build --no-cache
+          docker compose -f postgresql.yml -f local-dms.yml -f local-config.yml --env-file "./.env.e2e" -p dms-local build --no-cache
 
   test-timing-summary:
     name: Test Timing Summary

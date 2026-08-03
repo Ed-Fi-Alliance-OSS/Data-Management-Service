@@ -1,7 +1,7 @@
 # Instance Routing Manual Test
 # Run ./build-dms.ps1 InstanceE2ETest first to set up the environment
 # This will test that data routes to the correct instance databases.
-# Relational DMS CDC/Kafka support is pending a separate implementation.
+# The relational backend has no CDC pipeline; data is served directly from SQL.
 
 @dmsUrl = http://localhost:8080
 @configUrl = http://localhost:8081

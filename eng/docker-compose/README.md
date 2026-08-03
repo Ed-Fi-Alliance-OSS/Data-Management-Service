@@ -17,23 +17,21 @@
 This directory contains several Docker Compose files, which can be combined to
 start up different configurations:
 
-1. `kafka.yml` covers Kafka
-2. `kafka-ui.yml` covers KafkaUI
-3. `postgresql.yml` starts only PostgreSQL
-4. `mssql.yml` starts SQL Server for the DMS datastore (see "Running on the MSSQL backend" below)
-5. `local-dms.yml` runs the DMS from local source code.
-6. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
-7. `keycloak.yml` runs KeyCloak (identity provider).
-8. `swagger-ui.yml` covers SwaggerUI
+1. `postgresql.yml` starts only PostgreSQL
+2. `mssql.yml` starts SQL Server for the DMS datastore (see "Running on the MSSQL backend" below)
+3. `local-dms.yml` runs the DMS from local source code.
+4. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
+5. `keycloak.yml` runs KeyCloak (identity provider).
+6. `swagger-ui.yml` covers SwaggerUI
 
 The scripts read local settings from a `.env` file; on first run they seed it
 automatically as a copy of the tracked `.env.example`, so a clean checkout
 needs no manual step. Edit `.env` to customize — `.env.example` itself is
 documentation only and is never consumed at runtime.
 
-Kafka and Kafka UI compose files remain available for local infrastructure
-testing. Relational DMS CDC/Kafka support is pending a separate implementation,
-so this compose setup does not register DMS source connectors.
+The relational backend serves both writes and queries directly from SQL, so
+there is no Debezium/Kafka CDC pipeline: the Kafka and Kafka UI compose files
+have been removed and this compose setup registers no source connectors.
 
 Convenience PowerShell scripts have been included in the directory, which start
 the appropriate services.
@@ -124,13 +122,6 @@ If you want to use Keycloak as the identity provider, pass the `-IdentityProvide
 ./start-local-dms.ps1 -d -v
 ```
 
-You can set up the Kafka UI containers for testing by passing the -EnableKafkaUI option.
-
-```pwsh
-# Start everything with Kafka UI
-./start-local-dms.ps1 -EnableKafkaUI
-```
-
 You can launch Swagger UI as part of your local environment to explore DMS
 endpoints from your browser.
 
@@ -178,7 +169,7 @@ overlay (`DMS_DATASTORE=mssql`, `DMS_CONFIG_DATASTORE=mssql`, the `MSSQL_*` keys
 Server connection strings) onto the base environment file automatically — the same composition
 mechanism used by `-DataStandardVersion` (see "Selecting a Data Standard version" below), so
 every phase (configure, provision, and the DMS container itself) sees a consistent engine
-selection. Everything else (`SCHEMA_PACKAGES`, Kafka, Keycloak, identity-provider token
+selection. Everything else (`SCHEMA_PACKAGES`, Keycloak, identity-provider token
 endpoints, etc.) still comes from the base environment file; pass `-EnvironmentFile` only to
 override those base settings, and the overlay still composes on top of it.
 
@@ -203,7 +194,7 @@ A few things are specific to the MSSQL path:
   which auto-detects the SQL Server dialect from the data-store connection string and invokes
   `api-schema-tools ddl provision --dialect mssql --create-database`.
 * **No Debezium CDC.** The relational backend serves both writes and queries directly from
-  SQL, so Kafka, OpenSearch, and the Debezium source connector are not started on this path.
+  SQL, so no streaming or search infrastructure is started on this path.
 * **Seed data** uses the same API-based `-LoadSeedData` (BulkLoadClient) path as PostgreSQL;
   it is database-engine agnostic.
 * **CI publishes database-template packages for both engines.** `build-minimal-template.yml` and
@@ -402,9 +393,9 @@ is handled), so staging it needs no `-ClaimsDirectoryPath`. This applies to Data
 Standard 5.2, where TPDM is a separate extension; Data Standard 6.1 folds TPDM
 into core.
 
-Bootstrap mode provisions the relational DMS schema only. Relational DMS
-CDC/Kafka support is pending a separate implementation, so bootstrap startup
-does not register DMS source connectors.
+Bootstrap mode provisions the relational DMS schema only. The relational
+backend has no CDC pipeline, so bootstrap startup registers no source
+connectors.
 
 The DMS E2E setup wrappers stay on the non-bootstrap `SCHEMA_PACKAGES` flow.
 Those env files use `USE_API_SCHEMA_PATH=true` to download and materialize
@@ -422,17 +413,16 @@ local `.bootstrap/` workspace by delegating to
 also removes that engine's data volume; the workspace removal itself is
 engine-independent. If you started the stack with `start-local-dms.ps1`
 directly, `./start-local-dms.ps1 -d -v -RemoveBootstrap` with the same flags
-you started with remains the equivalent direct recovery — including options
-the bootstrap wrapper does not accept, such as `-EnableKafka`.
+you started with remains the equivalent direct recovery.
 
 These recovery commands target the `dms-local` stack. The prepare commands and
 the `.bootstrap/` workspace are shared with the published-image flow
 (`bootstrap-published-dms.ps1`), so if the running stack is `dms-published`,
 recover with `./start-published-dms.ps1 -d -v -RemoveBootstrap` plus the same
 compose-shaping options you started with (e.g. `-IdentityProvider keycloak`,
-`-EnableKafka`, `-EnableSwaggerUI`); the published wrapper itself has no
-teardown flags. Running the `dms-local` recovery instead would leave the
-published stack up while deleting the workspace its containers bind-mount.
+`-EnableSwaggerUI`); the published wrapper itself has no teardown flags.
+Running the `dms-local` recovery instead would leave the published stack up
+while deleting the workspace its containers bind-mount.
 
 > **Note on `-RemoveBootstrap`:** `./bootstrap-local-dms.ps1 -d -v` removes the
 > `.bootstrap/` workspace for you — it delegates to
@@ -583,7 +573,6 @@ where `{schoolYear}` is the four-digit school year (e.g. `2025`). The standard
 ## Default URLs
 
 * The DMS API: [http://localhost:8080](http://localhost:8080)
-* Kafka UI: [http://localhost:8088/](http://localhost:8088/)
 * Swagger UI: [http://localhost:8082](http://localhost:8082)
 
 ## Multi-Data-Store Testing with Route Qualifiers
@@ -733,12 +722,6 @@ To tear down the environment:
 ```powershell
 cd eng/docker-compose
 pwsh ./start-local-dms.ps1 -d -v
-```
-
-## Kafka UI
-
-```powershell
-# Open http://localhost:8088
 ```
 
 ## Accessing Swagger UI
