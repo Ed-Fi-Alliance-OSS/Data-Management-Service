@@ -133,6 +133,37 @@ public class Given_DocumentCacheWriterClassification
     }
 
     [Test]
+    public void It_treats_current_cache_ahead_as_latchable_when_work_is_absent_or_mismatched()
+    {
+        DocumentCacheWriterClassificationSelection missingWork = Select(
+            sourceContentVersion: 11,
+            cacheContentVersion: 12,
+            workRequiredContentVersion: null
+        );
+        DocumentCacheWriterClassificationSelection workBehind = Select(
+            sourceContentVersion: 11,
+            cacheContentVersion: 12,
+            workRequiredContentVersion: 10
+        );
+        DocumentCacheWriterClassificationSelection workAhead = Select(
+            sourceContentVersion: 11,
+            cacheContentVersion: 12,
+            workRequiredContentVersion: 13
+        );
+
+        new[] { missingWork, workBehind, workAhead }
+            .Should()
+            .AllSatisfy(selection =>
+            {
+                selection.Action.Should().Be(DocumentCacheWriterSelectedAction.RequestCacheAheadLatchFlow);
+                selection.RequestsCacheAheadLatchFlow.Should().BeTrue();
+                selection.WritesCache.Should().BeFalse();
+                selection.AcknowledgesWork.Should().BeFalse();
+                selection.TerminalResult.Should().BeNull();
+            });
+    }
+
+    [Test]
     public void It_selects_needs_materialization_when_current_work_exists_without_a_candidate()
     {
         DocumentCacheWriterClassificationSelection selection = Select(

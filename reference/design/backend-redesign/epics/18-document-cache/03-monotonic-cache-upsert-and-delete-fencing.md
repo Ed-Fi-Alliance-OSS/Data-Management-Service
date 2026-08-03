@@ -36,8 +36,10 @@ shared by queue processing and optional direct fill.
   missing/behind cache work pending when the candidate is not current. Repeat the required
   source/work predicates on cache DML and source/cache/work predicates on acknowledgement;
   the classification result alone does not authorize later DML.
-- Latch only current cache-ahead state after reclassification. Leave mismatched work
-  pending for explicit conditional scrub/rebuild repair without setting the latch.
+- Latch current cache-ahead state after reclassification; `C > S` takes precedence
+  over absent or mismatched work because only cache-ahead may represent unsafe
+  projected or published state. Leave non-cache-ahead work anomalies pending for
+  explicit conditional scrub/rebuild repair without setting the latch.
 - Commit cache write and matching work deletion together. Cover equal-version fast
   acknowledgement, enqueue-versus-ack races, newer-work preservation, delete/post-delete
   fencing, crash windows, and duplicate writers.
@@ -134,8 +136,9 @@ Each attempt uses one short provider transaction:
    - `W = S`, cache absent or behind, and candidate version differs from `S`: suppress the
      stale candidate and leave work pending;
    - `C = S` and `W` absent: no work remains, so no action; and
-   - `W != S`, or cache absent/behind with `W` absent: leave the anomaly pending for
-     explicit scrub or rebuild-page repair and do not set the cache-ahead latch.
+   - `W != S` with no cache-ahead relationship, or cache absent/behind with `W`
+     absent: leave the anomaly pending for explicit scrub or rebuild-page repair and
+     do not set the cache-ahead latch.
 5. Treat the final work acknowledgement as the commit gate for a cache write. If this
    attempt inserted or updated `DocumentCache` but the final conditional work delete
    affects zero rows, roll back the whole transaction and return a race-lost or retryable
@@ -173,8 +176,10 @@ Each attempt uses one short provider transaction:
   acknowledgement. Then start a short incident transaction, acquire the same state row
   exclusively, re-run the current source/cache/work classification, and set
   `CacheAheadRecoveryRequired` only if `C > S` remains current.
-- Do not set the latch for stale candidates, work ahead/behind, missing work, missing
-  source rows, duplicate writers, or lifecycle fences.
+- Do not set the latch for stale candidates, missing source rows, duplicate writers,
+  lifecycle fences, or work ahead/behind/missing-work observations when `C <= S` or
+  cache is absent. Absent or mismatched work does not suppress the latch when the
+  same current recheck still observes `C > S`.
 - If the recheck no longer sees `C > S`, return a "cache-ahead disappeared" outcome and
   leave lifecycle, latch, cache, and work unchanged.
 
@@ -227,8 +232,8 @@ Each attempt uses one short provider transaction:
   state.
 - Crash and concurrency tests prove no work-row lock spans materialization/backoff/I/O,
   cache and acknowledgement are atomic, stale candidates never write, and only current
-  `C > S` sets the latch. A canonical commit between classification and conditional DML
-  cannot erase or acknowledge its newer work.
+  `C > S`, regardless of `W`, sets the latch. A canonical commit between classification
+  and conditional DML cannot erase or acknowledge its newer work.
 - Performance evidence compares the required projector and direct-fill workload modes.
 
 ## Not Assigned to This Story
