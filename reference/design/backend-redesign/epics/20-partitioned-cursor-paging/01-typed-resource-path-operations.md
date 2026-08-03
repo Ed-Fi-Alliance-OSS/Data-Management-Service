@@ -29,10 +29,13 @@ document UUID, while preserving existing invalid-route behavior and repeated-que
 - Update path parsing, request state, route semantics, logging classification, and API dispatch to
   consume the typed operation.
 - Canonicalize `pageToken`, `pageSize`, and partition `number` at the HTTP boundary.
-- Preserve last-value-wins behavior across repeated parameters, including case variants, without
-  dictionary collisions or HTTP 500 responses.
+- Preserve last-value-wins behavior across repeated parameters, including case variants.
 - Preserve the existing invalid-UUID result for unknown third segments and unmatched behavior for
   additional segments.
+- Until E20-S06 activates the partition pipeline, dispatch
+  `/{project}/{resource}/partitions` through the existing invalid-UUID HTTP 400 behavior, including
+  `"validationErrors":{"$.id":["The value 'partitions' is not valid."]}`; do not return an
+  incomplete partition response.
 
 ## Acceptance Evidence and Test Expectations
 
@@ -41,7 +44,8 @@ document UUID, while preserving existing invalid-route behavior and repeated-que
 - Frontend tests prove repeated exact-name and case-variant query parameters choose the last value
   in request order.
 - Regression tests cover existing GET-many, GET-by-id, write, delete, and tracked-change routing.
-- No incomplete `/partitions` endpoint is externally exposed before E20-S06 supplies its pipeline.
+- Before E20-S06, `/partitions` regression coverage locks the existing invalid-UUID HTTP 400; no
+  incomplete endpoint is externally exposed.
 
 ## Cross-Provider and Authorization Responsibilities
 

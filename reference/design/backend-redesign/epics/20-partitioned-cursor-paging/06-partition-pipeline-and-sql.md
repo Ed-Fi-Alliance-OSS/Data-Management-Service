@@ -24,7 +24,8 @@ balanced cursor ranges in one identifiers-only database command.
 - Hard dependencies: E20-S00, E20-S01, E20-S02, and E20-S03.
 - Soft dependencies: E20-S04 and E20-S05 provide completed collection execution patterns but do
   not block boundary compiler work.
-- E20-S08 and E20-S09 consume the completed endpoint.
+- E20-S07 publishes partition paths only when this runtime pipeline lands. E20-S08 and E20-S10
+  consume the completed endpoint.
 
 ## Implementation Scope
 
@@ -35,7 +36,8 @@ balanced cursor ranges in one identifiers-only database command.
 - Integrate E20-S00's approved `number` validation, unsupported-parameter ordering, default count,
   and five-page minimum sizing into the partition pipeline.
 - Compile the approved PostgreSQL and SQL Server row-number/count/partition-size queries using the
-  shared candidate relation and overflow-safe ceiling arithmetic.
+  shared candidate relation and provider-appropriate mathematical ceiling arithmetic; the exact
+  equivalent expression is not contractual.
 - Return starting ids only, convert them to typed inclusive ranges, and token-encode them in Core.
 - Support regular resources, extension resources, descriptors, route qualifiers, tenants, and
   profile routing without document hydration or profile projection.
@@ -44,8 +46,8 @@ balanced cursor ranges in one identifiers-only database command.
 
 - Core tests assert dedicated pipeline order, exact ProblemDetails, `number` precedence, canonical
   unsupported-parameter order, defaults, and empty response shape.
-- SQL-golden tests cover both provider CTEs, parameter roles, one-command output, and arithmetic
-  edge cases.
+- SQL-golden tests cover both provider CTEs, parameter roles, one-command output, and partition
+  sizing semantics without requiring one algebraic spelling of ceiling division.
 - PostgreSQL and real SQL Server integration tests cover counts 1, 10, and 200; sparse/empty sets;
   filters; change versions; descriptors; and fewer-than-requested ranges.
 - Stable-fixture tests prove ranges are non-overlapping, final ranges are unbounded, and starts are
@@ -61,6 +63,6 @@ balanced cursor ranges in one identifiers-only database command.
 ## Explicit Exclusions / Not Assigned
 
 - OpenAPI publication belongs to E20-S07.
-- Broad ODS parity, multi-scenario E2E, and performance evidence belong to E20-S08 and E20-S09.
+- Broad ODS parity, multi-scenario E2E, and performance evidence belong to E20-S08 and E20-S10.
 - Document hydration, descriptor projection, links, total count, DDL, and new indexes are not part
   of this endpoint story.

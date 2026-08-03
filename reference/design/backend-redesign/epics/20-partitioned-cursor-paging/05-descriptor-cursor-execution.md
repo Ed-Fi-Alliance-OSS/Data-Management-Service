@@ -23,14 +23,14 @@ existing `DocumentId` values and the shared candidate and provider plans.
 
 - Hard dependencies: E20-S00, E20-S01, E20-S02, and E20-S03.
 - Existing E08 descriptor endpoint behavior remains a compatibility input.
-- E20-S08 and E20-S09 consume this story's completed descriptor path.
+- E20-S08 and E20-S10 consume this story's completed descriptor path.
 
 ## Implementation Scope
 
 - Pass typed cursor paging through `DescriptorReadHandler` and descriptor query execution.
 - Obtain the selected boundary from ordered descriptor query rows without a second query.
-- Carry the maximum selected descriptor `DocumentId` to Core and emit the same conditional
-  `Next-Page-Token` contract as regular resources.
+- Carry the nullable maximum selected descriptor `DocumentId` to Core and emit the same
+  keyset-presence-gated `Next-Page-Token` contract as regular resources.
 - Preserve descriptor materialization, namespace handling, filters, change-version behavior, and
   traditional total-count behavior.
 
@@ -55,4 +55,4 @@ existing `DocumentId` values and the shared candidate and provider plans.
 - Regular-resource hydration belongs to E20-S04.
 - Descriptor partition boundaries belong to E20-S06.
 - Descriptor OpenAPI belongs to E20-S07.
-- Broad parity/E2E and performance gates belong to E20-S08 and E20-S09.
+- Broad parity/E2E and performance gates belong to E20-S08 and E20-S10.

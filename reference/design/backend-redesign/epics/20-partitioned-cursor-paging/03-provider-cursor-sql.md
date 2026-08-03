@@ -20,17 +20,17 @@ traditional paging behavior or introducing offset/count work in cursor mode.
 
 ## Dependencies
 
-- Hard dependencies: E20-S00 and E20-S02.
-- Sequencing gate: the baseline portion of E20-S09 must complete before this story changes planner
-  SQL. E20-S09's final performance gate runs after implementation and does not create a cycle.
+- Hard dependencies: E20-S00, E20-S02, and the completed E20-S09 baseline story.
+- E20-S10 performs the final performance gate after implementation; it does not create a cycle.
 
 ## Implementation Scope
 
 - Extend page-query plan contracts and parameter roles for inclusive cursor bounds and page size.
 - Compile PostgreSQL range predicates plus `LIMIT @pageSize` with no offset/count SQL.
 - Compile SQL Server range predicates plus `TOP (@pageSize)` with no `OFFSET`/count SQL.
-- Preserve existing traditional PostgreSQL `LIMIT/OFFSET` and SQL Server `OFFSET/FETCH` output
-  except for reviewed mechanical factoring.
+- Preserve existing traditional PostgreSQL `LIMIT/OFFSET` and SQL Server `OFFSET/FETCH`
+  page-selection output except for reviewed candidate-plan factoring. Collection hydration-batch
+  result-set changes belong to E20-S04 and are outside this textual gate.
 - Supply compiled cursor plans to both regular-resource and descriptor execution stories.
 
 ## Acceptance Evidence and Test Expectations
@@ -53,4 +53,4 @@ traditional paging behavior or introducing offset/count work in cursor mode.
 
 - Keyset hydration/output and HTTP headers belong to E20-S04 and E20-S05.
 - Partition row-number/count SQL belongs to E20-S06.
-- Full plan and latency acceptance belongs to E20-S09.
+- Full plan and latency acceptance belongs to E20-S10.

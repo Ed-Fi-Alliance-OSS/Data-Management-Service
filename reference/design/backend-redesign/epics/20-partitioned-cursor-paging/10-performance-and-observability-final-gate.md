@@ -5,13 +5,12 @@ epic: DMS-1348
 status: proposed
 ---
 
-# E20-S09: Performance and Observability Gate
+# E20-S10: Performance and Observability Final Gate
 
 ## Outcome
 
-Provide a reproducible cross-provider harness, pre-change baselines, bounded telemetry, execution
-plans, and final evidence that cursor latency is depth-insensitive without regressing traditional
-paging.
+Use the E20-S09 harness and baseline to produce bounded telemetry, cross-provider execution plans,
+and final evidence that cursor latency is depth-insensitive without regressing traditional paging.
 
 ## Design References
 
@@ -21,19 +20,16 @@ paging.
 
 ## Dependencies
 
-- Baseline phase: no E20 implementation dependency; it must complete before E20-S03 changes
-  planner SQL.
-- Final-gate phase: hard dependencies on completed E20-S03 through E20-S08 behavior.
-- Existing E12 benchmark planning and E13 parity/E2E infrastructure are reusable inputs, not
-  substitutes for the required E20 evidence.
+- Hard dependencies: completed E20-S02 through E20-S08 behavior plus E20-S09 harness and baseline
+  artifacts.
+- Existing E12 benchmark planning and E13 parity/E2E infrastructure remain reusable inputs.
 
 ## Implementation Scope
 
-- Add or explicitly integrate and pin a repeatable PostgreSQL/SQL Server benchmark runner,
-  configuration, fixture loader, run manifest, and stable JSON/CSV result format.
-- Capture traditional paging baselines before planner changes.
 - Provision the epic's smoke, million-row, authorized, filtered, sparse-id, and descriptor data
-  sets and execute its page/partition matrix.
+  sets and execute the complete cursor/partition/final-comparison matrix on the pinned providers.
+- Re-run the three traditional offset scenarios with the E20-S09 definitions for comparable
+  post-change evidence.
 - Capture PostgreSQL and SQL Server plan and I/O evidence using the mechanisms specified by the
   epic.
 - Add bounded telemetry for mode, sizes/counts, duration, provider, command category, and outcome.
@@ -41,13 +37,11 @@ paging.
 
 ## Acceptance Evidence and Test Expectations
 
-- A clean environment can reproduce the same scenario definitions and machine-readable outputs
-  for both providers.
-- Baseline artifacts are identified by commit/environment before E20-S03 planner changes.
 - The final report includes p50/p95, command counts, reads/buffers, CPU/time, plans, returned
   rows/tokens, and pass/fail evaluation against every authoritative epic threshold.
 - Cursor plans contain no offset/count work, use range access where expected, and add no command;
   partition plans perform one candidate pass and return ids only.
+- Traditional offset results are directly compared with the identified E20-S09 baseline artifacts.
 - Telemetry tests prove token text, decoded bounds, filter names/values, identities, and candidate
   ids are never recorded.
 
@@ -56,11 +50,12 @@ paging.
 - PostgreSQL and real SQL Server use pinned versions, equivalent fixtures, and separately retained
   plan evidence; results are compared but provider-specific behavior is not hidden.
 - Include unfiltered, selectively filtered, representative authorized, and descriptor namespace
-  scenarios from the epic's matrix.
+  scenarios from the epic's final matrix.
 
 ## Explicit Exclusions / Not Assigned
 
-- Functional implementation belongs to E20-S00 through E20-S08.
+- Functional implementation belongs to E20-S00 through E20-S08, and harness/baseline ownership
+  belongs to E20-S09.
 - Production capacity sizing, dashboards, paid APM, and generalized load-test expansion are not
   assigned.
 - DDL or indexes are not delivered unless a separately reviewed provider plan demonstrates the

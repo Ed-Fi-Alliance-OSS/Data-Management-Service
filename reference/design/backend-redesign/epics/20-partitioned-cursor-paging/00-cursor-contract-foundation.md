@@ -34,8 +34,10 @@ of truth for exact messages, ordering, bounds, and terminal-page behavior.
 - Add the Core-owned token codec with the approved base64url, decimal, empty-maximum, inverted
   range, and `Int64.MaxValue` behavior.
 - Add phase-gated cursor and partition parameter validators and the approved ProblemDetails shell.
-- Define selected-keyset boundary and typed partition-result contracts without implementing
-  provider execution.
+- Keep cursor parameter recognition operation-scoped so `/deletes` and `/keyChanges` retain their
+  existing invalid-query-field HTTP 400 behavior.
+- Define the nullable selected-keyset boundary and typed partition-result contracts without
+  implementing provider execution.
 - Add and validate `DefaultPartitionCount`; validate `MaximumPageSize` for partition sizing.
 
 ## Acceptance Evidence and Test Expectations
@@ -45,6 +47,8 @@ of truth for exact messages, ordering, bounds, and terminal-page behavior.
 - Validator tests prove syntax/range, required-relationship, and mixed-mode phase gating with
   canonical error order and exact messages.
 - Traditional-only pagination failures retain their current response shell and messages.
+- `/deletes` and `/keyChanges` tests prove `pageToken` and `pageSize` are rejected rather than
+  ignored.
 - Configuration binding/default/startup validation tests cover valid and invalid values.
 - Contract tests prove tracked-change request models do not expose cursor paging.
 

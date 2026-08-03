@@ -16,7 +16,7 @@ related:
 ## Status
 
 This planning draft is the design output of `DMS-1349`. `DMS-1348` has no implementation
-children yet. The ten linked work-package files below are provisional planning placeholders that
+children yet. The eleven linked work-package files below are provisional planning placeholders that
 were approved before Jira creation; they use `jira: TBD` and are not implementation-owned story
 documents. Create Jira children only after separate authorization, then replace each placeholder's
 frontmatter and update `JIRA-INDEX.md` in a mapping-only change. The source spike is currently
@@ -58,10 +58,10 @@ cursor request even though ODS 7.3.2 accidentally accepts `limit` when `pageSize
 
 | Input/output | Contract |
 | --- | --- |
-| `Next-Page-Token` response header | Included on every non-empty HTTP 200 regular or descriptor GET-many response, including a `limit`/`offset` response that can begin a cursor walk. Absent on an empty response. |
+| `Next-Page-Token` response header | Included whenever regular-resource or descriptor GET-many page selection produces a non-null `HighestSelectedDocumentId`, including on a `limit`/`offset` response that can begin a cursor walk and when concurrent deletes leave the hydrated response body empty. Absent when page selection is skipped or selects no keys, and at `Int64.MaxValue` where advancing would overflow. |
 | `pageToken` | Selects the next inclusive `DocumentId` range. It is opaque to clients and is normally copied from `Next-Page-Token` or a `/partitions` response. |
-| `pageSize` | Optional only when `pageToken` is present; integer `0..MaximumPageSize`. When omitted, use the configured `MaximumPageSize`, matching the existing default GET-many size. |
-| `limit`, `offset` | Remain supported for traditional paging. Neither may be combined with `pageToken` or `pageSize`, including when its value is zero. |
+| `pageSize` | Optional only when `pageToken` is present; integer `0..MaximumPageSize`. When omitted, use the configured `MaximumPageSize`, initially `500`, matching the existing default GET-many size. |
+| `limit`, `offset` | Remain supported for traditional paging. When `limit` is omitted, use the configured `MaximumPageSize`, initially `500`. Neither parameter may be combined with `pageToken` or `pageSize`, including when its value is zero. |
 | `totalCount` | Remains supported for traditional paging. `totalCount=true` is invalid in cursor mode; an explicitly supplied `totalCount=false` is allowed. Clients may issue `?totalCount=true&limit=0` separately before a cursor walk. |
 | filters | Resource-property filters and `minChangeVersion`/`maxChangeVersion` compose with the cursor range. Clients must repeat the same filters on each request; the token does not store or validate them. |
 
@@ -71,15 +71,18 @@ uses a non-zero offset therefore starts its cursor continuation after the offset
 beginning of the collection. A token obtained from `/partitions` starts at that partition's first
 accessible candidate.
 
-`pageSize=0` returns HTTP 200 with an empty array and no `Next-Page-Token`; it intentionally
-cannot advance a cursor walk. The implementation does not fetch one extra row to predict the
-terminal page. It emits a token for every non-empty response and normally discovers completion
-through the next empty response.
+`pageSize=0` returns HTTP 200 with an empty array and no `Next-Page-Token` because its selected
+keyset is empty and `HighestSelectedDocumentId` is null; it intentionally cannot advance a cursor
+walk.
+The implementation does not fetch one extra row to predict the terminal page. It emits a token
+whenever page selection returns a non-empty keyset and normally discovers completion through the
+next keyset-empty response. If all selected rows are concurrently deleted before hydration, the
+current body can be empty while the header still advances past those selected keys.
 
 Query-parameter names are case-insensitive at the HTTP boundary and are canonicalized before
 Core validation. Preserve the frontend's existing last-value-wins behavior for repeated query
 parameters. Case variants such as `pageToken` and `PAGETOKEN` must collapse to one canonical key
-without a dictionary collision or HTTP 500; the last value in request order wins.
+and retain only the last value in request order.
 
 #### Cursor validation and ProblemDetails
 
@@ -124,6 +127,11 @@ Use these exact messages:
 Within a phase, report errors in canonical order: `pageToken`, `pageSize`, `limit`, `offset`,
 `totalCount`. A syntax/range failure suppresses relationship and mixed-mode errors; a required
 relationship failure suppresses mixed-mode errors.
+
+Cursor parameter recognition is operation-scoped. Supplying `pageToken` or `pageSize` to
+`/deletes` or `/keyChanges` returns the existing HTTP 400 bad-request shell with
+`The query field '{parameter}' is not valid for this Change Query endpoint.` These names must not
+become globally reserved parameters that unsupported endpoint families silently ignore.
 
 ### `/partitions`
 
@@ -191,11 +199,11 @@ Negative bounds and a minimum greater than the maximum are safe match-nothing ra
 authorization bypasses; an inverted range is also how a bounded partition reaches its terminal
 empty page after returning the item at the upper bound.
 
-After a non-empty page, the next token uses `last selected DocumentId + 1` and retains the
-request's maximum bound. If the last selected id is `Int64.MaxValue`, omit the header instead of
-overflowing. Tokens are not signed, encrypted, or bound to a resource, filter set, client,
-tenant, or database. Changing a range cannot bypass the independently compiled filters and
-authorization predicates, and tokens are not promised to be portable between data stores.
+After a non-empty selected keyset, the next token uses `HighestSelectedDocumentId + 1` and retains
+the request's maximum bound. If the highest selected id is `Int64.MaxValue`, omit the header
+instead of overflowing. Tokens are not signed, encrypted, or bound to a resource, filter set,
+client, tenant, or database. Changing a range cannot bypass the independently compiled filters
+and authorization predicates, and tokens are not promised to be portable between data stores.
 
 The codec belongs to Core's HTTP-contract boundary. Frontend code only canonicalizes parameter
 names, while backend contracts, planners, and SQL compilers receive the typed
@@ -223,9 +231,9 @@ CollectionPaging
 ```
 
 Retain the existing `PaginationParameters` model for traditional and tracked-change paging so
-`/deletes` and `/keyChanges` do not acquire cursor behavior. Add explicit query-parameter roles
-for cursor bounds and size and for partition count/minimum size; do not overload the existing
-offset/limit roles.
+`/deletes` and `/keyChanges` do not acquire cursor behavior or reserve cursor parameter names.
+Add explicit query-parameter roles for cursor bounds and size and for partition count/minimum
+size; do not overload the existing offset/limit roles.
 
 Factor a reusable `CandidateDocumentIdQuerySpec` containing the root relation, value predicates,
 live change-version predicates, unified-alias rewrites, row-level authorization specification,
@@ -262,21 +270,28 @@ WHERE <resource, change-version, and authorization predicates>
 ORDER BY r.[DocumentId];
 ```
 
-Cursor mode never compiles or runs total-count SQL. Existing traditional provider SQL must remain
-behaviorally and textually unchanged except for unavoidable factoring of the shared candidate
-plan.
+Cursor mode never compiles or runs total-count SQL. Existing traditional page-selection SQL must
+remain behaviorally and textually unchanged except for unavoidable factoring of the shared
+candidate plan. This textual gate does not cover the collection hydration-batch change required
+to expose selected keys; traditional response behavior remains unchanged.
 
-Materialize a regular-resource page keyset once, as the current hydration batch does. Surface the
-inserted ids as the first batch result set with PostgreSQL `RETURNING "DocumentId"` and SQL Server
-`OUTPUT INSERTED.[DocumentId]`; `HydrationExecutor` calculates their maximum. Carry that value
-through `HydratedPage` and `QuerySuccess` so Core can create `Next-Page-Token`. This returns at
-most `MaximumPageSize` bigint values and adds no second candidate selection, database command, or
-roundtrip. It is more robust than deriving the boundary only from hydrated document metadata
-because a selected last row could be concurrently deleted before hydration. Descriptor query
-rows already carry `DocumentId`; the descriptor handler takes their maximum.
+Materialize a regular-resource collection page keyset once, as the current hydration batch does.
+For `PageKeysetSpec.Query`, surface the inserted ids as the first batch result set with PostgreSQL
+`RETURNING "DocumentId"` and SQL Server `OUTPUT INSERTED.[DocumentId]`; `HydrationExecutor`
+calculates their maximum without depending on row order. `PageKeysetSpec.Single` GET-by-id
+hydration retains its existing batch shape and does not gain this result set. Carry the nullable
+`HighestSelectedDocumentId` through `HydratedPage` and `QuerySuccess` so Core can create
+`Next-Page-Token`. This returns at most `MaximumPageSize` bigint values and adds no second
+candidate selection, database command, transaction, or roundtrip. It is more robust than deriving
+the boundary only from hydrated document metadata because any or all selected rows could be
+concurrently deleted before hydration. Descriptor query rows already carry `DocumentId`; the
+descriptor handler takes their maximum.
 
-Core emits the token only when the final response array is non-empty. The returned maximum is the
-highest selected keyset id, not necessarily the highest document that survived later hydration.
+`HighestSelectedDocumentId` is null when page selection is skipped or the selected keyset is
+empty, including authorization/preprocessing/planner early-empty paths and zero-size pages. An
+empty response array alone cannot distinguish those cases from concurrent deletion after
+selection. Core emits the token whenever `HighestSelectedDocumentId` is present, regardless of
+the final response-body count, except for the `Int64.MaxValue` overflow case.
 
 ### Partition planning
 
@@ -288,8 +303,8 @@ statement that:
 3. computes the partition size; and
 4. returns only the starting `DocumentId` values.
 
-Use quotient/remainder ceiling arithmetic rather than `candidate_count + number - 1` so the
-calculation cannot overflow. PostgreSQL has this shape:
+Compute the mathematical ceiling with provider-appropriate arithmetic; its algebraic spelling is
+not contractual. PostgreSQL has this illustrative logical shape:
 
 ```sql
 WITH candidates AS (
@@ -307,8 +322,7 @@ ranked AS (
 sized AS (
     SELECT *,
         GREATEST(
-            candidate_count / @number
-              + CASE WHEN candidate_count % @number = 0 THEN 0 ELSE 1 END,
+            CEIL(candidate_count::numeric / @number),
             @minimumPartitionSize
         ) AS partition_size
     FROM ranked
@@ -319,10 +333,10 @@ WHERE (row_number - 1) % partition_size = 0
 ORDER BY "DocumentId";
 ```
 
-SQL Server uses the equivalent CTE with `COUNT_BIG`, `ROW_NUMBER`, `%`, and `CASE`. The database
-returns starting ids only. Backend code converts each non-final start to the inclusive range
-`start..nextStart-1` and the final start to `start..Int64.MaxValue`; Core token-encodes those typed
-ranges.
+SQL Server uses the equivalent CTE with `COUNT_BIG`, `ROW_NUMBER`, and a provider-appropriate
+ceiling expression. The database returns starting ids only. Backend code converts each non-final
+start to the inclusive range `start..nextStart-1` and the final start to
+`start..Int64.MaxValue`; Core token-encodes those typed ranges.
 
 The endpoint performs one database command and does not hydrate documents, project profiles,
 resolve descriptors, inject links, or return total count. Provider SQL may differ, but the
@@ -351,8 +365,8 @@ and authorization indexes cannot serve.
   construction, and then a partition handler. Partitions do not hydrate or profile-project
   documents.
 - **Backend contracts:** add a dedicated `IPartitionQueryHandler`; do not route partition work
-  through `QueryDocuments`. Query success carries the selected keyset maximum, and partition
-  success carries typed ranges. SQL planners and executors never parse token strings.
+  through `QueryDocuments`. Query success carries the nullable selected keyset maximum, and
+  partition success carries typed ranges. SQL planners and executors never parse token strings.
 - **Candidate planning:** factor the current root predicates, change-version filters, and
   authorization specification so traditional pages, cursor pages, and partition boundaries
   cannot drift.
@@ -369,7 +383,9 @@ For every eligible core-resource, extension-resource, and descriptor collection:
 
 - append `pageToken` and `pageSize` parameter references to the collection GET;
 - document `Next-Page-Token` as a string header on its HTTP 200 response;
-- add a sibling `/partitions` GET operation;
+- add a sibling `/partitions` GET operation only when the E20-S06 runtime partition pipeline is
+  activated; the path must not be published ahead of the implementation and there is no interim
+  feature toggle;
 - copy resource filters, live change-version filters, security, tags, and domain metadata from
   the collection operation, but do not copy traditional/cursor paging or `totalCount` parameters;
 - use a reusable HTTP 200 `application/json` schema containing `pageTokens: string[]`;
@@ -378,10 +394,12 @@ For every eligible core-resource, extension-resource, and descriptor collection:
 - provide a partition-specific summary and description rather than copying the collection GET
   text.
 
-Do not augment item-by-id, composite, change-query, discovery, or management paths. Publish the
-runtime `MaximumPageSize` as both the `pageSize` default and maximum, replacing the authoritative
-fixture's current default of 25 for assembled DMS documents. Publish `DefaultPartitionCount` as
-the `numberOfPartitions` default.
+Do not augment item-by-id, change-query, discovery, or management paths, and do not introduce
+composite paths. Publish the runtime `MaximumPageSize`, initially `500`, as both the default and
+maximum for the existing `limit` parameter and the new `pageSize` parameter. This replaces the
+authoritative fixture's current published default of `25` and fixed `limit` maximum of `500` with
+the runtime value consistently in assembled DMS documents. Publish `DefaultPartitionCount` as the
+`numberOfPartitions` default.
 
 Profile OpenAPI filtering must explicitly associate `/partitions` with its base collection
 because the partition response has no resource schema from which to infer the relationship.
@@ -424,12 +442,19 @@ or repeatable-read guarantees.
 ## Performance Invariants and Evidence
 
 Implementation is incomplete without reproducible PostgreSQL and real SQL Server evidence.
-Capture the traditional-paging baseline before changing planner code. The DMS repository does not
-currently contain an implemented cross-provider cursor benchmark harness, so DMS-1348 must add a
-repeatable script/configuration/result format or explicitly integrate and pin the external
-Suite-3 performance runner.
+E20-S09 must add a repeatable script/configuration/result format or explicitly integrate and pin
+the external Suite-3 performance runner, then capture the traditional-paging baseline before
+E20-S02 factors the existing planners or E20-S03 changes provider SQL.
 
-Use these pinned data sets:
+The pre-change E20-S09 baseline is deliberately limited to the three traditional offset
+scenarios used by the gates: offset 0, a one-page shallow offset, and a recorded deep offset, for
+page sizes 25 and 500 on both providers. It records commit/environment identity, p50/p95, command
+count, returned rows, reads or buffers, database CPU/time, and plans using a reproducible fixture
+large enough to exercise those offsets. It does not provision the million-row, authorized,
+filtered, sparse-id, or descriptor fixtures and does not run cursor or partition scenarios.
+
+After E20-S02 through E20-S08 are complete, E20-S10 uses the E20-S09 harness and baseline to run
+the final matrix and evaluate the acceptance gates. Use these pinned final-gate data sets:
 
 - 10,000 candidates for smoke and setup validation;
 - 1,000,000 accessible regular-resource candidates with at least 10% `DocumentId` gaps;
@@ -448,7 +473,9 @@ Acceptance gates are:
 
 - cursor SQL contains no `OFFSET`, row-number skip, or count query and uses the root
   `DocumentId` key as a range predicate;
-- existing `limit`/`offset` SQL and behavior remain unchanged;
+- existing `limit`/`offset` page-selection SQL and behavior remain unchanged except for reviewed
+  candidate-plan factoring; the expected selected-id result set in collection hydration batches
+  is outside this textual SQL gate;
 - cursor hydration performs one database command, uses the existing single-command page-keyset
   architecture, and adds no roundtrip;
 - `/partitions` performs one database command and returns identifiers only;
@@ -478,13 +505,15 @@ filter names or values, decoded bounds, client identity, or candidate identifier
   exact messages and ProblemDetails shells, repeated-parameter last-value-wins behavior, and
   case-variant canonicalization without an exception.
 - Routing and handler tests cover typed collection/by-id/partition classification, the dedicated
-  pipeline order, ordinary/empty/zero-size/`Int64.MaxValue` header behavior, and startup
-  configuration validation.
+  pipeline order, selected-keyset-empty/body-empty-after-selection/zero-size/`Int64.MaxValue`
+  header behavior, cursor parameters on `/deletes` and `/keyChanges`, and startup configuration
+  validation.
 - SQL compiler/golden tests cover traditional, cursor, and partition SQL for PostgreSQL and SQL
   Server, including explicit parameter roles, SQL Server `TOP`, absence of offset/count SQL in
-  cursor mode, overflow-safe partition sizing, and identifiers-only output.
-- Hydration tests cover PostgreSQL `RETURNING` and SQL Server `OUTPUT`, result-set ordering, the
-  selected-keyset maximum, and a selected final row deleted before hydration.
+  cursor mode, partition-sizing semantics, and identifiers-only output.
+- Hydration tests cover PostgreSQL `RETURNING` and SQL Server `OUTPUT`, the batch result-set
+  sequence without assuming selected-id row order, the nullable selected-keyset maximum, unchanged
+  GET-by-id result sets, and all selected rows deleted before hydration.
 - Backend integration tests cover regular resources and descriptors, page sizes 0/1/max,
   multiple pages, partition boundaries, sparse ids, empty sets, filtered queries, change-version
   ranges, concurrent insert/delete behavior, and identical boundaries for equivalently seeded
@@ -506,6 +535,13 @@ The approved intentional ODS differences are:
 
 - reject `limit` whenever cursor parameters are present, including when `pageSize` is also present;
 - reject `totalCount=true` in cursor mode;
+- reject `limit`, `offset`, `pageToken`, `pageSize`, and `totalCount` on `/partitions`, where ODS
+  7.3.2 validates only `number` and otherwise passes these through as additional parameters;
+- emit `Next-Page-Token` on ordinary `limit`/`offset` responses when their selected keyset is
+  non-empty, an extension absent from the Ed-Fi client guide and authoritative collection fixtures;
+- publish and use DMS's configured `MaximumPageSize`, initially `500`, as the default and maximum
+  for both `limit` and `pageSize` rather than retaining Ed-Fi's published default of `25` or a
+  fixed maximum;
 - use DMS `Int64 DocumentId` bounds rather than ODS `Int32 AggregateId` bounds;
 - omit the next header rather than overflowing at `Int64.MaxValue`; and
 - use the stricter approved base64url and decimal decoder contract.
@@ -536,9 +572,9 @@ The approved intentional ODS differences are:
   memory-grant behavior; do not infer parity from PostgreSQL tests.
 - The intentionally linear partition query may sort or spill on large filtered/authorized sets;
   preserve the one-command/one-scan shape and use measured evidence before proposing DDL.
-- The authoritative OpenAPI `pageSize` default currently conflicts with approved runtime behavior;
-  assembled documents must expose the runtime value consistently across resource and descriptor
-  specifications.
+- The authoritative OpenAPI paging defaults and fixed `limit` maximum can conflict with approved
+  runtime behavior; assembled documents must expose `MaximumPageSize` consistently as both the
+  default and maximum across resource and descriptor specifications.
 - `/partitions` has no resource-schema response from which the current profile filter can infer
   ownership; explicit base-path association is mandatory.
 - `pageSize=0`, inverted ranges, sparse identifiers, an empty candidate set, and
@@ -559,7 +595,7 @@ The approved intentional ODS differences are:
 
 These provisional allocation files are approved for decomposition before Jira creation. They
 allocate ownership and evidence while this epic remains authoritative for every shared contract.
-Their `E20-S00` through `E20-S09` identifiers are stable planning identifiers, not Jira keys.
+Their `E20-S00` through `E20-S10` identifiers are stable planning identifiers, not Jira keys.
 
 1. **[E20-S00: Cursor contract foundation](00-cursor-contract-foundation.md)** — typed paging/range
    models, token codec, phase-gated validation, ProblemDetails, configuration, and focused unit
@@ -571,10 +607,11 @@ Their `E20-S00` through `E20-S09` identifiers are stable planning identifiers, n
    regular/descriptor candidate specs, shared filter validation, deterministic parameters, and
    uniqueness contracts.
 4. **[E20-S03: Provider cursor SQL](03-provider-cursor-sql.md)** — PostgreSQL and SQL Server
-   compilers, explicit parameter roles, and SQL/golden tests preserving traditional SQL.
+   compilers, explicit parameter roles, and SQL/golden tests preserving traditional page-selection
+   SQL.
 5. **[E20-S04: Regular-resource cursor execution](04-regular-resource-cursor-execution.md)** —
-   hydration keyset `RETURNING`/`OUTPUT`, selected maximum, `QuerySuccess`, response header, and
-   both-provider integration tests.
+   hydration keyset `RETURNING`/`OUTPUT`, nullable selected maximum, `QuerySuccess`, response
+   header, and both-provider integration tests.
 6. **[E20-S05: Descriptor cursor execution](05-descriptor-cursor-execution.md)** — descriptor
    boundary propagation, headers, and provider tests.
 7. **[E20-S06: Partition pipeline and SQL](06-partition-pipeline-and-sql.md)** — route exposure,
@@ -586,14 +623,18 @@ Their `E20-S00` through `E20-S09` identifiers are stable planning identifiers, n
 9. **[E20-S08: Authorization, parity, and E2E suite](08-authorization-parity-and-e2e.md)** —
    cross-strategy accessible-set tests, ODS comparison, route/tenant/profile coverage, terminal
    walks, and parallel partition consumption.
-10. **[E20-S09: Performance and observability gate](09-performance-and-observability-gate.md)** —
-    pre-change baselines, reproducible cross-provider harness, pinned large-data fixtures,
-    provider-plan evidence, bounded telemetry, thresholds, and regression reporting.
+10. **[E20-S09: Performance harness and traditional baseline](09-performance-harness-and-baseline.md)** —
+     reproducible cross-provider harness and the three pre-change offset baseline scenarios.
+11. **[E20-S10: Performance and observability final gate](10-performance-and-observability-final-gate.md)** —
+     pinned large-data fixtures, full provider-plan evidence, bounded telemetry, thresholds, and
+     regression reporting.
 
-Capture E20-S09's traditional-paging baseline before E20-S03 changes planner code. E20-S01
-through E20-S03 follow E20-S00. E20-S04 through E20-S06 consume the shared candidate plan.
-E20-S07 may proceed once E20-S00 fixes the public contract. E20-S08 consumes E20-S04 through
-E20-S07, and E20-S09's final gate runs after provider, authorization, and E2E behavior is stable.
+Complete E20-S09 before E20-S02 factors page planners or E20-S03 changes provider SQL. E20-S01
+through E20-S03 otherwise follow E20-S00. E20-S04 through E20-S06 consume the shared candidate
+plan. E20-S07 cursor metadata may proceed once E20-S00 fixes the public contract, but its
+`/partitions` paths must land with the completed E20-S06 runtime pipeline. E20-S08 consumes
+E20-S04 through E20-S07, and E20-S10 runs after provider, authorization, and E2E behavior is
+stable.
 
 ## Completion Evidence
 

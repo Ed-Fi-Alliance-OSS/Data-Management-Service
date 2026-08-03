@@ -4,7 +4,7 @@ Status: Draft (planning aid derived from `reference/design/backend-redesign/epic
 
 Scope:
 - Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 21 epic files and
-  234 story/support files).
+  235 story/support files).
 - Captures *implementation* dependencies implied by acceptance criteria and shared design contracts.
 - Does not attempt to define ownership, sequencing within sprints, or exact delivery dates.
 
@@ -397,23 +397,23 @@ Epic: `15-plan-compilation/EPIC.md`
 Epic: `20-partitioned-cursor-paging/EPIC.md`
 
 These identifiers and files are provisional planning allocations with `jira: TBD`; they are not
-Jira keys. E20-S09 has an early baseline checkpoint and a later final gate. The baseline artifact
-must exist before E20-S03 changes planner SQL, but E20-S09 story completion also consumes the
-finished E20-S03 through E20-S08 implementation. Do not encode those two phase relationships as
-reciprocal Jira `Blocks` links.
+Jira keys. E20-S09 owns the harness and pre-change traditional baseline and must complete before
+E20-S02 factors existing planners or E20-S03 changes provider SQL. E20-S10 is a separate final
+gate that consumes E20-S02 through E20-S09, so the Jira dependency graph remains acyclic.
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
 | E20-S00 | [`00-cursor-contract-foundation.md`](20-partitioned-cursor-paging/00-cursor-contract-foundation.md) | — | E08-S04, E08-S05, E10, E14 | Typed paging/range contracts, token codec, validation, configuration |
 | E20-S01 | [`01-typed-resource-path-operations.md`](20-partitioned-cursor-paging/01-typed-resource-path-operations.md) | E20-S00 | — | Typed path operations, query canonicalization, routing regressions |
-| E20-S02 | [`02-shared-candidate-planning.md`](20-partitioned-cursor-paging/02-shared-candidate-planning.md) | E20-S00 | E08-S04, E08-S05, E10, E14 | Shared regular/descriptor candidate plan and uniqueness contract |
-| E20-S03 | [`03-provider-cursor-sql.md`](20-partitioned-cursor-paging/03-provider-cursor-sql.md) | E20-S00, E20-S02, E20-S09 baseline checkpoint | — | PostgreSQL/SQL Server cursor SQL and plan goldens |
+| E20-S02 | [`02-shared-candidate-planning.md`](20-partitioned-cursor-paging/02-shared-candidate-planning.md) | E20-S00, E20-S09 | E08-S04, E08-S05, E10, E14 | Shared regular/descriptor candidate plan and uniqueness contract |
+| E20-S03 | [`03-provider-cursor-sql.md`](20-partitioned-cursor-paging/03-provider-cursor-sql.md) | E20-S00, E20-S02, E20-S09 | — | PostgreSQL/SQL Server cursor SQL and plan goldens |
 | E20-S04 | [`04-regular-resource-cursor-execution.md`](20-partitioned-cursor-paging/04-regular-resource-cursor-execution.md) | E20-S00–E20-S03 | — | Regular-resource keyset boundary propagation and response header |
 | E20-S05 | [`05-descriptor-cursor-execution.md`](20-partitioned-cursor-paging/05-descriptor-cursor-execution.md) | E20-S00–E20-S03 | — | Descriptor boundary propagation and response header |
 | E20-S06 | [`06-partition-pipeline-and-sql.md`](20-partitioned-cursor-paging/06-partition-pipeline-and-sql.md) | E20-S00–E20-S03 | E20-S04, E20-S05 | Dedicated partition pipeline and both-provider boundary SQL |
-| E20-S07 | [`07-openapi-and-client-contract.md`](20-partitioned-cursor-paging/07-openapi-and-client-contract.md) | E20-S00 | E20-S01, E20-S06 | Resource/extension/descriptor/profile OpenAPI augmentation |
+| E20-S07 | [`07-openapi-and-client-contract.md`](20-partitioned-cursor-paging/07-openapi-and-client-contract.md) | E20-S00, E20-S06 | — | Cursor metadata plus runtime-gated resource/extension/descriptor/profile partition OpenAPI augmentation |
 | E20-S08 | [`08-authorization-parity-and-e2e.md`](20-partitioned-cursor-paging/08-authorization-parity-and-e2e.md) | E20-S04–E20-S07 | — | Authorization matrix, ODS parity, and E2E evidence |
-| E20-S09 | [`09-performance-and-observability-gate.md`](20-partitioned-cursor-paging/09-performance-and-observability-gate.md) | — for baseline; E20-S03–E20-S08 for final gate | E12, E13 | Pre-change baseline, cross-provider harness, plans, telemetry, final thresholds |
+| E20-S09 | [`09-performance-harness-and-baseline.md`](20-partitioned-cursor-paging/09-performance-harness-and-baseline.md) | — | E12, E13 | Cross-provider harness and three-scenario pre-change traditional baseline |
+| E20-S10 | [`10-performance-and-observability-final-gate.md`](20-partitioned-cursor-paging/10-performance-and-observability-final-gate.md) | E20-S02–E20-S09 | E12, E13 | Large fixtures, full matrix, plans, telemetry, and final thresholds |
 
 ---
 

@@ -23,7 +23,7 @@ fixture semantics.
 ## Dependencies
 
 - Hard dependencies: E20-S04, E20-S05, E20-S06, and E20-S07.
-- E20-S09 consumes the stable scenarios and fixtures for its final performance gate where useful.
+- E20-S10 consumes the stable scenarios and fixtures for its final performance gate where useful.
 
 ## Implementation Scope
 
@@ -45,7 +45,8 @@ fixture semantics.
 - Authorization tests prove forged tokens and partition requests do not expose inaccessible data
   or inaccessible starting ids.
 - ODS/DMS results match except for the explicit differences listed in the epic.
-- Existing traditional paging E2E scenarios remain unchanged.
+- Existing traditional paging response bodies, status codes, and `Total-Count` semantics remain
+  unchanged; the additional `Next-Page-Token` header is covered as an intentional contract change.
 
 ## Cross-Provider and Authorization Responsibilities
 
@@ -58,5 +59,5 @@ fixture semantics.
 
 - Fundamental contract, planner, SQL, execution, and OpenAPI implementation belongs to E20-S00
   through E20-S07.
-- Load/latency thresholds and provider plan capture belong to E20-S09.
+- Load/latency thresholds and provider plan capture belong to E20-S10.
 - Snapshot consistency is not asserted.

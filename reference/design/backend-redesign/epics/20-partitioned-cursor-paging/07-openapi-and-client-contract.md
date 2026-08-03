@@ -21,19 +21,23 @@ core, extension, descriptor, and profile OpenAPI documents without per-resource 
 
 ## Dependencies
 
-- Hard dependency: E20-S00 for the approved public parameter, response, and runtime-default
-  contracts.
-- Soft dependencies: E20-S01 and E20-S06 for final route/operation integration.
+- Hard dependencies: E20-S00 for the approved public parameter, response, and runtime-default
+  contracts, and E20-S06 before `/partitions` paths are published. Cursor-only collection
+  augmentation may be staged after E20-S00, but story completion and partition-path publication
+  must land with the runtime pipeline.
+- E20-S01 route integration is consumed transitively through E20-S06.
 - E20-S08 consumes the published contract for API/E2E parity coverage.
 
 ## Implementation Scope
 
 - Augment eligible collection GET operations after fragment merge with `pageToken`, `pageSize`,
   and `Next-Page-Token` metadata.
-- Generate sibling partition GET operations for core, extension, and descriptor collections with
-  partition-specific summaries/descriptions and `application/json` token responses.
+- Generate sibling partition GET operations for core, extension, and descriptor collections only
+  when E20-S06 activates the runtime route, with partition-specific summaries/descriptions and
+  `application/json` token responses.
 - Append `Partitions` to the exact base collection `operationId`, preserving extension prefixes.
-- Publish runtime page-size and partition-count defaults and the page-size maximum.
+- Publish runtime `MaximumPageSize` as both the default and maximum for `limit` and `pageSize`;
+  publish the runtime partition-count default.
 - Copy only eligible resource/change-version filters, security, tags, and domain metadata.
 - Associate profile partition paths explicitly with readable base resources without rewriting the
   token response to a profile media type.
@@ -44,8 +48,10 @@ core, extension, descriptor, and profile OpenAPI documents without per-resource 
   readable/write-only profile documents.
 - Tests assert exact `operationId`, summary, description, parameter references/defaults, response
   header, `application/json` schema, tags, and security.
-- Negative tests prove no augmentation of item-by-id, composite, `/deletes`, `/keyChanges`,
-  discovery, or management paths.
+- Negative tests prove no augmentation of item-by-id, `/deletes`, `/keyChanges`, discovery, or
+  management paths and no introduction of composite paths.
+- Sequencing tests or review evidence prove `/partitions` paths are absent before E20-S06 and are
+  published atomically with the active runtime operation.
 - OpenAPI generator integration tests produce the same augmented contract as runtime assembly.
 
 ## Cross-Provider and Authorization Responsibilities

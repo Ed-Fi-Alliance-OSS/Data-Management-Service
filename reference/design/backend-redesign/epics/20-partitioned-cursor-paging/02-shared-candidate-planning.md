@@ -22,7 +22,10 @@ change-version behavior, parameter binding, or row-level authorization.
 
 ## Dependencies
 
-- Hard dependency: E20-S00 for typed paging/range and backend contract boundaries.
+- Hard dependencies: E20-S00 for typed paging/range and backend contract boundaries, and E20-S09
+  for the captured pre-change traditional-paging baseline.
+- Do not begin factoring the existing regular-resource or descriptor page planners until E20-S09
+  is complete.
 - External foundations: E08 regular/descriptor query planning, E10 live change-version filters,
   and E14 row-level authorization planning.
 - Blocks provider compilation and execution in E20-S03 through E20-S06.
@@ -47,6 +50,8 @@ change-version behavior, parameter binding, or row-level authorization.
 - Authorization planner tests cover no-further, relationship, ownership, namespace, and view-based
   strategies where supported and detect duplicate candidate ids.
 - Normalized plan-contract tests lock deterministic parameter ordering.
+- Traditional page-selection SQL goldens and behavior are compared with E20-S09 evidence so
+  factoring cannot introduce an unexplained regression.
 
 ## Cross-Provider and Authorization Responsibilities
 
