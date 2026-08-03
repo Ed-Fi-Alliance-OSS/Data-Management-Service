@@ -293,53 +293,214 @@ function Set-ConnectionStringValue {
     $Builder.set_Item($Key, $Value)
 }
 
-function Get-MssqlProviderConnectionStringBuilder {
+function Get-ConnectionStringFamilyKey {
     <#
     .SYNOPSIS
-    Parses a SQL Server connection string with the ADO.NET SqlClient provider, so this phase decides
-    the effective server and database by the same rules the provider SchemaTools reparses the string
-    with applies - last occurrence of a synonym family wins.
+    Returns the builder's own key spellings that belong to a synonym family, in the builder's key
+    order. Empty when the string carries none.
 
     .DESCRIPTION
-    Neither builder already used here can answer that question:
+    Materialized into an array before being returned because DbConnectionStringBuilder.Keys is a live
+    view over the builder: a caller that removes keys while enumerating it would mutate the collection
+    under its own loop.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the collection of family key spellings present; the plural noun would read as a different contract.')]
+    param(
+        [Parameter(Mandatory)]
+        [System.Data.Common.DbConnectionStringBuilder]
+        $Builder,
 
-      - Get-ConnectionStringValue over an ordered alias list returns the FIRST listed synonym. So
-        "Database=safe;Initial Catalog=edfi_configurationservice" reports 'safe' while a SqlClient
-        reparse resolves 'edfi_configurationservice' - one database validated, a different one
-        deployed into.
-      - System.Data.Common.DbConnectionStringBuilder knows no synonyms at all, and its key order is
-        not occurrence order: a repeated key keeps its FIRST position while taking its LAST value
-        ("Database=first;Initial Catalog=second;Database=last" enumerates as database=last then
-        initial catalog=second), so no traversal of that collection reconstructs provider
-        precedence.
+        [Parameter(Mandatory)]
+        [string[]]
+        $Aliases
+    )
 
-    SchemaTools links Microsoft.Data.SqlClient (MssqlDatabaseProvisioner.GetDatabaseName reads
-    SqlConnectionStringBuilder.InitialCatalog). That exact assembly is not loadable at this boundary:
-    the copy beside the built tool is a platform stub whose constructor throws "Microsoft.Data.SqlClient
-    is not supported on this platform", the real implementation lives in a RID-specific runtimes/
-    subdirectory the .NET host - not Add-Type - selects, and the tool path is deliberately resolved only
-    AFTER this guard has run so a refusal deploys no DDL. System.Data.SqlClient is used instead: it is
-    in-box with PowerShell 7 on Windows and Linux alike, it is already the provider setup-openiddict.ps1
-    uses in this same directory, and its keyword table and synonym precedence for Data Source and
-    Initial Catalog are identical to Microsoft.Data.SqlClient's - pinned by a test that asserts the two
-    agree, reading the Microsoft.Data.SqlClient assembly out of the SchemaTools build output itself
-    rather than assuming the equivalence.
+    return @(
+        foreach ($key in $Builder.PSBase.Keys) {
+            if ($Aliases -contains ([string]$key).ToLowerInvariant()) { [string]$key }
+        }
+    )
+}
 
-    Diagnostics never echo the parsed value: an unsupported keyword message from the provider would
-    carry connection-string text.
+function Resolve-MssqlProviderAssemblyPath {
+    <#
+    .SYNOPSIS
+    Locates the Microsoft.Data.SqlClient assembly shipped WITH the resolved api-schema-tools
+    distribution - the exact build whose SqlConnectionStringBuilder will reparse whatever connection
+    string this phase hands the tool. Returns $null when the distribution carries none.
+
+    .DESCRIPTION
+    Two layouts, probed in this order for a reason:
+
+      - A BUILD output carries RID-specific implementations under runtimes/<rid>/lib/<tfm>/ and, at
+        the top level, a reference facade whose constructor throws "Microsoft.Data.SqlClient is not
+        supported on this platform". The .NET host picks the RID asset at runtime; Add-Type does not.
+        So the runtimes/ candidate must be preferred - loading the facade first would occupy the
+        assembly identity and make the real implementation unloadable afterwards.
+      - A PUBLISH output has its RID assets already flattened next to the apphost and no runtimes/
+        directory, so the top-level copy there IS the implementation.
+
+    Only the current platform's RID family is considered: 'win' on Windows, 'unix' elsewhere. Nothing
+    is downloaded, restored, or resolved from a NuGet cache - the assembly either ships with the tool
+    that is about to run or it does not.
     #>
     param(
         [Parameter(Mandatory)]
         [string]
-        $ConnectionString
+        $SchemaToolPath
     )
 
+    $toolDirectory = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($SchemaToolPath))
+    if ([string]::IsNullOrWhiteSpace($toolDirectory) -or -not (Test-Path -LiteralPath $toolDirectory -PathType Container)) {
+        return $null
+    }
+
+    $ridFamily = if ($IsWindows) { "win" } else { "unix" }
+    $ridRoot = Join-Path (Join-Path $toolDirectory "runtimes") $ridFamily
+    if (Test-Path -LiteralPath $ridRoot -PathType Container) {
+        # Highest target-framework directory first, matching what the host would bind for a modern tool.
+        $ridCandidate = @(
+            Get-ChildItem -LiteralPath $ridRoot -Recurse -File -Filter "Microsoft.Data.SqlClient.dll" -ErrorAction SilentlyContinue |
+                Sort-Object -Property FullName -Descending
+        ) | Select-Object -First 1
+        if ($null -ne $ridCandidate) {
+            return $ridCandidate.FullName
+        }
+    }
+
+    $flatCandidate = Join-Path $toolDirectory "Microsoft.Data.SqlClient.dll"
+    if (Test-Path -LiteralPath $flatCandidate -PathType Leaf) {
+        return $flatCandidate
+    }
+
+    return $null
+}
+
+function New-MssqlProviderConnectionStringBuilder {
+    <#
+    .SYNOPSIS
+    Parses a SQL Server connection string with the Microsoft.Data.SqlClient build the resolved
+    api-schema-tools ships, so a synonym-precedence verdict here is the verdict the tool itself will
+    reach when it reparses the same text.
+
+    .DESCRIPTION
+    The provider must be the tool's own, not the in-box legacy System.Data.SqlClient. The two do not
+    accept the same keyword set: Host Name In Certificate, Server Certificate, and Enclave
+    Attestation Url are all valid to Microsoft.Data.SqlClient and rejected outright by the legacy
+    provider, so parsing the whole string with the legacy builder would refuse external SQL Server
+    datastores that SchemaTools accepts.
+
+    Loaded via Add-Type from the path Resolve-MssqlProviderAssemblyPath selects, then PROBED by
+    constructing an empty builder: the reference facade shipped at the top level of a build output
+    loads happily and only fails on construction, so probing is what distinguishes "the provider is
+    here" from "a stub is here". A failed probe is reported as an unavailable provider rather than
+    surfacing later as a confusing parse error.
+
+    Diagnostics never echo the parsed value: the provider's own unsupported-keyword message would
+    carry connection-string text.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Constructs an in-memory provider builder; no system state changes and no -WhatIf surface.')]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $ConnectionString,
+
+        [Parameter(Mandatory)]
+        [string]
+        $SchemaToolPath
+    )
+
+    if (-not ([System.Management.Automation.PSTypeName]"Microsoft.Data.SqlClient.SqlConnectionStringBuilder").Type) {
+        $assemblyPath = Resolve-MssqlProviderAssemblyPath -SchemaToolPath $SchemaToolPath
+        if ([string]::IsNullOrWhiteSpace($assemblyPath)) {
+            throw "The api-schema-tools distribution at '$(Format-LogSafePath $SchemaToolPath)' does not ship a loadable Microsoft.Data.SqlClient assembly, so this phase cannot determine which member of a repeated SQL Server connection-string synonym family that tool would resolve. Rewrite the data store connection string to name the server and the database once each, or provide a tool distribution that includes the provider."
+        }
+
+        Add-Type -Path $assemblyPath
+    }
+
     try {
-        return [System.Data.SqlClient.SqlConnectionStringBuilder]::new($ConnectionString)
+        # Probe first: the top-level facade in a build output constructs no builder at all.
+        $null = [Microsoft.Data.SqlClient.SqlConnectionStringBuilder]::new()
     }
     catch {
-        throw "CMS data store connection string is not a valid SQL Server connection string for the SqlClient provider SchemaTools parses it with. The resolved value is withheld."
+        throw "The Microsoft.Data.SqlClient assembly loaded from the api-schema-tools distribution is a platform reference facade, not a usable implementation, so this phase cannot determine which member of a repeated SQL Server connection-string synonym family SchemaTools would resolve. Rewrite the data store connection string to name the server and the database once each."
     }
+
+    try {
+        return [Microsoft.Data.SqlClient.SqlConnectionStringBuilder]::new($ConnectionString)
+    }
+    catch {
+        throw "CMS data store connection string is not a valid SQL Server connection string for the Microsoft.Data.SqlClient provider SchemaTools parses it with. The resolved value is withheld."
+    }
+}
+
+function Get-MssqlEffectiveConnectionStringValue {
+    <#
+    .SYNOPSIS
+    Returns the value SchemaTools' provider will resolve for one SQL Server synonym family, without
+    subjecting the rest of the connection string to that provider's keyword validation.
+
+    .DESCRIPTION
+    Which member of a family wins is a question only when a string names more than one of them, and
+    that is the only case this consults the provider for:
+
+      - NO family key present: no value.
+      - EXACTLY ONE family key present: that key's value, read from the generic
+        System.Data.Common.DbConnectionStringBuilder. Already provider-faithful - a key repeated on
+        its own resolves to its last occurrence under SqlClient, and the generic builder likewise
+        holds the last value for a repeated key.
+      - TWO OR MORE family keys present: genuinely ambiguous, and neither builder already in play can
+        settle it. Get-ConnectionStringValue over an ordered alias list returns the FIRST listed
+        synonym, so "Database=safe;Initial Catalog=edfi_configurationservice" reports 'safe' while a
+        reparse resolves 'edfi_configurationservice' - one database validated, a different one
+        deployed into. The generic builder knows no synonyms at all, and its key order is not
+        occurrence order: a repeated key keeps its FIRST position while taking its LAST value
+        ("Database=first;Initial Catalog=second;Database=last" enumerates database before initial
+        catalog), so no traversal of that collection reconstructs provider precedence. Only here is
+        the tool's own provider loaded and asked.
+
+    Scoping the provider to the ambiguous case is what keeps a Microsoft.Data.SqlClient-only keyword
+    from being rejected on the common path: an unambiguous string is never handed to a strict keyword
+    validator at all, and every option it carries passes through the generic builder untouched.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [System.Data.Common.DbConnectionStringBuilder]
+        $Builder,
+
+        [Parameter(Mandatory)]
+        [string[]]
+        $Aliases,
+
+        [Parameter(Mandatory)]
+        [string]
+        $ProviderPropertyName,
+
+        [Parameter(Mandatory)]
+        [string]
+        $ConnectionString,
+
+        [Parameter(Mandatory)]
+        [string]
+        $SchemaToolPath
+    )
+
+    $presentKeys = @(Get-ConnectionStringFamilyKey -Builder $Builder -Aliases $Aliases)
+
+    if ($presentKeys.Count -eq 0) {
+        return $null
+    }
+
+    if ($presentKeys.Count -eq 1) {
+        return [string]$Builder.get_Item($presentKeys[0])
+    }
+
+    $provider = New-MssqlProviderConnectionStringBuilder `
+        -ConnectionString $ConnectionString `
+        -SchemaToolPath $SchemaToolPath
+
+    return [string]$provider.$ProviderPropertyName
 }
 
 function Split-MssqlServerEndpoint {
@@ -403,12 +564,7 @@ function Set-ConnectionStringFamilyValue {
         $Value
     )
 
-    # Materialized before any removal: Keys is a live view over the builder.
-    $presentKeys = @(
-        foreach ($key in $Builder.PSBase.Keys) {
-            if ($Aliases -contains ([string]$key).ToLowerInvariant()) { [string]$key }
-        }
-    )
+    $presentKeys = @(Get-ConnectionStringFamilyKey -Builder $Builder -Aliases $Aliases)
 
     $retainedKey = if ($presentKeys.Count -gt 0) { $presentKeys[0] } else { $Aliases[0] }
     foreach ($key in $presentKeys) {
@@ -641,28 +797,53 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
 
         [Parameter(Mandatory)]
         [hashtable]
-        $EnvValues
+        $EnvValues,
+
+        # The resolved api-schema-tools path, so an ambiguous synonym family is settled by the
+        # Microsoft.Data.SqlClient build that very tool ships. Resolved before this runs; resolution
+        # executes no DDL.
+        [Parameter(Mandatory)]
+        [string]
+        $SchemaToolPath
     )
 
     # Full SqlClient synonym families, so collapsing one leaves no other member of it behind:
     # Data Source also answers to Server / Addr / Address / Network Address, and Initial Catalog to
-    # Database. Same alias sets database-safety.psm1 recognizes for this engine.
+    # Database. Same alias sets database-safety.psm1 recognizes for this engine, and pinned against the
+    # provider's own synonym table by the SchemaTools unit tests.
     $serverAliases = @("server", "data source", "addr", "address", "network address")
     $databaseAliases = @("database", "initial catalog")
+    $userAliases = @("user id", "uid")
 
-    $provider = Get-MssqlProviderConnectionStringBuilder -ConnectionString $ConnectionString
-
-    $databaseName = [string]$provider.InitialCatalog
+    $databaseName = Get-MssqlEffectiveConnectionStringValue `
+        -Builder $Builder `
+        -Aliases $databaseAliases `
+        -ProviderPropertyName "InitialCatalog" `
+        -ConnectionString $ConnectionString `
+        -SchemaToolPath $SchemaToolPath
     if ([string]::IsNullOrWhiteSpace($databaseName)) {
         throw "CMS data store connection string did not contain a database name."
     }
 
-    $server = [string]$provider.DataSource
+    $server = Get-MssqlEffectiveConnectionStringValue `
+        -Builder $Builder `
+        -Aliases $serverAliases `
+        -ProviderPropertyName "DataSource" `
+        -ConnectionString $ConnectionString `
+        -SchemaToolPath $SchemaToolPath
     if ([string]::IsNullOrWhiteSpace($server)) {
         throw "CMS data store connection string is missing the server key."
     }
 
-    $instanceUser = [string]$provider.UserID
+    # Not written back into the canonical string, so an ambiguous user-id family needs no collapsing -
+    # but the value that identifies the target must still be the one the provider resolves, or two
+    # instances on one database could be grouped under a user neither of them connects as.
+    $instanceUser = Get-MssqlEffectiveConnectionStringValue `
+        -Builder $Builder `
+        -Aliases $userAliases `
+        -ProviderPropertyName "UserID" `
+        -ConnectionString $ConnectionString `
+        -SchemaToolPath $SchemaToolPath
     if ([string]::IsNullOrWhiteSpace($instanceUser)) {
         throw "CMS data store connection string is missing the user id key."
     }
@@ -730,7 +911,11 @@ function Convert-CmsConnectionStringToHostSideTarget {
 
         [Parameter(Mandatory)]
         [hashtable]
-        $EnvValues
+        $EnvValues,
+
+        [Parameter(Mandatory)]
+        [string]
+        $SchemaToolPath
     )
 
     $builder = ConvertTo-ConnectionStringBuilder -ConnectionString $ConnectionString
@@ -742,7 +927,8 @@ function Convert-CmsConnectionStringToHostSideTarget {
         return Convert-MssqlCmsConnectionStringToHostSideTarget `
             -Builder $builder `
             -ConnectionString $ConnectionString `
-            -EnvValues $EnvValues
+            -EnvValues $EnvValues `
+            -SchemaToolPath $SchemaToolPath
     }
 
     # PostgreSQL path: the surviving keys are database / host / username.
@@ -977,7 +1163,11 @@ function New-ProvisionTarget {
         $Instance,
 
         [hashtable]
-        $EnvValues
+        $EnvValues,
+
+        [Parameter(Mandatory)]
+        [string]
+        $SchemaToolPath
     )
 
     $rawDataStoreId = Get-ProvisionProperty -Object $Instance -Names @("id", "Id")
@@ -995,7 +1185,8 @@ function New-ProvisionTarget {
         -EnvValues $EnvValues
     $target = Convert-CmsConnectionStringToHostSideTarget `
         -ConnectionString $resolvedConnectionString `
-        -EnvValues $EnvValues
+        -EnvValues $EnvValues `
+        -SchemaToolPath $SchemaToolPath
 
     # configure-local-data-store.ps1 -NoDataStore can select a pre-existing route-unqualified
     # CMS data store without checking its connection-string dialect, so a stale data store from
@@ -1378,7 +1569,17 @@ function Invoke-ProvisionDmsSchema {
         -SchoolYear $SchoolYear `
         -Tenant $tenant
 
-    $targets = @($selectedInstances | ForEach-Object { New-ProvisionTarget -Instance $_ -EnvValues $envValues })
+    # Resolved BEFORE the targets are built, because building an MSSQL target may need the
+    # Microsoft.Data.SqlClient build this very distribution ships in order to settle a repeated
+    # connection-string synonym family the way the tool itself would. Resolution locates an executable
+    # and reads no database and deploys no DDL; every topology check below still completes before
+    # Invoke-DmsSchemaProvision is ever called.
+    $schemaTool = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH
+    Write-Information "api-schema-tools resolved: $(Format-LogSafeText $schemaTool)." -InformationAction Continue
+
+    $targets = @($selectedInstances | ForEach-Object {
+        New-ProvisionTarget -Instance $_ -EnvValues $envValues -SchemaToolPath $schemaTool
+    })
 
     # Separate-topology guard for EVERY selected target, whether this run's configure phase
     # registered its name or reused an existing data store's stored connection string. It runs
@@ -1398,8 +1599,6 @@ function Invoke-ProvisionDmsSchema {
     # database + user). Grouping only by database name would silently collapse two instances
     # that share a database name on different physical hosts or under different users.
     $groups = $targets | Group-Object -Property TargetKey
-    $schemaTool = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH
-    Write-Information "api-schema-tools resolved: $(Format-LogSafeText $schemaTool)." -InformationAction Continue
 
     $provisionedTargets = [System.Collections.ArrayList]::new()
 

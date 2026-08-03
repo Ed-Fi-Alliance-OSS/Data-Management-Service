@@ -867,6 +867,17 @@ function Invoke-BootstrapWrapper {
         $startArgs.DatabaseEngine = $DatabaseEngine
         if ($SeparateConfigDatabase) { $startArgs.SeparateConfigDatabase = $true }
         $startArgs.EnvironmentFile = $effectiveEnvFile
+        # This invocation is -InfraOnly without -DmsBaseUrl, so the start script reaches its terminal
+        # guidance and would print its own "run a fresh bootstrap-local-dms.ps1" hint. It cannot build a
+        # correct one here: the -EnvironmentFile above is already derived, and -DataStandardVersion is
+        # deliberately not forwarded (it would recompose the shared data-standard overlay over this run's
+        # bootstrap-scoped one). This run owns that hint and prints it from $callerEnvFile and its own
+        # $DataStandardVersion, so the start script's copy is suppressed rather than left to contradict
+        # it. Guarded on the start script that has the parameter: only start-local-dms.ps1 emits the
+        # hint, and start-published-dms.ps1 does not declare the switch.
+        if ($StartScriptName -eq "start-local-dms.ps1") {
+            $startArgs.SuppressWrapperContinuationGuidance = $true
+        }
 
         # Reset the native exit-code sentinel so the check below reflects only this start invocation and
         # not a stale value left by an earlier command. The start scripts signal failure by throwing;

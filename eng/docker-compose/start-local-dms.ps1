@@ -184,7 +184,21 @@ param (
     # participates (the default/-InfraOnly shape); has no effect with -DmsOnly/-DbOnly/-d, where
     # CMS does not start. Supported on both database engines.
     [Switch]
-    $SeparateConfigDatabase
+    $SeparateConfigDatabase,
+
+    # Set by bootstrap-wrapper.psm1 on its own infrastructure invocation, where THIS script is a step
+    # inside a wrapper-owned workflow rather than the operator's entry point. It suppresses only the
+    # "run a fresh bootstrap-local-dms.ps1" hint in the -InfraOnly guidance below.
+    #
+    # That hint has to reconstruct the input a FRESH wrapper run would compose from, and inside a
+    # wrapper-owned run this script cannot: the wrapper hands it an already-derived -EnvironmentFile
+    # and deliberately does not forward its own -DataStandardVersion (forwarding it would recompose the
+    # shared data-standard overlay over the wrapper's bootstrap-scoped one). Emitting the hint anyway
+    # would advertise a derived path as a base file, and omit a data standard the operator selected.
+    # The wrapper owns that hint instead and prints it from its own caller-supplied state. Direct
+    # invocation never passes this and its guidance is unchanged.
+    [Switch]
+    $SuppressWrapperContinuationGuidance
 )
 
 # Early fail-fast parameter validation — runs before any module import or Docker activity.
@@ -509,6 +523,97 @@ else {
         return $argumentText
     }
 
+    function Get-InfraOnlyTerminalGuidance {
+        <#
+        .SYNOPSIS
+        Builds the -InfraOnly terminal guidance block: the manual phase next-steps and, when this script
+        is the operator's entry point, the fresh-wrapper continuation command. Returns the lines rather
+        than writing them, so every command it would print can be collected and bound in a test without
+        starting infrastructure.
+
+        .DESCRIPTION
+        Same shape as provision-dms-schema.ps1's Get-ProvisionIdeGuidance, and for the same reason: the
+        commands are the contract, and a block that can only be observed by running the whole start-up
+        cannot be asserted on. Pure and side-effect-free.
+
+        The two phase commands and the fresh-wrapper command deliberately receive DIFFERENT environment
+        files:
+
+          - The phase commands continue from the environment this run already composed, so they get
+            -EffectiveEnvironmentFile, the derived file carrying the engine overlay and the topology
+            marker. Both recompose idempotently from it - the engine overlay detects it is already
+            applied, and the topology derivation recomputes the same artifact from the same switch.
+          - The fresh wrapper run recomposes its own overlays from its input, so it gets
+            -BaseEnvironmentFile, captured before this script's overlays ran. Handing it a derived file
+            would layer a second generation of overlays on top, and an explicitly selected data standard
+            has to travel with it because the wrapper always recomposes a data-standard overlay for a
+            local bootstrap.
+
+        Both datastore phases enforce the separate topology and neither can infer it from the environment
+        file the operator hands it - the marker lives in the derived file this start wrote - so a
+        separate-topology start declares it on each. Configure judges the name it registers; provision
+        judges the database each selected target resolves to, which is the only place a REUSED data
+        store's stored connection string is known. Without the switch the continuation could register,
+        or deploy the DMS schema into, the dedicated Configuration Service database.
+
+        Terminal guidance contract (DMS-1153 AC): print actionable phase next-steps but do NOT present a
+        second start-local-dms.ps1 run as a resume mechanism.
+        #>
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $DatabaseEngine,
+
+            [Parameter(Mandatory)]
+            [string]
+            $EffectiveEnvironmentFile,
+
+            [Parameter(Mandatory)]
+            [string]
+            $BaseEnvironmentFile,
+
+            [string]
+            $DataStandardVersion = "",
+
+            [switch]
+            $SeparateConfigDatabase,
+
+            [switch]
+            $SuppressWrapperContinuationGuidance
+        )
+
+        $lines = [System.Collections.Generic.List[string]]::new()
+        $lines.Add("Infrastructure phase complete. DMS service was not started.")
+        $lines.Add("")
+        $lines.Add("Next steps for the manual IDE / debugger phase flow:")
+
+        $phaseContinuationArgument = Get-ContinuationCommandArgument `
+            -DatabaseEngine $DatabaseEngine `
+            -EnvironmentFile $EffectiveEnvironmentFile `
+            -SeparateConfigDatabase:$SeparateConfigDatabase
+        $lines.Add("  1. configure-local-data-store.ps1 $phaseContinuationArgument    (instance creation / selection)")
+        $lines.Add("  2. provision-dms-schema.ps1 $phaseContinuationArgument          (schema provisioning; prints IDE configuration guidance)")
+        $lines.Add("  3. Launch DMS in your IDE / debugger")
+        $lines.Add("  4. load-dms-seed-data.ps1 -DmsBaseUrl <url>   (optional seed delivery to the IDE-hosted DMS)")
+
+        # Emitted only when THIS script is the operator's entry point. Inside a wrapper-owned run the
+        # wrapper prints this hint itself, from the caller-supplied base environment file and data
+        # standard it still holds - state this script is not given (see
+        # -SuppressWrapperContinuationGuidance). Printing both would put two fresh-wrapper commands in
+        # one transcript, disagreeing about the environment to compose from.
+        if (-not $SuppressWrapperContinuationGuidance) {
+            $lines.Add("For a wrapper-managed health-wait and optional seed, run a fresh:")
+            $wrapperContinuationArgument = Get-ContinuationCommandArgument `
+                -DatabaseEngine $DatabaseEngine `
+                -EnvironmentFile $BaseEnvironmentFile `
+                -DataStandardVersion $DataStandardVersion `
+                -SeparateConfigDatabase:$SeparateConfigDatabase
+            $lines.Add("  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> $wrapperContinuationArgument [-LoadSeedData ...]")
+        }
+
+        return $lines.ToArray()
+    }
+
     function Wait-HttpEndpointHealthy {
         param(
             [Parameter(Mandatory)]
@@ -790,47 +895,15 @@ else {
             # Terminal guidance contract (DMS-1153 AC): print actionable phase next-steps but do
             # NOT present a second start-local-dms.ps1 run as a resume mechanism. The wrapper
             # continuation shape is the supported health-wait path after a terminal stop.
-            Write-Output "Infrastructure phase complete. DMS service was not started."
-            Write-Output ""
-            Write-Output "Next steps for the manual IDE / debugger phase flow:"
-            # Both datastore phases enforce the separate topology and neither can infer it from the
-            # environment file the operator hands it - the marker lives in the derived file this
-            # start wrote - so a separate-topology start prints the switch that declares it on each.
-            # Configure judges the name it registers; provision judges the database each selected
-            # target resolves to, which is the only place a REUSED data store's stored connection
-            # string is known. Without the switch the continuation could register, or deploy the DMS
-            # schema into, the dedicated Configuration Service database.
-            #
-            # These two phases continue from the environment THIS run already composed, so they receive
-            # $EnvironmentFile - the derived file carrying the engine overlay and the topology marker -
-            # rather than the operator's base file. Both recompose idempotently from it: the engine
-            # overlay detects it is already applied, and the topology derivation recomputes the same
-            # artifact from the same switch. The engine is still declared explicitly, because it selects
-            # each phase's dialect gate as well as the overlay.
-            $phaseContinuationArgument = Get-ContinuationCommandArgument `
+            foreach ($line in (Get-InfraOnlyTerminalGuidance `
                 -DatabaseEngine $DatabaseEngine `
-                -EnvironmentFile $EnvironmentFile `
-                -SeparateConfigDatabase:$SeparateConfigDatabase
-            Write-Output "  1. configure-local-data-store.ps1 $phaseContinuationArgument    (instance creation / selection)"
-            Write-Output "  2. provision-dms-schema.ps1 $phaseContinuationArgument          (schema provisioning; prints IDE configuration guidance)"
-            Write-Output "  3. Launch DMS in your IDE / debugger"
-            Write-Output "  4. load-dms-seed-data.ps1 -DmsBaseUrl <url>   (optional seed delivery to the IDE-hosted DMS)"
-            Write-Output "For a wrapper-managed health-wait and optional seed, run a fresh:"
-            # The fresh wrapper run recomposes the environment from its own switches, so omitting the
-            # topology declaration here would silently hand the operator a SHARED-mode continuation
-            # of a separate-mode stack - and omitting the engine or the base environment file would
-            # recompose a PostgreSQL stack, or the default environment, over this one. It gets
-            # $baseEnvironmentFile, captured before this script's own overlays ran: handing the wrapper a
-            # derived file would layer its bootstrap-scoped overlays on top of them. For the same reason
-            # an explicitly selected data standard travels too - the wrapper always recomposes a
-            # data-standard overlay for a local bootstrap, and with no version named it would recompose
-            # the default one over a run that selected another.
-            $wrapperContinuationArgument = Get-ContinuationCommandArgument `
-                -DatabaseEngine $DatabaseEngine `
-                -EnvironmentFile $baseEnvironmentFile `
+                -EffectiveEnvironmentFile $EnvironmentFile `
+                -BaseEnvironmentFile $baseEnvironmentFile `
                 -DataStandardVersion $DataStandardVersion `
-                -SeparateConfigDatabase:$SeparateConfigDatabase
-            Write-Output "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> $wrapperContinuationArgument [-LoadSeedData ...]"
+                -SeparateConfigDatabase:$SeparateConfigDatabase `
+                -SuppressWrapperContinuationGuidance:$SuppressWrapperContinuationGuidance)) {
+                Write-Output $line
+            }
         }
         return
     }
