@@ -28,25 +28,8 @@ internal static class DocumentCacheWriterTelemetryLabel
 {
     public const string Unknown = "unknown";
     public const string CanonicalWrite = "CanonicalWrite";
+    public const string AppliedWrite = "AppliedWrite";
     public const string Failed = "Failed";
-
-    public static string FromAttemptOutcome(RelationalWriteExecutorAttemptOutcome outcome) =>
-        outcome switch
-        {
-            RelationalWriteExecutorAttemptOutcome.AppliedWrite => nameof(
-                RelationalWriteExecutorAttemptOutcome.AppliedWrite
-            ),
-            RelationalWriteExecutorAttemptOutcome.GuardedNoOp => nameof(
-                RelationalWriteExecutorAttemptOutcome.GuardedNoOp
-            ),
-            RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare => nameof(
-                RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare
-            ),
-            RelationalWriteExecutorAttemptOutcome.Failed => nameof(
-                RelationalWriteExecutorAttemptOutcome.Failed
-            ),
-            _ => Unknown,
-        };
 }
 
 internal sealed record DocumentCacheWriterMetricContext

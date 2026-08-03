@@ -751,8 +751,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         functionBody
             .Should()
             .Contain(
-                "RAISE EXCEPTION 'dms.DocumentCache.DocumentUuid diverges from the owning "
-                    + "dms.Document row for DocumentId %', NEW.\"DocumentId\";"
+                $"RAISE EXCEPTION '{DocumentCacheInventoryDefinition.DocumentCacheTriggers.PgsqlValidateDocumentUuidFailureMessage}', NEW.\"DocumentId\";"
             );
         functionBody.Should().NotContain("DocumentJson");
     }
@@ -1849,7 +1848,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         triggerBody
             .Should()
             .Contain(
-                "THROW 50000, N'dms.DocumentCache.DocumentUuid diverges from the owning dms.Document row.', 1;"
+                $"THROW 50000, N'{DocumentCacheInventoryDefinition.DocumentCacheTriggers.MssqlValidateDocumentUuidFailureMessage}', 1;"
             );
         triggerBody.Should().NotContain("DocumentJson");
         triggerBody.Should().NotContain("EXECUTE AS");

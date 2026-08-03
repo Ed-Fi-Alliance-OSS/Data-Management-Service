@@ -625,6 +625,45 @@ public class Given_A_Postgresql_DocumentCacheWriter
         (await ReadCacheAheadLatchAsync()).Should().BeFalse();
     }
 
+    [TestCase(PostgresqlDeleteRaceProviderFailure.ForeignKeyViolation)]
+    [TestCase(PostgresqlDeleteRaceProviderFailure.DocumentCacheUuidTrigger)]
+    [Category("DocumentCacheWriterConcurrency")]
+    public async Task DocumentCacheWriterConcurrency_it_replays_post_delete_provider_failures_to_source_missing(
+        PostgresqlDeleteRaceProviderFailure providerFailure
+    )
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidateMaterializedBeforeDelete = CreateCandidate(
+            source,
+            "candidate-before-delete"
+        );
+        var telemetry = new RecordingDocumentCacheWriterTelemetry();
+        var observer = new ThrowOncePostgresqlDeleteRaceFaultInjectionObserver(
+            () => DeleteSourceDocumentAsync(source.DocumentId),
+            providerFailure
+        );
+        PostgresqlDocumentCacheWriter writer = CreateWriter(observer, telemetry, maxRetryAttempts: 1);
+
+        DocumentCacheWriterResult result = await writer.WriteAsync(
+            CreateRequest(source, candidateMaterializedBeforeDelete)
+        );
+
+        result.Should().BeSameAs(DocumentCacheWriterResult.SourceMissingOrDeleted.Instance);
+        observer.InjectedFaultCount.Should().Be(1);
+        observer.DeletedSourceBeforeFault.Should().BeTrue();
+        telemetry
+            .Records.Should()
+            .Contain(record =>
+                record.Name == RecordingDocumentCacheWriterTelemetry.Retry
+                && record.AttemptCount == 2
+                && record.Context.Outcome == nameof(DocumentCacheWriterOutcome.SourceMissingOrDeleted)
+            );
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+    }
+
     [Test]
     [Category("DocumentCacheWriterConcurrency")]
     public async Task DocumentCacheWriterConcurrency_it_serializes_duplicate_absent_cache_writers_without_partial_cache_acknowledgement()
@@ -1477,6 +1516,12 @@ public class Given_A_Postgresql_DocumentCacheWriter
         RollbackTransaction = 2,
     }
 
+    public enum PostgresqlDeleteRaceProviderFailure
+    {
+        ForeignKeyViolation = 1,
+        DocumentCacheUuidTrigger = 2,
+    }
+
     private sealed class InterruptingFaultInjectionObserver(
         DocumentCacheWriterFaultInjectionHook hookToInterrupt,
         FaultInjectionInterruption interruption
@@ -1547,6 +1592,92 @@ public class Given_A_Postgresql_DocumentCacheWriter
         {
             _release.TrySetResult();
         }
+    }
+
+    private sealed class ThrowOncePostgresqlDeleteRaceFaultInjectionObserver(
+        Func<Task> deleteSourceAsync,
+        PostgresqlDeleteRaceProviderFailure providerFailure
+    ) : ITransactionFaultInjectionObserver
+    {
+        private bool _throwDeleteRace = true;
+
+        public int InjectedFaultCount { get; private set; }
+
+        public bool DeletedSourceBeforeFault { get; private set; }
+
+        public async ValueTask ObserveAsync(
+            DocumentCacheWriterFaultInjectionContext context,
+            DocumentCacheWriterFaultInjectionControl control,
+            CancellationToken cancellationToken
+        )
+        {
+            if (
+                context.Hook
+                    != DocumentCacheWriterFaultInjectionHook.AfterMainStateLockAndClassificationBeforeCacheDml
+                || !_throwDeleteRace
+            )
+            {
+                return;
+            }
+
+            _throwDeleteRace = false;
+            await deleteSourceAsync().ConfigureAwait(false);
+            DeletedSourceBeforeFault = true;
+            InjectedFaultCount++;
+            throw CreatePostgresqlDeleteRaceException(providerFailure);
+        }
+
+        private static PostgresException CreatePostgresqlDeleteRaceException(
+            PostgresqlDeleteRaceProviderFailure providerFailure
+        ) =>
+            providerFailure switch
+            {
+                PostgresqlDeleteRaceProviderFailure.ForeignKeyViolation => new PostgresException(
+                    messageText: "insert or update on table \"DocumentCache\" violates foreign key constraint \"FK_DocumentCache_Document_DocumentId\"",
+                    severity: "ERROR",
+                    invariantSeverity: "ERROR",
+                    sqlState: PostgresErrorCodes.ForeignKeyViolation,
+                    detail: string.Empty,
+                    hint: string.Empty,
+                    position: 0,
+                    internalPosition: 0,
+                    internalQuery: string.Empty,
+                    where: string.Empty,
+                    schemaName: "dms",
+                    tableName: "DocumentCache",
+                    columnName: string.Empty,
+                    dataTypeName: string.Empty,
+                    constraintName: "FK_DocumentCache_Document_DocumentId",
+                    file: "test.sql",
+                    line: "1",
+                    routine: "Execute"
+                ),
+                PostgresqlDeleteRaceProviderFailure.DocumentCacheUuidTrigger => new PostgresException(
+                    messageText: DocumentCacheInventoryDefinition.DocumentCacheTriggers.PgsqlValidateDocumentUuidFailureMessage.Replace(
+                        "%",
+                        "1",
+                        StringComparison.Ordinal
+                    ),
+                    severity: "ERROR",
+                    invariantSeverity: "ERROR",
+                    sqlState: PostgresErrorCodes.RaiseException,
+                    detail: string.Empty,
+                    hint: string.Empty,
+                    position: 0,
+                    internalPosition: 0,
+                    internalQuery: string.Empty,
+                    where: string.Empty,
+                    schemaName: "dms",
+                    tableName: "DocumentCache",
+                    columnName: string.Empty,
+                    dataTypeName: string.Empty,
+                    constraintName: string.Empty,
+                    file: "test.sql",
+                    line: "1",
+                    routine: "RaiseException"
+                ),
+                _ => throw new ArgumentOutOfRangeException(nameof(providerFailure), providerFailure, null),
+            };
     }
 
     private sealed class ThrowOncePostgresqlTransientFaultInjectionObserver

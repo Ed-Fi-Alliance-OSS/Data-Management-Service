@@ -126,7 +126,7 @@ public class Given_DocumentCacheWriterTelemetry
                 RelationalProviderToken.SqlServer,
                 dataStoreId: 99,
                 DocumentCacheWriterTelemetryLabel.CanonicalWrite,
-                nameof(RelationalWriteExecutorAttemptOutcome.AppliedWrite)
+                DocumentCacheWriterTelemetryLabel.AppliedWrite
             ),
             DocumentCacheWriterContentionParticipant.CanonicalWriter,
             DocumentCacheWriterContentionPhase.CanonicalPersist,
@@ -142,10 +142,7 @@ public class Given_DocumentCacheWriterTelemetry
         sameDocumentWait.Tags["target_key"].Should().Be("selected:99");
         sameDocumentWait.Tags["purpose"].Should().Be(DocumentCacheWriterTelemetryLabel.CanonicalWrite);
         sameDocumentWait.Tags["lifecycle"].Should().Be(DocumentCacheWriterTelemetryLabel.Unknown);
-        sameDocumentWait
-            .Tags["outcome"]
-            .Should()
-            .Be(nameof(RelationalWriteExecutorAttemptOutcome.AppliedWrite));
+        sameDocumentWait.Tags["outcome"].Should().Be(DocumentCacheWriterTelemetryLabel.AppliedWrite);
         sameDocumentWait.Tags["participant"].Should().Be("CanonicalWriter");
         sameDocumentWait.Tags["phase"].Should().Be("CanonicalPersist");
     }
@@ -274,10 +271,7 @@ public class Given_DocumentCacheWriterTelemetry
         sameDocumentWait.Tags["target_key"].Should().Be("selected:99");
         sameDocumentWait.Tags["purpose"].Should().Be(DocumentCacheWriterTelemetryLabel.CanonicalWrite);
         sameDocumentWait.Tags["lifecycle"].Should().Be(DocumentCacheWriterTelemetryLabel.Unknown);
-        sameDocumentWait
-            .Tags["outcome"]
-            .Should()
-            .Be(nameof(RelationalWriteExecutorAttemptOutcome.AppliedWrite));
+        sameDocumentWait.Tags["outcome"].Should().Be(DocumentCacheWriterTelemetryLabel.AppliedWrite);
         sameDocumentWait.Tags["participant"].Should().Be("CanonicalWriter");
         sameDocumentWait.Tags["phase"].Should().Be("CanonicalPersist");
         sameDocumentWait.DoubleValue.Should().BeGreaterThanOrEqualTo(0);

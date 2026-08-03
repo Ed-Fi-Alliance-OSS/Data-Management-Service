@@ -75,6 +75,12 @@ public sealed class CoreDdlEmitter
     private const string DocumentCacheUuidValidationTriggerName = DocumentCacheInventoryDefinition
         .DocumentCacheTriggers
         .ValidateDocumentUuid;
+    private const string DocumentCacheUuidValidationPgsqlFailureMessage = DocumentCacheInventoryDefinition
+        .DocumentCacheTriggers
+        .PgsqlValidateDocumentUuidFailureMessage;
+    private const string DocumentCacheUuidValidationMssqlFailureMessage = DocumentCacheInventoryDefinition
+        .DocumentCacheTriggers
+        .MssqlValidateDocumentUuidFailureMessage;
     private const string DocumentEnqueueProjectionInsertFunctionName = DocumentCacheInventoryDefinition
         .DocumentEnqueueArtifacts
         .PgsqlInsertFunction;
@@ -1067,8 +1073,7 @@ public sealed class CoreDdlEmitter
             using (writer.Indent())
             {
                 writer.AppendLine(
-                    "RAISE EXCEPTION 'dms.DocumentCache.DocumentUuid diverges from the owning "
-                        + $"dms.Document row for DocumentId %', NEW.{Quote("DocumentId")};"
+                    $"RAISE EXCEPTION '{DocumentCacheUuidValidationPgsqlFailureMessage}', NEW.{Quote("DocumentId")};"
                 );
             }
             writer.AppendLine("END IF;");
@@ -1131,9 +1136,7 @@ public sealed class CoreDdlEmitter
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
-                writer.AppendLine(
-                    "THROW 50000, N'dms.DocumentCache.DocumentUuid diverges from the owning dms.Document row.', 1;"
-                );
+                writer.AppendLine($"THROW 50000, N'{DocumentCacheUuidValidationMssqlFailureMessage}', 1;");
             }
             writer.AppendLine("END");
         }

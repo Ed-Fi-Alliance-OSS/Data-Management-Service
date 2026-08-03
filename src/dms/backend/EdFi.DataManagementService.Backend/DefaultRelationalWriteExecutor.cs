@@ -375,10 +375,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                     .ConfigureAwait(false);
                 RecordCanonicalWriterWait(
                     executionRequest,
-                    DocumentCacheWriterTelemetryLabel.FromAttemptOutcome(
-                        RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
-                    ),
-                    DocumentCacheWriterContentionPhase.CanonicalPersist,
+                    DocumentCacheWriterTelemetryLabel.AppliedWrite,
                     canonicalPersistStartTimestamp
                 );
             }
@@ -387,7 +384,6 @@ internal sealed class DefaultRelationalWriteExecutor(
                 RecordCanonicalWriterWait(
                     executionRequest,
                     DocumentCacheWriterTelemetryLabel.Failed,
-                    DocumentCacheWriterContentionPhase.CanonicalPersist,
                     canonicalPersistStartTimestamp
                 );
                 throw;
@@ -511,7 +507,6 @@ internal sealed class DefaultRelationalWriteExecutor(
     private void RecordCanonicalWriterWait(
         RelationalWriteExecutorRequest request,
         string outcome,
-        DocumentCacheWriterContentionPhase phase,
         long startTimestamp
     )
     {
@@ -523,7 +518,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 outcome
             ),
             DocumentCacheWriterContentionParticipant.CanonicalWriter,
-            phase,
+            DocumentCacheWriterContentionPhase.CanonicalPersist,
             DocumentCacheWriterTelemetry.GetElapsedTime(startTimestamp)
         );
     }

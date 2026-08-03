@@ -5,6 +5,7 @@
 
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -37,7 +38,7 @@ public class Given_MssqlDocumentCacheWriterDeleteRaceClassifier
     {
         SqlException exception = CreateSqlException(
             50000,
-            "dms.DocumentCache.DocumentUuid diverges from the owning dms.Document row."
+            DocumentCacheInventoryDefinition.DocumentCacheTriggers.MssqlValidateDocumentUuidFailureMessage
         );
 
         MssqlDocumentCacheWriterDeleteRaceClassifier.IsRetryableDeleteRace(exception).Should().BeTrue();

@@ -2014,9 +2014,7 @@ internal sealed class DescriptorWriteHandler(
 
             RecordDescriptorCanonicalWriterWait(
                 request,
-                DocumentCacheWriterTelemetryLabel.FromAttemptOutcome(
-                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
-                ),
+                DocumentCacheWriterTelemetryLabel.AppliedWrite,
                 canonicalPersistStartTimestamp
             );
 

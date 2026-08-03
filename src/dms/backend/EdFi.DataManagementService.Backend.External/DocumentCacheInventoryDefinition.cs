@@ -121,6 +121,12 @@ public static class DocumentCacheInventoryDefinition
     {
         public const string ValidateDocumentUuid = "TR_DocumentCache_ValidateDocumentUuid";
         public const string PgsqlValidateDocumentUuidFunction = "TF_DocumentCache_ValidateDocumentUuid";
+        public const string ValidateDocumentUuidFailureMessagePrefix =
+            "dms.DocumentCache.DocumentUuid diverges from the owning dms.Document row";
+        public const string PgsqlValidateDocumentUuidFailureMessage =
+            ValidateDocumentUuidFailureMessagePrefix + " for DocumentId %";
+        public const string MssqlValidateDocumentUuidFailureMessage =
+            ValidateDocumentUuidFailureMessagePrefix + ".";
     }
 
     public static class DocumentEnqueueArtifacts

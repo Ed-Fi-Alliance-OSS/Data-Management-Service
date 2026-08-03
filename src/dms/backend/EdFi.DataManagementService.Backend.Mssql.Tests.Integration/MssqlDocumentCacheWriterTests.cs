@@ -695,6 +695,45 @@ public class Given_A_Mssql_DocumentCacheWriter
         (await ReadCacheAheadLatchAsync()).Should().BeFalse();
     }
 
+    [TestCase(MssqlDeleteRaceProviderFailure.ForeignKeyViolation)]
+    [TestCase(MssqlDeleteRaceProviderFailure.DocumentCacheUuidTrigger)]
+    [Category("DocumentCacheWriterConcurrency")]
+    public async Task DocumentCacheWriterConcurrency_it_replays_post_delete_provider_failures_to_source_missing(
+        MssqlDeleteRaceProviderFailure providerFailure
+    )
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidateMaterializedBeforeDelete = CreateCandidate(
+            source,
+            "candidate-before-delete"
+        );
+        var telemetry = new RecordingDocumentCacheWriterTelemetry();
+        var observer = new ThrowOnceMssqlDeleteRaceFaultInjectionObserver(
+            () => DeleteSourceDocumentAsync(source.DocumentId),
+            providerFailure
+        );
+        MssqlDocumentCacheWriter writer = CreateWriter(observer, telemetry, maxRetryAttempts: 1);
+
+        DocumentCacheWriterResult result = await writer.WriteAsync(
+            CreateRequest(source, candidateMaterializedBeforeDelete)
+        );
+
+        result.Should().BeSameAs(DocumentCacheWriterResult.SourceMissingOrDeleted.Instance);
+        observer.InjectedFaultCount.Should().Be(1);
+        observer.DeletedSourceBeforeFault.Should().BeTrue();
+        telemetry
+            .Records.Should()
+            .Contain(record =>
+                record.Name == RecordingDocumentCacheWriterTelemetry.Retry
+                && record.AttemptCount == 2
+                && record.Context.Outcome == nameof(DocumentCacheWriterOutcome.SourceMissingOrDeleted)
+            );
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+    }
+
     [Test]
     [Category("DocumentCacheWriterConcurrency")]
     public async Task DocumentCacheWriterConcurrency_it_serializes_duplicate_absent_cache_writers_without_partial_cache_acknowledgement()
@@ -1603,6 +1642,40 @@ public class Given_A_Mssql_DocumentCacheWriter
         RollbackTransaction = 2,
     }
 
+    public enum MssqlDeleteRaceProviderFailure
+    {
+        ForeignKeyViolation = 1,
+        DocumentCacheUuidTrigger = 2,
+    }
+
+    private static SqlException CreateSqlException(int number, string message)
+    {
+        var sqlError = (SqlError)RuntimeHelpers.GetUninitializedObject(typeof(SqlError));
+        typeof(SqlError)
+            .GetField("_number", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(sqlError, number);
+        typeof(SqlError)
+            .GetField("_message", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(sqlError, message);
+
+        var errorList = new List<object> { sqlError };
+        var errorCollection = (SqlErrorCollection)
+            RuntimeHelpers.GetUninitializedObject(typeof(SqlErrorCollection));
+        typeof(SqlErrorCollection)
+            .GetField("_errors", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(errorCollection, errorList);
+
+        var sqlException = (SqlException)RuntimeHelpers.GetUninitializedObject(typeof(SqlException));
+        typeof(Exception)
+            .GetField("_message", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(sqlException, message);
+        typeof(SqlException)
+            .GetField("_errors", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(sqlException, errorCollection);
+
+        return sqlException;
+    }
+
     private sealed class InterruptingFaultInjectionObserver(
         DocumentCacheWriterFaultInjectionHook hookToInterrupt,
         FaultInjectionInterruption interruption
@@ -1675,6 +1748,59 @@ public class Given_A_Mssql_DocumentCacheWriter
         }
     }
 
+    private sealed class ThrowOnceMssqlDeleteRaceFaultInjectionObserver(
+        Func<Task> deleteSourceAsync,
+        MssqlDeleteRaceProviderFailure providerFailure
+    ) : ITransactionFaultInjectionObserver
+    {
+        private bool _throwDeleteRace = true;
+
+        public int InjectedFaultCount { get; private set; }
+
+        public bool DeletedSourceBeforeFault { get; private set; }
+
+        public async ValueTask ObserveAsync(
+            DocumentCacheWriterFaultInjectionContext context,
+            DocumentCacheWriterFaultInjectionControl control,
+            CancellationToken cancellationToken
+        )
+        {
+            if (
+                context.Hook
+                    != DocumentCacheWriterFaultInjectionHook.AfterMainStateLockAndClassificationBeforeCacheDml
+                || !_throwDeleteRace
+            )
+            {
+                return;
+            }
+
+            _throwDeleteRace = false;
+            await deleteSourceAsync().ConfigureAwait(false);
+            DeletedSourceBeforeFault = true;
+            InjectedFaultCount++;
+            throw CreateMssqlDeleteRaceException(providerFailure);
+        }
+
+        private static SqlException CreateMssqlDeleteRaceException(
+            MssqlDeleteRaceProviderFailure providerFailure
+        ) =>
+            providerFailure switch
+            {
+                MssqlDeleteRaceProviderFailure.ForeignKeyViolation => CreateSqlException(
+                    547,
+                    "The INSERT statement conflicted with the FOREIGN KEY constraint "
+                        + "\"FK_DocumentCache_Document_DocumentId\"."
+                ),
+                MssqlDeleteRaceProviderFailure.DocumentCacheUuidTrigger => CreateSqlException(
+                    50000,
+                    DocumentCacheInventoryDefinition
+                        .DocumentCacheTriggers
+                        .MssqlValidateDocumentUuidFailureMessage
+                ),
+                _ => throw new ArgumentOutOfRangeException(nameof(providerFailure), providerFailure, null),
+            };
+    }
+
     private sealed class ThrowOnceMssqlTransientFaultInjectionObserver : ITransactionFaultInjectionObserver
     {
         private bool _throwTransient = true;
@@ -1703,34 +1829,6 @@ public class Given_A_Mssql_DocumentCacheWriter
 
             _throwTransient = false;
             throw CreateSqlException(1222, "simulated lock timeout");
-        }
-
-        private static SqlException CreateSqlException(int number, string message)
-        {
-            var sqlError = (SqlError)RuntimeHelpers.GetUninitializedObject(typeof(SqlError));
-            typeof(SqlError)
-                .GetField("_number", BindingFlags.NonPublic | BindingFlags.Instance)!
-                .SetValue(sqlError, number);
-            typeof(SqlError)
-                .GetField("_message", BindingFlags.NonPublic | BindingFlags.Instance)!
-                .SetValue(sqlError, message);
-
-            var errorList = new List<object> { sqlError };
-            var errorCollection = (SqlErrorCollection)
-                RuntimeHelpers.GetUninitializedObject(typeof(SqlErrorCollection));
-            typeof(SqlErrorCollection)
-                .GetField("_errors", BindingFlags.NonPublic | BindingFlags.Instance)!
-                .SetValue(errorCollection, errorList);
-
-            var sqlException = (SqlException)RuntimeHelpers.GetUninitializedObject(typeof(SqlException));
-            typeof(Exception)
-                .GetField("_message", BindingFlags.NonPublic | BindingFlags.Instance)!
-                .SetValue(sqlException, message);
-            typeof(SqlException)
-                .GetField("_errors", BindingFlags.NonPublic | BindingFlags.Instance)!
-                .SetValue(sqlException, errorCollection);
-
-            return sqlException;
         }
     }
 
