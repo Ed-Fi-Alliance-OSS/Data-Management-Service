@@ -696,10 +696,12 @@ $failureStatement
             @(Get-Content -LiteralPath $forwardLog) | Should -Contain "start-infra engine=$_ separate=False" -Because "shared mode must remain the default all the way through the wrapper"
         }
 
-        It "does not forward -SeparateConfigDatabase to the configure or provision phases" {
-            # Those phases own the DMS datastore and are explicitly untouched by this seam; if the
-            # wrapper splatted the switch at them they would fail on an unknown parameter, so a clean
-            # run through both is itself the assertion.
+        It "runs configure and provision to completion with -SeparateConfigDatabase requested" {
+            # The configure phase registers the DMS datastore, so it DOES receive the switch (that
+            # forwarding is pinned in BootstrapSchemaDeploymentSafety.Tests.ps1, whose stub binds the
+            # switch by name); the provision phase takes its targets from what CMS already holds and
+            # is not given it. What this row adds is that the whole -InfraOnly chain still completes
+            # with the switch requested, reaching both phases.
             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
             $callLog = Join-Path $script:repo.RepoRoot "call-log-sep-phases.txt"
             New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null

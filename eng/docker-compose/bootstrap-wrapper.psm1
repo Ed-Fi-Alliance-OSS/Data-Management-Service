@@ -542,9 +542,10 @@ function Invoke-BootstrapWrapper {
 
         # Redirects the CMS (Configuration Service) database to a dedicated
         # edfi_configurationservice database instead of sharing the DMS datastore database.
-        # Forwarded to the start-script invocations below; NOT forwarded to configure-local-data-store.ps1
-        # or provision-dms-schema.ps1, which are untouched by this seam (DMS-1270). Supported on both
-        # database engines.
+        # Forwarded to the start-script invocations below and to configure-local-data-store.ps1,
+        # which registers the DMS datastore and must therefore know it may not land in the
+        # dedicated Configuration Service database. NOT forwarded to provision-dms-schema.ps1,
+        # which takes its targets from what CMS already holds. Supported on both database engines.
         [Switch]$SeparateConfigDatabase,
 
         # Data standard version for the local-bootstrap package surface. For
