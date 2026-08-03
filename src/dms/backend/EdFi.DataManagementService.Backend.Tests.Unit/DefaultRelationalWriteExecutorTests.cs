@@ -2635,7 +2635,86 @@ public class Given_Default_Relational_Write_Executor
             );
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        // A commit-phase failure is still classified, but it is never rolled back: the server may have
+        // committed and only failed to acknowledge it.
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_does_not_roll_back_an_applied_write_whose_commit_failure_is_unmapped()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _writeSessionFactory.Session.CommitExceptionToThrow = new StubDbException(
+            "connection reset on commit"
+        );
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        // The unmapped failure surfaces unchanged. A client-side rollback here could only fail against
+        // a transaction the server has already completed, replacing this failure with an unrelated
+        // one. Disposing the session settles whatever state is still pending instead.
+        await act.Should().ThrowAsync<StubDbException>().WithMessage("connection reset on commit");
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_does_not_roll_back_a_guarded_no_op_whose_commit_fails()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            selectedBody: JsonNode.Parse("""{"name":"Lincoln High"}""")!
+        );
+        _writeSessionFactory.Session.CommitExceptionToThrow = new StubDbException(
+            "connection reset on commit"
+        );
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        // The guarded no-op path commits without DML, so it reaches the same ambiguous commit state.
+        await act.Should().ThrowAsync<StubDbException>().WithMessage("connection reset on commit");
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_does_not_roll_back_when_a_commit_fails_with_a_non_database_exception()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _writeSessionFactory.Session.CommitExceptionToThrow = new InvalidOperationException(
+            "commit already began"
+        );
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        // The catch-all handler is as unable to roll back a begun commit as the database-failure one.
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("commit already began");
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
 
     [Test]

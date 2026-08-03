@@ -109,6 +109,11 @@ internal sealed class DefaultRelationalWriteExecutor(
         RelationalWriteExecutorResult? writeFailureResult = null;
         RelationalWriteExecutorRequest? executionRequest = null;
 
+        // The success result the attempt has earned, composed before the commit and returned only once
+        // the commit succeeds. Carrying it out of the try is what lets the commit itself sit outside
+        // every handler that rolls back.
+        RelationalWriteExecutorResult? committedResult = null;
+
         await using var writeSession = await _writeSessionFactory
             .CreateAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -332,37 +337,40 @@ internal sealed class DefaultRelationalWriteExecutor(
                     guardedTarget.ObservedContentVersion
                 );
 
-                await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-                return RelationalWriteExecutorResults.BuildGuardedNoOpSuccessResult(
+                committedResult = RelationalWriteExecutorResults.BuildGuardedNoOpSuccessResult(
                     request.OperationKind,
                     guardedTarget.DocumentUuid,
                     guardedNoOpEtag
                 );
             }
+            else
+            {
+                var persistedTarget =
+                    secondCommand.PersistResult
+                    ?? throw new InvalidOperationException(
+                        "The second command ran in DML mode but returned no persisted target."
+                    );
 
-            var persistedTarget =
-                secondCommand.PersistResult
-                ?? throw new InvalidOperationException(
-                    "The second command ran in DML mode but returned no persisted target."
+                RecordCanonicalWriterWait(
+                    executionRequest,
+                    DocumentCacheWriterTelemetryLabel.AppliedWrite,
+                    canonicalPersistStartTimestamp
                 );
 
-            RecordCanonicalWriterWait(
-                executionRequest,
-                DocumentCacheWriterTelemetryLabel.AppliedWrite,
-                canonicalPersistStartTimestamp
-            );
+                RelationalWritePersistedTargetValidator.Validate(
+                    executionRequest.TargetContext,
+                    persistedTarget
+                );
 
-            RelationalWritePersistedTargetValidator.Validate(executionRequest.TargetContext, persistedTarget);
+                var committedEtag = ComposeCommittedEtag(executionRequest, persistedTarget.ContentVersion);
 
-            var committedEtag = ComposeCommittedEtag(executionRequest, persistedTarget.ContentVersion);
-
-            await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return RelationalWriteExecutorResults.BuildAppliedWriteSuccessResult(
-                request.OperationKind,
-                executionRequest.TargetContext,
-                persistedTarget,
-                committedEtag
-            );
+                committedResult = RelationalWriteExecutorResults.BuildAppliedWriteSuccessResult(
+                    request.OperationKind,
+                    executionRequest.TargetContext,
+                    persistedTarget,
+                    committedEtag
+                );
+            }
         }
         catch (RelationalWriteRequestValidationException ex)
         {
@@ -441,6 +449,30 @@ internal sealed class DefaultRelationalWriteExecutor(
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
+
+        // The commit sits outside every handler above by construction, not by a flag any of them has to
+        // remember to check. Once the commit has begun the server may already have applied it and only
+        // failed to acknowledge it, so a client-side rollback could only fail on its own and replace the
+        // real failure with an unrelated one. Session disposal releases the transaction, which settles
+        // any state the server left pending.
+        try
+        {
+            await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbException ex)
+        {
+            // Only a resolved request reaches the commit, so a commit-phase provider failure is
+            // attributable and maps to the same write-failure results an in-attempt failure would. An
+            // unmapped one surfaces unchanged, exactly as it does inside the attempt.
+            if (_databaseFailureResultMapper.TryBuild(executionRequest!, ex, out var commitFailureResult))
+            {
+                return commitFailureResult!;
+            }
+
+            throw;
+        }
+
+        return committedResult!;
     }
 
     internal static void ValidateGuardedNoOpLockProof(
