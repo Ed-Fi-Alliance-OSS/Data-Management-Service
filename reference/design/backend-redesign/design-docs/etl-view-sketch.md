@@ -1,5 +1,10 @@
 # ETL View Sketch: Natural-Key Views with `LastModifiedDate` + `ChangeVersion`
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the statements that DMS
+> resolves identities via `dms.ReferentialIdentity` and that `dms.DocumentCache` is an available
+> pre-materialized projection. Neither table is emitted. The natural-key view sketch itself is
+> unaffected. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Status
 
 Sketch. This is **not** a full design. It answers “how might ETL-friendly SQL views work?” for consumers that want natural-key-shaped rows (not surrogate `DocumentId` FKs) and want update-tracking metadata per row.

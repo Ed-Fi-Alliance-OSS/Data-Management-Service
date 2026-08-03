@@ -5,6 +5,10 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1016
 
 # Story: Sampling-Based Integrity Watchdog (ReferentialIdentity + Journals)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the `ReferentialIdentity`
+> sampling this watchdog performs. The mapping it would verify is no longer stored, so there is nothing to
+> sample. Retained as a historical work record. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Description
 
 Add an optional production feature that continuously samples documents and verifies:

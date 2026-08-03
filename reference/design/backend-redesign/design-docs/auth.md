@@ -1,5 +1,12 @@
 # Authorization Design for Relational Primary Store (Tables per Resource)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the passages that add
+> `CreatedByOwnershipTokenId` to a `dms.Document` table and join `dms.Document` to authorize, and those
+> that retrieve referenced `DocumentId`s through `dms.ReferentialIdentity`. `CreatedByOwnershipTokenId`
+> is a permanently-NULL placeholder column on each resource root table and on `dms.Descriptor`;
+> authorization reads are single-table on the root row; references resolve by natural-key index seek.
+> The authorization model itself is current. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Why not use `dms.DocumentSubject`
 
 An earlier authorization redesign draft proposed a `dms.DocumentSubject` table that would map each document to its subject documents (Student, Staff, Contact, EdOrg). Combined with a materialized `dms.SubjectEdOrg` membership table, this approach aimed to precompute EdOrg membership during document insert/update (refer to the draft [here](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/8a69f58d6b05a1daa7754ce081070f27e283fd91/reference/design/backend-redesign/design-docs/auth.md)). This updated redesign does not use it for the following reasons:

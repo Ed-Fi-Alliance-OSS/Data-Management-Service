@@ -6,6 +6,11 @@ jira_url: https://edfi.atlassian.net/browse/DMS-995
 
 # Epic: Strict Identity Maintenance & Concurrency
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** this epic's subject — keeping
+> `dms.ReferentialIdentity` transactionally correct, including its superclass alias rows and the caches
+> over it — no longer exists. Identity resolution is an index seek on stored natural-key columns.
+> Retained as a historical work record. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Description
 
 Implement strict, transactional identity correctness and concurrency behavior described in:

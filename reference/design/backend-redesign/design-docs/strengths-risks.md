@@ -1,5 +1,11 @@
 # Backend Redesign: Strengths and Risks
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the "`ReferentialId`
+> retention" strength, the risks that follow from a persisted `ReferentialId → DocumentId` index
+> (including "ReferentialIdentity Incorrect Mapping"), and serving stamps from `dms.Document`. That index
+> no longer exists, so those risk classes are retired rather than mitigated. See
+> [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Status
 
 Draft.

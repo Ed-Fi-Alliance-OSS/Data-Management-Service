@@ -1,5 +1,12 @@
 # ADR: Derive `_etag` from `ContentVersion` instead of a content hash
 
+> **Superseded storage location:** this ADR decides to store the content-derived version on
+> `dms.Document` and serve `_etag` from `dms.Document.ContentVersion`. That table no longer exists —
+> `ContentVersion` is stamped onto the resource root row, or the `dms.Descriptor` row, and `_etag` is
+> composed from that row. The decision this ADR made (derive `_etag` from `ContentVersion` rather than a
+> content hash) is unchanged; only the row it is read from moved. See
+> [`docs/RELATIONAL-BACKEND.md` §4](../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 **Status:** Accepted — implemented in the relational backend; the three design docs
 (`update-tracking.md`, `transactions-and-concurrency.md`, `flattening-reconstitution.md`) have been
 updated to match. \

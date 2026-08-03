@@ -1,5 +1,11 @@
 # Backend Redesign Summary: Relational Primary Store (Tables per Resource)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the core-table list and the
+> "keep `ReferentialId` (UUIDv5 …) as the uniform natural-identity key" decision. `dms.Document`,
+> `dms.ReferentialIdentity` and `dms.DocumentCache` are not emitted; update-tracking stamps live on the
+> resource root row (or the `dms.Descriptor` row). Each source document listed below carries its own
+> banner. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 Status: Draft (summary of the draft design docs in this directory).
 
 This redesign replaces the current three-table JSON document store (`Document`/`Alias`/`Reference`) with a relational primary store using tables per resource, while keeping DMS behavior metadata-driven via `ApiSchema.json`.

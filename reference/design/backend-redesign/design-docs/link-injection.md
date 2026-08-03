@@ -1,5 +1,11 @@
 # Link Injection Design
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the description of links as
+> foreign keys into `dms.Document` and of one auxiliary `dms.Document` lookup per page. The auxiliary
+> lookup joins each target's own root table — or its `<Abstract>Identity` table for a polymorphic target
+> — for that target's `DocumentUuid` and discriminator. The injected link shape and the injection points
+> are unchanged. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Status
 
 Draft.

@@ -1,5 +1,11 @@
 # Backend Redesign: Unified Mapping Models (In-Memory)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the statements that
+> descriptors are stored in "`dms.Descriptor` (+ `dms.Document`)" and that tracked-change columns are
+> copied from `dms.Document.DocumentUuid` / `ContentVersion`. Those values come from the `dms.Descriptor`
+> row or the resource root row. The in-memory mapping-model object graph is otherwise current. See
+> [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 Status: Draft.
 
 This document defines the **single shared in-memory object graph** used to represent schema-derived mapping artifacts in the backend redesign.

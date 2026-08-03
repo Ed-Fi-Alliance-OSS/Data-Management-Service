@@ -1,5 +1,11 @@
 # Authorization Design (Subject/EdOrg Model)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the statements that
+> `dms.Document` "remains the store for resource payloads" and the identity-resolution paths that run
+> through `dms.ReferentialIdentity`. Payloads live in the per-resource tables; identity resolution is a
+> natural-key index seek. The subject/EdOrg authorization model itself is current. See
+> [`docs/RELATIONAL-BACKEND.md` §4](../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## 1. Purpose and Goals
 
 This document replaces the current JSONB/trigger‑driven model with a relational, strategy‑friendly design

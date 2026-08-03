@@ -1,5 +1,13 @@
 # Change Queries
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** every SQL sketch and
+> statement in this document that reads or joins `dms.Document` — including "`dms.Document` remains the
+> source of truth" for the mirror, and the delete ordering that deletes from `dms.Document` and relies on
+> its cascades. That table is not emitted; change versions, `_lastModifiedDate` and document ids are
+> stored on the resource root row (or the `dms.Descriptor` row) itself, and a delete is a single
+> statement against that row. The endpoint contract, `ChangeVersion` semantics and tracked-change table
+> design are otherwise current. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Purpose
 
 The Change Queries feature allows client systems to retrieve data that has changed since a specified version number. This keeps client systems in sync with the DMS without requiring them to pull the complete dataset.
@@ -1945,6 +1953,13 @@ FROM page_ids;
 
 -- The rest of the reconstitution queries are omitted for brevity.
 ```
+
+> **Superseded descriptor-page SQL:** the descriptor query below roots on `"dms"."Document"`, which is no
+> longer emitted, and the closing note that `_lastModifiedDate` and per-item `ChangeVersion` "remain
+> sourced from `dms.Document` for now" no longer holds. Descriptor pages root on `dms.Descriptor` itself,
+> range over that row's own mirrored `ContentVersion`, and take `DocumentUuid` / `ContentLastModifiedAt`
+> from the same row — the page is single-table. See
+> [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 Descriptor endpoints need to join with `dms.Descriptor` in order to emit the range filter leveraging the `IX_Descriptor_Discriminator_ContentVersion`:
 

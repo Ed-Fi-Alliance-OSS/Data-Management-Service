@@ -1,5 +1,12 @@
 # Backend Redesign: Flattening & Reconstitution (Metadata-Driven Relational Mapping)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the passages naming
+> `dms.ReferentialIdentity` as the primary identity resolver "maintained transactionally", and reference
+> resolution as a `ReferentialId → DocumentId` lookup. References resolve by seeking the target's
+> `UX_<T>_RefKey` natural-key index — `UX_Descriptor_UriLowered_Discriminator` for descriptors. The
+> flattening and reconstitution mapping rules are otherwise current. See
+> [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Status
 
 Draft.

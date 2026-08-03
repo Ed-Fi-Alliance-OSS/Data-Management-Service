@@ -1,5 +1,11 @@
 # The Problem With Removing `ReferentialId`s (Write-Path Impacts)
 
+> **Superseded as a solution direction by the `dms.Document` / `dms.ReferentialIdentity` removal:** this
+> note argues for keeping a persisted UUIDv5 `ReferentialId` index. That index, the `dms.uuidv5()` engine
+> function and the hash resolver that read them have since been removed in favour of natural-key index
+> seeks. Retained as the historical analysis of why the removal was hard. See
+> [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Status
 
 Draft (analysis note).

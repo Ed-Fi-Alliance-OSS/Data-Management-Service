@@ -1,5 +1,13 @@
 # Backend Redesign: DDL Generation (Tables per Resource)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the core-object list. The
+> emitter no longer emits `dms.Document`, `dms.ReferentialIdentity`, `dms.DocumentCache`, the
+> `dms.uuidv5()` helper, the pgcrypto extension or the `dms.UniqueIdentifierTable` table type. Emitted
+> core objects are `dms.Descriptor`, `dms.EffectiveSchema`, `dms.ResourceKey`, `dms.SchemaComponent`,
+> three sequences, `GetMaxChangeVersion` (plus `throw_error` on PostgreSQL) and the SQL Server
+> `BigIntTable` type. The emission mechanics are otherwise current. See
+> [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Status
 
 Draft.

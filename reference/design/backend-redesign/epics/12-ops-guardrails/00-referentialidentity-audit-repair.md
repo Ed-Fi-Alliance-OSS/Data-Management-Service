@@ -5,6 +5,11 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1015
 
 # Story: Audit/Repair Tool for `dms.ReferentialIdentity`
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the whole of this story. There
+> is no `dms.ReferentialIdentity` table to audit or repair — the corruption class it targeted cannot occur
+> because the mapping is no longer stored. Retained as a historical work record. See
+> [`docs/RELATIONAL-BACKEND.md` §4](../../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Description
 
 Provide an operational tool to audit and repair `dms.ReferentialIdentity` integrity, addressing a high-correctness-risk item called out in `reference/design/backend-redesign/design-docs/strengths-risks.md`.

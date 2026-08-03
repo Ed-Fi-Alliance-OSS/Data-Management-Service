@@ -1,5 +1,12 @@
 # Update Tracking: Representation `_etag/_lastModifiedDate` + Change Queries `ChangeVersion`
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** every stamping rule written
+> against `dms.Document` columns, including `_etag` being derived from `dms.Document.ContentVersion`.
+> The `ContentVersion` / `ContentLastModifiedAt` and `IdentityVersion` / `IdentityLastModifiedAt` pairs
+> are written onto the resource root row — or the `dms.Descriptor` row — by that table's own stamping
+> trigger, and `_etag` is composed from that row's `ContentVersion`. The stamping semantics themselves
+> are unchanged. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Status
 
 Draft. This document is the normative design for:

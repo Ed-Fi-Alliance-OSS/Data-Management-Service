@@ -1,5 +1,13 @@
 # Backend Redesign: Data Model
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the `dms.Document`,
+> `dms.ReferentialIdentity` and `dms.DocumentCache` table definitions below, and every rule that routes
+> document metadata or identity resolution through them. Those tables are no longer emitted — a
+> provisioned database carries four `dms.*` tables (`Descriptor`, `EffectiveSchema`, `ResourceKey`,
+> `SchemaComponent`) — and document metadata lives on the resource root row. The per-resource table,
+> descriptor and abstract-identity modelling is otherwise current. See
+> [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Status
 
 Draft.

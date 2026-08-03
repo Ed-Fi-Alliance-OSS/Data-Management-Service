@@ -5,6 +5,12 @@ jira_url: https://edfi.atlassian.net/browse/DMS-999
 
 # Story: Identity Propagation via Native Cascades (No Closure Traversal)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the per-resource triggers that
+> recompute `dms.ReferentialIdentity` and the engine UUIDv5 helper they call (`E02-S06`). Identity
+> propagation through native foreign-key cascades — the point of this story — survives unchanged; what is
+> gone is the derived identity index that the cascades used to update. See
+> [`docs/RELATIONAL-BACKEND.md` §4](../../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Description
 
 Implement strict identity maintenance for identity updates without application-managed identity closure traversal:

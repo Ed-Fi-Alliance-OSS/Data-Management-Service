@@ -1,5 +1,12 @@
 # Backend Redesign: Transactions, Concurrency, and Cascades
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the identity-maintenance,
+> POST-existence-detection and delete-cascade paths described here as running through
+> `dms.ReferentialIdentity` and `dms.Document`, and the optional `dms.DocumentCache` projection section.
+> Existence detection and reference resolution are index seeks on stored identity values; a delete is a
+> single statement against the resource root (or `dms.Descriptor`) row. The transaction and locking
+> reasoning is otherwise current. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Status
 
 Draft.

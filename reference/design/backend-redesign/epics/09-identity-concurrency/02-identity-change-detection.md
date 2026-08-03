@@ -5,6 +5,12 @@ jira_url: https://edfi.atlassian.net/browse/DMS-998
 
 # Story: Detect Identity Projection Changes Reliably
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the `dms.ReferentialIdentity`
+> maintenance this story gates. Identity-change *detection* itself survives — the stamping triggers still
+> bump `IdentityVersion` / `IdentityLastModifiedAt` only when a stored identity value actually changes.
+> Only the derived identity index the detection also fed is gone. See
+> [`docs/RELATIONAL-BACKEND.md` §4](../../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Description
 
 Detect whether a write changes the document’s identity projection values, so that:

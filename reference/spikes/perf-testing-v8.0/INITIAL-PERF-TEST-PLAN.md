@@ -1,5 +1,12 @@
 # Initial DMS PostgreSQL Performance Test Plan
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the workload description that
+> routes reference resolution through `dms.ReferentialIdentity` and isolates `dms.Document` /
+> `dms.ReferentialIdentity` write cost. Neither table exists; reference resolution is an index seek on the
+> target's own natural-key index. The harness, instrumentation and measurement plan are otherwise
+> unaffected. See
+> [`docs/RELATIONAL-BACKEND.md` §4](../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Purpose
 
 Create the first repeatable performance signal for the Data Management Service using the PostgreSQL relational backend. The plan is intentionally small: establish a reliable load harness, add only the instrumentation needed to explain bottlenecks, and produce actionable follow-up work.

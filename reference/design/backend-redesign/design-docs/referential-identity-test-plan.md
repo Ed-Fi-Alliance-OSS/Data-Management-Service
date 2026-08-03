@@ -1,5 +1,11 @@
 # `dms.ReferentialIdentity` Test Plan (Backend Redesign)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** this plan tests
+> `dms.ReferentialIdentity` corruption and explicitly scopes out "variants that remove `ReferentialId`s
+> entirely". That is the variant that shipped — the table, its maintenance triggers and the hash resolver
+> are gone — so none of these scenarios are reachable. Retained as a historical record of the risk it
+> addressed. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 This test plan targets the correctness risk described in `reference/design/backend-redesign/design-docs/strengths-risks.md` (“ReferentialIdentity Incorrect Mapping”): a valid `ReferentialId` resolving to the wrong `DocumentId`, or a `DocumentId` having an incorrect/stale `ReferentialId`.
 
 Security note: authorization checks rely on correct `DocumentId` resolution (both for reference resolution in the write path and for relationship-based authorization joins). A `ReferentialId → DocumentId` corruption can therefore become a data-exposure risk, not only a correctness bug; see `reference/design/backend-redesign/design-docs/auth.md`.

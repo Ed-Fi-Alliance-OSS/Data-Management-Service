@@ -5,6 +5,11 @@ jira_url: https://edfi.atlassian.net/browse/DMS-946
 
 # Story: Engine UUIDv5 Helper Function (PostgreSQL + SQL Server)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the whole of this story. The
+> engine `dms.uuidv5()` helper existed only to let triggers compute `ReferentialId` in the database; it was
+> removed with those triggers, along with the pgcrypto extension its PostgreSQL arm required. Retained as
+> a historical work record. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Description
 
 Implement UUIDv5 (RFC 4122) generation inside each supported database engine so the database can compute `ReferentialId` deterministically from identity projection values:

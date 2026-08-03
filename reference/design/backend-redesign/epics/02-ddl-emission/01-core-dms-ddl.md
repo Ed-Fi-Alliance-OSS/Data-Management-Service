@@ -5,6 +5,12 @@ jira_url: https://edfi.atlassian.net/browse/DMS-937
 
 # Story: Emit Core `dms.*` DDL (Including Update-Tracking Triggers)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the emitted core-object list.
+> `dms.Document`, `dms.ReferentialIdentity` and `dms.DocumentCache` are no longer emitted; the core DDL
+> emits `dms.Descriptor`, `dms.EffectiveSchema`, `dms.ResourceKey`, `dms.SchemaComponent`, three
+> sequences, `GetMaxChangeVersion` (plus `throw_error` on PostgreSQL) and the SQL Server `BigIntTable`
+> type. Retained as a historical work record. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Description
 
 Generate deterministic DDL for all required core objects in schema `dms`, per:

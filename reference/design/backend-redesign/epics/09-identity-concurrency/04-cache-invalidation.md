@@ -5,6 +5,11 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1000
 
 # Story: Invalidate Identity Resolution Caches After Commit
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the identity-resolution caches
+> this story invalidates are caches over `ReferentialId → DocumentId`. There is no such stored mapping and
+> no such cache: each request resolves identities by index seek within its own transaction. Retained as a
+> historical work record. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Description
 
 Ensure any caches used for identity resolution (`ReferentialId → DocumentId`) remain correct after identity changes:

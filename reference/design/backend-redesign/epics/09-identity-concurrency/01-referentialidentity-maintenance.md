@@ -5,6 +5,11 @@ jira_url: https://edfi.atlassian.net/browse/DMS-997
 
 # Story: Maintain `dms.ReferentialIdentity` (Primary + Superclass Alias Rows)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the whole of this story. The
+> `TR_<Root>_ReferentialIdentity` triggers it delivered stopped being derived and emitted, and the table
+> they maintained is no longer created. Retained as a historical work record. See
+> [`docs/RELATIONAL-BACKEND.md` §4](../../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Description
 
 Maintain `dms.ReferentialIdentity` as the canonical identity index:

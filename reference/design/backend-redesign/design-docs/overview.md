@@ -1,5 +1,12 @@
 # Backend Redesign: Relational Primary Store (Tables per Resource)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the "Why keep
+> `ReferentialId`" rationale and every statement that identities resolve through a persisted
+> `ReferentialId → DocumentId` index maintained transactionally by per-resource triggers. Identity
+> resolution is now an index seek on stored natural-key columns, and `ReferentialId` survives only as an
+> in-memory, request-scoped equality key. The tables-per-resource direction this document introduces is
+> current. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Status
 
 Draft. This is an initial design proposal for replacing the current three-table document store (`Document`/`Alias`/`Reference`) with a relational model using tables per resource, while keeping DMS behavior metadata-driven via `ApiSchema.json`.
