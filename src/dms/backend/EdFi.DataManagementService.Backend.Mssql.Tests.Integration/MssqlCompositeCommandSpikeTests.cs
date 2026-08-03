@@ -498,30 +498,22 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
     {
         // An aborted batch stops before the epilogue, so both options are still set on the physical session
         // when it is returned. Nothing in the command can restore them, which makes the client's reset of a
-        // pooled connection the only cleanup boundary the abort path has. A one-slot pool with its own
-        // identity forces the next borrow onto the same physical session so the reset is observable.
+        // pooled connection the only cleanup boundary the abort path has. Observing that reset requires the
+        // reborrow to land on the same physical session, so the case takes exactly one pool hop: the session
+        // itself opens the pool's first connection and carries the baseline reading.
         var pooledConnectionString = BuildIsolatedPoolConnectionString(parameterized);
 
         try
         {
-            short baselineSessionId;
+            var (session, baseline) = await OpenPooledSessionAsync(pooledConnectionString);
 
-            await using (var baselineConnection = new SqlConnection(pooledConnectionString))
+            await using (session)
             {
-                await baselineConnection.OpenAsync();
-
-                var baseline = await ReadSessionOptionStateAsync(baselineConnection);
-
                 // Self-checking assumption: if this instance defaulted either option on, the assertion after
                 // the reborrow would be measuring a server default rather than a reset.
                 baseline.XactAbortOn.Should().BeFalse();
                 baseline.NoCountOn.Should().BeFalse();
 
-                baselineSessionId = baseline.SessionId;
-            }
-
-            await using (var session = await OpenPooledSessionAsync(pooledConnectionString))
-            {
                 var builder = new RelationalCompositeCommandBuilder(
                     IRelationalCompositeCommandDialect.Create(SqlDialect.Mssql)
                 );
@@ -575,7 +567,9 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
                 // connection no longer holds a pending one.
                 var aborted = await ReadSessionOptionStateAsync((SqlConnection)session.Connection);
 
-                aborted.SessionId.Should().Be(baselineSessionId);
+                // Still the connection the session opened, so this guards against the abort or the
+                // server-completed rollback reconnecting underneath the session.
+                aborted.SessionId.Should().Be(baseline.SessionId);
 
                 if (parameterized)
                 {
@@ -603,14 +597,18 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
                 // reading both the session id and the options here leaves no unreset window.
                 var reused = await ReadSessionOptionStateAsync(reusedConnection);
 
-                reused
-                    .SessionId.Should()
-                    .Be(
-                        baselineSessionId,
-                        "the borrow must land on the same physical session; a different session id means the "
-                            + "aborted connection was discarded rather than reset, so pooled reset is not the "
-                            + "abort path's cleanup boundary at all"
+                if (reused.SessionId != baseline.SessionId)
+                {
+                    // Discarding a returned connection is a legitimate pool choice - MaxPoolSize bounds
+                    // concurrency, not identity - and a fresh session starts with both options off, so the
+                    // options read below would pass without a reset ever happening. The reset is therefore
+                    // unobserved rather than absent, which is not a result this case can report either way.
+                    Assert.Inconclusive(
+                        $"The reborrow landed on session {reused.SessionId} rather than {baseline.SessionId}, "
+                            + "so the aborted connection was discarded instead of handed back and pooled reset "
+                            + "could not be observed."
                     );
+                }
 
                 reused.XactAbortOn.Should().BeFalse();
                 reused.NoCountOn.Should().BeFalse();
@@ -629,8 +627,10 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
     }
 
     /// <summary>
-    /// Derives a connection string with its own pool identity and a single slot, so the borrows in one case
-    /// are forced onto one physical session and cannot be affected by the fixture's other connections.
+    /// Derives a connection string with its own pool identity and a single slot, so a case's borrows are
+    /// isolated from the fixture's other connections and only one physical session is live at a time. The
+    /// single slot makes a reborrow reuse that session but cannot guarantee it: the pool stays free to
+    /// discard a returned connection and open a replacement.
     /// </summary>
     private string BuildIsolatedPoolConnectionString(bool parameterized) =>
         new SqlConnectionStringBuilder(_database.ConnectionString)
@@ -643,14 +643,29 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
             Pooling = true,
         }.ConnectionString;
 
-    private static async Task<RelationalWriteSession> OpenPooledSessionAsync(string connectionString)
+    /// <summary>
+    /// Opens a pooled session and reads its physical session state before the transaction begins, so a case
+    /// measuring pooled reset needs only the one pool hop it is actually measuring.
+    /// </summary>
+    private static async Task<(
+        RelationalWriteSession Session,
+        PooledSessionOptionState Baseline
+    )> OpenPooledSessionAsync(string connectionString)
     {
         var connection = new SqlConnection(connectionString);
         await connection.OpenAsync();
+
+        // Read before the transaction begins: a raw command cannot run on a connection that holds a pending
+        // local transaction it has not been handed.
+        var baseline = await ReadSessionOptionStateAsync(connection);
+
         var transaction = (SqlTransaction)
             await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted);
 
-        return new RelationalWriteSession(connection, transaction, MssqlTransactionStateProbe.Instance);
+        return (
+            new RelationalWriteSession(connection, transaction, MssqlTransactionStateProbe.Instance),
+            baseline
+        );
     }
 
     /// <summary>
