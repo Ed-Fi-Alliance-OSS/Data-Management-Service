@@ -52,8 +52,9 @@ file and adjust it for your machine:
 
 ```shell
 # From base directory
-cp src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/appsettings.Development.json.example `
-   src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/appsettings.Development.json
+cd src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore
+cp appsettings.Development.json.example appsettings.Development.json
+cd ../../../../
 ./build-config.ps1 build
 ./build-config.ps1 run
 ```

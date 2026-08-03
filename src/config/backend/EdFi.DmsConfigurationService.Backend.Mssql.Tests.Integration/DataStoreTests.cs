@@ -211,14 +211,23 @@ public class DataStoreTests : DatabaseTest
     /// A deployment moving off a rejected encryption key recovers by re-submitting each connection
     /// string once the new key is configured. That procedure is only sound if update re-encrypts with
     /// the currently configured key instead of leaving the stored cipher text keyed to the previous
-    /// one, which is what this fixture pins. The SQL Server repository is a separate implementation
-    /// from the PostgreSQL one, so it carries its own copy of the PostgreSQL suite's twin fixture.
+    /// one, which is what this fixture pins. The resubmitted value is deliberately identical to the
+    /// original — the procedure changes only the key — so an unchanged-value no-op guard added to
+    /// update would fail here instead of breaking the recovery invisibly. The SQL Server repository is
+    /// a separate implementation from the PostgreSQL one, so it carries its own copy of the PostgreSQL
+    /// suite's twin fixture.
     /// </summary>
     [TestFixture]
     public class Given_a_data_store_updated_after_the_encryption_key_changed : DataStoreTests
     {
         private const string OriginalConnectionString = "Server=original;Database=OriginalDb;";
-        private const string ResubmittedConnectionString = "Server=resubmitted;Database=ResubmittedDb;";
+
+        /// <summary>
+        /// Named for the step it models; the value must stay equal to
+        /// <see cref="OriginalConnectionString" /> because the recovery procedure re-submits the
+        /// connection string unchanged.
+        /// </summary>
+        private const string ResubmittedConnectionString = OriginalConnectionString;
 
         /// <summary>
         /// 32 characters, and deliberately different from the configured test key: the key an operator
@@ -298,6 +307,9 @@ public class DataStoreTests : DatabaseTest
             return storedConnectionString!;
         }
 
+        /// <summary>
+        /// Same plaintext, but a different key and a fresh random IV: the stored bytes must change.
+        /// </summary>
         [Test]
         public void It_replaces_the_stored_cipher_text() =>
             _storedCipherTextAfterRotation.Should().NotBe(_storedCipherTextBeforeRotation);
@@ -325,11 +337,10 @@ public class DataStoreTests : DatabaseTest
             }
             catch (CryptographicException)
             {
-                // Left null: the assertions below hold either way.
+                // Left null: the assertion below holds either way.
             }
 
             decryptedWithPreviousKey.Should().NotBe(ResubmittedConnectionString);
-            decryptedWithPreviousKey.Should().NotBe(OriginalConnectionString);
         }
     }
 
