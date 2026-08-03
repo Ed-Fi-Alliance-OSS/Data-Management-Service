@@ -32,19 +32,7 @@
     },
     {
       "schema_name": "dms",
-      "table_name": "Document"
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache"
-    },
-    {
-      "schema_name": "dms",
       "table_name": "EffectiveSchema"
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "ReferentialIdentity"
     },
     {
       "schema_name": "dms",
@@ -3086,186 +3074,6 @@
     },
     {
       "schema_name": "dms",
-      "table_name": "Document",
-      "column_name": "ContentLastModifiedAt",
-      "ordinal_position": 6,
-      "data_type": "timestamp with time zone",
-      "is_nullable": false,
-      "default_expression": "now()",
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "Document",
-      "column_name": "ContentVersion",
-      "ordinal_position": 4,
-      "data_type": "bigint",
-      "is_nullable": false,
-      "default_expression": "nextval(\u0027dms.\u0022ChangeVersionSequence\u0022\u0027::regclass)",
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "Document",
-      "column_name": "CreatedAt",
-      "ordinal_position": 8,
-      "data_type": "timestamp with time zone",
-      "is_nullable": false,
-      "default_expression": "now()",
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "Document",
-      "column_name": "DocumentId",
-      "ordinal_position": 1,
-      "data_type": "bigint",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "Document",
-      "column_name": "DocumentUuid",
-      "ordinal_position": 2,
-      "data_type": "uuid",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "Document",
-      "column_name": "IdentityLastModifiedAt",
-      "ordinal_position": 7,
-      "data_type": "timestamp with time zone",
-      "is_nullable": false,
-      "default_expression": "now()",
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "Document",
-      "column_name": "IdentityVersion",
-      "ordinal_position": 5,
-      "data_type": "bigint",
-      "is_nullable": false,
-      "default_expression": "nextval(\u0027dms.\u0022ChangeVersionSequence\u0022\u0027::regclass)",
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "Document",
-      "column_name": "ResourceKeyId",
-      "ordinal_position": 3,
-      "data_type": "smallint",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "column_name": "ComputedAt",
-      "ordinal_position": 10,
-      "data_type": "timestamp with time zone",
-      "is_nullable": false,
-      "default_expression": "now()",
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "column_name": "ContentVersion",
-      "ordinal_position": 7,
-      "data_type": "bigint",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "column_name": "DocumentId",
-      "ordinal_position": 1,
-      "data_type": "bigint",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "column_name": "DocumentJson",
-      "ordinal_position": 9,
-      "data_type": "jsonb",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "column_name": "DocumentUuid",
-      "ordinal_position": 2,
-      "data_type": "uuid",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "column_name": "Etag",
-      "ordinal_position": 6,
-      "data_type": "character varying(64)",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "column_name": "LastModifiedAt",
-      "ordinal_position": 8,
-      "data_type": "timestamp with time zone",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "column_name": "ProjectName",
-      "ordinal_position": 3,
-      "data_type": "character varying(256)",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "column_name": "ResourceName",
-      "ordinal_position": 4,
-      "data_type": "character varying(256)",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "column_name": "ResourceVersion",
-      "ordinal_position": 5,
-      "data_type": "character varying(32)",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
       "table_name": "EffectiveSchema",
       "column_name": "ApiSchemaFormatVersion",
       "ordinal_position": 2,
@@ -3320,36 +3128,6 @@
       "column_name": "ResourceKeySeedHash",
       "ordinal_position": 5,
       "data_type": "bytea",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "ReferentialIdentity",
-      "column_name": "DocumentId",
-      "ordinal_position": 2,
-      "data_type": "bigint",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "ReferentialIdentity",
-      "column_name": "ReferentialId",
-      "ordinal_position": 1,
-      "data_type": "uuid",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "ReferentialIdentity",
-      "column_name": "ResourceKeyId",
-      "ordinal_position": 3,
-      "data_type": "smallint",
       "is_nullable": false,
       "default_expression": null,
       "is_computed": false
@@ -73341,94 +73119,6 @@
     },
     {
       "schema_name": "dms",
-      "table_name": "Document",
-      "constraint_name": "FK_Document_ResourceKey",
-      "constraint_type": "FOREIGN KEY",
-      "columns": [
-        "ResourceKeyId"
-      ],
-      "referenced_schema": "dms",
-      "referenced_table": "ResourceKey",
-      "referenced_columns": [
-        "ResourceKeyId"
-      ]
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "Document",
-      "constraint_name": "PK_Document",
-      "constraint_type": "PRIMARY KEY",
-      "columns": [
-        "DocumentId"
-      ],
-      "referenced_schema": null,
-      "referenced_table": null,
-      "referenced_columns": null
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "Document",
-      "constraint_name": "UX_Document_DocumentUuid",
-      "constraint_type": "UNIQUE",
-      "columns": [
-        "DocumentUuid"
-      ],
-      "referenced_schema": null,
-      "referenced_table": null,
-      "referenced_columns": null
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "constraint_name": "CK_DocumentCache_JsonObject",
-      "constraint_type": "CHECK",
-      "columns": [
-        "DocumentJson"
-      ],
-      "referenced_schema": null,
-      "referenced_table": null,
-      "referenced_columns": null
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "constraint_name": "FK_DocumentCache_Document",
-      "constraint_type": "FOREIGN KEY",
-      "columns": [
-        "DocumentId"
-      ],
-      "referenced_schema": "dms",
-      "referenced_table": "Document",
-      "referenced_columns": [
-        "DocumentId"
-      ]
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "constraint_name": "PK_DocumentCache",
-      "constraint_type": "PRIMARY KEY",
-      "columns": [
-        "DocumentId"
-      ],
-      "referenced_schema": null,
-      "referenced_table": null,
-      "referenced_columns": null
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "constraint_name": "UX_DocumentCache_DocumentUuid",
-      "constraint_type": "UNIQUE",
-      "columns": [
-        "DocumentUuid"
-      ],
-      "referenced_schema": null,
-      "referenced_table": null,
-      "referenced_columns": null
-    },
-    {
-      "schema_name": "dms",
       "table_name": "EffectiveSchema",
       "constraint_name": "CK_EffectiveSchema_ApiSchemaFormatVersion_NotBlank",
       "constraint_type": "CHECK",
@@ -73482,59 +73172,6 @@
       "constraint_type": "UNIQUE",
       "columns": [
         "EffectiveSchemaHash"
-      ],
-      "referenced_schema": null,
-      "referenced_table": null,
-      "referenced_columns": null
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "ReferentialIdentity",
-      "constraint_name": "FK_ReferentialIdentity_Document",
-      "constraint_type": "FOREIGN KEY",
-      "columns": [
-        "DocumentId"
-      ],
-      "referenced_schema": "dms",
-      "referenced_table": "Document",
-      "referenced_columns": [
-        "DocumentId"
-      ]
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "ReferentialIdentity",
-      "constraint_name": "FK_ReferentialIdentity_ResourceKey",
-      "constraint_type": "FOREIGN KEY",
-      "columns": [
-        "ResourceKeyId"
-      ],
-      "referenced_schema": "dms",
-      "referenced_table": "ResourceKey",
-      "referenced_columns": [
-        "ResourceKeyId"
-      ]
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "ReferentialIdentity",
-      "constraint_name": "PK_ReferentialIdentity",
-      "constraint_type": "PRIMARY KEY",
-      "columns": [
-        "ReferentialId"
-      ],
-      "referenced_schema": null,
-      "referenced_table": null,
-      "referenced_columns": null
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "ReferentialIdentity",
-      "constraint_name": "UX_ReferentialIdentity_DocumentId_ResourceKeyId",
-      "constraint_type": "UNIQUE",
-      "columns": [
-        "DocumentId",
-        "ResourceKeyId"
       ],
       "referenced_schema": null,
       "referenced_table": null,
@@ -121438,37 +121075,6 @@
       ]
     },
     {
-      "schema_name": "dms",
-      "table_name": "Document",
-      "index_name": "IX_Document_ResourceKeyId_DocumentId",
-      "is_unique": false,
-      "columns": [
-        "ResourceKeyId",
-        "DocumentId"
-      ]
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "index_name": "IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt",
-      "is_unique": false,
-      "columns": [
-        "ProjectName",
-        "ResourceName",
-        "LastModifiedAt",
-        "DocumentId"
-      ]
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "ReferentialIdentity",
-      "index_name": "IX_ReferentialIdentity_DocumentId",
-      "is_unique": false,
-      "columns": [
-        "DocumentId"
-      ]
-    },
-    {
       "schema_name": "edfi",
       "table_name": "AcademicWeek",
       "index_name": "IX_AcademicWeek_ContentVersion",
@@ -134243,9 +133849,9 @@
       "schema_name": "edfi",
       "table_name": "CommunityOrganization",
       "trigger_name": "TR_CommunityOrganization_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_CommunityOrganization_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022CommunityOrganization\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_CommunityOrganization_AbstractIdentity\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_CommunityOrganization_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022CommunityOrganization\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_CommunityOrganization_AbstractIdentity\u0022()",
       "function_name": "TF_TR_CommunityOrganization_AbstractIdentity"
     },
     {
@@ -134351,9 +133957,9 @@
       "schema_name": "edfi",
       "table_name": "CommunityProvider",
       "trigger_name": "TR_CommunityProvider_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_CommunityProvider_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022CommunityProvider\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_CommunityProvider_AbstractIdentity\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_CommunityProvider_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022CommunityProvider\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_CommunityProvider_AbstractIdentity\u0022()",
       "function_name": "TF_TR_CommunityProvider_AbstractIdentity"
     },
     {
@@ -134963,9 +134569,9 @@
       "schema_name": "edfi",
       "table_name": "EducationOrganizationNetwork",
       "trigger_name": "TR_EducationOrganizationNetwork_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_EducationOrganizationNetwork_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022EducationOrganizationNetwork\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_EducationOrganizationNetwork_AbstractIdentity\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_EducationOrganizationNetwork_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022EducationOrganizationNetwork\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_EducationOrganizationNetwork_AbstractIdentity\u0022()",
       "function_name": "TF_TR_EducationOrganizationNetwork_AbstractIdentity"
     },
     {
@@ -135089,9 +134695,9 @@
       "schema_name": "edfi",
       "table_name": "EducationServiceCenter",
       "trigger_name": "TR_EducationServiceCenter_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_EducationServiceCenter_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022EducationServiceCenter\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_EducationServiceCenter_AbstractIdentity\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_EducationServiceCenter_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022EducationServiceCenter\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_EducationServiceCenter_AbstractIdentity\u0022()",
       "function_name": "TF_TR_EducationServiceCenter_AbstractIdentity"
     },
     {
@@ -135719,9 +135325,9 @@
       "schema_name": "edfi",
       "table_name": "LocalEducationAgency",
       "trigger_name": "TR_LocalEducationAgency_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_LocalEducationAgency_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022LocalEducationAgency\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_LocalEducationAgency_AbstractIdentity\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_LocalEducationAgency_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022LocalEducationAgency\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_LocalEducationAgency_AbstractIdentity\u0022()",
       "function_name": "TF_TR_LocalEducationAgency_AbstractIdentity"
     },
     {
@@ -135989,9 +135595,9 @@
       "schema_name": "edfi",
       "table_name": "OrganizationDepartment",
       "trigger_name": "TR_OrganizationDepartment_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_OrganizationDepartment_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022OrganizationDepartment\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_OrganizationDepartment_AbstractIdentity\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_OrganizationDepartment_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022OrganizationDepartment\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_OrganizationDepartment_AbstractIdentity\u0022()",
       "function_name": "TF_TR_OrganizationDepartment_AbstractIdentity"
     },
     {
@@ -136124,9 +135730,9 @@
       "schema_name": "edfi",
       "table_name": "PostSecondaryInstitution",
       "trigger_name": "TR_PostSecondaryInstitution_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_PostSecondaryInstitution_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022PostSecondaryInstitution\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_PostSecondaryInstitution_AbstractIdentity\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_PostSecondaryInstitution_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022PostSecondaryInstitution\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_PostSecondaryInstitution_AbstractIdentity\u0022()",
       "function_name": "TF_TR_PostSecondaryInstitution_AbstractIdentity"
     },
     {
@@ -136430,9 +136036,9 @@
       "schema_name": "edfi",
       "table_name": "School",
       "trigger_name": "TR_School_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_School_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022School\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_School_AbstractIdentity\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_School_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022School\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_School_AbstractIdentity\u0022()",
       "function_name": "TF_TR_School_AbstractIdentity"
     },
     {
@@ -136979,9 +136585,9 @@
       "schema_name": "edfi",
       "table_name": "StateEducationAgency",
       "trigger_name": "TR_StateEducationAgency_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_StateEducationAgency_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022StateEducationAgency\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StateEducationAgency_AbstractIdentity\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_StateEducationAgency_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022StateEducationAgency\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StateEducationAgency_AbstractIdentity\u0022()",
       "function_name": "TF_TR_StateEducationAgency_AbstractIdentity"
     },
     {
@@ -137294,9 +136900,9 @@
       "schema_name": "edfi",
       "table_name": "StudentCTEProgramAssociation",
       "trigger_name": "TR_StudentCTEProgramAssociation_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_StudentCTEProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022StudentCTEProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentCTEProgramAssociation_AbstractIdentity\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_StudentCTEProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022StudentCTEProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentCTEProgramAssociation_AbstractIdentity\u0022()",
       "function_name": "TF_TR_StudentCTEProgramAssociation_AbstractIdentity"
     },
     {
@@ -137690,9 +137296,9 @@
       "schema_name": "edfi",
       "table_name": "StudentHomelessProgramAssociation",
       "trigger_name": "TR_StudentHomelessProgramAssociation_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_StudentHomelessProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022StudentHomelessProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentHomelessProgramAssociation_AbstractIdentity\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_StudentHomelessProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022StudentHomelessProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentHomelessProgramAssociation_AbstractIdentity\u0022()",
       "function_name": "TF_TR_StudentHomelessProgramAssociation_AbstractIdentity"
     },
     {
@@ -137762,9 +137368,9 @@
       "schema_name": "edfi",
       "table_name": "StudentLanguageInstructionProgramAssociation",
       "trigger_name": "TR_StudentLanguageInstructionProgramAssociation_Abst_57ea525497",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_StudentLanguageInstructionProgramAssociation_Abst_57ea525497\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022StudentLanguageInstructionProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentLanguageInstructionProgramAssociation_A_a427138fb0\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_StudentLanguageInstructionProgramAssociation_Abst_57ea525497\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022StudentLanguageInstructionProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentLanguageInstructionProgramAssociation_A_a427138fb0\u0022()",
       "function_name": "TF_TR_StudentLanguageInstructionProgramAssociation_A_a427138fb0"
     },
     {
@@ -137807,9 +137413,9 @@
       "schema_name": "edfi",
       "table_name": "StudentMigrantEducationProgramAssociation",
       "trigger_name": "TR_StudentMigrantEducationProgramAssociation_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_StudentMigrantEducationProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022StudentMigrantEducationProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentMigrantEducationProgramAssociation_Abst_bd3ba064b4\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_StudentMigrantEducationProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022StudentMigrantEducationProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentMigrantEducationProgramAssociation_Abst_bd3ba064b4\u0022()",
       "function_name": "TF_TR_StudentMigrantEducationProgramAssociation_Abst_bd3ba064b4"
     },
     {
@@ -137843,9 +137449,9 @@
       "schema_name": "edfi",
       "table_name": "StudentNeglectedOrDelinquentProgramAssociation",
       "trigger_name": "TR_StudentNeglectedOrDelinquentProgramAssociation_Ab_87c6f879b8",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_StudentNeglectedOrDelinquentProgramAssociation_Ab_87c6f879b8\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022StudentNeglectedOrDelinquentProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentNeglectedOrDelinquentProgramAssociation_d42448777f\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_StudentNeglectedOrDelinquentProgramAssociation_Ab_87c6f879b8\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022StudentNeglectedOrDelinquentProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentNeglectedOrDelinquentProgramAssociation_d42448777f\u0022()",
       "function_name": "TF_TR_StudentNeglectedOrDelinquentProgramAssociation_d42448777f"
     },
     {
@@ -137897,9 +137503,9 @@
       "schema_name": "edfi",
       "table_name": "StudentProgramAssociation",
       "trigger_name": "TR_StudentProgramAssociation_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_StudentProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022StudentProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentProgramAssociation_AbstractIdentity\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_StudentProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022StudentProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentProgramAssociation_AbstractIdentity\u0022()",
       "function_name": "TF_TR_StudentProgramAssociation_AbstractIdentity"
     },
     {
@@ -138014,9 +137620,9 @@
       "schema_name": "edfi",
       "table_name": "StudentSchoolFoodServiceProgramAssociation",
       "trigger_name": "TR_StudentSchoolFoodServiceProgramAssociation_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_StudentSchoolFoodServiceProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022StudentSchoolFoodServiceProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentSchoolFoodServiceProgramAssociation_Abs_a18cc7d62d\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_StudentSchoolFoodServiceProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022StudentSchoolFoodServiceProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentSchoolFoodServiceProgramAssociation_Abs_a18cc7d62d\u0022()",
       "function_name": "TF_TR_StudentSchoolFoodServiceProgramAssociation_Abs_a18cc7d62d"
     },
     {
@@ -138050,9 +137656,9 @@
       "schema_name": "edfi",
       "table_name": "StudentSection504ProgramAssociation",
       "trigger_name": "TR_StudentSection504ProgramAssociation_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_StudentSection504ProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022StudentSection504ProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentSection504ProgramAssociation_AbstractIdentity\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_StudentSection504ProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022StudentSection504ProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentSection504ProgramAssociation_AbstractIdentity\u0022()",
       "function_name": "TF_TR_StudentSection504ProgramAssociation_AbstractIdentity"
     },
     {
@@ -138113,9 +137719,9 @@
       "schema_name": "edfi",
       "table_name": "StudentSpecialEducationProgramAssociation",
       "trigger_name": "TR_StudentSpecialEducationProgramAssociation_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_StudentSpecialEducationProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022StudentSpecialEducationProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentSpecialEducationProgramAssociation_Abst_1454967766\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_StudentSpecialEducationProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022StudentSpecialEducationProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentSpecialEducationProgramAssociation_Abst_1454967766\u0022()",
       "function_name": "TF_TR_StudentSpecialEducationProgramAssociation_Abst_1454967766"
     },
     {
@@ -138194,9 +137800,9 @@
       "schema_name": "edfi",
       "table_name": "StudentTitleIPartAProgramAssociation",
       "trigger_name": "TR_StudentTitleIPartAProgramAssociation_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_StudentTitleIPartAProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON edfi.\u0022StudentTitleIPartAProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentTitleIPartAProgramAssociation_AbstractIdentity\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_StudentTitleIPartAProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON edfi.\u0022StudentTitleIPartAProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION edfi.\u0022TF_TR_StudentTitleIPartAProgramAssociation_AbstractIdentity\u0022()",
       "function_name": "TF_TR_StudentTitleIPartAProgramAssociation_AbstractIdentity"
     },
     {
@@ -138617,9 +138223,9 @@
       "schema_name": "sample",
       "table_name": "StudentArtProgramAssociation",
       "trigger_name": "TR_StudentArtProgramAssociation_AbstractIdentity",
-      "event_manipulation": "INSERT OR UPDATE",
+      "event_manipulation": "INSERT OR DELETE OR UPDATE",
       "action_timing": "BEFORE",
-      "definition": "CREATE TRIGGER \u0022TR_StudentArtProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR UPDATE ON sample.\u0022StudentArtProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION sample.\u0022TF_TR_StudentArtProgramAssociation_AbstractIdentity\u0022()",
+      "definition": "CREATE TRIGGER \u0022TR_StudentArtProgramAssociation_AbstractIdentity\u0022 BEFORE INSERT OR DELETE OR UPDATE ON sample.\u0022StudentArtProgramAssociation\u0022 FOR EACH ROW EXECUTE FUNCTION sample.\u0022TF_TR_StudentArtProgramAssociation_AbstractIdentity\u0022()",
       "function_name": "TF_TR_StudentArtProgramAssociation_AbstractIdentity"
     },
     {
@@ -138968,13 +138574,6 @@
       "data_type": "bigint",
       "start_value": 1,
       "increment_by": 1
-    },
-    {
-      "schema_name": "dms",
-      "sequence_name": "Document_DocumentId_seq",
-      "data_type": "bigint",
-      "start_value": 1,
-      "increment_by": 1
     }
   ],
   "table_types": [],
@@ -139002,16 +138601,6 @@
         "text"
       ],
       "definition": "CREATE OR REPLACE FUNCTION dms.throw_error(code text, msg text)\n RETURNS integer\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    RAISE EXCEPTION \u0027%\u0027, msg USING ERRCODE = code;\nEND\n$function$"
-    },
-    {
-      "schema_name": "dms",
-      "function_name": "uuidv5",
-      "return_type": "uuid",
-      "parameter_types": [
-        "uuid",
-        "text"
-      ],
-      "definition": "CREATE OR REPLACE FUNCTION dms.uuidv5(namespace_uuid uuid, name_text text)\n RETURNS uuid\n LANGUAGE plpgsql\n IMMUTABLE PARALLEL SAFE STRICT\nAS $function$\nDECLARE\n    hash bytea;\nBEGIN\n    hash := digest(\n        decode(replace(namespace_uuid::text, \u0027-\u0027, \u0027\u0027), \u0027hex\u0027)\n        || convert_to(name_text, \u0027UTF8\u0027),\n        \u0027sha1\u0027\n    );\n    hash := set_byte(hash, 6, (get_byte(hash, 6) \u0026 x\u00270f\u0027::int) | x\u002750\u0027::int);\n    hash := set_byte(hash, 8, (get_byte(hash, 8) \u0026 x\u00273f\u0027::int) | x\u002780\u0027::int);\n    RETURN encode(substring(hash from 1 for 16), \u0027hex\u0027)::uuid;\nEND\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -139368,7 +138957,7 @@
       "function_name": "TF_TR_CommunityOrganization_AbstractIdentity",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_CommunityOrganization_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022CommunityOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022CommunityOrganizationId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022CommunityOrganizationId\u0022, \u0027Ed-Fi:CommunityOrganization\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_CommunityOrganization_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022CommunityOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022CommunityOrganizationId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022CommunityOrganizationId\u0022, \u0027Ed-Fi:CommunityOrganization\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -139459,7 +139048,7 @@
       "function_name": "TF_TR_CommunityProvider_AbstractIdentity",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_CommunityProvider_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022CommunityProviderId\u0022 IS DISTINCT FROM NEW.\u0022CommunityProviderId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022CommunityProviderId\u0022, \u0027Ed-Fi:CommunityProvider\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_CommunityProvider_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022CommunityProviderId\u0022 IS DISTINCT FROM NEW.\u0022CommunityProviderId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022CommunityProviderId\u0022, \u0027Ed-Fi:CommunityProvider\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -139935,7 +139524,7 @@
       "function_name": "TF_TR_EducationOrganizationNetwork_AbstractIdentity",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_EducationOrganizationNetwork_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022EducationOrganizationNetworkId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganizationNetworkId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022EducationOrganizationNetworkId\u0022, \u0027Ed-Fi:EducationOrganizationNetwork\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_EducationOrganizationNetwork_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022EducationOrganizationNetworkId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganizationNetworkId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022EducationOrganizationNetworkId\u0022, \u0027Ed-Fi:EducationOrganizationNetwork\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -140026,7 +139615,7 @@
       "function_name": "TF_TR_EducationServiceCenter_AbstractIdentity",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_EducationServiceCenter_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022EducationServiceCenterId\u0022 IS DISTINCT FROM NEW.\u0022EducationServiceCenterId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022EducationServiceCenterId\u0022, \u0027Ed-Fi:EducationServiceCenter\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_EducationServiceCenter_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022EducationServiceCenterId\u0022 IS DISTINCT FROM NEW.\u0022EducationServiceCenterId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022EducationServiceCenterId\u0022, \u0027Ed-Fi:EducationServiceCenter\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -140530,7 +140119,7 @@
       "function_name": "TF_TR_LocalEducationAgency_AbstractIdentity",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_LocalEducationAgency_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022LocalEducationAgencyId\u0022 IS DISTINCT FROM NEW.\u0022LocalEducationAgencyId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022LocalEducationAgencyId\u0022, \u0027Ed-Fi:LocalEducationAgency\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_LocalEducationAgency_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022LocalEducationAgencyId\u0022 IS DISTINCT FROM NEW.\u0022LocalEducationAgencyId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022LocalEducationAgencyId\u0022, \u0027Ed-Fi:LocalEducationAgency\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -140726,7 +140315,7 @@
       "function_name": "TF_TR_OrganizationDepartment_AbstractIdentity",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_OrganizationDepartment_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022OrganizationDepartmentId\u0022 IS DISTINCT FROM NEW.\u0022OrganizationDepartmentId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022OrganizationDepartmentId\u0022, \u0027Ed-Fi:OrganizationDepartment\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_OrganizationDepartment_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022OrganizationDepartmentId\u0022 IS DISTINCT FROM NEW.\u0022OrganizationDepartmentId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022OrganizationDepartmentId\u0022, \u0027Ed-Fi:OrganizationDepartment\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -140838,7 +140427,7 @@
       "function_name": "TF_TR_PostSecondaryInstitution_AbstractIdentity",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_PostSecondaryInstitution_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022PostSecondaryInstitutionId\u0022 IS DISTINCT FROM NEW.\u0022PostSecondaryInstitutionId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022PostSecondaryInstitutionId\u0022, \u0027Ed-Fi:PostSecondaryInstitution\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_PostSecondaryInstitution_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022PostSecondaryInstitutionId\u0022 IS DISTINCT FROM NEW.\u0022PostSecondaryInstitutionId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022PostSecondaryInstitutionId\u0022, \u0027Ed-Fi:PostSecondaryInstitution\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -141090,7 +140679,7 @@
       "function_name": "TF_TR_School_AbstractIdentity",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_School_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022SchoolId\u0022 IS DISTINCT FROM NEW.\u0022SchoolId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022SchoolId\u0022, \u0027Ed-Fi:School\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_School_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022SchoolId\u0022 IS DISTINCT FROM NEW.\u0022SchoolId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022SchoolId\u0022, \u0027Ed-Fi:School\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -141510,7 +141099,7 @@
       "function_name": "TF_TR_StateEducationAgency_AbstractIdentity",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StateEducationAgency_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022StateEducationAgencyId\u0022 IS DISTINCT FROM NEW.\u0022StateEducationAgencyId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022StateEducationAgencyId\u0022, \u0027Ed-Fi:StateEducationAgency\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StateEducationAgency_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022StateEducationAgencyId\u0022 IS DISTINCT FROM NEW.\u0022StateEducationAgencyId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022EducationOrganizationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022EducationOrganizationId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022StateEducationAgencyId\u0022, \u0027Ed-Fi:StateEducationAgency\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganizationId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -141692,7 +141281,7 @@
       "function_name": "TF_TR_StudentCTEProgramAssociation_AbstractIdentity",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentCTEProgramAssociation_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentCTEProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentCTEProgramAssociation_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentCTEProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -142000,7 +141589,7 @@
       "function_name": "TF_TR_StudentHomelessProgramAssociation_AbstractIdentity",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentHomelessProgramAssociation_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentHomelessProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentHomelessProgramAssociation_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentHomelessProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -142063,7 +141652,7 @@
       "function_name": "TF_TR_StudentLanguageInstructionProgramAssociation_A_a427138fb0",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentLanguageInstructionProgramAssociation_A_a427138fb0\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentLanguageInstructionProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentLanguageInstructionProgramAssociation_A_a427138fb0\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentLanguageInstructionProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -142091,7 +141680,7 @@
       "function_name": "TF_TR_StudentMigrantEducationProgramAssociation_Abst_bd3ba064b4",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentMigrantEducationProgramAssociation_Abst_bd3ba064b4\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentMigrantEducationProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentMigrantEducationProgramAssociation_Abst_bd3ba064b4\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentMigrantEducationProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -142119,7 +141708,7 @@
       "function_name": "TF_TR_StudentNeglectedOrDelinquentProgramAssociation_d42448777f",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentNeglectedOrDelinquentProgramAssociation_d42448777f\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentNeglectedOrDelinquentProgramAssociation_d42448777f\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -142161,7 +141750,7 @@
       "function_name": "TF_TR_StudentProgramAssociation_AbstractIdentity",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentProgramAssociation_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentProgramAssociation_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -142252,7 +141841,7 @@
       "function_name": "TF_TR_StudentSchoolFoodServiceProgramAssociation_Abs_a18cc7d62d",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentSchoolFoodServiceProgramAssociation_Abs_a18cc7d62d\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentSchoolFoodServiceProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentSchoolFoodServiceProgramAssociation_Abs_a18cc7d62d\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentSchoolFoodServiceProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -142273,7 +141862,7 @@
       "function_name": "TF_TR_StudentSection504ProgramAssociation_AbstractIdentity",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentSection504ProgramAssociation_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentSection504ProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentSection504ProgramAssociation_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentSection504ProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -142357,7 +141946,7 @@
       "function_name": "TF_TR_StudentSpecialEducationProgramAssociation_Abst_1454967766",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentSpecialEducationProgramAssociation_Abst_1454967766\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentSpecialEducationProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentSpecialEducationProgramAssociation_Abst_1454967766\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentSpecialEducationProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -142392,7 +141981,7 @@
       "function_name": "TF_TR_StudentTitleIPartAProgramAssociation_AbstractIdentity",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentTitleIPartAProgramAssociation_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentTitleIPartAProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION edfi.\u0022TF_TR_StudentTitleIPartAProgramAssociation_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Ed-Fi:StudentTitleIPartAProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "edfi",
@@ -142756,7 +142345,7 @@
       "function_name": "TF_TR_StudentArtProgramAssociation_AbstractIdentity",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION sample.\u0022TF_TR_StudentArtProgramAssociation_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Sample:StudentArtProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION sample.\u0022TF_TR_StudentArtProgramAssociation_AbstractIdentity\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027DELETE\u0027 THEN\n        DELETE FROM \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 OR (OLD.\u0022BeginDate\u0022 IS DISTINCT FROM NEW.\u0022BeginDate\u0022 OR OLD.\u0022EducationOrganization_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022EducationOrganization_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_EducationOrganizationId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_EducationOrganizationId\u0022 OR OLD.\u0022ProgramProgram_ProgramName\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramName\u0022 OR OLD.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 IS DISTINCT FROM NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022 OR OLD.\u0022Student_StudentUniqueId\u0022 IS DISTINCT FROM NEW.\u0022Student_StudentUniqueId\u0022) THEN\n        INSERT INTO \u0022edfi\u0022.\u0022GeneralStudentProgramAssociationIdentity\u0022 (\u0022DocumentId\u0022, \u0022DocumentUuid\u0022, \u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022, \u0022Discriminator\u0022)\n        VALUES (NEW.\u0022DocumentId\u0022, NEW.\u0022DocumentUuid\u0022, NEW.\u0022BeginDate\u0022, NEW.\u0022EducationOrganization_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_EducationOrganizationId\u0022, NEW.\u0022ProgramProgram_ProgramName\u0022, NEW.\u0022ProgramProgram_ProgramTypeDescriptor_DescriptorId\u0022, NEW.\u0022Student_StudentUniqueId\u0022, \u0027Sample:StudentArtProgramAssociation\u0027)\n        ON CONFLICT (\u0022DocumentId\u0022)\n        DO UPDATE SET \u0022BeginDate\u0022 = EXCLUDED.\u0022BeginDate\u0022, \u0022EducationOrganization_EducationOrganizationId\u0022 = EXCLUDED.\u0022EducationOrganization_EducationOrganizationId\u0022, \u0022Program_EducationOrganizationId\u0022 = EXCLUDED.\u0022Program_EducationOrganizationId\u0022, \u0022Program_ProgramName\u0022 = EXCLUDED.\u0022Program_ProgramName\u0022, \u0022Program_ProgramTypeDescriptor_DescriptorId\u0022 = EXCLUDED.\u0022Program_ProgramTypeDescriptor_DescriptorId\u0022, \u0022Student_StudentUniqueId\u0022 = EXCLUDED.\u0022Student_StudentUniqueId\u0022;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "sample",

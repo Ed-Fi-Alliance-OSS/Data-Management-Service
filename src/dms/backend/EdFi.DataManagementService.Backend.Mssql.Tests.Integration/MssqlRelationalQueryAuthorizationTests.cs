@@ -916,10 +916,11 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             async () =>
                 await Database.ExecuteNonQueryAsync(
                     """
-                    INSERT INTO [edfi].[School] ([DocumentId], [NameOfInstitution], [SchoolId])
-                    VALUES (@documentId, @nameOfInstitution, @schoolId);
+                    INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [NameOfInstitution], [SchoolId])
+                    VALUES (@documentId, @documentUuid, @nameOfInstitution, @schoolId);
                     """,
                     new SqlParameter("@documentId", documentId),
+                    new SqlParameter("@documentUuid", seed.DocumentUuid.Value),
                     new SqlParameter("@nameOfInstitution", seed.NameOfInstitution),
                     new SqlParameter("@schoolId", seed.SchoolId)
                 ),
