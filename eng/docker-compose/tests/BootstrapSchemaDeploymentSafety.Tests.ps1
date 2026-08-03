@@ -5400,6 +5400,9 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             @{ Name = "MSSQL instance suffix ignored beside an explicit port"; ServerSegment = 'Server=tcp:localhost\ignored,15433'; ExpectLocal = $true }
             @{ Name = "MSSQL (local) with an ignored instance suffix"; ServerSegment = 'Server=tcp:(local)\ignored,15433'; ExpectLocal = $true }
             @{ Name = "MSSQL '.' with an ignored instance suffix"; ServerSegment = 'Server=tcp:.\ignored,15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL instance AFTER the explicit port is ignored too"; ServerSegment = 'Server=tcp:localhost,15433\ignored'; ExpectLocal = $true }
+            @{ Name = "MSSQL instance after a WRONG explicit port stays external"; ServerSegment = 'Server=tcp:localhost,19999\ignored'; ExpectLocal = $false }
+            @{ Name = "MSSQL '.' with the instance after the port"; ServerSegment = 'Server=tcp:.,15433\ignored'; ExpectLocal = $true }
             @{ Name = "MSSQL named instance with NO explicit port stays external"; ServerSegment = 'Server=tcp:localhost\ignored'; ExpectLocal = $false }
             @{ Name = "MSSQL external host with an instance suffix"; ServerSegment = 'Server=tcp:sql.example.com\ignored,15433'; ExpectLocal = $false }
             @{ Name = "MSSQL named pipes np: is not a local token"; ServerSegment = 'Server=np:.'; ExpectLocal = $false }
@@ -5423,9 +5426,12 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             # The token set is SqlClient's own closed set - '.', '(local)', 'localhost' - and the instance
             # rows follow its TCP server-name parsing: with an EXPLICIT comma port the provider uses that
             # port and does not resolve the suffix through SSRP, so 'localhost\ignored,<port>' reaches the
-            # same listener 'localhost,<port>' does. With NO explicit port the suffix stays attached and
-            # the target is not treated as this listener, because resolving a named instance is not
-            # something this phase can do. np:, lpc: and LocalDB are outside the set and stay external.
+            # same listener 'localhost,<port>' does. The suffix can sit on EITHER side of the port and is
+            # irrelevant both ways, so 'localhost,<port>\ignored' is the same endpoint - reading everything
+            # after the comma as the port produced '<port>\ignored', which is not a port, and the target
+            # read as external. With NO explicit port the suffix stays attached and the target is not
+            # treated as this listener, because resolving a named instance is not something this phase can
+            # do. np:, lpc: and LocalDB are outside the set and stay external.
             #
             # The loopback rule was PostgreSQL-only, so 'Server=127.1,<MSSQL_PORT>' reached the local
             # Compose server while classifying as external - the reserved-database guard was skipped
