@@ -412,7 +412,7 @@ public sealed class RelationalDocumentStoreRepository(
             try
             {
                 // One root table serves the whole delete: it is probed for the target, locked, and then
-                // deleted from ahead of the dms.Document row.
+                // deleted — a single statement whose returned DocumentId is the affected-rows signal.
                 var rootTable = ResolveRegularDeleteRootTableOrThrow(mappingSet, resource);
 
                 var resolved = await RelationalDocumentUuidLookupSupport
@@ -640,7 +640,7 @@ public sealed class RelationalDocumentStoreRepository(
     )
     {
         var deleteCommand = OrderedDeleteCommandBuilder.BuildResourceDeleteByDocumentIdCommand(
-            mappingSet.Key.Dialect,
+            sessionCommandExecutor.Dialect,
             rootTable,
             documentId
         );

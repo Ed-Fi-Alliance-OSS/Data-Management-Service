@@ -454,15 +454,16 @@ same reason — so a stale-versus-fresh comparison never straddles two tables
 [`RelationalWriteNoProfilePersister.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs)).
 
 > [!NOTE]
-> **Known lock-ordering hazard (non-descriptor writes).** Locking the root row inverts this writer's
-> lock order relative to the stamping/propagation cascades — the writer takes `Root(D)` first and only
-> reaches `dms.Document(D)` later through the stamping trigger, while a cascade from another
-> transaction still takes `dms.Document(D)` before `Root(D)`. Under that narrow contention pattern the
-> two orders can deadlock, which was impossible while both sides locked `dms.Document` first. It is
-> absorbed rather than prevented: deadlock and serialization failures classify as transient and Core's
-> Polly pipeline replays the **whole write transaction**. Phase 4 dissolves it outright by removing the
-> `dms.Document` write. The full analysis lives in `RelationalDocumentLockCommandBuilder`'s remarks; the
-> descriptor path has no such cycle (`DescriptorWriteHandler._descriptorLockTable`'s remarks).
+> **Resolved lock-ordering hazard (historical).** While the write path still wrote `dms.Document`,
+> locking the root row inverted this writer's lock order relative to the stamping/propagation cascades —
+> the writer took `Root(D)` first and reached `dms.Document(D)` only later through the stamping trigger,
+> while a cascade from another transaction took `dms.Document(D)` before `Root(D)`. That narrow
+> contention pattern could deadlock, and was absorbed rather than prevented: deadlock and serialization
+> failures classify as transient and Core's Polly pipeline replays the **whole write transaction**. The
+> write path no longer writes `dms.Document` (commits `064f08650`, `5db216110`), so the root row is the
+> only row either side takes and the cycle does not exist. The full analysis lives in
+> `RelationalDocumentLockCommandBuilder`'s remarks; the descriptor path never had such a cycle
+> (`DescriptorWriteHandler._descriptorLockTable`'s remarks).
 
 #### Case sensitivity and fail-closed postures
 
@@ -564,16 +565,24 @@ recognizing before hunting one.
 
 #### What is left on `dms.Document` and `dms.ReferentialIdentity`
 
-At this point `dms.Document` is **write-only** and `dms.ReferentialIdentity` is **inert**:
+At this point `dms.Document` is **traffic-free** and `dms.ReferentialIdentity` is **inert**:
 
-- `dms.Document` is still `INSERT`ed — it is what **originates `DocumentId`**, through `RETURNING` on
-  PostgreSQL and `SCOPE_IDENTITY()` on SQL Server, for both resources
-  ([`RelationalWriteNoProfilePersister.BuildInsertDocumentCommand`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs))
-  and descriptors ([`DescriptorWriteHandler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs)) —
-  still `DELETE`d alongside the row it identifies
+- `dms.Document` is **no longer written by anything** (commit `064f08650` + `5db216110`). `DocumentId`
+  now originates from **`dms.DocumentIdSequence`**, through a column default on every resource root
+  table and on `dms.Descriptor`; the root `INSERT` omits the column and returns the drawn value
+  (PostgreSQL `RETURNING "DocumentId"`; SQL Server `OUTPUT INSERTED.[DocumentId] INTO @newDocumentId`
+  plus a trailing `SELECT`, because a plain `OUTPUT` is illegal on the trigger-bearing root table)
+  ([`WritePlanCompiler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs),
+  [`RelationalWriteNoProfilePersister.InsertRootRowAsync`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs)).
+  The descriptor insert does the same on `dms.Descriptor`
+  ([`DescriptorWriteHandler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs)).
+  The delete is a **single statement** on the root (or descriptor) row whose returned `DocumentId` is
+  the affected-rows signal
   ([`OrderedDeleteCommandBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/OrderedDeleteCommandBuilder.cs)),
-  and still `UPDATE`d by the generated stamping triggers. **No production code path reads it** — and
-  no *dead* production reader is left either. The UUIDv5 hash resolver and its
+  and every foreign key into `dms.Document` — from resource roots, from `dms.Descriptor`, and from the
+  abstract identity tables — is **gone**. The table and its own stamping-trigger `UPDATE`s remain
+  emitted until the table is dropped. **No production code path reads it** — and no *dead* production
+  reader is left either. The UUIDv5 hash resolver and its
   `dms.ReferentialIdentity` ⋈ `dms.Document` join are **deleted** — every dialect composition now
   registers the natural-key resolver into the `IReferenceResolver` slot
   ([`WebApplicationBuilderExtensions.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs)) —

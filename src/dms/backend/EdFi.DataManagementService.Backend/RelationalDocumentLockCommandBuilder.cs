@@ -23,15 +23,16 @@ internal static class RelationalDocumentLockCommandBuilder
     /// root row's trigger-maintained document-metadata mirrors. Locking a row in one table while
     /// comparing stamps read from another would split the guarded-no-op comparison across two tables.
     /// <para>
-    /// <b>Known ordering hazard.</b> Locking the root row inverts this writer's lock order relative to
-    /// the stamping/propagation cascades: the writer now takes <c>Root(D)</c> first and only reaches
-    /// <c>dms.Document(D)</c> later, through the stamping trigger during persist, while a cascade
-    /// triggered by another transaction still takes <c>dms.Document(D)</c> before <c>Root(D)</c>. Under
-    /// that narrow contention pattern the two orders can deadlock, which was impossible while both
-    /// sides locked <c>dms.Document</c> first. The resilience pipeline already absorbs it — deadlock and
-    /// serialization failures (SQL Server 1205, PostgreSQL 40P01) classify as transient and replay the
-    /// whole write — and Phase 4 dissolves it outright by removing the <c>dms.Document</c> write, after
-    /// which the root row is the only row either side takes.
+    /// <b>Resolved ordering hazard (historical note).</b> While the write path still wrote
+    /// <c>dms.Document</c>, locking the root row inverted this writer's lock order relative to the
+    /// stamping/propagation cascades: the writer took <c>Root(D)</c> first and reached
+    /// <c>dms.Document(D)</c> only later through the stamping trigger, while a cascade triggered by
+    /// another transaction took <c>dms.Document(D)</c> before <c>Root(D)</c>. That narrow contention
+    /// pattern could deadlock, and the resilience pipeline absorbed it (SQL Server 1205, PostgreSQL 40P01
+    /// classify as transient and replay the whole write). The write path no longer writes
+    /// <c>dms.Document</c> at all — <c>DocumentId</c> comes from <c>dms.DocumentIdSequence</c>, the root
+    /// insert returns it, and the delete touches only the root row — so the root row is now the only row
+    /// either side takes and the cycle does not exist.
     /// </para>
     /// </remarks>
     public static RelationalCommand BuildContentVersionCommand(

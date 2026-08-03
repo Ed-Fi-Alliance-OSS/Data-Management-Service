@@ -473,9 +473,9 @@ internal sealed class DefaultRelationalWriteExecutor(
     /// <summary>
     /// Composes the served <c>_etag</c> for a just-committed write. The write response carries only
     /// the etag; the final committed <c>ContentVersion</c> is persistence metadata (from the persister,
-    /// or the freshness-checked stamp on the guarded no-op path). No <c>dms.Document</c> query, hydrate,
-    /// or hashing occurs here — this is a pure string composition over the stored counter and the
-    /// request's representation selectors (profile, format, link mode).
+    /// or the freshness-checked stamp on the guarded no-op path). No query, hydrate, or hashing occurs
+    /// here — this is a pure string composition over the stored counter and the request's representation
+    /// selectors (profile, format, link mode).
     /// </summary>
     private string ComposeCommittedEtag(RelationalWriteExecutorRequest request, long contentVersion) =>
         _servedEtagComposer.Compose(

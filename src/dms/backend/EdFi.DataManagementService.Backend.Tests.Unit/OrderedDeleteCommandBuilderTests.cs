@@ -14,35 +14,56 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_OrderedDeleteCommandBuilder
 {
-    [TestCase(
-        SqlDialect.Pgsql,
-        "DELETE FROM \"edfi\".\"School\"",
-        "DELETE FROM dms.\"Document\"",
-        "RETURNING \"DocumentId\""
-    )]
-    [TestCase(
-        SqlDialect.Mssql,
-        "DELETE FROM [edfi].[School]",
-        "DELETE FROM [dms].[Document]",
-        "OUTPUT DELETED.[DocumentId]"
-    )]
-    public void It_builds_regular_resource_delete_command_with_root_delete_before_document_delete(
-        SqlDialect dialect,
-        string rootDeleteFragment,
-        string documentDeleteFragment,
-        string finalResultFragment
-    )
+    [Test]
+    public void It_builds_the_pgsql_regular_resource_delete_returning_the_deleted_document_id()
     {
         var command = OrderedDeleteCommandBuilder.BuildResourceDeleteByDocumentIdCommand(
-            dialect,
+            SqlDialect.Pgsql,
             new DbTableName(new DbSchemaName("edfi"), "School"),
             123L
         );
 
-        AssertContainsInOrder(command.CommandText, rootDeleteFragment, documentDeleteFragment);
-        var finalStatement = SplitStatements(command)[^1];
-        finalStatement.Should().Contain(documentDeleteFragment);
-        finalStatement.Should().Contain(finalResultFragment);
+        command
+            .CommandText.Should()
+            .Be(
+                """
+                DELETE FROM "edfi"."School"
+                WHERE "DocumentId" = @documentId
+                RETURNING "DocumentId";
+                """
+            );
+        command.CommandText.Should().NotContain("dms.\"Document\"");
+
+        command.Parameters.Should().ContainSingle();
+        command.Parameters[0].Name.Should().Be("@documentId");
+        command.Parameters[0].Value.Should().Be(123L);
+    }
+
+    [Test]
+    public void It_builds_the_mssql_regular_resource_delete_outputting_the_deleted_document_id()
+    {
+        var command = OrderedDeleteCommandBuilder.BuildResourceDeleteByDocumentIdCommand(
+            SqlDialect.Mssql,
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            123L
+        );
+
+        // A plain OUTPUT is illegal on the trigger-bearing root table, so the deleted id lands in a table
+        // variable and a trailing SELECT exposes it as the affected-rows signal.
+        command
+            .CommandText.Should()
+            .Be(
+                """
+                DECLARE @deletedDocumentId TABLE ([DocumentId] bigint);
+
+                DELETE FROM [edfi].[School]
+                OUTPUT DELETED.[DocumentId] INTO @deletedDocumentId
+                WHERE [DocumentId] = @documentId;
+
+                SELECT [DocumentId] FROM @deletedDocumentId;
+                """
+            );
+        command.CommandText.Should().NotContain("[dms].[Document]");
 
         command.Parameters.Should().ContainSingle();
         command.Parameters[0].Name.Should().Be("@documentId");
@@ -54,7 +75,7 @@ public class Given_OrderedDeleteCommandBuilder
         "DELETE FROM dms.\"Descriptor\"",
         "\"DocumentUuid\" = @documentUuid",
         "\"ResourceKeyId\" = @resourceKeyId",
-        "DELETE FROM dms.\"Document\"",
+        "dms.\"Document\"",
         "RETURNING \"DocumentId\""
     )]
     [TestCase(
@@ -62,16 +83,16 @@ public class Given_OrderedDeleteCommandBuilder
         "DELETE FROM [dms].[Descriptor]",
         "[DocumentUuid] = @documentUuid",
         "[ResourceKeyId] = @resourceKeyId",
-        "DELETE FROM [dms].[Document]",
-        "OUTPUT DELETED.[DocumentId]"
+        "[dms].[Document]",
+        "OUTPUT DELETED.[DocumentId] INTO @deletedDocumentId"
     )]
-    public void It_builds_descriptor_delete_command_with_descriptor_delete_before_document_delete(
+    public void It_builds_the_descriptor_delete_returning_the_deleted_document_id(
         SqlDialect dialect,
         string descriptorDeleteFragment,
         string documentUuidPredicateFragment,
         string resourceKeyIdPredicateFragment,
-        string documentDeleteFragment,
-        string finalResultFragment
+        string documentTableFragment,
+        string returnedIdFragment
     )
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
@@ -83,20 +104,14 @@ public class Given_OrderedDeleteCommandBuilder
             ResourceKeyId
         );
 
-        AssertContainsInOrder(command.CommandText, descriptorDeleteFragment, documentDeleteFragment);
-
         // The descriptor delete predicates directly on the descriptor row's own uuid and ResourceKeyId
-        // mirrors — no dms.Document sub-select — while the trailing document delete and the
-        // descriptor-before-document ordering stay put.
-        var statements = SplitStatements(command);
-        statements.Should().HaveCount(2);
-        statements[0].Should().Contain(descriptorDeleteFragment);
-        statements[0].Should().Contain(documentUuidPredicateFragment);
-        statements[0].Should().Contain(resourceKeyIdPredicateFragment);
-        statements[0].Should().NotContain(documentDeleteFragment);
-        statements[0].Should().NotContain("SELECT");
-        statements[^1].Should().Contain(documentDeleteFragment);
-        statements[^1].Should().Contain(finalResultFragment);
+        // mirrors, and its own returned row is the affected-rows signal — dms.Document is not read or
+        // written.
+        command.CommandText.Should().Contain(descriptorDeleteFragment);
+        command.CommandText.Should().Contain(documentUuidPredicateFragment);
+        command.CommandText.Should().Contain(resourceKeyIdPredicateFragment);
+        command.CommandText.Should().Contain(returnedIdFragment);
+        command.CommandText.Should().NotContain(documentTableFragment);
 
         command.Parameters.Should().HaveCount(2);
         command
@@ -123,21 +138,5 @@ public class Given_OrderedDeleteCommandBuilder
         );
 
         command.CommandText.Should().Contain(expectedTableFragment);
-    }
-
-    private static string[] SplitStatements(RelationalCommand command) =>
-        command.CommandText.Split(
-            ';',
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
-        );
-
-    private static void AssertContainsInOrder(string commandText, string firstFragment, string secondFragment)
-    {
-        commandText.Should().Contain(firstFragment);
-        commandText.Should().Contain(secondFragment);
-        commandText
-            .IndexOf(firstFragment, StringComparison.Ordinal)
-            .Should()
-            .BeLessThan(commandText.IndexOf(secondFragment, StringComparison.Ordinal));
     }
 }

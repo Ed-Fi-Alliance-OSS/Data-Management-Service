@@ -8,8 +8,32 @@ using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
 
+/// <summary>
+/// Builds the single-statement resource and descriptor deletes. Each one deletes the resource root row (or
+/// the <c>dms.Descriptor</c> row) and returns the deleted <c>DocumentId</c>, which is the affected-rows
+/// signal <see cref="RelationalDeleteExecution"/> reads: a returned row means the target existed, no row
+/// means it did not.
+/// </summary>
+/// <remarks>
+/// There is no ordering question left. Deleting a document used to take two statements — the root row and
+/// then the <c>dms.Document</c> row, whose <c>RETURNING</c>/<c>OUTPUT DELETED</c> carried the signal — and
+/// child rows still cascade off the root row's own foreign keys. The root row is now the only row a delete
+/// touches, so it carries the signal itself.
+/// <para>
+/// The signal shape differs by dialect only because SQL Server rejects a plain <c>OUTPUT</c> on a
+/// trigger-bearing table, and every root table plus <c>dms.Descriptor</c> carries the stamping trigger. The
+/// deleted id therefore lands in a table variable and a trailing <c>SELECT</c> exposes it as the row the
+/// executor scans for.
+/// </para>
+/// </remarks>
 internal static class OrderedDeleteCommandBuilder
 {
+    /// <summary>
+    /// The SQL Server table variable carrying the deleted <c>DocumentId</c> out of the <c>OUTPUT</c>
+    /// clause.
+    /// </summary>
+    private const string DeletedDocumentIdTableVariable = "@deletedDocumentId";
+
     private static readonly DbColumnName DocumentIdColumn = new("DocumentId");
 
     public static RelationalCommand BuildResourceDeleteByDocumentIdCommand(
@@ -18,37 +42,39 @@ internal static class OrderedDeleteCommandBuilder
         long documentId
     )
     {
-        var rootDeleteSql = $"""
-            DELETE FROM {FormatTable(dialect, rootTable)}
-            WHERE {FormatColumn(dialect, DocumentIdColumn)} = @documentId;
-            """;
+        var table = FormatTable(dialect, rootTable);
+        var documentIdColumn = FormatColumn(dialect, DocumentIdColumn);
 
-        return new RelationalCommand(
-            $"{rootDeleteSql}{Environment.NewLine}{BuildDocumentDeleteByDocumentIdSql(dialect)}",
-            [new RelationalParameter("@documentId", documentId)]
-        );
+        var sql = dialect switch
+        {
+            SqlDialect.Pgsql => $"""
+                DELETE FROM {table}
+                WHERE {documentIdColumn} = @documentId
+                RETURNING {documentIdColumn};
+                """,
+            SqlDialect.Mssql => $"""
+                DECLARE {DeletedDocumentIdTableVariable} TABLE ({documentIdColumn} bigint);
+
+                DELETE FROM {table}
+                OUTPUT DELETED.{documentIdColumn} INTO {DeletedDocumentIdTableVariable}
+                WHERE {documentIdColumn} = @documentId;
+
+                SELECT {documentIdColumn} FROM {DeletedDocumentIdTableVariable};
+                """,
+            _ => throw new NotSupportedException(
+                $"Relational delete does not support SQL dialect '{dialect}'."
+            ),
+        };
+
+        return new RelationalCommand(sql, [new RelationalParameter("@documentId", documentId)]);
     }
 
     /// <summary>
-    /// Builds the two-statement descriptor delete. The first statement seeks the descriptor row's own
-    /// <c>UX_Descriptor_DocumentUuid</c> index and carries the descriptor row's <c>ResourceKeyId</c>
-    /// mirror as the residual scoping predicate, so no <c>dms.Document</c> read is involved.
+    /// Builds the descriptor delete. It seeks the descriptor row's own <c>UX_Descriptor_DocumentUuid</c>
+    /// index and carries the descriptor row's <c>ResourceKeyId</c> mirror as the residual scoping
+    /// predicate, so no <c>dms.Document</c> read is involved, and returns the deleted <c>DocumentId</c> as
+    /// the affected-rows signal.
     /// </summary>
-    /// <remarks>
-    /// Descriptor-row-first is a convention, not a requirement, and the reason is structural rather than
-    /// anything about trigger bodies. The two statements have <b>no data dependency</b>: each is keyed
-    /// independently by <c>@documentUuid</c> plus <c>@resourceKeyId</c>, so neither needs the other to have
-    /// run. And <c>FK_Descriptor_Document</c> is <c>ON DELETE CASCADE</c> on both dialects, so deleting the
-    /// <c>dms.Document</c> row first would take the descriptor row with it and leave the descriptor
-    /// statement matching nothing rather than erroring. Neither order can fail; this one is kept because it
-    /// is the order every other delete path uses.
-    /// <para>
-    /// The trailing document delete stays in Phase 3 for two reasons: it removes the document row
-    /// (cascading the referential-identity rows away through <c>FK_ReferentialIdentity_Document</c>), and
-    /// its <c>RETURNING</c>/<c>OUTPUT DELETED</c> is the affected-rows signal the delete executor reads —
-    /// which is also why it must stay the <em>second</em> statement.
-    /// </para>
-    /// </remarks>
     public static RelationalCommand BuildDescriptorDeleteCommand(
         SqlDialect dialect,
         DocumentUuid documentUuid,
@@ -60,10 +86,6 @@ internal static class OrderedDeleteCommandBuilder
                 """
                 DELETE FROM dms."Descriptor"
                 WHERE "DocumentUuid" = @documentUuid
-                  AND "ResourceKeyId" = @resourceKeyId;
-
-                DELETE FROM dms."Document"
-                WHERE "DocumentUuid" = @documentUuid
                   AND "ResourceKeyId" = @resourceKeyId
                 RETURNING "DocumentId";
                 """,
@@ -74,14 +96,14 @@ internal static class OrderedDeleteCommandBuilder
             ),
             SqlDialect.Mssql => new RelationalCommand(
                 """
+                DECLARE @deletedDocumentId TABLE ([DocumentId] bigint);
+
                 DELETE FROM [dms].[Descriptor]
+                OUTPUT DELETED.[DocumentId] INTO @deletedDocumentId
                 WHERE [DocumentUuid] = @documentUuid
                   AND [ResourceKeyId] = @resourceKeyId;
 
-                DELETE FROM [dms].[Document]
-                OUTPUT DELETED.[DocumentId]
-                WHERE [DocumentUuid] = @documentUuid
-                  AND [ResourceKeyId] = @resourceKeyId;
+                SELECT [DocumentId] FROM @deletedDocumentId;
                 """,
                 [
                     new RelationalParameter("@documentUuid", documentUuid.Value),
@@ -90,24 +112,6 @@ internal static class OrderedDeleteCommandBuilder
             ),
             _ => throw new NotSupportedException(
                 $"Descriptor delete does not support SQL dialect '{dialect}'."
-            ),
-        };
-
-    private static string BuildDocumentDeleteByDocumentIdSql(SqlDialect dialect) =>
-        dialect switch
-        {
-            SqlDialect.Pgsql => """
-                DELETE FROM dms."Document"
-                WHERE "DocumentId" = @documentId
-                RETURNING "DocumentId";
-                """,
-            SqlDialect.Mssql => """
-                DELETE FROM [dms].[Document]
-                OUTPUT DELETED.[DocumentId]
-                WHERE [DocumentId] = @documentId;
-                """,
-            _ => throw new NotSupportedException(
-                $"Relational delete does not support SQL dialect '{dialect}'."
             ),
         };
 

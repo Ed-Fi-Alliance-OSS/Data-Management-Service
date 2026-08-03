@@ -8411,24 +8411,25 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [TestCase(
         SqlDialect.Pgsql,
         "DELETE FROM \"edfi\".\"School\"",
-        "DELETE FROM dms.\"Document\"",
+        "dms.\"Document\"",
         "RETURNING \"DocumentId\""
     )]
     [TestCase(
         SqlDialect.Mssql,
         "DELETE FROM [edfi].[School]",
-        "DELETE FROM [dms].[Document]",
-        "OUTPUT DELETED.[DocumentId]"
+        "[dms].[Document]",
+        "OUTPUT DELETED.[DocumentId] INTO @deletedDocumentId"
     )]
-    public async Task It_deletes_the_resource_root_table_before_the_document_row(
+    public async Task It_deletes_the_resource_root_row_and_reads_its_own_returned_document_id(
         SqlDialect dialect,
         string rootDeleteFragment,
-        string documentDeleteFragment,
-        string finalResultFragment
+        string documentTableFragment,
+        string returnedIdFragment
     )
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var capturedDeleteCommands = new List<RelationalCommand>();
+        A.CallTo(() => _commandExecutor.Dialect).Returns(dialect);
         ConfigureResolvedDocument(documentId: 123L, documentUuid);
         ConfigureDeleteOutcome(deleted: true, capturedDeleteCommands.Add);
 
@@ -8442,23 +8443,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeOfType<DeleteResult.DeleteSuccess>();
         capturedDeleteCommands.Should().ContainSingle();
         var capturedDeleteCommand = capturedDeleteCommands.Single();
-        var statements = capturedDeleteCommand.CommandText.Split(
-            ';',
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
-        );
-        statements.Should().NotBeEmpty();
-        var finalStatement = statements[^1];
 
+        // The root row is the only row the delete touches, and its own returned DocumentId is the
+        // affected-rows signal.
         capturedDeleteCommand.CommandText.Should().Contain(rootDeleteFragment);
-        capturedDeleteCommand.CommandText.Should().Contain(documentDeleteFragment);
-        finalStatement.Should().Contain(documentDeleteFragment);
-        finalStatement.Should().Contain(finalResultFragment);
-        capturedDeleteCommand
-            .CommandText.IndexOf(rootDeleteFragment, StringComparison.Ordinal)
-            .Should()
-            .BeLessThan(
-                capturedDeleteCommand.CommandText.IndexOf(documentDeleteFragment, StringComparison.Ordinal)
-            );
+        capturedDeleteCommand.CommandText.Should().Contain(returnedIdFragment);
+        capturedDeleteCommand.CommandText.Should().NotContain(documentTableFragment);
         capturedDeleteCommand.Parameters.Should().ContainSingle();
         capturedDeleteCommand.Parameters[0].Name.Should().Be("@documentId");
         capturedDeleteCommand.Parameters[0].Value.Should().Be(123L);

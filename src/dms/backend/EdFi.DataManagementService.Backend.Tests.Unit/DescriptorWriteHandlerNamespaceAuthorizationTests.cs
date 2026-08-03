@@ -220,7 +220,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory
             .Session.Executor.Commands.Should()
             .NotContain(command =>
-                command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
+                command.CommandText.Contains("INSERT INTO dms.\"Descriptor\"", StringComparison.Ordinal)
             );
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -253,7 +253,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory
             .Session.Executor.Commands.Should()
             .NotContain(command =>
-                command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
+                command.CommandText.Contains("INSERT INTO dms.\"Descriptor\"", StringComparison.Ordinal)
             );
     }
 
@@ -282,7 +282,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory
             .Session.Executor.Commands.Should()
             .Contain(command =>
-                command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
+                command.CommandText.Contains("INSERT INTO dms.\"Descriptor\"", StringComparison.Ordinal)
             );
         sessionFactory.Session.CommitCallCount.Should().Be(1);
     }
@@ -318,7 +318,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory
             .Session.Executor.Commands.Should()
             .NotContain(command =>
-                command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
+                command.CommandText.Contains("INSERT INTO dms.\"Descriptor\"", StringComparison.Ordinal)
             );
         sessionFactory.Session.CommitCallCount.Should().Be(0);
     }
@@ -359,7 +359,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory
             .Session.Executor.Commands.Should()
             .NotContain(command =>
-                command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
+                command.CommandText.Contains("INSERT INTO dms.\"Descriptor\"", StringComparison.Ordinal)
             );
         sessionFactory.Session.CommitCallCount.Should().Be(0);
     }
@@ -907,7 +907,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory
             .Session.Executor.Commands.Should()
             .NotContain(command =>
-                command.CommandText.Contains("DELETE FROM dms.\"Document\"", StringComparison.Ordinal)
+                command.CommandText.Contains("DELETE FROM dms.\"Descriptor\"", StringComparison.Ordinal)
             );
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -945,7 +945,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory
             .Session.Executor.Commands.Should()
             .NotContain(command =>
-                command.CommandText.Contains("DELETE FROM dms.\"Document\"", StringComparison.Ordinal)
+                command.CommandText.Contains("DELETE FROM dms.\"Descriptor\"", StringComparison.Ordinal)
             );
     }
 
@@ -975,16 +975,12 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         var deleteCommand = sessionFactory
             .Session.Executor.Commands.Should()
             .ContainSingle(command =>
-                command.CommandText.Contains("DELETE FROM dms.\"Document\"", StringComparison.Ordinal)
+                command.CommandText.Contains("DELETE FROM dms.\"Descriptor\"", StringComparison.Ordinal)
             )
             .Subject;
         deleteCommand.CommandText.Should().Contain("DELETE FROM dms.\"Descriptor\"");
-        deleteCommand
-            .CommandText.IndexOf("DELETE FROM dms.\"Descriptor\"", StringComparison.Ordinal)
-            .Should()
-            .BeLessThan(
-                deleteCommand.CommandText.IndexOf("DELETE FROM dms.\"Document\"", StringComparison.Ordinal)
-            );
+        deleteCommand.CommandText.Should().Contain("RETURNING \"DocumentId\"");
+        deleteCommand.CommandText.Should().NotContain("dms.\"Document\"");
         sessionFactory.Session.CommitCallCount.Should().Be(1);
     }
 
@@ -1014,7 +1010,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory
             .Session.Executor.Commands.Should()
             .NotContain(command =>
-                command.CommandText.Contains("DELETE FROM dms.\"Document\"", StringComparison.Ordinal)
+                command.CommandText.Contains("DELETE FROM dms.\"Descriptor\"", StringComparison.Ordinal)
             );
         sessionFactory.Session.CommitCallCount.Should().Be(0);
     }
@@ -1074,7 +1070,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory
             .Session.Executor.Commands.Should()
             .NotContain(command =>
-                command.CommandText.Contains("DELETE FROM dms.\"Document\"", StringComparison.Ordinal)
+                command.CommandText.Contains("DELETE FROM dms.\"Descriptor\"", StringComparison.Ordinal)
             );
         sessionFactory
             .Session.ScalarCommands.Should()

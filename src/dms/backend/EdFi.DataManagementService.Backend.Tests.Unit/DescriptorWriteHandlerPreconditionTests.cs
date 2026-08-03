@@ -825,7 +825,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory
             .Session.Executor.Commands.Should()
             .NotContain(command =>
-                command.CommandText.Contains("DELETE FROM dms.\"Document\"", StringComparison.Ordinal)
+                command.CommandText.Contains("DELETE FROM dms.\"Descriptor\"", StringComparison.Ordinal)
             );
         sessionFactory.Session.ScalarCommands.Should().ContainSingle();
         sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
@@ -859,7 +859,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory
             .Session.Executor.Commands[2]
             .CommandText.Should()
-            .Contain("DELETE FROM dms.\"Document\"");
+            .Contain("DELETE FROM dms.\"Descriptor\"");
     }
 
     [Test]
@@ -902,26 +902,26 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory
             .Session.Executor.Commands[2]
             .CommandText.Should()
-            .Contain("DELETE FROM dms.\"Document\"");
+            .Contain("DELETE FROM dms.\"Descriptor\"");
     }
 
     [TestCase(
         SqlDialect.Pgsql,
         "DELETE FROM dms.\"Descriptor\"",
-        "DELETE FROM dms.\"Document\"",
+        "dms.\"Document\"",
         "RETURNING \"DocumentId\""
     )]
     [TestCase(
         SqlDialect.Mssql,
         "DELETE FROM [dms].[Descriptor]",
-        "DELETE FROM [dms].[Document]",
-        "OUTPUT DELETED.[DocumentId]"
+        "[dms].[Document]",
+        "OUTPUT DELETED.[DocumentId] INTO @deletedDocumentId"
     )]
-    public async Task It_deletes_the_shared_descriptor_row_before_the_document_row_when_delete_if_match_matches(
+    public async Task It_deletes_only_the_shared_descriptor_row_when_delete_if_match_matches(
         SqlDialect dialect,
         string descriptorDeleteFragment,
-        string documentDeleteFragment,
-        string finalResultFragment
+        string documentTableFragment,
+        string returnedIdFragment
     )
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
@@ -945,21 +945,12 @@ public class Given_Descriptor_Write_Preconditions
         result.Should().BeOfType<DeleteResult.DeleteSuccess>();
         sessionFactory.Session.Executor.Commands.Should().HaveCount(3);
         var deleteCommand = sessionFactory.Session.Executor.Commands[2];
-        var statements = deleteCommand.CommandText.Split(
-            ';',
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
-        );
-        statements.Should().NotBeEmpty();
-        var finalStatement = statements[^1];
 
+        // The descriptor row is the only row the delete touches, and its own returned DocumentId is the
+        // affected-rows signal.
         deleteCommand.CommandText.Should().Contain(descriptorDeleteFragment);
-        deleteCommand.CommandText.Should().Contain(documentDeleteFragment);
-        finalStatement.Should().Contain(documentDeleteFragment);
-        finalStatement.Should().Contain(finalResultFragment);
-        deleteCommand
-            .CommandText.IndexOf(descriptorDeleteFragment, StringComparison.Ordinal)
-            .Should()
-            .BeLessThan(deleteCommand.CommandText.IndexOf(documentDeleteFragment, StringComparison.Ordinal));
+        deleteCommand.CommandText.Should().Contain(returnedIdFragment);
+        deleteCommand.CommandText.Should().NotContain(documentTableFragment);
     }
 
     [Test]
@@ -1034,7 +1025,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
         sessionFactory.Session.Executor.CommandExceptionFactory = command =>
-            command.CommandText.Contains("DELETE FROM dms.\"Document\"", StringComparison.Ordinal)
+            command.CommandText.Contains("DELETE FROM dms.\"Descriptor\"", StringComparison.Ordinal)
                 ? new StubDbException("FK constraint violation")
                 : null;
 
@@ -1092,16 +1083,14 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.DisposeCallCount.Should().Be(1);
         sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
         AssertDescriptorPostProbe(sessionFactory.Session.Executor.Commands[0]);
-        // The insert batch keeps the dms."Document" insert (it originates the DocumentId until Phase 4)
-        // and writes no ReferentialIdentity row.
-        sessionFactory
-            .Session.Executor.Commands[1]
-            .CommandText.Should()
-            .Contain("INSERT INTO dms.\"Document\"");
+        // The insert batch touches dms."Descriptor" alone — DocumentId comes from the column's
+        // dms.DocumentIdSequence default — and writes no ReferentialIdentity row.
         sessionFactory
             .Session.Executor.Commands[1]
             .CommandText.Should()
             .Contain("INSERT INTO dms.\"Descriptor\"");
+        sessionFactory.Session.Executor.Commands[1].CommandText.Should().NotContain("dms.\"Document\"");
+        sessionFactory.Session.Executor.Commands[1].CommandText.Should().NotContain("\"DocumentId\",");
         sessionFactory.Session.Executor.Commands[1].CommandText.Should().NotContain("ReferentialIdentity");
         sessionFactory
             .Session.Executor.Commands[1]
@@ -1131,11 +1120,9 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory
             .Session.Executor.Commands[1]
             .CommandText.Should()
-            .Contain("INSERT INTO [dms].[Document]");
-        sessionFactory
-            .Session.Executor.Commands[1]
-            .CommandText.Should()
-            .Contain("SET @newDocumentId = SCOPE_IDENTITY();");
+            .Contain("INSERT INTO [dms].[Descriptor]");
+        sessionFactory.Session.Executor.Commands[1].CommandText.Should().NotContain("[dms].[Document]");
+        sessionFactory.Session.Executor.Commands[1].CommandText.Should().NotContain("SCOPE_IDENTITY");
         sessionFactory.Session.Executor.Commands[1].CommandText.Should().NotContain("ReferentialIdentity");
         sessionFactory
             .Session.Executor.Commands[1]
@@ -1151,7 +1138,7 @@ public class Given_Descriptor_Write_Preconditions
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.Executor.ResultSets.Enqueue([]);
         sessionFactory.Session.Executor.CommandExceptionFactory = command =>
-            command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
+            command.CommandText.Contains("INSERT INTO dms.\"Descriptor\"", StringComparison.Ordinal)
                 ? new StubDbException("unique constraint UX_Document_DocumentUuid")
                 : null;
         var classifier = A.Fake<IRelationalWriteExceptionClassifier>();
@@ -1180,7 +1167,7 @@ public class Given_Descriptor_Write_Preconditions
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.Executor.ResultSets.Enqueue([]);
         sessionFactory.Session.Executor.CommandExceptionFactory = command =>
-            command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
+            command.CommandText.Contains("INSERT INTO dms.\"Descriptor\"", StringComparison.Ordinal)
                 ? new StubDbException("descriptor unique violation")
                 : null;
         var classifier = A.Fake<IRelationalWriteExceptionClassifier>();
@@ -1227,7 +1214,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory
             .Session.Executor.Commands[1]
             .CommandText.Should()
-            .Contain("INSERT INTO dms.\"Document\"");
+            .Contain("INSERT INTO dms.\"Descriptor\"");
     }
 
     [Test]
@@ -1517,7 +1504,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory
             .Session.Executor.Commands[0]
             .CommandText.Should()
-            .Contain("DELETE FROM dms.\"Document\"");
+            .Contain("DELETE FROM dms.\"Descriptor\"");
     }
 
     private static string ExpectedComposedDescriptorEtag(long contentVersion) =>

@@ -15,10 +15,10 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Backend;
 
 /// <summary>
-/// Descriptor write handler that persists descriptor resources into <c>dms.Descriptor</c>, with a
-/// <c>dms.Document</c> INSERT/DELETE pair that survives only until Phase 4 replaces the identity column
-/// with <c>dms.DocumentIdSequence</c>. Every lookup, lock, and scoping predicate on this path reads the
-/// descriptor row; nothing here touches <c>dms.ReferentialIdentity</c>.
+/// Descriptor write handler that persists descriptor resources into <c>dms.Descriptor</c> and nothing
+/// else. <c>DocumentId</c> is drawn by the descriptor row's own <c>dms.DocumentIdSequence</c> column
+/// default, so no statement here reads or writes <c>dms.Document</c>. Every lookup, lock, and scoping
+/// predicate on this path reads the descriptor row; nothing here touches <c>dms.ReferentialIdentity</c>.
 /// </summary>
 internal sealed class DescriptorWriteHandler(
     IRelationalWriteTargetLookupService targetLookupService,
@@ -53,12 +53,11 @@ internal sealed class DescriptorWriteHandler(
     /// spans two tables.
     /// </summary>
     /// <remarks>
-    /// Lock acquisition order on this path is <c>dms.Descriptor</c> then <c>dms.Document</c> — the writer
-    /// takes the descriptor row here and the stamping trigger takes the document row later, inside the
-    /// triggering statement. No writer takes those in the opposite order: the descriptor DELETE statement
-    /// is also Descriptor-then-Document, and the non-descriptor write path never writes a
-    /// <c>dms.Descriptor</c> row. With no Document-then-Descriptor writer there is no cycle to deadlock
-    /// on, and Phase 4 dissolves the question outright by removing the <c>dms.Document</c> write.
+    /// The descriptor row is the only row this path locks. It used to be the first of two —
+    /// <c>dms.Descriptor</c> then <c>dms.Document</c>, the latter taken by the stamping trigger inside
+    /// the triggering statement — which raised an ordering question that is now moot: no statement on
+    /// this path touches <c>dms.Document</c>, so a single row is locked and there is no order to get
+    /// wrong.
     /// </remarks>
     private static readonly DbTableName _descriptorLockTable = new(new DbSchemaName("dms"), "Descriptor");
 
@@ -1479,12 +1478,12 @@ internal sealed class DescriptorWriteHandler(
             request.TraceId.Value
         );
 
-        var command = request.MappingSet.Key.Dialect switch
+        var command = commandExecutor.Dialect switch
         {
             SqlDialect.Pgsql => BuildPostgresqlInsertCommand(body, documentUuid, resourceKeyId),
             SqlDialect.Mssql => BuildMssqlInsertCommand(body, documentUuid, resourceKeyId),
             _ => throw new NotSupportedException(
-                $"Descriptor write does not support SQL dialect '{request.MappingSet.Key.Dialect}'."
+                $"Descriptor write does not support SQL dialect '{commandExecutor.Dialect}'."
             ),
         };
 
@@ -2046,27 +2045,22 @@ internal sealed class DescriptorWriteHandler(
         short resourceKeyId
     )
     {
-        // The Document CTE originates the DocumentId and nothing else: the descriptor row carries its own
-        // DocumentUuid and ResourceKeyId, bound here, and its own ContentVersion, stamped by the descriptor
-        // stamp trigger. That trigger is AFTER INSERT, so the stamp is not visible to anything inside the
-        // insert statement; the trailing SELECT is a separate statement and therefore re-reads the
-        // post-trigger value a later GET reads.
+        // The descriptor row originates its own DocumentId: the column is omitted so the
+        // dms.DocumentIdSequence default draws it. Nothing downstream of the insert needs that id — the
+        // etag is composed from ContentVersion, which the descriptor stamp trigger writes. That trigger is
+        // AFTER INSERT, so the stamp is not visible to anything inside the insert statement; the trailing
+        // SELECT is a separate statement and therefore re-reads the post-trigger value a later GET reads.
         const string Sql = """
-            WITH new_doc AS (
-                INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
-                VALUES (@documentUuid, @resourceKeyId)
-                RETURNING "DocumentId"
-            )
             INSERT INTO dms."Descriptor" (
-                "DocumentId", "DocumentUuid", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription",
+                "DocumentUuid", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription",
                 "Description", "EffectiveBeginDate", "EffectiveEndDate",
                 "Discriminator", "Uri"
             )
-            SELECT
-                "DocumentId", @documentUuid, @resourceKeyId, @namespace, @codeValue, @shortDescription,
+            VALUES (
+                @documentUuid, @resourceKeyId, @namespace, @codeValue, @shortDescription,
                 @description, @effectiveBeginDate::date, @effectiveEndDate::date,
                 @discriminator, @uri
-            FROM new_doc;
+            );
 
             SELECT "ContentVersion" FROM dms."Descriptor" WHERE "DocumentUuid" = @documentUuid;
             """;
@@ -2080,32 +2074,27 @@ internal sealed class DescriptorWriteHandler(
         short resourceKeyId
     )
     {
-        // The [dms].[Document] insert originates the DocumentId and nothing else: the descriptor row
-        // carries its own DocumentUuid and ResourceKeyId, bound here, and its own ContentVersion, stamped
-        // by the descriptor stamp trigger. That trigger is AFTER INSERT, so OUTPUT on the descriptor
-        // insert would return the pre-trigger value (and SQL Server disallows a plain OUTPUT on a
-        // trigger-bearing table anyway); the trailing SELECT re-reads the post-trigger value a later GET
-        // reads, and keeps the row-producing statement last so the reader's result set is unambiguous.
+        // The descriptor row originates its own DocumentId: the column is omitted so the
+        // dms.DocumentIdSequence default draws it. Nothing downstream of the insert needs that id — the
+        // etag is composed from ContentVersion, which the descriptor stamp trigger writes. That trigger is
+        // AFTER INSERT, so OUTPUT on the descriptor insert would return the pre-trigger value (and SQL
+        // Server disallows a plain OUTPUT on a trigger-bearing table anyway); the trailing SELECT re-reads
+        // the post-trigger value a later GET reads, and keeps the row-producing statement last so the
+        // reader's result set is unambiguous. It seeks UX_Descriptor_DocumentUuid, the same index the PG
+        // twin uses.
         const string Sql = """
-            DECLARE @newDocumentId BIGINT;
-
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            VALUES (@documentUuid, @resourceKeyId);
-
-            SET @newDocumentId = SCOPE_IDENTITY();
-
             INSERT INTO [dms].[Descriptor] (
-                [DocumentId], [DocumentUuid], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription],
+                [DocumentUuid], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription],
                 [Description], [EffectiveBeginDate], [EffectiveEndDate],
                 [Discriminator], [Uri]
             )
             VALUES (
-                @newDocumentId, @documentUuid, @resourceKeyId, @namespace, @codeValue, @shortDescription,
+                @documentUuid, @resourceKeyId, @namespace, @codeValue, @shortDescription,
                 @description, @effectiveBeginDate, @effectiveEndDate,
                 @discriminator, @uri
             );
 
-            SELECT [ContentVersion] FROM [dms].[Descriptor] WHERE [DocumentId] = @newDocumentId;
+            SELECT [ContentVersion] FROM [dms].[Descriptor] WHERE [DocumentUuid] = @documentUuid;
             """;
 
         return new RelationalCommand(Sql, BuildInsertParameters(body, documentUuid, resourceKeyId));
