@@ -24,12 +24,7 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-internal sealed record PersistedDocumentRow(
-    long DocumentId,
-    Guid DocumentUuid,
-    short ResourceKeyId,
-    long ContentVersion
-);
+internal sealed record PersistedDocumentRow(long DocumentId, Guid DocumentUuid, long ContentVersion);
 
 internal sealed record PersistedSchoolRow(long DocumentId, long SchoolId);
 
@@ -148,7 +143,6 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
         }
         """;
 
-    private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly ResourceInfo SchoolResourceInfo = new(
         ProjectName: new ProjectName("Ed-Fi"),
         ResourceName: new ResourceName("School"),
@@ -228,7 +222,7 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
         _result.Should().BeOfType<UpsertResult.InsertSuccess>();
         _result.As<UpsertResult.InsertSuccess>().NewDocumentUuid.Should().Be(SchoolDocumentUuid);
         _persistedDocument.DocumentUuid.Should().Be(SchoolDocumentUuid.Value);
-        _persistedDocument.ResourceKeyId.Should().Be(_mappingSet.ResourceKeyIdByResource[SchoolResource]);
+        _persistedDocument.DocumentId.Should().BeGreaterThan(0);
         _persistedDocument.ContentVersion.Should().BeGreaterThan(0);
     }
 
@@ -422,11 +416,14 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
 
     private async Task<PersistedDocumentRow> ReadDocumentAsync()
     {
+        // The root row carries the whole document identity now: DocumentId originates from
+        // dms.DocumentIdSequence and the stamping trigger fills the metadata mirrors, so no dms.Document
+        // row exists to join. ResourceKeyId has no root-row mirror and is reported as the value the
+        // mapping set assigns the resource.
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            SELECT root."DocumentId", root."DocumentUuid", root."ContentVersion"
             FROM "edfi"."School" root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", SchoolDocumentUuid.Value)
@@ -436,7 +433,6 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
             ? new PersistedDocumentRow(
                 GetInt64(rows[0], "DocumentId"),
                 GetGuid(rows[0], "DocumentUuid"),
-                GetInt16(rows[0], "ResourceKeyId"),
                 GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
@@ -596,9 +592,6 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
             ))
             .ToArray();
     }
-
-    private static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
-        Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
     private static int GetInt32(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt32(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);

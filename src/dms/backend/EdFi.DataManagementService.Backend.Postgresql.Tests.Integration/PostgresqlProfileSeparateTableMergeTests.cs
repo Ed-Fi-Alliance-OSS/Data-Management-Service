@@ -373,8 +373,9 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
             """
             SELECT COUNT(*)
             FROM "sample"."ProfileSeparateTableMergeItemExtension" ext
-            INNER JOIN "dms"."Document" d ON d."DocumentId" = ext."DocumentId"
-            WHERE d."DocumentUuid" = @documentUuid;
+            INNER JOIN "edfi"."ProfileSeparateTableMergeItem" root
+                ON root."DocumentId" = ext."DocumentId"
+            WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid.Value)
         );
@@ -394,8 +395,9 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
                 ext."SampleCategoryDescriptor_DescriptorId",
                 ext."DocumentId"
             FROM "sample"."ProfileSeparateTableMergeItemExtension" ext
-            INNER JOIN "dms"."Document" d ON d."DocumentId" = ext."DocumentId"
-            WHERE d."DocumentUuid" = @documentUuid;
+            INNER JOIN "edfi"."ProfileSeparateTableMergeItem" root
+                ON root."DocumentId" = ext."DocumentId"
+            WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid.Value)
         );
@@ -510,9 +512,9 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
             """
             UPDATE "sample"."ProfileSeparateTableMergeItemExtension" ext
             SET "SampleCategoryDescriptor_DescriptorId" = @descriptorDocumentId
-            FROM "dms"."Document" d
-            WHERE d."DocumentId" = ext."DocumentId"
-              AND d."DocumentUuid" = @documentUuid;
+            FROM "edfi"."ProfileSeparateTableMergeItem" root
+            WHERE root."DocumentId" = ext."DocumentId"
+              AND root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid.Value),
             new NpgsqlParameter("descriptorDocumentId", descriptorDocumentId)

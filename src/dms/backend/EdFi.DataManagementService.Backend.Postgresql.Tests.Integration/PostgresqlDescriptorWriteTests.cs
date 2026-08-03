@@ -591,7 +591,7 @@ public class Given_PostgresqlDescriptorWriteHandler
         await using var dataSource = Npgsql.NpgsqlDataSource.Create(_database.ConnectionString);
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var probe = connection.CreateCommand();
-        probe.CommandText = "SELECT 1 FROM dms.\"Document\" WHERE \"DocumentUuid\" = @documentUuid";
+        probe.CommandText = "SELECT 1 FROM dms.\"Descriptor\" WHERE \"DocumentUuid\" = @documentUuid";
         probe.Parameters.AddWithValue("@documentUuid", documentUuid.Value);
         var stillThere = await probe.ExecuteScalarAsync();
         stillThere.Should().NotBeNull("cross-resource DELETE must not remove the target row");
@@ -656,7 +656,7 @@ public class Given_PostgresqlDescriptorWriteHandler
         await using var dataSource = Npgsql.NpgsqlDataSource.Create(_database.ConnectionString);
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var probe = connection.CreateCommand();
-        probe.CommandText = "SELECT 1 FROM dms.\"Document\" WHERE \"DocumentUuid\" = @documentUuid";
+        probe.CommandText = "SELECT 1 FROM dms.\"Descriptor\" WHERE \"DocumentUuid\" = @documentUuid";
         probe.Parameters.AddWithValue("@documentUuid", documentUuid.Value);
         var stillThere = await probe.ExecuteScalarAsync();
         stillThere.Should().NotBeNull("mismatched If-Match must not delete the descriptor row");

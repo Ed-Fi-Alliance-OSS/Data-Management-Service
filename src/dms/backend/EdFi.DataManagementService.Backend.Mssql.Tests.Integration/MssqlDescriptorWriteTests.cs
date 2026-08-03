@@ -454,7 +454,7 @@ public class Given_MssqlDescriptorWriteHandler
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
         await using var probe = connection.CreateCommand();
-        probe.CommandText = "SELECT 1 FROM [dms].[Document] WHERE [DocumentUuid] = @documentUuid";
+        probe.CommandText = "SELECT 1 FROM [dms].[Descriptor] WHERE [DocumentUuid] = @documentUuid";
         probe.Parameters.Add(new SqlParameter("@documentUuid", documentUuid.Value));
         var stillThere = await probe.ExecuteScalarAsync();
         stillThere.Should().NotBeNull("mismatched If-Match must not delete the descriptor row");

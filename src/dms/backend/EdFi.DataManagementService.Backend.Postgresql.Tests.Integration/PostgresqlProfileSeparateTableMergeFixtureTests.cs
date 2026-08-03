@@ -407,8 +407,7 @@ public class Given_A_ProfiledUpsert_With_Creatable_False_ForNewSeparateTableScop
             """
             SELECT COUNT(*)
             FROM "edfi"."ProfileSeparateTableMergeItem" i
-            INNER JOIN "dms"."Document" d ON d."DocumentId" = i."DocumentId"
-            WHERE d."DocumentUuid" = @documentUuid;
+            WHERE i."DocumentUuid" = @documentUuid;
             """,
             new Npgsql.NpgsqlParameter("documentUuid", DocumentUuid.Value)
         );

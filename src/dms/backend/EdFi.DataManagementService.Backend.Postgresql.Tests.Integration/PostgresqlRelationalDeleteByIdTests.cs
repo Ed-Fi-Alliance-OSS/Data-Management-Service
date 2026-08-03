@@ -120,9 +120,9 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         // Capture DocumentId before delete; counting cascaded rows by DocumentId (rather than
         // joining child tables back to dms.Document on DocumentUuid) guarantees the post-delete
         // assertions are not trivially satisfied by the Document row already being gone.
-        var documentId = await GetDocumentIdAsync(documentUuid);
+        var documentId = await GetDocumentIdAsync("School", documentUuid);
         documentId.Should().NotBeNull();
-        (await CountDocumentsAsync(documentUuid)).Should().Be(1);
+        (await CountRootRowsAsync("School", documentUuid)).Should().Be(1);
         (await CountSchoolRootRowsAsync(documentId!.Value)).Should().Be(1);
         (await CountSchoolAddressRowsAsync(documentId.Value)).Should().BeGreaterThan(0);
         (await CountSchoolAddressPeriodRowsAsync(documentId.Value)).Should().BeGreaterThan(0);
@@ -132,16 +132,16 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         );
 
         delete.Should().BeOfType<DeleteResult.DeleteSuccess>();
-        (await CountDocumentsAsync(documentUuid)).Should().Be(0);
+        (await CountRootRowsAsync("School", documentUuid)).Should().Be(0);
         (await CountSchoolRootRowsAsync(documentId.Value))
             .Should()
-            .Be(0, "the School root row must cascade when the Document row is removed");
+            .Be(0, "the School root row is what the delete statement removes");
         (await CountSchoolAddressRowsAsync(documentId.Value))
             .Should()
-            .Be(0, "SchoolAddress child rows must cascade when the Document row is removed");
+            .Be(0, "SchoolAddress child rows must cascade when the School root row is removed");
         (await CountSchoolAddressPeriodRowsAsync(documentId.Value))
             .Should()
-            .Be(0, "SchoolAddressPeriod child rows must cascade when the Document row is removed");
+            .Be(0, "SchoolAddressPeriod child rows must cascade when the School root row is removed");
         _recordingLogger.Records.Should().NotContain(r => r.Message.Contains("FK constraint '"));
     }
 
@@ -205,7 +205,7 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
                 ["School"],
                 "the FK lives on a grandchild table of the School resource, so the resolver must walk the compiled model across resources and surface the ROOT resource name — not the child table name"
             );
-        (await CountDocumentsAsync(programDocumentUuid))
+        (await CountRootRowsAsync("Program", programDocumentUuid))
             .Should()
             .Be(
                 1,
@@ -243,7 +243,7 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         );
 
         delete.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
-        (await CountDocumentsAsync(documentUuid))
+        (await CountRootRowsAsync("School", documentUuid))
             .Should()
             .Be(1, "cross-resource DELETE must not remove the original School row");
         _recordingLogger.Records.Should().NotContain(r => r.Message.Contains("FK constraint '"));
@@ -306,12 +306,16 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         );
     }
 
-    private async Task<long> CountDocumentsAsync(DocumentUuid documentUuid)
+    /// <summary>
+    /// Counts the resource's own root rows carrying the uuid. The root row is the document now: it
+    /// originates DocumentId from dms.DocumentIdSequence and the delete removes it directly.
+    /// </summary>
+    private async Task<long> CountRootRowsAsync(string rootTable, DocumentUuid documentUuid)
     {
         var rows = await _database.QueryRowsAsync(
-            """
+            $"""
             SELECT COUNT(*) AS "Count"
-            FROM "dms"."Document"
+            FROM "edfi"."{rootTable}"
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid.Value)
@@ -320,12 +324,12 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         return Convert.ToInt64(rows[0]["Count"]);
     }
 
-    private async Task<long?> GetDocumentIdAsync(DocumentUuid documentUuid)
+    private async Task<long?> GetDocumentIdAsync(string rootTable, DocumentUuid documentUuid)
     {
         var rows = await _database.QueryRowsAsync(
-            """
+            $"""
             SELECT "DocumentId"
-            FROM "dms"."Document"
+            FROM "edfi"."{rootTable}"
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid.Value)
