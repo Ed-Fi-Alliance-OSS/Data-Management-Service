@@ -774,6 +774,66 @@ public class Given_MssqlCdcProviderAccessRetry
     }
 
     [Test]
+    public async Task It_should_fail_closed_on_revoked_gating_role_select_for_expected_cdc_object_without_repairing_it()
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        setupResult
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        var revokedCdcObjectName = $"fn_cdc_get_all_changes_{DocumentCaptureInstanceName}";
+        var expectedPermissionToken = $"cdc.{revokedCdcObjectName}.SELECT";
+
+        await ExecuteNonQueryAsync(
+            connection,
+            $"""
+            REVOKE SELECT ON OBJECT::[cdc].[{revokedCdcObjectName}] FROM {QuoteIdentifier(
+                GatingRoleName
+            )};
+            """
+        );
+
+        var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        validateResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(validateResult.Diagnostics));
+        validateResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_GATING_ROLE_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && diagnostic.SafeName.Value == GatingRoleName
+                && diagnostic.ObservedValue!.Contains(
+                    $"missing_cdc_selects:{expectedPermissionToken}",
+                    StringComparison.Ordinal
+                )
+            );
+        validateResult
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeArtifactName.Value == GatingRoleName
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation
+                    .SafeObservedValues["missing_gating_role_cdc_object_selects"]
+                    .Contains(expectedPermissionToken, StringComparison.Ordinal)
+            );
+        (
+            await HasRoleObjectPermissionAsync(
+                connection,
+                GatingRoleName,
+                revokedCdcObjectName,
+                "SELECT",
+                schemaName: "cdc"
+            )
+        )
+            .Should()
+            .BeFalse("validation reports the missing CDC role SELECT without destructive repair");
+    }
+
+    [Test]
     public async Task It_should_fail_closed_on_work_table_capture_without_disabling_it()
     {
         await using var connection = new SqlConnection(_database.ConnectionString);
@@ -1000,12 +1060,13 @@ public class Given_MssqlCdcProviderAccessRetry
         (await IsConnectorDatabaseRoleMemberAsync(connection, "db_datareader")).Should().BeFalse();
         (await IsConnectorDatabaseRoleMemberAsync(connection, "db_datawriter")).Should().BeFalse();
 
-        var gatingRolePermissions = await ReadRoleObjectPermissionsAsync(connection, GatingRoleName);
-        gatingRolePermissions
-            .Should()
-            .OnlyContain(permission =>
-                permission.SchemaName == "cdc" && permission.PermissionName == "SELECT"
-            );
+        var expectedCdcObjectSelects = await ReadExpectedCdcObjectSelectPermissionTokensAsync(connection);
+        expectedCdcObjectSelects.Should().HaveCountGreaterThanOrEqualTo(3);
+        var gatingRolePermissionTokens = (await ReadRoleObjectPermissionsAsync(connection, GatingRoleName))
+            .Select(PermissionToken)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        gatingRolePermissionTokens.Should().Equal(expectedCdcObjectSelects);
     }
 
     private async Task<StableMetadataSnapshot> ReadStableMetadataSnapshotAsync(SqlConnection connection) =>
@@ -1188,6 +1249,58 @@ public class Given_MssqlCdcProviderAccessRetry
 
         return permissions;
     }
+
+    private static async Task<IReadOnlyList<string>> ReadExpectedCdcObjectSelectPermissionTokensAsync(
+        SqlConnection connection
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH expected_capture_instances(capture_instance) AS (
+                SELECT *
+                FROM (VALUES
+                    (N'{DocumentCacheCaptureInstanceName}'),
+                    (N'{DocumentCaptureInstanceName}'),
+                    (N'{HeartbeatCaptureInstanceName}')
+                ) AS expected(capture_instance)
+            ),
+            expected_capture_cdc_objects AS (
+                SELECT object_info.object_id
+                FROM cdc.change_tables capture_info
+                INNER JOIN expected_capture_instances expected
+                    ON expected.capture_instance = capture_info.capture_instance
+                INNER JOIN sys.schemas schema_info
+                    ON schema_info.name = N'cdc'
+                INNER JOIN sys.objects object_info
+                    ON object_info.schema_id = schema_info.schema_id
+                    AND object_info.name IN (
+                        N'fn_cdc_get_all_changes_' + capture_info.capture_instance,
+                        N'fn_cdc_get_net_changes_' + capture_info.capture_instance
+                    )
+                WHERE capture_info.role_name = N'{GatingRoleName}'
+            )
+            SELECT
+                schema_info.name + N'.' + object_info.name + N'.SELECT'
+            FROM expected_capture_cdc_objects expected_cdc_object
+            INNER JOIN sys.objects object_info
+                ON object_info.object_id = expected_cdc_object.object_id
+            INNER JOIN sys.schemas schema_info
+                ON schema_info.schema_id = object_info.schema_id
+            ORDER BY schema_info.name, object_info.name;
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync();
+        List<string> tokens = [];
+        while (await reader.ReadAsync())
+        {
+            tokens.Add(reader.GetString(0));
+        }
+
+        return tokens;
+    }
+
+    private static string PermissionToken(PermissionRow permission) =>
+        $"{permission.SchemaName}.{permission.ObjectName}.{permission.PermissionName}";
 
     private static async Task<IReadOnlyList<string>> ReadGatingRoleMembersAsync(SqlConnection connection)
     {

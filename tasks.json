@@ -808,5 +808,46 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderMetadata"
     ],
     "completed": true
+  },
+  {
+    "category": "sqlserver-security",
+    "description": "High: Narrow SQL Server connector-access validation to the binding-derived CDC gating role and the SQL Server-created read permissions for the three expected capture instances. Remove the post-capture CREATE ROLE fallback, but do not add connector polling, Kafka checks, binding-state mutation, destructive repair, or a generic SQL Server permission-audit framework.",
+    "acceptance-criteria": [
+      "SQL Server connector-access inspection records whether the binding-derived gating role has SELECT on the CDC objects SQL Server created for the three expected capture instances, using safe object names and counts only.",
+      "Exact-match validation requires the binding-derived gating role to exist, have exactly the connector principal as a direct member, be referenced by the three expected capture instances and no unexpected capture instances, have no forbidden or DENY permissions, and have no missing expected CDC object SELECT permissions.",
+      "When all expected capture instances already exist but the binding-derived gating role is missing, InitialCreateOrExactMatch and ValidateOnly fail closed with stable SqlServerGatingRole or connector-principal diagnostics instead of creating a replacement role.",
+      "InitialCreateOrExactMatch may still create a clean missing gating role only before sp_cdc_enable_table creates one or more missing expected capture instances.",
+      "GrantConnectorPrivilegesSql has no post-capture CREATE ROLE fallback; the grant step remains limited to role membership, source SELECT, heartbeat SELECT, and heartbeat column UPDATE.",
+      "Setup results and cdc-provider.mssql.manifest.json expose only safe summaries of expected, observed, or missing CDC role permissions without credentials, raw connection strings, raw database names, or unsanitized catalog identifiers.",
+      "Focused unit coverage plus one SQL Server integration fixture prove a dropped gating role or revoked expected CDC object SELECT permission fails closed without destructive repair.",
+      "The integration assertion checks the expected CDC object permission names or count directly instead of only proving returned rows are within an allowed subset."
+    ],
+    "steps-to-verify": [
+      "Review ExecuteConnectorPrincipalAccessAsync, ConnectorPrincipalAccessSql, GatingRolePreCaptureSql, and GrantConnectorPrivilegesSql in CdcSqlServerHeartbeatDatabaseProvider.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcPrincipalAccess",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
+      "With ConnectionStrings__MssqlAdmin pointing at a disposable SQL Server 2025 instance, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderAccessRetry",
+      "Review CdcProviderAccessRetry assertions to confirm they cover only dropped-role or revoked-CDC-object permission behavior, not a broad SQL Server permission audit."
+    ],
+    "completed": true
+  },
+  {
+    "category": "provider-history",
+    "description": "High: Classify SQL Server ValidateOnly missing database CDC state or missing expected capture instances as provider-history loss evidence. Keep this as provider setup metadata and diagnostics only; do not add connector polling, binding-state latching, offset comparison, Kafka Connect calls, or destructive repair.",
+    "acceptance-criteria": [
+      "ValidateOnly against a database where SQL Server database CDC is disabled returns a ProviderHistoryLossEvidence diagnostic with SourceHistoryLost classification instead of only a generic artifact-missing or FailClosed result.",
+      "ValidateOnly against enabled database CDC with one or more missing binding-derived capture instances returns ProviderHistoryLossEvidence diagnostics with SourceHistoryLost classification for the missing expected capture artifacts.",
+      "ProviderHistoryObservations for the same missing SQL Server database CDC or capture-instance artifacts use SourceHistoryLost.",
+      "InitialCreateOrExactMatch behavior is unchanged: it may create missing SQL Server database CDC or capture artifacts only through the existing allowed initial setup path and does not report SourceHistoryLost for artifacts it creates before connector registration.",
+      "The setup result and cdc-provider.mssql.manifest.json preserve the explicit loss diagnostics and observations with safe artifact inventory only, without raw database names, connection strings, credentials, connector offsets, Kafka Connect calls, or source-history latch mutation.",
+      "Focused unit coverage updates the existing SQL Server validate-only missing database CDC and missing capture-instance fixtures; PostgreSQL slot history-loss behavior remains unchanged."
+    ],
+    "steps-to-verify": [
+      "Review ExecuteDatabaseCdcAsync, DatabaseCdcResult, CaptureInstancesResult, and CdcProviderSetupAggregate unsafe-artifact diagnostic mapping for SQL Server history-loss classification.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcCaptureInstances",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter PostgresqlCdcSlotHistory"
+    ],
+    "completed": false
   }
 ]

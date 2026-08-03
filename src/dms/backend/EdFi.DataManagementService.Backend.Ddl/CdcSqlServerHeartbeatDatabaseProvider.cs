@@ -704,6 +704,10 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     ["gating_role_explicit_permissions"] = "none",
                     ["expected_capture_instances_using_role"] = "0",
                     ["unexpected_capture_instances_using_role"] = "none",
+                    ["expected_cdc_object_count"] = "0",
+                    ["gating_role_cdc_object_select_count"] = "0",
+                    ["gating_role_cdc_object_selects"] = "none",
+                    ["missing_gating_role_cdc_object_selects"] = "none",
                 },
                 GrantInventory: [],
                 Diagnostics:
@@ -730,6 +734,10 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var gatingRoleExplicitPermissions = ReadCsv(row, "gating_role_explicit_permissions");
         var expectedCaptureInstancesUsingRole = ReadInt32(row, "expected_capture_instances_using_role");
         var unexpectedCaptureInstancesUsingRole = ReadCsv(row, "unexpected_capture_instances_using_role");
+        var expectedCdcObjectCount = ReadInt32(row, "expected_cdc_object_count");
+        var gatingRoleCdcObjectSelectCount = ReadInt32(row, "gating_role_cdc_object_select_count");
+        var gatingRoleCdcObjectSelects = ReadCsv(row, "gating_role_cdc_object_selects");
+        var missingGatingRoleCdcObjectSelects = ReadCsv(row, "missing_gating_role_cdc_object_selects");
         var disallowedDatabaseRoles = ReadCsv(row, "disallowed_database_roles");
         var disallowedServerRoles = ReadCsv(row, "disallowed_server_roles");
         var ownership = ReadCsv(row, "ownership");
@@ -767,17 +775,21 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var gatingRoleDirectMembershipIsGrantable =
             gatingRoleDirectMembers.Count == 0
             || gatingRoleDirectMembers.SequenceEqual([connectorPrincipal.Value], StringComparer.Ordinal);
+        var expectedCdcObjectInventoryIsReadable = expectedCdcObjectCount >= _captureTableOrder.Count;
+        var gatingRoleCdcObjectSelectsAreExact =
+            expectedCdcObjectInventoryIsReadable
+            && gatingRoleCdcObjectSelectCount == expectedCdcObjectCount
+            && missingGatingRoleCdcObjectSelects.Count == 0;
         var gatingRoleShapeIsGrantable =
-            !gatingRoleExists
-            || (
-                gatingRoleIsNormalRole
-                && gatingRoleDirectMembershipIsGrantable
-                && gatingRoleParentRoles.Count == 0
-                && gatingRoleOwnedObjects.Count == 0
-                && gatingRoleExplicitPermissions.Count == 0
-                && expectedCaptureInstancesUsingRole == _captureTableOrder.Count
-                && unexpectedCaptureInstancesUsingRole.Count == 0
-            );
+            gatingRoleExists
+            && gatingRoleIsNormalRole
+            && gatingRoleDirectMembershipIsGrantable
+            && gatingRoleParentRoles.Count == 0
+            && gatingRoleOwnedObjects.Count == 0
+            && gatingRoleExplicitPermissions.Count == 0
+            && expectedCaptureInstancesUsingRole == _captureTableOrder.Count
+            && unexpectedCaptureInstancesUsingRole.Count == 0
+            && gatingRoleCdcObjectSelectsAreExact;
         var connectorIdentityIsGrantable =
             connectorExists
             && connectorIsDatabasePrincipal
@@ -808,6 +820,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             && gatingRoleExplicitPermissions.Count == 0
             && expectedCaptureInstancesUsingRole == _captureTableOrder.Count
             && unexpectedCaptureInstancesUsingRole.Count == 0
+            && gatingRoleCdcObjectSelectsAreExact
             && !hasForbiddenPrivileges
             && missingRequiredPrivileges.Count == 0;
         var gatingRoleIsExactMatch =
@@ -818,7 +831,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             && gatingRoleOwnedObjects.Count == 0
             && gatingRoleExplicitPermissions.Count == 0
             && expectedCaptureInstancesUsingRole == _captureTableOrder.Count
-            && unexpectedCaptureInstancesUsingRole.Count == 0;
+            && unexpectedCaptureInstancesUsingRole.Count == 0
+            && gatingRoleCdcObjectSelectsAreExact;
 
         var observedValues = new Dictionary<string, string>
         {
@@ -833,6 +847,10 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ["gating_role_explicit_permissions"] = CsvOrNone(gatingRoleExplicitPermissions),
             ["expected_capture_instances_using_role"] = expectedCaptureInstancesUsingRole.ToString(),
             ["unexpected_capture_instances_using_role"] = CsvOrNone(unexpectedCaptureInstancesUsingRole),
+            ["expected_cdc_object_count"] = expectedCdcObjectCount.ToString(),
+            ["gating_role_cdc_object_select_count"] = gatingRoleCdcObjectSelectCount.ToString(),
+            ["gating_role_cdc_object_selects"] = CsvOrNone(gatingRoleCdcObjectSelects),
+            ["missing_gating_role_cdc_object_selects"] = CsvOrNone(missingGatingRoleCdcObjectSelects),
             ["disallowed_database_roles"] = CsvOrNone(disallowedDatabaseRoles),
             ["disallowed_server_roles"] = CsvOrNone(disallowedServerRoles),
             ["ownership"] = CsvOrNone(ownership),
@@ -855,6 +873,10 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ["gating_role_explicit_permissions"] = CsvOrNone(gatingRoleExplicitPermissions),
             ["expected_capture_instances_using_role"] = expectedCaptureInstancesUsingRole.ToString(),
             ["unexpected_capture_instances_using_role"] = CsvOrNone(unexpectedCaptureInstancesUsingRole),
+            ["expected_cdc_object_count"] = expectedCdcObjectCount.ToString(),
+            ["gating_role_cdc_object_select_count"] = gatingRoleCdcObjectSelectCount.ToString(),
+            ["gating_role_cdc_object_selects"] = CsvOrNone(gatingRoleCdcObjectSelects),
+            ["missing_gating_role_cdc_object_selects"] = CsvOrNone(missingGatingRoleCdcObjectSelects),
         };
 
         var diagnostics = ConnectorPrincipalAccessDiagnostics(
@@ -870,6 +892,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             gatingRoleExplicitPermissions,
             expectedCaptureInstancesUsingRole,
             unexpectedCaptureInstancesUsingRole,
+            expectedCdcObjectCount,
+            gatingRoleCdcObjectSelectCount,
+            missingGatingRoleCdcObjectSelects,
             disallowedDatabaseRoles,
             disallowedServerRoles,
             ownership,
@@ -946,12 +971,6 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 ) AS expected(capture_instance)
             ),
             expected_capture_cdc_objects AS (
-                SELECT capture_info.object_id
-                FROM cdc.change_tables capture_info
-                INNER JOIN expected_capture_instances expected
-                    ON expected.capture_instance = capture_info.capture_instance
-                WHERE capture_info.role_name = @gating_role_name
-                UNION
                 SELECT object_info.object_id
                 FROM cdc.change_tables capture_info
                 INNER JOIN expected_capture_instances expected
@@ -984,6 +1003,36 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     principal_info.is_fixed_role
                 FROM sys.database_principals principal_info
                 WHERE principal_info.name = @gating_role_name
+            ),
+            expected_capture_cdc_object_inventory AS (
+                SELECT
+                    object_info.object_id,
+                    CONVERT(
+                        nvarchar(512),
+                        schema_info.name COLLATE DATABASE_DEFAULT
+                            + N'.'
+                            + object_info.name COLLATE DATABASE_DEFAULT
+                            + N'.SELECT'
+                    ) AS permission_token
+                FROM expected_capture_cdc_objects expected_cdc_object
+                INNER JOIN sys.objects object_info
+                    ON object_info.object_id = expected_cdc_object.object_id
+                INNER JOIN sys.schemas schema_info
+                    ON schema_info.schema_id = object_info.schema_id
+            ),
+            gating_role_expected_cdc_select_permissions AS (
+                SELECT DISTINCT
+                    expected_cdc_object.permission_token
+                FROM expected_capture_cdc_object_inventory expected_cdc_object
+                INNER JOIN gating_role
+                    ON 1 = 1
+                INNER JOIN sys.database_permissions permission_info
+                    ON permission_info.grantee_principal_id = gating_role.principal_id
+                    AND permission_info.class = 1
+                    AND permission_info.major_id = expected_cdc_object.object_id
+                    AND permission_info.minor_id = 0
+                    AND permission_info.permission_name = N'SELECT'
+                    AND permission_info.state IN (N'G', N'W')
             ),
             public_principal AS (
                 SELECT principal_id
@@ -1343,6 +1392,27 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     AND expected.capture_instance IS NULL
                 ), N'') AS unexpected_capture_instances_using_role,
                 COALESCE((
+                    SELECT CONVERT(nvarchar(20), COUNT_BIG(*))
+                    FROM expected_capture_cdc_object_inventory
+                ), N'0') AS expected_cdc_object_count,
+                COALESCE((
+                    SELECT CONVERT(nvarchar(20), COUNT_BIG(*))
+                    FROM gating_role_expected_cdc_select_permissions
+                ), N'0') AS gating_role_cdc_object_select_count,
+                COALESCE((
+                    SELECT STRING_AGG(permission_token, N',') WITHIN GROUP (ORDER BY permission_token)
+                    FROM gating_role_expected_cdc_select_permissions
+                ), N'') AS gating_role_cdc_object_selects,
+                COALESCE((
+                    SELECT STRING_AGG(expected_cdc_object.permission_token, N',') WITHIN GROUP (ORDER BY expected_cdc_object.permission_token)
+                    FROM expected_capture_cdc_object_inventory expected_cdc_object
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM gating_role_expected_cdc_select_permissions selected_permission
+                        WHERE selected_permission.permission_token = expected_cdc_object.permission_token
+                    )
+                ), N'') AS missing_gating_role_cdc_object_selects,
+                COALESCE((
                     SELECT STRING_AGG(disallowed_role.name, N',') WITHIN GROUP (ORDER BY disallowed_role.name)
                     FROM (
                         SELECT DISTINCT reachable_database_roles.name
@@ -1614,11 +1684,6 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 THROW 51000, 'CDC SQL Server connector database principal is missing.', 1;
             END;
 
-            IF DATABASE_PRINCIPAL_ID(N'{gatingRoleLiteral}') IS NULL
-            BEGIN
-                CREATE ROLE {gatingRole};
-            END;
-
             IF NOT EXISTS (
                 SELECT 1
                 FROM sys.database_role_members role_member
@@ -1666,12 +1731,6 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             IF OBJECT_ID(N'cdc.change_tables', N'U') IS NOT NULL
             BEGIN
                 INSERT INTO @expected_capture_cdc_objects (object_id)
-                SELECT capture_info.object_id
-                FROM cdc.change_tables capture_info
-                INNER JOIN @expected_capture_instances expected
-                    ON expected.capture_instance = capture_info.capture_instance
-                WHERE capture_info.role_name = @gating_role_name
-                UNION
                 SELECT object_info.object_id
                 FROM cdc.change_tables capture_info
                 INNER JOIN @expected_capture_instances expected
@@ -3126,6 +3185,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         IReadOnlyList<string> gatingRoleExplicitPermissions,
         int expectedCaptureInstancesUsingRole,
         IReadOnlyList<string> unexpectedCaptureInstancesUsingRole,
+        int expectedCdcObjectCount,
+        int gatingRoleCdcObjectSelectCount,
+        IReadOnlyList<string> missingGatingRoleCdcObjectSelects,
         IReadOnlyList<string> disallowedDatabaseRoles,
         IReadOnlyList<string> disallowedServerRoles,
         IReadOnlyList<string> ownership,
@@ -3156,25 +3218,37 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             gatingRoleExists
             && gatingRoleDirectMembers.Count > 0
             && !gatingRoleDirectMembers.SequenceEqual([connectorPrincipal.Value], StringComparer.Ordinal);
+        var gatingRoleMissingAfterExpectedCaptures =
+            !gatingRoleExists && expectedCaptureInstancesUsingRole == _captureTableOrder.Count;
+        var expectedCdcObjectInventoryIsReadable = expectedCdcObjectCount >= _captureTableOrder.Count;
+        var gatingRoleCdcObjectSelectMismatch =
+            !expectedCdcObjectInventoryIsReadable
+            || gatingRoleCdcObjectSelectCount != expectedCdcObjectCount
+            || missingGatingRoleCdcObjectSelects.Count > 0;
         if (
-            gatingRoleExists
-            && (
-                !gatingRoleIsNormalRole
-                || gatingRoleDirectMemberMismatch
-                || gatingRoleParentRoles.Count > 0
-                || gatingRoleOwnedObjects.Count > 0
-                || gatingRoleExplicitPermissions.Count > 0
-                || expectedCaptureInstancesUsingRole != _captureTableOrder.Count
-                || unexpectedCaptureInstancesUsingRole.Count > 0
-            )
+            gatingRoleMissingAfterExpectedCaptures
+            || gatingRoleExists
+                && (
+                    !gatingRoleIsNormalRole
+                    || gatingRoleDirectMemberMismatch
+                    || gatingRoleParentRoles.Count > 0
+                    || gatingRoleOwnedObjects.Count > 0
+                    || gatingRoleExplicitPermissions.Count > 0
+                    || expectedCaptureInstancesUsingRole != _captureTableOrder.Count
+                    || unexpectedCaptureInstancesUsingRole.Count > 0
+                    || gatingRoleCdcObjectSelectMismatch
+                )
         )
         {
             diagnostics.Add(
                 GatingRoleMismatchDiagnostic(
                     gatingRoleName,
-                    expectedValue: "normal-role-exact-connector-member-no-ownership-no-permissions-three-captures",
+                    expectedValue: "normal-role-exact-connector-member-no-ownership-no-forbidden-permissions-three-captures-expected-cdc-selects",
                     observedParts:
                     [
+                        gatingRoleMissingAfterExpectedCaptures
+                            ? "missing-role-after-expected-captures"
+                            : null,
                         gatingRoleIsNormalRole ? null : "not-normal-role",
                         gatingRoleDirectMemberMismatch
                             ? $"members:{CsvOrNone(gatingRoleDirectMembers)}"
@@ -3194,6 +3268,15 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         unexpectedCaptureInstancesUsingRole.Count == 0
                             ? null
                             : $"unexpected_captures:{CsvOrNone(unexpectedCaptureInstancesUsingRole)}",
+                        expectedCdcObjectInventoryIsReadable
+                            ? null
+                            : $"expected_cdc_object_count:{expectedCdcObjectCount}",
+                        gatingRoleCdcObjectSelectCount == expectedCdcObjectCount
+                            ? null
+                            : $"cdc_select_count:{gatingRoleCdcObjectSelectCount}/{expectedCdcObjectCount}",
+                        missingGatingRoleCdcObjectSelects.Count == 0
+                            ? null
+                            : $"missing_cdc_selects:{CsvOrNone(missingGatingRoleCdcObjectSelects)}",
                     ]
                 )
             );
