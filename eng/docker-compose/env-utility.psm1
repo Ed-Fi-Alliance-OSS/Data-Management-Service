@@ -2785,8 +2785,12 @@ function Assert-MssqlTopologyPhysicalConsistency {
         Every candidate is resolved with the same sequential Compose precedence the topology
         validator uses, so ambient overrides are checked as the values the stack will actually
         receive; both Database and Initial Catalog segments participate independently. A
-        registered candidate, when supplied, must already be the PROVIDER-PARSED value
-        (Get-RegisteredDatastoreDatabaseValue), never raw parameter text. Candidates travel to
+        registered candidate, when supplied, must already be the value the PROVIDER receives -
+        Get-RegisteredDatastoreDatabaseValue for a name about to be registered, or the database
+        parsed out of the resolved/decrypted stored connection string for a datastore being
+        reused - never raw parameter text; -RegisteredDatastoreDatabaseSourceKey names which of
+        the two it is, so the diagnostic points at the input the operator actually supplied.
+        Candidates travel to
         the server as UTF-16 hex only; diagnostics name source keys and the expected-name
         contract and never echo a caller-authored value; failure detail is limited to a category
         and an exception TYPE name.
@@ -2809,6 +2813,13 @@ function Assert-MssqlTopologyPhysicalConsistency {
 
         [AllowEmptyString()]
         [string]$RegisteredDatastoreDatabaseName = "",
+
+        # Which input the registered candidate came from, for the diagnostic and the batch's
+        # per-candidate token. The default is the configure phase's explicit parameter; the
+        # provisioning boundary passes CMS_DATA_STORE_CONNECTION_STRING, because there the
+        # candidate is the database the stored data-store connection string resolves to.
+        [ValidatePattern('\A[A-Za-z0-9_.-]+\z')]
+        [string]$RegisteredDatastoreDatabaseSourceKey = "-DataStoreDatabaseName",
 
         [ValidateRange(1, 600)]
         [int]$TimeoutSeconds = 60
@@ -2879,8 +2890,8 @@ function Assert-MssqlTopologyPhysicalConsistency {
         $candidate["MSSQL_DB_NAME"] = $datastoreName
         $requiredRelation["MSSQL_DB_NAME"] = "distinct"
         if (-not [string]::IsNullOrWhiteSpace($RegisteredDatastoreDatabaseName)) {
-            $candidate["-DataStoreDatabaseName"] = $RegisteredDatastoreDatabaseName
-            $requiredRelation["-DataStoreDatabaseName"] = "distinct"
+            $candidate[$RegisteredDatastoreDatabaseSourceKey] = $RegisteredDatastoreDatabaseName
+            $requiredRelation[$RegisteredDatastoreDatabaseSourceKey] = "distinct"
         }
     }
     $sourceKeys = @($candidate.Keys)

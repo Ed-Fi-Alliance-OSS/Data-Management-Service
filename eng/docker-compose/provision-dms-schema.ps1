@@ -36,7 +36,20 @@ param(
     # and the default "postgresql" is a no-op via Resolve-DatabaseEngineEnvironmentFile's
     # idempotency guard (an env already carrying DMS_DATASTORE=mssql is returned unchanged).
     [ValidateSet("postgresql", "mssql")]
-    [string]$DatabaseEngine = "postgresql"
+    [string]$DatabaseEngine = "postgresql",
+
+    # Declares that the stack this phase provisions was started with -SeparateConfigDatabase, so
+    # the Configuration Service owns the dedicated edfi_configurationservice database and no DMS
+    # schema may be deployed into it. Topology is DECLARED, never inferred from a database-name
+    # spelling: pass the same switch the start invocation used. The start script's -InfraOnly
+    # guidance prints it for you when it applies. Omit it for the default shared topology, where
+    # the datastore and the Configuration Service share one database by design.
+    #
+    # This matters even though the phase takes its targets from what CMS already holds: a reused
+    # data store (configure -NoDataStore) carries a STORED connection string this phase resolves,
+    # decrypts, and hands to SchemaTools, so the dedicated database can be the effective target
+    # without any name having been registered by this run.
+    [Switch]$SeparateConfigDatabase
 )
 
 $ErrorActionPreference = "Stop"
@@ -755,6 +768,71 @@ function New-ProvisionTarget {
     }
 }
 
+function Assert-SeparateTopologyProvisionTarget {
+    <#
+    .SYNOPSIS
+    Separate-topology guard at the provisioning boundary: refuses a target database that is the
+    dedicated Configuration Service database, before SchemaTools is invoked against it.
+
+    .DESCRIPTION
+    The configure phase can only judge a name it is about to REGISTER. With -NoDataStore it
+    registers none - it selects an existing CMS data store - so the value that decides where DMS
+    schema lands is the STORED connection string on that record, which only this phase resolves.
+    This is that missing boundary, and it is the reason the switch reaches this phase at all: a
+    reused data store pointing at edfi_configurationservice would otherwise receive DMS DDL in
+    separate mode.
+
+    Judged here rather than earlier because $Target is the first place the real database name
+    exists: New-ProvisionTarget has already resolved ${...} placeholders, decrypted a CMS-encrypted
+    connection string, detected the dialect, and extracted the database. Parsing the raw
+    connectionString CMS hands back would be false assurance - it is base64 ciphertext.
+
+    No new comparer, query, parser, or collation rule: each engine's established authority answers,
+    on the value that engine's provider will actually receive.
+
+      - PostgreSQL: Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase, the same offline
+        predicate the registration path uses. Sound here for the same reason: SchemaTools creates
+        the database with a QUOTED identifier, so nothing folds and only a name that parses back AS
+        the reserved name collides.
+      - SQL Server: Assert-MssqlTopologyPhysicalConsistency, which asks the RUNNING instance under
+        its own collation, because a name's physical identity there depends on the instance
+        collation and no offline comparer can decide it. The candidate is labelled with the fixed
+        CMS_DATA_STORE_CONNECTION_STRING source key so the diagnostic names where it came from.
+
+    Diagnostics name the fixed source key, the data store id, and the reserved literal only - never
+    the stored connection string, its credentials, the decrypted text, or the resolved database.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        $Target,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $EnvValues,
+
+        [Parameter(Mandatory)]
+        [string]
+        $EnvironmentFile
+    )
+
+    if ($Target.Dialect -eq "mssql") {
+        $mssqlPassword = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+        Assert-MssqlTopologyPhysicalConsistency `
+            -EnvironmentFile $EnvironmentFile `
+            -ContainerName "dms-mssql" `
+            -SaPassword $mssqlPassword `
+            -RegisteredDatastoreDatabaseName $Target.DatabaseName `
+            -RegisteredDatastoreDatabaseSourceKey "CMS_DATA_STORE_CONNECTION_STRING"
+        return
+    }
+
+    if (Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase `
+            -DatabaseEngine "postgresql" `
+            -DatastoreDatabaseName $Target.DatabaseName) {
+        throw "CMS data store $(Format-LogSafeText $Target.DataStoreId) resolves to the dedicated 'edfi_configurationservice' database, which -SeparateConfigDatabase reserves for the Configuration Service. Provisioning would deploy the DMS schema into it and reintroduce the shared topology the switch opts out of. The target database name came from 'CMS_DATA_STORE_CONNECTION_STRING' - the connection string stored on that data store record - so re-register or reset the data store rather than changing this phase's inputs. The resolved value is withheld."
+    }
+}
+
 function Invoke-DmsSchemaProvision {
     param(
         [string]
@@ -958,7 +1036,10 @@ function Invoke-ProvisionDmsSchema {
 
         [ValidateSet("postgresql", "mssql")]
         [string]
-        $DatabaseEngine = "postgresql"
+        $DatabaseEngine = "postgresql",
+
+        [Switch]
+        $SeparateConfigDatabase
     )
 
     if ($DataStoreId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
@@ -972,6 +1053,21 @@ function Invoke-ProvisionDmsSchema {
     # files are already composed and no-op via the DMS_DATASTORE guard in
     # Resolve-DatabaseEngineEnvironmentFile.
     $resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $resolvedEnvironmentFile -DockerComposeRoot $PSScriptRoot
+    if ($SeparateConfigDatabase) {
+        # Same second composition step configure-local-data-store.ps1 runs, in the same order and
+        # after the same engine overlay: the separate-topology continuation is invoked with the
+        # operator's ORIGINAL -EnvironmentFile, while the topology marker the MSSQL authority reads
+        # lives in the derived file the start phase wrote. Recomputing it idempotently from the
+        # switch reproduces that same deterministic .derived/<name>.topology artifact, so the guard
+        # below asks the live authority about the environment the running stack actually received.
+        # Shared mode never calls this, so its effective file - and every value read from it -
+        # is unchanged.
+        $resolvedEnvironmentFile = Resolve-CmsDatabaseTopologyEnvironmentFile `
+            -BaseEnvironmentFile $resolvedEnvironmentFile `
+            -DatabaseEngine $DatabaseEngine `
+            -SeparateConfigDatabase `
+            -DockerComposeRoot $PSScriptRoot
+    }
     $envValues = ReadValuesFromEnvFile -EnvironmentFile $resolvedEnvironmentFile
     $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
     $tenant = Get-EnvValueOrDefault -EnvValues $envValues -Name "CONFIG_SERVICE_TENANT"
@@ -1011,6 +1107,21 @@ function Invoke-ProvisionDmsSchema {
         -Tenant $tenant
 
     $targets = @($selectedInstances | ForEach-Object { New-ProvisionTarget -Instance $_ -EnvValues $envValues })
+
+    # Separate-topology guard for EVERY selected target, whether this run's configure phase
+    # registered its name or reused an existing data store's stored connection string. It runs
+    # after the targets are built - each target's DatabaseName is the resolved, decrypted,
+    # dialect-aware database SchemaTools will receive - and before the tool is resolved, so a refusal
+    # deploys no DDL anywhere, including into targets that would have been provisioned first.
+    if ($SeparateConfigDatabase) {
+        foreach ($candidateTarget in $targets) {
+            Assert-SeparateTopologyProvisionTarget `
+                -Target $candidateTarget `
+                -EnvValues $envValues `
+                -EnvironmentFile $resolvedEnvironmentFile
+        }
+    }
+
     # Group by the effective provisioning target identity (dialect + translated host + port +
     # database + user). Grouping only by database name would silently collapse two instances
     # that share a database name on different physical hosts or under different users.
@@ -1055,4 +1166,5 @@ Invoke-ProvisionDmsSchema `
     -EnvironmentFile $EnvironmentFile `
     -DataStoreId $DataStoreId `
     -SchoolYear $SchoolYear `
-    -DatabaseEngine $DatabaseEngine
+    -DatabaseEngine $DatabaseEngine `
+    -SeparateConfigDatabase:$SeparateConfigDatabase

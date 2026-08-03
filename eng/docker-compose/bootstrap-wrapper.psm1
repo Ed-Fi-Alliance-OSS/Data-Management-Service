@@ -542,10 +542,12 @@ function Invoke-BootstrapWrapper {
 
         # Redirects the CMS (Configuration Service) database to a dedicated
         # edfi_configurationservice database instead of sharing the DMS datastore database.
-        # Forwarded to the start-script invocations below and to configure-local-data-store.ps1,
-        # which registers the DMS datastore and must therefore know it may not land in the
-        # dedicated Configuration Service database. NOT forwarded to provision-dms-schema.ps1,
-        # which takes its targets from what CMS already holds. Supported on both database engines.
+        # Forwarded to the start-script invocations below and to both datastore phases, because
+        # each owns a different half of the same rule that the DMS datastore may not land in the
+        # dedicated Configuration Service database: configure-local-data-store.ps1 judges a name it
+        # is about to register, and provision-dms-schema.ps1 judges the database each selected
+        # target actually resolves to - the only place a REUSED data store's stored connection
+        # string is known. Supported on both database engines.
         [Switch]$SeparateConfigDatabase,
 
         # Data standard version for the local-bootstrap package surface. For
@@ -926,6 +928,10 @@ function Invoke-BootstrapWrapper {
             DataStoreId = $configuredDataStoreIds
             DatabaseEngine = $DatabaseEngine
         }
+        # The provision phase is the boundary where a REUSED data store's stored connection string
+        # becomes the real target database, so it needs the same topology declaration the configure
+        # and start phases got. Forwarded exactly as the configure args are.
+        if ($SeparateConfigDatabase) { $provisionArgs.SeparateConfigDatabase = $true }
 
         # provision-dms-schema.ps1 throws on failure (no exit code); clear any stale native exit code first.
         $global:LASTEXITCODE = 0
