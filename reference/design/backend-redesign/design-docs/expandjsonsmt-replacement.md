@@ -6,6 +6,13 @@ epic: DMS-1089
 
 # Design: Replacement for `expandjsonsmt`
 
+> **Superseded Kafka/Debezium content:** the DMS Debezium/Kafka source-connector pipeline this design
+> targets has been abandoned. `eng/docker-compose/kafka.yml`, `kafka-ui.yml`, the connector configs and
+> the `-EnableKafka` / `-EnableKafkaUI` switches referenced here no longer exist, and no replacement
+> streaming design has been adopted. Retained as the record of the `expandjsonsmt` analysis. What DMS
+> records about changes today is the tracked-change tables in
+> [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 > Status: Proposed (DMS-911 spike). This document is the design deliverable for
 > DMS-911 ("Look for an alternative for `expandjsonsmt`"). It records the
 > investigation, the recommended path, and the follow-up implementation ticket.

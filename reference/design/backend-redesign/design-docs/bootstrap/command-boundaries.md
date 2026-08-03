@@ -1,5 +1,11 @@
 # DMS-916 Bootstrap — Command Boundaries
 
+> **Superseded Kafka content:** `-EnableKafkaUI` no longer exists on any start or bootstrap script.
+> The Kafka/Debezium compose surface (`kafka.yml`, `kafka-ui.yml`) and its plumbing were removed, so
+> passing that switch is now a hard parameter-binding error rather than an ignored opt-in. Every
+> occurrence of `-EnableKafkaUI` in the input and forwarding tables below should be read as struck; the
+> rest of each table is current.
+
 **Basis:** `bootstrap-design.md` Sections 3-12.
 `responsibility-inventory.md` is a supporting summary and must not restate this file as a competing
 ownership contract.

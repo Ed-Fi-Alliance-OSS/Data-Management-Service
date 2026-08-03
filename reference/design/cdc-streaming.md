@@ -1,10 +1,15 @@
 # DMS Feature: Change Data Capture to Stream
 
 > [!NOTE]
-> References to the `dms.documents` table in this document predate the current
-> relational backend. Support for OpenSearch/Elasticsearch as a read store has
-> been dropped. The Debezium + Kafka architecture remains the intended pattern;
-> the specific table and column names will differ in the current implementation.
+> **Superseded direction — retained as historical context.** References to the
+> `dms.documents` table in this document predate the current relational backend,
+> which has no such table. Support for OpenSearch/Elasticsearch as a read store was
+> dropped, and the Debezium + Kafka architecture has since been abandoned as well:
+> the Kafka/Debezium compose files, connector configurations and their opt-in
+> switches were removed from the repository, and no replacement streaming design has
+> been adopted. What DMS records about changes today is the per-resource
+> tracked-change tables described in
+> [`docs/RELATIONAL-BACKEND.md` §4](../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 As described in the architectural vision, the Data Management Service (DMS) will
 utilize Change Data Capture (CDC) technology to load incoming data into other

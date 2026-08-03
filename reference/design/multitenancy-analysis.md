@@ -1,9 +1,12 @@
 # Multi-Tenancy Data Segregation Analysis
 
 > [!IMPORTANT]
-> Plans for utilizing OpenSearch/Elasticsearch to support the API's read load
-> have been dropped. The OpenSearch sections below are preserved for historical
-> context. The database and Kafka analysis and design direction remain relevant.
+> Plans for utilizing OpenSearch/Elasticsearch to support the API's read load have
+> been dropped, and the **Kafka/Debezium direction has since been abandoned as
+> well** — the Kafka compose surface and its opt-in switches were removed from the
+> repository and no replacement streaming design has been adopted. The OpenSearch
+> and Kafka sections below are both preserved for historical context only. The
+> database data-segregation analysis and its design direction remain relevant.
 
 ## Introduction
 

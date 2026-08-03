@@ -5,6 +5,10 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1153
 
 # Story: Bootstrap Entry Point and IDE Workflow
 
+> **Superseded Kafka content:** `-EnableKafkaUI`, listed here as a forwarded pass-through parameter, was
+> removed with the Kafka/Debezium compose surface and is now a hard parameter-binding error. Read the
+> pass-through lists below without it; the rest of this story is current.
+
 ## Description
 
 Implement the infrastructure-lifecycle phase command (`start-local-dms.ps1`) and document the IDE

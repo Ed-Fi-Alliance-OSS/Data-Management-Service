@@ -1,5 +1,10 @@
 # DMS-916: Bootstrap DMS Design — Developer Environment Initialization
 
+> **Superseded Kafka content:** `-EnableKafkaUI` no longer exists on any start or bootstrap script — the
+> Kafka/Debezium compose surface it gated was removed, so passing it is now a hard parameter-binding
+> error. Read the infrastructure-UI-flag example below with `-EnableSwaggerUI` as the only surviving
+> member of that class; the rest of the design is current.
+
 ## Table of Contents
 
 - [1. Introduction](#1-introduction)

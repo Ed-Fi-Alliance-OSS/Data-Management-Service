@@ -5,6 +5,11 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1152
 
 # Story: API-Based XML Seed Delivery for Bootstrap
 
+> **Superseded Kafka content:** the `-EnableKafkaUI` entry in the parameter-delivery table below is no
+> longer accurate — that switch was removed with the Kafka/Debezium compose surface and is now a hard
+> parameter-binding error. `-EnableSwaggerUI`, `-EnableConfig`, `-EnvironmentFile` and
+> `-IdentityProvider` are unaffected, as is the rest of this story.
+
 ## Description
 
 Implement the story-aligned API-based seed path for developer bootstrap. This slice delivers the API-based
