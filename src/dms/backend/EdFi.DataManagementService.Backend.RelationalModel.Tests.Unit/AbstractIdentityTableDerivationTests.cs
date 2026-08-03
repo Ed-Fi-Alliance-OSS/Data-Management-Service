@@ -181,19 +181,13 @@ public class Given_Abstract_Identity_Table_Derivation
     }
 
     /// <summary>
-    /// It should use no action on update for document fk.
+    /// It should carry no foreign key: the maintenance trigger copies DocumentId from the concrete root
+    /// row, and no core document table remains to reference.
     /// </summary>
     [Test]
-    public void It_should_use_no_action_on_update_for_document_fk()
+    public void It_should_not_declare_a_document_foreign_key()
     {
-        var foreignKey = _abstractIdentityTable
-            .TableModel.Constraints.OfType<TableConstraint.ForeignKey>()
-            .Single();
-
-        foreignKey.TargetTable.Schema.Value.Should().Be("dms");
-        foreignKey.TargetTable.Name.Should().Be("Document");
-        foreignKey.OnDelete.Should().Be(ReferentialAction.Cascade);
-        foreignKey.OnUpdate.Should().Be(ReferentialAction.NoAction);
+        _abstractIdentityTable.TableModel.Constraints.OfType<TableConstraint.ForeignKey>().Should().BeEmpty();
     }
 
     /// <summary>

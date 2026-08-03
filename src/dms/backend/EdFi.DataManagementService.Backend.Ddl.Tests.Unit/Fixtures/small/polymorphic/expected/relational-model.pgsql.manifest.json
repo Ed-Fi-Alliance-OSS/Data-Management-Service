@@ -113,22 +113,6 @@
               "EducationOrganizationId",
               "DocumentId"
             ]
-          },
-          {
-            "kind": "ForeignKey",
-            "name": "FK_EducationOrganizationIdentity_Document",
-            "columns": [
-              "DocumentId"
-            ],
-            "target_table": {
-              "schema": "dms",
-              "name": "Document"
-            },
-            "target_columns": [
-              "DocumentId"
-            ],
-            "on_delete": "Cascade",
-            "on_update": "NoAction"
           }
         ]
       }
@@ -852,22 +836,6 @@
               "columns": [
                 "LocalEducationAgencyId"
               ]
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_LocalEducationAgency_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
             }
           ]
         }
@@ -1046,22 +1014,6 @@
               "columns": [
                 "SchoolId"
               ]
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_School_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
             }
           ]
         }

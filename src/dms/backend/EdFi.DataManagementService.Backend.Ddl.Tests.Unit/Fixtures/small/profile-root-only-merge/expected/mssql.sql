@@ -41,6 +41,13 @@ IF NOT EXISTS (
 )
 CREATE SEQUENCE [dms].[CollectionItemIdSequence] START WITH 1;
 
+IF NOT EXISTS (
+    SELECT 1 FROM sys.sequences s
+    JOIN sys.schemas sch ON s.schema_id = sch.schema_id
+    WHERE sch.name = N'dms' AND s.name = N'DocumentIdSequence'
+)
+CREATE SEQUENCE [dms].[DocumentIdSequence] START WITH 1;
+
 -- ==========================================================
 -- Phase 4: Functions and Types
 -- ==========================================================
@@ -133,7 +140,7 @@ CREATE TYPE [dms].[UniqueIdentifierTable] AS TABLE(
 IF OBJECT_ID(N'dms.Descriptor', N'U') IS NULL
 CREATE TABLE [dms].[Descriptor]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Descriptor_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [Namespace] nvarchar(255) NOT NULL,
     [CodeValue] nvarchar(50) NOT NULL,
     [ShortDescription] nvarchar(75) NOT NULL,
@@ -300,17 +307,6 @@ CREATE TABLE [dms].[SchemaComponent]
 -- ==========================================================
 -- Phase 6: Foreign Keys
 -- ==========================================================
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Descriptor_Document' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
-)
-ALTER TABLE [dms].[Descriptor]
-ADD CONSTRAINT [FK_Descriptor_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -483,7 +479,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'tracked_changes_edfi')
 IF OBJECT_ID(N'edfi.ProfileRootOnlyMergeItem', N'U') IS NULL
 CREATE TABLE [edfi].[ProfileRootOnlyMergeItem]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_ProfileRootOnlyMergeItem_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProfileRootOnlyMergeItem_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ProfileRootOnlyMergeItem_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProfileRootOnlyMergeItem_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -513,7 +509,7 @@ CREATE TABLE [edfi].[ProfileRootOnlyMergeItem]
 IF OBJECT_ID(N'edfi.Student', N'U') IS NULL
 CREATE TABLE [edfi].[Student]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Student_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Student_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Student_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Student_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -567,17 +563,6 @@ CREATE TABLE [tracked_changes_edfi].[Student]
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ProfileRootOnlyMergeItem_Document' AND parent_object_id = OBJECT_ID(N'edfi.ProfileRootOnlyMergeItem')
-)
-ALTER TABLE [edfi].[ProfileRootOnlyMergeItem]
-ADD CONSTRAINT [FK_ProfileRootOnlyMergeItem_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescriptor_Unified' AND parent_object_id = OBJECT_ID(N'edfi.ProfileRootOnlyMergeItem')
 )
 ALTER TABLE [edfi].[ProfileRootOnlyMergeItem]
@@ -596,17 +581,6 @@ ADD CONSTRAINT [FK_ProfileRootOnlyMergeItem_StudentReference_RefKey]
 FOREIGN KEY ([StudentReference_StudentUniqueId], [StudentReference_DocumentId])
 REFERENCES [edfi].[Student] ([StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Student_Document' AND parent_object_id = OBJECT_ID(N'edfi.Student')
-)
-ALTER TABLE [edfi].[Student]
-ADD CONSTRAINT [FK_Student_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (

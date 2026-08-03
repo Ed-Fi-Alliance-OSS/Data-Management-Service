@@ -16,7 +16,6 @@ internal static class ConstraintNaming
     internal const string ReferenceKeyToken = "RefKey";
     internal const string AllNoneToken = "AllNone";
     internal const string NullOrTrueToken = "NullOrTrue";
-    internal const string DocumentToken = "Document";
 
     private const string DescriptorIdSuffix = "_DescriptorId";
 

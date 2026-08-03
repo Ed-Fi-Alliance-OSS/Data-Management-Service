@@ -3,8 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.RelationalModel.Naming;
-
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 
 /// <summary>
@@ -75,41 +73,6 @@ internal static class ForeignKeyStorageValidator
             $"Foreign key '{foreignKey.Name}' from table '{referencingTable}' to table '{referencedTable}' "
                 + $"contains invalid {columnRole} column(s): {string.Join(", ", offendingColumns)}. Foreign key "
                 + "columns must reference stored columns and cannot use synthetic presence columns."
-        );
-    }
-
-    /// <summary>
-    /// Validates that dms.Document foreign-key targets include only DocumentId.
-    /// </summary>
-    public static void ValidateDocumentTargetColumns(
-        TableConstraint.ForeignKey foreignKey,
-        DbTableName referencingTable,
-        DbTableName referencedTable,
-        IReadOnlyList<DbColumnName> targetColumns
-    )
-    {
-        if (targetColumns.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Foreign key '{foreignKey.Name}' from table '{referencingTable}' to table "
-                    + $"'{referencedTable}' must define at least one target column."
-            );
-        }
-
-        var invalidColumns = targetColumns
-            .Where(column => !column.Equals(RelationalNameConventions.DocumentIdColumnName))
-            .Select(column => $"'{column.Value}'")
-            .ToArray();
-
-        if (invalidColumns.Length == 0)
-        {
-            return;
-        }
-
-        throw new InvalidOperationException(
-            $"Foreign key '{foreignKey.Name}' from table '{referencingTable}' to table '{referencedTable}' "
-                + $"contains invalid target column(s): {string.Join(", ", invalidColumns)}. Foreign keys "
-                + "targeting dms.Document must reference only DocumentId."
         );
     }
 }

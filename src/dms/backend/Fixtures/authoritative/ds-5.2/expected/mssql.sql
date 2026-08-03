@@ -41,6 +41,13 @@ IF NOT EXISTS (
 )
 CREATE SEQUENCE [dms].[CollectionItemIdSequence] START WITH 1;
 
+IF NOT EXISTS (
+    SELECT 1 FROM sys.sequences s
+    JOIN sys.schemas sch ON s.schema_id = sch.schema_id
+    WHERE sch.name = N'dms' AND s.name = N'DocumentIdSequence'
+)
+CREATE SEQUENCE [dms].[DocumentIdSequence] START WITH 1;
+
 -- ==========================================================
 -- Phase 4: Functions and Types
 -- ==========================================================
@@ -133,7 +140,7 @@ CREATE TYPE [dms].[UniqueIdentifierTable] AS TABLE(
 IF OBJECT_ID(N'dms.Descriptor', N'U') IS NULL
 CREATE TABLE [dms].[Descriptor]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Descriptor_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [Namespace] nvarchar(255) NOT NULL,
     [CodeValue] nvarchar(50) NOT NULL,
     [ShortDescription] nvarchar(75) NOT NULL,
@@ -300,17 +307,6 @@ CREATE TABLE [dms].[SchemaComponent]
 -- ==========================================================
 -- Phase 6: Foreign Keys
 -- ==========================================================
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Descriptor_Document' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
-)
-ALTER TABLE [dms].[Descriptor]
-ADD CONSTRAINT [FK_Descriptor_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -485,7 +481,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'tracked_changes_edfi')
 IF OBJECT_ID(N'edfi.AcademicWeek', N'U') IS NULL
 CREATE TABLE [edfi].[AcademicWeek]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_AcademicWeek_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AcademicWeek_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_AcademicWeek_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AcademicWeek_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -509,7 +505,7 @@ CREATE TABLE [edfi].[AcademicWeek]
 IF OBJECT_ID(N'edfi.AccountabilityRating', N'U') IS NULL
 CREATE TABLE [edfi].[AccountabilityRating]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_AccountabilityRating_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AccountabilityRating_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_AccountabilityRating_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AccountabilityRating_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -536,7 +532,7 @@ CREATE TABLE [edfi].[AccountabilityRating]
 IF OBJECT_ID(N'edfi.Assessment', N'U') IS NULL
 CREATE TABLE [edfi].[Assessment]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Assessment_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Assessment_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Assessment_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Assessment_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -732,7 +728,7 @@ CREATE TABLE [edfi].[AssessmentSection]
 IF OBJECT_ID(N'edfi.AssessmentAdministration', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentAdministration]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_AssessmentAdministration_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentAdministration_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_AssessmentAdministration_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentAdministration_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -786,7 +782,7 @@ CREATE TABLE [edfi].[AssessmentAdministrationPeriod]
 IF OBJECT_ID(N'edfi.AssessmentAdministrationParticipation', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentAdministrationParticipation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_AssessmentAdministrationParticipation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentAdministrationParticipation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_AssessmentAdministrationParticipation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentAdministrationParticipation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -829,7 +825,7 @@ CREATE TABLE [edfi].[AssessmentAdministrationParticipationAdministrationPointOfC
 IF OBJECT_ID(N'edfi.AssessmentBatteryPart', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentBatteryPart]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_AssessmentBatteryPart_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentBatteryPart_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_AssessmentBatteryPart_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentBatteryPart_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -867,7 +863,7 @@ CREATE TABLE [edfi].[AssessmentBatteryPartObjectiveAssessment]
 IF OBJECT_ID(N'edfi.AssessmentItem', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentItem]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_AssessmentItem_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentItem_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_AssessmentItem_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentItem_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -923,7 +919,7 @@ CREATE TABLE [edfi].[AssessmentItemPossibleRespons]
 IF OBJECT_ID(N'edfi.AssessmentScoreRangeLearningStandard', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentScoreRangeLearningStandard]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_AssessmentScoreRangeLearningStandard_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [AssessmentIdentifier_Unified] nvarchar(60) NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentScoreRangeLearningStandard_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_AssessmentScoreRangeLearningStandard_ContentVersion] DEFAULT 0,
@@ -968,7 +964,7 @@ CREATE TABLE [edfi].[AssessmentScoreRangeLearningStandardLearningStandard]
 IF OBJECT_ID(N'edfi.BalanceSheetDimension', N'U') IS NULL
 CREATE TABLE [edfi].[BalanceSheetDimension]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_BalanceSheetDimension_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_BalanceSheetDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_BalanceSheetDimension_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_BalanceSheetDimension_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -1000,7 +996,7 @@ CREATE TABLE [edfi].[BalanceSheetDimensionReportingTag]
 IF OBJECT_ID(N'edfi.BellSchedule', N'U') IS NULL
 CREATE TABLE [edfi].[BellSchedule]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_BellSchedule_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_BellSchedule_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_BellSchedule_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_BellSchedule_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -1063,7 +1059,7 @@ CREATE TABLE [edfi].[BellScheduleGradeLevel]
 IF OBJECT_ID(N'edfi.Calendar', N'U') IS NULL
 CREATE TABLE [edfi].[Calendar]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Calendar_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Calendar_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Calendar_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Calendar_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -1100,7 +1096,7 @@ CREATE TABLE [edfi].[CalendarGradeLevel]
 IF OBJECT_ID(N'edfi.CalendarDate', N'U') IS NULL
 CREATE TABLE [edfi].[CalendarDate]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_CalendarDate_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CalendarDate_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CalendarDate_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CalendarDate_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -1135,7 +1131,7 @@ CREATE TABLE [edfi].[CalendarDateCalendarEvent]
 IF OBJECT_ID(N'edfi.ChartOfAccount', N'U') IS NULL
 CREATE TABLE [edfi].[ChartOfAccount]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_ChartOfAccount_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ChartOfAccount_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ChartOfAccount_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ChartOfAccount_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -1205,7 +1201,7 @@ CREATE TABLE [edfi].[ChartOfAccountReportingTag]
 IF OBJECT_ID(N'edfi.ClassPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[ClassPeriod]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_ClassPeriod_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ClassPeriod_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ClassPeriod_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ClassPeriod_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -1240,7 +1236,7 @@ CREATE TABLE [edfi].[ClassPeriodMeetingTime]
 IF OBJECT_ID(N'edfi.Cohort', N'U') IS NULL
 CREATE TABLE [edfi].[Cohort]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Cohort_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Cohort_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Cohort_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Cohort_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -1281,7 +1277,7 @@ CREATE TABLE [edfi].[CohortProgram]
 IF OBJECT_ID(N'edfi.CommunityOrganization', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityOrganization]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_CommunityOrganization_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CommunityOrganization_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CommunityOrganization_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CommunityOrganization_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -1433,7 +1429,7 @@ CREATE TABLE [edfi].[CommunityOrganizationIndicatorPeriod]
 IF OBJECT_ID(N'edfi.CommunityProvider', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityProvider]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_CommunityProvider_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CommunityProvider_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CommunityProvider_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CommunityProvider_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -1593,7 +1589,7 @@ CREATE TABLE [edfi].[CommunityProviderIndicatorPeriod]
 IF OBJECT_ID(N'edfi.CommunityProviderLicense', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityProviderLicense]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_CommunityProviderLicense_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CommunityProviderLicense_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CommunityProviderLicense_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CommunityProviderLicense_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -1622,7 +1618,7 @@ CREATE TABLE [edfi].[CommunityProviderLicense]
 IF OBJECT_ID(N'edfi.CompetencyObjective', N'U') IS NULL
 CREATE TABLE [edfi].[CompetencyObjective]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_CompetencyObjective_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CompetencyObjective_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CompetencyObjective_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CompetencyObjective_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -1647,7 +1643,7 @@ CREATE TABLE [edfi].[CompetencyObjective]
 IF OBJECT_ID(N'edfi.Contact', N'U') IS NULL
 CREATE TABLE [edfi].[Contact]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Contact_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Contact_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Contact_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Contact_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -1834,7 +1830,7 @@ CREATE TABLE [edfi].[ContactLanguageUs]
 IF OBJECT_ID(N'edfi.Course', N'U') IS NULL
 CREATE TABLE [edfi].[Course]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Course_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Course_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Course_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Course_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -1948,7 +1944,7 @@ CREATE TABLE [edfi].[CourseOfferedGradeLevel]
 IF OBJECT_ID(N'edfi.CourseOffering', N'U') IS NULL
 CREATE TABLE [edfi].[CourseOffering]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_CourseOffering_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CourseOffering_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CourseOffering_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CourseOffering_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -2017,7 +2013,7 @@ CREATE TABLE [edfi].[CourseOfferingOfferedGradeLevel]
 IF OBJECT_ID(N'edfi.CourseTranscript', N'U') IS NULL
 CREATE TABLE [edfi].[CourseTranscript]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_CourseTranscript_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CourseTranscript_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CourseTranscript_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CourseTranscript_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -2168,7 +2164,7 @@ CREATE TABLE [edfi].[CourseTranscriptSection]
 IF OBJECT_ID(N'edfi.Credential', N'U') IS NULL
 CREATE TABLE [edfi].[Credential]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Credential_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Credential_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Credential_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Credential_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -2231,7 +2227,7 @@ CREATE TABLE [edfi].[CredentialGradeLevel]
 IF OBJECT_ID(N'edfi.CrisisEvent', N'U') IS NULL
 CREATE TABLE [edfi].[CrisisEvent]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_CrisisEvent_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CrisisEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CrisisEvent_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CrisisEvent_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -2253,7 +2249,7 @@ CREATE TABLE [edfi].[CrisisEvent]
 IF OBJECT_ID(N'edfi.DescriptorMapping', N'U') IS NULL
 CREATE TABLE [edfi].[DescriptorMapping]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_DescriptorMapping_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DescriptorMapping_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_DescriptorMapping_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DescriptorMapping_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -2285,7 +2281,7 @@ CREATE TABLE [edfi].[DescriptorMappingModelEntity]
 IF OBJECT_ID(N'edfi.DisciplineAction', N'U') IS NULL
 CREATE TABLE [edfi].[DisciplineAction]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_DisciplineAction_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DisciplineAction_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_DisciplineAction_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DisciplineAction_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -2360,7 +2356,7 @@ CREATE TABLE [edfi].[DisciplineActionStudentDisciplineIncidentBehaviorAssociatio
 IF OBJECT_ID(N'edfi.DisciplineIncident', N'U') IS NULL
 CREATE TABLE [edfi].[DisciplineIncident]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_DisciplineIncident_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DisciplineIncident_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_DisciplineIncident_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DisciplineIncident_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -2429,7 +2425,7 @@ CREATE TABLE [edfi].[DisciplineIncidentWeapon]
 IF OBJECT_ID(N'edfi.EducationContent', N'U') IS NULL
 CREATE TABLE [edfi].[EducationContent]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_EducationContent_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationContent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducationContent_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationContent_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -2551,7 +2547,7 @@ CREATE TABLE [edfi].[EducationContentLanguage]
 IF OBJECT_ID(N'edfi.EducationOrganizationInterventionPrescriptionAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationInterventionPrescriptionAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_EducationOrganizationInterventionPrescriptionAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationInterventionPrescriptionAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducationOrganizationInterventionPrescriptionAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationInterventionPrescriptionAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -2576,7 +2572,7 @@ CREATE TABLE [edfi].[EducationOrganizationInterventionPrescriptionAssociation]
 IF OBJECT_ID(N'edfi.EducationOrganizationNetwork', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationNetwork]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_EducationOrganizationNetwork_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationNetwork_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducationOrganizationNetwork_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationNetwork_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -2729,7 +2725,7 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkIndicatorPeriod]
 IF OBJECT_ID(N'edfi.EducationOrganizationNetworkAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationNetworkAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_EducationOrganizationNetworkAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationNetworkAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducationOrganizationNetworkAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationNetworkAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -2753,7 +2749,7 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkAssociation]
 IF OBJECT_ID(N'edfi.EducationOrganizationPeerAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationPeerAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_EducationOrganizationPeerAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationPeerAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducationOrganizationPeerAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationPeerAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -2775,7 +2771,7 @@ CREATE TABLE [edfi].[EducationOrganizationPeerAssociation]
 IF OBJECT_ID(N'edfi.EducationServiceCenter', N'U') IS NULL
 CREATE TABLE [edfi].[EducationServiceCenter]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_EducationServiceCenter_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationServiceCenter_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducationServiceCenter_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationServiceCenter_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -2930,7 +2926,7 @@ CREATE TABLE [edfi].[EducationServiceCenterIndicatorPeriod]
 IF OBJECT_ID(N'edfi.EvaluationRubricDimension', N'U') IS NULL
 CREATE TABLE [edfi].[EvaluationRubricDimension]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_EvaluationRubricDimension_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EvaluationRubricDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EvaluationRubricDimension_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EvaluationRubricDimension_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -2959,7 +2955,7 @@ CREATE TABLE [edfi].[EvaluationRubricDimension]
 IF OBJECT_ID(N'edfi.FeederSchoolAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[FeederSchoolAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_FeederSchoolAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_FeederSchoolAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_FeederSchoolAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_FeederSchoolAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -2984,7 +2980,7 @@ CREATE TABLE [edfi].[FeederSchoolAssociation]
 IF OBJECT_ID(N'edfi.FunctionDimension', N'U') IS NULL
 CREATE TABLE [edfi].[FunctionDimension]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_FunctionDimension_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_FunctionDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_FunctionDimension_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_FunctionDimension_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -3016,7 +3012,7 @@ CREATE TABLE [edfi].[FunctionDimensionReportingTag]
 IF OBJECT_ID(N'edfi.FundDimension', N'U') IS NULL
 CREATE TABLE [edfi].[FundDimension]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_FundDimension_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_FundDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_FundDimension_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_FundDimension_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -3048,7 +3044,7 @@ CREATE TABLE [edfi].[FundDimensionReportingTag]
 IF OBJECT_ID(N'edfi.Grade', N'U') IS NULL
 CREATE TABLE [edfi].[Grade]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Grade_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Grade_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Grade_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Grade_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -3108,7 +3104,7 @@ CREATE TABLE [edfi].[GradeLearningStandardGrade]
 IF OBJECT_ID(N'edfi.GradebookEntry', N'U') IS NULL
 CREATE TABLE [edfi].[GradebookEntry]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_GradebookEntry_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_GradebookEntry_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_GradebookEntry_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_GradebookEntry_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -3164,7 +3160,7 @@ CREATE TABLE [edfi].[GradebookEntryLearningStandard]
 IF OBJECT_ID(N'edfi.GradingPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[GradingPeriod]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_GradingPeriod_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_GradingPeriod_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_GradingPeriod_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_GradingPeriod_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -3193,7 +3189,7 @@ CREATE TABLE [edfi].[GradingPeriod]
 IF OBJECT_ID(N'edfi.GraduationPlan', N'U') IS NULL
 CREATE TABLE [edfi].[GraduationPlan]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_GraduationPlan_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_GraduationPlan_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_GraduationPlan_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_GraduationPlan_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -3322,7 +3318,7 @@ CREATE TABLE [edfi].[GraduationPlanRequiredAssessmentScore]
 IF OBJECT_ID(N'edfi.Intervention', N'U') IS NULL
 CREATE TABLE [edfi].[Intervention]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Intervention_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Intervention_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Intervention_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Intervention_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -3478,7 +3474,7 @@ CREATE TABLE [edfi].[InterventionUri]
 IF OBJECT_ID(N'edfi.InterventionPrescription', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionPrescription]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_InterventionPrescription_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_InterventionPrescription_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_InterventionPrescription_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_InterventionPrescription_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -3590,7 +3586,7 @@ CREATE TABLE [edfi].[InterventionPrescriptionUri]
 IF OBJECT_ID(N'edfi.InterventionStudy', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionStudy]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_InterventionStudy_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_InterventionStudy_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_InterventionStudy_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_InterventionStudy_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -3719,7 +3715,7 @@ CREATE TABLE [edfi].[InterventionStudyUri]
 IF OBJECT_ID(N'edfi.LearningStandard', N'U') IS NULL
 CREATE TABLE [edfi].[LearningStandard]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_LearningStandard_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LearningStandard_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LearningStandard_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LearningStandard_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -3808,7 +3804,7 @@ CREATE TABLE [edfi].[LearningStandardIdentificationCode]
 IF OBJECT_ID(N'edfi.LearningStandardEquivalenceAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[LearningStandardEquivalenceAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_LearningStandardEquivalenceAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LearningStandardEquivalenceAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LearningStandardEquivalenceAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LearningStandardEquivalenceAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -3834,7 +3830,7 @@ CREATE TABLE [edfi].[LearningStandardEquivalenceAssociation]
 IF OBJECT_ID(N'edfi.LocalAccount', N'U') IS NULL
 CREATE TABLE [edfi].[LocalAccount]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_LocalAccount_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalAccount_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LocalAccount_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalAccount_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -3876,7 +3872,7 @@ CREATE TABLE [edfi].[LocalAccountReportingTag]
 IF OBJECT_ID(N'edfi.LocalActual', N'U') IS NULL
 CREATE TABLE [edfi].[LocalActual]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_LocalActual_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalActual_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LocalActual_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalActual_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -3900,7 +3896,7 @@ CREATE TABLE [edfi].[LocalActual]
 IF OBJECT_ID(N'edfi.LocalBudget', N'U') IS NULL
 CREATE TABLE [edfi].[LocalBudget]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_LocalBudget_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalBudget_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LocalBudget_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalBudget_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -3924,7 +3920,7 @@ CREATE TABLE [edfi].[LocalBudget]
 IF OBJECT_ID(N'edfi.LocalContractedStaff', N'U') IS NULL
 CREATE TABLE [edfi].[LocalContractedStaff]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_LocalContractedStaff_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalContractedStaff_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LocalContractedStaff_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalContractedStaff_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -3951,7 +3947,7 @@ CREATE TABLE [edfi].[LocalContractedStaff]
 IF OBJECT_ID(N'edfi.LocalEducationAgency', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEducationAgency]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_LocalEducationAgency_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalEducationAgency_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LocalEducationAgency_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalEducationAgency_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -4150,7 +4146,7 @@ CREATE TABLE [edfi].[LocalEducationAgencyIndicatorPeriod]
 IF OBJECT_ID(N'edfi.LocalEncumbrance', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEncumbrance]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_LocalEncumbrance_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalEncumbrance_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LocalEncumbrance_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalEncumbrance_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -4174,7 +4170,7 @@ CREATE TABLE [edfi].[LocalEncumbrance]
 IF OBJECT_ID(N'edfi.LocalPayroll', N'U') IS NULL
 CREATE TABLE [edfi].[LocalPayroll]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_LocalPayroll_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalPayroll_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LocalPayroll_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalPayroll_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -4201,7 +4197,7 @@ CREATE TABLE [edfi].[LocalPayroll]
 IF OBJECT_ID(N'edfi.Location', N'U') IS NULL
 CREATE TABLE [edfi].[Location]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Location_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Location_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Location_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Location_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -4224,7 +4220,7 @@ CREATE TABLE [edfi].[Location]
 IF OBJECT_ID(N'edfi.ObjectDimension', N'U') IS NULL
 CREATE TABLE [edfi].[ObjectDimension]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_ObjectDimension_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ObjectDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ObjectDimension_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ObjectDimension_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -4256,7 +4252,7 @@ CREATE TABLE [edfi].[ObjectDimensionReportingTag]
 IF OBJECT_ID(N'edfi.ObjectiveAssessment', N'U') IS NULL
 CREATE TABLE [edfi].[ObjectiveAssessment]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_ObjectiveAssessment_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [AssessmentIdentifier_Unified] nvarchar(60) NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ObjectiveAssessment_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ObjectiveAssessment_ContentVersion] DEFAULT 0,
@@ -4352,7 +4348,7 @@ CREATE TABLE [edfi].[ObjectiveAssessmentScore]
 IF OBJECT_ID(N'edfi.OpenStaffPosition', N'U') IS NULL
 CREATE TABLE [edfi].[OpenStaffPosition]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_OpenStaffPosition_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_OpenStaffPosition_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_OpenStaffPosition_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_OpenStaffPosition_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -4403,7 +4399,7 @@ CREATE TABLE [edfi].[OpenStaffPositionInstructionalGradeLevel]
 IF OBJECT_ID(N'edfi.OperationalUnitDimension', N'U') IS NULL
 CREATE TABLE [edfi].[OperationalUnitDimension]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_OperationalUnitDimension_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_OperationalUnitDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_OperationalUnitDimension_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_OperationalUnitDimension_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -4435,7 +4431,7 @@ CREATE TABLE [edfi].[OperationalUnitDimensionReportingTag]
 IF OBJECT_ID(N'edfi.OrganizationDepartment', N'U') IS NULL
 CREATE TABLE [edfi].[OrganizationDepartment]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_OrganizationDepartment_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_OrganizationDepartment_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_OrganizationDepartment_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_OrganizationDepartment_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -4590,7 +4586,7 @@ CREATE TABLE [edfi].[OrganizationDepartmentIndicatorPeriod]
 IF OBJECT_ID(N'edfi.Person', N'U') IS NULL
 CREATE TABLE [edfi].[Person]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Person_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Person_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Person_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Person_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -4609,7 +4605,7 @@ CREATE TABLE [edfi].[Person]
 IF OBJECT_ID(N'edfi.PostSecondaryEvent', N'U') IS NULL
 CREATE TABLE [edfi].[PostSecondaryEvent]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_PostSecondaryEvent_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_PostSecondaryEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_PostSecondaryEvent_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_PostSecondaryEvent_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -4633,7 +4629,7 @@ CREATE TABLE [edfi].[PostSecondaryEvent]
 IF OBJECT_ID(N'edfi.PostSecondaryInstitution', N'U') IS NULL
 CREATE TABLE [edfi].[PostSecondaryInstitution]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_PostSecondaryInstitution_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_PostSecondaryInstitution_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_PostSecondaryInstitution_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_PostSecondaryInstitution_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -4799,7 +4795,7 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionIndicatorPeriod]
 IF OBJECT_ID(N'edfi.Program', N'U') IS NULL
 CREATE TABLE [edfi].[Program]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Program_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Program_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Program_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Program_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -4860,7 +4856,7 @@ CREATE TABLE [edfi].[ProgramSponsor]
 IF OBJECT_ID(N'edfi.ProgramDimension', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramDimension]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_ProgramDimension_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ProgramDimension_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramDimension_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -4892,7 +4888,7 @@ CREATE TABLE [edfi].[ProgramDimensionReportingTag]
 IF OBJECT_ID(N'edfi.ProgramEvaluation', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramEvaluation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_ProgramEvaluation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramEvaluation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ProgramEvaluation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramEvaluation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -4934,7 +4930,7 @@ CREATE TABLE [edfi].[ProgramEvaluationLevel]
 IF OBJECT_ID(N'edfi.ProgramEvaluationElement', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramEvaluationElement]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_ProgramEvaluationElement_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramEvaluationElement_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ProgramEvaluationElement_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramEvaluationElement_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -4993,7 +4989,7 @@ CREATE TABLE [edfi].[ProgramEvaluationElementProgramEvaluationLevel]
 IF OBJECT_ID(N'edfi.ProgramEvaluationObjective', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramEvaluationObjective]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_ProgramEvaluationObjective_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramEvaluationObjective_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ProgramEvaluationObjective_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramEvaluationObjective_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -5037,7 +5033,7 @@ CREATE TABLE [edfi].[ProgramEvaluationObjectiveProgramEvaluationLevel]
 IF OBJECT_ID(N'edfi.ProjectDimension', N'U') IS NULL
 CREATE TABLE [edfi].[ProjectDimension]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_ProjectDimension_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProjectDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ProjectDimension_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProjectDimension_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -5069,7 +5065,7 @@ CREATE TABLE [edfi].[ProjectDimensionReportingTag]
 IF OBJECT_ID(N'edfi.ReportCard', N'U') IS NULL
 CREATE TABLE [edfi].[ReportCard]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_ReportCard_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ReportCard_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ReportCard_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ReportCard_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -5163,7 +5159,7 @@ CREATE TABLE [edfi].[ReportCardStudentCompetencyObjective]
 IF OBJECT_ID(N'edfi.RestraintEvent', N'U') IS NULL
 CREATE TABLE [edfi].[RestraintEvent]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_RestraintEvent_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_RestraintEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_RestraintEvent_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_RestraintEvent_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -5221,7 +5217,7 @@ CREATE TABLE [edfi].[RestraintEventReason]
 IF OBJECT_ID(N'edfi.School', N'U') IS NULL
 CREATE TABLE [edfi].[School]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_School_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_School_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_School_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_School_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -5410,7 +5406,7 @@ CREATE TABLE [edfi].[SchoolIndicatorPeriod]
 IF OBJECT_ID(N'edfi.SchoolYearType', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolYearType]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_SchoolYearType_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SchoolYearType_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SchoolYearType_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SchoolYearType_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -5430,7 +5426,7 @@ CREATE TABLE [edfi].[SchoolYearType]
 IF OBJECT_ID(N'edfi.Section', N'U') IS NULL
 CREATE TABLE [edfi].[Section]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Section_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Section_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Section_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Section_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -5542,7 +5538,7 @@ CREATE TABLE [edfi].[SectionProgram]
 IF OBJECT_ID(N'edfi.SectionAttendanceTakenEvent', N'U') IS NULL
 CREATE TABLE [edfi].[SectionAttendanceTakenEvent]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_SectionAttendanceTakenEvent_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SectionAttendanceTakenEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SectionAttendanceTakenEvent_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SectionAttendanceTakenEvent_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -5577,7 +5573,7 @@ CREATE TABLE [edfi].[SectionAttendanceTakenEvent]
 IF OBJECT_ID(N'edfi.Session', N'U') IS NULL
 CREATE TABLE [edfi].[Session]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Session_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Session_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Session_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Session_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -5637,7 +5633,7 @@ CREATE TABLE [edfi].[SessionGradingPeriod]
 IF OBJECT_ID(N'edfi.SourceDimension', N'U') IS NULL
 CREATE TABLE [edfi].[SourceDimension]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_SourceDimension_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SourceDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SourceDimension_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SourceDimension_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -5669,7 +5665,7 @@ CREATE TABLE [edfi].[SourceDimensionReportingTag]
 IF OBJECT_ID(N'edfi.Staff', N'U') IS NULL
 CREATE TABLE [edfi].[Staff]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Staff_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Staff_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Staff_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Staff_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -5981,7 +5977,7 @@ CREATE TABLE [edfi].[StaffLanguageUs]
 IF OBJECT_ID(N'edfi.StaffAbsenceEvent', N'U') IS NULL
 CREATE TABLE [edfi].[StaffAbsenceEvent]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StaffAbsenceEvent_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffAbsenceEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffAbsenceEvent_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffAbsenceEvent_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -6004,7 +6000,7 @@ CREATE TABLE [edfi].[StaffAbsenceEvent]
 IF OBJECT_ID(N'edfi.StaffCohortAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffCohortAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StaffCohortAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffCohortAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffCohortAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffCohortAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -6030,7 +6026,7 @@ CREATE TABLE [edfi].[StaffCohortAssociation]
 IF OBJECT_ID(N'edfi.StaffDisciplineIncidentAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffDisciplineIncidentAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StaffDisciplineIncidentAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffDisciplineIncidentAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffDisciplineIncidentAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffDisciplineIncidentAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -6065,7 +6061,7 @@ CREATE TABLE [edfi].[StaffDisciplineIncidentAssociationDisciplineIncidentPartici
 IF OBJECT_ID(N'edfi.StaffEducationOrganizationAssignmentAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffEducationOrganizationAssignmentAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StaffEducationOrganizationAssignmentAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffEducationOrganizationAssignmentAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffEducationOrganizationAssignmentAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffEducationOrganizationAssignmentAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -6104,7 +6100,7 @@ CREATE TABLE [edfi].[StaffEducationOrganizationAssignmentAssociation]
 IF OBJECT_ID(N'edfi.StaffEducationOrganizationContactAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffEducationOrganizationContactAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StaffEducationOrganizationContactAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffEducationOrganizationContactAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffEducationOrganizationContactAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffEducationOrganizationContactAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -6172,7 +6168,7 @@ CREATE TABLE [edfi].[StaffEducationOrganizationContactAssociationTelephone]
 IF OBJECT_ID(N'edfi.StaffEducationOrganizationEmploymentAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffEducationOrganizationEmploymentAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StaffEducationOrganizationEmploymentAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffEducationOrganizationEmploymentAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffEducationOrganizationEmploymentAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffEducationOrganizationEmploymentAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -6209,7 +6205,7 @@ CREATE TABLE [edfi].[StaffEducationOrganizationEmploymentAssociation]
 IF OBJECT_ID(N'edfi.StaffLeave', N'U') IS NULL
 CREATE TABLE [edfi].[StaffLeave]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StaffLeave_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffLeave_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffLeave_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffLeave_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -6233,7 +6229,7 @@ CREATE TABLE [edfi].[StaffLeave]
 IF OBJECT_ID(N'edfi.StaffProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffProgramAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StaffProgramAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffProgramAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -6260,7 +6256,7 @@ CREATE TABLE [edfi].[StaffProgramAssociation]
 IF OBJECT_ID(N'edfi.StaffSchoolAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffSchoolAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StaffSchoolAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffSchoolAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffSchoolAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffSchoolAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -6317,7 +6313,7 @@ CREATE TABLE [edfi].[StaffSchoolAssociationGradeLevel]
 IF OBJECT_ID(N'edfi.StaffSectionAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffSectionAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StaffSectionAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffSectionAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffSectionAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffSectionAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -6349,7 +6345,7 @@ CREATE TABLE [edfi].[StaffSectionAssociation]
 IF OBJECT_ID(N'edfi.StateEducationAgency', N'U') IS NULL
 CREATE TABLE [edfi].[StateEducationAgency]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StateEducationAgency_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StateEducationAgency_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StateEducationAgency_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StateEducationAgency_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -6529,7 +6525,7 @@ CREATE TABLE [edfi].[StateEducationAgencyIndicatorPeriod]
 IF OBJECT_ID(N'edfi.Student', N'U') IS NULL
 CREATE TABLE [edfi].[Student]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Student_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Student_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Student_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Student_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -6633,7 +6629,7 @@ CREATE TABLE [edfi].[StudentVisa]
 IF OBJECT_ID(N'edfi.StudentAcademicRecord', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAcademicRecord]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentAcademicRecord_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAcademicRecord_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentAcademicRecord_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAcademicRecord_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -6785,7 +6781,7 @@ CREATE TABLE [edfi].[StudentAcademicRecordReportCard]
 IF OBJECT_ID(N'edfi.StudentAssessment', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessment]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentAssessment_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAssessment_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentAssessment_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAssessment_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -6945,7 +6941,7 @@ CREATE TABLE [edfi].[StudentAssessmentStudentObjectiveAssessmentScoreResult]
 IF OBJECT_ID(N'edfi.StudentAssessmentEducationOrganizationAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessmentEducationOrganizationAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentAssessmentEducationOrganizationAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAssessmentEducationOrganizationAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentAssessmentEducationOrganizationAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAssessmentEducationOrganizationAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -6974,7 +6970,7 @@ CREATE TABLE [edfi].[StudentAssessmentEducationOrganizationAssociation]
 IF OBJECT_ID(N'edfi.StudentAssessmentRegistration', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessmentRegistration]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentAssessmentRegistration_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAssessmentRegistration_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentAssessmentRegistration_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAssessmentRegistration_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -7044,7 +7040,7 @@ CREATE TABLE [edfi].[StudentAssessmentRegistrationAssessmentCustomization]
 IF OBJECT_ID(N'edfi.StudentAssessmentRegistrationBatteryPartAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessmentRegistrationBatteryPartAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentAssessmentRegistrationBatteryPartAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [AssessmentIdentifier_Unified] nvarchar(60) NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAssessmentRegistrationBatteryPartAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentAssessmentRegistrationBatteryPartAssociation_ContentVersion] DEFAULT 0,
@@ -7087,7 +7083,7 @@ CREATE TABLE [edfi].[StudentAssessmentRegistrationBatteryPartAssociationAccommod
 IF OBJECT_ID(N'edfi.StudentCTEProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentCTEProgramAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentCTEProgramAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentCTEProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentCTEProgramAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentCTEProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -7152,7 +7148,7 @@ CREATE TABLE [edfi].[StudentCTEProgramAssociationProgramParticipationStatus]
 IF OBJECT_ID(N'edfi.StudentCohortAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentCohortAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentCohortAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentCohortAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentCohortAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentCohortAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -7195,7 +7191,7 @@ CREATE TABLE [edfi].[StudentCohortAssociationSection]
 IF OBJECT_ID(N'edfi.StudentCompetencyObjective', N'U') IS NULL
 CREATE TABLE [edfi].[StudentCompetencyObjective]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentCompetencyObjective_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentCompetencyObjective_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentCompetencyObjective_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentCompetencyObjective_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -7267,7 +7263,7 @@ CREATE TABLE [edfi].[StudentCompetencyObjectiveStudentSectionAssociation]
 IF OBJECT_ID(N'edfi.StudentContactAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentContactAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentContactAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentContactAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentContactAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentContactAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -7296,7 +7292,7 @@ CREATE TABLE [edfi].[StudentContactAssociation]
 IF OBJECT_ID(N'edfi.StudentDisciplineIncidentBehaviorAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentDisciplineIncidentBehaviorAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentDisciplineIncidentBehaviorAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentDisciplineIncidentBehaviorAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentDisciplineIncidentBehaviorAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentDisciplineIncidentBehaviorAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -7346,7 +7342,7 @@ CREATE TABLE [edfi].[StudentDisciplineIncidentBehaviorAssociationWeapon]
 IF OBJECT_ID(N'edfi.StudentDisciplineIncidentNonOffenderAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentDisciplineIncidentNonOffenderAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentDisciplineIncidentNonOffenderAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentDisciplineIncidentNonOffenderAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentDisciplineIncidentNonOffenderAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentDisciplineIncidentNonOffenderAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -7381,7 +7377,7 @@ CREATE TABLE [edfi].[StudentDisciplineIncidentNonOffenderAssociationDisciplineIn
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssessmentAccommodation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssessmentAccommodation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentEducationOrganizationAssessmentAccommodation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentEducationOrganizationAssessmentAccommodation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentEducationOrganizationAssessmentAccommodation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentEducationOrganizationAssessmentAccommodation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -7416,7 +7412,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssessmentAccommodationGeneralA
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentEducationOrganizationAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentEducationOrganizationAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentEducationOrganizationAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentEducationOrganizationAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -7742,7 +7738,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationStudentIndicatorPeri
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationResponsibilityAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationResponsibilityAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentEducationOrganizationResponsibilityAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentEducationOrganizationResponsibilityAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentEducationOrganizationResponsibilityAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentEducationOrganizationResponsibilityAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -7767,7 +7763,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationResponsibilityAssociation]
 IF OBJECT_ID(N'edfi.StudentGradebookEntry', N'U') IS NULL
 CREATE TABLE [edfi].[StudentGradebookEntry]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentGradebookEntry_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentGradebookEntry_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentGradebookEntry_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentGradebookEntry_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -7799,7 +7795,7 @@ CREATE TABLE [edfi].[StudentGradebookEntry]
 IF OBJECT_ID(N'edfi.StudentHealth', N'U') IS NULL
 CREATE TABLE [edfi].[StudentHealth]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentHealth_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentHealth_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentHealth_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentHealth_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -7878,7 +7874,7 @@ CREATE TABLE [edfi].[StudentHealthRequiredImmunizationDate]
 IF OBJECT_ID(N'edfi.StudentHomelessProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentHomelessProgramAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentHomelessProgramAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentHomelessProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentHomelessProgramAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentHomelessProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -7942,7 +7938,7 @@ CREATE TABLE [edfi].[StudentHomelessProgramAssociationProgramParticipationStatus
 IF OBJECT_ID(N'edfi.StudentInterventionAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentInterventionAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentInterventionAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentInterventionAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentInterventionAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentInterventionAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -7987,7 +7983,7 @@ CREATE TABLE [edfi].[StudentInterventionAssociationInterventionEffectiveness]
 IF OBJECT_ID(N'edfi.StudentInterventionAttendanceEvent', N'U') IS NULL
 CREATE TABLE [edfi].[StudentInterventionAttendanceEvent]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentInterventionAttendanceEvent_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentInterventionAttendanceEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentInterventionAttendanceEvent_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentInterventionAttendanceEvent_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -8016,7 +8012,7 @@ CREATE TABLE [edfi].[StudentInterventionAttendanceEvent]
 IF OBJECT_ID(N'edfi.StudentLanguageInstructionProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentLanguageInstructionProgramAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentLanguageInstructionProgramAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentLanguageInstructionProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentLanguageInstructionProgramAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentLanguageInstructionProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -8097,7 +8093,7 @@ CREATE TABLE [edfi].[StudentLanguageInstructionProgramAssociationProgramParticip
 IF OBJECT_ID(N'edfi.StudentMigrantEducationProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentMigrantEducationProgramAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentMigrantEducationProgramAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentMigrantEducationProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentMigrantEducationProgramAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentMigrantEducationProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -8167,7 +8163,7 @@ CREATE TABLE [edfi].[StudentMigrantEducationProgramAssociationProgramParticipati
 IF OBJECT_ID(N'edfi.StudentNeglectedOrDelinquentProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentNeglectedOrDelinquentProgramAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentNeglectedOrDelinquentProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentNeglectedOrDelinquentProgramAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentNeglectedOrDelinquentProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -8231,7 +8227,7 @@ CREATE TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociationProgramPartic
 IF OBJECT_ID(N'edfi.StudentProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentProgramAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentProgramAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentProgramAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -8292,7 +8288,7 @@ CREATE TABLE [edfi].[StudentProgramAssociationService]
 IF OBJECT_ID(N'edfi.StudentProgramAttendanceEvent', N'U') IS NULL
 CREATE TABLE [edfi].[StudentProgramAttendanceEvent]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentProgramAttendanceEvent_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentProgramAttendanceEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentProgramAttendanceEvent_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentProgramAttendanceEvent_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -8325,7 +8321,7 @@ CREATE TABLE [edfi].[StudentProgramAttendanceEvent]
 IF OBJECT_ID(N'edfi.StudentProgramEvaluation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentProgramEvaluation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentProgramEvaluation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentProgramEvaluation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentProgramEvaluation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentProgramEvaluation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -8419,7 +8415,7 @@ CREATE TABLE [edfi].[StudentProgramEvaluationStudentEvaluationObjective]
 IF OBJECT_ID(N'edfi.StudentSchoolAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSchoolAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentSchoolAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSchoolAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSchoolAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSchoolAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -8508,7 +8504,7 @@ CREATE TABLE [edfi].[StudentSchoolAssociationEducationPlan]
 IF OBJECT_ID(N'edfi.StudentSchoolAttendanceEvent', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSchoolAttendanceEvent]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentSchoolAttendanceEvent_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSchoolAttendanceEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSchoolAttendanceEvent_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSchoolAttendanceEvent_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -8544,7 +8540,7 @@ CREATE TABLE [edfi].[StudentSchoolAttendanceEvent]
 IF OBJECT_ID(N'edfi.StudentSchoolFoodServiceProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSchoolFoodServiceProgramAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentSchoolFoodServiceProgramAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSchoolFoodServiceProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSchoolFoodServiceProgramAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSchoolFoodServiceProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -8606,7 +8602,7 @@ CREATE TABLE [edfi].[StudentSchoolFoodServiceProgramAssociationSchoolFoodService
 IF OBJECT_ID(N'edfi.StudentSection504ProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSection504ProgramAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentSection504ProgramAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSection504ProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSection504ProgramAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSection504ProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -8657,7 +8653,7 @@ CREATE TABLE [edfi].[StudentSection504ProgramAssociationProgramParticipationStat
 IF OBJECT_ID(N'edfi.StudentSectionAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSectionAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentSectionAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSectionAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSectionAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSectionAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -8713,7 +8709,7 @@ CREATE TABLE [edfi].[StudentSectionAssociationProgram]
 IF OBJECT_ID(N'edfi.StudentSectionAttendanceEvent', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSectionAttendanceEvent]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentSectionAttendanceEvent_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSectionAttendanceEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSectionAttendanceEvent_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSectionAttendanceEvent_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -8762,7 +8758,7 @@ CREATE TABLE [edfi].[StudentSectionAttendanceEventClassPeriod]
 IF OBJECT_ID(N'edfi.StudentSpecialEducationProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentSpecialEducationProgramAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSpecialEducationProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSpecialEducationProgramAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSpecialEducationProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -8899,7 +8895,7 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationSpecialEducationPr
 IF OBJECT_ID(N'edfi.StudentSpecialEducationProgramEligibilityAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentSpecialEducationProgramEligibilityAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSpecialEducationProgramEligibilityAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSpecialEducationProgramEligibilityAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSpecialEducationProgramEligibilityAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -8942,7 +8938,7 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
 IF OBJECT_ID(N'edfi.StudentTitleIPartAProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentTitleIPartAProgramAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentTitleIPartAProgramAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentTitleIPartAProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentTitleIPartAProgramAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentTitleIPartAProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -9004,7 +9000,7 @@ CREATE TABLE [edfi].[StudentTitleIPartAProgramAssociationTitleIPartAProgramServi
 IF OBJECT_ID(N'edfi.StudentTransportation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentTransportation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_StudentTransportation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentTransportation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentTransportation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentTransportation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -9056,7 +9052,7 @@ CREATE TABLE [edfi].[StudentTransportationTravelDirection]
 IF OBJECT_ID(N'edfi.Survey', N'U') IS NULL
 CREATE TABLE [edfi].[Survey]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Survey_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Survey_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Survey_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Survey_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -9090,7 +9086,7 @@ CREATE TABLE [edfi].[Survey]
 IF OBJECT_ID(N'edfi.SurveyCourseAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyCourseAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_SurveyCourseAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyCourseAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveyCourseAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyCourseAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -9114,7 +9110,7 @@ CREATE TABLE [edfi].[SurveyCourseAssociation]
 IF OBJECT_ID(N'edfi.SurveyProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyProgramAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_SurveyProgramAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveyProgramAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -9139,7 +9135,7 @@ CREATE TABLE [edfi].[SurveyProgramAssociation]
 IF OBJECT_ID(N'edfi.SurveyQuestion', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyQuestion]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_SurveyQuestion_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyQuestion_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveyQuestion_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyQuestion_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -9198,7 +9194,7 @@ CREATE TABLE [edfi].[SurveyQuestionResponseChoice]
 IF OBJECT_ID(N'edfi.SurveyQuestionResponse', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyQuestionResponse]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_SurveyQuestionResponse_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyQuestionResponse_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveyQuestionResponse_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyQuestionResponse_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -9259,7 +9255,7 @@ CREATE TABLE [edfi].[SurveyQuestionResponseValue]
 IF OBJECT_ID(N'edfi.SurveyResponse', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyResponse]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_SurveyResponse_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyResponse_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveyResponse_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyResponse_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -9307,7 +9303,7 @@ CREATE TABLE [edfi].[SurveyResponseSurveyLevel]
 IF OBJECT_ID(N'edfi.SurveyResponseEducationOrganizationTargetAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyResponseEducationOrganizationTargetAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_SurveyResponseEducationOrganizationTargetAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyResponseEducationOrganizationTargetAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveyResponseEducationOrganizationTargetAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyResponseEducationOrganizationTargetAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -9331,7 +9327,7 @@ CREATE TABLE [edfi].[SurveyResponseEducationOrganizationTargetAssociation]
 IF OBJECT_ID(N'edfi.SurveyResponseStaffTargetAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyResponseStaffTargetAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_SurveyResponseStaffTargetAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyResponseStaffTargetAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveyResponseStaffTargetAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyResponseStaffTargetAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -9355,7 +9351,7 @@ CREATE TABLE [edfi].[SurveyResponseStaffTargetAssociation]
 IF OBJECT_ID(N'edfi.SurveySection', N'U') IS NULL
 CREATE TABLE [edfi].[SurveySection]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_SurveySection_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySection_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveySection_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySection_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -9377,7 +9373,7 @@ CREATE TABLE [edfi].[SurveySection]
 IF OBJECT_ID(N'edfi.SurveySectionAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[SurveySectionAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_SurveySectionAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveySectionAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -9404,7 +9400,7 @@ CREATE TABLE [edfi].[SurveySectionAssociation]
 IF OBJECT_ID(N'edfi.SurveySectionResponse', N'U') IS NULL
 CREATE TABLE [edfi].[SurveySectionResponse]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_SurveySectionResponse_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionResponse_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveySectionResponse_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionResponse_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -9434,7 +9430,7 @@ CREATE TABLE [edfi].[SurveySectionResponse]
 IF OBJECT_ID(N'edfi.SurveySectionResponseEducationOrganizationTargetAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_SurveySectionResponseEducationOrganizationTargetAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionResponseEducationOrganizationTargetAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveySectionResponseEducationOrganizationTargetAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionResponseEducationOrganizationTargetAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -9463,7 +9459,7 @@ CREATE TABLE [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation
 IF OBJECT_ID(N'edfi.SurveySectionResponseStaffTargetAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[SurveySectionResponseStaffTargetAssociation]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_SurveySectionResponseStaffTargetAssociation_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionResponseStaffTargetAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveySectionResponseStaffTargetAssociation_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionResponseStaffTargetAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -12028,17 +12024,6 @@ CREATE TABLE [edfi].[GeneralStudentProgramAssociationIdentity]
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_AcademicWeek_Document' AND parent_object_id = OBJECT_ID(N'edfi.AcademicWeek')
-)
-ALTER TABLE [edfi].[AcademicWeek]
-ADD CONSTRAINT [FK_AcademicWeek_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_AcademicWeek_School_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.AcademicWeek')
 )
 ALTER TABLE [edfi].[AcademicWeek]
@@ -12046,17 +12031,6 @@ ADD CONSTRAINT [FK_AcademicWeek_School_RefKey]
 FOREIGN KEY ([School_SchoolId], [School_DocumentId])
 REFERENCES [edfi].[School] ([SchoolId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_AccountabilityRating_Document' AND parent_object_id = OBJECT_ID(N'edfi.AccountabilityRating')
-)
-ALTER TABLE [edfi].[AccountabilityRating]
-ADD CONSTRAINT [FK_AccountabilityRating_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -12101,17 +12075,6 @@ ADD CONSTRAINT [FK_Assessment_ContentStandardPublicationStatusDescriptor]
 FOREIGN KEY ([ContentStandardPublicationStatusDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Assessment_Document' AND parent_object_id = OBJECT_ID(N'edfi.Assessment')
-)
-ALTER TABLE [edfi].[Assessment]
-ADD CONSTRAINT [FK_Assessment_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -12435,17 +12398,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_AssessmentAdministration_Document' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentAdministration')
-)
-ALTER TABLE [edfi].[AssessmentAdministration]
-ADD CONSTRAINT [FK_AssessmentAdministration_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_AssessmentAdministrationAssessmentBatteryPart_AssessmentAdministration' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentAdministrationAssessmentBatteryPart')
 )
 ALTER TABLE [edfi].[AssessmentAdministrationAssessmentBatteryPart]
@@ -12486,17 +12438,6 @@ ADD CONSTRAINT [FK_AssessmentAdministrationParticipation_AssessmentAdministratio
 FOREIGN KEY ([AssessmentAdministration_DocumentId])
 REFERENCES [edfi].[AssessmentAdministration] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_AssessmentAdministrationParticipation_Document' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentAdministrationParticipation')
-)
-ALTER TABLE [edfi].[AssessmentAdministrationParticipation]
-ADD CONSTRAINT [FK_AssessmentAdministrationParticipation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -12545,17 +12486,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_AssessmentBatteryPart_Document' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentBatteryPart')
-)
-ALTER TABLE [edfi].[AssessmentBatteryPart]
-ADD CONSTRAINT [FK_AssessmentBatteryPart_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_AssessmentBatteryPartObjectiveAssessment_AssessmentBatteryPart' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentBatteryPartObjectiveAssessment')
 )
 ALTER TABLE [edfi].[AssessmentBatteryPartObjectiveAssessment]
@@ -12596,17 +12526,6 @@ ADD CONSTRAINT [FK_AssessmentItem_Assessment_RefKey]
 FOREIGN KEY ([Assessment_AssessmentIdentifier], [Assessment_Namespace], [Assessment_DocumentId])
 REFERENCES [edfi].[Assessment] ([AssessmentIdentifier], [Namespace], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_AssessmentItem_Document' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentItem')
-)
-ALTER TABLE [edfi].[AssessmentItem]
-ADD CONSTRAINT [FK_AssessmentItem_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -12666,17 +12585,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_AssessmentScoreRangeLearningStandard_Document' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentScoreRangeLearningStandard')
-)
-ALTER TABLE [edfi].[AssessmentScoreRangeLearningStandard]
-ADD CONSTRAINT [FK_AssessmentScoreRangeLearningStandard_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_AssessmentScoreRangeLearningStandard_ObjectiveAssessment_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentScoreRangeLearningStandard')
 )
 ALTER TABLE [edfi].[AssessmentScoreRangeLearningStandard]
@@ -12710,17 +12618,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_BalanceSheetDimension_Document' AND parent_object_id = OBJECT_ID(N'edfi.BalanceSheetDimension')
-)
-ALTER TABLE [edfi].[BalanceSheetDimension]
-ADD CONSTRAINT [FK_BalanceSheetDimension_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_BalanceSheetDimensionReportingTag_BalanceSheetDimension' AND parent_object_id = OBJECT_ID(N'edfi.BalanceSheetDimensionReportingTag')
 )
 ALTER TABLE [edfi].[BalanceSheetDimensionReportingTag]
@@ -12739,17 +12636,6 @@ ADD CONSTRAINT [FK_BalanceSheetDimensionReportingTag_ReportingTagDescriptor]
 FOREIGN KEY ([ReportingTagDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_BellSchedule_Document' AND parent_object_id = OBJECT_ID(N'edfi.BellSchedule')
-)
-ALTER TABLE [edfi].[BellSchedule]
-ADD CONSTRAINT [FK_BellSchedule_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -12831,17 +12717,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Calendar_Document' AND parent_object_id = OBJECT_ID(N'edfi.Calendar')
-)
-ALTER TABLE [edfi].[Calendar]
-ADD CONSTRAINT [FK_Calendar_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_Calendar_SchoolYear_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.Calendar')
 )
 ALTER TABLE [edfi].[Calendar]
@@ -12897,17 +12772,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CalendarDate_Document' AND parent_object_id = OBJECT_ID(N'edfi.CalendarDate')
-)
-ALTER TABLE [edfi].[CalendarDate]
-ADD CONSTRAINT [FK_CalendarDate_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_CalendarDateCalendarEvent_CalendarDate' AND parent_object_id = OBJECT_ID(N'edfi.CalendarDateCalendarEvent')
 )
 ALTER TABLE [edfi].[CalendarDateCalendarEvent]
@@ -12948,17 +12812,6 @@ ADD CONSTRAINT [FK_ChartOfAccount_BalanceSheetBalanceSheetDimension_RefKey]
 FOREIGN KEY ([BalanceSheetBalanceSheetDimension_Code], [FiscalYear_Unified], [BalanceSheetBalanceSheetDimension_DocumentId])
 REFERENCES [edfi].[BalanceSheetDimension] ([Code], [FiscalYear], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ChartOfAccount_Document' AND parent_object_id = OBJECT_ID(N'edfi.ChartOfAccount')
-)
-ALTER TABLE [edfi].[ChartOfAccount]
-ADD CONSTRAINT [FK_ChartOfAccount_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -13073,17 +12926,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ClassPeriod_Document' AND parent_object_id = OBJECT_ID(N'edfi.ClassPeriod')
-)
-ALTER TABLE [edfi].[ClassPeriod]
-ADD CONSTRAINT [FK_ClassPeriod_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_ClassPeriod_School_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.ClassPeriod')
 )
 ALTER TABLE [edfi].[ClassPeriod]
@@ -13139,17 +12981,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Cohort_Document' AND parent_object_id = OBJECT_ID(N'edfi.Cohort')
-)
-ALTER TABLE [edfi].[Cohort]
-ADD CONSTRAINT [FK_Cohort_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_Cohort_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.Cohort')
 )
 ALTER TABLE [edfi].[Cohort]
@@ -13190,17 +13021,6 @@ ADD CONSTRAINT [FK_CohortProgram_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CommunityOrganization_Document' AND parent_object_id = OBJECT_ID(N'edfi.CommunityOrganization')
-)
-ALTER TABLE [edfi].[CommunityOrganization]
-ADD CONSTRAINT [FK_CommunityOrganization_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -13432,17 +13252,6 @@ ADD CONSTRAINT [FK_CommunityProvider_CommunityOrganization_RefKey]
 FOREIGN KEY ([CommunityOrganization_CommunityOrganizationId], [CommunityOrganization_DocumentId])
 REFERENCES [edfi].[CommunityOrganization] ([CommunityOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CommunityProvider_Document' AND parent_object_id = OBJECT_ID(N'edfi.CommunityProvider')
-)
-ALTER TABLE [edfi].[CommunityProvider]
-ADD CONSTRAINT [FK_CommunityProvider_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -13711,17 +13520,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CommunityProviderLicense_Document' AND parent_object_id = OBJECT_ID(N'edfi.CommunityProviderLicense')
-)
-ALTER TABLE [edfi].[CommunityProviderLicense]
-ADD CONSTRAINT [FK_CommunityProviderLicense_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_CommunityProviderLicense_LicenseStatusDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.CommunityProviderLicense')
 )
 ALTER TABLE [edfi].[CommunityProviderLicense]
@@ -13744,17 +13542,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CompetencyObjective_Document' AND parent_object_id = OBJECT_ID(N'edfi.CompetencyObjective')
-)
-ALTER TABLE [edfi].[CompetencyObjective]
-ADD CONSTRAINT [FK_CompetencyObjective_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_CompetencyObjective_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.CompetencyObjective')
 )
 ALTER TABLE [edfi].[CompetencyObjective]
@@ -13773,17 +13560,6 @@ ADD CONSTRAINT [FK_CompetencyObjective_ObjectiveGradeLevelDescriptor]
 FOREIGN KEY ([ObjectiveGradeLevelDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Contact_Document' AND parent_object_id = OBJECT_ID(N'edfi.Contact')
-)
-ALTER TABLE [edfi].[Contact]
-ADD CONSTRAINT [FK_Contact_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -14107,17 +13883,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Course_Document' AND parent_object_id = OBJECT_ID(N'edfi.Course')
-)
-ALTER TABLE [edfi].[Course]
-ADD CONSTRAINT [FK_Course_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_Course_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.Course')
 )
 ALTER TABLE [edfi].[Course]
@@ -14294,17 +14059,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CourseOffering_Document' AND parent_object_id = OBJECT_ID(N'edfi.CourseOffering')
-)
-ALTER TABLE [edfi].[CourseOffering]
-ADD CONSTRAINT [FK_CourseOffering_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_CourseOffering_School_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.CourseOffering')
 )
 ALTER TABLE [edfi].[CourseOffering]
@@ -14433,17 +14187,6 @@ ADD CONSTRAINT [FK_CourseTranscript_CourseRepeatCodeDescriptor]
 FOREIGN KEY ([CourseRepeatCodeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CourseTranscript_Document' AND parent_object_id = OBJECT_ID(N'edfi.CourseTranscript')
-)
-ALTER TABLE [edfi].[CourseTranscript]
-ADD CONSTRAINT [FK_CourseTranscript_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -14712,17 +14455,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Credential_Document' AND parent_object_id = OBJECT_ID(N'edfi.Credential')
-)
-ALTER TABLE [edfi].[Credential]
-ADD CONSTRAINT [FK_Credential_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_Credential_StateOfIssueStateAbbreviationDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.Credential')
 )
 ALTER TABLE [edfi].[Credential]
@@ -14822,28 +14554,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CrisisEvent_Document' AND parent_object_id = OBJECT_ID(N'edfi.CrisisEvent')
-)
-ALTER TABLE [edfi].[CrisisEvent]
-ADD CONSTRAINT [FK_CrisisEvent_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_DescriptorMapping_Document' AND parent_object_id = OBJECT_ID(N'edfi.DescriptorMapping')
-)
-ALTER TABLE [edfi].[DescriptorMapping]
-ADD CONSTRAINT [FK_DescriptorMapping_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_DescriptorMappingModelEntity_DescriptorMapping' AND parent_object_id = OBJECT_ID(N'edfi.DescriptorMappingModelEntity')
 )
 ALTER TABLE [edfi].[DescriptorMappingModelEntity]
@@ -14884,17 +14594,6 @@ ADD CONSTRAINT [FK_DisciplineAction_DisciplineActionLengthDifferenceReasonDescri
 FOREIGN KEY ([DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_DisciplineAction_Document' AND parent_object_id = OBJECT_ID(N'edfi.DisciplineAction')
-)
-ALTER TABLE [edfi].[DisciplineAction]
-ADD CONSTRAINT [FK_DisciplineAction_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -14994,17 +14693,6 @@ ADD CONSTRAINT [FK_DisciplineActionStudentDisciplineIncidentBehaviorAssociation_
 FOREIGN KEY ([StudentDisciplineIncidentBehaviorAssociation_BehaviorDescriptor_DescriptorId], [StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier], [StudentDisciplineIncidentBehaviorAssociation_SchoolId], [StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId], [StudentDisciplineIncidentBehaviorAssociation_DocumentId])
 REFERENCES [edfi].[StudentDisciplineIncidentBehaviorAssociation] ([BehaviorDescriptor_DescriptorId], [DisciplineIncident_IncidentIdentifier], [DisciplineIncident_SchoolId], [Student_StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_DisciplineIncident_Document' AND parent_object_id = OBJECT_ID(N'edfi.DisciplineIncident')
-)
-ALTER TABLE [edfi].[DisciplineIncident]
-ADD CONSTRAINT [FK_DisciplineIncident_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -15126,17 +14814,6 @@ ADD CONSTRAINT [FK_EducationContent_CostRateDescriptor]
 FOREIGN KEY ([CostRateDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationContent_Document' AND parent_object_id = OBJECT_ID(N'edfi.EducationContent')
-)
-ALTER TABLE [edfi].[EducationContent]
-ADD CONSTRAINT [FK_EducationContent_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -15284,17 +14961,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationOrganizationInterventionPrescriptionAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationInterventionPrescriptionAssociation')
-)
-ALTER TABLE [edfi].[EducationOrganizationInterventionPrescriptionAssociation]
-ADD CONSTRAINT [FK_EducationOrganizationInterventionPrescriptionAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_EducationOrganizationInterventionPrescriptionAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationInterventionPrescriptionAssociation')
 )
 ALTER TABLE [edfi].[EducationOrganizationInterventionPrescriptionAssociation]
@@ -15313,17 +14979,6 @@ ADD CONSTRAINT [FK_EducationOrganizationInterventionPrescriptionAssociation_Inte
 FOREIGN KEY ([InterventionPrescriptionInterventionPrescription_DocumentId])
 REFERENCES [edfi].[InterventionPrescription] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationOrganizationNetwork_Document' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationNetwork')
-)
-ALTER TABLE [edfi].[EducationOrganizationNetwork]
-ADD CONSTRAINT [FK_EducationOrganizationNetwork_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -15559,17 +15214,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationOrganizationNetworkAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationNetworkAssociation')
-)
-ALTER TABLE [edfi].[EducationOrganizationNetworkAssociation]
-ADD CONSTRAINT [FK_EducationOrganizationNetworkAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_EducationOrganizationNetworkAssociation_EducationOrganizationNetwork_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationNetworkAssociation')
 )
 ALTER TABLE [edfi].[EducationOrganizationNetworkAssociation]
@@ -15592,17 +15236,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationOrganizationPeerAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationPeerAssociation')
-)
-ALTER TABLE [edfi].[EducationOrganizationPeerAssociation]
-ADD CONSTRAINT [FK_EducationOrganizationPeerAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_EducationOrganizationPeerAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationPeerAssociation')
 )
 ALTER TABLE [edfi].[EducationOrganizationPeerAssociation]
@@ -15621,17 +15254,6 @@ ADD CONSTRAINT [FK_EducationOrganizationPeerAssociation_PeerEducationOrganizatio
 FOREIGN KEY ([PeerEducationOrganization_DocumentId])
 REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationServiceCenter_Document' AND parent_object_id = OBJECT_ID(N'edfi.EducationServiceCenter')
-)
-ALTER TABLE [edfi].[EducationServiceCenter]
-ADD CONSTRAINT [FK_EducationServiceCenter_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -15867,17 +15489,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EvaluationRubricDimension_Document' AND parent_object_id = OBJECT_ID(N'edfi.EvaluationRubricDimension')
-)
-ALTER TABLE [edfi].[EvaluationRubricDimension]
-ADD CONSTRAINT [FK_EvaluationRubricDimension_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_EvaluationRubricDimension_EvaluationRubricRatingLevelDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.EvaluationRubricDimension')
 )
 ALTER TABLE [edfi].[EvaluationRubricDimension]
@@ -15933,17 +15544,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_FeederSchoolAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.FeederSchoolAssociation')
-)
-ALTER TABLE [edfi].[FeederSchoolAssociation]
-ADD CONSTRAINT [FK_FeederSchoolAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_FeederSchoolAssociation_FeederSchool_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.FeederSchoolAssociation')
 )
 ALTER TABLE [edfi].[FeederSchoolAssociation]
@@ -15962,17 +15562,6 @@ ADD CONSTRAINT [FK_FeederSchoolAssociation_School_RefKey]
 FOREIGN KEY ([School_SchoolId], [School_DocumentId])
 REFERENCES [edfi].[School] ([SchoolId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_FunctionDimension_Document' AND parent_object_id = OBJECT_ID(N'edfi.FunctionDimension')
-)
-ALTER TABLE [edfi].[FunctionDimension]
-ADD CONSTRAINT [FK_FunctionDimension_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -15999,17 +15588,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_FundDimension_Document' AND parent_object_id = OBJECT_ID(N'edfi.FundDimension')
-)
-ALTER TABLE [edfi].[FundDimension]
-ADD CONSTRAINT [FK_FundDimension_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_FundDimensionReportingTag_FundDimension' AND parent_object_id = OBJECT_ID(N'edfi.FundDimensionReportingTag')
 )
 ALTER TABLE [edfi].[FundDimensionReportingTag]
@@ -16028,17 +15606,6 @@ ADD CONSTRAINT [FK_FundDimensionReportingTag_ReportingTagDescriptor]
 FOREIGN KEY ([ReportingTagDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Grade_Document' AND parent_object_id = OBJECT_ID(N'edfi.Grade')
-)
-ALTER TABLE [edfi].[Grade]
-ADD CONSTRAINT [FK_Grade_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -16131,17 +15698,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_GradebookEntry_Document' AND parent_object_id = OBJECT_ID(N'edfi.GradebookEntry')
-)
-ALTER TABLE [edfi].[GradebookEntry]
-ADD CONSTRAINT [FK_GradebookEntry_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_GradebookEntry_GradebookEntryTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.GradebookEntry')
 )
 ALTER TABLE [edfi].[GradebookEntry]
@@ -16208,17 +15764,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_GradingPeriod_Document' AND parent_object_id = OBJECT_ID(N'edfi.GradingPeriod')
-)
-ALTER TABLE [edfi].[GradingPeriod]
-ADD CONSTRAINT [FK_GradingPeriod_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_GradingPeriod_GradingPeriodDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.GradingPeriod')
 )
 ALTER TABLE [edfi].[GradingPeriod]
@@ -16248,17 +15793,6 @@ ADD CONSTRAINT [FK_GradingPeriod_School_RefKey]
 FOREIGN KEY ([School_SchoolId], [School_DocumentId])
 REFERENCES [edfi].[School] ([SchoolId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_GraduationPlan_Document' AND parent_object_id = OBJECT_ID(N'edfi.GraduationPlan')
-)
-ALTER TABLE [edfi].[GraduationPlan]
-ADD CONSTRAINT [FK_GraduationPlan_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -16527,17 +16061,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Intervention_Document' AND parent_object_id = OBJECT_ID(N'edfi.Intervention')
-)
-ALTER TABLE [edfi].[Intervention]
-ADD CONSTRAINT [FK_Intervention_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_Intervention_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.Intervention')
 )
 ALTER TABLE [edfi].[Intervention]
@@ -16758,17 +16281,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_InterventionPrescription_Document' AND parent_object_id = OBJECT_ID(N'edfi.InterventionPrescription')
-)
-ALTER TABLE [edfi].[InterventionPrescription]
-ADD CONSTRAINT [FK_InterventionPrescription_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_InterventionPrescription_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.InterventionPrescription')
 )
 ALTER TABLE [edfi].[InterventionPrescription]
@@ -16930,17 +16442,6 @@ ADD CONSTRAINT [FK_InterventionStudy_DeliveryMethodDescriptor]
 FOREIGN KEY ([DeliveryMethodDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_InterventionStudy_Document' AND parent_object_id = OBJECT_ID(N'edfi.InterventionStudy')
-)
-ALTER TABLE [edfi].[InterventionStudy]
-ADD CONSTRAINT [FK_InterventionStudy_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -17176,17 +16677,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LearningStandard_Document' AND parent_object_id = OBJECT_ID(N'edfi.LearningStandard')
-)
-ALTER TABLE [edfi].[LearningStandard]
-ADD CONSTRAINT [FK_LearningStandard_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_LearningStandard_LearningStandardCategoryDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.LearningStandard')
 )
 ALTER TABLE [edfi].[LearningStandard]
@@ -17297,17 +16787,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LearningStandardEquivalenceAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.LearningStandardEquivalenceAssociation')
-)
-ALTER TABLE [edfi].[LearningStandardEquivalenceAssociation]
-ADD CONSTRAINT [FK_LearningStandardEquivalenceAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_LearningStandardEquivalenceAssociation_LearningStandardEquivalenceStrengthDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.LearningStandardEquivalenceAssociation')
 )
 ALTER TABLE [edfi].[LearningStandardEquivalenceAssociation]
@@ -17352,17 +16831,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalAccount_Document' AND parent_object_id = OBJECT_ID(N'edfi.LocalAccount')
-)
-ALTER TABLE [edfi].[LocalAccount]
-ADD CONSTRAINT [FK_LocalAccount_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_LocalAccount_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.LocalAccount')
 )
 ALTER TABLE [edfi].[LocalAccount]
@@ -17396,17 +16864,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalActual_Document' AND parent_object_id = OBJECT_ID(N'edfi.LocalActual')
-)
-ALTER TABLE [edfi].[LocalActual]
-ADD CONSTRAINT [FK_LocalActual_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_LocalActual_FinancialCollectionDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.LocalActual')
 )
 ALTER TABLE [edfi].[LocalActual]
@@ -17429,17 +16886,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalBudget_Document' AND parent_object_id = OBJECT_ID(N'edfi.LocalBudget')
-)
-ALTER TABLE [edfi].[LocalBudget]
-ADD CONSTRAINT [FK_LocalBudget_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_LocalBudget_FinancialCollectionDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.LocalBudget')
 )
 ALTER TABLE [edfi].[LocalBudget]
@@ -17458,17 +16904,6 @@ ADD CONSTRAINT [FK_LocalBudget_LocalAccount]
 FOREIGN KEY ([LocalAccount_DocumentId])
 REFERENCES [edfi].[LocalAccount] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalContractedStaff_Document' AND parent_object_id = OBJECT_ID(N'edfi.LocalContractedStaff')
-)
-ALTER TABLE [edfi].[LocalContractedStaff]
-ADD CONSTRAINT [FK_LocalContractedStaff_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -17513,17 +16948,6 @@ ADD CONSTRAINT [FK_LocalEducationAgency_CharterStatusDescriptor]
 FOREIGN KEY ([CharterStatusDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalEducationAgency_Document' AND parent_object_id = OBJECT_ID(N'edfi.LocalEducationAgency')
-)
-ALTER TABLE [edfi].[LocalEducationAgency]
-ADD CONSTRAINT [FK_LocalEducationAgency_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -17847,17 +17271,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalEncumbrance_Document' AND parent_object_id = OBJECT_ID(N'edfi.LocalEncumbrance')
-)
-ALTER TABLE [edfi].[LocalEncumbrance]
-ADD CONSTRAINT [FK_LocalEncumbrance_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_LocalEncumbrance_FinancialCollectionDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.LocalEncumbrance')
 )
 ALTER TABLE [edfi].[LocalEncumbrance]
@@ -17876,17 +17289,6 @@ ADD CONSTRAINT [FK_LocalEncumbrance_LocalAccount]
 FOREIGN KEY ([LocalAccount_DocumentId])
 REFERENCES [edfi].[LocalAccount] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalPayroll_Document' AND parent_object_id = OBJECT_ID(N'edfi.LocalPayroll')
-)
-ALTER TABLE [edfi].[LocalPayroll]
-ADD CONSTRAINT [FK_LocalPayroll_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -17924,17 +17326,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Location_Document' AND parent_object_id = OBJECT_ID(N'edfi.Location')
-)
-ALTER TABLE [edfi].[Location]
-ADD CONSTRAINT [FK_Location_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_Location_School_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.Location')
 )
 ALTER TABLE [edfi].[Location]
@@ -17942,17 +17333,6 @@ ADD CONSTRAINT [FK_Location_School_RefKey]
 FOREIGN KEY ([School_SchoolId], [School_DocumentId])
 REFERENCES [edfi].[School] ([SchoolId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ObjectDimension_Document' AND parent_object_id = OBJECT_ID(N'edfi.ObjectDimension')
-)
-ALTER TABLE [edfi].[ObjectDimension]
-ADD CONSTRAINT [FK_ObjectDimension_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -17997,17 +17377,6 @@ ADD CONSTRAINT [FK_ObjectiveAssessment_Assessment_RefKey]
 FOREIGN KEY ([AssessmentIdentifier_Unified], [Namespace_Unified], [Assessment_DocumentId])
 REFERENCES [edfi].[Assessment] ([AssessmentIdentifier], [Namespace], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ObjectiveAssessment_Document' AND parent_object_id = OBJECT_ID(N'edfi.ObjectiveAssessment')
-)
-ALTER TABLE [edfi].[ObjectiveAssessment]
-ADD CONSTRAINT [FK_ObjectiveAssessment_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -18144,17 +17513,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_OpenStaffPosition_Document' AND parent_object_id = OBJECT_ID(N'edfi.OpenStaffPosition')
-)
-ALTER TABLE [edfi].[OpenStaffPosition]
-ADD CONSTRAINT [FK_OpenStaffPosition_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_OpenStaffPosition_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.OpenStaffPosition')
 )
 ALTER TABLE [edfi].[OpenStaffPosition]
@@ -18254,17 +17612,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_OperationalUnitDimension_Document' AND parent_object_id = OBJECT_ID(N'edfi.OperationalUnitDimension')
-)
-ALTER TABLE [edfi].[OperationalUnitDimension]
-ADD CONSTRAINT [FK_OperationalUnitDimension_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_OperationalUnitDimensionReportingTag_OperationalUnitDimension' AND parent_object_id = OBJECT_ID(N'edfi.OperationalUnitDimensionReportingTag')
 )
 ALTER TABLE [edfi].[OperationalUnitDimensionReportingTag]
@@ -18294,17 +17641,6 @@ ADD CONSTRAINT [FK_OrganizationDepartment_AcademicSubjectDescriptor]
 FOREIGN KEY ([AcademicSubjectDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_OrganizationDepartment_Document' AND parent_object_id = OBJECT_ID(N'edfi.OrganizationDepartment')
-)
-ALTER TABLE [edfi].[OrganizationDepartment]
-ADD CONSTRAINT [FK_OrganizationDepartment_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -18540,17 +17876,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Person_Document' AND parent_object_id = OBJECT_ID(N'edfi.Person')
-)
-ALTER TABLE [edfi].[Person]
-ADD CONSTRAINT [FK_Person_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_Person_SourceSystemDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.Person')
 )
 ALTER TABLE [edfi].[Person]
@@ -18558,17 +17883,6 @@ ADD CONSTRAINT [FK_Person_SourceSystemDescriptor]
 FOREIGN KEY ([SourceSystemDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_PostSecondaryEvent_Document' AND parent_object_id = OBJECT_ID(N'edfi.PostSecondaryEvent')
-)
-ALTER TABLE [edfi].[PostSecondaryEvent]
-ADD CONSTRAINT [FK_PostSecondaryEvent_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -18613,17 +17927,6 @@ ADD CONSTRAINT [FK_PostSecondaryInstitution_AdministrativeFundingControlDescript
 FOREIGN KEY ([AdministrativeFundingControlDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_PostSecondaryInstitution_Document' AND parent_object_id = OBJECT_ID(N'edfi.PostSecondaryInstitution')
-)
-ALTER TABLE [edfi].[PostSecondaryInstitution]
-ADD CONSTRAINT [FK_PostSecondaryInstitution_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -18881,17 +18184,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Program_Document' AND parent_object_id = OBJECT_ID(N'edfi.Program')
-)
-ALTER TABLE [edfi].[Program]
-ADD CONSTRAINT [FK_Program_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_Program_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.Program')
 )
 ALTER TABLE [edfi].[Program]
@@ -18980,17 +18272,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ProgramDimension_Document' AND parent_object_id = OBJECT_ID(N'edfi.ProgramDimension')
-)
-ALTER TABLE [edfi].[ProgramDimension]
-ADD CONSTRAINT [FK_ProgramDimension_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_ProgramDimensionReportingTag_ProgramDimension' AND parent_object_id = OBJECT_ID(N'edfi.ProgramDimensionReportingTag')
 )
 ALTER TABLE [edfi].[ProgramDimensionReportingTag]
@@ -19009,17 +18290,6 @@ ADD CONSTRAINT [FK_ProgramDimensionReportingTag_ReportingTagDescriptor]
 FOREIGN KEY ([ReportingTagDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ProgramEvaluation_Document' AND parent_object_id = OBJECT_ID(N'edfi.ProgramEvaluation')
-)
-ALTER TABLE [edfi].[ProgramEvaluation]
-ADD CONSTRAINT [FK_ProgramEvaluation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -19086,17 +18356,6 @@ ADD CONSTRAINT [FK_ProgramEvaluationLevel_RatingLevelDescriptor]
 FOREIGN KEY ([RatingLevelDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ProgramEvaluationElement_Document' AND parent_object_id = OBJECT_ID(N'edfi.ProgramEvaluationElement')
-)
-ALTER TABLE [edfi].[ProgramEvaluationElement]
-ADD CONSTRAINT [FK_ProgramEvaluationElement_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -19178,17 +18437,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ProgramEvaluationObjective_Document' AND parent_object_id = OBJECT_ID(N'edfi.ProgramEvaluationObjective')
-)
-ALTER TABLE [edfi].[ProgramEvaluationObjective]
-ADD CONSTRAINT [FK_ProgramEvaluationObjective_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_ProgramEvaluationObjective_ProgramEvaluation' AND parent_object_id = OBJECT_ID(N'edfi.ProgramEvaluationObjective')
 )
 ALTER TABLE [edfi].[ProgramEvaluationObjective]
@@ -19255,17 +18503,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ProjectDimension_Document' AND parent_object_id = OBJECT_ID(N'edfi.ProjectDimension')
-)
-ALTER TABLE [edfi].[ProjectDimension]
-ADD CONSTRAINT [FK_ProjectDimension_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_ProjectDimensionReportingTag_ProjectDimension' AND parent_object_id = OBJECT_ID(N'edfi.ProjectDimensionReportingTag')
 )
 ALTER TABLE [edfi].[ProjectDimensionReportingTag]
@@ -19284,17 +18521,6 @@ ADD CONSTRAINT [FK_ProjectDimensionReportingTag_ReportingTagDescriptor]
 FOREIGN KEY ([ReportingTagDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ReportCard_Document' AND parent_object_id = OBJECT_ID(N'edfi.ReportCard')
-)
-ALTER TABLE [edfi].[ReportCard]
-ADD CONSTRAINT [FK_ReportCard_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -19464,17 +18690,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_RestraintEvent_Document' AND parent_object_id = OBJECT_ID(N'edfi.RestraintEvent')
-)
-ALTER TABLE [edfi].[RestraintEvent]
-ADD CONSTRAINT [FK_RestraintEvent_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_RestraintEvent_EducationalEnvironmentDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.RestraintEvent')
 )
 ALTER TABLE [edfi].[RestraintEvent]
@@ -19603,17 +18818,6 @@ ADD CONSTRAINT [FK_School_CharterStatusDescriptor]
 FOREIGN KEY ([CharterStatusDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_School_Document' AND parent_object_id = OBJECT_ID(N'edfi.School')
-)
-ALTER TABLE [edfi].[School]
-ADD CONSTRAINT [FK_School_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -19937,17 +19141,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SchoolYearType_Document' AND parent_object_id = OBJECT_ID(N'edfi.SchoolYearType')
-)
-ALTER TABLE [edfi].[SchoolYearType]
-ADD CONSTRAINT [FK_SchoolYearType_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_Section_AvailableCreditTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.Section')
 )
 ALTER TABLE [edfi].[Section]
@@ -19966,17 +19159,6 @@ ADD CONSTRAINT [FK_Section_CourseOffering]
 FOREIGN KEY ([CourseOffering_DocumentId])
 REFERENCES [edfi].[CourseOffering] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Section_Document' AND parent_object_id = OBJECT_ID(N'edfi.Section')
-)
-ALTER TABLE [edfi].[Section]
-ADD CONSTRAINT [FK_Section_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -20190,17 +19372,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SectionAttendanceTakenEvent_Document' AND parent_object_id = OBJECT_ID(N'edfi.SectionAttendanceTakenEvent')
-)
-ALTER TABLE [edfi].[SectionAttendanceTakenEvent]
-ADD CONSTRAINT [FK_SectionAttendanceTakenEvent_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_SectionAttendanceTakenEvent_Section' AND parent_object_id = OBJECT_ID(N'edfi.SectionAttendanceTakenEvent')
 )
 ALTER TABLE [edfi].[SectionAttendanceTakenEvent]
@@ -20219,17 +19390,6 @@ ADD CONSTRAINT [FK_SectionAttendanceTakenEvent_Staff_RefKey]
 FOREIGN KEY ([Staff_StaffUniqueId], [Staff_DocumentId])
 REFERENCES [edfi].[Staff] ([StaffUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Session_Document' AND parent_object_id = OBJECT_ID(N'edfi.Session')
-)
-ALTER TABLE [edfi].[Session]
-ADD CONSTRAINT [FK_Session_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -20322,17 +19482,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SourceDimension_Document' AND parent_object_id = OBJECT_ID(N'edfi.SourceDimension')
-)
-ALTER TABLE [edfi].[SourceDimension]
-ADD CONSTRAINT [FK_SourceDimension_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_SourceDimensionReportingTag_ReportingTagDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.SourceDimensionReportingTag')
 )
 ALTER TABLE [edfi].[SourceDimensionReportingTag]
@@ -20362,17 +19511,6 @@ ADD CONSTRAINT [FK_Staff_CitizenshipStatusDescriptor]
 FOREIGN KEY ([CitizenshipStatusDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Staff_Document' AND parent_object_id = OBJECT_ID(N'edfi.Staff')
-)
-ALTER TABLE [edfi].[Staff]
-ADD CONSTRAINT [FK_Staff_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -20894,17 +20032,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffAbsenceEvent_Document' AND parent_object_id = OBJECT_ID(N'edfi.StaffAbsenceEvent')
-)
-ALTER TABLE [edfi].[StaffAbsenceEvent]
-ADD CONSTRAINT [FK_StaffAbsenceEvent_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StaffAbsenceEvent_Staff_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StaffAbsenceEvent')
 )
 ALTER TABLE [edfi].[StaffAbsenceEvent]
@@ -20927,17 +20054,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffCohortAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StaffCohortAssociation')
-)
-ALTER TABLE [edfi].[StaffCohortAssociation]
-ADD CONSTRAINT [FK_StaffCohortAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StaffCohortAssociation_Staff_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StaffCohortAssociation')
 )
 ALTER TABLE [edfi].[StaffCohortAssociation]
@@ -20956,17 +20072,6 @@ ADD CONSTRAINT [FK_StaffDisciplineIncidentAssociation_DisciplineIncident_RefKey]
 FOREIGN KEY ([DisciplineIncident_IncidentIdentifier], [DisciplineIncident_SchoolId], [DisciplineIncident_DocumentId])
 REFERENCES [edfi].[DisciplineIncident] ([IncidentIdentifier], [School_SchoolId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffDisciplineIncidentAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StaffDisciplineIncidentAssociation')
-)
-ALTER TABLE [edfi].[StaffDisciplineIncidentAssociation]
-ADD CONSTRAINT [FK_StaffDisciplineIncidentAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -21022,17 +20127,6 @@ ADD CONSTRAINT [FK_StaffEducationOrganizationAssignmentAssociation_Credential_St
 FOREIGN KEY ([Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffEducationOrganizationAssignmentAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StaffEducationOrganizationAssignmentAssociation')
-)
-ALTER TABLE [edfi].[StaffEducationOrganizationAssignmentAssociation]
-ADD CONSTRAINT [FK_StaffEducationOrganizationAssignmentAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -21136,17 +20230,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffEducationOrganizationContactAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StaffEducationOrganizationContactAssociation')
-)
-ALTER TABLE [edfi].[StaffEducationOrganizationContactAssociation]
-ADD CONSTRAINT [FK_StaffEducationOrganizationContactAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StaffEducationOrganizationContactAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StaffEducationOrganizationContactAssociation')
 )
 ALTER TABLE [edfi].[StaffEducationOrganizationContactAssociation]
@@ -21224,17 +20307,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffEducationOrganizationEmploymentAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StaffEducationOrganizationEmploymentAssociation')
-)
-ALTER TABLE [edfi].[StaffEducationOrganizationEmploymentAssociation]
-ADD CONSTRAINT [FK_StaffEducationOrganizationEmploymentAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StaffEducationOrganizationEmploymentAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StaffEducationOrganizationEmploymentAssociation')
 )
 ALTER TABLE [edfi].[StaffEducationOrganizationEmploymentAssociation]
@@ -21290,17 +20362,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffLeave_Document' AND parent_object_id = OBJECT_ID(N'edfi.StaffLeave')
-)
-ALTER TABLE [edfi].[StaffLeave]
-ADD CONSTRAINT [FK_StaffLeave_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StaffLeave_StaffLeaveEventCategoryDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StaffLeave')
 )
 ALTER TABLE [edfi].[StaffLeave]
@@ -21319,17 +20380,6 @@ ADD CONSTRAINT [FK_StaffLeave_Staff_RefKey]
 FOREIGN KEY ([Staff_StaffUniqueId], [Staff_DocumentId])
 REFERENCES [edfi].[Staff] ([StaffUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffProgramAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StaffProgramAssociation')
-)
-ALTER TABLE [edfi].[StaffProgramAssociation]
-ADD CONSTRAINT [FK_StaffProgramAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -21374,17 +20424,6 @@ ADD CONSTRAINT [FK_StaffSchoolAssociation_Calendar_RefKey]
 FOREIGN KEY ([Calendar_CalendarCode], [SchoolId_Unified], [SchoolYear_Unified], [Calendar_DocumentId])
 REFERENCES [edfi].[Calendar] ([CalendarCode], [School_SchoolId], [SchoolYear_SchoolYear], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffSchoolAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StaffSchoolAssociation')
-)
-ALTER TABLE [edfi].[StaffSchoolAssociation]
-ADD CONSTRAINT [FK_StaffSchoolAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -21488,17 +20527,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffSectionAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StaffSectionAssociation')
-)
-ALTER TABLE [edfi].[StaffSectionAssociation]
-ADD CONSTRAINT [FK_StaffSectionAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StaffSectionAssociation_Section' AND parent_object_id = OBJECT_ID(N'edfi.StaffSectionAssociation')
 )
 ALTER TABLE [edfi].[StaffSectionAssociation]
@@ -21517,17 +20545,6 @@ ADD CONSTRAINT [FK_StaffSectionAssociation_Staff_RefKey]
 FOREIGN KEY ([Staff_StaffUniqueId], [Staff_DocumentId])
 REFERENCES [edfi].[Staff] ([StaffUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StateEducationAgency_Document' AND parent_object_id = OBJECT_ID(N'edfi.StateEducationAgency')
-)
-ALTER TABLE [edfi].[StateEducationAgency]
-ADD CONSTRAINT [FK_StateEducationAgency_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -21829,17 +20846,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Student_Document' AND parent_object_id = OBJECT_ID(N'edfi.Student')
-)
-ALTER TABLE [edfi].[Student]
-ADD CONSTRAINT [FK_Student_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_Student_Person_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.Student')
 )
 ALTER TABLE [edfi].[Student]
@@ -22012,17 +21018,6 @@ ADD CONSTRAINT [FK_StudentAcademicRecord_CumulativeEarnedCreditTypeDescriptor]
 FOREIGN KEY ([CumulativeEarnedCreditTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentAcademicRecord_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentAcademicRecord')
-)
-ALTER TABLE [edfi].[StudentAcademicRecord]
-ADD CONSTRAINT [FK_StudentAcademicRecord_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -22287,17 +21282,6 @@ ADD CONSTRAINT [FK_StudentAssessment_Assessment_RefKey]
 FOREIGN KEY ([Assessment_AssessmentIdentifier], [Assessment_Namespace], [Assessment_DocumentId])
 REFERENCES [edfi].[Assessment] ([AssessmentIdentifier], [Namespace], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentAssessment_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessment')
-)
-ALTER TABLE [edfi].[StudentAssessment]
-ADD CONSTRAINT [FK_StudentAssessment_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -22621,17 +21605,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentAssessmentEducationOrganizationAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentEducationOrganizationAssociation')
-)
-ALTER TABLE [edfi].[StudentAssessmentEducationOrganizationAssociation]
-ADD CONSTRAINT [FK_StudentAssessmentEducationOrganizationAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentAssessmentEducationOrganizationAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentEducationOrganizationAssociation')
 )
 ALTER TABLE [edfi].[StudentAssessmentEducationOrganizationAssociation]
@@ -22694,17 +21667,6 @@ ADD CONSTRAINT [FK_StudentAssessmentRegistration_AssessmentGradeLevelDescriptor]
 FOREIGN KEY ([AssessmentGradeLevelDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentAssessmentRegistration_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistration')
-)
-ALTER TABLE [edfi].[StudentAssessmentRegistration]
-ADD CONSTRAINT [FK_StudentAssessmentRegistration_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -22819,17 +21781,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentAssessmentRegistrationBatteryPartAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistrationBatteryPartAssociation')
-)
-ALTER TABLE [edfi].[StudentAssessmentRegistrationBatteryPartAssociation]
-ADD CONSTRAINT [FK_StudentAssessmentRegistrationBatteryPartAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentAssessmentRegistrationBatteryPartAssociation_StudentAssessmentRegistration' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistrationBatteryPartAssociation')
 )
 ALTER TABLE [edfi].[StudentAssessmentRegistrationBatteryPartAssociation]
@@ -22858,17 +21809,6 @@ ALTER TABLE [edfi].[StudentAssessmentRegistrationBatteryPartAssociationAccommoda
 ADD CONSTRAINT [FK_StudentAssessmentRegistrationBatteryPartAssociationAccommodation_StudentAssessmentRegistrationBatteryPartAssociation]
 FOREIGN KEY ([StudentAssessmentRegistrationBatteryPartAssociation_DocumentId])
 REFERENCES [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentCTEProgramAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentCTEProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentCTEProgramAssociation]
-ADD CONSTRAINT [FK_StudentCTEProgramAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
@@ -22995,17 +21935,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentCohortAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentCohortAssociation')
-)
-ALTER TABLE [edfi].[StudentCohortAssociation]
-ADD CONSTRAINT [FK_StudentCohortAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentCohortAssociation_Student_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentCohortAssociation')
 )
 ALTER TABLE [edfi].[StudentCohortAssociation]
@@ -23046,17 +21975,6 @@ ADD CONSTRAINT [FK_StudentCompetencyObjective_CompetencyLevelDescriptor]
 FOREIGN KEY ([CompetencyLevelDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentCompetencyObjective_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentCompetencyObjective')
-)
-ALTER TABLE [edfi].[StudentCompetencyObjective]
-ADD CONSTRAINT [FK_StudentCompetencyObjective_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -23182,17 +22100,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentContactAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentContactAssociation')
-)
-ALTER TABLE [edfi].[StudentContactAssociation]
-ADD CONSTRAINT [FK_StudentContactAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentContactAssociation_RelationDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentContactAssociation')
 )
 ALTER TABLE [edfi].[StudentContactAssociation]
@@ -23233,17 +22140,6 @@ ADD CONSTRAINT [FK_StudentDisciplineIncidentBehaviorAssociation_DisciplineIncide
 FOREIGN KEY ([DisciplineIncident_IncidentIdentifier], [DisciplineIncident_SchoolId], [DisciplineIncident_DocumentId])
 REFERENCES [edfi].[DisciplineIncident] ([IncidentIdentifier], [School_SchoolId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentDisciplineIncidentBehaviorAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentDisciplineIncidentBehaviorAssociation')
-)
-ALTER TABLE [edfi].[StudentDisciplineIncidentBehaviorAssociation]
-ADD CONSTRAINT [FK_StudentDisciplineIncidentBehaviorAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -23314,17 +22210,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentDisciplineIncidentNonOffenderAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentDisciplineIncidentNonOffenderAssociation')
-)
-ALTER TABLE [edfi].[StudentDisciplineIncidentNonOffenderAssociation]
-ADD CONSTRAINT [FK_StudentDisciplineIncidentNonOffenderAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentDisciplineIncidentNonOffenderAssociation_Student_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentDisciplineIncidentNonOffenderAssociation')
 )
 ALTER TABLE [edfi].[StudentDisciplineIncidentNonOffenderAssociation]
@@ -23353,17 +22238,6 @@ ALTER TABLE [edfi].[StudentDisciplineIncidentNonOffenderAssociationDisciplineInc
 ADD CONSTRAINT [FK_StudentDisciplineIncidentNonOffenderAssociationDisciplineIncidentParticipationCode_StudentDisciplineIncidentNonOff_26601efedb]
 FOREIGN KEY ([StudentDisciplineIncidentNonOffenderAssociation_DocumentId])
 REFERENCES [edfi].[StudentDisciplineIncidentNonOffenderAssociation] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentEducationOrganizationAssessmentAccommodation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentEducationOrganizationAssessmentAccommodation')
-)
-ALTER TABLE [edfi].[StudentEducationOrganizationAssessmentAccommodation]
-ADD CONSTRAINT [FK_StudentEducationOrganizationAssessmentAccommodation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
@@ -23420,17 +22294,6 @@ ADD CONSTRAINT [FK_StudentEducationOrganizationAssociation_BarrierToInternetAcce
 FOREIGN KEY ([BarrierToInternetAccessInResidenceDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentEducationOrganizationAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentEducationOrganizationAssociation')
-)
-ALTER TABLE [edfi].[StudentEducationOrganizationAssociation]
-ADD CONSTRAINT [FK_StudentEducationOrganizationAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -23996,17 +22859,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentEducationOrganizationResponsibilityAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentEducationOrganizationResponsibilityAssociation')
-)
-ALTER TABLE [edfi].[StudentEducationOrganizationResponsibilityAssociation]
-ADD CONSTRAINT [FK_StudentEducationOrganizationResponsibilityAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentEducationOrganizationResponsibilityAssociation')
 )
 ALTER TABLE [edfi].[StudentEducationOrganizationResponsibilityAssociation]
@@ -24062,17 +22914,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentGradebookEntry_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentGradebookEntry')
-)
-ALTER TABLE [edfi].[StudentGradebookEntry]
-ADD CONSTRAINT [FK_StudentGradebookEntry_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentGradebookEntry_GradebookEntry' AND parent_object_id = OBJECT_ID(N'edfi.StudentGradebookEntry')
 )
 ALTER TABLE [edfi].[StudentGradebookEntry]
@@ -24102,17 +22943,6 @@ ADD CONSTRAINT [FK_StudentGradebookEntry_SubmissionStatusDescriptor]
 FOREIGN KEY ([SubmissionStatusDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentHealth_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentHealth')
-)
-ALTER TABLE [edfi].[StudentHealth]
-ADD CONSTRAINT [FK_StudentHealth_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -24200,17 +23030,6 @@ ALTER TABLE [edfi].[StudentHealthRequiredImmunizationDate]
 ADD CONSTRAINT [FK_StudentHealthRequiredImmunizationDate_StudentHealthRequiredImmunization]
 FOREIGN KEY ([ParentCollectionItemId], [StudentHealth_DocumentId])
 REFERENCES [edfi].[StudentHealthRequiredImmunization] ([CollectionItemId], [StudentHealth_DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentHomelessProgramAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentHomelessProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentHomelessProgramAssociation]
-ADD CONSTRAINT [FK_StudentHomelessProgramAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
@@ -24337,17 +23156,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentInterventionAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentInterventionAssociation')
-)
-ALTER TABLE [edfi].[StudentInterventionAssociation]
-ADD CONSTRAINT [FK_StudentInterventionAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentInterventionAssociation_Intervention' AND parent_object_id = OBJECT_ID(N'edfi.StudentInterventionAssociation')
 )
 ALTER TABLE [edfi].[StudentInterventionAssociation]
@@ -24436,17 +23244,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentInterventionAttendanceEvent_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentInterventionAttendanceEvent')
-)
-ALTER TABLE [edfi].[StudentInterventionAttendanceEvent]
-ADD CONSTRAINT [FK_StudentInterventionAttendanceEvent_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentInterventionAttendanceEvent_EducationalEnvironmentDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentInterventionAttendanceEvent')
 )
 ALTER TABLE [edfi].[StudentInterventionAttendanceEvent]
@@ -24476,17 +23273,6 @@ ADD CONSTRAINT [FK_StudentInterventionAttendanceEvent_Student_RefKey]
 FOREIGN KEY ([Student_StudentUniqueId], [Student_DocumentId])
 REFERENCES [edfi].[Student] ([StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentLanguageInstructionProgramAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentLanguageInstructionProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentLanguageInstructionProgramAssociation]
-ADD CONSTRAINT [FK_StudentLanguageInstructionProgramAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -24667,17 +23453,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentMigrantEducationProgramAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentMigrantEducationProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentMigrantEducationProgramAssociation]
-ADD CONSTRAINT [FK_StudentMigrantEducationProgramAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentMigrantEducationProgramAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentMigrantEducationProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentMigrantEducationProgramAssociation]
@@ -24772,17 +23547,6 @@ ALTER TABLE [edfi].[StudentMigrantEducationProgramAssociationProgramParticipatio
 ADD CONSTRAINT [FK_StudentMigrantEducationProgramAssociationProgramParticipationStatus_StudentMigrantEducationProgramAssociation]
 FOREIGN KEY ([StudentMigrantEducationProgramAssociation_DocumentId])
 REFERENCES [edfi].[StudentMigrantEducationProgramAssociation] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentNeglectedOrDelinquentProgramAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentNeglectedOrDelinquentProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
-ADD CONSTRAINT [FK_StudentNeglectedOrDelinquentProgramAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
@@ -24920,17 +23684,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentProgramAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentProgramAssociation]
-ADD CONSTRAINT [FK_StudentProgramAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentProgramAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentProgramAssociation]
@@ -25041,17 +23794,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentProgramAttendanceEvent_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramAttendanceEvent')
-)
-ALTER TABLE [edfi].[StudentProgramAttendanceEvent]
-ADD CONSTRAINT [FK_StudentProgramAttendanceEvent_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentProgramAttendanceEvent_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramAttendanceEvent')
 )
 ALTER TABLE [edfi].[StudentProgramAttendanceEvent]
@@ -25103,17 +23845,6 @@ ADD CONSTRAINT [FK_StudentProgramAttendanceEvent_Student_RefKey]
 FOREIGN KEY ([Student_StudentUniqueId], [Student_DocumentId])
 REFERENCES [edfi].[Student] ([StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentProgramEvaluation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluation')
-)
-ALTER TABLE [edfi].[StudentProgramEvaluation]
-ADD CONSTRAINT [FK_StudentProgramEvaluation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -25371,17 +24102,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSchoolAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAssociation')
-)
-ALTER TABLE [edfi].[StudentSchoolAssociation]
-ADD CONSTRAINT [FK_StudentSchoolAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentSchoolAssociation_EnrollmentTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAssociation')
 )
 ALTER TABLE [edfi].[StudentSchoolAssociation]
@@ -25602,17 +24322,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSchoolAttendanceEvent_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAttendanceEvent')
-)
-ALTER TABLE [edfi].[StudentSchoolAttendanceEvent]
-ADD CONSTRAINT [FK_StudentSchoolAttendanceEvent_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentSchoolAttendanceEvent_EducationalEnvironmentDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAttendanceEvent')
 )
 ALTER TABLE [edfi].[StudentSchoolAttendanceEvent]
@@ -25653,17 +24362,6 @@ ADD CONSTRAINT [FK_StudentSchoolAttendanceEvent_Student_RefKey]
 FOREIGN KEY ([Student_StudentUniqueId], [Student_DocumentId])
 REFERENCES [edfi].[Student] ([StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSchoolFoodServiceProgramAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolFoodServiceProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentSchoolFoodServiceProgramAssociation]
-ADD CONSTRAINT [FK_StudentSchoolFoodServiceProgramAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -25767,17 +24465,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSection504ProgramAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentSection504ProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentSection504ProgramAssociation]
-ADD CONSTRAINT [FK_StudentSection504ProgramAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentSection504ProgramAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentSection504ProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentSection504ProgramAssociation]
@@ -25873,17 +24560,6 @@ ADD CONSTRAINT [FK_StudentSectionAssociation_AttemptStatusDescriptor]
 FOREIGN KEY ([AttemptStatusDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSectionAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentSectionAssociation')
-)
-ALTER TABLE [edfi].[StudentSectionAssociation]
-ADD CONSTRAINT [FK_StudentSectionAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -25998,17 +24674,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSectionAttendanceEvent_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentSectionAttendanceEvent')
-)
-ALTER TABLE [edfi].[StudentSectionAttendanceEvent]
-ADD CONSTRAINT [FK_StudentSectionAttendanceEvent_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentSectionAttendanceEvent_EducationalEnvironmentDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentSectionAttendanceEvent')
 )
 ALTER TABLE [edfi].[StudentSectionAttendanceEvent]
@@ -26059,17 +24724,6 @@ ALTER TABLE [edfi].[StudentSectionAttendanceEventClassPeriod]
 ADD CONSTRAINT [FK_StudentSectionAttendanceEventClassPeriod_StudentSectionAttendanceEvent]
 FOREIGN KEY ([StudentSectionAttendanceEvent_DocumentId])
 REFERENCES [edfi].[StudentSectionAttendanceEvent] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSpecialEducationProgramAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentSpecialEducationProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentSpecialEducationProgramAssociation]
-ADD CONSTRAINT [FK_StudentSpecialEducationProgramAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
@@ -26295,17 +24949,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSpecialEducationProgramEligibilityAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentSpecialEducationProgramEligibilityAssociation')
-)
-ALTER TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
-ADD CONSTRAINT [FK_StudentSpecialEducationProgramEligibilityAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentSpecialEducationProgramEligibilityAssociation')
 )
 ALTER TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
@@ -26390,17 +25033,6 @@ ADD CONSTRAINT [FK_StudentSpecialEducationProgramEligibilityAssociation_Student_
 FOREIGN KEY ([Student_StudentUniqueId], [Student_DocumentId])
 REFERENCES [edfi].[Student] ([StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentTitleIPartAProgramAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentTitleIPartAProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentTitleIPartAProgramAssociation]
-ADD CONSTRAINT [FK_StudentTitleIPartAProgramAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -26515,17 +25147,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentTransportation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentTransportation')
-)
-ALTER TABLE [edfi].[StudentTransportation]
-ADD CONSTRAINT [FK_StudentTransportation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentTransportation_StudentBusDetailsBusRouteDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentTransportation')
 )
 ALTER TABLE [edfi].[StudentTransportation]
@@ -26625,17 +25246,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Survey_Document' AND parent_object_id = OBJECT_ID(N'edfi.Survey')
-)
-ALTER TABLE [edfi].[Survey]
-ADD CONSTRAINT [FK_Survey_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_Survey_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.Survey')
 )
 ALTER TABLE [edfi].[Survey]
@@ -26691,17 +25301,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveyCourseAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.SurveyCourseAssociation')
-)
-ALTER TABLE [edfi].[SurveyCourseAssociation]
-ADD CONSTRAINT [FK_SurveyCourseAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_SurveyCourseAssociation_Survey_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.SurveyCourseAssociation')
 )
 ALTER TABLE [edfi].[SurveyCourseAssociation]
@@ -26709,17 +25308,6 @@ ADD CONSTRAINT [FK_SurveyCourseAssociation_Survey_RefKey]
 FOREIGN KEY ([Survey_Namespace], [Survey_SurveyIdentifier], [Survey_DocumentId])
 REFERENCES [edfi].[Survey] ([Namespace], [SurveyIdentifier], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveyProgramAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.SurveyProgramAssociation')
-)
-ALTER TABLE [edfi].[SurveyProgramAssociation]
-ADD CONSTRAINT [FK_SurveyProgramAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -26753,17 +25341,6 @@ ADD CONSTRAINT [FK_SurveyProgramAssociation_Survey_RefKey]
 FOREIGN KEY ([Survey_Namespace], [Survey_SurveyIdentifier], [Survey_DocumentId])
 REFERENCES [edfi].[Survey] ([Namespace], [SurveyIdentifier], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveyQuestion_Document' AND parent_object_id = OBJECT_ID(N'edfi.SurveyQuestion')
-)
-ALTER TABLE [edfi].[SurveyQuestion]
-ADD CONSTRAINT [FK_SurveyQuestion_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -26823,17 +25400,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveyQuestionResponse_Document' AND parent_object_id = OBJECT_ID(N'edfi.SurveyQuestionResponse')
-)
-ALTER TABLE [edfi].[SurveyQuestionResponse]
-ADD CONSTRAINT [FK_SurveyQuestionResponse_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_SurveyQuestionResponse_SurveyQuestion_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.SurveyQuestionResponse')
 )
 ALTER TABLE [edfi].[SurveyQuestionResponse]
@@ -26873,17 +25439,6 @@ ALTER TABLE [edfi].[SurveyQuestionResponseValue]
 ADD CONSTRAINT [FK_SurveyQuestionResponseValue_SurveyQuestionResponse]
 FOREIGN KEY ([SurveyQuestionResponse_DocumentId])
 REFERENCES [edfi].[SurveyQuestionResponse] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveyResponse_Document' AND parent_object_id = OBJECT_ID(N'edfi.SurveyResponse')
-)
-ALTER TABLE [edfi].[SurveyResponse]
-ADD CONSTRAINT [FK_SurveyResponse_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
@@ -26955,17 +25510,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveyResponseEducationOrganizationTargetAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.SurveyResponseEducationOrganizationTargetAssociation')
-)
-ALTER TABLE [edfi].[SurveyResponseEducationOrganizationTargetAssociation]
-ADD CONSTRAINT [FK_SurveyResponseEducationOrganizationTargetAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_SurveyResponseEducationOrganizationTargetAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.SurveyResponseEducationOrganizationTargetAssociation')
 )
 ALTER TABLE [edfi].[SurveyResponseEducationOrganizationTargetAssociation]
@@ -26984,17 +25528,6 @@ ADD CONSTRAINT [FK_SurveyResponseEducationOrganizationTargetAssociation_SurveyRe
 FOREIGN KEY ([SurveyResponse_Namespace], [SurveyResponse_SurveyIdentifier], [SurveyResponse_SurveyResponseIdentifier], [SurveyResponse_DocumentId])
 REFERENCES [edfi].[SurveyResponse] ([Survey_Namespace], [Survey_SurveyIdentifier], [SurveyResponseIdentifier], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveyResponseStaffTargetAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.SurveyResponseStaffTargetAssociation')
-)
-ALTER TABLE [edfi].[SurveyResponseStaffTargetAssociation]
-ADD CONSTRAINT [FK_SurveyResponseStaffTargetAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -27021,17 +25554,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveySection_Document' AND parent_object_id = OBJECT_ID(N'edfi.SurveySection')
-)
-ALTER TABLE [edfi].[SurveySection]
-ADD CONSTRAINT [FK_SurveySection_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_SurveySection_Survey_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.SurveySection')
 )
 ALTER TABLE [edfi].[SurveySection]
@@ -27039,17 +25561,6 @@ ADD CONSTRAINT [FK_SurveySection_Survey_RefKey]
 FOREIGN KEY ([Survey_Namespace], [Survey_SurveyIdentifier], [Survey_DocumentId])
 REFERENCES [edfi].[Survey] ([Namespace], [SurveyIdentifier], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveySectionAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.SurveySectionAssociation')
-)
-ALTER TABLE [edfi].[SurveySectionAssociation]
-ADD CONSTRAINT [FK_SurveySectionAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -27076,17 +25587,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveySectionResponse_Document' AND parent_object_id = OBJECT_ID(N'edfi.SurveySectionResponse')
-)
-ALTER TABLE [edfi].[SurveySectionResponse]
-ADD CONSTRAINT [FK_SurveySectionResponse_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_SurveySectionResponse_SurveyResponse_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.SurveySectionResponse')
 )
 ALTER TABLE [edfi].[SurveySectionResponse]
@@ -27105,17 +25605,6 @@ ADD CONSTRAINT [FK_SurveySectionResponse_SurveySection_RefKey]
 FOREIGN KEY ([Namespace_Unified], [SurveyIdentifier_Unified], [SurveySection_SurveySectionTitle], [SurveySection_DocumentId])
 REFERENCES [edfi].[SurveySection] ([Survey_Namespace], [Survey_SurveyIdentifier], [SurveySectionTitle], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveySectionResponseEducationOrganizationTargetAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.SurveySectionResponseEducationOrganizationTargetAssociation')
-)
-ALTER TABLE [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation]
-ADD CONSTRAINT [FK_SurveySectionResponseEducationOrganizationTargetAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -27142,17 +25631,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveySectionResponseStaffTargetAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.SurveySectionResponseStaffTargetAssociation')
-)
-ALTER TABLE [edfi].[SurveySectionResponseStaffTargetAssociation]
-ADD CONSTRAINT [FK_SurveySectionResponseStaffTargetAssociation_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_SurveySectionResponseStaffTargetAssociation_Staff_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.SurveySectionResponseStaffTargetAssociation')
 )
 ALTER TABLE [edfi].[SurveySectionResponseStaffTargetAssociation]
@@ -27171,28 +25649,6 @@ ADD CONSTRAINT [FK_SurveySectionResponseStaffTargetAssociation_SurveySectionResp
 FOREIGN KEY ([Namespace_Unified], [SurveyIdentifier_Unified], [SurveySectionResponse_SurveyResponseIdentifier], [SurveySectionResponse_SurveySectionTitle], [SurveySectionResponse_DocumentId])
 REFERENCES [edfi].[SurveySectionResponse] ([Namespace_Unified], [SurveyIdentifier_Unified], [SurveyResponse_SurveyResponseIdentifier], [SurveySection_SurveySectionTitle], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationOrganizationIdentity_Document' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationIdentity')
-)
-ALTER TABLE [edfi].[EducationOrganizationIdentity]
-ADD CONSTRAINT [FK_EducationOrganizationIdentity_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_GeneralStudentProgramAssociationIdentity_Document' AND parent_object_id = OBJECT_ID(N'edfi.GeneralStudentProgramAssociationIdentity')
-)
-ALTER TABLE [edfi].[GeneralStudentProgramAssociationIdentity]
-ADD CONSTRAINT [FK_GeneralStudentProgramAssociationIdentity_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (

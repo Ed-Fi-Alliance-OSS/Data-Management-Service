@@ -230,25 +230,13 @@ public class Given_A_JsonSchema_With_Nested_Collections
     }
 
     /// <summary>
-    /// It should create the root document foreign key.
+    /// It should leave the root table free of foreign keys: DocumentId originates from
+    /// dms.DocumentIdSequence, so the root row has no parent document row to reference.
     /// </summary>
     [Test]
-    public void It_should_create_the_root_document_foreign_key()
+    public void It_should_not_create_a_root_document_foreign_key()
     {
-        var rootFk = _rootTable.Constraints.OfType<TableConstraint.ForeignKey>().Single();
-
-        rootFk
-            .Columns.Select(column => column.Value)
-            .Should()
-            .Equal(RelationalNameConventions.DocumentIdColumnName.Value);
-
-        rootFk.TargetTable.Should().Be(new DbTableName(new DbSchemaName("dms"), "Document"));
-        rootFk
-            .TargetColumns.Select(column => column.Value)
-            .Should()
-            .Equal(RelationalNameConventions.DocumentIdColumnName.Value);
-        rootFk.OnDelete.Should().Be(ReferentialAction.Cascade);
-        rootFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
+        _rootTable.Constraints.OfType<TableConstraint.ForeignKey>().Should().BeEmpty();
     }
 
     /// <summary>

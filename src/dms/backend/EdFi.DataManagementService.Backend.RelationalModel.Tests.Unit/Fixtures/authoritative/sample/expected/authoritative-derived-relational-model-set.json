@@ -2244,22 +2244,6 @@
               "EducationOrganizationId",
               "DocumentId"
             ]
-          },
-          {
-            "kind": "ForeignKey",
-            "name": "FK_EducationOrganizationIdentity_Document",
-            "columns": [
-              "DocumentId"
-            ],
-            "target_table": {
-              "schema": "dms",
-              "name": "Document"
-            },
-            "target_columns": [
-              "DocumentId"
-            ],
-            "on_delete": "Cascade",
-            "on_update": "NoAction"
           }
         ]
       }
@@ -2423,22 +2407,6 @@
               "Student_StudentUniqueId",
               "DocumentId"
             ]
-          },
-          {
-            "kind": "ForeignKey",
-            "name": "FK_GeneralStudentProgramAssociationIdentity_Document",
-            "columns": [
-              "DocumentId"
-            ],
-            "target_table": {
-              "schema": "dms",
-              "name": "Document"
-            },
-            "target_columns": [
-              "DocumentId"
-            ],
-            "on_delete": "Cascade",
-            "on_update": "NoAction"
           }
         ]
       }
@@ -69138,22 +69106,6 @@
               "on_update": "Cascade"
             },
             {
-              "kind": "ForeignKey",
-              "name": "FK_AssessmentAdministration_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
-            },
-            {
               "kind": "AllOrNoneNullability",
               "name": "CK_AssessmentAdministration_Assessment_AllNone",
               "fk_column": "Assessment_DocumentId",
@@ -70196,22 +70148,6 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_ProgramEvaluationElement_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
-            },
-            {
-              "kind": "ForeignKey",
               "name": "FK_ProgramEvaluationElement_ProgramEvaluationObjective_RefKey",
               "columns": [
                 "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle",
@@ -71246,22 +71182,6 @@
                 "DocumentId"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_StudentAssessmentRegistration_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
               "on_update": "NoAction"
             },
             {
@@ -72576,22 +72496,6 @@
                 "DocumentId"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
               "on_update": "NoAction"
             },
             {

@@ -134,6 +134,19 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_create_document_id_sequence()
+    {
+        _ddl.Should().Contain("CREATE SEQUENCE IF NOT EXISTS \"dms\".\"DocumentIdSequence\"");
+    }
+
+    [Test]
+    public void It_should_default_descriptor_document_id_from_the_document_id_sequence()
+    {
+        _ddl.Should()
+            .Contain("\"DocumentId\" bigint NOT NULL DEFAULT nextval('\"dms\".\"DocumentIdSequence\"')");
+    }
+
+    [Test]
     public void It_should_emit_collection_item_id_sequence_before_tables()
     {
         var sequence = _ddl.IndexOf(
@@ -563,10 +576,11 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     // ── Foreign keys ────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_fk_descriptor_document()
+    public void It_should_not_have_fk_descriptor_document()
     {
-        _ddl.Should().Contain("\"FK_Descriptor_Document\"");
-        _ddl.Should().Contain("ON DELETE CASCADE");
+        // dms.Descriptor originates its own DocumentId from dms.DocumentIdSequence, so it no longer
+        // depends on a dms.Document parent row.
+        _ddl.Should().NotContain("\"FK_Descriptor_Document\"");
     }
 
     [Test]
@@ -916,6 +930,22 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should().Contain("sys.sequences");
         _ddl.Should().Contain("[dms].[CollectionItemIdSequence]");
+    }
+
+    [Test]
+    public void It_should_create_document_id_sequence_with_catalog_check()
+    {
+        _ddl.Should().Contain("sys.sequences");
+        _ddl.Should().Contain("[dms].[DocumentIdSequence]");
+    }
+
+    [Test]
+    public void It_should_default_descriptor_document_id_from_the_document_id_sequence()
+    {
+        _ddl.Should()
+            .Contain(
+                "[DocumentId] bigint NOT NULL CONSTRAINT [DF_Descriptor_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence])"
+            );
     }
 
     [Test]
@@ -1300,9 +1330,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Foreign keys ────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_all_six_foreign_keys()
+    public void It_should_have_all_five_foreign_keys()
     {
-        _ddl.Should().Contain("[FK_Descriptor_Document]");
+        _ddl.Should().NotContain("[FK_Descriptor_Document]");
         _ddl.Should().Contain("[FK_Document_ResourceKey]");
         _ddl.Should().Contain("[FK_DocumentCache_Document]");
         _ddl.Should().Contain("[FK_ReferentialIdentity_Document]");

@@ -752,22 +752,6 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_ProfileRootOnlyMergeItem_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
-            },
-            {
-              "kind": "ForeignKey",
               "name": "FK_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescriptor_Unified",
               "columns": [
                 "PrimarySchoolTypeDescriptor_Unified_DescriptorId"
@@ -1084,22 +1068,6 @@
                 "StudentUniqueId",
                 "DocumentId"
               ]
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_Student_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
             }
           ]
         }

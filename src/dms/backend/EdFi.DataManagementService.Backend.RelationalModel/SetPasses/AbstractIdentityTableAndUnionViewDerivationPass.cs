@@ -16,8 +16,6 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
 {
     private const string DiscriminatorColumnLabel = "Discriminator";
     private const int DiscriminatorMaxLength = 256;
-    private static readonly DbSchemaName _dmsSchemaName = new("dms");
-    private static readonly DbTableName _documentTableName = new(_dmsSchemaName, "Document");
 
     /// <summary>
     /// Executes abstract identity table and union view derivation across all abstract resources.
@@ -1140,18 +1138,6 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
             var referenceKeyName = ConstraintNaming.BuildReferenceKeyUniqueName(tableName);
             constraints.Add(new TableConstraint.Unique(referenceKeyName, referenceKeyColumns.ToArray()));
         }
-
-        var fkName = ConstraintNaming.BuildForeignKeyName(tableName, ConstraintNaming.DocumentToken);
-
-        constraints.Add(
-            new TableConstraint.ForeignKey(
-                fkName,
-                [RelationalNameConventions.DocumentIdColumnName],
-                _documentTableName,
-                [RelationalNameConventions.DocumentIdColumnName],
-                OnDelete: ReferentialAction.Cascade
-            )
-        );
 
         return constraints.ToArray();
     }

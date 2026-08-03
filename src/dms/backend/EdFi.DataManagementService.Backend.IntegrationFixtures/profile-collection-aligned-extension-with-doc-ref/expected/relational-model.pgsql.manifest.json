@@ -601,22 +601,6 @@
               "columns": [
                 "ParentResourceId"
               ]
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_ParentResource_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
             }
           ]
         },
@@ -1073,22 +1057,6 @@
                 "SponsorName",
                 "DocumentId"
               ]
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_Sponsor_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
             }
           ]
         }

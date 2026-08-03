@@ -36,6 +36,8 @@ CREATE SEQUENCE IF NOT EXISTS "dms"."ChangeVersionSequence" START WITH 1;
 
 CREATE SEQUENCE IF NOT EXISTS "dms"."CollectionItemIdSequence" START WITH 1;
 
+CREATE SEQUENCE IF NOT EXISTS "dms"."DocumentIdSequence" START WITH 1;
+
 -- ==========================================================
 -- Phase 4: Functions and Types
 -- ==========================================================
@@ -84,7 +86,7 @@ $uuidv5$;
 
 CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
 (
-    "DocumentId" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL DEFAULT nextval('"dms"."DocumentIdSequence"'),
     "Namespace" varchar(255) NOT NULL,
     "CodeValue" varchar(50) NOT NULL,
     "ShortDescription" varchar(75) NOT NULL,
@@ -323,23 +325,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_Descriptor_Document'
-        AND conrelid = to_regclass('"dms"."Descriptor"')
-    )
-    THEN
-        ALTER TABLE "dms"."Descriptor"
-        ADD CONSTRAINT "FK_Descriptor_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_Document_ResourceKey'
         AND conrelid = to_regclass('"dms"."Document"')
     )
@@ -474,7 +459,7 @@ CREATE SCHEMA IF NOT EXISTS "tracked_changes_edfi";
 
 CREATE TABLE IF NOT EXISTS "edfi"."DateTimeKeyResource"
 (
-    "DocumentId" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL DEFAULT nextval('"dms"."DocumentIdSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -490,7 +475,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DateTimeKeyResource"
 
 CREATE TABLE IF NOT EXISTS "edfi"."DecimalKeyResource"
 (
-    "DocumentId" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL DEFAULT nextval('"dms"."DocumentIdSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -507,7 +492,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DecimalKeyResource"
 
 CREATE TABLE IF NOT EXISTS "edfi"."DecimalRefResource"
 (
-    "DocumentId" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL DEFAULT nextval('"dms"."DocumentIdSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -526,7 +511,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DecimalRefResource"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentChildResource"
 (
-    "DocumentId" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL DEFAULT nextval('"dms"."DocumentIdSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -546,7 +531,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentChildResource"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentResource"
 (
-    "DocumentId" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL DEFAULT nextval('"dms"."DocumentIdSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -566,7 +551,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentResource"
 
 CREATE TABLE IF NOT EXISTS "edfi"."KeyUnifiedResource"
 (
-    "DocumentId" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL DEFAULT nextval('"dms"."DocumentIdSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -591,7 +576,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."KeyUnifiedResource"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ResourceA"
 (
-    "DocumentId" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL DEFAULT nextval('"dms"."DocumentIdSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -611,7 +596,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ResourceA"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ResourceB"
 (
-    "DocumentId" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL DEFAULT nextval('"dms"."DocumentIdSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -631,7 +616,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ResourceB"
 
 CREATE TABLE IF NOT EXISTS "edfi"."School"
 (
-    "DocumentId" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL DEFAULT nextval('"dms"."DocumentIdSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -650,7 +635,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
 
 CREATE TABLE IF NOT EXISTS "edfi"."Student"
 (
-    "DocumentId" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL DEFAULT nextval('"dms"."DocumentIdSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -668,7 +653,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Student"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
 (
-    "DocumentId" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL DEFAULT nextval('"dms"."DocumentIdSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -837,40 +822,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_DateTimeKeyResource_Document'
-        AND conrelid = to_regclass('"edfi"."DateTimeKeyResource"')
-    )
-    THEN
-        ALTER TABLE "edfi"."DateTimeKeyResource"
-        ADD CONSTRAINT "FK_DateTimeKeyResource_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_DecimalKeyResource_Document'
-        AND conrelid = to_regclass('"edfi"."DecimalKeyResource"')
-    )
-    THEN
-        ALTER TABLE "edfi"."DecimalKeyResource"
-        ADD CONSTRAINT "FK_DecimalKeyResource_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_DecimalRefResource_DecimalKeyReference_RefKey'
         AND conrelid = to_regclass('"edfi"."DecimalRefResource"')
     )
@@ -880,40 +831,6 @@ BEGIN
         FOREIGN KEY ("DecimalKeyReference_DecimalKey", "DecimalKeyReference_DocumentId")
         REFERENCES "edfi"."DecimalKeyResource" ("DecimalKey", "DocumentId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_DecimalRefResource_Document'
-        AND conrelid = to_regclass('"edfi"."DecimalRefResource"')
-    )
-    THEN
-        ALTER TABLE "edfi"."DecimalRefResource"
-        ADD CONSTRAINT "FK_DecimalRefResource_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EdOrgDependentChildResource_Document'
-        AND conrelid = to_regclass('"edfi"."EdOrgDependentChildResource"')
-    )
-    THEN
-        ALTER TABLE "edfi"."EdOrgDependentChildResource"
-        ADD CONSTRAINT "FK_EdOrgDependentChildResource_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -939,23 +856,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EdOrgDependentResource_Document'
-        AND conrelid = to_regclass('"edfi"."EdOrgDependentResource"')
-    )
-    THEN
-        ALTER TABLE "edfi"."EdOrgDependentResource"
-        ADD CONSTRAINT "FK_EdOrgDependentResource_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_EdOrgDependentResource_EducationOrganization_RefKey'
         AND conrelid = to_regclass('"edfi"."EdOrgDependentResource"')
     )
@@ -966,23 +866,6 @@ BEGIN
         REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_KeyUnifiedResource_Document'
-        AND conrelid = to_regclass('"edfi"."KeyUnifiedResource"')
-    )
-    THEN
-        ALTER TABLE "edfi"."KeyUnifiedResource"
-        ADD CONSTRAINT "FK_KeyUnifiedResource_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
     END IF;
 END $$;
 
@@ -1024,23 +907,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ResourceA_Document'
-        AND conrelid = to_regclass('"edfi"."ResourceA"')
-    )
-    THEN
-        ALTER TABLE "edfi"."ResourceA"
-        ADD CONSTRAINT "FK_ResourceA_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_ResourceA_StudentReference_RefKey'
         AND conrelid = to_regclass('"edfi"."ResourceA"')
     )
@@ -1051,23 +917,6 @@ BEGIN
         REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ResourceB_Document'
-        AND conrelid = to_regclass('"edfi"."ResourceB"')
-    )
-    THEN
-        ALTER TABLE "edfi"."ResourceB"
-        ADD CONSTRAINT "FK_ResourceB_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
     END IF;
 END $$;
 
@@ -1092,57 +941,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_School_Document'
-        AND conrelid = to_regclass('"edfi"."School"')
-    )
-    THEN
-        ALTER TABLE "edfi"."School"
-        ADD CONSTRAINT "FK_School_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_Student_Document'
-        AND conrelid = to_regclass('"edfi"."Student"')
-    )
-    THEN
-        ALTER TABLE "edfi"."Student"
-        ADD CONSTRAINT "FK_Student_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolAssociation_Document'
-        AND conrelid = to_regclass('"edfi"."StudentSchoolAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentSchoolAssociation"
-        ADD CONSTRAINT "FK_StudentSchoolAssociation_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentSchoolAssociation_SchoolReference_RefKey'
         AND conrelid = to_regclass('"edfi"."StudentSchoolAssociation"')
     )
@@ -1153,23 +951,6 @@ BEGIN
         REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationIdentity_Document'
-        AND conrelid = to_regclass('"edfi"."EducationOrganizationIdentity"')
-    )
-    THEN
-        ALTER TABLE "edfi"."EducationOrganizationIdentity"
-        ADD CONSTRAINT "FK_EducationOrganizationIdentity_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
     END IF;
 END $$;
 

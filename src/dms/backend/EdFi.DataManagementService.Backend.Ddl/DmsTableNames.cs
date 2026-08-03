@@ -27,6 +27,13 @@ internal static class DmsTableNames
     public const string ChangeVersionSequence = "ChangeVersionSequence";
     public const string CollectionItemIdSequence = "CollectionItemIdSequence";
 
+    /// <summary>
+    /// Originates <c>DocumentId</c> for every resource root row and for <c>dms.Descriptor</c>. The write
+    /// path binds no <c>DocumentId</c> on a create: the column default draws from this sequence and the
+    /// insert returns the value the rest of the write uses for child rows.
+    /// </summary>
+    public const string DocumentIdSequence = "DocumentIdSequence";
+
     // User-Defined Table Types (SQL Server TVPs) for authorization query parameterization
     public const string BigIntTableType = "BigIntTable";
     public const string UniqueIdentifierTableType = "UniqueIdentifierTable";

@@ -41,6 +41,13 @@ IF NOT EXISTS (
 )
 CREATE SEQUENCE [dms].[CollectionItemIdSequence] START WITH 1;
 
+IF NOT EXISTS (
+    SELECT 1 FROM sys.sequences s
+    JOIN sys.schemas sch ON s.schema_id = sch.schema_id
+    WHERE sch.name = N'dms' AND s.name = N'DocumentIdSequence'
+)
+CREATE SEQUENCE [dms].[DocumentIdSequence] START WITH 1;
+
 -- ==========================================================
 -- Phase 4: Functions and Types
 -- ==========================================================
@@ -133,7 +140,7 @@ CREATE TYPE [dms].[UniqueIdentifierTable] AS TABLE(
 IF OBJECT_ID(N'dms.Descriptor', N'U') IS NULL
 CREATE TABLE [dms].[Descriptor]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_Descriptor_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [Namespace] nvarchar(255) NOT NULL,
     [CodeValue] nvarchar(50) NOT NULL,
     [ShortDescription] nvarchar(75) NOT NULL,
@@ -303,17 +310,6 @@ CREATE TABLE [dms].[SchemaComponent]
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Descriptor_Document' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
-)
-ALTER TABLE [dms].[Descriptor]
-ADD CONSTRAINT [FK_Descriptor_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_Document_ResourceKey' AND parent_object_id = OBJECT_ID(N'dms.Document')
 )
 ALTER TABLE [dms].[Document]
@@ -466,7 +462,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'tracked_changes_edfi')
 IF OBJECT_ID(N'edfi.NamingStressItem', N'U') IS NULL
 CREATE TABLE [edfi].[NamingStressItem]
 (
-    [DocumentId] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL CONSTRAINT [DF_NamingStressItem_DocumentId] DEFAULT (NEXT VALUE FOR [dms].[DocumentIdSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_NamingStressItem_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_NamingStressItem_ContentVersion] DEFAULT 0,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_NamingStressItem_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -495,17 +491,6 @@ CREATE TABLE [tracked_changes_edfi].[NamingStressItem]
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_NamingStressItem_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_NamingStressItem] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_NamingStressItem_Document' AND parent_object_id = OBJECT_ID(N'edfi.NamingStressItem')
-)
-ALTER TABLE [edfi].[NamingStressItem]
-ADD CONSTRAINT [FK_NamingStressItem_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i

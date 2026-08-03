@@ -127,6 +127,12 @@ public sealed class CoreDdlEmitter
         );
 
     /// <summary>
+    /// Gets the default expression that originates <c>DocumentId</c> from <c>dms.DocumentIdSequence</c>.
+    /// </summary>
+    private string DocumentIdSequenceDefault =>
+        _dialect.RenderSequenceDefaultExpression(DmsTableNames.DmsSchema, DmsTableNames.DocumentIdSequence);
+
+    /// <summary>
     /// Generates the complete core <c>dms.*</c> DDL script for the configured dialect.
     /// </summary>
     /// <returns>
@@ -196,6 +202,19 @@ public sealed class CoreDdlEmitter
 
         EmitChangeVersionSequence(writer);
         EmitCollectionItemIdSequence(writer);
+        EmitDocumentIdSequence(writer);
+    }
+
+    /// <summary>
+    /// Emits the document-id sequence that originates <c>DocumentId</c> on every resource root row and on
+    /// <c>dms.Descriptor</c>, through the column default those tables carry.
+    /// </summary>
+    private void EmitDocumentIdSequence(SqlWriter writer)
+    {
+        writer.AppendLine(
+            _dialect.CreateSequenceIfNotExists(DmsTableNames.DmsSchema, DmsTableNames.DocumentIdSequence)
+        );
+        writer.AppendLine();
     }
 
     /// <summary>
@@ -309,8 +328,10 @@ public sealed class CoreDdlEmitter
         writer.AppendLine("(");
         using (writer.Indent())
         {
+            // The descriptor row originates its own DocumentId from dms.DocumentIdSequence: the descriptor
+            // INSERT omits the column and the value is drawn here, matching the resource root tables.
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("DocumentId"), _dialect.DocumentIdColumnType, false)},"
+                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("DocumentId"), _dialect.DocumentIdColumnType, false, "DF_Descriptor_DocumentId", DocumentIdSequenceDefault)},"
             );
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("Namespace"), StringType(255), false)},"
@@ -774,18 +795,6 @@ public sealed class CoreDdlEmitter
         writer.WritePhaseHeader(6, "Foreign Keys");
 
         // Ordered by (table name, constraint name).
-
-        writer.AppendLine(
-            _dialect.AddForeignKeyConstraint(
-                _descriptorTable,
-                "FK_Descriptor_Document",
-                [Col("DocumentId")],
-                _documentTable,
-                [Col("DocumentId")],
-                onDelete: ReferentialAction.Cascade
-            )
-        );
-        writer.AppendLine();
 
         writer.AppendLine(
             _dialect.AddForeignKeyConstraint(

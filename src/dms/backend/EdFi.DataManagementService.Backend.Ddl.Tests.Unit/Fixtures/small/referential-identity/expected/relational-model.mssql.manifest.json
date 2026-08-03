@@ -167,22 +167,6 @@
               "EducationOrganizationId",
               "DocumentId"
             ]
-          },
-          {
-            "kind": "ForeignKey",
-            "name": "FK_EducationOrganizationIdentity_Document",
-            "columns": [
-              "DocumentId"
-            ],
-            "target_table": {
-              "schema": "dms",
-              "name": "Document"
-            },
-            "target_columns": [
-              "DocumentId"
-            ],
-            "on_delete": "Cascade",
-            "on_update": "NoAction"
           }
         ]
       }
@@ -2521,22 +2505,6 @@
               "columns": [
                 "EventTimestamp"
               ]
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_DateTimeKeyResource_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
             }
           ]
         }
@@ -2713,22 +2681,6 @@
                 "DecimalKey",
                 "DocumentId"
               ]
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_DecimalKeyResource_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
             }
           ]
         }
@@ -2940,22 +2892,6 @@
                 "DocumentId"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_DecimalRefResource_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
               "on_update": "NoAction"
             },
             {
@@ -3191,22 +3127,6 @@
                 "EdOrgDependentChildResourceId",
                 "EdOrgDependentResourceReference_DocumentId"
               ]
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_EdOrgDependentChildResource_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
             },
             {
               "kind": "ForeignKey",
@@ -3459,22 +3379,6 @@
                 "EducationOrganization_EducationOrganizationId",
                 "DocumentId"
               ]
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_EdOrgDependentResource_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
             },
             {
               "kind": "ForeignKey",
@@ -3793,22 +3697,6 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_KeyUnifiedResource_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
-            },
-            {
-              "kind": "ForeignKey",
               "name": "FK_KeyUnifiedResource_ResourceAReference",
               "columns": [
                 "ResourceAReference_DocumentId"
@@ -4124,22 +4012,6 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_ResourceA_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
-            },
-            {
-              "kind": "ForeignKey",
               "name": "FK_ResourceA_StudentReference",
               "columns": [
                 "StudentReference_DocumentId"
@@ -4387,22 +4259,6 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_ResourceB_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
-            },
-            {
-              "kind": "ForeignKey",
               "name": "FK_ResourceB_StudentReference",
               "columns": [
                 "StudentReference_DocumentId"
@@ -4644,22 +4500,6 @@
                 "SchoolId",
                 "DocumentId"
               ]
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_School_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
             }
           ]
         }
@@ -4848,22 +4688,6 @@
                 "StudentUniqueId",
                 "DocumentId"
               ]
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_Student_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
             }
           ]
         }
@@ -5056,22 +4880,6 @@
                 "StudentUniqueId",
                 "SchoolReference_DocumentId"
               ]
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_Document",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Document"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
             },
             {
               "kind": "ForeignKey",

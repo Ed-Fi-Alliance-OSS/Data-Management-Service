@@ -26,7 +26,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 {
     private const string ExtensionPropertyName = "_ext";
     private static readonly DbSchemaName _dmsSchemaName = new("dms");
-    private static readonly DbTableName _documentTableName = new(_dmsSchemaName, "Document");
     private static readonly DbTableName _descriptorTableName = new(_dmsSchemaName, "Descriptor");
 
     /// <summary>
@@ -121,7 +120,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
     }
 
     /// <summary>
-    /// Creates the resource root table, keyed by <c>DocumentId</c> and FK'd to <c>dms.Document</c>.
+    /// Creates the resource root table, keyed by <c>DocumentId</c>. The key value originates from
+    /// <c>dms.DocumentIdSequence</c> through the column default the DDL emitter attaches, so the root row
+    /// stands alone — it carries no foreign key to any core document table.
     /// </summary>
     private static TableScope CreateRootTable(
         DbSchemaName schema,
@@ -136,20 +137,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         var identityMetadata = BuildRootTableIdentityMetadata();
         var columns = BuildIdentityColumns(identityMetadata);
 
-        var fkName = ConstraintNaming.BuildForeignKeyName(tableName, ConstraintNaming.DocumentToken);
-
-        TableConstraint[] constraints =
-        [
-            new TableConstraint.ForeignKey(
-                fkName,
-                [RelationalNameConventions.DocumentIdColumnName],
-                _documentTableName,
-                [RelationalNameConventions.DocumentIdColumnName],
-                OnDelete: ReferentialAction.Cascade
-            ),
-        ];
-
-        var table = new DbTableModel(tableName, jsonScope, key, columns, constraints)
+        var table = new DbTableModel(tableName, jsonScope, key, columns, Constraints: [])
         {
             IdentityMetadata = identityMetadata,
         };
@@ -175,8 +163,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
     }
 
     /// <summary>
-    /// Creates the shared descriptor table root (<c>dms.Descriptor</c>), keyed by <c>DocumentId</c> and
-    /// FK'd to <c>dms.Document</c>.
+    /// Creates the shared descriptor table root (<c>dms.Descriptor</c>), keyed by <c>DocumentId</c>. Like
+    /// every resource root table it originates that key from <c>dms.DocumentIdSequence</c> and carries no
+    /// foreign key to any core document table.
     /// </summary>
     private static TableScope CreateDescriptorRootTable()
     {
@@ -185,23 +174,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         var identityMetadata = BuildRootTableIdentityMetadata();
         var columns = BuildIdentityColumns(identityMetadata);
 
-        var fkName = ConstraintNaming.BuildForeignKeyName(
-            _descriptorTableName,
-            ConstraintNaming.DocumentToken
-        );
-
-        TableConstraint[] constraints =
-        [
-            new TableConstraint.ForeignKey(
-                fkName,
-                [RelationalNameConventions.DocumentIdColumnName],
-                _documentTableName,
-                [RelationalNameConventions.DocumentIdColumnName],
-                OnDelete: ReferentialAction.Cascade
-            ),
-        ];
-
-        var table = new DbTableModel(_descriptorTableName, jsonScope, key, columns, constraints)
+        var table = new DbTableModel(_descriptorTableName, jsonScope, key, columns, Constraints: [])
         {
             IdentityMetadata = identityMetadata,
         };

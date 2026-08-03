@@ -440,6 +440,20 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             );
         }
 
+        if (UsesDocumentIdSequenceDefault(table, column))
+        {
+            return _dialect.RenderColumnDefinitionWithNamedDefault(
+                column.ColumnName,
+                type,
+                column.IsNullable,
+                BuildNamedDefaultConstraintName(table, column),
+                _dialect.RenderSequenceDefaultExpression(
+                    DmsTableNames.DmsSchema,
+                    DmsTableNames.DocumentIdSequence
+                )
+            );
+        }
+
         if (
             emitDocumentMetadataDefaults
             && TryResolveMirrorNamedDefault(
@@ -499,17 +513,17 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             case ColumnKind.MirroredContentVersion:
             case ColumnKind.MirroredIdentityVersion:
-                constraintName = BuildMirrorDefaultConstraintName(table, column);
+                constraintName = BuildNamedDefaultConstraintName(table, column);
                 defaultExpression = "0";
                 return true;
             case ColumnKind.MirroredContentLastModifiedAt:
             case ColumnKind.MirroredIdentityLastModifiedAt:
             case ColumnKind.CreatedAt:
-                constraintName = BuildMirrorDefaultConstraintName(table, column);
+                constraintName = BuildNamedDefaultConstraintName(table, column);
                 defaultExpression = _dialect.CurrentTimestampDefaultExpression;
                 return true;
             case ColumnKind.DocumentUuid:
-                constraintName = BuildMirrorDefaultConstraintName(table, column);
+                constraintName = BuildNamedDefaultConstraintName(table, column);
                 defaultExpression = _dialect.NewGuidDefaultExpression;
                 return true;
             default:
@@ -520,12 +534,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Builds the <c>DF_&lt;Table&gt;_&lt;Column&gt;</c> default constraint name for a mirror column, applying
-    /// the dialect identifier length limit. Resource-root table names can already sit at the dialect limit
-    /// after identifier shortening, so the generated default-constraint name must be shortened too (SQL
-    /// Server enforces a 128-character identifier limit on the named <c>CONSTRAINT</c>).
+    /// Builds the <c>DF_&lt;Table&gt;_&lt;Column&gt;</c> default constraint name for a defaulted column,
+    /// applying the dialect identifier length limit. Resource-root table names can already sit at the
+    /// dialect limit after identifier shortening, so the generated default-constraint name must be
+    /// shortened too (SQL Server enforces a 128-character identifier limit on the named
+    /// <c>CONSTRAINT</c>).
     /// </summary>
-    private string BuildMirrorDefaultConstraintName(DbTableModel table, DbColumnModel column)
+    private string BuildNamedDefaultConstraintName(DbTableModel table, DbColumnModel column)
     {
         return SqlIdentifierShortening.ApplyDialectLimit(
             $"DF_{table.Table.Name}_{column.ColumnName.Value}",
@@ -538,6 +553,24 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     {
         return column.ColumnName.Equals(RelationalNameConventions.CollectionItemIdColumnName)
             && table.IdentityMetadata.TableKind is DbTableKind.Collection or DbTableKind.ExtensionCollection;
+    }
+
+    /// <summary>
+    /// Reports whether a column originates its value from <c>dms.DocumentIdSequence</c>: the
+    /// <c>DocumentId</c> key column of a resource root table. The root <c>INSERT</c> omits the column and
+    /// returns the drawn value, which the rest of the write binds onto child rows — the same
+    /// sequence-default shape <see cref="UsesCollectionItemSequenceDefault"/> gives collection rows, but
+    /// under a named <c>DF_</c> constraint so SQL Server does not assign a system-generated name.
+    /// </summary>
+    /// <remarks>
+    /// Abstract identity tables are excluded by the <see cref="DbTableKind.Root"/> gate (they carry no
+    /// identity metadata): their <c>DocumentId</c> is copied from the concrete root row by the maintenance
+    /// trigger and must never draw a fresh value.
+    /// </remarks>
+    private static bool UsesDocumentIdSequenceDefault(DbTableModel table, DbColumnModel column)
+    {
+        return column.ColumnName.Equals(RelationalNameConventions.DocumentIdColumnName)
+            && table.IdentityMetadata.TableKind is DbTableKind.Root;
     }
 
     /// <summary>

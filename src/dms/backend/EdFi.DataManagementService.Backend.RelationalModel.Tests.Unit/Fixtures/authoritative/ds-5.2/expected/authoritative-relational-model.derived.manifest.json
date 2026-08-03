@@ -293,22 +293,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_AcademicWeek_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_AcademicWeek_School_RefKey",
                 "columns": [
                   "School_SchoolId",
@@ -644,22 +628,6 @@
                   "RatingTitle",
                   "SchoolYear_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_AccountabilityRating_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -1106,22 +1074,6 @@
                 ],
                 "on_delete": "NoAction",
                 "on_update": "Cascade"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_AssessmentAdministrationParticipation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -1651,22 +1603,6 @@
                 ],
                 "on_delete": "NoAction",
                 "on_update": "Cascade"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_AssessmentAdministration_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "AllOrNoneNullability",
@@ -2283,22 +2219,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_AssessmentBatteryPart_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -2959,22 +2879,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_AssessmentItem_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -3721,22 +3625,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_AssessmentScoreRangeLearningStandard_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_AssessmentScoreRangeLearningStandard_ObjectiveAss_bf1ffffec2",
                 "columns": [
                   "AssessmentIdentifier_Unified",
@@ -4450,22 +4338,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_Assessment_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -6777,22 +6649,6 @@
                   "FiscalYear",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_BalanceSheetDimension_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               }
             ]
           },
@@ -7223,22 +7079,6 @@
                   "BellScheduleName",
                   "School_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_BellSchedule_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -7994,22 +7834,6 @@
                 "on_update": "NoAction"
               },
               {
-                "kind": "ForeignKey",
-                "name": "FK_CalendarDate_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
                 "kind": "AllOrNoneNullability",
                 "name": "CK_CalendarDate_Calendar_AllNone",
                 "fk_column": "Calendar_DocumentId",
@@ -8461,22 +8285,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_Calendar_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -9331,22 +9139,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_ChartOfAccount_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_ChartOfAccount_EducationOrganization_RefKey",
                 "columns": [
                   "EducationOrganization_EducationOrganizationId",
@@ -10123,22 +9915,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_ClassPeriod_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_ClassPeriod_School_RefKey",
                 "columns": [
                   "School_SchoolId",
@@ -10681,22 +10457,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_Cohort_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_Cohort_EducationOrganization_RefKey",
                 "columns": [
                   "EducationOrganization_EducationOrganizationId",
@@ -11208,22 +10968,6 @@
                   "CommunityOrganizationId",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_CommunityOrganization_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -13262,22 +13006,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_CommunityProviderLicense_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_CommunityProviderLicense_LicenseStatusDescriptor",
                 "columns": [
                   "LicenseStatusDescriptor_DescriptorId"
@@ -13670,22 +13398,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_CommunityProvider_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -15775,22 +15487,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_CompetencyObjective_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_CompetencyObjective_EducationOrganization_RefKey",
                 "columns": [
                   "EducationOrganization_EducationOrganizationId",
@@ -16233,22 +15929,6 @@
                   "ContactUniqueId",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_Contact_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -18928,22 +18608,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_CourseOffering_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_CourseOffering_School_RefKey",
                 "columns": [
                   "SchoolId_Unified",
@@ -20066,22 +19730,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_CourseTranscript_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -22110,22 +21758,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_Course_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_Course_EducationOrganization_RefKey",
                 "columns": [
                   "EducationOrganization_EducationOrganizationId",
@@ -23525,22 +23157,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_Credential_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_Credential_StateOfIssueStateAbbreviationDescriptor",
                 "columns": [
                   "StateOfIssueStateAbbreviationDescriptor_DescriptorId"
@@ -24340,22 +23956,6 @@
                 ],
                 "on_delete": "NoAction",
                 "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_CrisisEvent_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               }
             ]
           }
@@ -24665,22 +24265,6 @@
                   "Namespace",
                   "Value"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_DescriptorMapping_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               }
             ]
           },
@@ -25326,22 +24910,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_DisciplineAction_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -26336,22 +25904,6 @@
                   "School_SchoolId",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_DisciplineIncident_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -27404,22 +26956,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_EducationContent_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -28782,22 +28318,6 @@
                 "on_update": "Cascade"
               },
               {
-                "kind": "ForeignKey",
-                "name": "FK_EducationOrganizationInterventionPrescriptionAsso_b1d5f116fc",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
                 "kind": "AllOrNoneNullability",
                 "name": "CK_EducationOrganizationInterventionPrescriptionAsso_4d9ce46462",
                 "fk_column": "InterventionPrescriptionInterventionPrescription_DocumentId",
@@ -29042,22 +28562,6 @@
                   "EducationOrganizationNetwork_DocumentId",
                   "MemberEducationOrganization_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_EducationOrganizationNetworkAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -29349,22 +28853,6 @@
                   "EducationOrganizationNetworkId",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_EducationOrganizationNetwork_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -31315,22 +30803,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_EducationOrganizationPeerAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_EducationOrganizationPeerAssociation_EducationOrg_f85a0a6d77",
                 "columns": [
                   "EducationOrganization_EducationOrganizationId",
@@ -31652,22 +31124,6 @@
                   "EducationServiceCenterId",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_EducationServiceCenter_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -33904,22 +33360,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_EvaluationRubricDimension_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_EvaluationRubricDimension_EvaluationRubricRatingL_7e594ed888",
                 "columns": [
                   "EvaluationRubricRatingLevelDescriptor_DescriptorId"
@@ -34366,22 +33806,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_FeederSchoolAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_FeederSchoolAssociation_FeederSchool_RefKey",
                 "columns": [
                   "FeederSchool_SchoolId",
@@ -34656,22 +34080,6 @@
                   "FiscalYear",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_FunctionDimension_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               }
             ]
           },
@@ -35021,22 +34429,6 @@
                   "FiscalYear",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_FundDimension_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               }
             ]
           },
@@ -35721,22 +35113,6 @@
                   "Namespace",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_GradebookEntry_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -36554,22 +35930,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_Grade_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_Grade_GradeTypeDescriptor",
                 "columns": [
                   "GradeTypeDescriptor_DescriptorId"
@@ -37307,22 +36667,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_GradingPeriod_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_GradingPeriod_GradingPeriodDescriptor",
                 "columns": [
                   "GradingPeriodDescriptor_DescriptorId"
@@ -37703,22 +37047,6 @@
                   "GraduationSchoolYear_GraduationSchoolYear",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_GraduationPlan_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -39886,22 +39214,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_InterventionPrescription_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_InterventionPrescription_EducationOrganization_RefKey",
                 "columns": [
                   "EducationOrganization_EducationOrganizationId",
@@ -41212,22 +40524,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_InterventionStudy_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -42881,22 +42177,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_Intervention_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -44733,22 +44013,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_LearningStandardEquivalenceAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_LearningStandardEquivalenceAssociation_LearningSt_fadb2757dc",
                 "columns": [
                   "LearningStandardEquivalenceStrengthDescriptor_DescriptorId"
@@ -45312,22 +44576,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_LearningStandard_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -46403,22 +45651,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_LocalAccount_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_LocalAccount_EducationOrganization_RefKey",
                 "columns": [
                   "EducationOrganization_EducationOrganizationId",
@@ -46869,22 +46101,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_LocalActual_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_LocalActual_FinancialCollectionDescriptor",
                 "columns": [
                   "FinancialCollectionDescriptor_DescriptorId"
@@ -47188,22 +46404,6 @@
                   "AsOfDate",
                   "LocalAccount_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_LocalBudget_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -47536,22 +46736,6 @@
                   "LocalAccount_DocumentId",
                   "Staff_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_LocalContractedStaff_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -47978,22 +47162,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_LocalEducationAgency_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -50558,22 +49726,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_LocalEncumbrance_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_LocalEncumbrance_FinancialCollectionDescriptor",
                 "columns": [
                   "FinancialCollectionDescriptor_DescriptorId"
@@ -50903,22 +50055,6 @@
                   "LocalAccount_DocumentId",
                   "Staff_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_LocalPayroll_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -51255,22 +50391,6 @@
                   "School_SchoolId",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_Location_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -51711,22 +50831,6 @@
                   "FiscalYear",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_ObjectDimension_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               }
             ]
           },
@@ -52291,22 +51395,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_ObjectiveAssessment_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -53538,22 +52626,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_OpenStaffPosition_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_OpenStaffPosition_EducationOrganization_RefKey",
                 "columns": [
                   "EducationOrganization_EducationOrganizationId",
@@ -54207,22 +53279,6 @@
                   "FiscalYear",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_OperationalUnitDimension_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               }
             ]
           },
@@ -54638,22 +53694,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_OrganizationDepartment_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -56664,22 +55704,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_Person_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_Person_SourceSystemDescriptor",
                 "columns": [
                   "SourceSystemDescriptor_DescriptorId"
@@ -57067,22 +56091,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_PostSecondaryEvent_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_PostSecondaryEvent_PostSecondaryEventCategoryDescriptor",
                 "columns": [
                   "PostSecondaryEventCategoryDescriptor_DescriptorId"
@@ -57449,22 +56457,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_PostSecondaryInstitution_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -59716,22 +58708,6 @@
                   "FiscalYear",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_ProgramDimension_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               }
             ]
           },
@@ -60465,22 +59441,6 @@
                   "ProgramTypeDescriptor_Unified_DescriptorId",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_ProgramEvaluationElement_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -61258,22 +60218,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProgramEvaluationObjective_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_ProgramEvaluationObjective_ProgramEvaluation_Prog_15c846119c",
                 "columns": [
                   "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
@@ -61916,22 +60860,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProgramEvaluation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_ProgramEvaluation_ProgramEvaluationPeriodDescriptor",
                 "columns": [
                   "ProgramEvaluationPeriodDescriptor_DescriptorId"
@@ -62493,22 +61421,6 @@
                   "ProgramTypeDescriptor_DescriptorId",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_Program_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -63253,22 +62165,6 @@
                   "FiscalYear",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_ProjectDimension_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               }
             ]
           },
@@ -63987,22 +62883,6 @@
                   "Student_StudentUniqueId",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_ReportCard_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -65743,22 +64623,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_RestraintEvent_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_RestraintEvent_EducationalEnvironmentDescriptor",
                 "columns": [
                   "EducationalEnvironmentDescriptor_DescriptorId"
@@ -66572,22 +65436,6 @@
                   "SchoolYear",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_SchoolYearType_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               }
             ]
           }
@@ -67012,22 +65860,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_School_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -69644,22 +68476,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_SectionAttendanceTakenEvent_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_SectionAttendanceTakenEvent_Section_RefKey",
                 "columns": [
                   "Section_LocalCourseCode",
@@ -70338,22 +69154,6 @@
                 ],
                 "on_delete": "NoAction",
                 "on_update": "Cascade"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_Section_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -71783,22 +70583,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_Session_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_Session_SchoolYear_RefKey",
                 "columns": [
                   "SchoolYear_SchoolYear",
@@ -72576,22 +71360,6 @@
                   "FiscalYear",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_SourceDimension_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               }
             ]
           },
@@ -73074,22 +71842,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StaffAbsenceEvent_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StaffAbsenceEvent_Staff_RefKey",
                 "columns": [
                   "Staff_StaffUniqueId",
@@ -73427,22 +72179,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StaffCohortAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StaffCohortAssociation_Staff_RefKey",
                 "columns": [
                   "Staff_StaffUniqueId",
@@ -73713,22 +72449,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StaffDisciplineIncidentAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -74351,22 +73071,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StaffEducationOrganizationAssignmentAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -75034,22 +73738,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StaffEducationOrganizationContactAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -75903,22 +74591,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StaffEducationOrganizationEmploymentAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StaffEducationOrganizationEmploymentAssociation_E_c0a3f93ccd",
                 "columns": [
                   "EmploymentStatusDescriptor_DescriptorId"
@@ -76367,22 +75039,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StaffLeave_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StaffLeave_StaffLeaveEventCategoryDescriptor",
                 "columns": [
                   "StaffLeaveEventCategoryDescriptor_DescriptorId"
@@ -76704,22 +75360,6 @@
                   "ProgramProgram_DocumentId",
                   "Staff_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StaffProgramAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -77168,22 +75808,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StaffSchoolAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -77965,22 +76589,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StaffSectionAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StaffSectionAssociation_Section_RefKey",
                 "columns": [
                   "Section_LocalCourseCode",
@@ -78515,22 +77123,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_Staff_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -82478,22 +81070,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StateEducationAgency_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StateEducationAgency_OperationalStatusDescriptor",
                 "columns": [
                   "OperationalStatusDescriptor_DescriptorId"
@@ -85008,22 +83584,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentAcademicRecord_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentAcademicRecord_EducationOrganization_RefKey",
                 "columns": [
                   "EducationOrganization_EducationOrganizationId",
@@ -87067,22 +85627,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentAssessmentEducationOrganizationAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentAssessmentEducationOrganizationAssociation_c9873778a0",
                 "columns": [
                   "SchoolYear_SchoolYear",
@@ -87568,22 +86112,6 @@
                 ],
                 "on_delete": "NoAction",
                 "on_update": "Cascade"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentAssessmentRegistrationBatteryPartAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "AllOrNoneNullability",
@@ -88267,22 +86795,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentAssessmentRegistration_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -89304,22 +87816,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentAssessment_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -91585,22 +90081,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentCTEProgramAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentCTEProgramAssociation_EducationOrganization_RefKey",
                 "columns": [
                   "EducationOrganization_EducationOrganizationId",
@@ -92437,22 +90917,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentCohortAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentCohortAssociation_Student_RefKey",
                 "columns": [
                   "Student_StudentUniqueId",
@@ -93065,22 +91529,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentCompetencyObjective_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -94151,22 +92599,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentContactAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentContactAssociation_RelationDescriptor",
                 "columns": [
                   "RelationDescriptor_DescriptorId"
@@ -94519,22 +92951,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentDisciplineIncidentBehaviorAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -95115,22 +93531,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentDisciplineIncidentNonOffenderAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentDisciplineIncidentNonOffenderAssociation_S_1547a03023",
                 "columns": [
                   "Student_StudentUniqueId",
@@ -95558,22 +93958,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentEducationOrganizationAssessmentAccommodation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -96137,22 +94521,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentEducationOrganizationAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -100332,22 +98700,6 @@
                 "on_update": "NoAction"
               },
               {
-                "kind": "ForeignKey",
-                "name": "FK_StudentEducationOrganizationResponsibilityAssocia_e45cfc3dea",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
                 "kind": "AllOrNoneNullability",
                 "name": "CK_StudentEducationOrganizationResponsibilityAssocia_55c549385d",
                 "fk_column": "Student_DocumentId",
@@ -100745,22 +99097,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentGradebookEntry_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentGradebookEntry_GradebookEntry_RefKey",
                 "columns": [
                   "GradebookEntry_GradebookEntryIdentifier",
@@ -101111,22 +99447,6 @@
                   "EducationOrganization_DocumentId",
                   "Student_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentHealth_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -102112,22 +100432,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentHomelessProgramAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentHomelessProgramAssociation_EducationOrgani_c8d1672cf0",
                 "columns": [
                   "EducationOrganization_EducationOrganizationId",
@@ -102988,22 +101292,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentInterventionAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentInterventionAssociation_Intervention_RefKey",
                 "columns": [
                   "Intervention_EducationOrganizationId",
@@ -103670,22 +101958,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentInterventionAttendanceEvent_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentInterventionAttendanceEvent_EducationalEnv_a70364a135",
                 "columns": [
                   "EducationalEnvironmentDescriptor_DescriptorId"
@@ -104110,22 +102382,6 @@
                   "ProgramProgram_DocumentId",
                   "Student_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentLanguageInstructionProgramAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -105384,22 +103640,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentMigrantEducationProgramAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentMigrantEducationProgramAssociation_Educati_04ae28fe0e",
                 "columns": [
                   "EducationOrganization_EducationOrganizationId",
@@ -106260,22 +104500,6 @@
                   "ProgramProgram_DocumentId",
                   "Student_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentNeglectedOrDelinquentProgramAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -107180,22 +105404,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentProgramAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentProgramAssociation_EducationOrganization_RefKey",
                 "columns": [
                   "EducationOrganization_EducationOrganizationId",
@@ -108054,22 +106262,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentProgramAttendanceEvent_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentProgramAttendanceEvent_EducationOrganization_RefKey",
                 "columns": [
                   "EducationOrganization_EducationOrganizationId",
@@ -108604,22 +106796,6 @@
                   "ProgramEvaluation_DocumentId",
                   "Student_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentProgramEvaluation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -110709,22 +108885,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentSchoolAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentSchoolAssociation_EnrollmentTypeDescriptor",
                 "columns": [
                   "EnrollmentTypeDescriptor_DescriptorId"
@@ -111925,22 +110085,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentSchoolAttendanceEvent_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentSchoolAttendanceEvent_EducationalEnvironme_81210f87be",
                 "columns": [
                   "EducationalEnvironmentDescriptor_DescriptorId"
@@ -112394,22 +110538,6 @@
                   "ProgramProgram_DocumentId",
                   "Student_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentSchoolFoodServiceProgramAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -113287,22 +111415,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentSection504ProgramAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentSection504ProgramAssociation_EducationOrga_f56069c23a",
                 "columns": [
                   "EducationOrganization_EducationOrganizationId",
@@ -114093,22 +112205,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentSectionAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentSectionAssociation_DualCreditEducationOrga_5d3ceb52c8",
                 "columns": [
                   "DualCreditEducationOrganization_EducationOrganizationId",
@@ -114891,22 +112987,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentSectionAttendanceEvent_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -115702,22 +113782,6 @@
                   "ProgramProgram_DocumentId",
                   "Student_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentSpecialEducationProgramAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -117590,22 +115654,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentSpecialEducationProgramEligibilityAssociat_e20497bd59",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentSpecialEducationProgramEligibilityAssociat_e512ab86de",
                 "columns": [
                   "EvaluationDelayReasonDescriptor_DescriptorId"
@@ -118028,22 +116076,6 @@
                   "ProgramProgram_DocumentId",
                   "Student_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentTitleIPartAProgramAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -118864,22 +116896,6 @@
                   "Student_DocumentId",
                   "TransportationEducationOrganization_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentTransportation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -119799,22 +117815,6 @@
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_Student_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -121162,22 +119162,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_SurveyCourseAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_SurveyCourseAssociation_Survey_RefKey",
                 "columns": [
                   "Survey_Namespace",
@@ -121478,22 +119462,6 @@
                   "Program_DocumentId",
                   "Survey_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_SurveyProgramAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -121918,22 +119886,6 @@
                   "SurveyQuestion_DocumentId",
                   "SurveyResponse_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_SurveyQuestionResponse_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -122684,22 +120636,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_SurveyQuestion_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_SurveyQuestion_QuestionFormDescriptor",
                 "columns": [
                   "QuestionFormDescriptor_DescriptorId"
@@ -123365,22 +121301,6 @@
                 "on_update": "NoAction"
               },
               {
-                "kind": "ForeignKey",
-                "name": "FK_SurveyResponseEducationOrganizationTargetAssociat_5c502ebd67",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
                 "kind": "AllOrNoneNullability",
                 "name": "CK_SurveyResponseEducationOrganizationTargetAssociat_2e5b9a06e1",
                 "fk_column": "EducationOrganization_DocumentId",
@@ -123630,22 +121550,6 @@
                   "Staff_DocumentId",
                   "SurveyResponse_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_SurveyResponseStaffTargetAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -124060,22 +121964,6 @@
                   "SurveyResponseIdentifier",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_SurveyResponse_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -124601,22 +122489,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_SurveySectionAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_SurveySectionAssociation_Section_RefKey",
                 "columns": [
                   "Section_LocalCourseCode",
@@ -125022,22 +122894,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_SurveySectionResponseEducationOrganizationTargetA_4026fb64bb",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_SurveySectionResponseEducationOrganizationTargetA_a6940cfb51",
                 "columns": [
                   "Namespace_Unified",
@@ -125401,22 +123257,6 @@
                   "Staff_DocumentId",
                   "SurveySectionResponse_DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_SurveySectionResponseStaffTargetAssociation_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -125816,22 +123656,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_SurveySectionResponse_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_SurveySectionResponse_SurveyResponse_RefKey",
                 "columns": [
                   "Namespace_Unified",
@@ -126134,22 +123958,6 @@
                   "SurveySectionTitle",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_SurveySection_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",
@@ -126529,22 +124337,6 @@
                   "SurveyIdentifier",
                   "DocumentId"
                 ]
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_Survey_Document",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "ForeignKey",

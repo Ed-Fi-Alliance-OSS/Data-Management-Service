@@ -36,6 +36,8 @@ CREATE SEQUENCE IF NOT EXISTS "dms"."ChangeVersionSequence" START WITH 1;
 
 CREATE SEQUENCE IF NOT EXISTS "dms"."CollectionItemIdSequence" START WITH 1;
 
+CREATE SEQUENCE IF NOT EXISTS "dms"."DocumentIdSequence" START WITH 1;
+
 -- ==========================================================
 -- Phase 4: Functions and Types
 -- ==========================================================
@@ -84,7 +86,7 @@ $uuidv5$;
 
 CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
 (
-    "DocumentId" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL DEFAULT nextval('"dms"."DocumentIdSequence"'),
     "Namespace" varchar(255) NOT NULL,
     "CodeValue" varchar(50) NOT NULL,
     "ShortDescription" varchar(75) NOT NULL,
@@ -323,23 +325,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_Descriptor_Document'
-        AND conrelid = to_regclass('"dms"."Descriptor"')
-    )
-    THEN
-        ALTER TABLE "dms"."Descriptor"
-        ADD CONSTRAINT "FK_Descriptor_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_Document_ResourceKey'
         AND conrelid = to_regclass('"dms"."Document"')
     )
@@ -489,7 +474,7 @@ CREATE SCHEMA IF NOT EXISTS "tracked_changes_edfi";
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProfileRootOnlyMergeItem"
 (
-    "DocumentId" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL DEFAULT nextval('"dms"."DocumentIdSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -518,7 +503,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProfileRootOnlyMergeItem"
 
 CREATE TABLE IF NOT EXISTS "edfi"."Student"
 (
-    "DocumentId" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL DEFAULT nextval('"dms"."DocumentIdSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -571,23 +556,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ProfileRootOnlyMergeItem_Document'
-        AND conrelid = to_regclass('"edfi"."ProfileRootOnlyMergeItem"')
-    )
-    THEN
-        ALTER TABLE "edfi"."ProfileRootOnlyMergeItem"
-        ADD CONSTRAINT "FK_ProfileRootOnlyMergeItem_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescriptor_Unified'
         AND conrelid = to_regclass('"edfi"."ProfileRootOnlyMergeItem"')
     )
@@ -614,23 +582,6 @@ BEGIN
         FOREIGN KEY ("StudentReference_StudentUniqueId", "StudentReference_DocumentId")
         REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_Student_Document'
-        AND conrelid = to_regclass('"edfi"."Student"')
-    )
-    THEN
-        ALTER TABLE "edfi"."Student"
-        ADD CONSTRAINT "FK_Student_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
 END $$;

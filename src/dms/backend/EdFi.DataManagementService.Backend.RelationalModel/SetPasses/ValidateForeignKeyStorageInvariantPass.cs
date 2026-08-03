@@ -31,25 +31,6 @@ public sealed class ValidateForeignKeyStorageInvariantPass : IRelationalModelSet
             {
                 if (!tablesByName.TryGetValue(foreignKey.TargetTable, out var targetTable))
                 {
-                    if (IsDocumentTable(foreignKey.TargetTable))
-                    {
-                        ForeignKeyStorageValidator.ValidateEndpointColumns(
-                            foreignKey,
-                            table.Table,
-                            foreignKey.TargetTable,
-                            "local",
-                            foreignKey.Columns,
-                            localTableMetadata
-                        );
-                        ForeignKeyStorageValidator.ValidateDocumentTargetColumns(
-                            foreignKey,
-                            table.Table,
-                            foreignKey.TargetTable,
-                            foreignKey.TargetColumns
-                        );
-                        continue;
-                    }
-
                     throw new InvalidOperationException(
                         $"Foreign key '{foreignKey.Name}' from table '{table.Table}' references unknown "
                             + $"target table '{foreignKey.TargetTable}'."
@@ -76,15 +57,6 @@ public sealed class ValidateForeignKeyStorageInvariantPass : IRelationalModelSet
                 );
             }
         }
-    }
-
-    /// <summary>
-    /// Returns true when the referenced table is the shared core <c>dms.Document</c> table.
-    /// </summary>
-    private static bool IsDocumentTable(DbTableName table)
-    {
-        return string.Equals(table.Schema.Value, "dms", StringComparison.Ordinal)
-            && string.Equals(table.Name, "Document", StringComparison.Ordinal);
     }
 
     /// <summary>
