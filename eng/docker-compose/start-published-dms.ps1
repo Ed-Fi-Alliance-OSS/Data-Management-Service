@@ -193,12 +193,11 @@ $cmsIncludedInComposeSet = $EnableConfig -or $InfraOnly -or $IdentityProvider -e
 
 # CMS participates only when it is both a forward-starting non-DMS-only shape AND actually present
 # in the compose set - not -DmsOnly (CMS doesn't start), -DbOnly, or teardown (-d), and not a bare
-# published Keycloak start that omits published-config.yml entirely. Today's existing
-# Assert-MssqlCmsDatabaseIsShared check (shared-mode-only) must keep running exactly as it does
-# today for those non-participating shapes; when CMS does participate, this story's own validator
-# (which understands both shared and separate mode) supersedes it, so the old check is skipped
-# here. Validating a CMS endpoint for a CMS that never starts would reject an irrelevant
-# customized value, so the compose-set conjunct is load-bearing, not cosmetic.
+# published Keycloak start that omits published-config.yml entirely. Non-participating shapes get
+# structural validation only; every participating MSSQL shape is verified physically on the
+# running server after readiness (Assert-MssqlTopologyPhysicalConsistency), in shared and
+# separate mode alike. Validating a CMS endpoint for a CMS that never starts would reject an
+# irrelevant customized value, so the compose-set conjunct is load-bearing, not cosmetic.
 $cmsParticipates = (-not ($databaseOnlyStartup -or $d -or $DmsOnly)) -and $cmsIncludedInComposeSet
 
 if ($cmsParticipates) {
@@ -608,29 +607,29 @@ else {
         $mssqlSaPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
         Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
 
-        if ($cmsParticipates -and (Test-CmsSeparateTopologyDeclared -EnvironmentFile $EnvironmentFile)) {
-            # Physical-identity check for the separate topology: the RUNNING SQL Server - the
-            # only authority on its own database-name semantics - decides whether the selected
-            # datastore is physically distinct from the dedicated Configuration Service
-            # database. Gated on the effective file's own topology marker, read raw: on this
-            # participating path the topology resolver above just recomputed the topology from
-            # the switch, so the marker in the file it RETURNED is the current declaration
-            # (measured: a marker-carrying derived file passed back WITHOUT the switch is
-            # re-resolved to shared mode before this point). A shared-mode run therefore never
-            # invokes the authority at all; its identical internal gate remains as defense in
-            # depth.
-            # Placed hard against readiness so a collision, or any inability to verify (it
-            # fails closed), stops the start after the database container exists but before
+        if ($cmsParticipates) {
+            # The live topology check for EVERY CMS-participating MSSQL start: the RUNNING SQL
+            # Server - the only authority on its own database-name semantics - verifies that the
+            # CMS targets (the seam and every connection-string segment) are physically the
+            # database the effective topology expects, and in separate mode that the datastore
+            # candidates stay physically distinct from the dedicated Configuration Service
+            # database. The authority reads the effective file's own topology marker (raw) to
+            # select the mode; on this participating path the topology resolver above just
+            # recomputed the topology from the switch, so the marker in the file it RETURNED is
+            # the current declaration.
+            # Placed hard against readiness so a violated relation, or any inability to verify
+            # (it fails closed), stops the start after the database container exists but before
             # OpenIddict, CMS, DMS, or the data-store registration below touches it. The
             # registered candidate joins
             # only when that registration will actually run, and as the value a provider
             # RECEIVES - never the raw parameter text, which the connection-string transport
-            # can differ from (a bare trailing line feed is removed by it).
+            # can differ from (a bare trailing line feed is removed by it); the authority
+            # applies it only where it participates (the separate mode's distinctness rule).
             $registeredDatastoreDatabaseValue = ""
             if ($dataStoreRegistrationRuns -and -not [string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
                 $registeredDatastoreDatabaseValue = Get-RegisteredDatastoreDatabaseValue -DatastoreDatabaseName $DataStoreDatabaseName
             }
-            Assert-MssqlPhysicalDatastoreDistinctness `
+            Assert-MssqlTopologyPhysicalConsistency `
                 -EnvironmentFile $EnvironmentFile `
                 -ContainerName "dms-mssql" `
                 -SaPassword $mssqlSaPassword `

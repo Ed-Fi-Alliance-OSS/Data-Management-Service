@@ -253,10 +253,9 @@ $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $Dat
 # DbOnly and teardown skip the CMS/OpenIddict invariant because neither initializes identity data.
 #
 # CMS participates only in the default/-InfraOnly forward-starting shape - not -DmsOnly (CMS
-# doesn't start), -DbOnly, or teardown (-d). Today's existing Assert-MssqlCmsDatabaseIsShared check
-# (shared-mode-only) must keep running exactly as it does today for those non-participating shapes;
-# when CMS does participate, this story's own validator (which understands both shared and
-# separate mode) supersedes it, so the old check is skipped here.
+# doesn't start), -DbOnly, or teardown (-d). Non-participating shapes get structural validation
+# only; every participating MSSQL shape is verified physically on the running server after
+# readiness (Assert-MssqlTopologyPhysicalConsistency), in shared and separate mode alike.
 $cmsParticipates = -not ($databaseOnlyStartup -or $d -or $DmsOnly)
 
 if ($cmsParticipates) {
@@ -628,21 +627,19 @@ else {
         $mssqlSaPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
         Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
 
-        if ($cmsParticipates -and (Test-CmsSeparateTopologyDeclared -EnvironmentFile $EnvironmentFile)) {
-            # Physical-identity check for the separate topology: the RUNNING SQL Server - the
-            # only authority on its own database-name semantics - decides whether the selected
-            # datastore is physically distinct from the dedicated Configuration Service
-            # database. Gated on the effective file's own topology marker, read raw: on this
-            # participating path the topology resolver above just recomputed the topology from
-            # the switch, so the marker in the file it RETURNED is the current declaration
-            # (measured: a marker-carrying derived file passed back WITHOUT the switch is
-            # re-resolved to shared mode before this point). A shared-mode run therefore never
-            # invokes the authority at all; its identical internal gate remains as defense in
-            # depth.
-            # Placed hard against readiness so a collision, or any inability to verify (it
-            # fails closed), stops the start after the database container exists but before
+        if ($cmsParticipates) {
+            # The live topology check for EVERY CMS-participating MSSQL start: the RUNNING SQL
+            # Server - the only authority on its own database-name semantics - verifies that the
+            # CMS targets (the seam and every connection-string segment) are physically the
+            # database the effective topology expects, and in separate mode that the datastore
+            # stays physically distinct from the dedicated Configuration Service database. The
+            # authority reads the effective file's own topology marker (raw) to select the mode;
+            # on this participating path the topology resolver above just recomputed the topology
+            # from the switch, so the marker in the file it RETURNED is the current declaration.
+            # Placed hard against readiness so a violated relation, or any inability to verify
+            # (it fails closed), stops the start after the database container exists but before
             # OpenIddict, CMS, DMS, or any datastore work touches it.
-            Assert-MssqlPhysicalDatastoreDistinctness `
+            Assert-MssqlTopologyPhysicalConsistency `
                 -EnvironmentFile $EnvironmentFile `
                 -ContainerName "dms-mssql" `
                 -SaPassword $mssqlSaPassword

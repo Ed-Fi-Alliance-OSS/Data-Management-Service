@@ -1240,26 +1240,22 @@ function Get-MssqlComposedEnvContent {
     return , @($composed)
 }
 
-function Test-CmsTargetNameAgreement {
+function Test-PostgresCmsTargetNameAgreement {
     <#
     .SYNOPSIS
-        True when a CMS database-target name textually agrees with the expected topology name - the
-        one conservative, ordinal-exact pre-start agreement rule every CMS-target comparison uses.
+        True when a POSTGRESQL CMS database-target name textually agrees with the expected topology
+        name - ordinal-exact, and PostgreSQL-ONLY by contract.
 
     .DESCRIPTION
-        A PRE-START TEXTUAL AGREEMENT rule, deliberately NOT SQL Server physical-identity modeling.
-        The agreement checks that consume this predicate run before any SQL Server exists to ask,
-        and database-name equivalence on SQL Server is decided by the running INSTANCE's collation
-        (measured: a case variant that a case-insensitive collation folds onto the expected name is
-        a genuinely DISTINCT physical database on a case-sensitive instance), so no offline
-        comparison can claim that two DIFFERENT spellings name the same physical database. Exact
-        text is the safe sufficient condition: identical text - any Unicode text - denotes the same
-        database under every collation, so an exactly-spelled configuration (valid Unicode datastore
-        names included) always passes; any non-exact spelling is refused regardless of the selected
-        MSSQL collation, and the remedy is to use the exact configured spelling. Physical
-        distinctness of the DMS datastore from the reserved CMS database remains owned by
-        Assert-MssqlPhysicalDatastoreDistinctness against the running server; this rule never
-        stands in for it.
+        PostgreSQL only, and the name says so on purpose: do NOT reuse this for SQL Server. On
+        PostgreSQL the compared values are never unquoted SQL identifiers (nothing folds), so exact
+        ordinal text IS the correct final agreement rule there. On SQL Server, whether two DIFFERENT
+        spellings denote one physical database is decided by the running INSTANCE's collation
+        (measured both ways: the default collation folds an ASCII case variant onto the expected
+        name, while a case-sensitive instance keeps the same pair distinct), so no fixed offline
+        comparer - exact, case-insensitive, or otherwise - can render that verdict. Every
+        collation-dependent MSSQL name relationship is decided by the live topology authority,
+        Assert-MssqlTopologyPhysicalConsistency, against the running server.
 
     .PARAMETER ActualName
         The target name as configured - a parsed connection-string database segment, or an ambient
@@ -1275,66 +1271,6 @@ function Test-CmsTargetNameAgreement {
 
     if ([string]::IsNullOrEmpty($ActualName) -or [string]::IsNullOrEmpty($ExpectedName)) { return $false }
     return [string]::Equals($ActualName, $ExpectedName, [System.StringComparison]::Ordinal)
-}
-
-function Assert-MssqlCmsDatabaseIsShared {
-    <#
-    .SYNOPSIS
-        Enforces the legacy shared-mode invariant: a caller-authored CMS MSSQL connection string must
-        target MSSQL_DB_NAME, so CMS and the self-contained OpenIddict store cannot silently land in
-        different databases.
-
-    .DESCRIPTION
-        Takes ALREADY-RESOLVED values. Resolution belongs to the caller so the connection string is
-        resolved exactly once, against one composed environment, and the shape check, the reserved-name
-        signal, and this invariant all judge the same text. This function previously resolved the string
-        itself with a narrow grammar that accepted only a literal or a bare ${NAME} and threw
-        "unsupported environment expression" on anything else - so a connection string using a
-        documented Compose operator, including the ${A:-${B}} form the checked-in .yml fallbacks
-        themselves use, could not be validated at all.
-
-        Agreement is ordinal-exact through Test-CmsTargetNameAgreement. The previous case-insensitive
-        comparison silently accepted a case variant that a CASE-SENSITIVE SQL Server keeps as a
-        distinct physical database - splitting CMS or OpenIddict away from the datastore the shared
-        topology promises they share.
-    #>
-    param(
-        [Parameter(Mandatory)]
-        [AllowEmptyString()]
-        [string]$ResolvedConnectionString,
-
-        [Parameter(Mandatory)]
-        [AllowEmptyString()]
-        [string]$ExpectedDatabaseName
-    )
-
-    $expectedDatabaseName = $ExpectedDatabaseName
-    if ([string]::IsNullOrWhiteSpace($expectedDatabaseName)) {
-        throw "MSSQL_DB_NAME must be non-blank when preserving a caller-authored CMS MSSQL connection string."
-    }
-
-    $resolvedConnectionString = $ResolvedConnectionString
-
-    # Validate that the resolved text is a parseable connection string before reading segments from it,
-    # so a malformed value still gets its own diagnostic rather than looking like a missing database.
-    try {
-        $parseProbe = [System.Data.Common.DbConnectionStringBuilder]::new()
-        $parseProbe.set_ConnectionString($resolvedConnectionString)
-    }
-    catch {
-        throw "DMS_CONFIG_DATABASE_CONNECTION_STRING is not a valid connection string."
-    }
-
-    $databaseNames = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $resolvedConnectionString)
-    if ($databaseNames.Count -eq 0) {
-        throw "DMS_CONFIG_DATABASE_CONNECTION_STRING must include Database or Initial Catalog and target MSSQL_DB_NAME ('$expectedDatabaseName')."
-    }
-
-    foreach ($actualDatabaseName in $databaseNames) {
-        if (-not (Test-CmsTargetNameAgreement -ActualName $actualDatabaseName -ExpectedName $expectedDatabaseName)) {
-            throw "MSSQL shared-database configuration mismatch: DMS_CONFIG_DATABASE_CONNECTION_STRING targets '$actualDatabaseName', but MSSQL_DB_NAME resolves to '$expectedDatabaseName'. CMS and OpenIddict must share MSSQL_DB_NAME, and pre-start agreement accepts only the exact configured spelling: whether two different spellings are the same physical database depends on the running instance's collation, which cannot be consulted at this boundary. Align the values character-for-character, or opt into the dedicated CMS database with -SeparateConfigDatabase (DMS-1270)."
-        }
-    }
 }
 
 function Resolve-DatabaseEngineEnvironmentFile {
@@ -1376,13 +1312,12 @@ function Resolve-DatabaseEngineEnvironmentFile {
         A partial hand-authored MSSQL env is completed from the overlay. Non-blank custom MSSQL
         credentials, database names, and ports are preserved. Connection strings are preserved only
         when they contain a SQL Server data-source keyword; PostgreSQL-shaped values inherited from
-        a partially edited base file are replaced by the MSSQL overlay. A caller-authored CMS MSSQL
-        connection string must resolve to MSSQL_DB_NAME so CMS and self-contained OpenIddict cannot
-        silently target different databases; a mismatch fails before any derived file is written -
-        unless the file declares the separate CMS database topology (marker or reserved
-        'edfi_configurationservice' target; see the -SkipMssqlCmsDatabaseValidation note), which is
-        outside that shared-mode invariant by definition. DMS_DATASTORE and DMS_CONFIG_DATASTORE
-        are always forced to mssql.
+        a partially edited base file are replaced by the MSSQL overlay. This function renders NO
+        database-NAME verdict: whether the CMS target and the datastore are the same physical
+        database is decided by the running instance's collation, so every CMS-participating MSSQL
+        start verifies it live (Assert-MssqlTopologyPhysicalConsistency); this composition path
+        validates structure only. DMS_DATASTORE and DMS_CONFIG_DATASTORE are always forced to
+        mssql.
 
     .PARAMETER DatabaseEngine
         "postgresql" (default; no-op) or "mssql".
@@ -1395,37 +1330,12 @@ function Resolve-DatabaseEngineEnvironmentFile {
         directory (eng/docker-compose).
 
     .PARAMETER SkipMssqlCmsDatabaseValidation
-        Skips the legacy CMS/OpenIddict shared-database invariant. Two caller classes pass $true:
-        the dedicated database-only diagnostic startup and teardown, where neither CMS nor
-        OpenIddict is initialized so there is nothing to validate; and the CMS-participating
-        start-script branches and the wrapper's pre-resolution chain, where the check is superseded
-        rather than absent - they run the stricter, topology-aware
-        Confirm-CmsDatabaseTopologyAgreement immediately afterwards (DMS-1270). Every other caller
-        (the configure, provision, and E2E environment resolutions) leaves it off, keeping the
-        legacy check in force for shared-mode files.
-
-        The invariant is also skipped automatically, regardless of this switch, when the base env file
-        declares the separate CMS database topology (DMS-1270). That check asserts a *shared-mode*
-        invariant - CMS and OpenIddict must both target MSSQL_DB_NAME - which is by definition false
-        for a file declaring a dedicated CMS database, whatever the file's provenance. Two content
-        signals declare it: the marker (DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true), and a CMS
-        connection string whose every recognized database-name segment resolves to the reserved
-        dedicated name 'edfi_configurationservice'. Both are raw topology declarations read from the
-        file's own content, not authenticity signals: a hand-authored or copied file carrying either
-        is exempted exactly like one this design's own migration wrote, and that is the intended
-        semantics - the file has declared itself outside the shared-mode contract, and the paths
-        that actually operate CMS validate it with the topology-aware
-        Confirm-CmsDatabaseTopologyAgreement instead. The reserved-name signal is what lets the
-        documented standalone continuation (a -SeparateConfigDatabase start phase followed by direct
-        configure/provision invocations against the same caller-authored source file) proceed: the
-        marker exists only in the start script's derived file, never in the caller's source file.
-
-        This matters for every caller that passes no switch here - the configure and provision
-        phases, build-dms.ps1's E2E environment resolutions, and provision-e2e-database.ps1 - all of
-        which own the DMS datastore and take no part in the CMS seam. Without the exemption they
-        would reject the very configuration a preceding -SeparateConfigDatabase start phase
-        established. It is read raw (never through Compose precedence), so an ambient shell variable
-        cannot switch the invariant off for a file that does not itself carry the marker.
+        Retained for call-site compatibility; a NO-OP. It used to skip the legacy CMS/OpenIddict
+        shared-database NAME invariant, which is superseded: no pre-start MSSQL name verdict is
+        rendered on this path anymore, because physical name equivalence is the running
+        instance's collation's call and every CMS-participating start verifies it live
+        (Assert-MssqlTopologyPhysicalConsistency). Callers that never start or consume CMS get
+        structural validation only, which this switch never affected.
     #>
     param(
         [string]$DatabaseEngine = "postgresql",
@@ -1433,6 +1343,9 @@ function Resolve-DatabaseEngineEnvironmentFile {
         [string]$DockerComposeRoot,
         [switch]$SkipMssqlCmsDatabaseValidation
     )
+    # Consumed for documentation only - see the .PARAMETER note: the superseded invariant it
+    # gated no longer exists, and removing the parameter would break five stable call sites.
+    $null = $SkipMssqlCmsDatabaseValidation
 
     if ($DatabaseEngine -ne "mssql") {
         return $BaseEnvironmentFile
@@ -1466,17 +1379,6 @@ function Resolve-DatabaseEngineEnvironmentFile {
     $baseDeclaresMssql =
         [string](Get-SequentialEffectiveValue -Evaluation $baseEvaluation -Name "DMS_DATASTORE") -eq "mssql" -or
         [string](Get-SequentialEffectiveValue -Evaluation $baseEvaluation -Name "DMS_CONFIG_DATASTORE") -eq "mssql"
-
-    # A separate-mode file is out of the shared-mode invariant's scope by construction; see the
-    # -SkipMssqlCmsDatabaseValidation note above. Read the marker from its own raw declaration through
-    # the shared assignment model and never from the ambient environment: the exported and quoted marker
-    # spellings are supported everywhere else in this design, and an unrelated ambient variable of the
-    # marker's name must not be able to switch a safety check off.
-    $baseMarkerDeclaration = Get-DotenvLastDeclaration -Evaluation $baseEvaluation -Name "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
-    $baseMarkerValue =
-        if ($null -eq $baseMarkerDeclaration) { "false" }
-        else { [string](ConvertFrom-ComposeEnvironmentValue -Value $baseMarkerDeclaration.RawValue) }
-    $baseDeclaresSeparateTopology = [string]::Equals($baseMarkerValue, "true", [System.StringComparison]::Ordinal)
 
     # The exact lines composition would write, built once and used for validation AND for the write, so
     # the two can never describe different artifacts. Connection-string preservation is optimistic here
@@ -1547,59 +1449,17 @@ function Resolve-DatabaseEngineEnvironmentFile {
         throw "MSSQL engine composition cannot proceed: '$connectionStringKey' does not resolve to a SQL Server connection string in the composed environment for '$BaseEnvironmentFile'. Correct that key, or remove it so the .env.mssql overlay supplies the SQL Server default. (The value is withheld because a connection string contains credentials.)"
     }
 
-    $composedCmsConnectionString = [string](Get-SequentialEffectiveValue `
-        -Evaluation $composedEvaluation `
-        -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING")
-
-    if ($baseDeclaresMssql -and -not $SkipMssqlCmsDatabaseValidation -and -not $baseDeclaresSeparateTopology) {
-        # Validation judges the CONNECTION STRING THE COMPOSED FILE ACTUALLY RENDERS. Judging a
-        # separately-modelled environment instead let three shapes diverge from the written file: a base
-        # value depending on an overlay default froze empty, an `export `-spelled declaration survived
-        # alongside the overlay's own, and an outer-quoted or whole-reference value was dropped by a
-        # raw-text shape check after passing the resolved gate.
-        $resolvedCmsConnectionString = $composedCmsConnectionString
-
-        if (Test-MssqlConnectionStringValue -ConnectionString $resolvedCmsConnectionString) {
-
-            # A CMS connection string targeting the reserved dedicated database name is ALSO a
-            # separate-topology declaration - content, not provenance, the same doctrine as the
-            # marker above. The documented standalone continuation (start-local-dms.ps1 -InfraOnly
-            # -SeparateConfigDatabase, then configure-local-data-store.ps1 / provision-dms-schema.ps1
-            # against the SAME caller-authored source file) reaches this gate with no switch and no
-            # marker (the marker lives only in the start script's derived file), and the reserved
-            # name is the only signal left. Only an unambiguous declaration skips the invariant:
-            # every recognized database-name segment must be EXACTLY the reserved literal
-            # 'edfi_configurationservice' (ordinal - a case variant is not an unambiguous
-            # declaration, because whether it even IS the reserved database depends on the running
-            # instance's collation, and this gate runs before any server exists to ask); a mixed,
-            # case-variant, or unparseable connection string still runs the invariant and fails
-            # loudly there with exact-spelling guidance.
-            #
-            # Resolution uses the SAME Compose-equivalent semantics as the start path, not the legacy
-            # single-${NAME} grammar. Those two disagreed, and the disagreement split a run in half: a
-            # caller-authored
-            #   Database=${DMS_CONFIG_DATABASE_NAME:-${MSSQL_DB_NAME}}
-            # - an operator form the checked-in .yml fallbacks themselves use - passed the start
-            # phase's topology validation and then threw "unsupported environment expression" here, in
-            # the very manual phases the start script's terminal guidance points to. Both the signal and
-            # the invariant read the database segments off the single already-resolved value above.
-            $candidateDatabaseNames = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $resolvedCmsConnectionString)
-            $targetsDedicatedCmsDatabase =
-                $candidateDatabaseNames.Count -gt 0 -and
-                @($candidateDatabaseNames | Where-Object {
-                    -not (Test-CmsTargetNameAgreement -ActualName $_ -ExpectedName "edfi_configurationservice")
-                }).Count -eq 0
-
-            if (-not $targetsDedicatedCmsDatabase) {
-                $expectedSharedDatabaseName = [string](Get-SequentialEffectiveValue `
-                    -Evaluation $composedEvaluation `
-                    -Name "MSSQL_DB_NAME")
-                Assert-MssqlCmsDatabaseIsShared `
-                    -ResolvedConnectionString $resolvedCmsConnectionString `
-                    -ExpectedDatabaseName $expectedSharedDatabaseName
-            }
-        }
-    }
+    # No pre-start MSSQL database-NAME verdict is rendered here anymore - superseded by the live
+    # topology authority. This composition path keeps only deterministic structural validation
+    # (the connection-string shape loop above already covers DMS_CONFIG_DATABASE_CONNECTION_STRING
+    # among the overlay's CONNECTION_STRING keys). Whether the composed CMS target and the
+    # datastore are the same physical database is the running instance's collation's call, so
+    # every CMS-participating MSSQL start asks the server itself
+    # (Assert-MssqlTopologyPhysicalConsistency, wired after readiness in both start scripts);
+    # continuation shapes that never start or consume CMS validate structure only. The legacy
+    # shared-name invariant and the reserved-literal continuation signal that used to live here
+    # inferred physical identity - and in one direction or the other, any such offline rule is
+    # wrong on some supported collation.
 
     # A fixed three-key signal can become stale when .env.mssql gains another required setting. Prove
     # that every current overlay key exists and is non-blank in the base file's own SEQUENTIAL
@@ -2460,7 +2320,7 @@ function Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase {
         collation, and the equivalence class differs between instances (measured: a case variant that
         collides under the default collation is a genuinely distinct database on a case-sensitive
         instance), so no fixed rule answers for every server. MSSQL physical distinctness is decided by
-        the server-backed authority, Assert-MssqlPhysicalDatastoreDistinctness, against the RUNNING
+        the server-backed authority, Assert-MssqlTopologyPhysicalConsistency, against the RUNNING
         instance - which is why -DatabaseEngine refuses "mssql" at parameter binding instead of handing
         back a silent non-verdict.
 
@@ -2570,7 +2430,7 @@ function Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase {
         SQL Server has NO offline verdict: quoting does not decide identity there, the server matches
         database names under the INSTANCE collation, and that class differs between instances - so MSSQL
         physical distinctness is decided by the server-backed authority,
-        Assert-MssqlPhysicalDatastoreDistinctness, against the RUNNING instance. The transport rule is
+        Assert-MssqlTopologyPhysicalConsistency, against the RUNNING instance. The transport rule is
         preserved on that path too: the wired start script hands the authority the PARSED value
         (Get-RegisteredDatastoreDatabaseValue) when the registration will run, never the raw parameter
         text. -DatabaseEngine therefore refuses "mssql" at parameter binding instead of handing back a
@@ -2636,42 +2496,49 @@ function ConvertTo-MssqlUtf16HexLiteral {
     return $builder.ToString()
 }
 
-# The fixed vocabulary of the physical-distinctness batch. One prefix per output line kind; the
+# The fixed vocabulary of the topology-consistency batch. One prefix per output line kind; the
 # strict parser accepts nothing else. Shared between the generator and the parser so the two can
 # never drift.
-$script:MssqlDistinctnessContextTokenPrefix = "CMSTOPOLOGYCTX|"
-$script:MssqlDistinctnessReservedTokenPrefix = "CMSTOPOLOGYRESERVED|"
-$script:MssqlDistinctnessCandidateTokenPrefix = "CMSTOPOLOGYCAND|"
+$script:MssqlTopologyContextTokenPrefix = "CMSTOPOLOGYCTX|"
+$script:MssqlTopologyExpectedTokenPrefix = "CMSTOPOLOGYEXPECTED|"
+$script:MssqlTopologyCandidateTokenPrefix = "CMSTOPOLOGYCAND|"
 
-function New-MssqlPhysicalDistinctnessQuery {
+function New-MssqlTopologyConsistencyQuery {
     <#
     .SYNOPSIS
         Builds the read-only, ASCII-only T-SQL batch that asks the RUNNING SQL Server whether
-        each candidate datastore name denotes the same physical database as the dedicated
-        'edfi_configurationservice'.
+        each candidate database name denotes the same physical database as the batch's single
+        EXPECTED name, under the instance's own collation.
 
     .DESCRIPTION
-        The single SQL-generation authority for the server-backed physical-identity check; the
-        strict parser consumes exactly what this emits, and no other production code may build
-        this SQL. Shape, in order:
+        The single SQL-generation authority for the server-backed topology check; the strict
+        parser consumes exactly what this emits, and no other production code may build this
+        SQL. The batch reports the server's per-candidate relation; which relation each
+        candidate REQUIRES (equal for CMS-target agreement, distinct for datastore
+        distinctness) is the calling authority's contract, not the batch's. Shape, in order:
 
         - `SET NOCOUNT ON` so row-count chatter never pollutes the token stream.
         - A context line proving the batch really runs in master and that master's collation
           equals the server collation (master is rebuilt with the server collation, so
           disagreement means a broken instance): both are asserted IN the batch as a second
           layer under the explicit `-d master` on the sqlcmd invocation.
-        - A reserved-presence line: `DB_ID` corroboration is presence-GATED - on a fresh stack
-          neither database exists yet, and a null DB_ID is absence, never evidence.
+        - An expected-presence line: `DB_ID` corroboration is presence-GATED - on a fresh stack
+          the expected database may not exist yet, and a null DB_ID is absence, never evidence.
         - One line per candidate carrying its source key, the master-context `=` verdict
-          (`collides`/`distinct` - the same oracle the ground-truth measurements proved agrees
+          (`equal`/`distinct` - the same oracle the ground-truth measurements proved agrees
           with DB_ID and CREATE on every row), and the DB_ID corroboration
           (`agree`/`disagree`/`skipped`): equal names must resolve to the same database id and
           distinct names must not, so any disagreement between the two oracles fails closed.
 
-        Candidates travel exclusively as UTF-16 hex literals (ConvertTo-MssqlUtf16HexLiteral);
-        their text NEVER appears in the emitted SQL, which stays pure ASCII by construction. NO
-        collation name is hardcoded anywhere: the server's own master context supplies the
-        comparison semantics, which is the entire point of asking the server.
+        The expected name and every candidate travel exclusively as UTF-16 hex literals
+        (ConvertTo-MssqlUtf16HexLiteral); their text NEVER appears in the emitted SQL, which
+        stays pure ASCII by construction. NO collation name is hardcoded anywhere: the server's
+        own master context supplies the comparison semantics, which is the entire point of
+        asking the server.
+
+    .PARAMETER ExpectedName
+        The single comparand every candidate is compared against - the effective MSSQL_DB_NAME
+        in shared mode, or the dedicated 'edfi_configurationservice' in separate mode.
 
     .PARAMETER Candidate
         Ordered dictionary of source key (the parameter or environment key a diagnostic may
@@ -2682,38 +2549,42 @@ function New-MssqlPhysicalDistinctnessQuery {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Returns a SQL string; changes no state. The New- verb describes the artifact, matching New-MssqlCreateDatabaseStatement.')]
     param(
         [Parameter(Mandatory)]
+        [string]$ExpectedName,
+
+        [Parameter(Mandatory)]
         [System.Collections.IDictionary]$Candidate
     )
 
     if ($Candidate.Count -eq 0) {
-        throw "New-MssqlPhysicalDistinctnessQuery: at least one candidate is required."
+        throw "New-MssqlTopologyConsistencyQuery: at least one candidate is required."
     }
 
+    $expectedHexLiteral = ConvertTo-MssqlUtf16HexLiteral -Value $ExpectedName
     $lines = [System.Collections.Generic.List[string]]::new()
     $null = $lines.Add("SET NOCOUNT ON;")
-    $null = $lines.Add("DECLARE @reserved nvarchar(max) = N'edfi_configurationservice';")
-    $null = $lines.Add("SELECT '$($script:MssqlDistinctnessContextTokenPrefix)db='")
+    $null = $lines.Add("DECLARE @expected nvarchar(max) = CONVERT(nvarchar(max), $expectedHexLiteral);")
+    $null = $lines.Add("SELECT '$($script:MssqlTopologyContextTokenPrefix)db='")
     $null = $lines.Add("     + CASE WHEN DB_NAME() = 'master' THEN 'master' ELSE 'other' END")
     $null = $lines.Add("     + '|collationAgreement='")
     $null = $lines.Add("     + CASE WHEN CONVERT(nvarchar(128), DATABASEPROPERTYEX('master', 'Collation')) = CONVERT(nvarchar(128), SERVERPROPERTY('Collation'))")
     $null = $lines.Add("            THEN 'agree' ELSE 'disagree' END;")
-    $null = $lines.Add("SELECT '$($script:MssqlDistinctnessReservedTokenPrefix)'")
-    $null = $lines.Add("     + CASE WHEN DB_ID(@reserved) IS NULL THEN 'absent' ELSE 'present' END;")
+    $null = $lines.Add("SELECT '$($script:MssqlTopologyExpectedTokenPrefix)'")
+    $null = $lines.Add("     + CASE WHEN DB_ID(@expected) IS NULL THEN 'absent' ELSE 'present' END;")
 
     $candidateIndex = 0
     foreach ($sourceKey in $Candidate.Keys) {
         if ($sourceKey -notmatch '\A[A-Za-z0-9_.-]+\z') {
-            throw "New-MssqlPhysicalDistinctnessQuery: source key must be a simple ASCII identifier."
+            throw "New-MssqlTopologyConsistencyQuery: source key must be a simple ASCII identifier."
         }
         $hexLiteral = ConvertTo-MssqlUtf16HexLiteral -Value ([string]$Candidate[$sourceKey])
         $variableName = "@candidate$candidateIndex"
         $null = $lines.Add("DECLARE $variableName nvarchar(max) = CONVERT(nvarchar(max), $hexLiteral);")
-        $null = $lines.Add("SELECT '$($script:MssqlDistinctnessCandidateTokenPrefix)$sourceKey|'")
-        $null = $lines.Add("     + CASE WHEN $variableName = @reserved THEN 'collides' ELSE 'distinct' END")
+        $null = $lines.Add("SELECT '$($script:MssqlTopologyCandidateTokenPrefix)$sourceKey|'")
+        $null = $lines.Add("     + CASE WHEN $variableName = @expected THEN 'equal' ELSE 'distinct' END")
         $null = $lines.Add("     + '|dbid='")
-        $null = $lines.Add("     + CASE WHEN DB_ID(@reserved) IS NULL THEN 'skipped'")
-        $null = $lines.Add("            WHEN $variableName = @reserved THEN CASE WHEN DB_ID($variableName) = DB_ID(@reserved) THEN 'agree' ELSE 'disagree' END")
-        $null = $lines.Add("            ELSE CASE WHEN DB_ID($variableName) IS NULL OR DB_ID($variableName) <> DB_ID(@reserved) THEN 'agree' ELSE 'disagree' END")
+        $null = $lines.Add("     + CASE WHEN DB_ID(@expected) IS NULL THEN 'skipped'")
+        $null = $lines.Add("            WHEN $variableName = @expected THEN CASE WHEN DB_ID($variableName) = DB_ID(@expected) THEN 'agree' ELSE 'disagree' END")
+        $null = $lines.Add("            ELSE CASE WHEN DB_ID($variableName) IS NULL OR DB_ID($variableName) <> DB_ID(@expected) THEN 'agree' ELSE 'disagree' END")
         $null = $lines.Add("       END;")
         $candidateIndex++
     }
@@ -2722,10 +2593,10 @@ function New-MssqlPhysicalDistinctnessQuery {
     return ($lines -join "`n") + "`n"
 }
 
-function ConvertFrom-MssqlPhysicalDistinctnessQueryOutput {
+function ConvertFrom-MssqlTopologyConsistencyQueryOutput {
     <#
     .SYNOPSIS
-        Strictly parses the output of the physical-distinctness batch into a classification -
+        Strictly parses the output of the topology-consistency batch into a classification -
         never a guess: anything other than the exact expected token set is UNVERIFIABLE.
 
     .DESCRIPTION
@@ -2733,10 +2604,11 @@ function ConvertFrom-MssqlPhysicalDistinctnessQueryOutput {
         what throws. Classification categories:
 
         - 'ok'                    - exact token set, context proven, oracles agree; Verdict per
-                                    source key is 'collides' or 'distinct'.
+                                    source key is 'equal' or 'distinct'.
         - 'unexpected-output'     - missing/duplicated/unknown lines, unknown verdict tokens, or
-                                    corroboration tokens inconsistent with reserved presence.
-                                    Exit code zero alone is never success; the tokens are.
+                                    corroboration tokens inconsistent with expected-database
+                                    presence. Exit code zero alone is never success; the tokens
+                                    are.
         - 'context-assertion'     - the batch did not run in master, or master's collation
                                     disagreed with the server collation.
         - 'oracle-disagreement'   - the equality verdict and the DB_ID corroboration contradict
@@ -2764,7 +2636,7 @@ function ConvertFrom-MssqlPhysicalDistinctnessQueryOutput {
 
     $classification = [ordered]@{
         Category        = "unexpected-output"
-        ReservedPresent = $false
+        ExpectedPresent = $false
         Verdict         = [ordered]@{}
     }
 
@@ -2784,32 +2656,32 @@ function ConvertFrom-MssqlPhysicalDistinctnessQueryOutput {
             Where-Object { $_ -ne "" }
     )
 
-    $contextLines = @($meaningfulLines | Where-Object { $_.StartsWith($script:MssqlDistinctnessContextTokenPrefix, [System.StringComparison]::Ordinal) })
-    $reservedLines = @($meaningfulLines | Where-Object { $_.StartsWith($script:MssqlDistinctnessReservedTokenPrefix, [System.StringComparison]::Ordinal) })
-    $candidateLines = @($meaningfulLines | Where-Object { $_.StartsWith($script:MssqlDistinctnessCandidateTokenPrefix, [System.StringComparison]::Ordinal) })
-    if ($contextLines.Count -ne 1 -or $reservedLines.Count -ne 1 -or
+    $contextLines = @($meaningfulLines | Where-Object { $_.StartsWith($script:MssqlTopologyContextTokenPrefix, [System.StringComparison]::Ordinal) })
+    $expectedLines = @($meaningfulLines | Where-Object { $_.StartsWith($script:MssqlTopologyExpectedTokenPrefix, [System.StringComparison]::Ordinal) })
+    $candidateLines = @($meaningfulLines | Where-Object { $_.StartsWith($script:MssqlTopologyCandidateTokenPrefix, [System.StringComparison]::Ordinal) })
+    if ($contextLines.Count -ne 1 -or $expectedLines.Count -ne 1 -or
         $meaningfulLines.Count -ne (2 + $candidateLines.Count)) {
         return [pscustomobject]$classification
     }
 
     if (-not [string]::Equals(
             $contextLines[0],
-            "$($script:MssqlDistinctnessContextTokenPrefix)db=master|collationAgreement=agree",
+            "$($script:MssqlTopologyContextTokenPrefix)db=master|collationAgreement=agree",
             [System.StringComparison]::Ordinal)) {
         # Distinguish a well-formed assertion FAILURE from a malformed line (unexpected-output).
-        $contextPayload = $contextLines[0].Substring($script:MssqlDistinctnessContextTokenPrefix.Length)
+        $contextPayload = $contextLines[0].Substring($script:MssqlTopologyContextTokenPrefix.Length)
         if ([regex]::IsMatch($contextPayload, '\Adb=(master|other)\|collationAgreement=(agree|disagree)\z')) {
             $classification.Category = "context-assertion"
         }
         return [pscustomobject]$classification
     }
 
-    $reservedValue = $reservedLines[0].Substring($script:MssqlDistinctnessReservedTokenPrefix.Length)
-    $reservedIsPresentToken = [string]::Equals($reservedValue, "present", [System.StringComparison]::Ordinal)
-    if (-not ($reservedIsPresentToken -or [string]::Equals($reservedValue, "absent", [System.StringComparison]::Ordinal))) {
+    $expectedValue = $expectedLines[0].Substring($script:MssqlTopologyExpectedTokenPrefix.Length)
+    $expectedIsPresentToken = [string]::Equals($expectedValue, "present", [System.StringComparison]::Ordinal)
+    if (-not ($expectedIsPresentToken -or [string]::Equals($expectedValue, "absent", [System.StringComparison]::Ordinal))) {
         return [pscustomobject]$classification
     }
-    $classification.ReservedPresent = $reservedIsPresentToken
+    $classification.ExpectedPresent = $expectedIsPresentToken
 
     if ($candidateLines.Count -ne $ExpectedSourceKey.Count) {
         return [pscustomobject]$classification
@@ -2817,21 +2689,21 @@ function ConvertFrom-MssqlPhysicalDistinctnessQueryOutput {
 
     for ($index = 0; $index -lt $ExpectedSourceKey.Count; $index++) {
         $sourceKey = $ExpectedSourceKey[$index]
-        $expectedLinePrefix = "$($script:MssqlDistinctnessCandidateTokenPrefix)$sourceKey|"
+        $expectedLinePrefix = "$($script:MssqlTopologyCandidateTokenPrefix)$sourceKey|"
         $line = $candidateLines[$index]
         if (-not $line.StartsWith($expectedLinePrefix, [System.StringComparison]::Ordinal)) {
             return [pscustomobject]$classification
         }
         $payload = $line.Substring($expectedLinePrefix.Length)
-        $payloadMatch = [regex]::Match($payload, '\A(collides|distinct)\|dbid=(agree|disagree|skipped)\z')
+        $payloadMatch = [regex]::Match($payload, '\A(equal|distinct)\|dbid=(agree|disagree|skipped)\z')
         if (-not $payloadMatch.Success) {
             return [pscustomobject]$classification
         }
         $verdict = $payloadMatch.Groups[1].Value
         $corroboration = $payloadMatch.Groups[2].Value
 
-        # 'skipped' is only coherent when the reserved database is absent, and vice versa.
-        if (([string]::Equals($corroboration, "skipped", [System.StringComparison]::Ordinal)) -ne (-not $classification.ReservedPresent)) {
+        # 'skipped' is only coherent when the expected database is absent, and vice versa.
+        if (([string]::Equals($corroboration, "skipped", [System.StringComparison]::Ordinal)) -ne (-not $classification.ExpectedPresent)) {
             return [pscustomobject]$classification
         }
         if ([string]::Equals($corroboration, "disagree", [System.StringComparison]::Ordinal)) {
@@ -2845,10 +2717,10 @@ function ConvertFrom-MssqlPhysicalDistinctnessQueryOutput {
     return [pscustomobject]$classification
 }
 
-function New-MssqlDistinctnessSqlcmdArgument {
+function New-MssqlTopologySqlcmdArgument {
     <#
     .SYNOPSIS
-        The exact docker argument vector that carries the physical-distinctness batch to the
+        The exact docker argument vector that carries the topology-consistency batch to the
         database container's sqlcmd - one argument per element, no shell, no candidate text.
 
     .DESCRIPTION
@@ -2878,70 +2750,50 @@ function New-MssqlDistinctnessSqlcmdArgument {
     )
 }
 
-function Test-CmsSeparateTopologyDeclared {
+# (Test-CmsSeparateTopologyDeclared was deleted: the start scripts' authority gate no longer
+# depends on the topology mode - the live check runs for every CMS-participating MSSQL start,
+# and the authority reads the marker itself to select shared or separate semantics.)
+
+function Assert-MssqlTopologyPhysicalConsistency {
     <#
     .SYNOPSIS
-        True when the effective environment file's own declarations carry the separate-topology
-        marker (DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true).
+        The live boundary for EVERY CMS-participating MSSQL start: asks the RUNNING SQL Server,
+        under its own collation, whether the effective topology's database names are physically
+        consistent - CMS targets equal to the mode's expected database, and (separate mode)
+        datastore candidates distinct from it - and throws unless every relation is verified.
 
     .DESCRIPTION
-        The wiring gate for the start scripts' server-backed physical-identity check: a
-        shared-mode run must not invoke the authority at all (the frozen zero-invocation
-        contract). On the participating path the topology resolver has just recomputed the
-        topology from the -SeparateConfigDatabase switch, so the marker in the EFFECTIVE file
-        it returned is the current declaration (measured: a marker-carrying derived file passed
-        back WITHOUT the switch is re-resolved to shared mode before this gate runs). Read raw
-        from the file's own declarations, exactly as Confirm-CmsDatabaseTopologyAgreement and
-        the authority read it, so an unrelated ambient variable can neither invoke nor suppress
-        the check. The authority's identical internal gate remains as defense in depth.
-    #>
-    param(
-        [Parameter(Mandatory)]
-        [string]$EnvironmentFile
-    )
+        The single final MSSQL name authority. No offline comparer renders any MSSQL name
+        verdict: database names inherit the INSTANCE collation, and the equivalence class was
+        measured in BOTH directions (the default collation folds an ASCII case variant onto the
+        expected name; a case-sensitive instance keeps the same pair distinct), so only the
+        server this stack actually runs against can answer - and it answers for EVERY candidate,
+        exact spellings included.
 
-    $sequential = Resolve-DotenvFileSequentially -Path $EnvironmentFile
-    $markerDeclaration = Get-DotenvLastDeclaration -Evaluation $sequential -Name "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
-    if ($null -eq $markerDeclaration) { return $false }
-    return [string]::Equals(
-        [string](ConvertFrom-ComposeEnvironmentValue -Value $markerDeclaration.RawValue),
-        "true",
-        [System.StringComparison]::Ordinal)
-}
+        Runs for BOTH topologies. The mode comes from the marker
+        (DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE), read RAW from the effective environment file's
+        own declarations - the same source Confirm-CmsDatabaseTopologyAgreement uses - so an
+        unrelated ambient variable cannot flip the mode. Shared mode verifies that the effective
+        DMS_CONFIG_DATABASE_NAME seam and every parsed CMS connection-string database segment
+        are physically EQUAL to the effective MSSQL_DB_NAME. Separate mode verifies the same
+        candidates are physically EQUAL to the dedicated 'edfi_configurationservice', and
+        additionally that the effective MSSQL_DB_NAME - and the provider-parsed registered
+        candidate, when supplied - are physically DISTINCT from it. Callers gate shape, engine,
+        and CMS participation; the placement contract (after the database readiness wait, before
+        OpenIddict/CMS/DMS/registration work) belongs to the calling scripts.
 
-function Assert-MssqlPhysicalDatastoreDistinctness {
-    <#
-    .SYNOPSIS
-        The stage-2 boundary: asks the RUNNING SQL Server whether the separate-topology
-        datastore candidates are physically distinct from the dedicated
-        'edfi_configurationservice', and throws unless every candidate is verified distinct.
+        Every candidate is resolved with the same sequential Compose precedence the topology
+        validator uses, so ambient overrides are checked as the values the stack will actually
+        receive; both Database and Initial Catalog segments participate independently. A
+        registered candidate, when supplied, must already be the PROVIDER-PARSED value
+        (Get-RegisteredDatastoreDatabaseValue), never raw parameter text. Candidates travel to
+        the server as UTF-16 hex only; diagnostics name source keys and the expected-name
+        contract and never echo a caller-authored value; failure detail is limited to a category
+        and an exception TYPE name.
 
-    .DESCRIPTION
-        The single final MSSQL physical-identity authority. No offline predicate renders any
-        MSSQL name verdict: database names inherit the INSTANCE collation (measured: a
-        case-sensitive instance keeps case variants distinct that any offline case-folding rule
-        would refuse), so only the server this stack actually runs against can answer, and it
-        answers for EVERY candidate - printable ASCII included.
-
-        Runs only for the separate topology: the marker
-        (DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE) is read RAW from the effective environment
-        file's own declarations - the same source Confirm-CmsDatabaseTopologyAgreement uses -
-        so an unrelated ambient variable cannot invoke or suppress the check; in shared mode
-        this function is a no-op. Callers gate shape, engine, and CMS participation; the
-        placement contract (after the database readiness wait, before OpenIddict/CMS/DMS/
-        registration work) belongs to the calling scripts.
-
-        The initialized candidate (MSSQL_DB_NAME) is resolved with the same sequential Compose
-        precedence the topology validator uses, so an ambient override is checked as the value
-        the stack will actually receive. A registered candidate, when supplied, must already be
-        the PROVIDER-PARSED value (Get-RegisteredDatastoreDatabaseValue), never raw parameter
-        text. Candidates travel to the server as UTF-16 hex only; diagnostics name the source
-        key and the reserved literal and never echo a caller-authored value; failure detail is
-        limited to a category and an exception TYPE name.
-
-        Fail-closed throughout: a collision throws, and ANY inability to verify - transport
-        failure, timeout, incomplete stdin delivery, nonzero exit, unexpected output, a failed
-        context assertion, or oracle disagreement - also throws. Startup never proceeds
+        Fail-closed throughout: a violated relation throws, and ANY inability to verify -
+        transport failure, timeout, incomplete stdin delivery, nonzero exit, unexpected output,
+        a failed context assertion, or oracle disagreement - also throws. Startup never proceeds
         unverified, and exit code zero alone is never success.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
@@ -2962,35 +2814,82 @@ function Assert-MssqlPhysicalDatastoreDistinctness {
         [int]$TimeoutSeconds = 60
     )
 
-    # Topology gate: the marker is this design's internal record, read raw from the file's own
-    # declarations exactly as Confirm-CmsDatabaseTopologyAgreement reads it. In shared mode CMS
-    # is deliberately aliased to the selected datastore - ONE physical database by design - so
-    # there is no distinctness contract to verify.
+    # Mode, never a name verdict: the marker is this design's internal record, read raw from the
+    # file's own declarations exactly as Confirm-CmsDatabaseTopologyAgreement reads it. Topology
+    # is declared by the switch/marker - it is never inferred from a database-name spelling,
+    # whose physical meaning only the instance's collation can decide.
     $sequential = Resolve-DotenvFileSequentially -Path $EnvironmentFile
     $markerDeclaration = Get-DotenvLastDeclaration -Evaluation $sequential -Name "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
     $markerValue =
         if ($null -eq $markerDeclaration) { "false" }
         else { [string](ConvertFrom-ComposeEnvironmentValue -Value $markerDeclaration.RawValue) }
-    if (-not [string]::Equals($markerValue, "true", [System.StringComparison]::Ordinal)) {
-        return
+    $isSeparate = [string]::Equals($markerValue, "true", [System.StringComparison]::Ordinal)
+
+    $datastoreName = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name "MSSQL_DB_NAME")
+    if ([string]::IsNullOrWhiteSpace($datastoreName)) {
+        throw "Assert-MssqlTopologyPhysicalConsistency: could not resolve a non-blank datastore database name for 'MSSQL_DB_NAME'."
     }
 
-    $initializedDatastoreName = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name "MSSQL_DB_NAME")
-    if ([string]::IsNullOrWhiteSpace($initializedDatastoreName)) {
-        throw "Assert-MssqlPhysicalDatastoreDistinctness: could not resolve a non-blank datastore database name for 'MSSQL_DB_NAME'."
+    # Structural, presence-aware seam handling: a SUPPLIED-but-blank ambient override (any
+    # non-null value is supplied under Compose precedence) or a declared-blank seam renders the
+    # connection string's database segment empty at run time, so it fails deterministically here
+    # - named key only, no value echoed. An entirely absent seam contributes no candidate; the
+    # connection-string segments below are the seam's real consumers either way.
+    $ambientSeamValue = [System.Environment]::GetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME")
+    if ($null -ne $ambientSeamValue -and [string]::IsNullOrWhiteSpace($ambientSeamValue)) {
+        throw "CMS database topology configuration error: the ambient environment supplies 'DMS_CONFIG_DATABASE_NAME' as an empty or whitespace-only value, which Compose would hand to the container verbatim. Unset it or set a database name. The value is withheld."
+    }
+    $seamName = Get-SequentialEffectiveValue -Evaluation $sequential -Name "DMS_CONFIG_DATABASE_NAME"
+    if ($null -ne $seamName -and [string]::IsNullOrWhiteSpace([string]$seamName)) {
+        throw "CMS database topology configuration error: 'DMS_CONFIG_DATABASE_NAME' resolves to an empty or whitespace-only value in the effective environment. Set a database name or remove the declaration. The value is withheld."
     }
 
-    $candidate = [ordered]@{ "MSSQL_DB_NAME" = $initializedDatastoreName }
-    if (-not [string]::IsNullOrWhiteSpace($RegisteredDatastoreDatabaseName)) {
-        $candidate["-DataStoreDatabaseName"] = $RegisteredDatastoreDatabaseName
+    $cmsConnectionString = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING")
+    if ([string]::IsNullOrWhiteSpace($cmsConnectionString)) {
+        throw "Assert-MssqlTopologyPhysicalConsistency: DMS_CONFIG_DATABASE_CONNECTION_STRING is required for MSSQL and cannot be entirely absent; the .env.mssql overlay normally supplies it."
+    }
+    $segmentNames = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $cmsConnectionString)
+    if ($segmentNames.Count -eq 0) {
+        throw "Assert-MssqlTopologyPhysicalConsistency: DMS_CONFIG_DATABASE_CONNECTION_STRING must include a Database or Initial Catalog segment."
+    }
+
+    # One batch, one expected name, per-candidate REQUIRED relations owned here. Shared mode:
+    # every CMS target must be physically EQUAL to the datastore. Separate mode: every CMS
+    # target must be EQUAL to the reserved database, while the datastore candidates stay
+    # DISTINCT from it.
+    $expectedName = if ($isSeparate) { "edfi_configurationservice" } else { $datastoreName }
+    $expectedDescription =
+        if ($isSeparate) { "the dedicated 'edfi_configurationservice' database" }
+        else { "the datastore database MSSQL_DB_NAME resolves to" }
+
+    $candidate = [ordered]@{}
+    $requiredRelation = @{}
+    if ($null -ne $seamName) {
+        $candidate["DMS_CONFIG_DATABASE_NAME"] = [string]$seamName
+        $requiredRelation["DMS_CONFIG_DATABASE_NAME"] = "equal"
+    }
+    $segmentIndex = 0
+    foreach ($segmentName in $segmentNames) {
+        $segmentIndex++
+        $segmentKey = if ($segmentIndex -eq 1) { "DMS_CONFIG_DATABASE_CONNECTION_STRING" } else { "DMS_CONFIG_DATABASE_CONNECTION_STRING.$segmentIndex" }
+        $candidate[$segmentKey] = [string]$segmentName
+        $requiredRelation[$segmentKey] = "equal"
+    }
+    if ($isSeparate) {
+        $candidate["MSSQL_DB_NAME"] = $datastoreName
+        $requiredRelation["MSSQL_DB_NAME"] = "distinct"
+        if (-not [string]::IsNullOrWhiteSpace($RegisteredDatastoreDatabaseName)) {
+            $candidate["-DataStoreDatabaseName"] = $RegisteredDatastoreDatabaseName
+            $requiredRelation["-DataStoreDatabaseName"] = "distinct"
+        }
     }
     $sourceKeys = @($candidate.Keys)
     $sourceKeyList = ($sourceKeys | ForEach-Object { "'$_'" }) -join ", "
 
-    $query = New-MssqlPhysicalDistinctnessQuery -Candidate $candidate
+    $query = New-MssqlTopologyConsistencyQuery -ExpectedName $expectedName -Candidate $candidate
     $transport = Invoke-NativeCommandWithInput `
         -FilePath "docker" `
-        -ArgumentList (New-MssqlDistinctnessSqlcmdArgument -ContainerName $ContainerName -SaPassword $SaPassword) `
+        -ArgumentList (New-MssqlTopologySqlcmdArgument -ContainerName $ContainerName -SaPassword $SaPassword) `
         -InputText $query `
         -TimeoutSeconds $TimeoutSeconds
 
@@ -3003,16 +2902,23 @@ function Assert-MssqlPhysicalDatastoreDistinctness {
         else { $null }
     if ($null -ne $transportProblem) {
         $failureDetail = if ([string]::IsNullOrEmpty($transport.FailureTypeName)) { "" } else { " [$($transport.FailureTypeName)]" }
-        throw "CMS database topology verification failed: the physical distinctness of the datastore name resolved from $sourceKeyList against 'edfi_configurationservice' could not be confirmed on the running SQL Server ($transportProblem$failureDetail). Startup does not proceed unverified. The resolved value is withheld."
+        throw "CMS database topology verification failed: the physical consistency of the database names resolved from $sourceKeyList against $expectedDescription could not be confirmed on the running SQL Server ($transportProblem$failureDetail). Startup does not proceed unverified. The resolved values are withheld."
     }
 
-    $parsed = ConvertFrom-MssqlPhysicalDistinctnessQueryOutput -OutputText $transport.StandardOutput -ExpectedSourceKey $sourceKeys
+    $parsed = ConvertFrom-MssqlTopologyConsistencyQueryOutput -OutputText $transport.StandardOutput -ExpectedSourceKey $sourceKeys
     if ($parsed.Category -ne "ok") {
-        throw "CMS database topology verification failed: the physical distinctness of the datastore name resolved from $sourceKeyList against 'edfi_configurationservice' could not be confirmed on the running SQL Server ($($parsed.Category)). Startup does not proceed unverified. The resolved value is withheld."
+        throw "CMS database topology verification failed: the physical consistency of the database names resolved from $sourceKeyList against $expectedDescription could not be confirmed on the running SQL Server ($($parsed.Category)). Startup does not proceed unverified. The resolved values are withheld."
     }
 
     foreach ($sourceKey in $sourceKeys) {
-        if ([string]::Equals([string]$parsed.Verdict[$sourceKey], "collides", [System.StringComparison]::Ordinal)) {
+        $verdict = [string]$parsed.Verdict[$sourceKey]
+        $required = [string]$requiredRelation[$sourceKey]
+        if ([string]::Equals($required, "equal", [System.StringComparison]::Ordinal) -and
+            -not [string]::Equals($verdict, "equal", [System.StringComparison]::Ordinal)) {
+            throw "CMS database topology mismatch: SQL Server reports that the database name resolved from '$sourceKey' denotes a DIFFERENT physical database than $expectedDescription (server-collation name comparison on the running instance). The effective topology requires them to be the same database. The resolved values are withheld. Align the names or change the -SeparateConfigDatabase selection."
+        }
+        if ([string]::Equals($required, "distinct", [System.StringComparison]::Ordinal) -and
+            -not [string]::Equals($verdict, "distinct", [System.StringComparison]::Ordinal)) {
             throw "CMS database topology mismatch: SQL Server reports that the datastore name resolved from '$sourceKey' denotes the SAME physical database as the dedicated 'edfi_configurationservice' (server-collation name comparison on the running instance). -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct. The resolved value is withheld. Rename the datastore database or use shared mode."
         }
     }
@@ -3511,10 +3417,11 @@ function Confirm-CmsDatabaseTopologyAgreement {
         and this function fails clearly if it ever does.
 
         Every recognized database-name key present (Database, Initial Catalog) must individually
-        agree with the expected name - the same all-candidates-must-agree pattern
-        Assert-MssqlCmsDatabaseIsShared already uses, not a "pick one" or "reject if more than one
-        is present" rule; a connection string carrying two agreeing aliases is accepted. The same
-        rule applies to every recognized host-key alias present, and host-key recognition is
+        agree with the expected name - an all-candidates-must-agree pattern, not a "pick one" or
+        "reject if more than one is present" rule; a connection string carrying two agreeing
+        aliases is accepted. (For MSSQL that agreement is decided live per candidate by the
+        topology authority; here it is final for PostgreSQL only.) The same rule applies to
+        every recognized host-key alias present, and host-key recognition is
         engine-specific (Get-EndpointFromResolvedConnectionString): an MSSQL-only alias is not
         recognized for a PostgreSQL validation and vice versa, so a connection string authored for
         the wrong engine cannot pass by accident. A connection string presenting no recognized host
@@ -3522,10 +3429,12 @@ function Confirm-CmsDatabaseTopologyAgreement {
         (neither a host,port compound nor, for PostgreSQL, a standalone "port" key) defaults to the
         engine's documented internal port (1433 MSSQL, 5432 PostgreSQL).
 
-        Finally, if the ambient process/shell environment sets DMS_CONFIG_DATABASE_NAME directly
-        (read raw, not through Get-ComposeResolvedEnvValue, which would trivially equal itself), it
-        must also agree with the expected name - a caller-set ambient override that disagrees with
-        the intended topology is rejected rather than silently allowed to reach Compose.
+        Finally, ambient DMS_CONFIG_DATABASE_NAME handling is PRESENCE-aware: any non-null value
+        is supplied under Compose precedence, so a supplied empty or whitespace-only value fails
+        here deterministically, before Docker, naming the key without echoing the value. A
+        supplied nonblank PostgreSQL value must agree exactly with the expected name; a supplied
+        nonblank MSSQL value is the effective seam, verified physically by the live topology
+        authority after readiness - this function renders no MSSQL name verdict for it.
 
     .PARAMETER EnvironmentFile
         Absolute path to the effective environment file (after Resolve-DatabaseEngineEnvironmentFile
@@ -3551,17 +3460,16 @@ function Confirm-CmsDatabaseTopologyAgreement {
     # none, so it must be the exact host that fallback names. A test pins it to a real Compose render.
     $inlineFallbackHost = if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
     $expectedPort = if ($DatabaseEngine -eq "mssql") { "1433" } else { "5432" }
-    # The RESOLVED database names compared below - the connection string's own database segments and an
-    # ambient DMS_CONFIG_DATABASE_NAME override - agree through Test-CmsTargetNameAgreement: ordinal
-    # exact for BOTH engines. On PostgreSQL neither value is an unquoted SQL identifier, so nothing
-    # folds; on SQL Server whether two DIFFERENT spellings are the same physical database depends on the
-    # running instance's collation, which this pre-start check cannot consult - the previous
-    # case-insensitive comparison accepted a case variant that a case-sensitive instance keeps as a
-    # distinct database. The agreement rule deliberately does NOT govern the
-    # datastore-versus-reserved-CMS-name collision: on PostgreSQL that answer is fixed by the mechanism
-    # that physically CREATES the datastore database
-    # (Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase), and on SQL Server it is decided by
-    # the RUNNING instance through Assert-MssqlPhysicalDatastoreDistinctness, not by this function.
+    # Database-NAME agreement below is engine-split. PostgreSQL: the resolved segments and any
+    # ambient override are literal provider values (nothing folds), so exact ordinal agreement
+    # (Test-PostgresCmsTargetNameAgreement) is the correct final rule and runs here. SQL Server:
+    # this function renders NO name verdict at all - it validates structure (presence, parse,
+    # candidate discovery, host/port) and the live topology authority
+    # (Assert-MssqlTopologyPhysicalConsistency) decides every name relationship on the running
+    # instance, whose collation was measured to flip the answer in both directions across
+    # supported collations. The PostgreSQL datastore-versus-reserved-CMS collision stays with the
+    # mechanism that physically CREATES the datastore database
+    # (Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase), not this function.
 
     # The marker comes from its own raw declaration through the shared assignment model, then through
     # Compose's value semantics. Read raw and never from the ambient environment: the marker is this
@@ -3606,7 +3514,7 @@ function Confirm-CmsDatabaseTopologyAgreement {
         # PostgreSQL only: this offline verdict is an exact model of postgresql-init.sh's unquoted
         # CREATE DATABASE lexer. SQL Server renders NO offline verdict here - database names inherit the
         # INSTANCE collation, so MSSQL physical distinctness is decided by the server-backed authority
-        # (Assert-MssqlPhysicalDatastoreDistinctness) against the running instance, after the database
+        # (Assert-MssqlTopologyPhysicalConsistency) against the running instance, after the database
         # container starts and before anything consumes it.
         $datastoreDatabaseName = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name $datastoreNameKey)
         if (Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine $DatabaseEngine -DatastoreDatabaseName $datastoreDatabaseName) {
@@ -3640,9 +3548,19 @@ function Confirm-CmsDatabaseTopologyAgreement {
     if ($actualDatabaseNames.Count -eq 0) {
         throw "Confirm-CmsDatabaseTopologyAgreement: DMS_CONFIG_DATABASE_CONNECTION_STRING must include Database or Initial Catalog and target '$expectedDatabaseName'."
     }
-    foreach ($actualDatabaseName in $actualDatabaseNames) {
-        if (-not (Test-CmsTargetNameAgreement -ActualName $actualDatabaseName -ExpectedName $expectedDatabaseName)) {
-            throw "CMS database topology mismatch: DMS_CONFIG_DATABASE_CONNECTION_STRING targets database '$actualDatabaseName', but the effective topology contract requires '$expectedDatabaseName'. Agreement is by exact spelling - on SQL Server, whether two different spellings denote the same physical database depends on the running instance's collation, which cannot be consulted before startup. Align the connection string or the -SeparateConfigDatabase selection."
+    # Database-NAME agreement is engine-split. PostgreSQL: the parsed segments are literal
+    # provider values (nothing folds), so exact ordinal agreement is the correct final rule and
+    # runs here, before any container starts. SQL Server: whether a segment and the expected name
+    # are the same physical database is the running instance's collation's call - measured in
+    # both directions across supported collations - so this function renders NO MSSQL name
+    # verdict; structural discovery above proves the segments exist, and the live authority
+    # (Assert-MssqlTopologyPhysicalConsistency) verifies every segment physically after the
+    # database container is ready and before anything consumes it.
+    if ($DatabaseEngine -eq "postgresql") {
+        foreach ($actualDatabaseName in $actualDatabaseNames) {
+            if (-not (Test-PostgresCmsTargetNameAgreement -ActualName $actualDatabaseName -ExpectedName $expectedDatabaseName)) {
+                throw "CMS database topology mismatch: DMS_CONFIG_DATABASE_CONNECTION_STRING targets database '$actualDatabaseName', but the effective topology contract requires '$expectedDatabaseName'. Align the connection string or the -SeparateConfigDatabase selection."
+            }
         }
     }
 
@@ -3674,8 +3592,21 @@ function Confirm-CmsDatabaseTopologyAgreement {
         }
     }
 
+    # Ambient provenance is PRESENCE-aware: $null means absent (the file governs); ANY non-null
+    # value is supplied, because Compose gives it precedence over every file declaration. A
+    # supplied empty or whitespace-only value would render the seam blank at run time, so it
+    # fails deterministically here - before Docker - naming the key and never echoing the value.
+    # A supplied nonblank PostgreSQL value keeps the existing exact agreement rule; a supplied
+    # nonblank MSSQL value IS the effective seam under Compose precedence, and the live topology
+    # authority verifies it physically after readiness - no offline MSSQL name verdict is
+    # rendered here.
     $ambientDatabaseName = [System.Environment]::GetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME")
-    if (-not [string]::IsNullOrWhiteSpace($ambientDatabaseName) -and -not (Test-CmsTargetNameAgreement -ActualName $ambientDatabaseName -ExpectedName $expectedDatabaseName)) {
-        throw "CMS database topology mismatch: an ambient DMS_CONFIG_DATABASE_NAME='$ambientDatabaseName' conflicts with the effective topology contract, which requires '$expectedDatabaseName'. Agreement is by exact spelling - on SQL Server, physical equivalence of different spellings depends on the running instance's collation. Unset it or align it character-for-character before running."
+    if ($null -ne $ambientDatabaseName) {
+        if ([string]::IsNullOrWhiteSpace($ambientDatabaseName)) {
+            throw "CMS database topology configuration error: the ambient environment supplies 'DMS_CONFIG_DATABASE_NAME' as an empty or whitespace-only value, which Compose would hand to the container verbatim. Unset it or set a database name. The value is withheld."
+        }
+        if ($DatabaseEngine -eq "postgresql" -and -not (Test-PostgresCmsTargetNameAgreement -ActualName $ambientDatabaseName -ExpectedName $expectedDatabaseName)) {
+            throw "CMS database topology mismatch: an ambient DMS_CONFIG_DATABASE_NAME='$ambientDatabaseName' conflicts with the effective topology contract, which requires '$expectedDatabaseName'. Unset it or align it before running."
+        }
     }
 }
