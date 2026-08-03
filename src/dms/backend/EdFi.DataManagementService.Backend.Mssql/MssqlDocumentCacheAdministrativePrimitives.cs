@@ -71,18 +71,6 @@ internal sealed class MssqlDocumentCacheAdministrativePrimitives : IDocumentCach
             cancellationToken
         );
 
-    public Task<DocumentCacheAdministrativeActivationTransitionResult> TryTransitionLifecycleAfterActivationPrerequisitesAsync(
-        IRelationalWriteSession mutexSession,
-        DocumentCacheAdministrativeLifecycleTransitionRequest request,
-        CancellationToken cancellationToken = default
-    ) =>
-        DocumentCacheAdministrativePrimitivesSupport.TryTransitionLifecycleAfterActivationPrerequisitesAsync(
-            mutexSession,
-            Commands,
-            request,
-            cancellationToken
-        );
-
     public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentCacheBatchAsync(
         IRelationalWriteSession mutexSession,
         DocumentCacheAdministrativeClearBatchRequest request,

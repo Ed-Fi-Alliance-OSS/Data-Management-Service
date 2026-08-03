@@ -232,50 +232,6 @@ public class Given_DocumentCacheAdministrativePrimitives
     }
 
     [Test]
-    public async Task It_does_not_issue_activation_lifecycle_transition_when_sql_server_prerequisites_fail()
-    {
-        DocumentCacheAdministrativePrimitiveCommands commands =
-            DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Mssql);
-        var executor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(
-                    RelationalAccessTestData.CreateRow(("ReadCommittedSnapshot", 0), ("NestedTriggers", 1))
-                ),
-            ]),
-            new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(
-                    RelationalAccessTestData.CreateRow(
-                        ("ProjectionLifecycleState", "Disabled"),
-                        ("CacheAheadRecoveryRequired", false)
-                    )
-                ),
-            ]),
-        ]);
-        var session = new InMemoryAdministrativeSession(executor);
-
-        DocumentCacheAdministrativeActivationTransitionResult result =
-            await DocumentCacheAdministrativePrimitivesSupport.TryTransitionLifecycleAfterActivationPrerequisitesAsync(
-                session,
-                commands,
-                new DocumentCacheAdministrativeLifecycleTransitionRequest(
-                    DocumentCacheLifecycleState.Disabled,
-                    expectedCacheAheadRecoveryRequired: false,
-                    DocumentCacheLifecycleState.Tracking,
-                    nextCacheAheadRecoveryRequired: false
-                )
-            );
-
-        result.Mutated.Should().BeFalse();
-        result.ActivationPrerequisites.IsSatisfied.Should().BeFalse();
-        executor.Commands.Should().HaveCount(2);
-        executor.Commands[0].CommandText.Should().Contain("FROM [sys].[databases]");
-        executor.Commands[1].CommandText.Should().Contain("WITH (XLOCK, HOLDLOCK)");
-        executor
-            .Commands.Should()
-            .NotContain(command => command.CommandText.Contains("UPDATE [dms].[DocumentCacheState]"));
-    }
-
-    [Test]
     public async Task It_treats_postgresql_activation_prerequisites_as_not_applicable_without_sql()
     {
         var executor = new InMemoryRelationalCommandExecutor([]);

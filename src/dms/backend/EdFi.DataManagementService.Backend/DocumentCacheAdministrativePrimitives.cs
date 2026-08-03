@@ -113,29 +113,6 @@ internal sealed record DocumentCacheAdministrativeLifecycleTransitionResult
     }
 }
 
-internal sealed record DocumentCacheAdministrativeActivationTransitionResult
-{
-    public DocumentCacheAdministrativeActivationTransitionResult(
-        DocumentCacheProviderPrerequisiteValidationResult activationPrerequisites,
-        DocumentCacheAdministrativeLifecycleTransitionResult transition,
-        string message
-    )
-    {
-        ActivationPrerequisites =
-            activationPrerequisites ?? throw new ArgumentNullException(nameof(activationPrerequisites));
-        Transition = transition ?? throw new ArgumentNullException(nameof(transition));
-        Message = DocumentCacheAdministrativePrimitiveText.Sanitize(message);
-    }
-
-    public DocumentCacheProviderPrerequisiteValidationResult ActivationPrerequisites { get; }
-
-    public DocumentCacheAdministrativeLifecycleTransitionResult Transition { get; }
-
-    public string Message { get; }
-
-    public bool Mutated => Transition.Mutated;
-}
-
 internal enum DocumentCacheAdministrativeClearTarget
 {
     DocumentCache = 1,
@@ -1040,12 +1017,6 @@ internal interface IDocumentCacheAdministrativePrimitives
         CancellationToken cancellationToken = default
     );
 
-    Task<DocumentCacheAdministrativeActivationTransitionResult> TryTransitionLifecycleAfterActivationPrerequisitesAsync(
-        IRelationalWriteSession mutexSession,
-        DocumentCacheAdministrativeLifecycleTransitionRequest request,
-        CancellationToken cancellationToken = default
-    );
-
     Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentCacheBatchAsync(
         IRelationalWriteSession mutexSession,
         DocumentCacheAdministrativeClearBatchRequest request,
@@ -1385,53 +1356,6 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
             .ConfigureAwait(false);
 
         return DocumentCacheAdministrativeLifecycleTransitionResult.NotTransitioned(currentLifecycle);
-    }
-
-    public static async Task<DocumentCacheAdministrativeActivationTransitionResult> TryTransitionLifecycleAfterActivationPrerequisitesAsync(
-        IRelationalWriteSession mutexSession,
-        DocumentCacheAdministrativePrimitiveCommands commands,
-        DocumentCacheAdministrativeLifecycleTransitionRequest request,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(mutexSession);
-        ArgumentNullException.ThrowIfNull(commands);
-        ArgumentNullException.ThrowIfNull(request);
-
-        DocumentCacheProviderPrerequisiteValidationResult activationPrerequisites =
-            await ValidateActivationPrerequisitesAsync(mutexSession, commands, cancellationToken)
-                .ConfigureAwait(false);
-
-        if (!activationPrerequisites.IsSatisfied)
-        {
-            DocumentCacheLifecycleReadResult currentLifecycle = await ReadLifecycleAsync(
-                    mutexSession.CreateCommandExecutor(),
-                    commands,
-                    DocumentCacheAdministrativeStateLockMode.Exclusive,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            return new DocumentCacheAdministrativeActivationTransitionResult(
-                activationPrerequisites,
-                DocumentCacheAdministrativeLifecycleTransitionResult.NotTransitioned(currentLifecycle),
-                "Activation prerequisite validation failed before lifecycle mutation."
-            );
-        }
-
-        DocumentCacheAdministrativeLifecycleTransitionResult transition = await TryTransitionLifecycleAsync(
-                mutexSession,
-                commands,
-                request,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        return new DocumentCacheAdministrativeActivationTransitionResult(
-            activationPrerequisites,
-            transition,
-            "Activation prerequisites were validated immediately before lifecycle transition."
-        );
     }
 
     public static Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentCacheBatchAsync(

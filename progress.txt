@@ -212,3 +212,8 @@ Completed administrative-primitives follow-up task for reference/design/backend-
 Key decisions: PostgreSQL baseline seed page now aliases observed source version, guards ON CONFLICT repair on unchanged observed work version, and classifies guarded misses as Retry; SQL Server behavior unchanged. Race test uses ReadCommitted harness to observe SQL classification before PG SSI aborts artificial concurrent update.
 Files changed: DocumentCacheAdministrativePrimitives.cs; DocumentCacheAdministrativePrimitivesTests.cs; PostgresqlDocumentCacheBaselineSeedingTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Simplification follow-up remains open.
+
+Completed simplification follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: removed production-dead activation-prerequisite lifecycle transition result/helper from shared primitive contract; kept current workflows on separate prerequisite validation plus guarded lifecycle transitions so fail-closed behavior stays unchanged.
+Files changed: DocumentCacheAdministrativePrimitives.cs; PG/MSSQL primitive wrappers; unit/integration primitive fakes and decorators; tasks.json; progress.txt.
+Blockers/notes: none. All tasks in tasks.json now complete.

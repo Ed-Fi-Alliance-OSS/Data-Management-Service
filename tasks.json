@@ -699,7 +699,7 @@
       "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativePrimitives|FullyQualifiedName~DocumentCacheGuardedNewEmptyActivation|FullyQualifiedName~DocumentCacheOfflineActivation\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "explicit-integrity-scrub",

@@ -528,17 +528,6 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
             CancellationToken cancellationToken = default
         ) => inner.TryTransitionLifecycleAsync(mutexSession, request, cancellationToken);
 
-        public Task<DocumentCacheAdministrativeActivationTransitionResult> TryTransitionLifecycleAfterActivationPrerequisitesAsync(
-            IRelationalWriteSession mutexSession,
-            DocumentCacheAdministrativeLifecycleTransitionRequest request,
-            CancellationToken cancellationToken = default
-        ) =>
-            inner.TryTransitionLifecycleAfterActivationPrerequisitesAsync(
-                mutexSession,
-                request,
-                cancellationToken
-            );
-
         public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentCacheBatchAsync(
             IRelationalWriteSession mutexSession,
             DocumentCacheAdministrativeClearBatchRequest request,

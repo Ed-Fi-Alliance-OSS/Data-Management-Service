@@ -71,18 +71,6 @@ internal sealed class PostgresqlDocumentCacheAdministrativePrimitives : IDocumen
             cancellationToken
         );
 
-    public Task<DocumentCacheAdministrativeActivationTransitionResult> TryTransitionLifecycleAfterActivationPrerequisitesAsync(
-        IRelationalWriteSession mutexSession,
-        DocumentCacheAdministrativeLifecycleTransitionRequest request,
-        CancellationToken cancellationToken = default
-    ) =>
-        DocumentCacheAdministrativePrimitivesSupport.TryTransitionLifecycleAfterActivationPrerequisitesAsync(
-            mutexSession,
-            Commands,
-            request,
-            cancellationToken
-        );
-
     public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentCacheBatchAsync(
         IRelationalWriteSession mutexSession,
         DocumentCacheAdministrativeClearBatchRequest request,

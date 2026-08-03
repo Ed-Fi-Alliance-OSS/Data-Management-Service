@@ -430,12 +430,6 @@ public class Given_DocumentCacheBaselineSeeding
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException();
 
-        public Task<DocumentCacheAdministrativeActivationTransitionResult> TryTransitionLifecycleAfterActivationPrerequisitesAsync(
-            IRelationalWriteSession mutexSession,
-            DocumentCacheAdministrativeLifecycleTransitionRequest request,
-            CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
-
         public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentCacheBatchAsync(
             IRelationalWriteSession mutexSession,
             DocumentCacheAdministrativeClearBatchRequest request,
