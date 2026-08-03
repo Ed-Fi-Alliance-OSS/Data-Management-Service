@@ -347,24 +347,29 @@ trailing spaces — measured examples that all resolve to the reserved database 
 collation include full-width letterforms, the `fi` ligature, and characters with no collation weight
 at all — and which differ between instances: a case variant that collides under the default
 collation is a genuinely distinct database on a case-sensitive one. The only entity that can answer
-is the SQL Server that will host both databases, so a separate-mode start verifies distinctness
-against the running instance itself: after the database container starts and reports ready, and
-before OpenIddict, CMS, DMS, or the data-store registration touch it, the datastore name — and any
-`-DataStoreDatabaseName`, as the value the provider actually receives — is checked on the server.
-All SQL Server distinctness verdicts happen there. Valid Unicode datastore names are fully supported
-and no longer require renaming: a name is refused only when the instance itself reports that it
-denotes the reserved database, or when the verification cannot be completed, in which case the start
-fails closed rather than proceeding unverified. A verification failure names the offending key or
+is the SQL Server that will host these databases, so *every* SQL Server start that runs the
+Configuration Service verifies its database names against the running instance itself: after the
+database container starts and reports ready, and before OpenIddict, CMS, DMS, or the data-store
+registration touch it, the names are checked on the server. In shared mode the check is that the
+Configuration Service's target — the `DMS_CONFIG_DATABASE_NAME` seam and every `Database` /
+`Initial Catalog` segment of its connection string — really is the DMS datastore database. In
+separate mode the same targets must be the dedicated `edfi_configurationservice`, and the datastore
+name — plus any `-DataStoreDatabaseName`, as the value the provider actually receives — must be
+distinct from it. All SQL Server name verdicts happen there. Valid Unicode names are fully
+supported and no longer require renaming: a name is refused only when the instance itself reports
+the wrong relationship, or when the verification cannot be completed, in which case the start fails
+closed rather than proceeding unverified. A verification failure names the offending key or
 parameter and never prints the configured value.
 
-Shared-mode environment files on non-CMS shapes keep today's shared-database check unchanged. That
-check asserts a shared-mode invariant, so it does not apply to a configuration that has declared
-itself separate — by the internal marker, by an explicit `-SeparateConfigDatabase`, or by a CMS
-connection string that targets `edfi_configurationservice` outright. The last of those is what lets
-the manual phases continue from a `-SeparateConfigDatabase -InfraOnly` start: the marker lives only
-in the derived file, so `configure-local-data-store.ps1` and `provision-dms-schema.ps1` invoked
-directly against your original `-EnvironmentFile` recognize the dedicated target from the file's own
-content. A connection string naming some other third database is still rejected.
+Shapes that never start the Configuration Service — `-DmsOnly`, `-DbOnly`, teardown, and a bare
+published Keycloak start that omits `published-config.yml` — get structural validation only:
+presence, parseability, database-segment discovery, and host/port. No SQL Server name is judged for
+them, because there is no running instance to ask and no offline rule can answer. This is also what
+lets the manual phases continue from a `-SeparateConfigDatabase -InfraOnly` start:
+`configure-local-data-store.ps1` and `provision-dms-schema.ps1` invoked directly against your
+original `-EnvironmentFile` own the DMS datastore and take no part in the Configuration Service
+seam, so they no longer need the topology marker — which lives only in the derived file — to
+proceed.
 
 Switching an existing stack between modes re-points CMS but does not move data: `dmscs` content
 already written in one database stays there. For a clean switch, tear down with `-d -v` and start

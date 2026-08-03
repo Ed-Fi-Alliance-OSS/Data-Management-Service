@@ -715,6 +715,8 @@ function Invoke-BootstrapWrapper {
 
             # Composing the engine overlay is a SQL Server concern only, but the function returns the
             # base file unchanged for postgresql, so calling it either way keeps this to one path.
+            # -SkipMssqlCmsDatabaseValidation is retained here for compatibility and is a documented
+            # no-op: composition renders no database-NAME verdict on either engine.
             $baseEnvFile = Resolve-DatabaseEngineEnvironmentFile `
                 -DatabaseEngine $DatabaseEngine `
                 -BaseEnvironmentFile $baseEnvFile `
@@ -736,11 +738,11 @@ function Invoke-BootstrapWrapper {
 
         # The wrapper's own pre-resolution chain always represents a CMS-participating context (its
         # initial infra-start invocation below always includes CMS), so this story's own
-        # topology-write sequence and validator - which supersede the shared-mode-only check skipped
-        # above - run unconditionally here, for both engines. Deliberately sequenced after identity
-        # resolution: that check is the wrapper's documented earliest failure, and a topology error
-        # raised ahead of it would mask an unsupported identity provider behind a database-name
-        # complaint.
+        # topology-write sequence and validator run unconditionally here, for both engines. On SQL
+        # Server they establish the topology the start script then verifies physically against the
+        # running instance after readiness. Deliberately sequenced after identity resolution: that
+        # check is the wrapper's documented earliest failure, and a topology error raised ahead of
+        # it would mask an unsupported identity provider behind a database-name complaint.
         if (Test-Path -LiteralPath $envUtilityPathForEngineOverlay) {
             $baseEnvFile = Resolve-CmsDatabaseTopologyEnvironmentFile `
                 -BaseEnvironmentFile $baseEnvFile `

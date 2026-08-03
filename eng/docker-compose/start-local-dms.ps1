@@ -271,16 +271,14 @@ if ($cmsParticipates) {
     Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine
 }
 else {
-    # CMS does not participate in this shape, so the legacy shared-mode-only check keeps running
-    # exactly as it does today for a plain (no-switch) invocation of a shared-mode file.
-    # Two separate-topology signals skip it, because it asserts an invariant that is definitionally
-    # false for a separate-mode configuration: Resolve-DatabaseEngineEnvironmentFile itself skips it
-    # for an env file already carrying the topology marker (a derived-file continuation), and an
-    # explicit -SeparateConfigDatabase skips it here for a caller-authored source file that targets
-    # the dedicated database directly - the marker lives only in derived files, so without this a
-    # documented "accepted, gated no-op" continuation like `-DmsOnly -SeparateConfigDatabase` against
-    # the original -EnvironmentFile would be rejected by a check for a topology the caller explicitly
-    # declined.
+    # CMS does not participate in this shape, so the topology sequence above does not run and this
+    # path composes the engine overlay only - structural validation, no database-NAME verdict. A
+    # SQL Server name relationship is the running instance's collation's call, and this shape never
+    # starts a server to ask, so a documented "accepted, gated no-op" continuation like
+    # `-DmsOnly -SeparateConfigDatabase` against the original -EnvironmentFile proceeds regardless
+    # of which database its CMS connection string names.
+    # -SkipMssqlCmsDatabaseValidation is retained at this call site for compatibility and is a
+    # documented no-op; the switch value is preserved so the argument still records the intent.
     $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d -or $SeparateConfigDatabase)
 }
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
