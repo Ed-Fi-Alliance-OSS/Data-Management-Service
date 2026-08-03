@@ -344,6 +344,14 @@ public class Given_DocumentCacheAdministrativePrimitives
         pgsql
             .SeedBaselinePageCommandText.Should()
             .Contain("WHEN work.\"RequiredContentVersion\" < EXCLUDED.\"RequiredContentVersion\"");
+        pgsql
+            .SeedBaselinePageCommandText.Should()
+            .Contain("work.\"RequiredContentVersion\" = candidate.\"PreviousRequiredContentVersion\"");
+        pgsql
+            .SeedBaselinePageCommandText.Should()
+            .Contain(
+                "observed.\"PreviousRequiredContentVersion\" IS DISTINCT FROM observed.\"SourceContentVersion\""
+            );
         pgsql.SeedBaselinePageCommandText.Should().Contain("ELSE work.\"LastEnqueuedAt\"");
         pgsql.SeedBaselinePageCommandText.Should().NotContain("COUNT");
 

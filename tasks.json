@@ -683,7 +683,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheBaselineSeeding\"",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativePrimitives|FullyQualifiedName~DocumentCacheBaselineSeeding\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "simplification",

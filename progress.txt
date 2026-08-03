@@ -207,3 +207,8 @@ Completed explicit-integrity-scrub follow-up task for reference/design/backend-r
 Key decisions: explicit scrub now rereads lifecycle/latch on mutex session after live preflight and before boundary capture; stale latch/lifecycle returns no-mutation failure with current diagnostics, no new scrub state or retry policy.
 Files changed: DocumentCacheExplicitIntegrityScrub.cs; PG/MSSQL ExplicitIntegrityScrub integration tests; tasks.json; progress.txt.
 Blockers/notes: default MSSQL admin env unset; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Remaining follow-up tasks still open in tasks.json.
+
+Completed administrative-primitives follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: PostgreSQL baseline seed page now aliases observed source version, guards ON CONFLICT repair on unchanged observed work version, and classifies guarded misses as Retry; SQL Server behavior unchanged. Race test uses ReadCommitted harness to observe SQL classification before PG SSI aborts artificial concurrent update.
+Files changed: DocumentCacheAdministrativePrimitives.cs; DocumentCacheAdministrativePrimitivesTests.cs; PostgresqlDocumentCacheBaselineSeedingTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Simplification follow-up remains open.

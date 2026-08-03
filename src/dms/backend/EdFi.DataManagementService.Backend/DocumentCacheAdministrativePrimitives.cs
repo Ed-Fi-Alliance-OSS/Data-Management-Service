@@ -2419,7 +2419,7 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
                 observed AS (
                     SELECT
                         bounded_source.{documentIdColumn},
-                        bounded_source.{contentVersionColumn},
+                        bounded_source.{contentVersionColumn} AS {sourceContentVersionColumn},
                         work.{workRequiredContentVersionColumn} AS {previousRequiredContentVersionColumn}
                     FROM bounded_source
                     LEFT JOIN {workTable} AS work
@@ -2434,7 +2434,7 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
                     )
                     SELECT
                         observed.{documentIdColumn},
-                        observed.{contentVersionColumn},
+                        observed.{sourceContentVersionColumn},
                         CURRENT_TIMESTAMP,
                         CURRENT_TIMESTAMP
                     FROM observed
@@ -2445,18 +2445,26 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
                                 THEN EXCLUDED.{lastEnqueuedAtColumn}
                             ELSE work.{lastEnqueuedAtColumn}
                         END
-                    WHERE work.{workRequiredContentVersionColumn} <> EXCLUDED.{workRequiredContentVersionColumn}
+                    WHERE (
+                        SELECT candidate.{previousRequiredContentVersionColumn} IS NOT NULL
+                          AND work.{workRequiredContentVersionColumn} = candidate.{previousRequiredContentVersionColumn}
+                          AND work.{workRequiredContentVersionColumn} <> EXCLUDED.{workRequiredContentVersionColumn}
+                        FROM observed AS candidate
+                        WHERE candidate.{documentIdColumn} = work.{documentIdColumn}
+                    )
                     RETURNING work.{documentIdColumn}
                 )
                 SELECT
                     observed.{documentIdColumn} AS {resultDocumentIdColumn},
-                    observed.{contentVersionColumn} AS {sourceContentVersionColumn},
+                    observed.{sourceContentVersionColumn},
                     observed.{previousRequiredContentVersionColumn},
                     CASE
+                        WHEN upserted.{documentIdColumn} IS NULL
+                             AND observed.{previousRequiredContentVersionColumn} IS DISTINCT FROM observed.{sourceContentVersionColumn} THEN 'Retry'
                         WHEN upserted.{documentIdColumn} IS NULL THEN 'None'
                         WHEN observed.{previousRequiredContentVersionColumn} IS NULL THEN 'Inserted'
-                        WHEN observed.{previousRequiredContentVersionColumn} < observed.{contentVersionColumn} THEN 'Advanced'
-                        WHEN observed.{previousRequiredContentVersionColumn} > observed.{contentVersionColumn} THEN 'Lowered'
+                        WHEN observed.{previousRequiredContentVersionColumn} < observed.{sourceContentVersionColumn} THEN 'Advanced'
+                        WHEN observed.{previousRequiredContentVersionColumn} > observed.{sourceContentVersionColumn} THEN 'Lowered'
                         ELSE 'None'
                     END AS {mutationKindColumn}
                 FROM observed

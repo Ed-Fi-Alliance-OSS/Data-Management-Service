@@ -138,6 +138,57 @@ public class Given_A_Postgresql_DocumentCacheBaselineSeeding_Primitive
         workRows[aheadWork.DocumentId].LastEnqueuedAt.Should().Be(OldLastEnqueuedAt);
     }
 
+    [Test]
+    public async Task It_retries_when_observed_work_changes_before_page_repair()
+    {
+        SourceDocument racedWork = await InsertDocumentAsync(contentVersion: 10);
+        await ClearProjectionWorkAsync();
+        await InsertProjectionWorkAsync(racedWork, requiredContentVersion: 5);
+
+        long advisoryLockKey = 1_314_000_000L + racedWork.DocumentId;
+        await InstallBaselineSeedRaceTriggerAsync(racedWork.DocumentId, advisoryLockKey);
+
+        await using var blocker = new NpgsqlConnection(_database.ConnectionString);
+        await blocker.OpenAsync();
+        await AcquireAdvisoryLockAsync(blocker, advisoryLockKey);
+
+        await using IDocumentCacheAdministrativeMutexLease lease = await AcquireMutexAsync();
+        Task<DocumentCacheAdministrativeBaselineSeedPageResult> seedTask = SeedPageAndRollbackOnRetryAsync(
+            lease,
+            boundaryDocumentId: racedWork.DocumentId,
+            afterDocumentId: 0,
+            pageSize: 1
+        );
+
+        try
+        {
+            await WaitForBlockedAdvisoryLockAsync(seedTask);
+            await UpdateProjectionWorkAsync(racedWork, requiredContentVersion: 99);
+        }
+        finally
+        {
+            await ReleaseAdvisoryLockAsync(blocker, advisoryLockKey);
+        }
+
+        DocumentCacheAdministrativeBaselineSeedPageResult result = await seedTask;
+
+        result
+            .Status.Should()
+            .Be(DocumentCacheAdministrativeBaselineSeedPageStatus.RetryFromLastCommittedKey);
+        result.Mutated.Should().BeFalse();
+        result.Documents.Should().ContainSingle();
+        result.Documents[0].DocumentId.Should().Be(racedWork.DocumentId);
+        result.Documents[0].SourceContentVersion.Should().Be(10);
+        result.Documents[0].PreviousRequiredContentVersion.Should().Be(5);
+        result
+            .Documents[0]
+            .MutationKind.Should()
+            .Be(DocumentCacheAdministrativeBaselineWorkMutationKind.Retry);
+
+        IReadOnlyDictionary<long, WorkRow> workRows = await ReadWorkRowsAsync();
+        workRows[racedWork.DocumentId].RequiredContentVersion.Should().Be(99);
+    }
+
     private Task<IDocumentCacheAdministrativeMutexLease> AcquireMutexAsync() =>
         _mutex.AcquireAsync(
             new DocumentCacheTargetConnectionInput(
@@ -230,6 +281,53 @@ public class Given_A_Postgresql_DocumentCacheBaselineSeeding_Primitive
         }
     }
 
+    private async Task<DocumentCacheAdministrativeBaselineSeedPageResult> SeedPageAndRollbackOnRetryAsync(
+        IDocumentCacheAdministrativeMutexLease lease,
+        long boundaryDocumentId,
+        long afterDocumentId,
+        int pageSize
+    )
+    {
+        // Let the harness observe the SQL retry classification before PostgreSQL SSI aborts the race.
+        await using IRelationalWriteSession session = await lease.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted
+        );
+
+        try
+        {
+            await using var enableRaceCommand = session.CreateCommand(
+                new RelationalCommand("""SET LOCAL edfi.baseline_seed_race = 'on';""")
+            );
+            await enableRaceCommand.ExecuteNonQueryAsync();
+
+            DocumentCacheAdministrativeBaselineSeedPageResult result =
+                await _primitives.SeedBaselinePageAsync(
+                    session,
+                    new DocumentCacheAdministrativeBaselineSeedPageRequest(
+                        boundaryDocumentId,
+                        afterDocumentId,
+                        pageSize
+                    )
+                );
+
+            if (result.Status == DocumentCacheAdministrativeBaselineSeedPageStatus.RetryFromLastCommittedKey)
+            {
+                await session.RollbackAsync(CancellationToken.None);
+            }
+            else
+            {
+                await session.CommitAsync();
+            }
+
+            return result;
+        }
+        catch
+        {
+            await session.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
     private async Task<SourceDocument> InsertDocumentAsync(long contentVersion)
     {
         short resourceKeyId = _fixture.MappingSet.ResourceKeyIdByResource[PersonResource];
@@ -286,6 +384,112 @@ public class Given_A_Postgresql_DocumentCacheBaselineSeeding_Primitive
             new NpgsqlParameter("firstEnqueuedAt", NpgsqlDbType.TimestampTz) { Value = OldFirstEnqueuedAt },
             new NpgsqlParameter("lastEnqueuedAt", NpgsqlDbType.TimestampTz) { Value = OldLastEnqueuedAt }
         );
+
+    private Task UpdateProjectionWorkAsync(SourceDocument source, long requiredContentVersion) =>
+        _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "dms"."DocumentProjectionWork"
+            SET
+                "RequiredContentVersion" = @requiredContentVersion,
+                "LastEnqueuedAt" = @lastEnqueuedAt
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = source.DocumentId },
+            new NpgsqlParameter("requiredContentVersion", NpgsqlDbType.Bigint)
+            {
+                Value = requiredContentVersion,
+            },
+            new NpgsqlParameter("lastEnqueuedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = OldLastEnqueuedAt.AddMinutes(5),
+            }
+        );
+
+    private Task InstallBaselineSeedRaceTriggerAsync(long documentId, long advisoryLockKey) =>
+        _database.ExecuteNonQueryAsync(
+            $$"""
+            CREATE OR REPLACE FUNCTION "dms"."block_baseline_seed_race"()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                IF NEW."DocumentId" = {{documentId}}
+                   AND current_setting('edfi.baseline_seed_race', true) = 'on' THEN
+                    PERFORM pg_advisory_lock({{advisoryLockKey}});
+                    PERFORM pg_advisory_unlock({{advisoryLockKey}});
+                END IF;
+
+                RETURN NEW;
+            END;
+            $$;
+
+            DROP TRIGGER IF EXISTS "BlockBaselineSeedRace" ON "dms"."DocumentProjectionWork";
+
+            CREATE TRIGGER "BlockBaselineSeedRace"
+            BEFORE INSERT ON "dms"."DocumentProjectionWork"
+            FOR EACH ROW
+            EXECUTE FUNCTION "dms"."block_baseline_seed_race"();
+            """
+        );
+
+    private static async Task AcquireAdvisoryLockAsync(NpgsqlConnection connection, long advisoryLockKey)
+    {
+        await using NpgsqlCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT pg_advisory_lock(@advisoryLockKey);";
+        command.Parameters.Add(
+            new NpgsqlParameter("advisoryLockKey", NpgsqlDbType.Bigint) { Value = advisoryLockKey }
+        );
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task ReleaseAdvisoryLockAsync(NpgsqlConnection connection, long advisoryLockKey)
+    {
+        await using NpgsqlCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT pg_advisory_unlock(@advisoryLockKey);";
+        command.Parameters.Add(
+            new NpgsqlParameter("advisoryLockKey", NpgsqlDbType.Bigint) { Value = advisoryLockKey }
+        );
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task WaitForBlockedAdvisoryLockAsync(Task seedTask)
+    {
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync(cancellation.Token);
+
+        while (!seedTask.IsCompleted)
+        {
+            if (await HasWaitingAdvisoryLockAsync(connection, cancellation.Token))
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(25), cancellation.Token);
+        }
+
+        await seedTask;
+        Assert.Fail("Baseline seed page completed before the race trigger blocked on the advisory lock.");
+    }
+
+    private static async Task<bool> HasWaitingAdvisoryLockAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        await using NpgsqlCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_locks
+                WHERE locktype = 'advisory'
+                  AND granted = false
+            );
+            """;
+
+        object? result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is true;
+    }
 
     private async Task<IReadOnlyDictionary<long, WorkRow>> ReadWorkRowsAsync()
     {
