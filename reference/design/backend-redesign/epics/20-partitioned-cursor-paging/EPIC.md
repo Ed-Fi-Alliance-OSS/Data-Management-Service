@@ -16,7 +16,7 @@ related:
 ## Status
 
 This planning draft is the design output of `DMS-1349`. `DMS-1348` has no implementation
-children yet. The eleven linked work-package files below are provisional planning placeholders that
+children yet. The thirteen linked work-package files below are provisional planning placeholders that
 were approved before Jira creation; they use `jira: TBD` and are not implementation-owned story
 documents. Create Jira children only after separate authorization, then replace each placeholder's
 frontmatter and update `JIRA-INDEX.md` in a mapping-only change. The source spike is currently
@@ -79,6 +79,11 @@ whenever page selection returns a non-empty keyset and normally discovers comple
 next keyset-empty response. If all selected rows are concurrently deleted before hydration, the
 current body can be empty while the header still advances past those selected keys.
 
+Emitting `Next-Page-Token` on an ordinary `limit`/`offset` response extends the published Ed-Fi
+surface because the client guide does not describe it for traditional responses and authoritative
+collection fixtures do not define it as a response header. It nevertheless matches ODS 7.3.2
+runtime behavior and gives clients a cursor-walk entry point.
+
 Query-parameter names are case-insensitive at the HTTP boundary and are canonicalized before
 Core validation. Preserve the frontend's existing last-value-wins behavior for repeated query
 parameters. Case variants such as `pageToken` and `PAGETOKEN` must collapse to one canonical key
@@ -90,12 +95,17 @@ The presence of either `pageToken` or `pageSize`, including a blank or malformed
 the new cursor validation path and its parameter-validation ProblemDetails shell. Traditional-only
 `limit`/`offset` failures retain the existing generic bad-request response and messages.
 
-Cursor validation is phase-gated. Accumulate errors in canonical parameter order within a phase,
-but stop after the first phase containing errors:
+Cursor validation returns exactly one error and follows ODS 7.3.2 control-flow precedence:
 
-1. syntax and range validation;
+1. paging-strategy and mixed-mode conflicts;
 2. required parameter relationships; and
-3. mixed-mode rules.
+3. syntax and range validation.
+
+The ODS early check for `offset` with `pageToken` has highest precedence. For the remaining
+mixed-mode conflicts, evaluate `limit` with either cursor parameter and then `totalCount=true` in
+cursor mode. Presence, including a blank, malformed, or zero value, controls those checks before
+values are parsed. Within required relationships, `pageSize` with `offset` and neither `pageToken`
+nor `limit` uses the ODS limit/offset guidance before the general missing-`pageToken` rule.
 
 New cursor and partition failures use HTTP 400 with this JSON shape and the current DMS
 `application/json` response media type:
@@ -120,13 +130,15 @@ Use these exact messages:
 - invalid `offset` while the cursor shell applies: `Offset must be a numeric value greater than or equal to 0.`
 - invalid `totalCount` while the cursor shell applies: `TotalCount must be a boolean value.`
 - `pageSize` without `pageToken`: `PageToken is required when pageSize is specified.`
+- `pageSize` with `offset` and neither `pageToken` nor `limit`: `Use limit instead of pageSize when using limit/offset paging.`
 - cursor parameters with `limit`: `Use pageSize instead of limit when using cursor paging with pageToken.`
 - cursor parameters with `offset`: `Both offset and pageToken parameters were provided, but they support alternative paging approaches and cannot be used together.`
 - `totalCount=true` in cursor mode: `The totalCount parameter cannot be set to true when using cursor paging with pageToken.`
 
-Within a phase, report errors in canonical order: `pageToken`, `pageSize`, `limit`, `offset`,
-`totalCount`. A syntax/range failure suppresses relationship and mixed-mode errors; a required
-relationship failure suppresses mixed-mode errors.
+Stop after the first applicable rule. A mixed-mode error suppresses relationship and syntax/range
+errors, and a required-relationship error suppresses syntax/range errors. This intentionally
+matches ODS's one-element validation-error response rather than accumulating all applicable
+messages.
 
 Cursor parameter recognition is operation-scoped. Supplying `pageToken` or `pageSize` to
 `/deletes` or `/keyChanges` returns the existing HTTP 400 bad-request shell with
@@ -235,13 +247,20 @@ Retain the existing `PaginationParameters` model for traditional and tracked-cha
 Add explicit query-parameter roles for cursor bounds and size and for partition count/minimum
 size; do not overload the existing offset/limit roles.
 
-Factor a reusable `CandidateDocumentIdQuerySpec` containing the root relation, value predicates,
-live change-version predicates, unified-alias rewrites, row-level authorization specification,
-and deterministic parameter metadata. Traditional page, cursor page, and partition compilers
-must consume that same spec. The regular-resource builder continues to root on the resource
-table, while the descriptor builder continues to root on `dms.Descriptor` with its mandatory
-`ResourceKeyId` predicate. Core resource/change-version filter parsing is also shared between
-GET-many and `/partitions` so candidate behavior cannot drift before it reaches SQL.
+Extend the existing `PageDocumentIdQuerySpec` and shared `PageDocumentIdSqlCompiler` rather than
+introducing a parallel candidate abstraction. The spec already carries the root relation, value
+and live change-version predicates, unified-alias rewrites, row-level authorization
+specification, paging parameter names, and deterministic compiler inputs, and both the
+regular-resource and descriptor planners already construct it. Add explicit cursor-bound/page-size
+and partition-count/minimum-size parameter roles and expose the same unpaged candidate relation
+to the partition compiler. The regular-resource builder continues to root on the resource table,
+while the descriptor builder continues to root on `dms.Descriptor` with its mandatory
+`ResourceKeyId` predicate.
+
+The residual Core-side work is to share resource-filter and live change-version parsing between
+GET-many and `/partitions` so candidate behavior cannot drift before it reaches SQL. Add an
+explicit one-row-per-`DocumentId` assertion for each consumer and supported authorization
+strategy.
 
 The candidate relation must produce exactly one row per `DocumentId`. Authorization strategies
 should preserve uniqueness by construction, normally through `EXISTS`; do not add unconditional
@@ -367,9 +386,9 @@ and authorization indexes cannot serve.
 - **Backend contracts:** add a dedicated `IPartitionQueryHandler`; do not route partition work
   through `QueryDocuments`. Query success carries the nullable selected keyset maximum, and
   partition success carries typed ranges. SQL planners and executors never parse token strings.
-- **Candidate planning:** factor the current root predicates, change-version filters, and
-  authorization specification so traditional pages, cursor pages, and partition boundaries
-  cannot drift.
+- **Candidate planning:** extend `PageDocumentIdQuerySpec` and `PageDocumentIdSqlCompiler` with
+  cursor and partition roles, share Core filter/change-version parsing, and assert that traditional
+  pages, cursor pages, and partition boundaries consume one unique candidate row per document.
 
 ### OpenAPI assembly
 
@@ -379,10 +398,13 @@ The current ApiSchema base documents already contain `pageToken`, `pageSize`, an
 OpenAPI assembly after all core, abstract, and extension fragments are merged but before domain
 and profile filtering.
 
-For every eligible core-resource, extension-resource, and descriptor collection:
+For every eligible core-resource, extension-resource, and descriptor collection, publish the
+following metadata only with its corresponding completed runtime execution:
 
-- append `pageToken` and `pageSize` parameter references to the collection GET;
-- document `Next-Page-Token` as a string header on its HTTP 200 response;
+- append `pageToken` and `pageSize` parameter references to the collection GET only after E20-S04
+  and E20-S05 have activated regular-resource and descriptor cursor execution respectively;
+- document `Next-Page-Token` as a string header on its HTTP 200 response under the same cursor
+  execution gate;
 - add a sibling `/partitions` GET operation only when the E20-S06 runtime partition pipeline is
   activated; the path must not be published ahead of the implementation and there is no interim
   feature toggle;
@@ -393,6 +415,10 @@ For every eligible core-resource, extension-resource, and descriptor collection:
   example `getStudentsPartitions` and `get_TPDMCandidatesPartitions`; and
 - provide a partition-specific summary and description rather than copying the collection GET
   text.
+
+There is no advance-publication interval or interim feature toggle: cursor parameters and the
+response header must not be published before clients can use them, just as `/partitions` paths
+must not be published before the runtime route is active.
 
 Do not augment item-by-id, change-query, discovery, or management paths, and do not introduce
 composite paths. Publish the runtime `MaximumPageSize`, initially `500`, as both the default and
@@ -444,7 +470,10 @@ or repeatable-read guarantees.
 Implementation is incomplete without reproducible PostgreSQL and real SQL Server evidence.
 E20-S09 must add a repeatable script/configuration/result format or explicitly integrate and pin
 the external Suite-3 performance runner, then capture the traditional-paging baseline before
-E20-S02 factors the existing planners or E20-S03 changes provider SQL.
+E20-S03 changes generated provider page-selection SQL. E20-S02 may proceed in parallel because it
+extends the existing shared plan contract and Core parsing without changing traditional SQL.
+Because E20-S04 and E20-S05 depend on E20-S03, the baseline also lands before their downstream
+changes to shared traditional collection execution, including E20-S04's selected-id result set.
 
 The pre-change E20-S09 baseline is deliberately limited to the three traditional offset
 scenarios used by the gates: offset 0, a one-page shallow offset, and a recorded deep offset, for
@@ -492,18 +521,22 @@ Filtered and authorized plans should retain applicable existing indexes without 
 candidate scans. A partition plan may scan and sort the candidate set once. Add DDL or indexes
 only after reviewed provider evidence demonstrates a repeatable deficiency.
 
-Bounded telemetry records paging mode, requested/returned page size, requested/returned partition
-count, duration, provider, command category, and success/failure. It never records raw token text,
-filter names or values, decoded bounds, client identity, or candidate identifiers.
+## Bounded Telemetry
+
+E20-S12 adds production telemetry independently of the measurement matrix. Record paging mode,
+requested/returned page size, requested/returned partition count, duration, provider, command
+category, and success/failure with bounded dimensions. Never record raw token text, decoded
+bounds, filter names or values, client identity, or candidate identifiers.
 
 ## Test Expectations
 
 - Unit tests cover token round trips, omitted maximum, padded/unpadded input, forbidden alphabet
   and padding forms, invalid UTF-8, extra fields, decimal grammar, `Int64` bounds, terminal
   inverted ranges, and overflow handling.
-- Validation tests cover every query-parameter combination, phase gating, canonical error order,
-  exact messages and ProblemDetails shells, repeated-parameter last-value-wins behavior, and
-  case-variant canonicalization without an exception.
+- Validation tests cover every query-parameter combination, ODS-compatible cursor precedence,
+  exactly one cursor error, partition phase gating and unsupported-parameter ordering, exact
+  messages and ProblemDetails shells, repeated-parameter last-value-wins behavior, and case-variant
+  canonicalization without an exception.
 - Routing and handler tests cover typed collection/by-id/partition classification, the dedicated
   pipeline order, selected-keyset-empty/body-empty-after-selection/zero-size/`Int64.MaxValue`
   header behavior, cursor parameters on `/deletes` and `/keyChanges`, and startup configuration
@@ -528,8 +561,10 @@ filter names or values, decoded bounds, client identity, or candidate identifier
 - E2E tests cover the public headers/body, the terminal empty request, malformed/mixed parameters,
   default and requested partition counts, parallel consumption without overlap, route qualifiers,
   multi-tenancy, extension resources, descriptors, and OpenAPI/profile metadata.
-- A parity fixture runs the same contract cases against an ODS 7.3 reference API and DMS. Any
-  additional difference must be recorded here before implementation is accepted.
+- The E20-S11 parity fixture runs the same contract cases against an ODS 7.3.2 reference API and
+  DMS. Any additional difference must be recorded here before implementation is accepted.
+
+### Approved Intentional ODS Differences
 
 The approved intentional ODS differences are:
 
@@ -537,11 +572,19 @@ The approved intentional ODS differences are:
 - reject `totalCount=true` in cursor mode;
 - reject `limit`, `offset`, `pageToken`, `pageSize`, and `totalCount` on `/partitions`, where ODS
   7.3.2 validates only `number` and otherwise passes these through as additional parameters;
-- emit `Next-Page-Token` on ordinary `limit`/`offset` responses when their selected keyset is
-  non-empty, an extension absent from the Ed-Fi client guide and authoritative collection fixtures;
+- reject ODS's undocumented `allowSmallPartitions` and `useJoinAuth` partition pass-through
+  parameters under DMS's unknown-query-field rule;
+- gate `Next-Page-Token` on a non-null `HighestSelectedDocumentId`, including when concurrent
+  deletion leaves an empty hydrated body, while ODS gates the header on hydrated body count;
+- retain DMS's existing `Offset must be a numeric value greater than or equal to 0.` text rather
+  than ODS's `Offset cannot be a negative value.`;
+- retain DMS's existing `Limit must be omitted or set to a numeric value between 0 and {N}.` text
+  rather than ODS's `Limit must be a value between 0 and {N}.`;
 - publish and use DMS's configured `MaximumPageSize`, initially `500`, as the default and maximum
   for both `limit` and `pageSize` rather than retaining Ed-Fi's published default of `25` or a
   fixed maximum;
+- make `DefaultPartitionCount` configurable and publish its runtime value as the OpenAPI default,
+  while ODS uses and publishes a fixed default of `10`;
 - use DMS `Int64 DocumentId` bounds rather than ODS `Int32 AggregateId` bounds;
 - omit the next header rather than overflowing at `Int64.MaxValue`; and
 - use the stricter approved base64url and decimal decoder contract.
@@ -553,8 +596,9 @@ The approved intentional ODS differences are:
   `ApiService`, query/partition handlers, token codec, configuration, and response headers.
 - `Frontend.AspNetCore`: query-parameter canonicalization, option registration, and default
   configuration.
-- `Backend.Plans` and plan contracts: shared candidate spec, page/partition compilers, parameter
-  roles, hydration batch output, and executor result contracts.
+- `Backend.Plans` and plan contracts: the existing `PageDocumentIdQuerySpec` and
+  `PageDocumentIdSqlCompiler`, partition compilation, parameter roles, hydration batch output, and
+  executor result contracts.
 - `Backend`: regular and descriptor candidate planners, `RelationalDocumentStoreRepository`, and
   `DescriptorReadHandler`.
 - `Core/OpenApi`, OpenAPI generator, and authoritative-fixture-based tests: platform augmentation
@@ -595,17 +639,17 @@ The approved intentional ODS differences are:
 
 These provisional allocation files are approved for decomposition before Jira creation. They
 allocate ownership and evidence while this epic remains authoritative for every shared contract.
-Their `E20-S00` through `E20-S10` identifiers are stable planning identifiers, not Jira keys.
+Their `E20-S00` through `E20-S12` identifiers are stable planning identifiers, not Jira keys.
 
 1. **[E20-S00: Cursor contract foundation](00-cursor-contract-foundation.md)** — typed paging/range
-   models, token codec, phase-gated validation, ProblemDetails, configuration, and focused unit
-   tests.
+   models, token codec, ODS-precedence cursor validation, partition validation, ProblemDetails,
+   configuration, and focused unit tests.
 2. **[E20-S01: Typed resource path operations](01-typed-resource-path-operations.md)** —
    collection/by-id/partition routing, canonicalization, and regression tests without exposing an
    incomplete partition handler.
-3. **[E20-S02: Shared candidate planning](02-shared-candidate-planning.md)** — reusable
-   regular/descriptor candidate specs, shared filter validation, deterministic parameters, and
-   uniqueness contracts.
+3. **[E20-S02: Shared candidate planning](02-shared-candidate-planning.md)** — extend the shared
+   page-document-id spec/compiler, share Core filter validation, add parameter roles, and assert
+   candidate uniqueness.
 4. **[E20-S03: Provider cursor SQL](03-provider-cursor-sql.md)** — PostgreSQL and SQL Server
    compilers, explicit parameter roles, and SQL/golden tests preserving traditional page-selection
    SQL.
@@ -621,20 +665,26 @@ Their `E20-S00` through `E20-S10` identifiers are stable planning identifiers, n
    resource/extension/descriptor augmentation, profile association, `operationId` values,
    summaries/descriptions, runtime defaults, snapshots, and client-facing documentation.
 9. **[E20-S08: Authorization, parity, and E2E suite](08-authorization-parity-and-e2e.md)** —
-   cross-strategy accessible-set tests, ODS comparison, route/tenant/profile coverage, terminal
-   walks, and parallel partition consumption.
+   cross-strategy accessible-set tests, S11-backed comparisons, route/tenant/profile coverage,
+   terminal walks, and parallel partition consumption.
 10. **[E20-S09: Performance harness and traditional baseline](09-performance-harness-and-baseline.md)** —
      reproducible cross-provider harness and the three pre-change offset baseline scenarios.
-11. **[E20-S10: Performance and observability final gate](10-performance-and-observability-final-gate.md)** —
-     pinned large-data fixtures, full provider-plan evidence, bounded telemetry, thresholds, and
-     regression reporting.
+11. **[E20-S10: Performance final gate](10-performance-and-observability-final-gate.md)** — pinned
+    large-data fixtures, full provider-plan evidence, thresholds, and regression reporting.
+12. **[E20-S11: ODS parity fixture and difference ledger](11-ods-parity-fixture-and-difference-ledger.md)** —
+    pinned ODS 7.3.2 reference infrastructure, comparison harness, and approved-difference
+    enforcement.
+13. **[E20-S12: Bounded cursor and partition telemetry](12-bounded-cursor-and-partition-telemetry.md)** —
+    production paging metrics with bounded dimensions and explicit privacy constraints.
 
-Complete E20-S09 before E20-S02 factors page planners or E20-S03 changes provider SQL. E20-S01
-through E20-S03 otherwise follow E20-S00. E20-S04 through E20-S06 consume the shared candidate
-plan. E20-S07 cursor metadata may proceed once E20-S00 fixes the public contract, but its
-`/partitions` paths must land with the completed E20-S06 runtime pipeline. E20-S08 consumes
-E20-S04 through E20-S07, and E20-S10 runs after provider, authorization, and E2E behavior is
-stable.
+E20-S09 may run in parallel with E20-S00 through E20-S02 but must complete before E20-S03 changes
+provider SQL; that dependency also places the baseline before downstream E20-S04/E20-S05 shared
+execution changes. E20-S04 through E20-S06 consume the shared page-document-id plan. E20-S06
+boundary compilation may proceed from E20-S00 through E20-S03, but route activation additionally
+requires E20-S04 and E20-S05. E20-S07 publishes no cursor parameter, response header, or partition
+path until E20-S04 through E20-S06 provide the corresponding runtime behavior. E20-S11 may proceed
+after E20-S00; E20-S08 consumes E20-S04 through E20-S07 and E20-S11. E20-S10 runs after E20-S02
+through E20-S09, while E20-S12 may proceed independently after E20-S04 through E20-S06.
 
 ## Completion Evidence
 

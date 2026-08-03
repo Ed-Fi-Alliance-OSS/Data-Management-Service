@@ -9,9 +9,9 @@ status: proposed
 
 ## Outcome
 
-Demonstrate through API-level integration, ODS comparison, and end-to-end scenarios that cursor
-pages and partition boundaries preserve the approved public, authorization, routing, and stable
-fixture semantics.
+Demonstrate through API-level integration, E20-S11-backed ODS comparison cases, and end-to-end
+scenarios that cursor pages and partition boundaries preserve the approved public, authorization,
+routing, and stable-fixture semantics.
 
 ## Design References
 
@@ -22,7 +22,7 @@ fixture semantics.
 
 ## Dependencies
 
-- Hard dependencies: E20-S04, E20-S05, E20-S06, and E20-S07.
+- Hard dependencies: E20-S04, E20-S05, E20-S06, E20-S07, and the E20-S11 ODS comparison fixture.
 - E20-S10 consumes the stable scenarios and fixtures for its final performance gate where useful.
 
 ## Implementation Scope
@@ -32,16 +32,17 @@ fixture semantics.
   requests.
 - Add stable-fixture sequential and parallel partition walks, filters, change versions,
   extensions, descriptors, profiles, route qualifiers, and multi-tenancy.
-- Build an ODS 7.3 comparison fixture and record the intentional differences already approved in
-  the epic.
+- Run the applicable public contract cases through E20-S11's pinned ODS 7.3.2 comparison fixture
+  and enforce the intentional differences already approved in the epic.
 - Add concurrency scenarios that document, rather than overpromise, non-snapshot behavior.
 
 ## Acceptance Evidence and Test Expectations
 
 - Stable sequential and parallel walks return every accessible fixture member exactly once with
   no overlap across ranges on PostgreSQL and representative real SQL Server coverage.
-- Exact validation shells, phase gating, canonical error order, repeated-parameter behavior,
-  terminal empty pages, and response headers are asserted through HTTP.
+- Exact validation shells, ODS-compatible cursor precedence and single-error behavior, partition
+  validation ordering, repeated-parameter behavior, terminal empty pages, and response headers are
+  asserted through HTTP.
 - Authorization tests prove forged tokens and partition requests do not expose inaccessible data
   or inaccessible starting ids.
 - ODS/DMS results match except for the explicit differences listed in the epic.
@@ -59,5 +60,7 @@ fixture semantics.
 
 - Fundamental contract, planner, SQL, execution, and OpenAPI implementation belongs to E20-S00
   through E20-S07.
+- The pinned ODS reference stack, comparison harness, and approved-difference ledger belong to
+  E20-S11.
 - Load/latency thresholds and provider plan capture belong to E20-S10.
 - Snapshot consistency is not asserted.

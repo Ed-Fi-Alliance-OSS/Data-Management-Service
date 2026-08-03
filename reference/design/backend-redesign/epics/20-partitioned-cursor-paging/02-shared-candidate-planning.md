@@ -9,9 +9,9 @@ status: proposed
 
 ## Outcome
 
-Create one reusable candidate-plan contract per regular-resource or descriptor query so
-traditional pages, cursor pages, and partition boundaries cannot drift in filtering,
-change-version behavior, parameter binding, or row-level authorization.
+Extend the existing shared page-document-id plan contract so traditional pages, cursor pages, and
+partition boundaries cannot drift in filtering, change-version behavior, parameter binding, or
+row-level authorization.
 
 ## Design References
 
@@ -22,36 +22,38 @@ change-version behavior, parameter binding, or row-level authorization.
 
 ## Dependencies
 
-- Hard dependencies: E20-S00 for typed paging/range and backend contract boundaries, and E20-S09
-  for the captured pre-change traditional-paging baseline.
-- Do not begin factoring the existing regular-resource or descriptor page planners until E20-S09
-  is complete.
+- Hard dependency: E20-S00 for typed paging/range and backend contract boundaries.
+- E20-S09 may run in parallel. Its captured baseline is a hard prerequisite of E20-S03 before
+  generated provider SQL changes, not of this contract-extension story.
 - External foundations: E08 regular/descriptor query planning, E10 live change-version filters,
   and E14 row-level authorization planning.
 - Blocks provider compilation and execution in E20-S03 through E20-S06.
 
 ## Implementation Scope
 
-- Factor `CandidateDocumentIdQuerySpec` and deterministic parameter metadata from the existing
-  regular-resource and descriptor page planners.
+- Extend `PageDocumentIdQuerySpec` and `PageDocumentIdSqlCompiler`, already shared by the existing
+  regular-resource and descriptor page planners, with explicit cursor-bound/page-size and
+  partition-count/minimum-size parameter roles and an unpaged partition candidate form.
 - Share resource-filter and live change-version validation/planning between GET-many and
   `/partitions`.
 - Preserve regular-resource root-table behavior and descriptor `dms.Descriptor` plus
   `ResourceKeyId` behavior.
-- Guarantee one candidate row per `DocumentId` for every supported authorization strategy.
+- Add an explicit one-row-per-`DocumentId` assertion for every consumer and supported
+  authorization strategy.
 - Keep provider-neutral candidate semantics separate from paging- and partition-specific SQL.
 
 ## Acceptance Evidence and Test Expectations
 
-- Planner unit tests prove traditional, cursor, and partition consumers receive identical
-  predicates, authorization specs, and filter parameter values for the same request.
+- Planner unit tests prove both existing planners construct the extended shared spec and that
+  traditional, cursor, and partition consumers receive identical predicates, authorization specs,
+  and filter parameter values for the same request.
 - Tests cover resource filters, id filters, min/max change version, unified aliases, empty
   candidates, and descriptors.
 - Authorization planner tests cover no-further, relationship, ownership, namespace, and view-based
   strategies where supported and detect duplicate candidate ids.
 - Normalized plan-contract tests lock deterministic parameter ordering.
-- Traditional page-selection SQL goldens and behavior are compared with E20-S09 evidence so
-  factoring cannot introduce an unexplained regression.
+- Existing traditional page-selection SQL goldens remain unchanged; E20-S03 owns comparison with
+  the E20-S09 baseline before provider SQL changes.
 
 ## Cross-Provider and Authorization Responsibilities
 

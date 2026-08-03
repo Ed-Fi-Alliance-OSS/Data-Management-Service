@@ -5,12 +5,12 @@ epic: DMS-1348
 status: proposed
 ---
 
-# E20-S10: Performance and Observability Final Gate
+# E20-S10: Performance Final Gate
 
 ## Outcome
 
-Use the E20-S09 harness and baseline to produce bounded telemetry, cross-provider execution plans,
-and final evidence that cursor latency is depth-insensitive without regressing traditional paging.
+Use the E20-S09 harness and baseline to produce cross-provider execution plans and final evidence
+that cursor latency is depth-insensitive without regressing traditional paging.
 
 ## Design References
 
@@ -32,7 +32,6 @@ and final evidence that cursor latency is depth-insensitive without regressing t
   post-change evidence.
 - Capture PostgreSQL and SQL Server plan and I/O evidence using the mechanisms specified by the
   epic.
-- Add bounded telemetry for mode, sizes/counts, duration, provider, command category, and outcome.
 - Produce a final report evaluating every threshold and explaining any variance or proposed index.
 
 ## Acceptance Evidence and Test Expectations
@@ -42,8 +41,6 @@ and final evidence that cursor latency is depth-insensitive without regressing t
 - Cursor plans contain no offset/count work, use range access where expected, and add no command;
   partition plans perform one candidate pass and return ids only.
 - Traditional offset results are directly compared with the identified E20-S09 baseline artifacts.
-- Telemetry tests prove token text, decoded bounds, filter names/values, identities, and candidate
-  ids are never recorded.
 
 ## Cross-Provider and Authorization Responsibilities
 
@@ -56,6 +53,7 @@ and final evidence that cursor latency is depth-insensitive without regressing t
 
 - Functional implementation belongs to E20-S00 through E20-S08, and harness/baseline ownership
   belongs to E20-S09.
+- Bounded production telemetry and its privacy tests belong to E20-S12.
 - Production capacity sizing, dashboards, paid APM, and generalized load-test expansion are not
   assigned.
 - DDL or indexes are not delivered unless a separately reviewed provider plan demonstrates the

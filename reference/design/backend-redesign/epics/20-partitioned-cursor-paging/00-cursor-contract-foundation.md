@@ -10,8 +10,9 @@ status: proposed
 ## Outcome
 
 Establish the provider-neutral HTTP and Core contracts for traditional-versus-cursor paging,
-token encoding/decoding, phase-gated validation, and configuration. The epic remains the source
-of truth for exact messages, ordering, bounds, and terminal-page behavior.
+token encoding/decoding, ODS-precedence single-error cursor validation, partition validation, and
+configuration. The epic remains the source of truth for exact messages, ordering, bounds, and
+terminal-page behavior.
 
 ## Design References
 
@@ -33,7 +34,9 @@ of truth for exact messages, ordering, bounds, and terminal-page behavior.
   retaining traditional `PaginationParameters` for tracked-change endpoints.
 - Add the Core-owned token codec with the approved base64url, decimal, empty-maximum, inverted
   range, and `Int64.MaxValue` behavior.
-- Add phase-gated cursor and partition parameter validators and the approved ProblemDetails shell.
+- Add a cursor validator that evaluates mixed-mode conflicts, required relationships, and
+  syntax/range rules in the approved ODS-compatible precedence and returns exactly one error.
+- Add the separately phase-gated partition validator and the approved ProblemDetails shell.
 - Keep cursor parameter recognition operation-scoped so `/deletes` and `/keyChanges` retain their
   existing invalid-query-field HTTP 400 behavior.
 - Define the nullable selected-keyset boundary and typed partition-result contracts without
@@ -44,8 +47,10 @@ of truth for exact messages, ordering, bounds, and terminal-page behavior.
 
 - Unit tests cover the complete codec grammar, round trips, bounds, malformed inputs, and
   terminal/overflow behavior.
-- Validator tests prove syntax/range, required-relationship, and mixed-mode phase gating with
-  canonical error order and exact messages.
+- Cursor validator tests prove mixed-mode, required-relationship, and syntax/range precedence,
+  exactly one error, and exact messages, including the ODS `Use limit instead of pageSize...`
+  case. Partition validator tests preserve `number` precedence and canonical unsupported-parameter
+  ordering.
 - Traditional-only pagination failures retain their current response shell and messages.
 - `/deletes` and `/keyChanges` tests prove `pageToken` and `pageSize` are rejected rather than
   ignored.
