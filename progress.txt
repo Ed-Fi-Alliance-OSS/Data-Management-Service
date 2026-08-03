@@ -247,3 +247,8 @@ Completed startup-cleanup task for reference/design/backend-redesign/epics/18-do
 Key decisions: removed unreachable InitializeDocumentCacheTargets phase constant only; pinned remaining startup phase constants in focused startup status test; left Program.cs and hosted DocumentCache supervisor lifecycle unchanged.
 Files changed: StartupPhaseExecutor.cs; StartupPhaseExecutorTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Configuration-docs remains open.
+
+Completed configuration-docs task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added Administration:WorkflowTimeout sample as 24:00:00 beside existing DocumentCache projector settings; kept design reference and target/read/projector shapes unchanged; mirrored bootstrap embedded example with actual example file.
+Files changed: appsettings.json; appsettings.Development.json.example; bootstrap-design.md; tasks.json; progress.txt.
+Blockers/notes: none. Verified focused frontend config tests and rg example check.

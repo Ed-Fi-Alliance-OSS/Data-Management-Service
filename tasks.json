@@ -881,6 +881,6 @@
       "dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheOptions|FullyQualifiedName~WebApplicationBuilderExtensions|FullyQualifiedName~DocumentCacheStartupDiagnostics\"",
       "rg -n 'Administration|WorkflowTimeout' src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings*.json reference/design/backend-redesign/design-docs/bootstrap/appsettings.Development.json.example"
     ],
-    "completed": false
+    "completed": true
   }
 ]
