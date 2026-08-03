@@ -16,11 +16,11 @@
 > projection changes", so `TriggerKindParameters.ReferentialIdentityMaintenance` is gone from the
 > derived trigger inventory; the four surviving kinds are `DocumentStamping`,
 > `AbstractIdentityMaintenance`, `MssqlIdentityPropagationTrigger` and `AuthHierarchyMaintenance`.
-> `dms.Document.ResourceKeyId` is
-> not read at read time and `dms.Document(ResourceKeyId) → dms.ResourceKey` is not emitted — the only
-> core-table FK is `FK_SchemaComponent_EffectiveSchemaHash`; `dms.Document.CreatedByOwnershipTokenId` is
-> a column on every resource root table and on `dms.Descriptor` instead; and `abstractResources[*]` feed
-> the `<Abstract>Identity` tables, not alias rows in a referential-identity index.
+> `dms.Document.ResourceKeyId` is not read at read time and
+> `dms.Document(ResourceKeyId) → dms.ResourceKey` is not emitted — the only core-table FK is
+> `FK_SchemaComponent_EffectiveSchemaHash`; `dms.Document.CreatedByOwnershipTokenId` is a column on
+> every resource root table and on `dms.Descriptor` instead; and `abstractResources[*]` feed the
+> `<Abstract>Identity` tables, not alias rows in a referential-identity index.
 >
 > The **emission mechanics** — determinism and canonicalization, statement ordering and phases,
 > existence-check patterns, identifier naming and shortening, and the manifest artifacts — are

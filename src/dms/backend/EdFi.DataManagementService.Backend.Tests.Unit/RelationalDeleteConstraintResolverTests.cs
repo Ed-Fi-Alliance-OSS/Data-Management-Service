@@ -257,11 +257,12 @@ public class Given_Relational_Delete_Constraint_Resolver
     [Test]
     public void It_keeps_the_first_owner_silently_when_duplicate_constraint_names_share_the_same_owning_table()
     {
-        // Shared-superclass case: every concrete descriptor resource enumerates
-        // FK_Descriptor_Document pointing at the shared dms.Descriptor table. The same physical
-        // FK appears under multiple resources, but the owning table is identical — first-
+        // Shared-table case: two concrete resources enumerate the same physical table, so the same
+        // physical FK appears under multiple resources with an identical owning table — first-
         // writer-wins is correct and must stay silent (no warning noise during normal operation).
-        const string duplicateName = "FK_Descriptor_Document";
+        // The model and constraint name below are synthetic: no emitted model reaches this branch
+        // today, since dms.Descriptor is the only physically shared table and it carries no FK.
+        const string duplicateName = "FK_SharedTable_Parent";
         var modelSet = BuildModelSet(
             BuildResource(
                 EducationOrgCategoryDescriptorResource,

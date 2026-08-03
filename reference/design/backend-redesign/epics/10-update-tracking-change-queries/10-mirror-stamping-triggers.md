@@ -5,6 +5,20 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1173
 
 # Story: Keep Change-Version Mirrors in Lock-Step from Stamping Triggers
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the whole of this story. Its
+> subject is the dual write this phase retired — stamping `dms.Document`, capturing those values with
+> `RETURNING` / `OUTPUT`, and copying them to a mirror row. There is no `dms.Document` row to stamp or
+> capture from. A root-table or `dms.Descriptor` `DocumentStamping` trigger now writes `ContentVersion`
+> and `ContentLastModifiedAt` — plus `IdentityVersion` and `IdentityLastModifiedAt` on insert and on an
+> identity change — directly onto its own row; a child / collection / `_ext` trigger still `UPDATE`s the
+> resource root row named by its `MirrorStampTargetTable`, and that row is now the only copy of the stamp
+> rather than a mirror of one. What survives on those triggers: allocation from
+> `dms.ChangeVersionSequence`, and the suppression of updates whose authoritative columns did not change
+> (rendered as a positive `IS DISTINCT FROM` / `inserted`-vs-`deleted` comparison over the authoritative
+> column list). What goes: every acceptance criterion phrased as reading, writing or matching
+> `dms.Document` values. Retained as a historical work record. See
+> [`docs/RELATIONAL-BACKEND.md` §4](../../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Description
 
 Extend every `TriggerKindParameters.DocumentStamping` trigger renderer so the stamped `dms.Document` values are captured once and copied to the trigger's `MirrorStampTargetTable`.

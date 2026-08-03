@@ -86,10 +86,16 @@ internal sealed class RelationalDeleteConstraintResolver(ILogger<RelationalDelet
                     {
                         var existing = entries[constraintName];
 
-                        // Shared-superclass case: the same physical FK is enumerated once per
-                        // concrete resource that shares the superclass table (e.g. every concrete
-                        // descriptor resource carries FK_Descriptor_Document on the shared
-                        // dms.Descriptor table). First-writer-wins is correct here and stays silent.
+                        // Shared-table case: two concrete resources enumerated the same physical
+                        // table, so one physical FK arrived twice under a single owning table.
+                        // First-writer-wins is correct here and stays silent. No emitted model
+                        // currently reaches this branch: in the authoritative DS-5.2 relational
+                        // model every table belongs to exactly one concrete resource, and the one
+                        // physically shared table — dms.Descriptor, whose resources contribute no
+                        // tables of their own (SharedDescriptorTable storage) — carries no foreign
+                        // key at all (only PK_Descriptor, UX_Descriptor_DocumentUuid and
+                        // UX_Descriptor_UriLowered_Discriminator). The branch stays as the guard
+                        // that keeps a future shared table out of the collision warning below.
                         if (existing.OwningTable == table.Table)
                         {
                             continue;
