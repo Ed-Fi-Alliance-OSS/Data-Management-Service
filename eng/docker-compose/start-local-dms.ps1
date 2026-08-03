@@ -754,7 +754,15 @@ else {
             Write-Output "  3. Launch DMS in your IDE / debugger"
             Write-Output "  4. load-dms-seed-data.ps1 -DmsBaseUrl <url>   (optional seed delivery to the IDE-hosted DMS)"
             Write-Output "For a wrapper-managed health-wait and optional seed, run a fresh:"
-            Write-Output "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> [-LoadSeedData ...]"
+            # The fresh wrapper run recomposes the environment from its own switches, so omitting the
+            # topology declaration here would silently hand the operator a SHARED-mode continuation
+            # of a separate-mode stack.
+            if ($SeparateConfigDatabase) {
+                Write-Output "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -SeparateConfigDatabase [-LoadSeedData ...]"
+            }
+            else {
+                Write-Output "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> [-LoadSeedData ...]"
+            }
         }
         return
     }

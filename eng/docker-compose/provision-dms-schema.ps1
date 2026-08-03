@@ -376,6 +376,79 @@ function Resolve-ExpectedProvisioningDialect {
     }
 }
 
+function Get-LocalComposeDatabaseHostSideEndpoint {
+    <#
+    .SYNOPSIS
+    The host-side coordinates of the LOCAL Compose database service for a dialect: the exact values
+    the two host-side translations below substitute for the Docker-internal host.
+
+    .DESCRIPTION
+    Extracted so the translation and anything that later asks "is this target the local Compose
+    database?" cannot answer from two different sets of literals. SQL Server encodes host and port
+    together, so its endpoint is one "127.0.0.1,<port>" value; PostgreSQL keeps them separate.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet("pgsql", "mssql")]
+        [string]
+        $Dialect,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $EnvValues
+    )
+
+    if ($Dialect -eq "mssql") {
+        # mssql.yml publishes this port on 127.0.0.1 only (IPv4); use the literal address so
+        # SqlClient cannot resolve "localhost" to ::1 first and stall or fail on an IPv6 host.
+        $mssqlPort = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "MSSQL_PORT" -DefaultValue "1435"
+        return [pscustomobject]@{
+            Host = "127.0.0.1,$mssqlPort"
+            Port = $mssqlPort
+        }
+    }
+
+    return [pscustomobject]@{
+        Host = "localhost"
+        Port = (Get-EnvValueOrDefault -EnvValues $EnvValues -Name "POSTGRES_PORT" -DefaultValue "5432")
+    }
+}
+
+function Test-ProvisionTargetIsLocalComposeDatabase {
+    <#
+    .SYNOPSIS
+    True when a provisioning target's already-translated endpoint IS the local Compose database
+    service this environment publishes.
+
+    .DESCRIPTION
+    Compares the target's effective host/port - the identity the host-side translation already
+    produced, and the same fields TargetKey is built from - against
+    Get-LocalComposeDatabaseHostSideEndpoint. No new parsing: a Docker-internal target has already
+    been rewritten to the local coordinates by this point, and a target authored directly against
+    those coordinates is the same physical server, so both answer true.
+
+    An external server (a managed PostgreSQL, a shared SQL Server) keeps its own host and answers
+    false. That distinction is load-bearing for the separate-topology guard: this provisioner
+    supports per-data-store external servers and already treats identical database names on
+    different hosts as different targets, so a database named 'edfi_configurationservice' on some
+    other server is not the local Configuration Service database and no local authority - least of
+    all the dms-mssql container's collation - can say anything about it.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        $Target,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $EnvValues
+    )
+
+    $localEndpoint = Get-LocalComposeDatabaseHostSideEndpoint -Dialect $Target.Dialect -EnvValues $EnvValues
+
+    return ([string]::Equals([string]$Target.Host, $localEndpoint.Host, [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$Target.Port, $localEndpoint.Port, [System.StringComparison]::Ordinal))
+}
+
 function Convert-MssqlCmsConnectionStringToHostSideTarget {
     <#
     .SYNOPSIS
@@ -417,10 +490,7 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
 
     $effectiveServer = $server
     if ($serverHost.Equals("dms-mssql", [System.StringComparison]::OrdinalIgnoreCase)) {
-        $mssqlPort = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "MSSQL_PORT" -DefaultValue "1435"
-        # mssql.yml publishes this port on 127.0.0.1 only (IPv4); use the literal address so
-        # SqlClient cannot resolve "localhost" to ::1 first and stall or fail on an IPv6 host.
-        $effectiveServer = "127.0.0.1,$mssqlPort"
+        $effectiveServer = (Get-LocalComposeDatabaseHostSideEndpoint -Dialect "mssql" -EnvValues $EnvValues).Host
     }
 
     # Mutate only the server; every other stored option (password, TrustServerCertificate,
@@ -512,8 +582,9 @@ function Convert-CmsConnectionStringToHostSideTarget {
     $effectivePort = $instancePort
     if ($instanceHost.Equals("dms-postgresql", [System.StringComparison]::OrdinalIgnoreCase) -and
         $instancePort -eq "5432") {
-        $effectiveHost = "localhost"
-        $effectivePort = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "POSTGRES_PORT" -DefaultValue "5432"
+        $localEndpoint = Get-LocalComposeDatabaseHostSideEndpoint -Dialect "pgsql" -EnvValues $EnvValues
+        $effectiveHost = $localEndpoint.Host
+        $effectivePort = $localEndpoint.Port
     }
 
     # Mutate only host and port. Every other option the CMS stored (SSL Mode, Trust Server
@@ -814,6 +885,15 @@ function Assert-SeparateTopologyProvisionTarget {
         [string]
         $EnvironmentFile
     )
+
+    # Scoped to the local Compose database service, which is the only server the dedicated
+    # 'edfi_configurationservice' database lives on. A data store pointed at an external server -
+    # a shape this phase supports, and one whose targets are already kept distinct from local ones
+    # by TargetKey - has its own namespace: a database of that name there is a different physical
+    # database, and asking the local instance about it would answer for the wrong server entirely.
+    if (-not (Test-ProvisionTargetIsLocalComposeDatabase -Target $Target -EnvValues $EnvValues)) {
+        return
+    }
 
     if ($Target.Dialect -eq "mssql") {
         $mssqlPassword = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"

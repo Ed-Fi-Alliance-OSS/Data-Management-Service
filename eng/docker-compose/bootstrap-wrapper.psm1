@@ -965,7 +965,15 @@ function Invoke-BootstrapWrapper {
                 Write-Information "Optional seed delivery once your IDE-hosted DMS is healthy:" -InformationAction Continue
                 Write-Information "  load-dms-seed-data.ps1 -DmsBaseUrl <url> [...]" -InformationAction Continue
                 Write-Information "For a wrapper-managed health-wait and seed (fresh wrapper run; -NoDataStore reuses the data store this run created):" -InformationAction Continue
-                Write-Information "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore [-LoadSeedData ...]" -InformationAction Continue
+                # The fresh run recomposes the environment from its own switches, so the topology
+                # declaration has to travel with the hint: without it the continuation would start a
+                # SHARED-mode stack over a separate-mode one and undo the operator's selection.
+                if ($SeparateConfigDatabase) {
+                    Write-Information "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore -SeparateConfigDatabase [-LoadSeedData ...]" -InformationAction Continue
+                }
+                else {
+                    Write-Information "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore [-LoadSeedData ...]" -InformationAction Continue
+                }
                 Write-Information "  Note: -NoDataStore supports exactly one route-unqualified data store. If this run used" -InformationAction Continue
                 Write-Information "  -SchoolYearRange (or created route-qualified data stores), do NOT re-run the wrapper:" -InformationAction Continue
                 Write-Information "  re-supplying -SchoolYearRange creates a NEW set of data stores instead of selecting these." -InformationAction Continue
