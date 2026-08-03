@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
@@ -29,6 +31,8 @@ public class Given_A_Mssql_DocumentCacheWriter
 {
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/minimal";
+    private const int PerformanceEvidenceBatchSize = 50;
+    private const int PerformanceEvidenceContentionCount = 5;
 
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DateTimeOffset LastModifiedAt = new(2026, 7, 31, 12, 0, 0, TimeSpan.Zero);
@@ -1018,6 +1022,103 @@ public class Given_A_Mssql_DocumentCacheWriter
         AssertDocumentCacheWriterTelemetryCoverage(telemetry, "sqlserver");
     }
 
+    [Test]
+    [Explicit("Component-level performance evidence for DMS-1313; not a correctness gate.")]
+    [Category("DocumentCacheWriterPerformanceEvidence")]
+    public async Task DocumentCacheWriterPerformanceEvidence_it_compares_projector_and_direct_fill_workload_modes()
+    {
+        var telemetry = new RecordingDocumentCacheWriterTelemetry();
+        _writer = CreateWriter(telemetry: telemetry, maxRetryAttempts: 1);
+        List<DocumentCacheWriterPerformanceEvidenceRow> evidence = [];
+
+        foreach (DocumentCacheWriterPurpose purpose in PerformanceEvidencePurposes())
+        {
+            evidence.Add(
+                await MeasurePerformanceEvidenceScenarioAsync(
+                    "sqlserver",
+                    "candidate-write",
+                    purpose,
+                    telemetry,
+                    PerformanceEvidenceBatchSize,
+                    () => RunCandidateWritePerformanceEvidenceAsync(purpose, PerformanceEvidenceBatchSize)
+                )
+            );
+            evidence.Add(
+                await MeasurePerformanceEvidenceScenarioAsync(
+                    "sqlserver",
+                    "equal-version-acknowledgement",
+                    purpose,
+                    telemetry,
+                    PerformanceEvidenceBatchSize,
+                    () =>
+                        RunEqualVersionAcknowledgementPerformanceEvidenceAsync(
+                            purpose,
+                            PerformanceEvidenceBatchSize
+                        )
+                )
+            );
+            evidence.Add(
+                await MeasurePerformanceEvidenceScenarioAsync(
+                    "sqlserver",
+                    "needs-materialization",
+                    purpose,
+                    telemetry,
+                    PerformanceEvidenceBatchSize,
+                    () =>
+                        RunNeedsMaterializationPerformanceEvidenceAsync(purpose, PerformanceEvidenceBatchSize)
+                )
+            );
+            evidence.Add(
+                await MeasurePerformanceEvidenceScenarioAsync(
+                    "sqlserver",
+                    "duplicate-writer-contention",
+                    purpose,
+                    telemetry,
+                    PerformanceEvidenceContentionCount,
+                    () =>
+                        RunDuplicateWriterContentionPerformanceEvidenceAsync(
+                            telemetry,
+                            purpose,
+                            PerformanceEvidenceContentionCount
+                        )
+                )
+            );
+            evidence.Add(
+                await MeasurePerformanceEvidenceScenarioAsync(
+                    "sqlserver",
+                    "canonical-acknowledgement-contention",
+                    purpose,
+                    telemetry,
+                    operationCount: 1,
+                    () => RunCanonicalContentionPerformanceEvidenceAsync(telemetry, purpose)
+                )
+            );
+            evidence.Add(
+                await MeasurePerformanceEvidenceScenarioAsync(
+                    "sqlserver",
+                    "retry-candidate-write",
+                    purpose,
+                    telemetry,
+                    operationCount: 1,
+                    () => RunRetryPerformanceEvidenceAsync(telemetry, purpose)
+                )
+            );
+            evidence.Add(
+                await MeasurePerformanceEvidenceScenarioAsync(
+                    "sqlserver",
+                    "cache-ahead-incident",
+                    purpose,
+                    telemetry,
+                    operationCount: 1,
+                    () => RunCacheAheadIncidentPerformanceEvidenceAsync(purpose)
+                )
+            );
+        }
+
+        AssertDocumentCacheWriterPerformanceEvidence(evidence, telemetry, "sqlserver");
+        WriteDocumentCacheWriterPerformanceEvidence(evidence, "sqlserver");
+    }
+
     private async Task<DocumentCacheWriterResult> WriteAsync(
         SourceDocument source,
         DocumentCacheMaterializationCandidate? candidate,
@@ -1037,6 +1138,241 @@ public class Given_A_Mssql_DocumentCacheWriter
             candidate,
             CancellationToken.None
         );
+
+    private async Task RunCandidateWritePerformanceEvidenceAsync(
+        DocumentCacheWriterPurpose purpose,
+        int count
+    )
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+
+        for (int index = 0; index < count; index++)
+        {
+            SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+            DocumentCacheWriterResult result = await WriteAsync(
+                source,
+                CreateCandidate(source, $"performance-candidate-{purpose}-{index}"),
+                purpose
+            );
+
+            result.Should().BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>();
+        }
+    }
+
+    private async Task RunEqualVersionAcknowledgementPerformanceEvidenceAsync(
+        DocumentCacheWriterPurpose purpose,
+        int count
+    )
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+
+        for (int index = 0; index < count; index++)
+        {
+            SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 20);
+            await InsertCacheRowAsync(source, contentVersion: 20);
+
+            DocumentCacheWriterResult result = await WriteAsync(source, candidate: null, purpose);
+
+            result.Should().BeOfType<DocumentCacheWriterResult.AlreadyCurrentAcknowledged>();
+        }
+    }
+
+    private async Task RunNeedsMaterializationPerformanceEvidenceAsync(
+        DocumentCacheWriterPurpose purpose,
+        int count
+    )
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+
+        for (int index = 0; index < count; index++)
+        {
+            SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 30);
+
+            DocumentCacheWriterResult result = await WriteAsync(source, candidate: null, purpose);
+
+            result.Should().BeOfType<DocumentCacheWriterResult.NeedsMaterialization>();
+        }
+    }
+
+    private async Task RunDuplicateWriterContentionPerformanceEvidenceAsync(
+        RecordingDocumentCacheWriterTelemetry telemetry,
+        DocumentCacheWriterPurpose purpose,
+        int count
+    )
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+
+        for (int index = 0; index < count; index++)
+        {
+            SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 40);
+            DocumentCacheMaterializationCandidate candidate = CreateCandidate(
+                source,
+                $"performance-duplicate-{purpose}-{index}"
+            );
+            var pauseBeforeAcknowledgement = new PausingFaultInjectionObserver(
+                DocumentCacheWriterFaultInjectionHook.AfterCacheDmlBeforeAcknowledgement
+            );
+            MssqlDocumentCacheWriter pausedWriter = CreateWriter(
+                pauseBeforeAcknowledgement,
+                telemetry,
+                maxRetryAttempts: 1
+            );
+
+            Task<DocumentCacheWriterResult> firstWrite = pausedWriter.WriteAsync(
+                CreateRequest(source, candidate, purpose)
+            );
+            await pauseBeforeAcknowledgement.WaitUntilReachedAsync(TimeSpan.FromSeconds(5));
+            Task<DocumentCacheWriterResult> secondWrite = _writer.WriteAsync(
+                CreateRequest(source, candidate, purpose)
+            );
+
+            pauseBeforeAcknowledgement.Release();
+            DocumentCacheWriterResult[] results = await Task.WhenAll(firstWrite, secondWrite)
+                .WaitAsync(TimeSpan.FromSeconds(10));
+            DocumentCacheWriterOutcome[] outcomes = results.Select(result => result.Outcome).ToArray();
+
+            outcomes
+                .Count(outcome => outcome == DocumentCacheWriterOutcome.CandidateWrittenAcknowledged)
+                .Should()
+                .Be(1);
+            outcomes
+                .Should()
+                .BeSubsetOf([
+                    DocumentCacheWriterOutcome.CandidateWrittenAcknowledged,
+                    DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged,
+                    DocumentCacheWriterOutcome.RacingWriterLost,
+                ]);
+        }
+    }
+
+    private async Task RunCanonicalContentionPerformanceEvidenceAsync(
+        RecordingDocumentCacheWriterTelemetry telemetry,
+        DocumentCacheWriterPurpose purpose
+    )
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 50);
+        await InsertCacheRowAsync(source, contentVersion: 50);
+        var pauseAfterAcknowledgement = new PausingFaultInjectionObserver(
+            DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit
+        );
+        MssqlDocumentCacheWriter acknowledgementHoldingWriter = CreateWriter(
+            pauseAfterAcknowledgement,
+            telemetry,
+            maxRetryAttempts: 1
+        );
+
+        Task<DocumentCacheWriterResult> acknowledgement = acknowledgementHoldingWriter.WriteAsync(
+            CreateRequest(source, candidate: null, purpose)
+        );
+        await pauseAfterAcknowledgement.WaitUntilReachedAsync(TimeSpan.FromSeconds(5));
+
+        try
+        {
+            (
+                await FluentActions
+                    .Awaiting(() =>
+                        AttemptContentVersionAdvanceWithShortLockTimeoutAsync(
+                            source.DocumentId,
+                            contentVersion: 51
+                        )
+                    )
+                    .Should()
+                    .ThrowAsync<SqlException>()
+            )
+                .Which.Number.Should()
+                .Be(1222);
+        }
+        finally
+        {
+            pauseAfterAcknowledgement.Release();
+        }
+
+        (await acknowledgement.WaitAsync(TimeSpan.FromSeconds(10)))
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.AlreadyCurrentAcknowledged>();
+    }
+
+    private async Task RunRetryPerformanceEvidenceAsync(
+        RecordingDocumentCacheWriterTelemetry telemetry,
+        DocumentCacheWriterPurpose purpose
+    )
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 60);
+        var transientFault = new ThrowOnceMssqlTransientFaultInjectionObserver();
+        MssqlDocumentCacheWriter retryingWriter = CreateWriter(
+            transientFault,
+            telemetry,
+            maxRetryAttempts: 1
+        );
+
+        (
+            await retryingWriter.WriteAsync(
+                CreateRequest(source, CreateCandidate(source, $"performance-retry-{purpose}"), purpose)
+            )
+        )
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>();
+        transientFault.ObservedAttemptCount.Should().Be(2);
+    }
+
+    private async Task RunCacheAheadIncidentPerformanceEvidenceAsync(DocumentCacheWriterPurpose purpose)
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 70);
+        await InsertCacheRowAsync(source, contentVersion: 71);
+
+        (await WriteAsync(source, candidate: null, purpose))
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CacheAheadLatchSet>();
+        (await ReadCacheAheadLatchAsync()).Should().BeTrue();
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+    }
+
+    private static async Task<DocumentCacheWriterPerformanceEvidenceRow> MeasurePerformanceEvidenceScenarioAsync(
+        string provider,
+        string scenario,
+        DocumentCacheWriterPurpose purpose,
+        RecordingDocumentCacheWriterTelemetry telemetry,
+        int operationCount,
+        Func<Task> runScenario
+    )
+    {
+        int startingRecordCount = telemetry.Records.Count;
+        long startTimestamp = Stopwatch.GetTimestamp();
+
+        await runScenario();
+
+        TimeSpan elapsed = Stopwatch.GetElapsedTime(startTimestamp);
+        TelemetryRecord[] scenarioRecords = telemetry.Records.Skip(startingRecordCount).ToArray();
+
+        return new DocumentCacheWriterPerformanceEvidenceRow(
+            provider,
+            scenario,
+            purpose,
+            operationCount,
+            elapsed,
+            OutcomeCount: scenarioRecords.Count(record =>
+                record.Name == RecordingDocumentCacheWriterTelemetry.Outcome
+            ),
+            TransactionDurationCount: scenarioRecords.Count(record =>
+                record.Name == RecordingDocumentCacheWriterTelemetry.TransactionDuration
+            ),
+            CacheDmlDurationCount: scenarioRecords.Count(record =>
+                record.Name == RecordingDocumentCacheWriterTelemetry.CacheDmlDuration
+            ),
+            AcknowledgementDurationCount: scenarioRecords.Count(record =>
+                record.Name == RecordingDocumentCacheWriterTelemetry.AcknowledgementDuration
+            ),
+            RetryCount: scenarioRecords.Count(record =>
+                record.Name == RecordingDocumentCacheWriterTelemetry.Retry
+            ),
+            SameDocumentWaitCount: scenarioRecords.Count(record =>
+                record.Name == RecordingDocumentCacheWriterTelemetry.SameDocumentWait
+            )
+        );
+    }
 
     private DocumentCacheMaterializationTargetContext CreateTargetContext() =>
         new(
@@ -1509,6 +1845,171 @@ public class Given_A_Mssql_DocumentCacheWriter
         return fenced;
     }
 
+    private static void AssertDocumentCacheWriterPerformanceEvidence(
+        IReadOnlyCollection<DocumentCacheWriterPerformanceEvidenceRow> evidence,
+        RecordingDocumentCacheWriterTelemetry telemetry,
+        string provider
+    )
+    {
+        string[] requiredScenarios =
+        [
+            "candidate-write",
+            "equal-version-acknowledgement",
+            "needs-materialization",
+            "duplicate-writer-contention",
+            "canonical-acknowledgement-contention",
+            "retry-candidate-write",
+            "cache-ahead-incident",
+        ];
+
+        evidence.Should().HaveCount(requiredScenarios.Length * PerformanceEvidencePurposes().Length);
+        evidence.Should().OnlyContain(row => row.Provider == provider);
+        evidence.Should().OnlyContain(row => row.OperationCount > 0);
+        evidence.Should().OnlyContain(row => row.Elapsed >= TimeSpan.Zero);
+        evidence.Should().OnlyContain(row => row.OutcomeCount > 0);
+        evidence.Should().OnlyContain(row => row.TransactionDurationCount > 0);
+
+        foreach (DocumentCacheWriterPurpose purpose in PerformanceEvidencePurposes())
+        {
+            foreach (string scenario in requiredScenarios)
+            {
+                evidence.Should().ContainSingle(row => row.Scenario == scenario && row.Purpose == purpose);
+            }
+
+            string purposeLabel = purpose.ToString();
+            telemetry
+                .Records.Should()
+                .Contain(record =>
+                    record.Name == RecordingDocumentCacheWriterTelemetry.CacheDmlDuration
+                    && record.Context.Purpose == purposeLabel
+                );
+            telemetry
+                .Records.Should()
+                .Contain(record =>
+                    record.Name == RecordingDocumentCacheWriterTelemetry.AcknowledgementDuration
+                    && record.Context.Purpose == purposeLabel
+                );
+            telemetry
+                .Records.Should()
+                .Contain(record =>
+                    record.Name == RecordingDocumentCacheWriterTelemetry.Retry
+                    && record.AttemptCount == 2
+                    && record.Context.Purpose == purposeLabel
+                );
+            telemetry
+                .Records.Should()
+                .Contain(record =>
+                    record.Name == RecordingDocumentCacheWriterTelemetry.SameDocumentWait
+                    && record.Context.Purpose == purposeLabel
+                );
+        }
+
+        telemetry
+            .Records.Select(record => record.Context)
+            .Where(context => !IsExpectedTelemetryContext(context, provider))
+            .Should()
+            .BeEmpty();
+    }
+
+    private static void WriteDocumentCacheWriterPerformanceEvidence(
+        IReadOnlyCollection<DocumentCacheWriterPerformanceEvidenceRow> evidence,
+        string provider
+    )
+    {
+        List<string> lines = [$"DocumentCacheWriter performance evidence provider={provider}"];
+
+        foreach (
+            IGrouping<string, DocumentCacheWriterPerformanceEvidenceRow> scenarioGroup in evidence
+                .GroupBy(row => row.Scenario)
+                .OrderBy(group => group.Key)
+        )
+        {
+            foreach (
+                DocumentCacheWriterPerformanceEvidenceRow row in scenarioGroup.OrderBy(row => row.Purpose)
+            )
+            {
+                lines.Add(FormatPerformanceEvidenceRow(row));
+            }
+
+            DocumentCacheWriterPerformanceEvidenceRow projector = scenarioGroup.Single(row =>
+                row.Purpose == DocumentCacheWriterPurpose.DurableWorkProjection
+            );
+            DocumentCacheWriterPerformanceEvidenceRow directFill = scenarioGroup.Single(row =>
+                row.Purpose == DocumentCacheWriterPurpose.DirectFill
+            );
+
+            lines.Add(
+                "provider="
+                    + provider
+                    + " scenario="
+                    + scenarioGroup.Key
+                    + " directfill_to_projector_elapsed_ratio="
+                    + FormatElapsedRatio(directFill, projector)
+            );
+        }
+
+        foreach (string line in lines)
+        {
+            TestContext.Progress.WriteLine(line);
+        }
+
+        string attachmentPath = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            $"document-cache-writer-performance-evidence-{provider}.txt"
+        );
+        File.WriteAllLines(attachmentPath, lines);
+        TestContext.AddTestAttachment(
+            attachmentPath,
+            $"DocumentCacheWriter component performance evidence for {provider}."
+        );
+    }
+
+    private static string FormatPerformanceEvidenceRow(DocumentCacheWriterPerformanceEvidenceRow row) =>
+        "provider="
+        + row.Provider
+        + " scenario="
+        + row.Scenario
+        + " purpose="
+        + row.Purpose
+        + " count="
+        + row.OperationCount.ToString(CultureInfo.InvariantCulture)
+        + " elapsed_ms="
+        + FormatMilliseconds(row.Elapsed)
+        + " avg_ms="
+        + FormatAverageMilliseconds(row)
+        + " outcome_samples="
+        + row.OutcomeCount.ToString(CultureInfo.InvariantCulture)
+        + " transaction_samples="
+        + row.TransactionDurationCount.ToString(CultureInfo.InvariantCulture)
+        + " cache_dml_samples="
+        + row.CacheDmlDurationCount.ToString(CultureInfo.InvariantCulture)
+        + " acknowledgement_samples="
+        + row.AcknowledgementDurationCount.ToString(CultureInfo.InvariantCulture)
+        + " retry_samples="
+        + row.RetryCount.ToString(CultureInfo.InvariantCulture)
+        + " same_document_wait_samples="
+        + row.SameDocumentWaitCount.ToString(CultureInfo.InvariantCulture);
+
+    private static string FormatAverageMilliseconds(DocumentCacheWriterPerformanceEvidenceRow row) =>
+        (row.Elapsed.TotalMilliseconds / row.OperationCount).ToString("0.###", CultureInfo.InvariantCulture);
+
+    private static string FormatElapsedRatio(
+        DocumentCacheWriterPerformanceEvidenceRow numerator,
+        DocumentCacheWriterPerformanceEvidenceRow denominator
+    ) =>
+        denominator.Elapsed == TimeSpan.Zero
+            ? "undefined"
+            : (numerator.Elapsed.TotalMilliseconds / denominator.Elapsed.TotalMilliseconds).ToString(
+                "0.###",
+                CultureInfo.InvariantCulture
+            );
+
+    private static string FormatMilliseconds(TimeSpan elapsed) =>
+        elapsed.TotalMilliseconds.ToString("0.###", CultureInfo.InvariantCulture);
+
+    private static DocumentCacheWriterPurpose[] PerformanceEvidencePurposes() =>
+        [DocumentCacheWriterPurpose.DurableWorkProjection, DocumentCacheWriterPurpose.DirectFill];
+
     private static void AssertDocumentCacheWriterTelemetryCoverage(
         RecordingDocumentCacheWriterTelemetry telemetry,
         string provider
@@ -1635,6 +2136,20 @@ public class Given_A_Mssql_DocumentCacheWriter
     private sealed record SourceDocument(long DocumentId, Guid DocumentUuid, long ContentVersion);
 
     private sealed record CacheRow(long ContentVersion, string StreamEtag, string DocumentJson);
+
+    private sealed record DocumentCacheWriterPerformanceEvidenceRow(
+        string Provider,
+        string Scenario,
+        DocumentCacheWriterPurpose Purpose,
+        int OperationCount,
+        TimeSpan Elapsed,
+        int OutcomeCount,
+        int TransactionDurationCount,
+        int CacheDmlDurationCount,
+        int AcknowledgementDurationCount,
+        int RetryCount,
+        int SameDocumentWaitCount
+    );
 
     private static IEnumerable<TestCaseData> CrashHookCases()
     {
@@ -1860,32 +2375,33 @@ public class Given_A_Mssql_DocumentCacheWriter
         public const string AcknowledgementDuration = nameof(AcknowledgementDuration);
         public const string Retry = nameof(Retry);
         public const string SameDocumentWait = nameof(SameDocumentWait);
+        private readonly object _recordsLock = new();
 
         public List<TelemetryRecord> Records { get; } = [];
 
         public void RecordOutcome(DocumentCacheWriterMetricContext context)
         {
-            Records.Add(new TelemetryRecord(Outcome, context));
+            Add(new TelemetryRecord(Outcome, context));
         }
 
         public void RecordTransactionDuration(DocumentCacheWriterMetricContext context, TimeSpan duration)
         {
-            Records.Add(new TelemetryRecord(TransactionDuration, context, Duration: duration));
+            Add(new TelemetryRecord(TransactionDuration, context, Duration: duration));
         }
 
         public void RecordCacheDmlDuration(DocumentCacheWriterMetricContext context, TimeSpan duration)
         {
-            Records.Add(new TelemetryRecord(CacheDmlDuration, context, Duration: duration));
+            Add(new TelemetryRecord(CacheDmlDuration, context, Duration: duration));
         }
 
         public void RecordAcknowledgementDuration(DocumentCacheWriterMetricContext context, TimeSpan duration)
         {
-            Records.Add(new TelemetryRecord(AcknowledgementDuration, context, Duration: duration));
+            Add(new TelemetryRecord(AcknowledgementDuration, context, Duration: duration));
         }
 
         public void RecordRetry(DocumentCacheWriterMetricContext context, TimeSpan duration, int attemptCount)
         {
-            Records.Add(new TelemetryRecord(Retry, context, Duration: duration, AttemptCount: attemptCount));
+            Add(new TelemetryRecord(Retry, context, Duration: duration, AttemptCount: attemptCount));
         }
 
         public void RecordSameDocumentWait(
@@ -1895,7 +2411,7 @@ public class Given_A_Mssql_DocumentCacheWriter
             TimeSpan duration
         )
         {
-            Records.Add(
+            Add(
                 new TelemetryRecord(
                     SameDocumentWait,
                     context,
@@ -1904,6 +2420,14 @@ public class Given_A_Mssql_DocumentCacheWriter
                     Phase: phase
                 )
             );
+        }
+
+        private void Add(TelemetryRecord record)
+        {
+            lock (_recordsLock)
+            {
+                Records.Add(record);
+            }
         }
     }
 
