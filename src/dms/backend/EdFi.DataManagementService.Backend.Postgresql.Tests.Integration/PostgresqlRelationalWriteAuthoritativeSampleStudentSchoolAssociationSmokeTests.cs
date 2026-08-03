@@ -136,9 +136,6 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
         };
     }
 
-    public static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
-        Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
-
     public static int GetInt32(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt32(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
@@ -336,7 +333,6 @@ internal sealed record AuthoritativeSampleStudentSchoolAssociationSeedData(
 internal sealed record AuthoritativeSampleStudentSchoolAssociationDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
-    short ResourceKeyId,
     long ContentVersion
 );
 
@@ -745,13 +741,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         _createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         _stateAfterCreate.Document.DocumentUuid.Should().Be(StudentSchoolAssociationDocumentUuid.Value);
-        _stateAfterCreate
-            .Document.ResourceKeyId.Should()
-            .Be(
-                _mappingSet.ResourceKeyIdByResource[
-                    new QualifiedResourceName("Ed-Fi", "StudentSchoolAssociation")
-                ]
-            );
         _stateAfterCreate
             .Association.Should()
             .Be(
@@ -1368,11 +1357,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 
     private async Task<AuthoritativeSampleStudentSchoolAssociationSeedData> SeedReferenceDataAsync()
     {
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
-        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var calendarResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Calendar");
-        var graduationPlanResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GraduationPlan");
         var calendarTypeDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "CalendarTypeDescriptor"
@@ -1473,66 +1457,53 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             "Transfer"
         );
 
-        var studentSchoolYearTypeDocumentId = await InsertDocumentAsync(
+        // Each seeded resource root row is its own document: the root INSERT hands back the
+        // DocumentId its DEFAULT drew from dms.DocumentIdSequence.
+        var studentSchoolYearTypeDocumentId = await InsertSchoolYearTypeAsync(
             Guid.Parse("22222222-0000-0000-0000-000000000001"),
-            schoolYearTypeResourceKeyId
+            SchoolYear,
+            true
         );
-        await InsertSchoolYearTypeAsync(studentSchoolYearTypeDocumentId, SchoolYear, true);
 
-        var foundationGraduationSchoolYearTypeDocumentId = await InsertDocumentAsync(
+        var foundationGraduationSchoolYearTypeDocumentId = await InsertSchoolYearTypeAsync(
             Guid.Parse("22222222-0000-0000-0000-000000000002"),
-            schoolYearTypeResourceKeyId
-        );
-        await InsertSchoolYearTypeAsync(
-            foundationGraduationSchoolYearTypeDocumentId,
             FoundationGraduationSchoolYear,
             false
         );
 
-        var endorsementGraduationSchoolYearTypeDocumentId = await InsertDocumentAsync(
+        var endorsementGraduationSchoolYearTypeDocumentId = await InsertSchoolYearTypeAsync(
             Guid.Parse("22222222-0000-0000-0000-000000000003"),
-            schoolYearTypeResourceKeyId
-        );
-        await InsertSchoolYearTypeAsync(
-            endorsementGraduationSchoolYearTypeDocumentId,
             EndorsementGraduationSchoolYear,
             false
         );
 
-        var stemGraduationSchoolYearTypeDocumentId = await InsertDocumentAsync(
+        var stemGraduationSchoolYearTypeDocumentId = await InsertSchoolYearTypeAsync(
             Guid.Parse("22222222-0000-0000-0000-000000000004"),
-            schoolYearTypeResourceKeyId
-        );
-        await InsertSchoolYearTypeAsync(
-            stemGraduationSchoolYearTypeDocumentId,
             StemGraduationSchoolYear,
             false
         );
 
-        var schoolDocumentId = await InsertDocumentAsync(
+        var schoolDocumentId = await InsertSchoolAsync(
             Guid.Parse("33333333-0000-0000-0000-000000000001"),
-            schoolResourceKeyId
+            SchoolId,
+            "Alpha Academy"
         );
-        await InsertSchoolAsync(schoolDocumentId, SchoolId, "Alpha Academy");
 
-        var conflictSchoolDocumentId = await InsertDocumentAsync(
+        var conflictSchoolDocumentId = await InsertSchoolAsync(
             Guid.Parse("33333333-0000-0000-0000-000000000002"),
-            schoolResourceKeyId
+            ConflictSchoolId,
+            "Beta Academy"
         );
-        await InsertSchoolAsync(conflictSchoolDocumentId, ConflictSchoolId, "Beta Academy");
 
-        var studentDocumentId = await InsertDocumentAsync(
+        var studentDocumentId = await InsertStudentAsync(
             Guid.Parse("44444444-0000-0000-0000-000000000001"),
-            studentResourceKeyId
+            StudentUniqueId,
+            "Maya",
+            "Lopez"
         );
-        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Maya", "Lopez");
 
-        var calendarDocumentId = await InsertDocumentAsync(
+        var calendarDocumentId = await InsertCalendarAsync(
             Guid.Parse("55555555-0000-0000-0000-000000000001"),
-            calendarResourceKeyId
-        );
-        await InsertCalendarAsync(
-            calendarDocumentId,
             studentSchoolYearTypeDocumentId,
             SchoolYear,
             schoolDocumentId,
@@ -1541,12 +1512,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             CalendarCode
         );
 
-        var conflictCalendarDocumentId = await InsertDocumentAsync(
+        var conflictCalendarDocumentId = await InsertCalendarAsync(
             Guid.Parse("55555555-0000-0000-0000-000000000002"),
-            calendarResourceKeyId
-        );
-        await InsertCalendarAsync(
-            conflictCalendarDocumentId,
             studentSchoolYearTypeDocumentId,
             SchoolYear,
             conflictSchoolDocumentId,
@@ -1555,12 +1522,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             ConflictCalendarCode
         );
 
-        var foundationGraduationPlanDocumentId = await InsertDocumentAsync(
+        var foundationGraduationPlanDocumentId = await InsertGraduationPlanAsync(
             Guid.Parse("66666666-0000-0000-0000-000000000001"),
-            graduationPlanResourceKeyId
-        );
-        await InsertGraduationPlanAsync(
-            foundationGraduationPlanDocumentId,
             schoolDocumentId,
             SchoolId,
             foundationGraduationSchoolYearTypeDocumentId,
@@ -1569,12 +1532,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             26.000m
         );
 
-        var endorsementGraduationPlanDocumentId = await InsertDocumentAsync(
+        var endorsementGraduationPlanDocumentId = await InsertGraduationPlanAsync(
             Guid.Parse("66666666-0000-0000-0000-000000000002"),
-            graduationPlanResourceKeyId
-        );
-        await InsertGraduationPlanAsync(
-            endorsementGraduationPlanDocumentId,
             schoolDocumentId,
             SchoolId,
             endorsementGraduationSchoolYearTypeDocumentId,
@@ -1583,12 +1542,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             27.500m
         );
 
-        var stemGraduationPlanDocumentId = await InsertDocumentAsync(
+        var stemGraduationPlanDocumentId = await InsertGraduationPlanAsync(
             Guid.Parse("66666666-0000-0000-0000-000000000003"),
-            graduationPlanResourceKeyId
-        );
-        await InsertGraduationPlanAsync(
-            stemGraduationPlanDocumentId,
             schoolDocumentId,
             SchoolId,
             stemGraduationSchoolYearTypeDocumentId,
@@ -1632,19 +1587,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
-    {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
     private async Task<long> SeedDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
@@ -1678,12 +1620,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
-
-        await _database.ExecuteNonQueryAsync(
+        // dms.Descriptor is the descriptor's document row and originates its own DocumentId.
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "dms"."Descriptor" (
-                "DocumentId",
                 "DocumentUuid",
                 "ResourceKeyId",
                 "Namespace",
@@ -1694,7 +1634,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "Uri"
             )
             VALUES (
-                @documentId,
                 @documentUuid,
                 @resourceKeyId,
                 @namespace,
@@ -1703,9 +1642,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 @description,
                 @discriminator,
                 @uri
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
@@ -1715,40 +1654,36 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             new NpgsqlParameter("discriminator", discriminator),
             new NpgsqlParameter("uri", uri)
         );
-
-        return documentId;
     }
 
-    private async Task InsertSchoolAsync(long documentId, long schoolId, string nameOfInstitution)
+    private async Task<long> InsertSchoolAsync(Guid documentUuid, long schoolId, string nameOfInstitution)
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "edfi"."School" ("DocumentId", "DocumentUuid", "NameOfInstitution", "SchoolId")
-            SELECT @documentId, document."DocumentUuid", @nameOfInstitution, @schoolId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            INSERT INTO "edfi"."School" ("DocumentUuid", "NameOfInstitution", "SchoolId")
+            VALUES (@documentUuid, @nameOfInstitution, @schoolId)
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
             new NpgsqlParameter("schoolId", schoolId)
         );
     }
 
-    private async Task InsertStudentAsync(
-        long documentId,
+    private async Task<long> InsertStudentAsync(
+        Guid documentUuid,
         string studentUniqueId,
         string firstName,
         string lastSurname
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "edfi"."Student" ("DocumentId", "DocumentUuid", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
-            SELECT @documentId, document."DocumentUuid", @birthDate, @firstName, @lastSurname, @studentUniqueId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            INSERT INTO "edfi"."Student" ("DocumentUuid", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
+            VALUES (@documentUuid, @birthDate, @firstName, @lastSurname, @studentUniqueId)
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("birthDate", new DateOnly(2010, 5, 14)),
             new NpgsqlParameter("firstName", firstName),
             new NpgsqlParameter("lastSurname", lastSurname),
@@ -1756,32 +1691,37 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    private async Task InsertSchoolYearTypeAsync(long documentId, int schoolYear, bool currentSchoolYear)
+    private async Task<long> InsertSchoolYearTypeAsync(
+        Guid documentUuid,
+        int schoolYear,
+        bool currentSchoolYear
+    )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "edfi"."SchoolYearType" (
-                "DocumentId",
+                "DocumentUuid",
                 "CurrentSchoolYear",
                 "SchoolYear",
                 "SchoolYearDescription"
             )
             VALUES (
-                @documentId,
+                @documentUuid,
                 @currentSchoolYear,
                 @schoolYear,
                 @schoolYearDescription
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("currentSchoolYear", currentSchoolYear),
             new NpgsqlParameter("schoolYear", schoolYear),
             new NpgsqlParameter("schoolYearDescription", $"{schoolYear}-{schoolYear + 1}")
         );
     }
 
-    private async Task InsertCalendarAsync(
-        long documentId,
+    private async Task<long> InsertCalendarAsync(
+        Guid documentUuid,
         long schoolYearDocumentId,
         int schoolYear,
         long schoolDocumentId,
@@ -1790,10 +1730,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         string calendarCode
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "edfi"."Calendar" (
-                "DocumentId",
+                "DocumentUuid",
                 "SchoolYear_DocumentId",
                 "SchoolYear_SchoolYear",
                 "School_DocumentId",
@@ -1802,16 +1742,17 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "CalendarCode"
             )
             VALUES (
-                @documentId,
+                @documentUuid,
                 @schoolYearDocumentId,
                 @schoolYear,
                 @schoolDocumentId,
                 @schoolId,
                 @calendarTypeDescriptorId,
                 @calendarCode
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("schoolYearDocumentId", schoolYearDocumentId),
             new NpgsqlParameter("schoolYear", schoolYear),
             new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
@@ -1821,8 +1762,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    private async Task InsertGraduationPlanAsync(
-        long documentId,
+    private async Task<long> InsertGraduationPlanAsync(
+        Guid documentUuid,
         long educationOrganizationDocumentId,
         long educationOrganizationId,
         long graduationSchoolYearDocumentId,
@@ -1831,10 +1772,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         decimal totalRequiredCredits
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "edfi"."GraduationPlan" (
-                "DocumentId",
+                "DocumentUuid",
                 "EducationOrganization_DocumentId",
                 "EducationOrganization_EducationOrganizationId",
                 "GraduationSchoolYear_DocumentId",
@@ -1843,16 +1784,17 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "TotalRequiredCredits"
             )
             VALUES (
-                @documentId,
+                @documentUuid,
                 @educationOrganizationDocumentId,
                 @educationOrganizationId,
                 @graduationSchoolYearDocumentId,
                 @graduationSchoolYear,
                 @graduationPlanTypeDescriptorId,
                 @totalRequiredCredits
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("educationOrganizationDocumentId", educationOrganizationDocumentId),
             new NpgsqlParameter("educationOrganizationId", educationOrganizationId),
             new NpgsqlParameter("graduationSchoolYearDocumentId", graduationSchoolYearDocumentId),
@@ -1883,9 +1825,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            SELECT root."DocumentId", root."DocumentUuid", root."ContentVersion"
             FROM "edfi"."StudentSchoolAssociation" root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -1900,10 +1841,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetGuid(
                     rows[0],
                     "DocumentUuid"
-                ),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt16(
-                    rows[0],
-                    "ResourceKeyId"
                 ),
                 AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
                     rows[0],
@@ -2449,11 +2386,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
 
     private async Task<PropagatedReferenceIdentityRuntimeSeedData> SeedReferenceDataAsync()
     {
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
-        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var calendarResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Calendar");
-        var graduationPlanResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GraduationPlan");
         var calendarTypeDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "CalendarTypeDescriptor"
@@ -2523,50 +2455,41 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             "Transfer"
         );
 
-        var studentSchoolYearTypeDocumentId = await InsertDocumentAsync(
+        // Each seeded resource root row is its own document: the root INSERT hands back the
+        // DocumentId its DEFAULT drew from dms.DocumentIdSequence.
+        var studentSchoolYearTypeDocumentId = await InsertSchoolYearTypeAsync(
             Guid.Parse("88888888-0000-0000-0000-000000000001"),
-            schoolYearTypeResourceKeyId
+            SchoolYear,
+            true
         );
-        await InsertSchoolYearTypeAsync(studentSchoolYearTypeDocumentId, SchoolYear, true);
 
-        var foundationGraduationSchoolYearTypeDocumentId = await InsertDocumentAsync(
+        var foundationGraduationSchoolYearTypeDocumentId = await InsertSchoolYearTypeAsync(
             Guid.Parse("88888888-0000-0000-0000-000000000002"),
-            schoolYearTypeResourceKeyId
-        );
-        await InsertSchoolYearTypeAsync(
-            foundationGraduationSchoolYearTypeDocumentId,
             FoundationGraduationSchoolYear,
             false
         );
 
-        var endorsementGraduationSchoolYearTypeDocumentId = await InsertDocumentAsync(
+        var endorsementGraduationSchoolYearTypeDocumentId = await InsertSchoolYearTypeAsync(
             Guid.Parse("88888888-0000-0000-0000-000000000003"),
-            schoolYearTypeResourceKeyId
-        );
-        await InsertSchoolYearTypeAsync(
-            endorsementGraduationSchoolYearTypeDocumentId,
             EndorsementGraduationSchoolYear,
             false
         );
 
-        var schoolDocumentId = await InsertDocumentAsync(
+        var schoolDocumentId = await InsertSchoolAsync(
             Guid.Parse("99999999-0000-0000-0000-000000000001"),
-            schoolResourceKeyId
+            SchoolId,
+            "Alpha Academy"
         );
-        await InsertSchoolAsync(schoolDocumentId, SchoolId, "Alpha Academy");
 
-        var studentDocumentId = await InsertDocumentAsync(
+        var studentDocumentId = await InsertStudentAsync(
             Guid.Parse("aaaaaaaa-1000-0000-0000-000000000001"),
-            studentResourceKeyId
+            StudentUniqueId,
+            "Maya",
+            "Lopez"
         );
-        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Maya", "Lopez");
 
-        var calendarDocumentId = await InsertDocumentAsync(
+        var calendarDocumentId = await InsertCalendarAsync(
             Guid.Parse("aaaaaaaa-1000-0000-0000-000000000002"),
-            calendarResourceKeyId
-        );
-        await InsertCalendarAsync(
-            calendarDocumentId,
             studentSchoolYearTypeDocumentId,
             SchoolYear,
             schoolDocumentId,
@@ -2575,12 +2498,8 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             CalendarCode
         );
 
-        var alternateCalendarDocumentId = await InsertDocumentAsync(
+        var alternateCalendarDocumentId = await InsertCalendarAsync(
             Guid.Parse("aaaaaaaa-1000-0000-0000-000000000005"),
-            calendarResourceKeyId
-        );
-        await InsertCalendarAsync(
-            alternateCalendarDocumentId,
             studentSchoolYearTypeDocumentId,
             SchoolYear,
             schoolDocumentId,
@@ -2589,12 +2508,8 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             AlternateCalendarCode
         );
 
-        var foundationGraduationPlanDocumentId = await InsertDocumentAsync(
+        var foundationGraduationPlanDocumentId = await InsertGraduationPlanAsync(
             Guid.Parse("aaaaaaaa-1000-0000-0000-000000000003"),
-            graduationPlanResourceKeyId
-        );
-        await InsertGraduationPlanAsync(
-            foundationGraduationPlanDocumentId,
             schoolDocumentId,
             SchoolId,
             foundationGraduationSchoolYearTypeDocumentId,
@@ -2603,12 +2518,8 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             26.000m
         );
 
-        var endorsementGraduationPlanDocumentId = await InsertDocumentAsync(
+        var endorsementGraduationPlanDocumentId = await InsertGraduationPlanAsync(
             Guid.Parse("aaaaaaaa-1000-0000-0000-000000000004"),
-            graduationPlanResourceKeyId
-        );
-        await InsertGraduationPlanAsync(
-            endorsementGraduationPlanDocumentId,
             schoolDocumentId,
             SchoolId,
             endorsementGraduationSchoolYearTypeDocumentId,
@@ -2647,19 +2558,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
-    {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
     private async Task<long> SeedDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
@@ -2693,12 +2591,10 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
-
-        await _database.ExecuteNonQueryAsync(
+        // dms.Descriptor is the descriptor's document row and originates its own DocumentId.
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "dms"."Descriptor" (
-                "DocumentId",
                 "DocumentUuid",
                 "ResourceKeyId",
                 "Namespace",
@@ -2709,7 +2605,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                 "Uri"
             )
             VALUES (
-                @documentId,
                 @documentUuid,
                 @resourceKeyId,
                 @namespace,
@@ -2718,9 +2613,9 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                 @description,
                 @discriminator,
                 @uri
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
@@ -2730,40 +2625,36 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             new NpgsqlParameter("discriminator", discriminator),
             new NpgsqlParameter("uri", uri)
         );
-
-        return documentId;
     }
 
-    private async Task InsertSchoolAsync(long documentId, long schoolId, string nameOfInstitution)
+    private async Task<long> InsertSchoolAsync(Guid documentUuid, long schoolId, string nameOfInstitution)
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "edfi"."School" ("DocumentId", "DocumentUuid", "NameOfInstitution", "SchoolId")
-            SELECT @documentId, document."DocumentUuid", @nameOfInstitution, @schoolId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            INSERT INTO "edfi"."School" ("DocumentUuid", "NameOfInstitution", "SchoolId")
+            VALUES (@documentUuid, @nameOfInstitution, @schoolId)
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
             new NpgsqlParameter("schoolId", schoolId)
         );
     }
 
-    private async Task InsertStudentAsync(
-        long documentId,
+    private async Task<long> InsertStudentAsync(
+        Guid documentUuid,
         string studentUniqueId,
         string firstName,
         string lastSurname
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "edfi"."Student" ("DocumentId", "DocumentUuid", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
-            SELECT @documentId, document."DocumentUuid", @birthDate, @firstName, @lastSurname, @studentUniqueId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            INSERT INTO "edfi"."Student" ("DocumentUuid", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
+            VALUES (@documentUuid, @birthDate, @firstName, @lastSurname, @studentUniqueId)
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("birthDate", new DateOnly(2010, 5, 14)),
             new NpgsqlParameter("firstName", firstName),
             new NpgsqlParameter("lastSurname", lastSurname),
@@ -2771,32 +2662,37 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
         );
     }
 
-    private async Task InsertSchoolYearTypeAsync(long documentId, int schoolYear, bool currentSchoolYear)
+    private async Task<long> InsertSchoolYearTypeAsync(
+        Guid documentUuid,
+        int schoolYear,
+        bool currentSchoolYear
+    )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "edfi"."SchoolYearType" (
-                "DocumentId",
+                "DocumentUuid",
                 "CurrentSchoolYear",
                 "SchoolYear",
                 "SchoolYearDescription"
             )
             VALUES (
-                @documentId,
+                @documentUuid,
                 @currentSchoolYear,
                 @schoolYear,
                 @schoolYearDescription
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("currentSchoolYear", currentSchoolYear),
             new NpgsqlParameter("schoolYear", schoolYear),
             new NpgsqlParameter("schoolYearDescription", $"{schoolYear}-{schoolYear + 1}")
         );
     }
 
-    private async Task InsertCalendarAsync(
-        long documentId,
+    private async Task<long> InsertCalendarAsync(
+        Guid documentUuid,
         long schoolYearDocumentId,
         int schoolYear,
         long schoolDocumentId,
@@ -2805,10 +2701,10 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
         string calendarCode
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "edfi"."Calendar" (
-                "DocumentId",
+                "DocumentUuid",
                 "SchoolYear_DocumentId",
                 "SchoolYear_SchoolYear",
                 "School_DocumentId",
@@ -2817,16 +2713,17 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                 "CalendarCode"
             )
             VALUES (
-                @documentId,
+                @documentUuid,
                 @schoolYearDocumentId,
                 @schoolYear,
                 @schoolDocumentId,
                 @schoolId,
                 @calendarTypeDescriptorId,
                 @calendarCode
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("schoolYearDocumentId", schoolYearDocumentId),
             new NpgsqlParameter("schoolYear", schoolYear),
             new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
@@ -2836,8 +2733,8 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
         );
     }
 
-    private async Task InsertGraduationPlanAsync(
-        long documentId,
+    private async Task<long> InsertGraduationPlanAsync(
+        Guid documentUuid,
         long educationOrganizationDocumentId,
         long educationOrganizationId,
         long graduationSchoolYearDocumentId,
@@ -2846,10 +2743,10 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
         decimal totalRequiredCredits
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "edfi"."GraduationPlan" (
-                "DocumentId",
+                "DocumentUuid",
                 "EducationOrganization_DocumentId",
                 "EducationOrganization_EducationOrganizationId",
                 "GraduationSchoolYear_DocumentId",
@@ -2858,16 +2755,17 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                 "TotalRequiredCredits"
             )
             VALUES (
-                @documentId,
+                @documentUuid,
                 @educationOrganizationDocumentId,
                 @educationOrganizationId,
                 @graduationSchoolYearDocumentId,
                 @graduationSchoolYear,
                 @graduationPlanTypeDescriptorId,
                 @totalRequiredCredits
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("educationOrganizationDocumentId", educationOrganizationDocumentId),
             new NpgsqlParameter("educationOrganizationId", educationOrganizationId),
             new NpgsqlParameter("graduationSchoolYearDocumentId", graduationSchoolYearDocumentId),
@@ -2897,9 +2795,8 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            SELECT root."DocumentId", root."DocumentUuid", root."ContentVersion"
             FROM "edfi"."StudentSchoolAssociation" root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -2914,10 +2811,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                 AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetGuid(
                     rows[0],
                     "DocumentUuid"
-                ),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt16(
-                    rows[0],
-                    "ResourceKeyId"
                 ),
                 AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
                     rows[0],
@@ -3315,11 +3208,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
 
     private async Task<AuthoritativeSampleStudentSchoolAssociationSeedData> SeedReferenceDataAsync()
     {
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
-        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var calendarResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Calendar");
-        var graduationPlanResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GraduationPlan");
         var calendarTypeDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "CalendarTypeDescriptor"
@@ -3411,66 +3299,53 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             "Transfer"
         );
 
-        var studentSchoolYearTypeDocumentId = await InsertDocumentAsync(
+        // Each seeded resource root row is its own document: the root INSERT hands back the
+        // DocumentId its DEFAULT drew from dms.DocumentIdSequence.
+        var studentSchoolYearTypeDocumentId = await InsertSchoolYearTypeAsync(
             Guid.Parse("88888888-0000-0000-0000-000000000001"),
-            schoolYearTypeResourceKeyId
+            SchoolYear,
+            true
         );
-        await InsertSchoolYearTypeAsync(studentSchoolYearTypeDocumentId, SchoolYear, true);
 
-        var foundationGraduationSchoolYearTypeDocumentId = await InsertDocumentAsync(
+        var foundationGraduationSchoolYearTypeDocumentId = await InsertSchoolYearTypeAsync(
             Guid.Parse("88888888-0000-0000-0000-000000000002"),
-            schoolYearTypeResourceKeyId
-        );
-        await InsertSchoolYearTypeAsync(
-            foundationGraduationSchoolYearTypeDocumentId,
             FoundationGraduationSchoolYear,
             false
         );
 
-        var endorsementGraduationSchoolYearTypeDocumentId = await InsertDocumentAsync(
+        var endorsementGraduationSchoolYearTypeDocumentId = await InsertSchoolYearTypeAsync(
             Guid.Parse("88888888-0000-0000-0000-000000000003"),
-            schoolYearTypeResourceKeyId
-        );
-        await InsertSchoolYearTypeAsync(
-            endorsementGraduationSchoolYearTypeDocumentId,
             EndorsementGraduationSchoolYear,
             false
         );
 
-        var stemGraduationSchoolYearTypeDocumentId = await InsertDocumentAsync(
+        var stemGraduationSchoolYearTypeDocumentId = await InsertSchoolYearTypeAsync(
             Guid.Parse("88888888-0000-0000-0000-000000000004"),
-            schoolYearTypeResourceKeyId
-        );
-        await InsertSchoolYearTypeAsync(
-            stemGraduationSchoolYearTypeDocumentId,
             StemGraduationSchoolYear,
             false
         );
 
-        var schoolDocumentId = await InsertDocumentAsync(
+        var schoolDocumentId = await InsertSchoolAsync(
             Guid.Parse("99999999-0000-0000-0000-000000000001"),
-            schoolResourceKeyId
+            SchoolId,
+            "Alpha Academy"
         );
-        await InsertSchoolAsync(schoolDocumentId, SchoolId, "Alpha Academy");
 
-        var conflictSchoolDocumentId = await InsertDocumentAsync(
+        var conflictSchoolDocumentId = await InsertSchoolAsync(
             Guid.Parse("99999999-0000-0000-0000-000000000002"),
-            schoolResourceKeyId
+            ConflictSchoolId,
+            "Beta Academy"
         );
-        await InsertSchoolAsync(conflictSchoolDocumentId, ConflictSchoolId, "Beta Academy");
 
-        var studentDocumentId = await InsertDocumentAsync(
+        var studentDocumentId = await InsertStudentAsync(
             Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001"),
-            studentResourceKeyId
+            StudentUniqueId,
+            "Maya",
+            "Lopez"
         );
-        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Maya", "Lopez");
 
-        var conflictCalendarDocumentId = await InsertDocumentAsync(
+        var conflictCalendarDocumentId = await InsertCalendarAsync(
             Guid.Parse("bbbbbbbb-0000-0000-0000-000000000001"),
-            calendarResourceKeyId
-        );
-        await InsertCalendarAsync(
-            conflictCalendarDocumentId,
             studentSchoolYearTypeDocumentId,
             SchoolYear,
             conflictSchoolDocumentId,
@@ -3479,12 +3354,8 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             ConflictCalendarCode
         );
 
-        var foundationGraduationPlanDocumentId = await InsertDocumentAsync(
+        var foundationGraduationPlanDocumentId = await InsertGraduationPlanAsync(
             Guid.Parse("cccccccc-0000-0000-0000-000000000001"),
-            graduationPlanResourceKeyId
-        );
-        await InsertGraduationPlanAsync(
-            foundationGraduationPlanDocumentId,
             schoolDocumentId,
             SchoolId,
             foundationGraduationSchoolYearTypeDocumentId,
@@ -3493,12 +3364,8 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             26.000m
         );
 
-        var endorsementGraduationPlanDocumentId = await InsertDocumentAsync(
+        var endorsementGraduationPlanDocumentId = await InsertGraduationPlanAsync(
             Guid.Parse("cccccccc-0000-0000-0000-000000000002"),
-            graduationPlanResourceKeyId
-        );
-        await InsertGraduationPlanAsync(
-            endorsementGraduationPlanDocumentId,
             schoolDocumentId,
             SchoolId,
             endorsementGraduationSchoolYearTypeDocumentId,
@@ -3507,12 +3374,8 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             27.500m
         );
 
-        var stemGraduationPlanDocumentId = await InsertDocumentAsync(
+        var stemGraduationPlanDocumentId = await InsertGraduationPlanAsync(
             Guid.Parse("cccccccc-0000-0000-0000-000000000003"),
-            graduationPlanResourceKeyId
-        );
-        await InsertGraduationPlanAsync(
-            stemGraduationPlanDocumentId,
             schoolDocumentId,
             SchoolId,
             stemGraduationSchoolYearTypeDocumentId,
@@ -3556,19 +3419,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
-    {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
     private async Task<long> SeedDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
@@ -3602,12 +3452,10 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
-
-        await _database.ExecuteNonQueryAsync(
+        // dms.Descriptor is the descriptor's document row and originates its own DocumentId.
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "dms"."Descriptor" (
-                "DocumentId",
                 "DocumentUuid",
                 "ResourceKeyId",
                 "Namespace",
@@ -3618,7 +3466,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                 "Uri"
             )
             VALUES (
-                @documentId,
                 @documentUuid,
                 @resourceKeyId,
                 @namespace,
@@ -3627,9 +3474,9 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                 @description,
                 @discriminator,
                 @uri
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
@@ -3639,40 +3486,36 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             new NpgsqlParameter("discriminator", discriminator),
             new NpgsqlParameter("uri", uri)
         );
-
-        return documentId;
     }
 
-    private async Task InsertSchoolAsync(long documentId, long schoolId, string nameOfInstitution)
+    private async Task<long> InsertSchoolAsync(Guid documentUuid, long schoolId, string nameOfInstitution)
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "edfi"."School" ("DocumentId", "DocumentUuid", "NameOfInstitution", "SchoolId")
-            SELECT @documentId, document."DocumentUuid", @nameOfInstitution, @schoolId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            INSERT INTO "edfi"."School" ("DocumentUuid", "NameOfInstitution", "SchoolId")
+            VALUES (@documentUuid, @nameOfInstitution, @schoolId)
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
             new NpgsqlParameter("schoolId", schoolId)
         );
     }
 
-    private async Task InsertStudentAsync(
-        long documentId,
+    private async Task<long> InsertStudentAsync(
+        Guid documentUuid,
         string studentUniqueId,
         string firstName,
         string lastSurname
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "edfi"."Student" ("DocumentId", "DocumentUuid", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
-            SELECT @documentId, document."DocumentUuid", @birthDate, @firstName, @lastSurname, @studentUniqueId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            INSERT INTO "edfi"."Student" ("DocumentUuid", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
+            VALUES (@documentUuid, @birthDate, @firstName, @lastSurname, @studentUniqueId)
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("birthDate", new DateOnly(2010, 5, 14)),
             new NpgsqlParameter("firstName", firstName),
             new NpgsqlParameter("lastSurname", lastSurname),
@@ -3680,32 +3523,37 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
         );
     }
 
-    private async Task InsertSchoolYearTypeAsync(long documentId, int schoolYear, bool currentSchoolYear)
+    private async Task<long> InsertSchoolYearTypeAsync(
+        Guid documentUuid,
+        int schoolYear,
+        bool currentSchoolYear
+    )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "edfi"."SchoolYearType" (
-                "DocumentId",
+                "DocumentUuid",
                 "CurrentSchoolYear",
                 "SchoolYear",
                 "SchoolYearDescription"
             )
             VALUES (
-                @documentId,
+                @documentUuid,
                 @currentSchoolYear,
                 @schoolYear,
                 @schoolYearDescription
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("currentSchoolYear", currentSchoolYear),
             new NpgsqlParameter("schoolYear", schoolYear),
             new NpgsqlParameter("schoolYearDescription", $"{schoolYear}-{schoolYear + 1}")
         );
     }
 
-    private async Task InsertCalendarAsync(
-        long documentId,
+    private async Task<long> InsertCalendarAsync(
+        Guid documentUuid,
         long schoolYearDocumentId,
         int schoolYear,
         long schoolDocumentId,
@@ -3714,10 +3562,10 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
         string calendarCode
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "edfi"."Calendar" (
-                "DocumentId",
+                "DocumentUuid",
                 "SchoolYear_DocumentId",
                 "SchoolYear_SchoolYear",
                 "School_DocumentId",
@@ -3726,16 +3574,17 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                 "CalendarCode"
             )
             VALUES (
-                @documentId,
+                @documentUuid,
                 @schoolYearDocumentId,
                 @schoolYear,
                 @schoolDocumentId,
                 @schoolId,
                 @calendarTypeDescriptorId,
                 @calendarCode
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("schoolYearDocumentId", schoolYearDocumentId),
             new NpgsqlParameter("schoolYear", schoolYear),
             new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
@@ -3745,8 +3594,8 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
         );
     }
 
-    private async Task InsertGraduationPlanAsync(
-        long documentId,
+    private async Task<long> InsertGraduationPlanAsync(
+        Guid documentUuid,
         long educationOrganizationDocumentId,
         long educationOrganizationId,
         long graduationSchoolYearDocumentId,
@@ -3755,10 +3604,10 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
         decimal totalRequiredCredits
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "edfi"."GraduationPlan" (
-                "DocumentId",
+                "DocumentUuid",
                 "EducationOrganization_DocumentId",
                 "EducationOrganization_EducationOrganizationId",
                 "GraduationSchoolYear_DocumentId",
@@ -3767,16 +3616,17 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                 "TotalRequiredCredits"
             )
             VALUES (
-                @documentId,
+                @documentUuid,
                 @educationOrganizationDocumentId,
                 @educationOrganizationId,
                 @graduationSchoolYearDocumentId,
                 @graduationSchoolYear,
                 @graduationPlanTypeDescriptorId,
                 @totalRequiredCredits
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("educationOrganizationDocumentId", educationOrganizationDocumentId),
             new NpgsqlParameter("educationOrganizationId", educationOrganizationId),
             new NpgsqlParameter("graduationSchoolYearDocumentId", graduationSchoolYearDocumentId),
@@ -3789,10 +3639,12 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
     private async Task<AuthoritativeSampleStudentSchoolAssociationRejectedWriteSnapshot> ReadRejectedWriteSnapshotAsync()
     {
         return new(
+            // The StudentSchoolAssociation root row is the document the rejected write would have
+            // created, so its DocumentUuid column is where a partial write would show up.
             DocumentUuids: await ReadGuidListAsync(
                 """
                 SELECT "DocumentUuid"
-                FROM "dms"."Document"
+                FROM "edfi"."StudentSchoolAssociation"
                 ORDER BY "DocumentUuid";
                 """,
                 "DocumentUuid"

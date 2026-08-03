@@ -21,7 +21,6 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
     private string _databaseName = null!;
     private string _connectionString = null!;
     private HydratedPage _result = null!;
-    private HydratedPage _rootSourcedResult = null!;
 
     private const string TestSchema = "hydtest";
 
@@ -44,29 +43,17 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
         await ExecuteSql(
             connection,
             """
-            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms') EXEC('CREATE SCHEMA [dms]');
             IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'hydtest') EXEC('CREATE SCHEMA [hydtest]');
 
-            CREATE TABLE dms.Document (
-                DocumentId bigint PRIMARY KEY,
-                DocumentUuid uniqueidentifier NOT NULL,
-                ResourceKeyId smallint NOT NULL DEFAULT 0,
-                ContentVersion bigint NOT NULL DEFAULT 1,
-                IdentityVersion bigint NOT NULL DEFAULT 1,
-                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
-            );
-
-            -- Root tables carry trigger-maintained mirrors of the dms.Document metadata columns.
+            -- The resource root row is the document: it carries the metadata columns itself.
             CREATE TABLE hydtest.School (
                 DocumentId bigint PRIMARY KEY,
                 SchoolId int NOT NULL,
-                DocumentUuid uniqueidentifier NULL,
-                ContentVersion bigint NULL,
-                IdentityVersion bigint NULL,
-                ContentLastModifiedAt datetimeoffset NULL,
-                IdentityLastModifiedAt datetimeoffset NULL
+                DocumentUuid uniqueidentifier NOT NULL,
+                ContentVersion bigint NOT NULL DEFAULT 1,
+                IdentityVersion bigint NOT NULL DEFAULT 1,
+                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
             CREATE TABLE hydtest.SchoolAddress (
@@ -90,15 +77,10 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
         await ExecuteSql(
             connection,
             """
-            INSERT INTO dms.Document (DocumentId, DocumentUuid, ContentVersion, IdentityVersion)
+            INSERT INTO hydtest.School (DocumentId, SchoolId, DocumentUuid, ContentVersion, IdentityVersion)
             VALUES
-                (101, 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa', 10, 10),
-                (102, 'bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb', 20, 20);
-
-            INSERT INTO hydtest.School (DocumentId, SchoolId)
-            VALUES
-                (101, 255901),
-                (102, 255902);
+                (101, 255901, 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa', 10, 10),
+                (102, 255902, 'bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb', 20, 20);
 
             INSERT INTO hydtest.SchoolAddress (CollectionItemId, School_DocumentId, Ordinal, City)
             VALUES
@@ -112,16 +94,6 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
                 (5002, 101, 1001, 1, '2021-06-15'),
                 (5003, 101, 1002, 0, '2022-09-01'),
                 (5004, 102, 1003, 0, '2023-03-01');
-
-            -- Stand in for the generated dual-write trigger: the root row mirrors dms.Document.
-            UPDATE s
-            SET s.DocumentUuid = d.DocumentUuid,
-                s.ContentVersion = d.ContentVersion,
-                s.IdentityVersion = d.IdentityVersion,
-                s.ContentLastModifiedAt = d.ContentLastModifiedAt,
-                s.IdentityLastModifiedAt = d.IdentityLastModifiedAt
-            FROM hydtest.School s
-            INNER JOIN dms.Document d ON d.DocumentId = s.DocumentId;
             """
         );
 
@@ -155,18 +127,6 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
             plan,
             keyset,
             SqlDialect.Mssql,
-            CancellationToken.None
-        );
-
-        await using var rootSourcedConnection = new SqlConnection(_connectionString);
-        await rootSourcedConnection.OpenAsync();
-
-        _rootSourcedResult = await HydrationExecutor.ExecuteAsync(
-            rootSourcedConnection,
-            plan,
-            keyset,
-            SqlDialect.Mssql,
-            new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable },
             CancellationToken.None
         );
     }
@@ -302,38 +262,31 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
     }
 
     [Test]
-    public void It_returns_the_same_document_metadata_from_the_root_table_mirrors()
+    public void It_returns_metadata_values_seeded_on_the_root_rows()
     {
-        _rootSourcedResult.DocumentMetadata.Should().Equal(_result.DocumentMetadata);
-    }
-
-    [Test]
-    public void It_returns_root_sourced_metadata_values_matching_the_document_rows()
-    {
-        _rootSourcedResult.DocumentMetadata.Should().HaveCount(2);
-        _rootSourcedResult.DocumentMetadata[0].DocumentId.Should().Be(101);
-        _rootSourcedResult
+        _result.DocumentMetadata.Should().HaveCount(2);
+        _result.DocumentMetadata[0].DocumentId.Should().Be(101);
+        _result
             .DocumentMetadata[0]
             .DocumentUuid.Should()
             .Be(Guid.Parse("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"));
-        _rootSourcedResult.DocumentMetadata[0].ContentVersion.Should().Be(10);
-        _rootSourcedResult.DocumentMetadata[0].IdentityVersion.Should().Be(10);
-        _rootSourcedResult.DocumentMetadata[1].DocumentId.Should().Be(102);
-        _rootSourcedResult
+        _result.DocumentMetadata[0].ContentVersion.Should().Be(10);
+        _result.DocumentMetadata[0].IdentityVersion.Should().Be(10);
+        _result.DocumentMetadata[1].DocumentId.Should().Be(102);
+        _result
             .DocumentMetadata[1]
             .DocumentUuid.Should()
             .Be(Guid.Parse("bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb"));
-        _rootSourcedResult.DocumentMetadata[1].ContentVersion.Should().Be(20);
+        _result.DocumentMetadata[1].ContentVersion.Should().Be(20);
     }
 
     [Test]
-    public void It_reads_root_sourced_metadata_without_touching_the_document_table()
+    public void It_reads_metadata_without_touching_the_document_table()
     {
         var batchSql = HydrationBatchBuilder.Build(
             HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Mssql),
             new PageKeysetSpec.Single(101L),
-            SqlDialect.Mssql,
-            new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable }
+            SqlDialect.Mssql
         );
 
         batchSql.Should().Contain("FROM [hydtest].[School] d");
@@ -354,7 +307,6 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
     private string _databaseName = null!;
     private string _connectionString = null!;
     private HydratedPage _result = null!;
-    private HydratedPage _rootSourcedResult = null!;
 
     private const string TestSchema = "hydsingle";
 
@@ -376,29 +328,17 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
         await ExecuteSql(
             connection,
             """
-            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms') EXEC('CREATE SCHEMA [dms]');
             IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'hydsingle') EXEC('CREATE SCHEMA [hydsingle]');
 
-            CREATE TABLE dms.Document (
-                DocumentId bigint PRIMARY KEY,
-                DocumentUuid uniqueidentifier NOT NULL,
-                ResourceKeyId smallint NOT NULL DEFAULT 0,
-                ContentVersion bigint NOT NULL DEFAULT 1,
-                IdentityVersion bigint NOT NULL DEFAULT 1,
-                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
-            );
-
-            -- Root tables carry trigger-maintained mirrors of the dms.Document metadata columns.
+            -- The resource root row is the document: it carries the metadata columns itself.
             CREATE TABLE hydsingle.School (
                 DocumentId bigint PRIMARY KEY,
                 SchoolId int NOT NULL,
-                DocumentUuid uniqueidentifier NULL,
-                ContentVersion bigint NULL,
-                IdentityVersion bigint NULL,
-                ContentLastModifiedAt datetimeoffset NULL,
-                IdentityLastModifiedAt datetimeoffset NULL
+                DocumentUuid uniqueidentifier NOT NULL,
+                ContentVersion bigint NOT NULL DEFAULT 1,
+                IdentityVersion bigint NOT NULL DEFAULT 1,
+                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
             CREATE TABLE hydsingle.SchoolAddress (
@@ -421,29 +361,16 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
         await ExecuteSql(
             connection,
             """
-            INSERT INTO dms.Document (DocumentId, DocumentUuid)
+            INSERT INTO hydsingle.School (DocumentId, SchoolId, DocumentUuid)
             VALUES
-                (201, 'cccccccc-3333-3333-3333-cccccccccccc'),
-                (202, 'dddddddd-4444-4444-4444-dddddddddddd');
-
-            INSERT INTO hydsingle.School (DocumentId, SchoolId)
-            VALUES (201, 100001), (202, 100002);
+                (201, 100001, 'cccccccc-3333-3333-3333-cccccccccccc'),
+                (202, 100002, 'dddddddd-4444-4444-4444-dddddddddddd');
 
             INSERT INTO hydsingle.SchoolAddress (CollectionItemId, School_DocumentId, Ordinal, City)
             VALUES (2001, 201, 0, 'Alpha'), (2002, 202, 0, 'Beta');
 
             INSERT INTO hydsingle.SchoolAddressPeriod (CollectionItemId, School_DocumentId, ParentCollectionItemId, Ordinal, BeginDate)
             VALUES (6001, 201, 2001, 0, '2020-01-01'), (6002, 202, 2002, 0, '2023-03-01');
-
-            -- Stand in for the generated dual-write trigger: the root row mirrors dms.Document.
-            UPDATE s
-            SET s.DocumentUuid = d.DocumentUuid,
-                s.ContentVersion = d.ContentVersion,
-                s.IdentityVersion = d.IdentityVersion,
-                s.ContentLastModifiedAt = d.ContentLastModifiedAt,
-                s.IdentityLastModifiedAt = d.IdentityLastModifiedAt
-            FROM hydsingle.School s
-            INNER JOIN dms.Document d ON d.DocumentId = s.DocumentId;
             """
         );
 
@@ -459,18 +386,6 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
             plan,
             keyset,
             SqlDialect.Mssql,
-            CancellationToken.None
-        );
-
-        await using var rootSourcedConnection = new SqlConnection(_connectionString);
-        await rootSourcedConnection.OpenAsync();
-
-        _rootSourcedResult = await HydrationExecutor.ExecuteAsync(
-            rootSourcedConnection,
-            plan,
-            keyset,
-            SqlDialect.Mssql,
-            new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable },
             CancellationToken.None
         );
     }
@@ -523,25 +438,12 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
     }
 
     [Test]
-    public void It_returns_the_same_single_document_metadata_from_the_root_table_mirrors()
-    {
-        _rootSourcedResult.DocumentMetadata.Should().Equal(_result.DocumentMetadata);
-        _rootSourcedResult.DocumentMetadata.Should().ContainSingle();
-        _rootSourcedResult.DocumentMetadata[0].DocumentId.Should().Be(201);
-        _rootSourcedResult
-            .DocumentMetadata[0]
-            .DocumentUuid.Should()
-            .Be(Guid.Parse("cccccccc-3333-3333-3333-cccccccccccc"));
-    }
-
-    [Test]
-    public void It_reads_root_sourced_metadata_without_touching_the_document_table()
+    public void It_reads_metadata_without_touching_the_document_table()
     {
         var batchSql = HydrationBatchBuilder.Build(
             HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Mssql),
             new PageKeysetSpec.Single(201L),
-            SqlDialect.Mssql,
-            new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable }
+            SqlDialect.Mssql
         );
 
         batchSql.Should().Contain("FROM [hydsingle].[School] d");
@@ -583,23 +485,17 @@ public class Given_A_Query_With_TotalCount_Requested_Mssql
         await ExecuteSql(
             connection,
             """
-            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms') EXEC('CREATE SCHEMA [dms]');
             IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'hydcount') EXEC('CREATE SCHEMA [hydcount]');
 
-            CREATE TABLE dms.Document (
+            -- The resource root row is the document: it carries the metadata columns itself.
+            CREATE TABLE hydcount.School (
                 DocumentId bigint PRIMARY KEY,
+                SchoolId int NOT NULL,
                 DocumentUuid uniqueidentifier NOT NULL,
-                ResourceKeyId smallint NOT NULL DEFAULT 0,
                 ContentVersion bigint NOT NULL DEFAULT 1,
                 IdentityVersion bigint NOT NULL DEFAULT 1,
                 ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
-            );
-
-            CREATE TABLE hydcount.School (
-                DocumentId bigint PRIMARY KEY,
-                SchoolId int NOT NULL
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
             CREATE TABLE hydcount.SchoolAddress (
@@ -622,14 +518,11 @@ public class Given_A_Query_With_TotalCount_Requested_Mssql
         await ExecuteSql(
             connection,
             """
-            INSERT INTO dms.Document (DocumentId, DocumentUuid)
+            INSERT INTO hydcount.School (DocumentId, SchoolId, DocumentUuid)
             VALUES
-                (301, 'eeeeeeee-5555-5555-5555-eeeeeeeeeeee'),
-                (302, 'ffffffff-6666-6666-6666-ffffffffffff'),
-                (303, '11111111-7777-7777-7777-111111111111');
-
-            INSERT INTO hydcount.School (DocumentId, SchoolId)
-            VALUES (301, 900001), (302, 900002), (303, 900003);
+                (301, 900001, 'eeeeeeee-5555-5555-5555-eeeeeeeeeeee'),
+                (302, 900002, 'ffffffff-6666-6666-6666-ffffffffffff'),
+                (303, 900003, '11111111-7777-7777-7777-111111111111');
             """
         );
 
@@ -722,31 +615,25 @@ public class Given_A_Reference_Bearing_Resource_Mssql
         await ExecuteSql(
             connection,
             """
-            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms') EXEC('CREATE SCHEMA [dms]');
             IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'hydref') EXEC('CREATE SCHEMA [hydref]');
 
-            CREATE TABLE dms.Document (
-                DocumentId bigint PRIMARY KEY,
-                DocumentUuid uniqueidentifier NOT NULL,
-                ResourceKeyId smallint NOT NULL DEFAULT 0,
-                ContentVersion bigint NOT NULL DEFAULT 1,
-                IdentityVersion bigint NOT NULL DEFAULT 1,
-                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
-            );
-
+            -- The resource root row is the document: it carries the metadata columns itself.
             CREATE TABLE hydref.StudentSchoolAssociation (
                 DocumentId bigint PRIMARY KEY,
                 School_DocumentId bigint NULL,
                 School_SchoolId bigint NULL,
                 Calendar_DocumentId bigint NULL,
-                Calendar_CalendarCode varchar(60) NULL
+                Calendar_CalendarCode varchar(60) NULL,
+                DocumentUuid uniqueidentifier NOT NULL,
+                ContentVersion bigint NOT NULL DEFAULT 1,
+                IdentityVersion bigint NOT NULL DEFAULT 1,
+                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
             -- Reference-target root tables. The document-reference auxiliary lookup resolves
-            -- each reference through its TARGET resource's root table (never dms.Document), so
-            -- the referenced School/Calendar roots must exist in this test schema.
+            -- each reference through its TARGET resource's own root table, so the referenced
+            -- School/Calendar roots must exist in this test schema.
             CREATE TABLE hydref.School (
                 DocumentId bigint PRIMARY KEY,
                 DocumentUuid uniqueidentifier NOT NULL
@@ -762,12 +649,6 @@ public class Given_A_Reference_Bearing_Resource_Mssql
         await ExecuteSql(
             connection,
             """
-            INSERT INTO dms.Document (DocumentId, DocumentUuid)
-            VALUES
-                (401, 'aaaa0001-0001-0001-0001-aaaa00000001'),
-                (402, 'aaaa0002-0002-0002-0002-aaaa00000002'),
-                (403, 'aaaa0003-0003-0003-0003-aaaa00000003');
-
             INSERT INTO hydref.School (DocumentId, DocumentUuid)
             VALUES
                 (10, 'cccc0010-0010-0010-0010-cccc00000010'),
@@ -778,11 +659,11 @@ public class Given_A_Reference_Bearing_Resource_Mssql
                 (50, 'dddd0050-0050-0050-0050-dddd00000050'),
                 (60, 'dddd0060-0060-0060-0060-dddd00000060');
 
-            INSERT INTO hydref.StudentSchoolAssociation (DocumentId, School_DocumentId, School_SchoolId, Calendar_DocumentId, Calendar_CalendarCode)
+            INSERT INTO hydref.StudentSchoolAssociation (DocumentId, School_DocumentId, School_SchoolId, Calendar_DocumentId, Calendar_CalendarCode, DocumentUuid)
             VALUES
-                (401, 10, 255901, 50, 'CAL-101'),
-                (402, NULL, NULL, NULL, NULL),
-                (403, 20, 255902, 60, 'CAL-202');
+                (401, 10, 255901, 50, 'CAL-101', 'aaaa0001-0001-0001-0001-aaaa00000001'),
+                (402, NULL, NULL, NULL, NULL, 'aaaa0002-0002-0002-0002-aaaa00000002'),
+                (403, 20, 255902, 60, 'CAL-202', 'aaaa0003-0003-0003-0003-aaaa00000003');
             """
         );
 

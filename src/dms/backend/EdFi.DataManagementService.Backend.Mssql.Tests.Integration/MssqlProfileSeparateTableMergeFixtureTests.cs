@@ -388,8 +388,7 @@ public class Given_A_Mssql_ProfiledUpsert_With_Creatable_False_ForNewSeparateTab
             """
             SELECT COUNT(*)
             FROM [edfi].[ProfileSeparateTableMergeItem] i
-            INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]
-            WHERE d.[DocumentUuid] = @documentUuid;
+            WHERE i.[DocumentUuid] = @documentUuid;
             """,
             new Microsoft.Data.SqlClient.SqlParameter("@documentUuid", DocumentUuid.Value)
         );

@@ -85,10 +85,10 @@ internal static class RelationalDocumentUuidLookupSupport
 
     /// <summary>
     /// GET-by-id entry point. The route already names the resource, so the target probe seeks the
-    /// resource root table's <c>UX_&lt;Root&gt;_DocumentUuid</c> unique index instead of
-    /// <c>dms.Document</c>: resource scoping is structural (a uuid belonging to another resource is
-    /// simply absent from this root table) and the probed <c>DocumentUuid</c>/<c>ContentVersion</c>
-    /// come from the same root row that GET hydration reads.
+    /// resource root table's <c>UX_&lt;Root&gt;_DocumentUuid</c> unique index: resource scoping is
+    /// structural (a uuid belonging to another resource is simply absent from this root table) and the
+    /// probed <c>DocumentUuid</c>/<c>ContentVersion</c> come from the same root row that GET hydration
+    /// reads.
     /// </summary>
     public static Task<ResolvedRootTarget?> TryResolveGetTargetByRootTableAsync(
         IRelationalCommandExecutor commandExecutor,

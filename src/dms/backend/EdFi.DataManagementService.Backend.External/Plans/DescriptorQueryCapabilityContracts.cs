@@ -202,7 +202,7 @@ public sealed record SupportedDescriptorQueryField
 public enum DescriptorQueryValueKind
 {
     /// <summary>
-    /// The query value must parse as <c>dms.Document.DocumentUuid</c>.
+    /// The query value must parse as a <c>DocumentUuid</c>.
     /// </summary>
     DocumentUuid,
 
@@ -225,7 +225,7 @@ public abstract record DescriptorQueryFieldTarget
     private DescriptorQueryFieldTarget() { }
 
     /// <summary>
-    /// A query field that targets <c>dms.Document.DocumentUuid</c>.
+    /// A query field that targets the row's <c>DocumentUuid</c>.
     /// </summary>
     public sealed record DocumentUuid : DescriptorQueryFieldTarget;
 

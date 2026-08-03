@@ -172,9 +172,9 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
             );
         }
 
-        // No support index is derived for the row-local CreatedByOwnershipTokenId mirror. That column is a
-        // forward-compatible placeholder: this v8.0.0 base has no dms.Document source column to copy from, so
-        // the stamping triggers never write it and it stays permanently NULL. Indexing an all-NULL column
+        // No support index is derived for the row-local CreatedByOwnershipTokenId column. It is a
+        // forward-compatible placeholder: this v8.0.0 base has no ownership token to record, so the
+        // stamping triggers never write it and it stays permanently NULL. Indexing an all-NULL column
         // only costs storage and write time. The index returns in the phase that starts populating the
         // column for ownership-based authorization filters.
 

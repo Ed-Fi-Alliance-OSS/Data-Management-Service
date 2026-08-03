@@ -144,17 +144,6 @@ internal static class MssqlDescriptorProjectionPipelineFixture
             IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms') EXEC('CREATE SCHEMA [dms]');
             IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{TestSchema}') EXEC('CREATE SCHEMA [{TestSchema}]');
 
-            CREATE TABLE [dms].[Document] (
-                [DocumentId] bigint PRIMARY KEY,
-                [DocumentUuid] uniqueidentifier NOT NULL,
-                [ResourceKeyId] smallint NOT NULL DEFAULT 0,
-                [ContentVersion] bigint NOT NULL DEFAULT 1,
-                [IdentityVersion] bigint NOT NULL DEFAULT 1,
-                [ContentLastModifiedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                [IdentityLastModifiedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                [CreatedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
-            );
-
             CREATE TABLE [dms].[Descriptor] (
                 [DocumentId] bigint PRIMARY KEY,
                 [Namespace] varchar(255) NOT NULL DEFAULT '',
@@ -167,6 +156,8 @@ internal static class MssqlDescriptorProjectionPipelineFixture
                 [Uri] varchar(306) NOT NULL
             );
 
+            -- The root row is the document: it owns its DocumentId outright. The read plan projects
+            -- only the modeled columns, so no document-metadata columns are scaffolded here.
             CREATE TABLE [{TestSchema}].[CourseOffering] (
                 [DocumentId] bigint PRIMARY KEY,
                 [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
@@ -181,10 +172,6 @@ internal static class MssqlDescriptorProjectionPipelineFixture
         await ExecuteSqlAsync(
             connection,
             $"""
-            INSERT INTO [dms].[Document] ([DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion], [IdentityVersion]) VALUES
-                (810, '81000000-0000-0000-0000-000000000810', 0, 1, 1),
-                (811, '81100000-0000-0000-0000-000000000811', 0, 1, 1);
-
             INSERT INTO [dms].[Descriptor] ([DocumentId], [Namespace], [CodeValue], [ShortDescription], [Discriminator], [Uri]) VALUES
                 (910, 'uri://ed-fi.org/AcademicSubjectDescriptor', 'English Language Arts', 'English Language Arts', 'edfi.AcademicSubjectDescriptor', '{Uri910}'),
                 (911, 'uri://ed-fi.org/InstructionLanguageDescriptor', 'English', 'English', 'edfi.InstructionLanguageDescriptor', '{Uri911}');

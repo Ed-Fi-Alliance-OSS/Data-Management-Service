@@ -18,7 +18,7 @@ public abstract class GetMaxChangeVersionTestBase
 
     public static async Task<long> CallFunction()
     {
-        await using var connection = await Uuidv5ParityTestBase.DataSource.OpenConnectionAsync();
+        await using var connection = await DatabaseSetupFixture.DataSource.OpenConnectionAsync();
         await using var cmd = new NpgsqlCommand("""SELECT "dms"."GetMaxChangeVersion"()""", connection);
         var result = await cmd.ExecuteScalarAsync();
         return (long)result!;
@@ -26,7 +26,7 @@ public abstract class GetMaxChangeVersionTestBase
 
     public static async Task AdvanceSequence(int times)
     {
-        await using var connection = await Uuidv5ParityTestBase.DataSource.OpenConnectionAsync();
+        await using var connection = await DatabaseSetupFixture.DataSource.OpenConnectionAsync();
         for (var i = 0; i < times; i++)
         {
             await using var cmd = new NpgsqlCommand(
@@ -41,7 +41,7 @@ public abstract class GetMaxChangeVersionTestBase
     // assertions that depend on the fresh start state.
     public static async Task ResetSequenceToStart()
     {
-        await using var connection = await Uuidv5ParityTestBase.DataSource.OpenConnectionAsync();
+        await using var connection = await DatabaseSetupFixture.DataSource.OpenConnectionAsync();
         await using var cmd = new NpgsqlCommand(
             "ALTER SEQUENCE \"dms\".\"ChangeVersionSequence\" RESTART",
             connection

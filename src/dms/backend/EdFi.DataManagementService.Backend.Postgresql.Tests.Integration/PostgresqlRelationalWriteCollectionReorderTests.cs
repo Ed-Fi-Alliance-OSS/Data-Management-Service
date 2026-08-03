@@ -27,7 +27,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 internal sealed record FullSurfaceCollectionReorderDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
-    short ResourceKeyId,
     long ContentVersion
 );
 
@@ -132,7 +131,6 @@ file static class FullSurfaceCollectionReorderIntegrationTestSupport
         }
         """;
 
-    public static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     public static readonly ResourceInfo SchoolResourceInfo = new(
         ProjectName: new ProjectName("Ed-Fi"),
         ResourceName: new ResourceName("School"),
@@ -207,9 +205,6 @@ file static class FullSurfaceCollectionReorderIntegrationTestSupport
         );
     }
 
-    public static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
-        Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
-
     public static int GetInt32(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt32(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
@@ -255,9 +250,8 @@ file static class FullSurfaceCollectionReorderIntegrationTestSupport
     {
         var rows = await database.QueryRowsAsync(
             """
-            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            SELECT root."DocumentId", root."DocumentUuid", root."ContentVersion"
             FROM "edfi"."School" root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -267,7 +261,6 @@ file static class FullSurfaceCollectionReorderIntegrationTestSupport
             ? new FullSurfaceCollectionReorderDocumentRow(
                 GetInt64(rows[0], "DocumentId"),
                 GetGuid(rows[0], "DocumentUuid"),
-                GetInt16(rows[0], "ResourceKeyId"),
                 GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
@@ -430,13 +423,6 @@ public class Given_A_Postgresql_Relational_Write_Full_Surface_Collection_Reorder
         _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
         _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
         _stateAfterUpdate.Document.DocumentUuid.Should().Be(SchoolDocumentUuid.Value);
-        _stateAfterUpdate
-            .Document.ResourceKeyId.Should()
-            .Be(
-                _mappingSet.ResourceKeyIdByResource[
-                    FullSurfaceCollectionReorderIntegrationTestSupport.SchoolResource
-                ]
-            );
         _stateAfterUpdate
             .Document.ContentVersion.Should()
             .BeGreaterThan(_stateBeforeUpdate.Document.ContentVersion);

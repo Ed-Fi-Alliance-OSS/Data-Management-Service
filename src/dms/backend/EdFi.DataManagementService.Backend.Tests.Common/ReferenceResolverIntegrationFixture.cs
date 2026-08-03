@@ -841,6 +841,17 @@ public sealed record ReferenceResolverSeedData(
     /// <summary>Rows for the synthetic wide-identity resource, one column per scalar kind.</summary>
     public IReadOnlyList<ReferenceResolverWideIdentitySeed> WideIdentities { get; init; } = [];
 
+    /// <summary>
+    /// Resolves the seeded <c>DocumentUuid</c> for a document id. <c>dms.Document</c> no longer exists, so
+    /// the uuid is bound onto the owning root / descriptor / abstract-identity row instead. The seed set
+    /// still declares it once, in <see cref="Documents"/>, so every table mirroring a document agrees.
+    /// </summary>
+    private Guid DocumentUuidFor(long documentId) =>
+        Documents.FirstOrDefault(document => document.DocumentId == documentId)?.DocumentUuid
+        ?? throw new InvalidOperationException(
+            $"Seed data declares no document with DocumentId '{documentId}'."
+        );
+
     public IReadOnlyList<ReferenceResolverSeedTableBatch> CreateTableBatches()
     {
         return
@@ -866,33 +877,34 @@ public sealed record ReferenceResolverSeedData(
                     .ToArray()
             ),
             new(
-                new DbTableName(new DbSchemaName("dms"), "Document"),
+                new DbTableName(new DbSchemaName("edfi"), "School"),
                 [
                     new DbColumnName("DocumentId"),
                     new DbColumnName("DocumentUuid"),
-                    new DbColumnName("ResourceKeyId"),
+                    new DbColumnName("SchoolId"),
                 ],
-                Documents
-                    .Select(document =>
+                Schools
+                    .Select(school =>
                         (IReadOnlyList<object?>)
-                            [document.DocumentId, document.DocumentUuid, document.ResourceKeyId]
+                            [school.DocumentId, DocumentUuidFor(school.DocumentId), school.SchoolId]
                     )
                     .ToArray()
             ),
             new(
-                new DbTableName(new DbSchemaName("edfi"), "School"),
-                [new DbColumnName("DocumentId"), new DbColumnName("SchoolId")],
-                Schools
-                    .Select(school => (IReadOnlyList<object?>)[school.DocumentId, school.SchoolId])
-                    .ToArray()
-            ),
-            new(
                 new DbTableName(new DbSchemaName("edfi"), "LocalEducationAgency"),
-                [new DbColumnName("DocumentId"), new DbColumnName("LocalEducationAgencyId")],
+                [
+                    new DbColumnName("DocumentId"),
+                    new DbColumnName("DocumentUuid"),
+                    new DbColumnName("LocalEducationAgencyId"),
+                ],
                 LocalEducationAgencies
                     .Select(localEducationAgency =>
                         (IReadOnlyList<object?>)
-                            [localEducationAgency.DocumentId, localEducationAgency.LocalEducationAgencyId]
+                            [
+                                localEducationAgency.DocumentId,
+                                DocumentUuidFor(localEducationAgency.DocumentId),
+                                localEducationAgency.LocalEducationAgencyId,
+                            ]
                     )
                     .ToArray()
             ),
@@ -900,13 +912,19 @@ public sealed record ReferenceResolverSeedData(
                 new DbTableName(new DbSchemaName("edfi"), "EducationOrganizationIdentity"),
                 [
                     new DbColumnName("DocumentId"),
+                    new DbColumnName("DocumentUuid"),
                     new DbColumnName("EducationOrganizationId"),
                     new DbColumnName("Discriminator"),
                 ],
                 EducationOrganizationIdentities
                     .Select(identity =>
                         (IReadOnlyList<object?>)
-                            [identity.DocumentId, identity.EducationOrganizationId, identity.Discriminator]
+                            [
+                                identity.DocumentId,
+                                DocumentUuidFor(identity.DocumentId),
+                                identity.EducationOrganizationId,
+                                identity.Discriminator,
+                            ]
                     )
                     .ToArray()
             ),
@@ -914,6 +932,7 @@ public sealed record ReferenceResolverSeedData(
                 new DbTableName(new DbSchemaName("edfi"), "WideIdentityResource"),
                 [
                     new DbColumnName("DocumentId"),
+                    new DbColumnName("DocumentUuid"),
                     new DbColumnName("Int64Key"),
                     new DbColumnName("DecimalKey"),
                     new DbColumnName("DateKey"),
@@ -926,6 +945,7 @@ public sealed record ReferenceResolverSeedData(
                         (IReadOnlyList<object?>)
                             [
                                 wideIdentity.DocumentId,
+                                DocumentUuidFor(wideIdentity.DocumentId),
                                 wideIdentity.Int64Key,
                                 wideIdentity.DecimalKey,
                                 wideIdentity.DateKey,
@@ -940,6 +960,7 @@ public sealed record ReferenceResolverSeedData(
                 new DbTableName(new DbSchemaName("dms"), "Descriptor"),
                 [
                     new DbColumnName("DocumentId"),
+                    new DbColumnName("DocumentUuid"),
                     new DbColumnName("Namespace"),
                     new DbColumnName("CodeValue"),
                     new DbColumnName("ShortDescription"),
@@ -951,6 +972,7 @@ public sealed record ReferenceResolverSeedData(
                         (IReadOnlyList<object?>)
                             [
                                 descriptor.DocumentId,
+                                DocumentUuidFor(descriptor.DocumentId),
                                 descriptor.Namespace,
                                 descriptor.CodeValue,
                                 descriptor.ShortDescription,

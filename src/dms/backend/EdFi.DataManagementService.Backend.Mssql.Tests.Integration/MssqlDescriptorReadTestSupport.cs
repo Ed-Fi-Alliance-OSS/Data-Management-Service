@@ -13,23 +13,14 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 internal static class MssqlDescriptorReadTestSupport
 {
-    public static async Task<long> InsertDocumentAsync(
-        MssqlGeneratedDdlTestDatabase database,
-        DocumentUuid documentUuid,
-        short resourceKeyId
-    )
+    /// <summary>
+    /// Draws the next <c>DocumentId</c> from <c>dms.DocumentIdSequence</c> — the same counter the
+    /// <c>dms.Descriptor</c> column default draws from, so a seeded id can never collide with one a
+    /// production write allocates.
+    /// </summary>
+    public static async Task<long> NextDocumentIdAsync(MssqlGeneratedDdlTestDatabase database)
     {
-        return await database.ExecuteScalarAsync<long>(
-            """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
-            """,
-            new SqlParameter("@documentUuid", documentUuid.Value),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
+        return await database.ExecuteScalarAsync<long>("SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];");
     }
 
     public static async Task<long> SeedDescriptorAsync(
@@ -43,7 +34,7 @@ internal static class MssqlDescriptorReadTestSupport
             mappingSet,
             resource
         );
-        var documentId = await InsertDocumentAsync(database, seed.DocumentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync(database);
 
         await InsertDescriptorRowAsync(database, resource, documentId, resourceKeyId, seed);
 
@@ -113,35 +104,19 @@ internal static class MssqlDescriptorReadTestSupport
         );
     }
 
-    public static async Task<IReadOnlyDictionary<string, object?>> ReadDocumentRowAsync(
+    /// <summary>
+    /// Reads the seeded document's metadata row. The descriptor row IS the document row now — it
+    /// carries <c>DocumentUuid</c>, <c>ResourceKeyId</c> and both stamp pairs itself — so this
+    /// resolves to the descriptor row.
+    /// </summary>
+    public static Task<IReadOnlyDictionary<string, object?>> ReadDocumentRowAsync(
         MssqlGeneratedDdlTestDatabase database,
         long documentId
-    )
-    {
-        var rows = await database.QueryRowsAsync(
-            """
-            SELECT
-                [DocumentId],
-                [DocumentUuid],
-                [ResourceKeyId],
-                [ContentVersion],
-                [IdentityVersion],
-                [ContentLastModifiedAt],
-                [IdentityLastModifiedAt],
-                [CreatedAt]
-            FROM [dms].[Document]
-            WHERE [DocumentId] = @documentId;
-            """,
-            new SqlParameter("@documentId", documentId)
-        );
-
-        return GetSingleRowOrThrow(rows, "Document", documentId);
-    }
+    ) => ReadDescriptorStampRowAsync(database, documentId);
 
     /// <summary>
     /// Reads the descriptor row's authoritative stamps. The descriptor row owns
-    /// <c>ContentVersion</c>/<c>IdentityVersion</c> and their timestamps; the <c>dms.Document</c> row
-    /// carries only the id it dispensed.
+    /// <c>ContentVersion</c>/<c>IdentityVersion</c> and their timestamps outright.
     /// </summary>
     public static async Task<IReadOnlyDictionary<string, object?>> ReadDescriptorStampRowAsync(
         MssqlGeneratedDdlTestDatabase database,

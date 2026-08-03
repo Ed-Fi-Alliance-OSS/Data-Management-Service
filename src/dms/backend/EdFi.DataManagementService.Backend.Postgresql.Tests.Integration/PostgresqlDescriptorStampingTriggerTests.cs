@@ -13,8 +13,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// <summary>
 /// Behavior of the no-tombstone variant of <c>TR_Descriptor_Stamp_Document</c> (the
 /// <c>small/minimal</c> fixture carries no shared descriptor tracked-change table). The descriptor row
-/// is the authoritative stamp store: the trigger writes <c>dms.Descriptor</c>'s own columns and never
-/// touches <c>dms.Document</c>.
+/// is the authoritative stamp store: the trigger writes <c>dms.Descriptor</c>'s own columns.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -46,7 +45,6 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         await _database.ExecuteNonQueryAsync(
             """
             DELETE FROM dms."Descriptor";
-            DELETE FROM dms."Document";
             """
         );
     }
@@ -62,57 +60,33 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
 
     private async Task<(long DocumentId, StampValues Stamp)> SeedAsync(string codeValue = "Female")
     {
-        var documentId = await InsertDocumentAsync();
-        await InsertDescriptorAsync(documentId, codeValue);
+        var documentId = await InsertDescriptorAsync(codeValue);
 
         return (documentId, await ReadDescriptorContentStampAsync(documentId));
     }
 
-    private async Task<long> InsertDocumentAsync()
-    {
-        var resourceKeyId = await _database.ExecuteScalarAsync<short>(
-            """SELECT MIN("ResourceKeyId") FROM dms."ResourceKey";"""
-        );
-
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@uuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("uuid", Guid.NewGuid()),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private async Task InsertDescriptorAsync(long documentId, string codeValue = "Female")
+    /// <summary>
+    /// Inserts the descriptor row without an explicit <c>DocumentId</c> so the column DEFAULT draws it
+    /// from <c>dms.DocumentIdSequence</c>, and returns the id the row landed on.
+    /// </summary>
+    private async Task<long> InsertDescriptorAsync(string codeValue = "Female")
     {
         var uriOrDiscriminator = $"uri://ed-fi.org/SexDescriptor#{codeValue}";
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO dms."Descriptor"
-                ("DocumentId", "Namespace", "CodeValue", "ShortDescription", "Description",
+                ("Namespace", "CodeValue", "ShortDescription", "Description",
                  "EffectiveBeginDate", "EffectiveEndDate", "Discriminator", "Uri")
-            VALUES (@documentId, @namespace, @codeValue, @shortDescription, @description,
-                    NULL, NULL, @discriminator, @uri);
+            VALUES (@namespace, @codeValue, @shortDescription, @description,
+                    NULL, NULL, @discriminator, @uri)
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("namespace", "uri://ed-fi.org/SexDescriptor"),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", codeValue),
             new NpgsqlParameter("description", codeValue),
             new NpgsqlParameter("discriminator", uriOrDiscriminator),
             new NpgsqlParameter("uri", uriOrDiscriminator)
-        );
-    }
-
-    private async Task<StampValues> ReadDocumentStampAsync(long documentId)
-    {
-        return await ReadStampAsync(
-            @"dms.""Document""",
-            "ContentVersion",
-            "ContentLastModifiedAt",
-            documentId
         );
     }
 
@@ -175,11 +149,9 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
     {
         // A new descriptor row has no prior stamp to preserve, so the INSERT arm takes the identity
         // stamp alongside the content stamp — two sequence values, both landing on the descriptor row.
-        var documentId = await InsertDocumentAsync();
-        var beforeDocument = await ReadDocumentStampAsync(documentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
 
-        await InsertDescriptorAsync(documentId);
+        var documentId = await InsertDescriptorAsync();
 
         var contentStamp = await ReadDescriptorContentStampAsync(documentId);
         var identityStamp = await ReadDescriptorIdentityStampAsync(documentId);
@@ -191,9 +163,6 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(2L, "a descriptor insert allocates one content stamp and one identity stamp");
-        (await ReadDocumentStampAsync(documentId))
-            .Should()
-            .Be(beforeDocument, "no trigger writes dms.Document any more");
     }
 
     [Test]
@@ -202,7 +171,6 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         // The descriptor row is the stamp store and it is the row going away, so the no-tombstone
         // variant's DELETE arm has nothing left to write.
         var seed = await SeedAsync();
-        var beforeDocument = await ReadDocumentStampAsync(seed.DocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
 
         await _database.ExecuteNonQueryAsync(
@@ -214,14 +182,12 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         );
 
         (await ReadMaxChangeVersionAsync()).Should().Be(beforeMaxChangeVersion);
-        (await ReadDocumentStampAsync(seed.DocumentId)).Should().Be(beforeDocument);
     }
 
     [Test]
     public async Task It_stamps_the_descriptor_row_on_descriptor_value_change()
     {
         var seed = await SeedAsync();
-        var beforeDocument = await ReadDocumentStampAsync(seed.DocumentId);
         var beforeIdentity = await ReadDescriptorIdentityStampAsync(seed.DocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
         await DelayForDistinctTimestampsAsync();
@@ -245,7 +211,6 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         (await ReadDescriptorIdentityStampAsync(seed.DocumentId))
             .Should()
             .Be(beforeIdentity, "a content change must not bump the identity stamp");
-        (await ReadDocumentStampAsync(seed.DocumentId)).Should().Be(beforeDocument);
     }
 
     [Test]

@@ -12,14 +12,25 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 /// <summary>
-/// One-time setup fixture that provisions the dms schema and the
-/// dms.uuidv5() helper function required by the parity tests.
-/// Runs once per test assembly before any test fixtures execute.
+/// One-time setup fixture that provisions the dms schema, the change-version sequence and the
+/// dms.GetMaxChangeVersion() helper function, and owns the assembly-wide connection string the
+/// core-function fixtures share. Runs once per test assembly before any test fixtures execute.
 /// </summary>
 [SetUpFixture]
 public class DatabaseSetupFixture
 {
     private string? _databaseName;
+
+    private static string? _connectionString;
+
+    /// <summary>
+    /// The assembly-wide connection string set by <see cref="OneTimeSetUp"/>.
+    /// </summary>
+    internal static string ConnectionString =>
+        _connectionString
+        ?? throw new InvalidOperationException(
+            "ConnectionString has not been initialized. Ensure DatabaseSetupFixture has run."
+        );
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -39,7 +50,6 @@ public class DatabaseSetupFixture
         var createSchema = dialect.CreateSchemaIfNotExists(schema);
         var createSequence = dialect.CreateSequenceIfNotExists(schema, "ChangeVersionSequence");
         var createGetMax = dialect.CreateGetMaxChangeVersionFunction(schema);
-        var createUuidv5 = dialect.CreateUuidv5Function(schema);
 
         await using SqlConnection connection = new(connectionString);
         await connection.OpenAsync();
@@ -62,12 +72,7 @@ public class DatabaseSetupFixture
             await cmd.ExecuteNonQueryAsync();
         }
 
-        await using (var cmd = new SqlCommand(createUuidv5, connection))
-        {
-            await cmd.ExecuteNonQueryAsync();
-        }
-
-        Uuidv5ParityTestBase.InitializeConnectionString(connectionString);
+        _connectionString = connectionString;
     }
 
     [OneTimeTearDown]
@@ -80,5 +85,7 @@ public class DatabaseSetupFixture
             MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
             _databaseName = null;
         }
+
+        _connectionString = null;
     }
 }

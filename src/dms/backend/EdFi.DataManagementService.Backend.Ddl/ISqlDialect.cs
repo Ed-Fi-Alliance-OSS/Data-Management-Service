@@ -221,15 +221,6 @@ public interface ISqlDialect
     string CreateExtensionIfNotExists(string extensionName);
 
     /// <summary>
-    /// Returns the DDL statement to create the UUIDv5 (RFC 4122) helper function in the
-    /// specified schema. The function accepts a namespace UUID and a name string and returns
-    /// a deterministic UUID that matches DMS Core's ReferentialIdCalculator output byte-for-byte.
-    /// </summary>
-    /// <param name="schema">The schema to create the function in (typically "dms").</param>
-    /// <returns>The complete CREATE FUNCTION statement.</returns>
-    string CreateUuidv5Function(DbSchemaName schema);
-
-    /// <summary>
     /// Returns the DDL statement to create the <c>GetMaxChangeVersion</c> helper function in the
     /// specified schema. The function returns the current value of
     /// <c>dms.ChangeVersionSequence</c> as a <c>bigint</c> and is the backing query for the

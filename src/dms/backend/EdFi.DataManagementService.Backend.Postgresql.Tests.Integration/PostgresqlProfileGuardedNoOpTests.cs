@@ -131,9 +131,8 @@ internal static class ProfileGuardedNoOpIntegrationTestSupport
             .ConfigureAwait(false);
 
     /// <summary>
-    /// Reads the document's identity and stamp state. The shape's own resource root row is the stamp
-    /// store, so the read scopes to that table; <c>ResourceKeyId</c> is the one column only
-    /// <c>dms.Document</c> carries and is joined in.
+    /// Reads the document's identity and stamp state. The shape's own resource root row IS the
+    /// document — it carries every stamp column — so the read scopes to that table alone.
     /// </summary>
     private static async Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> ReadDocumentRowsAsync(
         PostgresqlGeneratedDdlTestDatabase database,
@@ -143,11 +142,10 @@ internal static class ProfileGuardedNoOpIntegrationTestSupport
         await database
             .QueryRowsAsync(
                 $"""
-                SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId",
+                SELECT root."DocumentId", root."DocumentUuid",
                        root."ContentVersion", root."ContentLastModifiedAt",
                        root."IdentityVersion", root."IdentityLastModifiedAt"
                 FROM "{shapeRootTable.Schema}"."{shapeRootTable.Table}" root
-                INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
                 WHERE root."DocumentUuid" = @documentUuid;
                 """,
                 new NpgsqlParameter("documentUuid", documentUuid)
@@ -303,16 +301,16 @@ internal abstract class ProfileGuardedNoOpGeneratedDdlFixtureTestBase
         });
 
     /// <summary>
-    /// Counts rows in <c>dms.Document</c> matching the supplied
-    /// <paramref name="documentUuid"/>. Used to assert that a profiled
+    /// Counts rows in the shape's resource root table — the table that now IS the document —
+    /// matching the supplied <paramref name="documentUuid"/>. Used to assert that a profiled
     /// POST-as-update did NOT insert a new document under the incoming UUID.
     /// </summary>
     protected async Task<long> CountDocumentRowsByUuidAsync(Guid documentUuid)
     {
         var rows = await _database.QueryRowsAsync(
-            """
+            $"""
             SELECT COUNT(*) AS "RowCount"
-            FROM "dms"."Document"
+            FROM "{ShapeRootTable.Schema}"."{ShapeRootTable.Table}"
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -991,13 +989,13 @@ internal class Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Put
     [Test]
     public void It_preserves_the_persisted_state_aside_from_the_concurrent_content_version_bump()
     {
-        // The freshness-checker bumper raises the stored Document.ContentVersion by one
+        // The freshness-checker bumper raises the stored root-row ContentVersion by one
         // as the simulated concurrent writer — not the executor's stale-retry no-op
-        // success path, which neither persists rowset content nor mutates Document
-        // metadata. We substitute the bumper's ContentVersion bump back to the
+        // success path, which neither persists rowset content nor mutates the root row's
+        // document metadata. We substitute the bumper's ContentVersion bump back to the
         // before-state so the deep-equivalence assertion proves the no-op retry
         // preserves every other field (ContentLastModifiedAt, IdentityVersion,
-        // IdentityLastModifiedAt, RootRow, ResourceKeyId, DocumentUuid, DocumentId).
+        // IdentityLastModifiedAt, RootRow, DocumentUuid, DocumentId).
         var adjustedAfterState = _stateAfterUpdate with
         {
             Document = _stateAfterUpdate.Document with
@@ -1092,13 +1090,13 @@ internal class Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Post_As
     [Test]
     public void It_preserves_the_persisted_state_aside_from_the_concurrent_content_version_bump()
     {
-        // The freshness-checker bumper raises the stored Document.ContentVersion by one
+        // The freshness-checker bumper raises the stored root-row ContentVersion by one
         // as the simulated concurrent writer — not the executor's stale-retry no-op
-        // success path, which neither persists rowset content nor mutates Document
-        // metadata. We substitute the bumper's ContentVersion bump back to the
+        // success path, which neither persists rowset content nor mutates the root row's
+        // document metadata. We substitute the bumper's ContentVersion bump back to the
         // before-state so the deep-equivalence assertion proves the no-op retry
         // preserves every other field (ContentLastModifiedAt, IdentityVersion,
-        // IdentityLastModifiedAt, RootRow, ResourceKeyId, DocumentUuid, DocumentId).
+        // IdentityLastModifiedAt, RootRow, DocumentUuid, DocumentId).
         var adjustedAfterState = _stateAfterPostAsUpdate with
         {
             Document = _stateAfterPostAsUpdate.Document with

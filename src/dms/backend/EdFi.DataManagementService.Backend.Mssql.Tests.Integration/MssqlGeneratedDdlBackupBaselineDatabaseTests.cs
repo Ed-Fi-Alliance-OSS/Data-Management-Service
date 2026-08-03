@@ -10,11 +10,7 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-internal sealed record MssqlGeneratedDdlBackupMutableCounts(
-    long DocumentCount,
-    long SchoolCount,
-    long SchoolAddressCount
-);
+internal sealed record MssqlGeneratedDdlBackupMutableCounts(long SchoolCount, long SchoolAddressCount);
 
 internal sealed record MssqlGeneratedDdlBackupDocumentState(
     long DocumentId,
@@ -131,7 +127,7 @@ public class Given_MssqlGeneratedDdlBackupBaselineDatabase
             "Austin"
         );
 
-        secondMutableCountsBeforeInsert.Should().Be(new MssqlGeneratedDdlBackupMutableCounts(0, 0, 0));
+        secondMutableCountsBeforeInsert.Should().Be(new MssqlGeneratedDdlBackupMutableCounts(0, 0));
         secondDocumentState.Should().Be(firstDocumentState);
         secondCollectionItemId.Should().Be(firstCollectionItemId);
     }
@@ -222,8 +218,8 @@ public class Given_MssqlGeneratedDdlBackupBaselineDatabase
         MssqlGeneratedDdlTestDatabase database
     )
     {
+        // edfi.School is the School document's root row, so counting it is the document count.
         return new(
-            await ReadTableCountAsync(database, "[dms].[Document]"),
             await ReadTableCountAsync(database, "[edfi].[School]"),
             await ReadTableCountAsync(database, "[edfi].[SchoolAddress]")
         );
@@ -243,53 +239,32 @@ public class Given_MssqlGeneratedDdlBackupBaselineDatabase
         int schoolId
     )
     {
-        var resourceKeyId = await database.ExecuteScalarAsync<short>(
-            """
-            SELECT [ResourceKeyId]
-            FROM [dms].[ResourceKey]
-            WHERE [ProjectName] = @projectName
-              AND [ResourceName] = @resourceName;
-            """,
-            new SqlParameter("@projectName", "Ed-Fi"),
-            new SqlParameter("@resourceName", "School")
-        );
-
+        // The root row is the document: DocumentId comes from its dms.DocumentIdSequence default and
+        // the stamping trigger writes ContentVersion / IdentityVersion onto the same row.
         await database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            VALUES (@documentUuid, @resourceKeyId);
+            INSERT INTO [edfi].[School] ([DocumentUuid], [SchoolId])
+            VALUES (@documentUuid, @schoolId);
             """,
             new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
+            new SqlParameter("@schoolId", schoolId)
         );
 
         var documentRows = await database.QueryRowsAsync(
             """
             SELECT [DocumentId], [ContentVersion], [IdentityVersion]
-            FROM [dms].[Document]
+            FROM [edfi].[School]
             WHERE [DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid)
         );
         var documentRow = documentRows.Should().ContainSingle().Which;
-        var documentState = new MssqlGeneratedDdlBackupDocumentState(
+
+        return new MssqlGeneratedDdlBackupDocumentState(
             Convert.ToInt64(documentRow["DocumentId"]),
             Convert.ToInt64(documentRow["ContentVersion"]),
             Convert.ToInt64(documentRow["IdentityVersion"])
         );
-
-        await database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [SchoolId])
-            SELECT @documentId, document.[DocumentUuid], @schoolId
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
-            """,
-            new SqlParameter("@documentId", documentState.DocumentId),
-            new SqlParameter("@schoolId", schoolId)
-        );
-
-        return documentState;
     }
 
     private static async Task<long> InsertSchoolAddressAsync(

@@ -356,25 +356,21 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_A_Focused_Stabl
 
     private async Task<FocusedStableKeySmokeSeedData> SeedSmokeRowsAsync()
     {
-        var schoolDocumentId = await InsertDocumentAsync(
+        // The resource root row is the document: it originates its own DocumentId from
+        // dms.DocumentIdSequence, so the root insert hands back the id the child rows hang off.
+        var schoolDocumentId = await InsertSchoolAsync(
             Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            "Ed-Fi",
-            "School"
+            100
         );
-        var otherSchoolDocumentId = await InsertDocumentAsync(
+        var otherSchoolDocumentId = await InsertSchoolAsync(
             Guid.Parse("22222222-2222-2222-2222-222222222222"),
-            "Ed-Fi",
-            "School"
+            200
         );
-        var programDocumentId = await InsertDocumentAsync(
+        var programDocumentId = await InsertProgramAsync(
             Guid.Parse("33333333-3333-3333-3333-333333333333"),
-            "Ed-Fi",
-            "Program"
+            "Robotics"
         );
 
-        await InsertSchoolAsync(schoolDocumentId, 100);
-        await InsertSchoolAsync(otherSchoolDocumentId, 200);
-        await InsertProgramAsync(programDocumentId, "Robotics");
         await InsertSchoolExtensionAsync(schoolDocumentId, "North");
 
         var addressCollectionItemId = await InsertSchoolAddressAsync(schoolDocumentId, 1, "Austin");
@@ -416,59 +412,28 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_A_Focused_Stabl
         );
     }
 
-    private async Task<short> GetResourceKeyIdAsync(string projectName, string resourceName)
+    private async Task<long> InsertSchoolAsync(Guid documentUuid, int schoolId)
     {
-        return await _database.ExecuteScalarAsync<short>(
-            """
-            SELECT "ResourceKeyId"
-            FROM "dms"."ResourceKey"
-            WHERE "ProjectName" = @projectName
-              AND "ResourceName" = @resourceName;
-            """,
-            new NpgsqlParameter("projectName", projectName),
-            new NpgsqlParameter("resourceName", resourceName)
-        );
-    }
-
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, string projectName, string resourceName)
-    {
-        var resourceKeyId = await GetResourceKeyIdAsync(projectName, resourceName);
-
         return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
+            INSERT INTO "edfi"."School" ("DocumentUuid", "SchoolId")
+            VALUES (@documentUuid, @schoolId)
             RETURNING "DocumentId";
             """,
             new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private async Task InsertSchoolAsync(long documentId, int schoolId)
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO "edfi"."School" ("DocumentId", "DocumentUuid", "SchoolId")
-            SELECT @documentId, document."DocumentUuid", @schoolId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
-            """,
-            new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("schoolId", schoolId)
         );
     }
 
-    private async Task InsertProgramAsync(long documentId, string programName)
+    private async Task<long> InsertProgramAsync(Guid documentUuid, string programName)
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "edfi"."Program" ("DocumentId", "DocumentUuid", "ProgramName")
-            SELECT @documentId, document."DocumentUuid", @programName
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            INSERT INTO "edfi"."Program" ("DocumentUuid", "ProgramName")
+            VALUES (@documentUuid, @programName)
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("programName", programName)
         );
     }

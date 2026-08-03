@@ -433,8 +433,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         AuthorizationStudentAcademicRecordSeed seed
     )
     {
-        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationStudentAcademicRecordResource");
-        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
         var studentAcademicRecordDocumentId = await GetStudentAcademicRecordDocumentIdAsync(
             seed.EducationOrganizationId,
             seed.SchoolYear,
@@ -682,8 +681,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
     public async Task SeedSchoolYearTypeAsync(SchoolYearTypeSeed seed)
     {
-        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
 
         await Database.ExecuteNonQueryAsync(
             """
@@ -712,8 +710,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
     public async Task SeedStudentAsync(StudentSeed seed)
     {
-        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
-        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
 
         await Database.ExecuteNonQueryAsync(
             """
@@ -745,8 +742,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
     public async Task SeedStudentSchoolAssociationAsync(StudentSchoolAssociationSeed seed)
     {
-        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StudentSchoolAssociation");
-        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
         var schoolDocumentId = await GetSchoolDocumentIdAsync(seed.SchoolId);
         var studentDocumentId = await GetStudentDocumentIdAsync(seed.StudentUniqueId);
         var entryGradeLevelDescriptorId = await GetDescriptorDocumentIdAsync(
@@ -790,8 +786,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
     public async Task SeedStudentAcademicRecordAsync(StudentAcademicRecordSeed seed)
     {
-        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StudentAcademicRecord");
-        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
         var schoolDocumentId = await GetSchoolDocumentIdAsync(seed.EducationOrganizationId);
         var schoolYearDocumentId = await GetSchoolYearDocumentIdAsync(seed.SchoolYear);
         var studentDocumentId = await GetStudentDocumentIdAsync(seed.StudentUniqueId);
@@ -1098,8 +1093,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         DocumentUuid documentUuid
     )
     {
-        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationRootChildResource");
-        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+        var document = await ReadDocumentStateAsync(documentUuid);
 
         return new AuthorizationWriteSideEffectState(
             Document: document,
@@ -1115,8 +1109,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         DocumentUuid documentUuid
     )
     {
-        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationNullableResource");
-        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+        var document = await ReadDocumentStateAsync(documentUuid);
 
         return new AuthorizationWriteSideEffectState(
             Document: document,
@@ -1132,8 +1125,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         DocumentUuid documentUuid
     )
     {
-        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationStudentAcademicRecordResource");
-        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+        var document = await ReadDocumentStateAsync(documentUuid);
 
         return new AuthorizationWriteSideEffectState(
             Document: document,
@@ -1149,8 +1141,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         DocumentUuid documentUuid
     )
     {
-        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationStudentSchoolResource");
-        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+        var document = await ReadDocumentStateAsync(documentUuid);
 
         return new AuthorizationWriteSideEffectState(
             Document: document,
@@ -1245,23 +1236,19 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     public async Task<IReadOnlyList<PersistedQuerySchool>> ReadPersistedSchoolsInDocumentOrderAsync()
     {
         var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
-        var resourceKeyId = MappingSet.ResourceKeyIdByResource[schoolResource];
         var physicalSchema = MappingSet.ReadPlansByResource[schoolResource].Model.PhysicalSchema.Value;
+        // The School root table is the School document, so reading it needs no resource-key filter.
         var rows = await Database.QueryRowsAsync(
             $"""
             SELECT
-                doc."DocumentId",
-                doc."DocumentUuid",
+                school."DocumentId",
+                school."DocumentUuid",
                 school."SchoolId",
                 school."NameOfInstitution",
                 school."ContentVersion"
-            FROM "dms"."Document" doc
-            INNER JOIN "{physicalSchema}"."School" school
-                ON school."DocumentId" = doc."DocumentId"
-            WHERE doc."ResourceKeyId" = @resourceKeyId
-            ORDER BY doc."DocumentId";
-            """,
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            FROM "{physicalSchema}"."School" school
+            ORDER BY school."DocumentId";
+            """
         );
 
         return
@@ -1401,23 +1388,20 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     /// <summary>
     /// Reads a document's identity and stamp state. The owning resource root row is the stamp store, so
     /// the read selects across every root the fixture's model set declares (plus dms.Descriptor) keyed by
-    /// DocumentUuid, and joins dms.Document for ResourceKeyId — the one column only that table carries.
+    /// DocumentUuid. There is no ResourceKeyId to cross-check: that column lived only on dms.Document,
+    /// and a row's resource identity is now the table it lives in.
     /// </summary>
-    private async Task<AuthorizationDocumentState> ReadDocumentStateAsync(
-        DocumentUuid documentUuid,
-        short resourceKeyId
-    )
+    private async Task<AuthorizationDocumentState> ReadDocumentStateAsync(DocumentUuid documentUuid)
     {
         var rows = await Database.QueryRowsAsync(
             _documentStateQuery,
             new NpgsqlParameter("documentUuid", documentUuid.Value)
         );
 
-        return rows.Count == 1 && GetRequiredInt16(rows[0], "ResourceKeyId") == resourceKeyId
+        return rows.Count == 1
             ? new AuthorizationDocumentState(
                 GetRequiredInt64(rows[0], "DocumentId"),
                 GetRequiredGuid(rows[0], "DocumentUuid"),
-                GetRequiredInt16(rows[0], "ResourceKeyId"),
                 GetRequiredInt64(rows[0], "ContentVersion"),
                 GetRequiredInt64(rows[0], "IdentityVersion"),
                 GetRequiredDateTime(rows[0], "ContentLastModifiedAt"),
@@ -1425,8 +1409,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 GetRequiredDateTime(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
-                $"Expected one resource-root document row for '{documentUuid.Value}' with resource key "
-                    + $"'{resourceKeyId}', but found {rows.Count}."
+                $"Expected one resource-root document row for '{documentUuid.Value}', but found {rows.Count}."
             );
     }
 
@@ -1492,17 +1475,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
 
         return MappingSet.WritePlansByResource[resource];
-    }
-
-    private short GetCompiledResourceKeyId(string projectEndpointName, string resourceName)
-    {
-        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
-        var resource = new QualifiedResourceName(
-            resourceHandle.ResourceInfo.ProjectName.Value,
-            resourceHandle.ResourceInfo.ResourceName.Value
-        );
-
-        return MappingSet.ResourceKeyIdByResource[resource];
     }
 
     private async Task<long> CountRowsInTableAsync(DbTableName table)
@@ -1682,12 +1654,14 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    // The only caller is MutateAuthorizationRootChildSchoolAsync, so the uuid resolves against that
+    // resource's own root row.
     private async Task<long> GetDocumentIdByUuidAsync(DocumentUuid documentUuid)
     {
         return await Database.ExecuteScalarAsync<long>(
             """
             SELECT "DocumentId"
-            FROM "dms"."Document"
+            FROM "authz"."AuthorizationRootChildResource"
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid.Value)
@@ -1763,9 +1737,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             """
             SELECT descriptor."DocumentId"
             FROM "dms"."Descriptor" descriptor
-            INNER JOIN "dms"."Document" document
-                ON document."DocumentId" = descriptor."DocumentId"
-            WHERE document."ResourceKeyId" = @resourceKeyId
+            WHERE descriptor."ResourceKeyId" = @resourceKeyId
               AND descriptor."Uri" = @uri;
             """,
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
@@ -1773,17 +1745,14 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Reserves a DocumentId for a hand-seeded row. It must come from dms.DocumentIdSequence — the same
+    /// counter the root-table DEFAULT draws from — or a seeded id would collide with the next
+    /// production-created one.
+    /// </summary>
+    private async Task<long> ReserveDocumentIdAsync()
     {
-        return await Database.ExecuteScalarAsync<long>(
-            """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
+        return await Database.ExecuteScalarAsync<long>("""SELECT nextval('"dms"."DocumentIdSequence"');""");
     }
 
     private async Task<long> InsertDescriptorAsync(
@@ -1796,7 +1765,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
 
         await Database.ExecuteNonQueryAsync(
             """
@@ -1864,9 +1833,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
     private static long GetRequiredInt64(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt64(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
-
-    private static short GetRequiredInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
-        Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
     private static int GetRequiredInt32(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt32(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
@@ -1966,8 +1932,11 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         commandText.Contains("\"AuthorizationResult\"", StringComparison.Ordinal)
         && commandText.Contains("AUTH1", StringComparison.Ordinal);
 
+    // The delete is a single statement against the resource root row: it is the only DELETE the
+    // session issues and the only one that projects the deleted DocumentId back.
     private static bool IsPostgresqlDocumentDeleteCommand(string commandText) =>
-        commandText.Contains("DELETE FROM dms.\"Document\"", StringComparison.Ordinal);
+        commandText.Contains("DELETE FROM", StringComparison.Ordinal)
+        && commandText.Contains("RETURNING \"DocumentId\"", StringComparison.Ordinal);
 }
 
 [TestFixture]

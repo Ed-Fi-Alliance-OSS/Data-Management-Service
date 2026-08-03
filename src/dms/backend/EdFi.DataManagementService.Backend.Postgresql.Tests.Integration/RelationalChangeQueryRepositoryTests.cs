@@ -37,7 +37,7 @@ public abstract class RelationalChangeQueryRepositoryTestBase
     protected static IChangeQueryRepository CreateRepository()
     {
         var commandExecutor = new PostgresqlRelationalCommandExecutor(
-            static async ct => await Uuidv5ParityTestBase.DataSource.OpenConnectionAsync(ct),
+            static async ct => await DatabaseSetupFixture.DataSource.OpenConnectionAsync(ct),
             NullLogger<PostgresqlRelationalCommandExecutor>.Instance
         );
 
@@ -402,10 +402,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
             ProgramTypeDescriptorCodeValue,
             ProgramTypeDescriptorCodeValue
         );
-        long programDocumentId = await InsertDocumentAsync(
-            ProgramDocumentUuid.Value,
-            await GetResourceKeyIdAsync("Ed-Fi", "Program")
-        );
+        long programDocumentId = await NextDocumentIdAsync();
 
         await InsertProgramRootAsync(programDocumentId, programTypeDescriptorDocumentId, ProgramName);
         await DeleteProgramRootAsync(programDocumentId);
@@ -845,6 +842,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
             """
             INSERT INTO "edfi"."Program" (
                 "DocumentId",
+                "DocumentUuid",
                 "EducationOrganization_DocumentId",
                 "EducationOrganization_EducationOrganizationId",
                 "ProgramTypeDescriptor_DescriptorId",
@@ -852,6 +850,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @schoolDocumentId,
                 @schoolId,
                 @programTypeDescriptorDocumentId,
@@ -859,6 +858,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
             );
             """,
             new NpgsqlParameter("documentId", programDocumentId),
+            new NpgsqlParameter("documentUuid", ProgramDocumentUuid.Value),
             new NpgsqlParameter("schoolDocumentId", await GetSchoolDocumentIdAsync()),
             new NpgsqlParameter("schoolId", SchoolId),
             new NpgsqlParameter("programTypeDescriptorDocumentId", programTypeDescriptorDocumentId),
@@ -927,16 +927,17 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Mints the next DocumentId from the sequence the resource root tables and
+    /// <c>dms.Descriptor</c> draw their DEFAULT from, so a seeded row can never collide with a
+    /// production-created one.
+    /// </summary>
+    private async Task<long> NextDocumentIdAsync()
     {
         return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            SELECT nextval('"dms"."DocumentIdSequence"');
+            """
         );
     }
 
@@ -950,7 +951,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         string shortDescription
     )
     {
-        long documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        long documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """

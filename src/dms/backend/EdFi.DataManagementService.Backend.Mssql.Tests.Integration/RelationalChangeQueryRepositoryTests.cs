@@ -38,7 +38,7 @@ public abstract class RelationalChangeQueryRepositoryTestBase
         var commandExecutor = new MssqlRelationalCommandExecutor(
             static async ct =>
             {
-                var connection = new SqlConnection(Uuidv5ParityTestBase.ConnectionString);
+                var connection = new SqlConnection(DatabaseSetupFixture.ConnectionString);
                 await connection.OpenAsync(ct);
                 return connection;
             },
@@ -416,10 +416,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             ProgramTypeDescriptorCodeValue,
             ProgramTypeDescriptorCodeValue
         );
-        long programDocumentId = await InsertDocumentAsync(
-            ProgramDocumentUuid.Value,
-            await GetResourceKeyIdAsync("Ed-Fi", "Program")
-        );
+        long programDocumentId = await NextDocumentIdAsync();
 
         await InsertProgramRootAsync(programDocumentId, programTypeDescriptorDocumentId, ProgramName);
         await DeleteProgramRootAsync(programDocumentId);
@@ -778,7 +775,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         return await _database.ExecuteScalarAsync<long>(
             """
             SELECT [DocumentId]
-            FROM [dms].[Document]
+            FROM [edfi].[AcademicWeek]
             WHERE [DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", AcademicWeekDocumentUuid.Value)
@@ -790,7 +787,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         return await _database.ExecuteScalarAsync<long>(
             """
             SELECT [DocumentId]
-            FROM [dms].[Document]
+            FROM [edfi].[School]
             WHERE [DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", SchoolDocumentUuid.Value)
@@ -814,6 +811,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             """
             INSERT INTO [edfi].[AcademicWeek] (
                 [DocumentId],
+                [DocumentUuid],
                 [School_DocumentId],
                 [School_SchoolId],
                 [BeginDate],
@@ -823,6 +821,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @schoolDocumentId,
                 @schoolId,
                 @beginDate,
@@ -832,6 +831,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             );
             """,
             new SqlParameter("@documentId", academicWeekDocumentId),
+            new SqlParameter("@documentUuid", AcademicWeekDocumentUuid.Value),
             new SqlParameter("@schoolDocumentId", await GetSchoolDocumentIdAsync()),
             new SqlParameter("@schoolId", SchoolId),
             new SqlParameter("@beginDate", new DateTime(2025, 8, 15, 0, 0, 0, DateTimeKind.Unspecified)),
@@ -862,6 +862,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             """
             INSERT INTO [edfi].[Program] (
                 [DocumentId],
+                [DocumentUuid],
                 [EducationOrganization_DocumentId],
                 [EducationOrganization_EducationOrganizationId],
                 [ProgramTypeDescriptor_DescriptorId],
@@ -869,6 +870,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @schoolDocumentId,
                 @schoolId,
                 @programTypeDescriptorDocumentId,
@@ -876,6 +878,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             );
             """,
             new SqlParameter("@documentId", programDocumentId),
+            new SqlParameter("@documentUuid", ProgramDocumentUuid.Value),
             new SqlParameter("@schoolDocumentId", await GetSchoolDocumentIdAsync()),
             new SqlParameter("@schoolId", SchoolId),
             new SqlParameter("@programTypeDescriptorDocumentId", programTypeDescriptorDocumentId),
@@ -944,18 +947,17 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Mints the next DocumentId from the same sequence the resource root tables and
+    /// <c>dms.Descriptor</c> draw their DEFAULT from, so a seeded id can never collide with a
+    /// production-created one.
+    /// </summary>
+    private async Task<long> NextDocumentIdAsync()
     {
         return await _database.ExecuteScalarAsync<long>(
             """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT inserted.[DocumentId] INTO @Inserted ([DocumentId])
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
+            SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];
+            """
         );
     }
 
@@ -969,7 +971,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         string shortDescription
     )
     {
-        long documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        long documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """

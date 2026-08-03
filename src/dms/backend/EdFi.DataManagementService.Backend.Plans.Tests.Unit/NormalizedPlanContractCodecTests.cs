@@ -2516,7 +2516,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                 ),
             ],
             DocumentReferenceLookup: new DocumentReferenceLookupPlan(
-                SelectByKeysetSql: "SELECT d.[DocumentId], d.[DocumentUuid], d.[ResourceKeyId]\nFROM (SELECT r.[School_DocumentId] AS [DocumentId] FROM [edfi].[StudentSchoolAssociation] r UNION SELECT r.[Calendar_DocumentId] AS [DocumentId] FROM [edfi].[StudentSchoolAssociation] r) p\nINNER JOIN [dms].[Document] d ON d.[DocumentId] = p.[DocumentId]\nORDER BY d.[DocumentId] ASC;\n",
+                SelectByKeysetSql: "SELECT d.[DocumentId], d.[DocumentUuid], d.[ResourceKeyId]\nFROM (SELECT r.[School_DocumentId] AS [DocumentId] FROM [edfi].[StudentSchoolAssociation] r UNION SELECT r.[Calendar_DocumentId] AS [DocumentId] FROM [edfi].[StudentSchoolAssociation] r) p\nINNER JOIN [edfi].[School] d ON d.[DocumentId] = p.[DocumentId]\nORDER BY d.[DocumentId] ASC;\n",
                 ResultShape: new DocumentReferenceLookupResultShape(
                     DocumentIdOrdinal: 0,
                     DocumentUuidOrdinal: 1,
@@ -2533,7 +2533,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                         FkColumn: new DbColumnName("Calendar_DocumentId")
                     ),
                 ],
-                SelectBySingleDocumentSql: "SELECT d.[DocumentId], d.[DocumentUuid], d.[ResourceKeyId]\nFROM [dms].[Document] d\nWHERE d.[DocumentId] = @DocumentId\nORDER BY d.[DocumentId] ASC;\n"
+                SelectBySingleDocumentSql: "SELECT d.[DocumentId], d.[DocumentUuid], d.[ResourceKeyId]\nFROM [edfi].[School] d\nWHERE d.[DocumentId] = @DocumentId\nORDER BY d.[DocumentId] ASC;\n"
             )
         );
     }

@@ -355,8 +355,7 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
             """
             SELECT i."ProfileSeparateTableMergeItemId", i."DisplayName", i."DocumentId"
             FROM "edfi"."ProfileSeparateTableMergeItem" i
-            INNER JOIN "dms"."Document" d ON d."DocumentId" = i."DocumentId"
-            WHERE d."DocumentUuid" = @documentUuid;
+            WHERE i."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid.Value)
         );
@@ -430,20 +429,17 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
         );
     }
 
-    public static async Task<long> InsertDocumentRowAsync(
-        PostgresqlGeneratedDdlTestDatabase database,
-        Guid documentUuid,
-        short resourceKeyId
-    )
+    /// <summary>
+    /// Mints the next DocumentId from the same sequence the resource root tables and
+    /// <c>dms.Descriptor</c> draw their DEFAULT from, so a seeded row can never collide with a
+    /// production-created one.
+    /// </summary>
+    public static async Task<long> NextDocumentIdAsync(PostgresqlGeneratedDdlTestDatabase database)
     {
         return await database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            SELECT nextval('"dms"."DocumentIdSequence"');
+            """
         );
     }
 
@@ -456,7 +452,7 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "SchoolTypeDescriptor");
-        var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync(database);
         var uri = $"{@namespace}#{codeValue}";
         const string discriminator = "SchoolTypeDescriptor";
         await database.ExecuteNonQueryAsync(

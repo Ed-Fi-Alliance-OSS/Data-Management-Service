@@ -70,8 +70,8 @@ public interface IRelationalWriteTargetLookupResolver
     /// <remarks>
     /// Reference-sourced natural-key parts bind the <c>DocumentId</c> of the already-resolved reference,
     /// so this probe can only run <b>after</b> reference resolution inside the same write session. The
-    /// returned <c>DocumentUuid</c>/<c>ContentVersion</c> come from the root row's trigger-maintained
-    /// mirrors, which are in-transaction consistent with <c>dms.Document</c>.
+    /// returned <c>DocumentUuid</c>/<c>ContentVersion</c> come from the root row's own
+    /// trigger-maintained document metadata.
     /// </remarks>
     Task<RelationalWriteTargetLookupResult> TryResolveByNaturalKeyAsync(
         MappingSet mappingSet,

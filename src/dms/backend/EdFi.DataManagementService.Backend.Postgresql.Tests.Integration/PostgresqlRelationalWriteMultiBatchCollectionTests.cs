@@ -32,7 +32,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 internal sealed record MultiBatchCollectionPersistedDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
-    short ResourceKeyId,
     long ContentVersion
 );
 
@@ -355,9 +354,8 @@ file static class MultiBatchCollectionsIntegrationTestSupport
     {
         var rows = await database.QueryRowsAsync(
             """
-            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            SELECT root."DocumentId", root."DocumentUuid", root."ContentVersion"
             FROM "edfi"."School" root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -367,7 +365,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             ? new MultiBatchCollectionPersistedDocumentRow(
                 GetInt64(rows[0], "DocumentId"),
                 GetGuid(rows[0], "DocumentUuid"),
-                GetInt16(rows[0], "ResourceKeyId"),
                 GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
@@ -447,9 +444,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             ))
             .ToArray();
     }
-
-    private static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
-        Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
     private static int GetInt32(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt32(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
@@ -584,13 +578,6 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Create_W
         _result.As<UpsertResult.InsertSuccess>().NewDocumentUuid.Should().Be(SchoolDocumentUuid);
 
         _persistedState.Document.DocumentUuid.Should().Be(SchoolDocumentUuid.Value);
-        _persistedState
-            .Document.ResourceKeyId.Should()
-            .Be(
-                _mappingSet.ResourceKeyIdByResource[
-                    MultiBatchCollectionsIntegrationTestSupport.SchoolResource
-                ]
-            );
         _persistedState
             .School.Should()
             .Be(

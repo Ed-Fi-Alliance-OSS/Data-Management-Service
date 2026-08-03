@@ -17,7 +17,6 @@ internal sealed record MssqlGeneratedDdlBaselineCounts(
 );
 
 internal sealed record MssqlGeneratedDdlMutableCounts(
-    long DocumentCount,
     long ContactCount,
     long ContactExtensionCount,
     long ContactExtensionAuthorCount,
@@ -111,7 +110,7 @@ public class Given_MssqlGeneratedDdlTestDatabase
             "A"
         );
 
-        resetMutableCounts.Should().Be(new MssqlGeneratedDdlMutableCounts(0, 0, 0, 0, 0));
+        resetMutableCounts.Should().Be(new MssqlGeneratedDdlMutableCounts(0, 0, 0, 0));
         resetBaselineCounts.Should().Be(baselineCounts);
         resetIntegrityState.DisabledForeignKeyCount.Should().Be(0);
         resetIntegrityState.UntrustedForeignKeyCount.Should().Be(0);
@@ -198,8 +197,8 @@ public class Given_MssqlGeneratedDdlTestDatabase
 
     private async Task<MssqlGeneratedDdlMutableCounts> ReadMutableCountsAsync()
     {
+        // edfi.Contact is the Contact document's root row, so counting it is the document count.
         return new(
-            await ReadTableCountAsync("[dms].[Document]"),
             await ReadTableCountAsync("[edfi].[Contact]"),
             await ReadTableCountAsync("[sample].[ContactExtension]"),
             await ReadTableCountAsync("[sample].[ContactExtensionAuthor]"),
@@ -217,30 +216,23 @@ public class Given_MssqlGeneratedDdlTestDatabase
         string contactUniqueId
     )
     {
-        var resourceKeyId = await _database.ExecuteScalarAsync<short>(
-            """
-            SELECT [ResourceKeyId]
-            FROM [dms].[ResourceKey]
-            WHERE [ProjectName] = @projectName
-              AND [ResourceName] = @resourceName;
-            """,
-            new SqlParameter("@projectName", "Ed-Fi"),
-            new SqlParameter("@resourceName", "Contact")
-        );
-
+        // The root row is the document: DocumentId comes from its dms.DocumentIdSequence default and
+        // the stamping trigger writes ContentVersion / IdentityVersion onto the same row.
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            VALUES (@documentUuid, @resourceKeyId);
+            INSERT INTO [edfi].[Contact] ([DocumentUuid], [ContactUniqueId], [FirstName], [LastSurname])
+            VALUES (@documentUuid, @contactUniqueId, @firstName, @lastSurname);
             """,
             new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
+            new SqlParameter("@contactUniqueId", contactUniqueId),
+            new SqlParameter("@firstName", "Test"),
+            new SqlParameter("@lastSurname", "Contact")
         );
 
         var documentRows = await _database.QueryRowsAsync(
             """
             SELECT [DocumentId], [ContentVersion], [IdentityVersion]
-            FROM [dms].[Document]
+            FROM [edfi].[Contact]
             WHERE [DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid)
@@ -250,19 +242,6 @@ public class Given_MssqlGeneratedDdlTestDatabase
             Convert.ToInt64(documentRow["DocumentId"]),
             Convert.ToInt64(documentRow["ContentVersion"]),
             Convert.ToInt64(documentRow["IdentityVersion"])
-        );
-
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO [edfi].[Contact] ([DocumentId], [DocumentUuid], [ContactUniqueId], [FirstName], [LastSurname])
-            SELECT @documentId, document.[DocumentUuid], @contactUniqueId, @firstName, @lastSurname
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
-            """,
-            new SqlParameter("@documentId", documentState.DocumentId),
-            new SqlParameter("@contactUniqueId", contactUniqueId),
-            new SqlParameter("@firstName", "Test"),
-            new SqlParameter("@lastSurname", "Contact")
         );
 
         await _database.ExecuteNonQueryAsync(

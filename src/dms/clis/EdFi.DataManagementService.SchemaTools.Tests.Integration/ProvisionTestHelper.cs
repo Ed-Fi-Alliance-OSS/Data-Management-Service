@@ -20,13 +20,10 @@ internal static partial class ProvisionTestHelper
 {
     internal static readonly string[] ExpectedCoreTables =
     [
-        "Document",
         "ResourceKey",
         "Descriptor",
-        "ReferentialIdentity",
         "EffectiveSchema",
         "SchemaComponent",
-        "DocumentCache",
     ];
 
     internal static (int ExitCode, string Output, string Error) RunProvision(

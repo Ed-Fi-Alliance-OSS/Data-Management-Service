@@ -13,8 +13,8 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// <summary>
 /// Behavior of the no-tombstone variant of <c>TR_Descriptor_Stamp_Document</c> (the
 /// <c>small/minimal</c> fixture carries no shared descriptor tracked-change table). The descriptor row
-/// is the authoritative stamp store: the trigger writes <c>dms.Descriptor</c>'s own columns and never
-/// touches <c>dms.Document</c>.
+/// is the document and the authoritative stamp store: the trigger writes <c>dms.Descriptor</c>'s own
+/// columns.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -60,7 +60,6 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         await _database.ExecuteNonQueryAsync(
             """
             DELETE FROM [dms].[Descriptor];
-            DELETE FROM [dms].[Document];
             """
         );
     }
@@ -79,27 +78,20 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         string codeValue = "Female"
     )
     {
-        var documentId = await InsertDocumentAsync();
+        var documentId = await NextDocumentIdAsync();
         await InsertDescriptorAsync(documentId, shortDescription, codeValue);
 
         return (documentId, await ReadDescriptorContentStampAsync(documentId));
     }
 
-    private async Task<long> InsertDocumentAsync()
+    /// <summary>
+    /// Draws the next <c>DocumentId</c> from <c>dms.DocumentIdSequence</c> — the same counter the
+    /// <c>dms.Descriptor.DocumentId</c> column default draws from, so a seeded id can never collide
+    /// with one a production write allocates.
+    /// </summary>
+    private async Task<long> NextDocumentIdAsync()
     {
-        var resourceKeyId = await _database.ExecuteScalarAsync<short>(
-            "SELECT MIN(ResourceKeyId) FROM [dms].[ResourceKey];"
-        );
-
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            INSERT INTO [dms].[Document] (DocumentUuid, ResourceKeyId)
-            VALUES (@uuid, @resourceKeyId);
-            SELECT SCOPE_IDENTITY();
-            """,
-            new SqlParameter("@uuid", Guid.NewGuid()),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
+        return await _database.ExecuteScalarAsync<long>("SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];");
     }
 
     private async Task InsertDescriptorAsync(
@@ -124,16 +116,6 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
             new SqlParameter("@description", codeValue),
             new SqlParameter("@discriminator", uriOrDiscriminator),
             new SqlParameter("@uri", uriOrDiscriminator)
-        );
-    }
-
-    private async Task<StampValues> ReadDocumentStampAsync(long documentId)
-    {
-        return await ReadStampAsync(
-            "[dms].[Document]",
-            "ContentVersion",
-            "ContentLastModifiedAt",
-            documentId
         );
     }
 
@@ -197,8 +179,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         // A new descriptor row has no prior stamp to preserve, so the pure-insert workset takes the
         // identity stamp alongside the content stamp — two sequence values, both landing on the
         // descriptor row.
-        var documentId = await InsertDocumentAsync();
-        var beforeDocument = await ReadDocumentStampAsync(documentId);
+        var documentId = await NextDocumentIdAsync();
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
 
         await InsertDescriptorAsync(documentId);
@@ -217,9 +198,6 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(1L, "a descriptor insert stamps both pairs from one NEXT VALUE FOR evaluation");
-        (await ReadDocumentStampAsync(documentId))
-            .Should()
-            .Be(beforeDocument, "no trigger writes dms.Document any more");
     }
 
     [Test]
@@ -228,7 +206,6 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         // The descriptor row is the stamp store and it is the row going away, so the no-tombstone
         // variant leaves pure deletes out of every stamp workset.
         var seed = await SeedAsync();
-        var beforeDocument = await ReadDocumentStampAsync(seed.DocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
 
         await _database.ExecuteNonQueryAsync(
@@ -240,14 +217,12 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         );
 
         (await ReadMaxChangeVersionAsync()).Should().Be(beforeMaxChangeVersion);
-        (await ReadDocumentStampAsync(seed.DocumentId)).Should().Be(beforeDocument);
     }
 
     [Test]
     public async Task It_stamps_the_descriptor_row_on_descriptor_value_change()
     {
         var seed = await SeedAsync();
-        var beforeDocument = await ReadDocumentStampAsync(seed.DocumentId);
         var beforeIdentity = await ReadDescriptorIdentityStampAsync(seed.DocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
         await DelayForDistinctTimestampsAsync();
@@ -271,7 +246,6 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         (await ReadDescriptorIdentityStampAsync(seed.DocumentId))
             .Should()
             .Be(beforeIdentity, "a content change must not bump the identity stamp");
-        (await ReadDocumentStampAsync(seed.DocumentId)).Should().Be(beforeDocument);
     }
 
     [Test]

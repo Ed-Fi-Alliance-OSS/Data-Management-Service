@@ -19,7 +19,6 @@ public sealed partial class MssqlReferenceResolverTestDatabase : IAsyncDisposabl
     private static readonly MssqlDialect _dialect = new(new MssqlDialectRules());
     private static readonly string _coreDdl = new CoreDdlEmitter(_dialect).Emit();
     private static readonly string _resetSql = MssqlDatabaseResetSql.Build();
-    private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
     private bool _disposed;
 
     private MssqlReferenceResolverTestDatabase(
@@ -232,14 +231,9 @@ public sealed partial class MssqlReferenceResolverTestDatabase : IAsyncDisposabl
             VALUES {string.Join(", ", valueRows)};
             """;
 
-        command.CommandText =
-            batch.Table == _documentTable
-                ? $"""
-                    SET IDENTITY_INSERT {quotedTableName} ON;
-                    {insertSql}
-                    SET IDENTITY_INSERT {quotedTableName} OFF;
-                    """
-                : insertSql;
+        // No seeded table carries an IDENTITY column any more: DocumentId comes from
+        // dms.DocumentIdSequence through a column DEFAULT that the seed simply overrides.
+        command.CommandText = insertSql;
 
         return command;
     }

@@ -104,9 +104,6 @@ file static class AuthoritativeSampleSurveyQuestionIntegrationTestSupport
             mappingSet
         );
 
-    public static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
-        Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
-
     public static int GetInt32(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt32(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
@@ -166,7 +163,6 @@ internal sealed record AuthoritativeSampleSurveyQuestionSeedData(
 internal sealed record AuthoritativeSampleSurveyQuestionDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
-    short ResourceKeyId,
     long ContentVersion
 );
 
@@ -431,9 +427,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         _createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         _stateAfterCreate.Document.DocumentUuid.Should().Be(SurveyQuestionDocumentUuid.Value);
-        _stateAfterCreate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[new QualifiedResourceName("Ed-Fi", "SurveyQuestion")]);
         _stateAfterCreate
             .SurveyQuestion.Should()
             .Be(
@@ -715,9 +708,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 
     private async Task<AuthoritativeSampleSurveyQuestionSeedData> SeedReferenceDataAsync()
     {
-        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var surveyResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Survey");
-        var surveySectionResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SurveySection");
         var questionFormDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "QuestionFormDescriptor"
@@ -733,30 +723,24 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             "Matrix"
         );
 
-        var schoolYearTypeDocumentId = await InsertDocumentAsync(
+        // Each seeded resource root row is its own document: the root INSERT hands back the
+        // DocumentId its DEFAULT drew from dms.DocumentIdSequence.
+        var schoolYearTypeDocumentId = await InsertSchoolYearTypeAsync(
             Guid.Parse("22222222-0000-0000-0000-000000000001"),
-            schoolYearTypeResourceKeyId
+            SchoolYear,
+            SchoolYearDescription
         );
-        await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, SchoolYear, SchoolYearDescription);
 
-        var surveyDocumentId = await InsertDocumentAsync(
+        var surveyDocumentId = await InsertSurveyAsync(
             Guid.Parse("33333333-0000-0000-0000-000000000001"),
-            surveyResourceKeyId
-        );
-        await InsertSurveyAsync(
-            surveyDocumentId,
             schoolYearTypeDocumentId,
             SurveyNamespace,
             SurveyIdentifier,
             SurveyTitle
         );
 
-        var surveySectionDocumentId = await InsertDocumentAsync(
+        var surveySectionDocumentId = await InsertSurveySectionAsync(
             Guid.Parse("44444444-0000-0000-0000-000000000001"),
-            surveySectionResourceKeyId
-        );
-        await InsertSurveySectionAsync(
-            surveySectionDocumentId,
             surveyDocumentId,
             SurveyNamespace,
             SurveyIdentifier,
@@ -808,19 +792,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
-    {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
     private async Task<long> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
@@ -831,12 +802,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
-
-        await _database.ExecuteNonQueryAsync(
+        // dms.Descriptor is the descriptor's document row and originates its own DocumentId.
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "dms"."Descriptor" (
-                "DocumentId",
                 "DocumentUuid",
                 "ResourceKeyId",
                 "Namespace",
@@ -847,7 +816,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "Uri"
             )
             VALUES (
-                @documentId,
                 @documentUuid,
                 @resourceKeyId,
                 @namespace,
@@ -856,9 +824,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 @description,
                 @discriminator,
                 @uri
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
@@ -868,53 +836,49 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             new NpgsqlParameter("discriminator", discriminator),
             new NpgsqlParameter("uri", uri)
         );
-
-        return documentId;
     }
 
-    private async Task InsertSchoolYearTypeAsync(
-        long documentId,
+    private async Task<long> InsertSchoolYearTypeAsync(
+        Guid documentUuid,
         int schoolYear,
         string schoolYearDescription
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "edfi"."SchoolYearType" (
-                "DocumentId",
                 "DocumentUuid",
                 "CurrentSchoolYear",
                 "SchoolYear",
                 "SchoolYearDescription"
             )
-            SELECT
-                @documentId,
-                document."DocumentUuid",
+            VALUES (
+                @documentUuid,
                 @currentSchoolYear,
                 @schoolYear,
                 @schoolYearDescription
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("currentSchoolYear", true),
             new NpgsqlParameter("schoolYear", schoolYear),
             new NpgsqlParameter("schoolYearDescription", schoolYearDescription)
         );
     }
 
-    private async Task InsertSurveyAsync(
-        long documentId,
+    private async Task<long> InsertSurveyAsync(
+        Guid documentUuid,
         long schoolYearTypeDocumentId,
         string surveyNamespace,
         string surveyIdentifier,
         string surveyTitle
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "edfi"."Survey" (
-                "DocumentId",
+                "DocumentUuid",
                 "SchoolYear_Unified",
                 "SchoolYear_DocumentId",
                 "Namespace",
@@ -922,15 +886,16 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "SurveyTitle"
             )
             VALUES (
-                @documentId,
+                @documentUuid,
                 @schoolYear,
                 @schoolYearDocumentId,
                 @namespace,
                 @surveyIdentifier,
                 @surveyTitle
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("schoolYear", SchoolYear),
             new NpgsqlParameter("schoolYearDocumentId", schoolYearTypeDocumentId),
             new NpgsqlParameter("namespace", surveyNamespace),
@@ -939,32 +904,33 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    private async Task InsertSurveySectionAsync(
-        long documentId,
+    private async Task<long> InsertSurveySectionAsync(
+        Guid documentUuid,
         long surveyDocumentId,
         string surveyNamespace,
         string surveyIdentifier,
         string surveySectionTitle
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "edfi"."SurveySection" (
-                "DocumentId",
+                "DocumentUuid",
                 "Survey_DocumentId",
                 "Survey_Namespace",
                 "Survey_SurveyIdentifier",
                 "SurveySectionTitle"
             )
             VALUES (
-                @documentId,
+                @documentUuid,
                 @surveyDocumentId,
                 @surveyNamespace,
                 @surveyIdentifier,
                 @surveySectionTitle
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("surveyDocumentId", surveyDocumentId),
             new NpgsqlParameter("surveyNamespace", surveyNamespace),
             new NpgsqlParameter("surveyIdentifier", surveyIdentifier),
@@ -990,9 +956,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            SELECT root."DocumentId", root."DocumentUuid", root."ContentVersion"
             FROM "edfi"."SurveyQuestion" root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -1002,7 +967,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             ? new AuthoritativeSampleSurveyQuestionDocumentRow(
                 AuthoritativeSampleSurveyQuestionIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 AuthoritativeSampleSurveyQuestionIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
-                AuthoritativeSampleSurveyQuestionIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 AuthoritativeSampleSurveyQuestionIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(

@@ -554,12 +554,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     [Test]
     public async Task It_should_stamp_root_extension_inserts_without_touching_identity_stamps()
     {
-        var contactResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Contact");
-        var documentId = await InsertDocumentAsync(
-            Guid.Parse("12121212-1212-1212-1212-121212121212"),
-            contactResourceKeyId
-        );
-        await InsertContactAsync(documentId, "10003", "Taylor", "Reed");
+        var documentUuid = Guid.Parse("12121212-1212-1212-1212-121212121212");
+        var documentId = await ReserveDocumentIdAsync();
+        await InsertContactAsync(documentId, documentUuid, "10003", "Taylor", "Reed");
 
         var before = await GetDocumentStampStateAsync(documentId);
 
@@ -674,15 +671,13 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     [Test]
     public async Task It_should_not_stamp_identity_for_content_only_updates_on_identity_propagation_tables()
     {
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var schoolDocumentId = await InsertDocumentAsync(
-            Guid.Parse("23232323-2323-2323-2323-232323232323"),
-            schoolResourceKeyId
-        );
+        var schoolDocumentUuid = Guid.Parse("23232323-2323-2323-2323-232323232323");
+        var schoolDocumentId = await ReserveDocumentIdAsync();
         await _database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "School",
-            async () => await InsertSchoolAsync(schoolDocumentId, 101, "North Ridge High"),
+            async () =>
+                await InsertSchoolAsync(schoolDocumentId, schoolDocumentUuid, 101, "North Ridge High"),
             mirrorMetadataForDocumentId: schoolDocumentId
         );
 
@@ -938,17 +933,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     [Test]
     public async Task It_should_stamp_extension_project_root_resource_rows_across_every_write_path()
     {
-        var busResourceKeyId = await GetResourceKeyIdAsync("Sample", "Bus");
-        var busDocumentId = await InsertDocumentAsync(
-            Guid.Parse("abababab-abab-abab-abab-abababababab"),
-            busResourceKeyId
-        );
+        var busDocumentUuid = Guid.Parse("abababab-abab-abab-abab-abababababab");
+        var busDocumentId = await ReserveDocumentIdAsync();
         var beforeInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
         var initialBusId = $"BUS-{busDocumentId}-001";
         var updatedBusId = $"BUS-{busDocumentId}-002";
 
         await DelayForDistinctTimestampsAsync();
-        await InsertBusAsync(busDocumentId, initialBusId);
+        await InsertBusAsync(busDocumentId, busDocumentUuid, initialBusId);
 
         // The root row is the stamp store, so it only exists to be read once the insert lands. A new
         // row has no prior stamp to preserve, so the INSERT branch allocates both the content and the
@@ -1010,13 +1002,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     [Test]
     public async Task It_should_not_stamp_document_or_track_changes_for_direct_root_stamp_only_updates()
     {
-        var busResourceKeyId = await GetResourceKeyIdAsync("Sample", "Bus");
-        var busDocumentId = await InsertDocumentAsync(
-            Guid.Parse("bcbcbcbc-bcbc-bcbc-bcbc-bcbcbcbcbcbc"),
-            busResourceKeyId
-        );
+        var busDocumentUuid = Guid.Parse("bcbcbcbc-bcbc-bcbc-bcbc-bcbcbcbcbcbc");
+        var busDocumentId = await ReserveDocumentIdAsync();
 
-        await InsertBusAsync(busDocumentId, $"BUS-{busDocumentId}-STAMP-ONLY");
+        await InsertBusAsync(busDocumentId, busDocumentUuid, $"BUS-{busDocumentId}-STAMP-ONLY");
 
         var beforeDocument = await GetDocumentStampStateAsync(busDocumentId);
         var beforeMirror = await GetRootMirrorStampStateAsync("sample", "Bus", busDocumentId);
@@ -1197,7 +1186,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         const string GradingPeriodDescriptorNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";
         const string GradingPeriodDescriptorCodeValue = "FirstSixWeeks";
 
-        var gradingPeriodResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GradingPeriod");
         var gradingPeriodDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "GradingPeriodDescriptor"
@@ -1226,12 +1214,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var firstGradingPeriodDocumentUuid = Guid.Parse("d3d3d3d3-d3d3-d3d3-d3d3-d3d3d3d3d3d3");
-        var firstGradingPeriodDocumentId = await InsertDocumentAsync(
-            firstGradingPeriodDocumentUuid,
-            gradingPeriodResourceKeyId
-        );
+        var firstGradingPeriodDocumentId = await ReserveDocumentIdAsync();
         await InsertGradingPeriodAsync(
             firstGradingPeriodDocumentId,
+            firstGradingPeriodDocumentUuid,
             schoolYearTypeDocumentId,
             SchoolYear,
             _seedData.SchoolDocumentId,
@@ -1241,12 +1227,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var secondGradingPeriodDocumentUuid = Guid.Parse("d4d4d4d4-d4d4-d4d4-d4d4-d4d4d4d4d4d4");
-        var secondGradingPeriodDocumentId = await InsertDocumentAsync(
-            secondGradingPeriodDocumentUuid,
-            gradingPeriodResourceKeyId
-        );
+        var secondGradingPeriodDocumentId = await ReserveDocumentIdAsync();
         await InsertGradingPeriodAsync(
             secondGradingPeriodDocumentId,
+            secondGradingPeriodDocumentUuid,
             schoolYearTypeDocumentId,
             SchoolYear,
             _seedData.SchoolDocumentId,
@@ -1335,7 +1319,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         const string GradingPeriodDescriptorNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";
         const string GradingPeriodDescriptorCodeValue = "SecondSixWeeks";
 
-        var gradingPeriodResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GradingPeriod");
         var gradingPeriodDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "GradingPeriodDescriptor"
@@ -1358,9 +1341,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var changedDocumentUuid = Guid.Parse("d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6");
-        var changedDocumentId = await InsertDocumentAsync(changedDocumentUuid, gradingPeriodResourceKeyId);
+        var changedDocumentId = await ReserveDocumentIdAsync();
         await InsertGradingPeriodAsync(
             changedDocumentId,
+            changedDocumentUuid,
             schoolYearTypeDocumentId,
             SchoolYear,
             _seedData.SchoolDocumentId,
@@ -1370,12 +1354,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var unchangedDocumentUuid = Guid.Parse("d7d7d7d7-d7d7-d7d7-d7d7-d7d7d7d7d7d7");
-        var unchangedDocumentId = await InsertDocumentAsync(
-            unchangedDocumentUuid,
-            gradingPeriodResourceKeyId
-        );
+        var unchangedDocumentId = await ReserveDocumentIdAsync();
         await InsertGradingPeriodAsync(
             unchangedDocumentId,
+            unchangedDocumentUuid,
             schoolYearTypeDocumentId,
             SchoolYear,
             _seedData.SchoolDocumentId,
@@ -1438,7 +1420,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         const int SchoolYear = 2025;
         const string DescriptorNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";
 
-        var gradingPeriodResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GradingPeriod");
         var gradingPeriodDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "GradingPeriodDescriptor"
@@ -1470,12 +1451,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var gradingPeriodDocumentUuid = Guid.Parse("e7e7e7e7-e7e7-e7e7-e7e7-e7e7e7e7e7e7");
-        var gradingPeriodDocumentId = await InsertDocumentAsync(
-            gradingPeriodDocumentUuid,
-            gradingPeriodResourceKeyId
-        );
+        var gradingPeriodDocumentId = await ReserveDocumentIdAsync();
         await InsertGradingPeriodAsync(
             gradingPeriodDocumentId,
+            gradingPeriodDocumentUuid,
             schoolYearTypeDocumentId,
             SchoolYear,
             _seedData.SchoolDocumentId,
@@ -1541,34 +1520,25 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         const string AssessmentIdentifier = "ASMT-NULLT-001";
         const string StudentUniqueId = "20001";
 
-        var assessmentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Assessment");
-        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
-        var studentAssessmentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StudentAssessment");
-
-        var assessmentDocumentId = await InsertDocumentAsync(
-            Guid.Parse("b5b5b5b5-b5b5-b5b5-b5b5-b5b5b5b5b5b5"),
-            assessmentResourceKeyId
-        );
+        var assessmentDocumentUuid = Guid.Parse("b5b5b5b5-b5b5-b5b5-b5b5-b5b5b5b5b5b5");
+        var assessmentDocumentId = await ReserveDocumentIdAsync();
         await InsertAssessmentAsync(
             assessmentDocumentId,
+            assessmentDocumentUuid,
             AssessmentIdentifier,
             "Null Transition Assessment",
             AssessmentNamespace
         );
 
-        var studentDocumentId = await InsertDocumentAsync(
-            Guid.Parse("b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6"),
-            studentResourceKeyId
-        );
-        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Nola", "Vale");
+        var studentDocumentUuid = Guid.Parse("b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6");
+        var studentDocumentId = await ReserveDocumentIdAsync();
+        await InsertStudentAsync(studentDocumentId, studentDocumentUuid, StudentUniqueId, "Nola", "Vale");
 
         var studentAssessmentDocumentUuid = Guid.Parse("b7b7b7b7-b7b7-b7b7-b7b7-b7b7b7b7b7b7");
-        var studentAssessmentDocumentId = await InsertDocumentAsync(
-            studentAssessmentDocumentUuid,
-            studentAssessmentResourceKeyId
-        );
+        var studentAssessmentDocumentId = await ReserveDocumentIdAsync();
         await InsertStudentAssessmentAsync(
             studentAssessmentDocumentId,
+            studentAssessmentDocumentUuid,
             assessmentDocumentId,
             AssessmentIdentifier,
             AssessmentNamespace,
@@ -1641,38 +1611,31 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         const string ReplacementAssessmentIdentifier = "ASMT-002";
         const string ScoreRangeId = "SR-001";
 
-        var assessmentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Assessment");
-        var scoreRangeResourceKeyId = await GetResourceKeyIdAsync(
-            "Ed-Fi",
-            "AssessmentScoreRangeLearningStandard"
-        );
-
-        var originalAssessmentDocumentId = await InsertDocumentAsync(
-            Guid.Parse("e1e1e1e1-e1e1-e1e1-e1e1-e1e1e1e1e1e1"),
-            assessmentResourceKeyId
-        );
+        var originalAssessmentDocumentUuid = Guid.Parse("e1e1e1e1-e1e1-e1e1-e1e1-e1e1e1e1e1e1");
+        var originalAssessmentDocumentId = await ReserveDocumentIdAsync();
         await InsertAssessmentAsync(
             originalAssessmentDocumentId,
+            originalAssessmentDocumentUuid,
             OriginalAssessmentIdentifier,
             "Original Assessment",
             AssessmentNamespace
         );
 
-        var replacementAssessmentDocumentId = await InsertDocumentAsync(
-            Guid.Parse("e2e2e2e2-e2e2-e2e2-e2e2-e2e2e2e2e2e2"),
-            assessmentResourceKeyId
-        );
+        var replacementAssessmentDocumentUuid = Guid.Parse("e2e2e2e2-e2e2-e2e2-e2e2-e2e2e2e2e2e2");
+        var replacementAssessmentDocumentId = await ReserveDocumentIdAsync();
         await InsertAssessmentAsync(
             replacementAssessmentDocumentId,
+            replacementAssessmentDocumentUuid,
             ReplacementAssessmentIdentifier,
             "Replacement Assessment",
             AssessmentNamespace
         );
 
         var scoreRangeDocumentUuid = Guid.Parse("e3e3e3e3-e3e3-e3e3-e3e3-e3e3e3e3e3e3");
-        var scoreRangeDocumentId = await InsertDocumentAsync(scoreRangeDocumentUuid, scoreRangeResourceKeyId);
+        var scoreRangeDocumentId = await ReserveDocumentIdAsync();
         await InsertAssessmentScoreRangeLearningStandardAsync(
             scoreRangeDocumentId,
+            scoreRangeDocumentUuid,
             OriginalAssessmentIdentifier,
             AssessmentNamespace,
             originalAssessmentDocumentId,
@@ -1742,9 +1705,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var seed = await SeedKeyChangeStudentEducationOrganizationAssociationAsync();
         var before = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
 
-        // DMS-1180 two-statement order, statement 1: delete the resource row while the
-        // dms.Document row still exists, so the stamping trigger can read the doc-stamp
-        // linkage for the tombstone.
+        // The resource root row IS the document, so one DELETE retires the whole document and
+        // fires the stamping trigger's delete branch.
         await DelayForDistinctTimestampsAsync();
         var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
             "DELETE FROM [edfi].[StudentEducationOrganizationAssociation] WHERE [DocumentId] = @documentId;",
@@ -1752,7 +1714,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
         resourceRowsAffected.Should().Be(1);
 
-        (await CountDocumentRowsAsync(seed.AssociationDocumentId)).Should().Be(1);
+        (
+            await CountRowsAsync(
+                "SELECT COUNT(*) FROM [edfi].[StudentEducationOrganizationAssociation] WHERE [DocumentId] = @documentId;",
+                new SqlParameter("@documentId", seed.AssociationDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
 
         (
             await CountTrackedChangeRowsAsync(
@@ -1775,10 +1744,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         // The delete branch takes the tombstone's ChangeVersion straight from
-        // dms.ChangeVersionSequence instead of stamping dms.Document and reading it back, so the
-        // tombstone stays post-delete and monotonic without depending on the dms.Document row
-        // still being there: it is the last change version this delete allocated, and the
-        // dms.Document stamp the second statement removes never overtakes it.
+        // dms.ChangeVersionSequence rather than stamping the row it is deleting and reading the
+        // stamp back, so the tombstone stays post-delete and monotonic: it is the last change
+        // version this delete allocated.
         tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
         trackedRow["Id"].Should().Be(seed.AssociationDocumentUuid);
@@ -1796,23 +1764,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             .Be(seed.StudentDocumentId);
         AssertAllNewColumnsAreNull(trackedRow);
 
-        // Statement 2: delete the dms.Document row.
-        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
-            "DELETE FROM [dms].[Document] WHERE [DocumentId] = @documentId;",
-            new SqlParameter("@documentId", seed.AssociationDocumentId)
-        );
-        documentRowsAffected.Should().Be(1);
-
-        (await CountDocumentRowsAsync(seed.AssociationDocumentId)).Should().Be(0);
-        (
-            await CountTrackedChangeRowsAsync(
-                "tracked_changes_edfi",
-                "StudentEducationOrganizationAssociation",
-                seed.AssociationDocumentUuid
-            )
-        )
-            .Should()
-            .Be(1);
+        // No later visible tracked row may advance an extraction watermark past the tombstone.
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "StudentEducationOrganizationAssociation",
@@ -1841,8 +1793,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
         var before = await GetDocumentStampStateAsync(descriptorDocumentId);
 
-        // Statement 1: delete the shared descriptor row while the dms.Document row
-        // still exists.
+        // The dms.Descriptor row IS the descriptor document, so one DELETE retires it.
         await DelayForDistinctTimestampsAsync();
         var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
             "DELETE FROM [dms].[Descriptor] WHERE [DocumentId] = @documentId;",
@@ -1850,7 +1801,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
         resourceRowsAffected.Should().Be(1);
 
-        (await CountDocumentRowsAsync(descriptorDocumentId)).Should().Be(1);
+        (
+            await CountRowsAsync(
+                "SELECT COUNT(*) FROM [dms].[Descriptor] WHERE [DocumentId] = @documentId;",
+                new SqlParameter("@documentId", descriptorDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Descriptor", descriptorDocumentUuid))
             .Should()
@@ -1867,10 +1825,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         // The delete branch takes the tombstone's ChangeVersion straight from
-        // dms.ChangeVersionSequence instead of stamping dms.Document and reading it back, so the
-        // tombstone stays post-delete and monotonic without depending on the dms.Document row
-        // still being there: it is the last change version this delete allocated, and the
-        // dms.Document stamp the second statement removes never overtakes it.
+        // dms.ChangeVersionSequence rather than stamping the row it is deleting and reading the
+        // stamp back, so the tombstone stays post-delete and monotonic: it is the last change
+        // version this delete allocated.
         tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
         trackedRow["Id"].Should().Be(descriptorDocumentUuid);
@@ -1879,17 +1836,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         trackedRow["OldCodeValue"].Should().Be(DescriptorCodeValue);
         AssertAllNewColumnsAreNull(trackedRow);
 
-        // Statement 2: delete the dms.Document row.
-        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
-            "DELETE FROM [dms].[Document] WHERE [DocumentId] = @documentId;",
-            new SqlParameter("@documentId", descriptorDocumentId)
-        );
-        documentRowsAffected.Should().Be(1);
-
-        (await CountDocumentRowsAsync(descriptorDocumentId)).Should().Be(0);
-        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Descriptor", descriptorDocumentUuid))
-            .Should()
-            .Be(1);
+        // No later visible tracked row may advance an extraction watermark past the tombstone.
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "Descriptor",
@@ -1906,14 +1853,13 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // must dodge the manually planted EducationOrganizationIdentity row for that id).
         const int FreshSchoolId = 400;
 
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         var schoolDocumentUuid = Guid.Parse("f2f2f2f2-f2f2-f2f2-f2f2-f2f2f2f2f2f2");
-        var schoolDocumentId = await InsertDocumentAsync(schoolDocumentUuid, schoolResourceKeyId);
-        await InsertSchoolAsync(schoolDocumentId, FreshSchoolId, "Delta Academy");
+        var schoolDocumentId = await ReserveDocumentIdAsync();
+        await InsertSchoolAsync(schoolDocumentId, schoolDocumentUuid, FreshSchoolId, "Delta Academy");
         var before = await GetDocumentStampStateAsync(schoolDocumentId);
 
-        // Statement 1: delete the concrete-abstract resource row while the dms.Document
-        // row still exists. School tombstones into its OWN tracked-change table.
+        // Delete the concrete-abstract resource row, which is the document itself. School
+        // tombstones into its OWN tracked-change table.
         await DelayForDistinctTimestampsAsync();
         var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
             "DELETE FROM [edfi].[School] WHERE [DocumentId] = @documentId;",
@@ -1921,7 +1867,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
         resourceRowsAffected.Should().Be(1);
 
-        (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(1);
+        (
+            await CountRowsAsync(
+                "SELECT COUNT(*) FROM [edfi].[School] WHERE [DocumentId] = @documentId;",
+                new SqlParameter("@documentId", schoolDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
             .Should()
@@ -1938,27 +1891,16 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         // The delete branch takes the tombstone's ChangeVersion straight from
-        // dms.ChangeVersionSequence instead of stamping dms.Document and reading it back, so the
-        // tombstone stays post-delete and monotonic without depending on the dms.Document row
-        // still being there: it is the last change version this delete allocated, and the
-        // dms.Document stamp the second statement removes never overtakes it.
+        // dms.ChangeVersionSequence rather than stamping the row it is deleting and reading the
+        // stamp back, so the tombstone stays post-delete and monotonic: it is the last change
+        // version this delete allocated.
         tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
         trackedRow["Id"].Should().Be(schoolDocumentUuid);
         Convert.ToInt64(trackedRow["OldSchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
         AssertAllNewColumnsAreNull(trackedRow);
 
-        // Statement 2: delete the dms.Document row.
-        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
-            "DELETE FROM [dms].[Document] WHERE [DocumentId] = @documentId;",
-            new SqlParameter("@documentId", schoolDocumentId)
-        );
-        documentRowsAffected.Should().Be(1);
-
-        (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(0);
-        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
-            .Should()
-            .Be(1);
+        // No later visible tracked row may advance an extraction watermark past the tombstone.
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "School",
@@ -1976,10 +1918,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         const int OriginalSchoolId = 500;
         const int ReplacementSchoolId = 501;
 
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         var schoolDocumentUuid = Guid.Parse("f3f3f3f3-f3f3-f3f3-f3f3-f3f3f3f3f3f3");
-        var schoolDocumentId = await InsertDocumentAsync(schoolDocumentUuid, schoolResourceKeyId);
-        await InsertSchoolAsync(schoolDocumentId, OriginalSchoolId, "Epsilon Academy");
+        var schoolDocumentId = await ReserveDocumentIdAsync();
+        await InsertSchoolAsync(schoolDocumentId, schoolDocumentUuid, OriginalSchoolId, "Epsilon Academy");
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
             .Should()
@@ -2019,25 +1960,15 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // grandchildren (SchoolDistrict/Term) — all FK-cascaded from the root row.
         const string StudentUniqueId = "20002";
 
-        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
-        var associationResourceKeyId = await GetResourceKeyIdAsync(
-            "Ed-Fi",
-            "StudentEducationOrganizationAssociation"
-        );
-
-        var studentDocumentId = await InsertDocumentAsync(
-            Guid.Parse("f4f4f4f4-f4f4-f4f4-f4f4-f4f4f4f4f4f4"),
-            studentResourceKeyId
-        );
-        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Avery", "Sloan");
+        var studentDocumentUuid = Guid.Parse("f4f4f4f4-f4f4-f4f4-f4f4-f4f4f4f4f4f4");
+        var studentDocumentId = await ReserveDocumentIdAsync();
+        await InsertStudentAsync(studentDocumentId, studentDocumentUuid, StudentUniqueId, "Avery", "Sloan");
 
         var associationDocumentUuid = Guid.Parse("f5f5f5f5-f5f5-f5f5-f5f5-f5f5f5f5f5f5");
-        var associationDocumentId = await InsertDocumentAsync(
-            associationDocumentUuid,
-            associationResourceKeyId
-        );
+        var associationDocumentId = await ReserveDocumentIdAsync();
         await InsertStudentEducationOrganizationAssociationAsync(
             associationDocumentId,
+            associationDocumentUuid,
             _seedData.EducationOrganizationDocumentId,
             100,
             studentDocumentId,
@@ -2100,8 +2031,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         var before = await GetDocumentStampStateAsync(associationDocumentId);
 
-        // Statement 1: delete the root resource row; FK cascades remove the child and
-        // _ext rows and fire their stamping triggers.
+        // Delete the root resource row, which is the document itself; FK cascades remove the
+        // child and _ext rows and fire their stamping triggers.
         await DelayForDistinctTimestampsAsync();
         var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
             "DELETE FROM [edfi].[StudentEducationOrganizationAssociation] WHERE [DocumentId] = @documentId;",
@@ -2152,25 +2083,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         // The tombstone must be the final visible root delete stamp. Cascaded child trigger
         // activity must not advance the document extraction watermark past the tombstone.
-        (await CountDocumentRowsAsync(associationDocumentId))
-            .Should()
-            .Be(1);
-        tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
-        await AssertMaxTrackedChangeVersionAsync(
-            "tracked_changes_edfi",
-            "StudentEducationOrganizationAssociation",
-            associationDocumentUuid,
-            tombstoneChangeVersion
-        );
-
-        // Statement 2: delete the dms.Document row.
-        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
-            "DELETE FROM [dms].[Document] WHERE [DocumentId] = @documentId;",
-            new SqlParameter("@documentId", associationDocumentId)
-        );
-        documentRowsAffected.Should().Be(1);
-
-        (await CountDocumentRowsAsync(associationDocumentId)).Should().Be(0);
         (
             await CountRowsAsync(
                 "SELECT COUNT(*) FROM [edfi].[StudentEducationOrganizationAssociation] WHERE [DocumentId] = @documentId;",
@@ -2179,15 +2091,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         )
             .Should()
             .Be(0);
-        (
-            await CountTrackedChangeRowsAsync(
-                "tracked_changes_edfi",
-                "StudentEducationOrganizationAssociation",
-                associationDocumentUuid
-            )
-        )
-            .Should()
-            .Be(1);
+        tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
 
         // No later visible tracked row may advance an extraction watermark past the
         // tombstone.
@@ -2208,19 +2112,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // of cascaded extension-trigger activity.
         const int FreshSchoolId = 401;
 
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var busResourceKeyId = await GetResourceKeyIdAsync("Sample", "Bus");
-
         var schoolDocumentUuid = Guid.Parse("f7f7f7f7-f7f7-f7f7-f7f7-f7f7f7f7f7f7");
-        var schoolDocumentId = await InsertDocumentAsync(schoolDocumentUuid, schoolResourceKeyId);
-        await InsertSchoolAsync(schoolDocumentId, FreshSchoolId, "Zeta Academy");
+        var schoolDocumentId = await ReserveDocumentIdAsync();
+        await InsertSchoolAsync(schoolDocumentId, schoolDocumentUuid, FreshSchoolId, "Zeta Academy");
         await InsertSchoolExtensionAsync(schoolDocumentId);
 
-        var busDocumentId = await InsertDocumentAsync(
-            Guid.Parse("f8f8f8f8-f8f8-f8f8-f8f8-f8f8f8f8f8f8"),
-            busResourceKeyId
-        );
-        await InsertBusAsync(busDocumentId, "BUS-401");
+        var busDocumentUuid = Guid.Parse("f8f8f8f8-f8f8-f8f8-f8f8-f8f8f8f8f8f8");
+        var busDocumentId = await ReserveDocumentIdAsync();
+        await InsertBusAsync(busDocumentId, busDocumentUuid, "BUS-401");
         await InsertSchoolExtensionDirectlyOwnedBusAsync(schoolDocumentId, 1, busDocumentId, "BUS-401");
 
         var before = await GetDocumentStampStateAsync(schoolDocumentId);
@@ -2250,8 +2149,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             .Should()
             .Be(1);
 
-        // Statement 1: delete the root School row; FK cascades remove the _ext row
-        // and its grandchild and fire their stamping triggers.
+        // Delete the root School row, which is the document itself; FK cascades remove the
+        // _ext row and its grandchild and fire their stamping triggers.
         await DelayForDistinctTimestampsAsync();
         var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
             "DELETE FROM [edfi].[School] WHERE [DocumentId] = @documentId;",
@@ -2297,36 +2196,15 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         // The tombstone must be the final visible root delete stamp. Cascaded extension trigger
         // activity must not advance the document extraction watermark past the tombstone.
-        (await CountDocumentRowsAsync(schoolDocumentId))
-            .Should()
-            .Be(1);
-        tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
-        await AssertMaxTrackedChangeVersionAsync(
-            "tracked_changes_edfi",
-            "School",
-            schoolDocumentUuid,
-            tombstoneChangeVersion
-        );
-
-        // Statement 2: delete the dms.Document row.
-        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
-            "DELETE FROM [dms].[Document] WHERE [DocumentId] = @documentId;",
-            new SqlParameter("@documentId", schoolDocumentId)
-        );
-        documentRowsAffected.Should().Be(1);
-
-        (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(0);
         (
             await CountRowsAsync(
-                "SELECT COUNT(*) FROM [edfi].[EducationOrganizationIdentity] WHERE [DocumentId] = @documentId;",
+                "SELECT COUNT(*) FROM [edfi].[School] WHERE [DocumentId] = @documentId;",
                 new SqlParameter("@documentId", schoolDocumentId)
             )
         )
             .Should()
             .Be(0);
-        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
-            .Should()
-            .Be(1);
+        tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "School",
@@ -2339,14 +2217,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task<AuthoritativeSampleSmokeSeedData> SeedSmokeRowsAsync()
     {
-        var accountabilityRatingResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "AccountabilityRating");
-        var contactResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Contact");
-        var courseOfferingResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "CourseOffering");
-        var courseResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Course");
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var sessionResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Session");
-        var surveyResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Survey");
         var addressTypeDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "AddressTypeDescriptor"
@@ -2357,11 +2227,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
         var termDescriptorResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "TermDescriptor");
 
-        var contactDocumentId = await InsertDocumentAsync(
-            Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            contactResourceKeyId
-        );
-        await InsertContactAsync(contactDocumentId, "10001", "Casey", "Cole");
+        var contactDocumentUuid = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var contactDocumentId = await ReserveDocumentIdAsync();
+        await InsertContactAsync(contactDocumentId, contactDocumentUuid, "10001", "Casey", "Cole");
         await InsertContactExtensionAsync(contactDocumentId);
 
         var contactExtensionAuthorCollectionItemId = await InsertContactExtensionAuthorAsync(
@@ -2370,30 +2238,28 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             "Octavia Butler"
         );
 
-        var otherContactDocumentId = await InsertDocumentAsync(
-            Guid.Parse("22222222-2222-2222-2222-222222222222"),
-            contactResourceKeyId
-        );
-        await InsertContactAsync(otherContactDocumentId, "10002", "Morgan", "Lane");
+        var otherContactDocumentUuid = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var otherContactDocumentId = await ReserveDocumentIdAsync();
+        await InsertContactAsync(otherContactDocumentId, otherContactDocumentUuid, "10002", "Morgan", "Lane");
 
-        var educationOrganizationDocumentId = await InsertDocumentAsync(
-            Guid.Parse("77777777-7777-7777-7777-777777777777"),
-            schoolResourceKeyId
+        var educationOrganizationDocumentUuid = Guid.Parse("77777777-7777-7777-7777-777777777777");
+        var educationOrganizationDocumentId = await ReserveDocumentIdAsync();
+        await InsertEducationOrganizationIdentityAsync(
+            educationOrganizationDocumentId,
+            educationOrganizationDocumentUuid,
+            100,
+            "Ed-Fi:School"
         );
-        await InsertEducationOrganizationIdentityAsync(educationOrganizationDocumentId, 100, "Ed-Fi:School");
 
-        var schoolYearTypeDocumentId = await InsertDocumentAsync(
-            Guid.Parse("99999999-9999-9999-9999-999999999999"),
-            schoolYearTypeResourceKeyId
-        );
-        await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, 2025);
+        var schoolYearTypeDocumentUuid = Guid.Parse("99999999-9999-9999-9999-999999999999");
+        var schoolYearTypeDocumentId = await ReserveDocumentIdAsync();
+        await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, schoolYearTypeDocumentUuid, 2025);
 
-        var accountabilityRatingDocumentId = await InsertDocumentAsync(
-            Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
-            accountabilityRatingResourceKeyId
-        );
+        var accountabilityRatingDocumentUuid = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var accountabilityRatingDocumentId = await ReserveDocumentIdAsync();
         await InsertAccountabilityRatingAsync(
             accountabilityRatingDocumentId,
+            accountabilityRatingDocumentUuid,
             educationOrganizationDocumentId,
             100,
             schoolYearTypeDocumentId,
@@ -2439,23 +2305,21 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             "Spring"
         );
 
-        var schoolDocumentId = await InsertDocumentAsync(
-            Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
-            schoolResourceKeyId
-        );
+        var schoolDocumentUuid = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var schoolDocumentId = await ReserveDocumentIdAsync();
         await _database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "School",
-            async () => await InsertSchoolAsync(schoolDocumentId, 100, "Sample High School"),
+            async () =>
+                await InsertSchoolAsync(schoolDocumentId, schoolDocumentUuid, 100, "Sample High School"),
             mirrorMetadataForDocumentId: schoolDocumentId
         );
 
-        var sessionDocumentId = await InsertDocumentAsync(
-            Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
-            sessionResourceKeyId
-        );
+        var sessionDocumentUuid = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var sessionDocumentId = await ReserveDocumentIdAsync();
         await InsertSessionAsync(
             sessionDocumentId,
+            sessionDocumentUuid,
             schoolYearTypeDocumentId,
             2025,
             schoolDocumentId,
@@ -2467,12 +2331,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             90
         );
 
-        var surveyDocumentId = await InsertDocumentAsync(
-            Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
-            surveyResourceKeyId
-        );
+        var surveyDocumentUuid = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        var surveyDocumentId = await ReserveDocumentIdAsync();
         await InsertSurveyAsync(
             surveyDocumentId,
+            surveyDocumentUuid,
             schoolYearTypeDocumentId,
             2025,
             sessionDocumentId,
@@ -2483,12 +2346,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             "Student Climate Survey"
         );
 
-        var courseDocumentId = await InsertDocumentAsync(
-            Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
-            courseResourceKeyId
-        );
+        var courseDocumentUuid = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        var courseDocumentId = await ReserveDocumentIdAsync();
         await InsertCourseAsync(
             courseDocumentId,
+            courseDocumentUuid,
             educationOrganizationDocumentId,
             100,
             "ALG-1",
@@ -2496,12 +2358,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             1
         );
 
-        var courseOfferingDocumentId = await InsertDocumentAsync(
-            Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff"),
-            courseOfferingResourceKeyId
-        );
+        var courseOfferingDocumentUuid = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+        var courseOfferingDocumentId = await ReserveDocumentIdAsync();
         await InsertCourseOfferingAsync(
             courseOfferingDocumentId,
+            courseOfferingDocumentUuid,
             100,
             courseDocumentId,
             "ALG-1",
@@ -2590,19 +2451,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Reserves a DocumentId off the same sequence the root-table column DEFAULT draws from, so a
+    /// seeded row that supplies its id explicitly can never collide with a row that lets the DEFAULT
+    /// allocate one.
+    /// </summary>
+    private async Task<long> ReserveDocumentIdAsync()
     {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
+        return await _database.ExecuteScalarAsync<long>("SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];");
     }
 
     private async Task<long> InsertDescriptorAsync(
@@ -2615,7 +2471,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -2658,6 +2514,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task InsertContactAsync(
         long documentId,
+        Guid documentUuid,
         string contactUniqueId,
         string firstName,
         string lastSurname
@@ -2666,27 +2523,25 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[Contact] ([DocumentId], [DocumentUuid], [ContactUniqueId], [FirstName], [LastSurname])
-            SELECT @documentId, document.[DocumentUuid], @contactUniqueId, @firstName, @lastSurname
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            VALUES (@documentId, @documentUuid, @contactUniqueId, @firstName, @lastSurname);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@contactUniqueId", contactUniqueId),
             new SqlParameter("@firstName", firstName),
             new SqlParameter("@lastSurname", lastSurname)
         );
     }
 
-    private async Task InsertBusAsync(long documentId, string busId)
+    private async Task InsertBusAsync(long documentId, Guid documentUuid, string busId)
     {
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [sample].[Bus] ([DocumentId], [DocumentUuid], [BusId])
-            SELECT @documentId, document.[DocumentUuid], @busId
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            VALUES (@documentId, @documentUuid, @busId);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@busId", busId)
         );
     }
@@ -2728,26 +2583,26 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task InsertEducationOrganizationIdentityAsync(
         long documentId,
+        Guid documentUuid,
         int educationOrganizationId,
         string discriminator
     )
     {
-        // DocumentUuid has no default (m23), so this out-of-band insert must carry the seeded
-        // dms.Document row's value — the same value the maintenance trigger would have copied.
+        // DocumentUuid has no default (m23), so this out-of-band insert must carry the document's
+        // uuid explicitly — the same value the maintenance trigger would have copied off the root row.
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-            SELECT @documentId, d.[DocumentUuid], @educationOrganizationId, @discriminator
-            FROM [dms].[Document] d
-            WHERE d.[DocumentId] = @documentId;
+            VALUES (@documentId, @documentUuid, @educationOrganizationId, @discriminator);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@educationOrganizationId", educationOrganizationId),
             new SqlParameter("@discriminator", discriminator)
         );
     }
 
-    private async Task InsertSchoolYearTypeAsync(long documentId, int schoolYear)
+    private async Task InsertSchoolYearTypeAsync(long documentId, Guid documentUuid, int schoolYear)
     {
         await _database.ExecuteNonQueryAsync(
             """
@@ -2758,32 +2613,36 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [SchoolYear],
                 [SchoolYearDescription]
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document.[DocumentUuid],
+                @documentUuid,
                 @currentSchoolYear,
                 @schoolYear,
                 @schoolYearDescription
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@currentSchoolYear", true),
             new SqlParameter("@schoolYear", schoolYear),
             new SqlParameter("@schoolYearDescription", $"{schoolYear}-{schoolYear + 1}")
         );
     }
 
-    private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
+    private async Task InsertSchoolAsync(
+        long documentId,
+        Guid documentUuid,
+        int schoolId,
+        string nameOfInstitution
+    )
     {
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [NameOfInstitution], [SchoolId])
-            SELECT @documentId, document.[DocumentUuid], @nameOfInstitution, @schoolId
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            VALUES (@documentId, @documentUuid, @nameOfInstitution, @schoolId);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
             new SqlParameter("@schoolId", schoolId)
         );
@@ -2791,6 +2650,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task InsertSessionAsync(
         long documentId,
+        Guid documentUuid,
         long schoolYearDocumentId,
         int schoolYear,
         long schoolDocumentId,
@@ -2817,9 +2677,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [SessionName],
                 [TotalInstructionalDays]
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document.[DocumentUuid],
+                @documentUuid,
                 @schoolYearDocumentId,
                 @schoolYear,
                 @schoolDocumentId,
@@ -2829,10 +2689,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 @endDate,
                 @sessionName,
                 @totalInstructionalDays
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@schoolYearDocumentId", schoolYearDocumentId),
             new SqlParameter("@schoolYear", schoolYear),
             new SqlParameter("@schoolDocumentId", schoolDocumentId),
@@ -2847,6 +2707,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task InsertCourseAsync(
         long documentId,
+        Guid documentUuid,
         long educationOrganizationDocumentId,
         int educationOrganizationId,
         string courseCode,
@@ -2865,18 +2726,18 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [CourseTitle],
                 [NumberOfParts]
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document.[DocumentUuid],
+                @documentUuid,
                 @educationOrganizationDocumentId,
                 @educationOrganizationId,
                 @courseCode,
                 @courseTitle,
                 @numberOfParts
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@educationOrganizationDocumentId", educationOrganizationDocumentId),
             new SqlParameter("@educationOrganizationId", educationOrganizationId),
             new SqlParameter("@courseCode", courseCode),
@@ -2887,6 +2748,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task InsertCourseOfferingAsync(
         long documentId,
+        Guid documentUuid,
         int schoolId,
         long courseDocumentId,
         string courseCode,
@@ -2913,9 +2775,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [Session_SessionName],
                 [LocalCourseCode]
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document.[DocumentUuid],
+                @documentUuid,
                 @schoolId,
                 @courseDocumentId,
                 @courseCode,
@@ -2925,10 +2787,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 @sessionSchoolYear,
                 @sessionName,
                 @localCourseCode
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@schoolId", schoolId),
             new SqlParameter("@courseDocumentId", courseDocumentId),
             new SqlParameter("@courseCode", courseCode),
@@ -2943,6 +2805,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task InsertSurveyAsync(
         long documentId,
+        Guid documentUuid,
         long schoolYearDocumentId,
         int schoolYear,
         long sessionDocumentId,
@@ -2967,9 +2830,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [SurveyIdentifier],
                 [SurveyTitle]
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document.[DocumentUuid],
+                @documentUuid,
                 @schoolYear,
                 @schoolYearDocumentId,
                 @sessionDocumentId,
@@ -2978,10 +2841,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 @namespace,
                 @surveyIdentifier,
                 @surveyTitle
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@schoolYear", schoolYear),
             new SqlParameter("@schoolYearDocumentId", schoolYearDocumentId),
             new SqlParameter("@sessionDocumentId", sessionDocumentId),
@@ -2995,6 +2858,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task InsertAccountabilityRatingAsync(
         long documentId,
+        Guid documentUuid,
         long educationOrganizationDocumentId,
         int educationOrganizationId,
         long schoolYearDocumentId,
@@ -3015,19 +2879,19 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [Rating],
                 [RatingTitle]
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document.[DocumentUuid],
+                @documentUuid,
                 @educationOrganizationDocumentId,
                 @educationOrganizationId,
                 @schoolYearDocumentId,
                 @schoolYear,
                 @rating,
                 @ratingTitle
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@educationOrganizationDocumentId", educationOrganizationDocumentId),
             new SqlParameter("@educationOrganizationId", educationOrganizationId),
             new SqlParameter("@schoolYearDocumentId", schoolYearDocumentId),
@@ -3189,6 +3053,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task InsertStudentAsync(
         long documentId,
+        Guid documentUuid,
         string studentUniqueId,
         string firstName,
         string lastSurname
@@ -3197,11 +3062,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[Student] ([DocumentId], [DocumentUuid], [BirthDate], [FirstName], [LastSurname], [StudentUniqueId])
-            SELECT @documentId, document.[DocumentUuid], @birthDate, @firstName, @lastSurname, @studentUniqueId
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            VALUES (@documentId, @documentUuid, @birthDate, @firstName, @lastSurname, @studentUniqueId);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@birthDate", new DateOnly(2010, 1, 1)),
             new SqlParameter("@firstName", firstName),
             new SqlParameter("@lastSurname", lastSurname),
@@ -3211,6 +3075,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task InsertStudentEducationOrganizationAssociationAsync(
         long documentId,
+        Guid documentUuid,
         long educationOrganizationDocumentId,
         int educationOrganizationId,
         long studentDocumentId,
@@ -3227,17 +3092,17 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [Student_DocumentId],
                 [Student_StudentUniqueId]
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document.[DocumentUuid],
+                @documentUuid,
                 @educationOrganizationDocumentId,
                 @educationOrganizationId,
                 @studentDocumentId,
                 @studentUniqueId
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@educationOrganizationDocumentId", educationOrganizationDocumentId),
             new SqlParameter("@educationOrganizationId", educationOrganizationId),
             new SqlParameter("@studentDocumentId", studentDocumentId),
@@ -3392,6 +3257,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task InsertGradingPeriodAsync(
         long documentId,
+        Guid documentUuid,
         long schoolYearTypeDocumentId,
         int schoolYear,
         long schoolDocumentId,
@@ -3415,9 +3281,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [GradingPeriodName],
                 [TotalInstructionalDays]
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document.[DocumentUuid],
+                @documentUuid,
                 @schoolYearTypeDocumentId,
                 @schoolYear,
                 @schoolDocumentId,
@@ -3427,10 +3293,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 @endDate,
                 @gradingPeriodName,
                 @totalInstructionalDays
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@schoolYearTypeDocumentId", schoolYearTypeDocumentId),
             new SqlParameter("@schoolYear", schoolYear),
             new SqlParameter("@schoolDocumentId", schoolDocumentId),
@@ -3445,6 +3311,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task InsertAssessmentAsync(
         long documentId,
+        Guid documentUuid,
         string assessmentIdentifier,
         string assessmentTitle,
         string @namespace
@@ -3453,11 +3320,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[Assessment] ([DocumentId], [DocumentUuid], [AssessmentIdentifier], [AssessmentTitle], [Namespace])
-            SELECT @documentId, document.[DocumentUuid], @assessmentIdentifier, @assessmentTitle, @namespace
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            VALUES (@documentId, @documentUuid, @assessmentIdentifier, @assessmentTitle, @namespace);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@assessmentIdentifier", assessmentIdentifier),
             new SqlParameter("@assessmentTitle", assessmentTitle),
             new SqlParameter("@namespace", @namespace)
@@ -3466,6 +3332,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task InsertStudentAssessmentAsync(
         long documentId,
+        Guid documentUuid,
         long assessmentDocumentId,
         string assessmentIdentifier,
         string assessmentNamespace,
@@ -3486,19 +3353,19 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [Student_StudentUniqueId],
                 [StudentAssessmentIdentifier]
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document.[DocumentUuid],
+                @documentUuid,
                 @assessmentDocumentId,
                 @assessmentIdentifier,
                 @assessmentNamespace,
                 @studentDocumentId,
                 @studentUniqueId,
                 @studentAssessmentIdentifier
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@assessmentDocumentId", assessmentDocumentId),
             new SqlParameter("@assessmentIdentifier", assessmentIdentifier),
             new SqlParameter("@assessmentNamespace", assessmentNamespace),
@@ -3510,6 +3377,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task InsertAssessmentScoreRangeLearningStandardAsync(
         long documentId,
+        Guid documentUuid,
         string assessmentIdentifier,
         string @namespace,
         long assessmentDocumentId,
@@ -3531,19 +3399,19 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [MinimumScore],
                 [ScoreRangeId]
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document.[DocumentUuid],
+                @documentUuid,
                 @assessmentIdentifier,
                 @namespace,
                 @assessmentDocumentId,
                 @maximumScore,
                 @minimumScore,
                 @scoreRangeId
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@assessmentIdentifier", assessmentIdentifier),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@assessmentDocumentId", assessmentDocumentId),
@@ -3559,43 +3427,31 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         const long OriginalEducationOrganizationId = 100;
         const long ReplacementEducationOrganizationId = 200;
 
-        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var associationResourceKeyId = await GetResourceKeyIdAsync(
-            "Ed-Fi",
-            "StudentEducationOrganizationAssociation"
-        );
-
-        var studentDocumentId = await InsertDocumentAsync(
-            Guid.Parse("c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1"),
-            studentResourceKeyId
-        );
-        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Riley", "Quinn");
+        var studentDocumentUuid = Guid.Parse("c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1");
+        var studentDocumentId = await ReserveDocumentIdAsync();
+        await InsertStudentAsync(studentDocumentId, studentDocumentUuid, StudentUniqueId, "Riley", "Quinn");
 
         // Unlike the seeded SchoolId=100 school (whose triggers are disabled to dodge the
         // manually planted EducationOrganizationIdentity row for the same id), this fresh
         // school keeps its triggers enabled so TR_School_AbstractIdentity projects the
         // EducationOrganizationIdentity row the association FK re-points to.
-        var replacementSchoolDocumentId = await InsertDocumentAsync(
-            Guid.Parse("c2c2c2c2-c2c2-c2c2-c2c2-c2c2c2c2c2c2"),
-            schoolResourceKeyId
-        );
+        var replacementSchoolDocumentUuid = Guid.Parse("c2c2c2c2-c2c2-c2c2-c2c2-c2c2c2c2c2c2");
+        var replacementSchoolDocumentId = await ReserveDocumentIdAsync();
         await InsertSchoolAsync(
             replacementSchoolDocumentId,
+            replacementSchoolDocumentUuid,
             (int)ReplacementEducationOrganizationId,
             "Gamma Academy"
         );
 
         var associationDocumentUuid = Guid.Parse("c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3");
-        var associationDocumentId = await InsertDocumentAsync(
-            associationDocumentUuid,
-            associationResourceKeyId
-        );
+        var associationDocumentId = await ReserveDocumentIdAsync();
         // The association's original EdOrg reference targets the seeded
         // EducationOrganizationIdentity row (EducationOrganizationId=100), which the
         // single-column FK on EducationOrganization_DocumentId requires.
         await InsertStudentEducationOrganizationAssociationAsync(
             associationDocumentId,
+            associationDocumentUuid,
             _seedData.EducationOrganizationDocumentId,
             (int)OriginalEducationOrganizationId,
             studentDocumentId,
@@ -3644,14 +3500,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     private async Task<long> ReadMaxChangeVersionAsync()
     {
         return await _database.ExecuteScalarAsync<long>("SELECT [dms].[GetMaxChangeVersion]();");
-    }
-
-    private async Task<long> CountDocumentRowsAsync(long documentId)
-    {
-        return await CountRowsAsync(
-            "SELECT COUNT(*) FROM [dms].[Document] WHERE [DocumentId] = @documentId;",
-            new SqlParameter("@documentId", documentId)
-        );
     }
 
     private async Task<long> CountTrackedChangeRowsAsync(

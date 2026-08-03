@@ -166,7 +166,7 @@ internal static class PostgresqlProfileNestedSupport
                 p."ParentCode",
                 p."ParentName"
             FROM "edfi"."ParentResourceParent" p
-            INNER JOIN "dms"."Document" d ON d."DocumentId" = p."ParentResource_DocumentId"
+            INNER JOIN "edfi"."ParentResource" d ON d."DocumentId" = p."ParentResource_DocumentId"
             WHERE d."DocumentUuid" = @documentUuid
             ORDER BY p."Ordinal", p."CollectionItemId";
             """,
@@ -198,7 +198,7 @@ internal static class PostgresqlProfileNestedSupport
                 c."ChildCode",
                 c."ChildValue"
             FROM "edfi"."ParentResourceParentChildren" c
-            INNER JOIN "dms"."Document" d ON d."DocumentId" = c."ParentResource_DocumentId"
+            INNER JOIN "edfi"."ParentResource" d ON d."DocumentId" = c."ParentResource_DocumentId"
             WHERE d."DocumentUuid" = @documentUuid
             ORDER BY c."ParentCollectionItemId", c."Ordinal", c."CollectionItemId";
             """,
@@ -228,7 +228,7 @@ internal static class PostgresqlProfileNestedSupport
                 ext."RootExtVisibleScalar",
                 ext."RootExtHiddenScalar"
             FROM "rootext"."ParentResourceExtension" ext
-            INNER JOIN "dms"."Document" d ON d."DocumentId" = ext."DocumentId"
+            INNER JOIN "edfi"."ParentResource" d ON d."DocumentId" = ext."DocumentId"
             WHERE d."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid.Value)
@@ -257,7 +257,7 @@ internal static class PostgresqlProfileNestedSupport
                 ec."RootExtChildCode",
                 ec."RootExtChildValue"
             FROM "rootext"."ParentResourceExtensionRootExtChildren" ec
-            INNER JOIN "dms"."Document" d ON d."DocumentId" = ec."ParentResource_DocumentId"
+            INNER JOIN "edfi"."ParentResource" d ON d."DocumentId" = ec."ParentResource_DocumentId"
             WHERE d."DocumentUuid" = @documentUuid
             ORDER BY ec."Ordinal", ec."CollectionItemId";
             """,

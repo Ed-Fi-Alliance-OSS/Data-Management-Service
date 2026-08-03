@@ -31,7 +31,6 @@ public class Given_ReferenceResolverIntegrationFixture
             .Should()
             .Equal(
                 "dms.ResourceKey",
-                "dms.Document",
                 "edfi.School",
                 "edfi.LocalEducationAgency",
                 "edfi.EducationOrganizationIdentity",
@@ -40,7 +39,6 @@ public class Given_ReferenceResolverIntegrationFixture
             );
 
         _seedBatches.Single(batch => batch.Table.Name == "ResourceKey").Rows.Should().HaveCount(7);
-        _seedBatches.Single(batch => batch.Table.Name == "Document").Rows.Should().HaveCount(5);
         _seedBatches.Single(batch => batch.Table.Name == "School").Rows.Should().HaveCount(1);
         _seedBatches.Single(batch => batch.Table.Name == "LocalEducationAgency").Rows.Should().HaveCount(1);
         _seedBatches

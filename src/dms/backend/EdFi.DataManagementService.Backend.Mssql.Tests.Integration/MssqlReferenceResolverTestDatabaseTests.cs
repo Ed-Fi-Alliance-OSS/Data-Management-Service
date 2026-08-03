@@ -74,10 +74,7 @@ public class Given_MssqlReferenceResolverTestDatabase
             .Should()
             .Contain([
                 "dms.Descriptor",
-                "dms.Document",
-                "dms.DocumentCache",
                 "dms.EffectiveSchema",
-                "dms.ReferentialIdentity",
                 "dms.ResourceKey",
                 "dms.SchemaComponent",
                 "edfi.LocalEducationAgency",
@@ -125,8 +122,9 @@ public class Given_MssqlReferenceResolverTestDatabase
                 new Dictionary<string, long>
                 {
                     ["dms.ResourceKey"] = _database.Fixture.SeedData.ResourceKeys.Count,
-                    ["dms.Document"] = _database.Fixture.SeedData.Documents.Count,
                     ["dms.Descriptor"] = _database.Fixture.SeedData.Descriptors.Count,
+                    ["edfi.School"] = _database.Fixture.SeedData.Schools.Count,
+                    ["edfi.LocalEducationAgency"] = _database.Fixture.SeedData.LocalEducationAgencies.Count,
                 }
             );
         firstStudentTableCount.Should().Be(1);
@@ -142,11 +140,17 @@ public class Given_MssqlReferenceResolverTestDatabase
 
     private static async Task<IDictionary<string, long>> ReadFixtureTableCountsAsync(string connectionString)
     {
+        // The seeded documents are counted on the tables that own them: the resource root tables and
+        // dms.Descriptor. The root row is the document now, so there is no separate document table.
         return new Dictionary<string, long>
         {
             ["dms.ResourceKey"] = await ReadTableCountAsync(connectionString, "[dms].[ResourceKey]"),
-            ["dms.Document"] = await ReadTableCountAsync(connectionString, "[dms].[Document]"),
             ["dms.Descriptor"] = await ReadTableCountAsync(connectionString, "[dms].[Descriptor]"),
+            ["edfi.School"] = await ReadTableCountAsync(connectionString, "[edfi].[School]"),
+            ["edfi.LocalEducationAgency"] = await ReadTableCountAsync(
+                connectionString,
+                "[edfi].[LocalEducationAgency]"
+            ),
         };
     }
 
@@ -160,15 +164,6 @@ public class Given_MssqlReferenceResolverTestDatabase
                 SELECT [ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion]
                 FROM [dms].[ResourceKey]
                 ORDER BY [ResourceKeyId]
-                FOR JSON PATH, INCLUDE_NULL_VALUES;
-                """
-            ),
-            ["dms.Document"] = await ReadJsonAsync(
-                connectionString,
-                """
-                SELECT [DocumentId], [DocumentUuid], [ResourceKeyId]
-                FROM [dms].[Document]
-                ORDER BY [DocumentId]
                 FOR JSON PATH, INCLUDE_NULL_VALUES;
                 """
             ),

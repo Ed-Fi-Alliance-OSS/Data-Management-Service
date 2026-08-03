@@ -403,25 +403,19 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
 
     private async Task<FocusedStableKeySmokeSeedData> SeedSmokeRowsAsync()
     {
-        var schoolDocumentId = await InsertDocumentAsync(
+        var schoolDocumentId = await InsertSchoolAsync(
             Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            "Ed-Fi",
-            "School"
+            100
         );
-        var otherSchoolDocumentId = await InsertDocumentAsync(
+        var otherSchoolDocumentId = await InsertSchoolAsync(
             Guid.Parse("22222222-2222-2222-2222-222222222222"),
-            "Ed-Fi",
-            "School"
+            200
         );
-        var programDocumentId = await InsertDocumentAsync(
+        var programDocumentId = await InsertProgramAsync(
             Guid.Parse("33333333-3333-3333-3333-333333333333"),
-            "Ed-Fi",
-            "Program"
+            "Robotics"
         );
 
-        await InsertSchoolAsync(schoolDocumentId, 100);
-        await InsertSchoolAsync(otherSchoolDocumentId, 200);
-        await InsertProgramAsync(programDocumentId, "Robotics");
         await InsertSchoolExtensionAsync(schoolDocumentId, "North");
 
         var addressCollectionItemId = await InsertSchoolAddressAsync(schoolDocumentId, 1, "Austin");
@@ -463,61 +457,36 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         );
     }
 
-    private async Task<short> GetResourceKeyIdAsync(string projectName, string resourceName)
+    /// <summary>
+    /// Seeds a School root row and returns the <c>DocumentId</c> its
+    /// <c>dms.DocumentIdSequence</c> default drew — the root row is the document.
+    /// </summary>
+    private async Task<long> InsertSchoolAsync(Guid documentUuid, int schoolId)
     {
-        return await _database.ExecuteScalarAsync<short>(
-            """
-            SELECT [ResourceKeyId]
-            FROM [dms].[ResourceKey]
-            WHERE [ProjectName] = @projectName
-              AND [ResourceName] = @resourceName;
-            """,
-            new SqlParameter("@projectName", projectName),
-            new SqlParameter("@resourceName", resourceName)
-        );
-    }
-
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, string projectName, string resourceName)
-    {
-        var resourceKeyId = await GetResourceKeyIdAsync(projectName, resourceName);
-
         return await _database.ExecuteScalarAsync<long>(
             """
             DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
+            INSERT INTO [edfi].[School] ([DocumentUuid], [SchoolId])
             OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
-            VALUES (@documentUuid, @resourceKeyId);
+            VALUES (@documentUuid, @schoolId);
             SELECT TOP (1) [DocumentId] FROM @Inserted;
             """,
             new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private async Task InsertSchoolAsync(long documentId, int schoolId)
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [SchoolId])
-            SELECT @documentId, document.[DocumentUuid], @schoolId
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
-            """,
-            new SqlParameter("@documentId", documentId),
             new SqlParameter("@schoolId", schoolId)
         );
     }
 
-    private async Task InsertProgramAsync(long documentId, string programName)
+    private async Task<long> InsertProgramAsync(Guid documentUuid, string programName)
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO [edfi].[Program] ([DocumentId], [DocumentUuid], [ProgramName])
-            SELECT @documentId, document.[DocumentUuid], @programName
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            DECLARE @Inserted TABLE ([DocumentId] bigint);
+            INSERT INTO [edfi].[Program] ([DocumentUuid], [ProgramName])
+            OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
+            VALUES (@documentUuid, @programName);
+            SELECT TOP (1) [DocumentId] FROM @Inserted;
             """,
-            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@programName", programName)
         );
     }

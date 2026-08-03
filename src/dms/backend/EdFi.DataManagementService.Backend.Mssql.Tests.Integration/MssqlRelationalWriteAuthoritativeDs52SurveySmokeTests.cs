@@ -514,9 +514,6 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
 
     private async Task<MssqlSurveyRuntimeSeedData> SeedReferenceDataAsync()
     {
-        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var sessionResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Session");
         var termDescriptorResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "TermDescriptor");
 
         var fallTermDescriptorDocumentId = await InsertDescriptorAsync(
@@ -538,27 +535,28 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             "Spring"
         );
 
-        var schoolYearTypeDocumentId = await InsertDocumentAsync(
+        var schoolYearTypeDocumentId = await NextDocumentIdAsync();
+        await InsertSchoolYearTypeAsync(
+            schoolYearTypeDocumentId,
             Guid.Parse("99999999-0000-0000-0000-000000000001"),
-            schoolYearTypeResourceKeyId
+            SchoolYear
         );
-        await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, SchoolYear);
 
-        var schoolDocumentId = await InsertDocumentAsync(
-            Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001"),
-            schoolResourceKeyId
-        );
+        var schoolDocumentId = await NextDocumentIdAsync();
         await _database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "School",
-            async () => await InsertSchoolAsync(schoolDocumentId, SchoolId, "Sample High School"),
+            async () =>
+                await InsertSchoolAsync(
+                    schoolDocumentId,
+                    Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001"),
+                    SchoolId,
+                    "Sample High School"
+                ),
             mirrorMetadataForDocumentId: schoolDocumentId
         );
 
-        var fallSessionDocumentId = await InsertDocumentAsync(
-            Guid.Parse("bbbbbbbb-0000-0000-0000-000000000001"),
-            sessionResourceKeyId
-        );
+        var fallSessionDocumentId = await NextDocumentIdAsync();
         await InsertSessionAsync(
             fallSessionDocumentId,
             schoolYearTypeDocumentId,
@@ -572,10 +570,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             90
         );
 
-        var springSessionDocumentId = await InsertDocumentAsync(
-            Guid.Parse("bbbbbbbb-0000-0000-0000-000000000002"),
-            sessionResourceKeyId
-        );
+        var springSessionDocumentId = await NextDocumentIdAsync();
         await InsertSessionAsync(
             springSessionDocumentId,
             schoolYearTypeDocumentId,
@@ -607,10 +602,8 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
                     survey.[Namespace],
                     survey.[SurveyIdentifier],
                     survey.[SurveyTitle]
-                FROM [dms].[Document] document
-                INNER JOIN [edfi].[Survey] survey
-                    ON survey.[DocumentId] = document.[DocumentId]
-                WHERE document.[DocumentUuid] = @documentUuid;
+                FROM [edfi].[Survey] survey
+                WHERE survey.[DocumentUuid] = @documentUuid;
                 """,
                 new SqlParameter("@documentUuid", documentUuid)
             )
@@ -664,20 +657,12 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
-    {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
+    /// <summary>
+    /// Mints a DocumentId from the same counter the root tables and <c>dms.Descriptor</c> default from,
+    /// so a hand-seeded row can never collide with one the write path creates.
+    /// </summary>
+    private Task<long> NextDocumentIdAsync() =>
+        _database.ExecuteScalarAsync<long>("SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];");
 
     private async Task<long> InsertDescriptorAsync(
         Guid documentUuid,
@@ -689,7 +674,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -730,7 +715,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         return documentId;
     }
 
-    private async Task InsertSchoolYearTypeAsync(long documentId, int schoolYear)
+    private async Task InsertSchoolYearTypeAsync(long documentId, Guid documentUuid, int schoolYear)
     {
         await _database.ExecuteNonQueryAsync(
             """
@@ -741,32 +726,36 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
                 [SchoolYear],
                 [SchoolYearDescription]
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document.[DocumentUuid],
+                @documentUuid,
                 @currentSchoolYear,
                 @schoolYear,
                 @schoolYearDescription
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@currentSchoolYear", true),
             new SqlParameter("@schoolYear", schoolYear),
             new SqlParameter("@schoolYearDescription", $"{schoolYear}-{schoolYear + 1}")
         );
     }
 
-    private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
+    private async Task InsertSchoolAsync(
+        long documentId,
+        Guid documentUuid,
+        int schoolId,
+        string nameOfInstitution
+    )
     {
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [NameOfInstitution], [SchoolId])
-            SELECT @documentId, document.[DocumentUuid], @nameOfInstitution, @schoolId
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            VALUES (@documentId, @documentUuid, @nameOfInstitution, @schoolId);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
             new SqlParameter("@schoolId", schoolId)
         );

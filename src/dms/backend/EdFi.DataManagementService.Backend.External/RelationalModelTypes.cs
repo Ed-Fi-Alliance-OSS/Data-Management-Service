@@ -89,43 +89,43 @@ public enum ColumnKind
     ParentKeyPart,
 
     /// <summary>
-    /// A synthesized root-table column that mirrors <c>dms.Document.ContentVersion</c> for the row,
-    /// enabling row-local change-version range filters without joining <c>dms.Document</c>. Has no
+    /// A synthesized root-table column holding the row's authoritative content-stamp version,
+    /// enabling row-local change-version range filters with no extra join. Has no
     /// source JSONPath and no target resource; maintained only by document-stamping triggers and
     /// excluded from client-writable projections.
     /// </summary>
     MirroredContentVersion,
 
     /// <summary>
-    /// A synthesized root-table column that mirrors <c>dms.Document.ContentLastModifiedAt</c> for the
-    /// row. Has no source JSONPath and no target resource; maintained only by document-stamping
+    /// A synthesized root-table column holding the row's authoritative content-change timestamp.
+    /// Has no source JSONPath and no target resource; maintained only by document-stamping
     /// triggers and excluded from client-writable projections.
     /// </summary>
     MirroredContentLastModifiedAt,
 
     /// <summary>
-    /// A synthesized root-table column that mirrors <c>dms.Document.DocumentUuid</c> (the public API id).
-    /// Trigger-populated during the dual-write migration window; no source JSONPath, not client-writable.
+    /// A synthesized root-table column holding the row's authoritative <c>DocumentUuid</c> (the public
+    /// API id). Trigger-populated; no source JSONPath, not client-writable.
     /// </summary>
     DocumentUuid,
 
     /// <summary>
-    /// A synthesized root-table column that mirrors <c>dms.Document.IdentityVersion</c>.
+    /// A synthesized root-table column holding the row's authoritative identity-stamp version.
     /// </summary>
     MirroredIdentityVersion,
 
     /// <summary>
-    /// A synthesized root-table column that mirrors <c>dms.Document.IdentityLastModifiedAt</c>.
+    /// A synthesized root-table column holding the row's authoritative identity-change timestamp.
     /// </summary>
     MirroredIdentityLastModifiedAt,
 
     /// <summary>
-    /// A synthesized root-table column that mirrors <c>dms.Document.CreatedAt</c>.
+    /// A synthesized root-table column holding the row's authoritative creation timestamp.
     /// </summary>
     CreatedAt,
 
     /// <summary>
-    /// A synthesized root-table column that mirrors <c>dms.Document.CreatedByOwnershipTokenId</c>
+    /// A synthesized root-table column holding the row's authoritative creating ownership token
     /// (nullable; supports ownership-based authorization).
     /// </summary>
     CreatedByOwnershipTokenId,
@@ -864,7 +864,7 @@ public enum TrackedChangeSystemColumnRole
     Id,
 
     /// <summary>
-    /// <c>ChangeVersion</c> — the bumped <c>dms.Document.ContentVersion</c> at the tracked event.
+    /// <c>ChangeVersion</c> — the bumped source-row <c>ContentVersion</c> at the tracked event.
     /// </summary>
     ChangeVersion,
 

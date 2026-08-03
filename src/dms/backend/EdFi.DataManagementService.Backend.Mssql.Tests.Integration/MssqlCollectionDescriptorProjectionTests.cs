@@ -201,17 +201,6 @@ internal static class MssqlCollectionDescriptorProjectionFixture
             IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms') EXEC('CREATE SCHEMA [dms]');
             IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{TestSchema}') EXEC('CREATE SCHEMA [{TestSchema}]');
 
-            CREATE TABLE [dms].[Document] (
-                [DocumentId] bigint PRIMARY KEY,
-                [DocumentUuid] uniqueidentifier NOT NULL,
-                [ResourceKeyId] smallint NOT NULL DEFAULT 0,
-                [ContentVersion] bigint NOT NULL DEFAULT 1,
-                [IdentityVersion] bigint NOT NULL DEFAULT 1,
-                [ContentLastModifiedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                [IdentityLastModifiedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                [CreatedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
-            );
-
             CREATE TABLE [dms].[Descriptor] (
                 [DocumentId] bigint PRIMARY KEY,
                 [Namespace] varchar(255) NOT NULL DEFAULT '',
@@ -224,6 +213,8 @@ internal static class MssqlCollectionDescriptorProjectionFixture
                 [Uri] varchar(306) NOT NULL
             );
 
+            -- The root row is the document: it owns its DocumentId outright. The read plan projects
+            -- only the modeled columns, so no document-metadata columns are scaffolded here.
             CREATE TABLE [{TestSchema}].[School] (
                 [DocumentId] bigint PRIMARY KEY,
                 [SchoolId] int NOT NULL
@@ -245,9 +236,6 @@ internal static class MssqlCollectionDescriptorProjectionFixture
         await ExecuteSqlAsync(
             connection,
             $"""
-            INSERT INTO [dms].[Document] ([DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion], [IdentityVersion]) VALUES
-                ({SchoolDocumentId1}, '82000000-0000-0000-0000-000000000820', 0, 1, 1);
-
             INSERT INTO [dms].[Descriptor] ([DocumentId], [Namespace], [CodeValue], [ShortDescription], [Discriminator], [Uri]) VALUES
                 ({DescriptorId920}, 'uri://ed-fi.org/AddressTypeDescriptor', 'Physical', 'Physical', 'edfi.AddressTypeDescriptor', '{Uri920}'),
                 ({DescriptorId921}, 'uri://ed-fi.org/AddressTypeDescriptor', 'Mailing', 'Mailing', 'edfi.AddressTypeDescriptor', '{Uri921}');

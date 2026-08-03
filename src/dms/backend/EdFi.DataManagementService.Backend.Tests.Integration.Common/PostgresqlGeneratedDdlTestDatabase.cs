@@ -347,8 +347,8 @@ public sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
         await using var connection = await _dataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        // Single-row dms.Document deletes cascade across the full FK graph; keep the
-        // generous shared timeout so cold CI runners don't trip the driver default.
+        // Resource deletes cascade across the child/collection FK graph; keep the generous shared
+        // timeout so cold CI runners don't trip the driver default.
         command.CommandTimeout = DefaultCommandTimeoutSeconds;
         command.Parameters.AddRange(parameters);
 

@@ -29,33 +29,4 @@ public sealed record HydrationExecutionOptions(
     bool IncludeDescriptorProjection = true,
     bool IncludeDocumentReferenceLookup = true,
     bool UseSingleDocumentFastPath = false
-)
-{
-    /// <summary>
-    /// Selects the table the document metadata result set reads from. Every non-descriptor caller —
-    /// the read paths and the write path's current-state load, which reads the same root row the write
-    /// session locked — passes <c>RootTable</c>. <c>DocumentTable</c> remains the default for callers
-    /// that have no resource root row to read from.
-    /// </summary>
-    public DocumentMetadataSource DocumentMetadataSource { get; init; } =
-        DocumentMetadataSource.DocumentTable;
-}
-
-/// <summary>
-/// Identifies which table a hydration batch reads the document metadata columns
-/// (<c>DocumentId</c>, <c>DocumentUuid</c>, <c>ContentVersion</c>, <c>IdentityVersion</c>,
-/// <c>ContentLastModifiedAt</c>, <c>IdentityLastModifiedAt</c>) from.
-/// </summary>
-public enum DocumentMetadataSource
-{
-    /// <summary>
-    /// Read metadata from the authoritative <c>dms.Document</c> row.
-    /// </summary>
-    DocumentTable = 0,
-
-    /// <summary>
-    /// Read metadata from the resource root table's trigger-maintained mirror columns, which carry
-    /// the same column names as <c>dms.Document</c>.
-    /// </summary>
-    RootTable = 1,
-}
+);

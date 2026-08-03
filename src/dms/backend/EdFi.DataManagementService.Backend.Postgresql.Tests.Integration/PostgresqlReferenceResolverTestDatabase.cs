@@ -14,7 +14,6 @@ public sealed class PostgresqlReferenceResolverTestDatabase : IAsyncDisposable
 {
     private static readonly PgsqlDialect _dialect = new(new PgsqlDialectRules());
     private static readonly string _coreDdl = new CoreDdlEmitter(_dialect).Emit();
-    private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
     private static readonly string _resetTablesSql = """
         DO $$
         DECLARE
@@ -234,14 +233,11 @@ public sealed class PostgresqlReferenceResolverTestDatabase : IAsyncDisposable
             valueRows.Add($"({string.Join(", ", parameterNames)})");
         }
 
-        var identityOverrideClause =
-            batch.Table == _documentTable ? " OVERRIDING SYSTEM VALUE" : string.Empty;
-
         command.CommandText = $"""
             INSERT INTO {SqlIdentifierQuoter.QuoteTableName(
                 SqlDialect.Pgsql,
                 batch.Table
-            )} ({quotedColumns}){identityOverrideClause}
+            )} ({quotedColumns})
             VALUES {string.Join(", ", valueRows)};
             """;
 

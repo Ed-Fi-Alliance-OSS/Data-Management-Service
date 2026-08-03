@@ -252,18 +252,15 @@ public class MssqlChildBindingIdentityPropagationTests
 
     private async Task<long> InsertSchoolDocumentAsync(int schoolId)
     {
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var schoolDocumentId = await InsertDocumentAsync(
-            Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            schoolResourceKeyId
-        );
+        var schoolDocumentUuid = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var schoolDocumentId = await NextDocumentIdAsync();
 
         // The DS 5.2 School insert triggers attempt to maintain the
         // EducationOrganizationIdentity alias row. The BellSchedule/ClassPeriod
         // FKs only need [edfi].[School] populated with matching ([DocumentId], [SchoolId]),
         // so we disable triggers temporarily to bypass the alias side-effects. The shared helper
-        // re-asserts the dms.Document metadata mirror on the seeded root row before re-enabling the
-        // triggers, because the stamping trigger that normally writes those mirrors was suppressed.
+        // re-asserts the stamps on the seeded root row before re-enabling the triggers, because the
+        // stamping trigger that normally writes them was suppressed.
         await _database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "School",
@@ -271,11 +268,10 @@ public class MssqlChildBindingIdentityPropagationTests
                 _database.ExecuteNonQueryAsync(
                     """
                     INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [NameOfInstitution], [SchoolId])
-                    SELECT @documentId, document.[DocumentUuid], @nameOfInstitution, @schoolId
-                    FROM [dms].[Document] document
-                    WHERE document.[DocumentId] = @documentId;
+                    VALUES (@documentId, @documentUuid, @nameOfInstitution, @schoolId);
                     """,
                     new SqlParameter("@documentId", schoolDocumentId),
+                    new SqlParameter("@documentUuid", schoolDocumentUuid),
                     new SqlParameter("@nameOfInstitution", "Test School"),
                     new SqlParameter("@schoolId", schoolId)
                 ),
@@ -291,11 +287,7 @@ public class MssqlChildBindingIdentityPropagationTests
         string classPeriodName
     )
     {
-        var classPeriodResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "ClassPeriod");
-        var classPeriodDocumentId = await InsertDocumentAsync(
-            Guid.Parse("22222222-2222-2222-2222-222222222222"),
-            classPeriodResourceKeyId
-        );
+        var classPeriodDocumentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -327,11 +319,7 @@ public class MssqlChildBindingIdentityPropagationTests
         string bellScheduleName
     )
     {
-        var bellScheduleResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "BellSchedule");
-        var bellScheduleDocumentId = await InsertDocumentAsync(
-            Guid.Parse("33333333-3333-3333-3333-333333333333"),
-            bellScheduleResourceKeyId
-        );
+        var bellScheduleDocumentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -458,11 +446,7 @@ public class MssqlChildBindingIdentityPropagationTests
 
     private async Task<long> InsertSectionAsync(int schoolId)
     {
-        var sectionResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Section");
-        var sectionDocumentId = await InsertDocumentAsync(
-            Guid.Parse("44444444-4444-4444-4444-444444444444"),
-            sectionResourceKeyId
-        );
+        var sectionDocumentId = await NextDocumentIdAsync();
 
         // Section requires a non-null CourseOffering FK and a non-null SchoolId_Unified
         // plus the all-or-none CourseOffering CHECK columns. Seeding the full upstream
@@ -472,8 +456,8 @@ public class MssqlChildBindingIdentityPropagationTests
         // to insert a synthetic Section. The propagation behaviour under test fires from
         // ClassPeriod's trigger and stamps Section via SectionClassPeriod — none of that
         // depends on real CourseOffering rows being present. The shared trigger-suppression helper
-        // re-asserts the dms.Document metadata mirror on the seeded root row, which the suppressed
-        // stamping trigger would otherwise have written.
+        // re-asserts the stamps on the seeded root row, which the suppressed stamping trigger would
+        // otherwise have written.
         await _database.ExecuteNonQueryAsync(
             "ALTER TABLE [edfi].[Section] NOCHECK CONSTRAINT [FK_Section_CourseOffering];"
         );
@@ -606,32 +590,13 @@ public class MssqlChildBindingIdentityPropagationTests
         return rows.Single();
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Draws the next <c>DocumentId</c> from <c>dms.DocumentIdSequence</c> — the same counter the
+    /// <c>DocumentId</c> column default on the resource root tables draws from, so a seeded id can
+    /// never collide with one a production write allocates.
+    /// </summary>
+    private async Task<long> NextDocumentIdAsync()
     {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private async Task<short> GetResourceKeyIdAsync(string projectName, string resourceName)
-    {
-        return await _database.ExecuteScalarAsync<short>(
-            """
-            SELECT [ResourceKeyId]
-            FROM [dms].[ResourceKey]
-            WHERE [ProjectName] = @projectName
-              AND [ResourceName] = @resourceName;
-            """,
-            new SqlParameter("@projectName", projectName),
-            new SqlParameter("@resourceName", resourceName)
-        );
+        return await _database.ExecuteScalarAsync<long>("SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];");
     }
 }

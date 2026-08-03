@@ -1139,7 +1139,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([]);
         sessionFactory.Session.Executor.CommandExceptionFactory = command =>
             command.CommandText.Contains("INSERT INTO dms.\"Descriptor\"", StringComparison.Ordinal)
-                ? new StubDbException("unique constraint UX_Document_DocumentUuid")
+                ? new StubDbException("unique constraint UX_Descriptor_DocumentUuid")
                 : null;
         var classifier = A.Fake<IRelationalWriteExceptionClassifier>();
         A.CallTo(() => classifier.IsUniqueConstraintViolation(A<DbException>._)).Returns(true);

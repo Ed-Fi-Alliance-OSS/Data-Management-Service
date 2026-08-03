@@ -317,8 +317,7 @@ internal static class MssqlProfileSeparateTableMergeSupport
             """
             SELECT i.[ProfileSeparateTableMergeItemId], i.[DisplayName], i.[DocumentId]
             FROM [edfi].[ProfileSeparateTableMergeItem] i
-            INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]
-            WHERE d.[DocumentUuid] = @documentUuid;
+            WHERE i.[DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid.Value)
         );
@@ -335,8 +334,9 @@ internal static class MssqlProfileSeparateTableMergeSupport
             """
             SELECT COUNT(*)
             FROM [sample].[ProfileSeparateTableMergeItemExtension] ext
-            INNER JOIN [dms].[Document] d ON d.[DocumentId] = ext.[DocumentId]
-            WHERE d.[DocumentUuid] = @documentUuid;
+            INNER JOIN [edfi].[ProfileSeparateTableMergeItem] root
+                ON root.[DocumentId] = ext.[DocumentId]
+            WHERE root.[DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid.Value)
         );
@@ -356,8 +356,9 @@ internal static class MssqlProfileSeparateTableMergeSupport
                 ext.[SampleCategoryDescriptor_DescriptorId],
                 ext.[DocumentId]
             FROM [sample].[ProfileSeparateTableMergeItemExtension] ext
-            INNER JOIN [dms].[Document] d ON d.[DocumentId] = ext.[DocumentId]
-            WHERE d.[DocumentUuid] = @documentUuid;
+            INNER JOIN [edfi].[ProfileSeparateTableMergeItem] root
+                ON root.[DocumentId] = ext.[DocumentId]
+            WHERE root.[DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid.Value)
         );
@@ -389,20 +390,17 @@ internal static class MssqlProfileSeparateTableMergeSupport
         );
     }
 
-    public static async Task<long> InsertDocumentRowAsync(
-        MssqlGeneratedDdlTestDatabase database,
-        Guid documentUuid,
-        short resourceKeyId
-    )
+    /// <summary>
+    /// Mints the next DocumentId from the same sequence the resource root tables and
+    /// <c>dms.Descriptor</c> draw their DEFAULT from, so a seeded row can never collide with a
+    /// production-created one.
+    /// </summary>
+    public static async Task<long> NextDocumentIdAsync(MssqlGeneratedDdlTestDatabase database)
     {
         return await database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId]
-            VALUES (@documentUuid, @resourceKeyId);
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
+            SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];
+            """
         );
     }
 
@@ -415,7 +413,7 @@ internal static class MssqlProfileSeparateTableMergeSupport
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "SchoolTypeDescriptor");
-        var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync(database);
         var uri = $"{@namespace}#{codeValue}";
         const string discriminator = "SchoolTypeDescriptor";
         await database.ExecuteNonQueryAsync(
@@ -471,8 +469,9 @@ internal static class MssqlProfileSeparateTableMergeSupport
             UPDATE ext
             SET [SampleCategoryDescriptor_DescriptorId] = @descriptorDocumentId
             FROM [sample].[ProfileSeparateTableMergeItemExtension] ext
-            INNER JOIN [dms].[Document] d ON d.[DocumentId] = ext.[DocumentId]
-            WHERE d.[DocumentUuid] = @documentUuid;
+            INNER JOIN [edfi].[ProfileSeparateTableMergeItem] root
+                ON root.[DocumentId] = ext.[DocumentId]
+            WHERE root.[DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid.Value),
             new SqlParameter("@descriptorDocumentId", descriptorDocumentId)

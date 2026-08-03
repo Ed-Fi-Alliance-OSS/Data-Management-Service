@@ -317,7 +317,8 @@ public enum PlanSqlAliasRole
     Table,
 
     /// <summary>
-    /// <c>dms.Document</c> table alias.
+    /// Document-metadata alias, reserved by the alias map; plan compilers read document metadata from
+    /// the resource root table under the root alias.
     /// </summary>
     Document,
 

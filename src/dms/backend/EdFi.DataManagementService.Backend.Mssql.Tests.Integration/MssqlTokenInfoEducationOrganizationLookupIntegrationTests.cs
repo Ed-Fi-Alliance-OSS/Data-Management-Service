@@ -30,9 +30,6 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
     private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private RecordingMssqlRelationalCommandExecutor _commandExecutor = null!;
-    private short _stateEducationAgencyResourceKeyId;
-    private short _localEducationAgencyResourceKeyId;
-    private short _schoolResourceKeyId;
     private short _localEducationAgencyCategoryDescriptorResourceKeyId;
     private long _localEducationAgencyCategoryDescriptorDocumentId;
 
@@ -57,9 +54,6 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
         );
         _database = _databaseLease.Database;
 
-        _stateEducationAgencyResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StateEducationAgency");
-        _localEducationAgencyResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "LocalEducationAgency");
-        _schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         _localEducationAgencyCategoryDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "LocalEducationAgencyCategoryDescriptor"
@@ -344,19 +338,14 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Draws the next <c>DocumentId</c> from <c>dms.DocumentIdSequence</c> — the same counter the
+    /// <c>DocumentId</c> column default on <c>dms.Descriptor</c> and the resource root tables draws
+    /// from, so a seeded id can never collide with one a production write allocates.
+    /// </summary>
+    private async Task<long> NextDocumentIdAsync()
     {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT inserted.[DocumentId] INTO @Inserted ([DocumentId])
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
+        return await _database.ExecuteScalarAsync<long>("SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];");
     }
 
     private async Task<long> InsertDescriptorAsync(
@@ -369,7 +358,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -416,18 +405,20 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
         string nameOfInstitution
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _stateEducationAgencyResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[StateEducationAgency] (
                 [DocumentId],
+                [DocumentUuid],
                 [StateEducationAgencyId],
                 [NameOfInstitution]
             )
-            VALUES (@documentId, @stateEducationAgencyId, @nameOfInstitution);
+            VALUES (@documentId, @documentUuid, @stateEducationAgencyId, @nameOfInstitution);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@stateEducationAgencyId", stateEducationAgencyId),
             new SqlParameter("@nameOfInstitution", nameOfInstitution)
         );
@@ -443,7 +434,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
         long? parentStateEducationAgencyId = null
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _localEducationAgencyResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -492,7 +483,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
         long parentLocalEducationAgencyId
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _schoolResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """

@@ -885,11 +885,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
 
     private async Task<MssqlStudentSchoolAssociationSeedData> SeedReferenceDataAsync()
     {
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
-        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var calendarResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Calendar");
-        var graduationPlanResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GraduationPlan");
         var calendarTypeDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "CalendarTypeDescriptor"
@@ -963,42 +958,42 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             "Resident"
         );
 
-        var studentSchoolYearTypeDocumentId = await InsertDocumentAsync(
+        var studentSchoolYearTypeDocumentId = await NextDocumentIdAsync();
+        await InsertSchoolYearTypeAsync(
+            studentSchoolYearTypeDocumentId,
             Guid.Parse("88888888-0000-0000-0000-000000000001"),
-            schoolYearTypeResourceKeyId
+            SchoolYear,
+            true
         );
-        await InsertSchoolYearTypeAsync(studentSchoolYearTypeDocumentId, SchoolYear, true);
 
-        var foundationGraduationSchoolYearTypeDocumentId = await InsertDocumentAsync(
-            Guid.Parse("88888888-0000-0000-0000-000000000002"),
-            schoolYearTypeResourceKeyId
-        );
+        var foundationGraduationSchoolYearTypeDocumentId = await NextDocumentIdAsync();
         await InsertSchoolYearTypeAsync(
             foundationGraduationSchoolYearTypeDocumentId,
+            Guid.Parse("88888888-0000-0000-0000-000000000002"),
             FoundationGraduationSchoolYear,
             false
         );
 
-        var endorsementGraduationSchoolYearTypeDocumentId = await InsertDocumentAsync(
-            Guid.Parse("88888888-0000-0000-0000-000000000003"),
-            schoolYearTypeResourceKeyId
-        );
+        var endorsementGraduationSchoolYearTypeDocumentId = await NextDocumentIdAsync();
         await InsertSchoolYearTypeAsync(
             endorsementGraduationSchoolYearTypeDocumentId,
+            Guid.Parse("88888888-0000-0000-0000-000000000003"),
             EndorsementGraduationSchoolYear,
             false
         );
 
-        var schoolDocumentId = await InsertDocumentAsync(
-            Guid.Parse("99999999-0000-0000-0000-000000000001"),
-            schoolResourceKeyId
-        );
+        var schoolDocumentId = await NextDocumentIdAsync();
         await _database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "School",
             async () =>
             {
-                await InsertSchoolAsync(schoolDocumentId, (int)SchoolId, "Alpha Academy");
+                await InsertSchoolAsync(
+                    schoolDocumentId,
+                    Guid.Parse("99999999-0000-0000-0000-000000000001"),
+                    (int)SchoolId,
+                    "Alpha Academy"
+                );
                 await InsertEducationOrganizationIdentityAsync(
                     schoolDocumentId,
                     (int)SchoolId,
@@ -1008,16 +1003,16 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             mirrorMetadataForDocumentId: schoolDocumentId
         );
 
-        var studentDocumentId = await InsertDocumentAsync(
+        var studentDocumentId = await NextDocumentIdAsync();
+        await InsertStudentAsync(
+            studentDocumentId,
             Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001"),
-            studentResourceKeyId
+            StudentUniqueId,
+            "Maya",
+            "Lopez"
         );
-        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Maya", "Lopez");
 
-        var calendarDocumentId = await InsertDocumentAsync(
-            Guid.Parse("bbbbbbbb-0000-0000-0000-000000000001"),
-            calendarResourceKeyId
-        );
+        var calendarDocumentId = await NextDocumentIdAsync();
         await InsertCalendarAsync(
             calendarDocumentId,
             studentSchoolYearTypeDocumentId,
@@ -1028,10 +1023,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             CalendarCode
         );
 
-        var foundationGraduationPlanDocumentId = await InsertDocumentAsync(
-            Guid.Parse("cccccccc-0000-0000-0000-000000000001"),
-            graduationPlanResourceKeyId
-        );
+        var foundationGraduationPlanDocumentId = await NextDocumentIdAsync();
         await InsertGraduationPlanAsync(
             foundationGraduationPlanDocumentId,
             schoolDocumentId,
@@ -1042,10 +1034,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             26.000m
         );
 
-        var endorsementGraduationPlanDocumentId = await InsertDocumentAsync(
-            Guid.Parse("cccccccc-0000-0000-0000-000000000002"),
-            graduationPlanResourceKeyId
-        );
+        var endorsementGraduationPlanDocumentId = await NextDocumentIdAsync();
         await InsertGraduationPlanAsync(
             endorsementGraduationPlanDocumentId,
             schoolDocumentId,
@@ -1098,20 +1087,12 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
-    {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
+    /// <summary>
+    /// Mints a DocumentId from the same counter the root tables and <c>dms.Descriptor</c> default from,
+    /// so a hand-seeded row can never collide with one the write path creates.
+    /// </summary>
+    private Task<long> NextDocumentIdAsync() =>
+        _database.ExecuteScalarAsync<long>("SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];");
 
     private async Task<long> SeedDescriptorAsync(
         Guid documentUuid,
@@ -1146,7 +1127,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -1187,7 +1168,12 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         return documentId;
     }
 
-    private async Task InsertSchoolYearTypeAsync(long documentId, int schoolYear, bool currentSchoolYear)
+    private async Task InsertSchoolYearTypeAsync(
+        long documentId,
+        Guid documentUuid,
+        int schoolYear,
+        bool currentSchoolYear
+    )
     {
         await _database.ExecuteNonQueryAsync(
             """
@@ -1198,32 +1184,36 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
                 [SchoolYear],
                 [SchoolYearDescription]
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document.[DocumentUuid],
+                @documentUuid,
                 @currentSchoolYear,
                 @schoolYear,
                 @schoolYearDescription
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@currentSchoolYear", currentSchoolYear),
             new SqlParameter("@schoolYear", schoolYear),
             new SqlParameter("@schoolYearDescription", $"{schoolYear}-{schoolYear + 1}")
         );
     }
 
-    private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
+    private async Task InsertSchoolAsync(
+        long documentId,
+        Guid documentUuid,
+        int schoolId,
+        string nameOfInstitution
+    )
     {
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [NameOfInstitution], [SchoolId])
-            SELECT @documentId, document.[DocumentUuid], @nameOfInstitution, @schoolId
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            VALUES (@documentId, @documentUuid, @nameOfInstitution, @schoolId);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
             new SqlParameter("@schoolId", schoolId)
         );
@@ -1235,8 +1225,8 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         string discriminator
     )
     {
-        // DocumentUuid has no default (m23), so this out-of-band insert must carry the seeded
-        // dms.Document row's value — the same value the maintenance trigger would have copied.
+        // DocumentUuid has no default (m23), so this out-of-band insert must carry the seeded School
+        // root row's value — the same value the maintenance trigger would have copied.
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[EducationOrganizationIdentity] (
@@ -1245,9 +1235,9 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
                 [EducationOrganizationId],
                 [Discriminator]
             )
-            SELECT @documentId, d.[DocumentUuid], @educationOrganizationId, @discriminator
-            FROM [dms].[Document] d
-            WHERE d.[DocumentId] = @documentId;
+            SELECT @documentId, root.[DocumentUuid], @educationOrganizationId, @discriminator
+            FROM [edfi].[School] root
+            WHERE root.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@educationOrganizationId", educationOrganizationId),
@@ -1257,6 +1247,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
 
     private async Task InsertStudentAsync(
         long documentId,
+        Guid documentUuid,
         string studentUniqueId,
         string firstName,
         string lastSurname
@@ -1265,11 +1256,10 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[Student] ([DocumentId], [DocumentUuid], [BirthDate], [FirstName], [LastSurname], [StudentUniqueId])
-            SELECT @documentId, document.[DocumentUuid], @birthDate, @firstName, @lastSurname, @studentUniqueId
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            VALUES (@documentId, @documentUuid, @birthDate, @firstName, @lastSurname, @studentUniqueId);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@birthDate", new DateOnly(2010, 5, 14)),
             new SqlParameter("@firstName", firstName),
             new SqlParameter("@lastSurname", lastSurname),

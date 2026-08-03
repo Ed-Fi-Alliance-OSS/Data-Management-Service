@@ -333,7 +333,7 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
         var rows = await database.QueryRowsAsync(
             """
             SELECT "DocumentId"
-            FROM "dms"."Document"
+            FROM "edfi"."School"
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid.Value)
@@ -388,11 +388,13 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
         return GetNullableInt64(rows[0], "AddressTypeDescriptor_DescriptorId");
     }
 
+    // The root row is the document. School is the only resource these fixtures write, so counting
+    // its root table is the "how many documents exist" probe.
     public static Task<long> ReadDocumentCountAsync(PostgresqlGeneratedDdlTestDatabase database) =>
         database.ExecuteScalarAsync<long>(
             """
             SELECT COUNT(*)
-            FROM "dms"."Document";
+            FROM "edfi"."School";
             """
         );
 
@@ -416,14 +418,12 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "AddressTypeDescriptor");
+        // dms.Descriptor draws its DocumentId DEFAULT from this same sequence, so a seeded
+        // descriptor id can never collide with a production-created one.
         var documentId = await database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            SELECT nextval('"dms"."DocumentIdSequence"');
+            """
         );
 
         var uri = $"uri://ed-fi.org/AddressTypeDescriptor#{codeValue}";

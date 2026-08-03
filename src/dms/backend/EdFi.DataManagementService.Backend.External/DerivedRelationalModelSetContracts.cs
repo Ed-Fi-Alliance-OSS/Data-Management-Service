@@ -360,17 +360,7 @@ public readonly record struct DbTriggerName(string Value);
 /// </summary>
 /// <param name="Column">The physical column on the root table.</param>
 /// <param name="IdentityJsonPath">The canonical JSON path this column stores.</param>
-/// <param name="ScalarType">The scalar type metadata for type-aware string formatting.</param>
-/// <param name="IsDescriptorReference">
-/// Indicates that <paramref name="Column"/> stores a descriptor document ID rather than the
-/// descriptor URI itself.
-/// </param>
-public sealed record IdentityElementMapping(
-    DbColumnName Column,
-    string IdentityJsonPath,
-    RelationalScalarType ScalarType,
-    bool IsDescriptorReference = false
-);
+public sealed record IdentityElementMapping(DbColumnName Column, string IdentityJsonPath);
 
 /// <summary>
 /// Maps a source column on the trigger's owning table to a target column on the maintenance table.

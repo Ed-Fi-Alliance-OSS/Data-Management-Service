@@ -127,9 +127,6 @@ file static class PostAsUpdateIntegrationTestSupport
         );
     }
 
-    public static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
-        Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
-
     public static int GetInt32(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt32(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
@@ -178,7 +175,6 @@ file static class PostAsUpdateIntegrationTestSupport
 internal sealed record FocusedPostAsUpdateDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
-    short ResourceKeyId,
     long ContentVersion
 );
 
@@ -464,9 +460,8 @@ public class Given_A_Postgresql_Relational_Post_With_A_Changed_Identity_With_A_F
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            SELECT root."DocumentId", root."DocumentUuid", root."ContentVersion"
             FROM "edfi"."School" root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -476,7 +471,6 @@ public class Given_A_Postgresql_Relational_Post_With_A_Changed_Identity_With_A_F
             ? new FocusedPostAsUpdateDocumentRow(
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
@@ -506,12 +500,14 @@ public class Given_A_Postgresql_Relational_Post_With_A_Changed_Identity_With_A_F
             );
     }
 
+    // School is the only resource this fixture ever writes, so its root table carries every document
+    // row the counts are about.
     private async Task<long> ReadDocumentCountAsync()
     {
         var rows = await _database.QueryRowsAsync(
             """
             SELECT COUNT(*) AS "Count"
-            FROM "dms"."Document";
+            FROM "edfi"."School";
             """
         );
 
@@ -525,7 +521,7 @@ public class Given_A_Postgresql_Relational_Post_With_A_Changed_Identity_With_A_F
         var rows = await _database.QueryRowsAsync(
             """
             SELECT COUNT(*) AS "Count"
-            FROM "dms"."Document"
+            FROM "edfi"."School"
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -717,9 +713,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         _createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         _stateAfterCreate.Document.DocumentUuid.Should().Be(StudentAcademicRecordDocumentUuid.Value);
-        _stateAfterCreate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]);
         _stateAfterCreate
             .AcademicRecord.Should()
             .Be(
@@ -1249,9 +1242,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 
     private async Task<AuthoritativeStudentAcademicRecordSeedData> SeedReferenceDataAsync()
     {
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
         var termDescriptorResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "TermDescriptor");
         var academicHonorCategoryDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
@@ -1270,23 +1260,27 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             "RecognitionTypeDescriptor"
         );
 
-        var schoolDocumentId = await InsertDocumentAsync(
+        // Each seeded resource root row is its own document: the root INSERT hands back the
+        // DocumentId its DEFAULT drew from dms.DocumentIdSequence.
+        var schoolDocumentId = await InsertSchoolAsync(
             Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            schoolResourceKeyId
+            100,
+            "Alpha Academy"
         );
-        await InsertSchoolAsync(schoolDocumentId, 100, "Alpha Academy");
 
-        var schoolYearTypeDocumentId = await InsertDocumentAsync(
+        var schoolYearTypeDocumentId = await InsertSchoolYearTypeAsync(
             Guid.Parse("22222222-2222-2222-2222-222222222222"),
-            schoolYearTypeResourceKeyId
+            2026,
+            true,
+            "2025-2026"
         );
-        await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, 2026, true, "2025-2026");
 
-        var studentDocumentId = await InsertDocumentAsync(
+        var studentDocumentId = await InsertStudentAsync(
             Guid.Parse("33333333-3333-3333-3333-333333333333"),
-            studentResourceKeyId
+            "10001",
+            "Casey",
+            "Cole"
         );
-        await InsertStudentAsync(studentDocumentId, "10001", "Casey", "Cole");
 
         var fallTermDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("44444444-4444-4444-4444-444444444444"),
@@ -1452,19 +1446,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
-    {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
     private async Task<long> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
@@ -1475,12 +1456,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
-
-        await _database.ExecuteNonQueryAsync(
+        // dms.Descriptor is the descriptor's document row and originates its own DocumentId.
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "dms"."Descriptor" (
-                "DocumentId",
                 "DocumentUuid",
                 "ResourceKeyId",
                 "Namespace",
@@ -1491,7 +1470,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "Uri"
             )
             VALUES (
-                @documentId,
                 @documentUuid,
                 @resourceKeyId,
                 @namespace,
@@ -1500,9 +1478,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 @description,
                 @discriminator,
                 @uri
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
@@ -1512,69 +1490,66 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             new NpgsqlParameter("discriminator", discriminator),
             new NpgsqlParameter("uri", uri)
         );
-
-        return documentId;
     }
 
-    private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
+    private async Task<long> InsertSchoolAsync(Guid documentUuid, int schoolId, string nameOfInstitution)
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "edfi"."School" ("DocumentId", "DocumentUuid", "NameOfInstitution", "SchoolId")
-            SELECT @documentId, document."DocumentUuid", @nameOfInstitution, @schoolId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            INSERT INTO "edfi"."School" ("DocumentUuid", "NameOfInstitution", "SchoolId")
+            VALUES (@documentUuid, @nameOfInstitution, @schoolId)
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
             new NpgsqlParameter("schoolId", schoolId)
         );
     }
 
-    private async Task InsertSchoolYearTypeAsync(
-        long documentId,
+    private async Task<long> InsertSchoolYearTypeAsync(
+        Guid documentUuid,
         int schoolYear,
         bool currentSchoolYear,
         string schoolYearDescription
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "edfi"."SchoolYearType" (
-                "DocumentId",
+                "DocumentUuid",
                 "CurrentSchoolYear",
                 "SchoolYear",
                 "SchoolYearDescription"
             )
             VALUES (
-                @documentId,
+                @documentUuid,
                 @currentSchoolYear,
                 @schoolYear,
                 @schoolYearDescription
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("currentSchoolYear", currentSchoolYear),
             new NpgsqlParameter("schoolYear", schoolYear),
             new NpgsqlParameter("schoolYearDescription", schoolYearDescription)
         );
     }
 
-    private async Task InsertStudentAsync(
-        long documentId,
+    private async Task<long> InsertStudentAsync(
+        Guid documentUuid,
         string studentUniqueId,
         string firstName,
         string lastSurname
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "edfi"."Student" ("DocumentId", "DocumentUuid", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
-            SELECT @documentId, document."DocumentUuid", @birthDate, @firstName, @lastSurname, @studentUniqueId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            INSERT INTO "edfi"."Student" ("DocumentUuid", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
+            VALUES (@documentUuid, @birthDate, @firstName, @lastSurname, @studentUniqueId)
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("birthDate", new DateOnly(2010, 1, 1)),
             new NpgsqlParameter("firstName", firstName),
             new NpgsqlParameter("lastSurname", lastSurname),
@@ -1628,9 +1603,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            SELECT root."DocumentId", root."DocumentUuid", root."ContentVersion"
             FROM "edfi"."StudentAcademicRecord" root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -1640,7 +1614,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             ? new AuthoritativePostAsUpdateDocumentRow(
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
@@ -2211,7 +2184,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
         }
         """;
 
-    private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly ResourceInfo SchoolResourceInfo = new(
         ProjectName: new ProjectName("Ed-Fi"),
         ResourceName: new ResourceName("School"),
@@ -2312,9 +2284,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
             .ExistingDocumentUuid.Should()
             .Be(ExistingSchoolDocumentUuid);
         _documentAfterPostAsUpdate.DocumentUuid.Should().Be(ExistingSchoolDocumentUuid.Value);
-        _documentAfterPostAsUpdate
-            .ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[SchoolResource]);
         _documentAfterPostAsUpdate
             .ContentVersion.Should()
             .BeGreaterThan(_documentBeforePostAsUpdate.ContentVersion);
@@ -2424,9 +2393,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            SELECT root."DocumentId", root."DocumentUuid", root."ContentVersion"
             FROM "edfi"."School" root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -2436,7 +2404,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
             ? new FocusedPostAsUpdateDocumentRow(
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
@@ -2444,12 +2411,14 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
             );
     }
 
+    // School is the only resource this fixture ever writes, so its root table carries every document
+    // row the counts are about.
     private async Task<long> ReadDocumentCountAsync()
     {
         var rows = await _database.QueryRowsAsync(
             """
             SELECT COUNT(*) AS "Count"
-            FROM "dms"."Document";
+            FROM "edfi"."School";
             """
         );
 
@@ -2463,7 +2432,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
         var rows = await _database.QueryRowsAsync(
             """
             SELECT COUNT(*) AS "Count"
-            FROM "dms"."Document"
+            FROM "edfi"."School"
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -2595,7 +2564,6 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
     private ConcurrentPostCreateRaceCoordinator _raceCoordinator = null!;
     private UpsertResult _createWinnerResult = null!;
     private UpsertResult _staleCreateCandidateResult = null!;
-    private ReferentialId _sharedSchoolReferentialId;
     private FocusedPostAsUpdateDocumentRow _documentAfterRequests = null!;
     private FocusedPostAsUpdateSchoolRow _schoolAfterRequests = null!;
     private IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow> _addressesAfterRequests = null!;
@@ -2613,13 +2581,13 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _raceCoordinator = new ConcurrentPostCreateRaceCoordinator();
         _serviceProvider = PostAsUpdateIntegrationTestSupport.CreateServiceProvider(_raceCoordinator);
-        _sharedSchoolReferentialId = new ReferentialId(await ComputeSchoolReferentialIdAsync());
 
+        // Both racing requests submit the same School identity, so ReferentialIdCalculator derives the
+        // same ReferentialId for each — which is what makes this a create race on one natural key.
         var staleCreateCandidateTask = ExecuteUpsertAsync(
             StaleCreateCandidateRequestBodyJson,
             StaleCreateCandidateDocumentUuid,
-            "pg-post-create-race-stale-candidate",
-            _sharedSchoolReferentialId
+            "pg-post-create-race-stale-candidate"
         );
 
         await _raceCoordinator.WaitUntilFirstResolverCallIsPendingAsync();
@@ -2627,8 +2595,7 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
         _createWinnerResult = await ExecuteUpsertAsync(
             CreateWinnerRequestBodyJson,
             CreateWinnerDocumentUuid,
-            "pg-post-create-race-create-winner",
-            _sharedSchoolReferentialId
+            "pg-post-create-race-create-winner"
         );
 
         (await ReadDocumentCountAsync(CreateWinnerDocumentUuid.Value)).Should().Be(1);
@@ -2692,8 +2659,7 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId = null
+        string traceId
     )
     {
         using var scope = _serviceProvider.CreateScope();
@@ -2711,20 +2677,17 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
             );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
-        return await repository.UpsertDocument(
-            CreateUpsertRequest(requestBodyJson, documentUuid, traceId, referentialId)
-        );
+        return await repository.UpsertDocument(CreateUpsertRequest(requestBodyJson, documentUuid, traceId));
     }
 
     private UpsertRequest CreateUpsertRequest(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId
+        string traceId
     ) =>
         new(
             ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: CreateSchoolDocumentInfo(referentialId),
+            DocumentInfo: CreateSchoolDocumentInfo(),
             MappingSet: _mappingSet,
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
@@ -2732,14 +2695,13 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
             DocumentUuid: documentUuid
         );
 
-    private static DocumentInfo CreateSchoolDocumentInfo(ReferentialId? referentialId = null)
+    private static DocumentInfo CreateSchoolDocumentInfo()
     {
         var schoolIdentity = CreateSchoolIdentity();
 
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
-            ReferentialId: referentialId
-                ?? ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
+            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -2754,9 +2716,8 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            SELECT root."DocumentId", root."DocumentUuid", root."ContentVersion"
             FROM "edfi"."School" root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -2766,7 +2727,6 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
             ? new FocusedPostAsUpdateDocumentRow(
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
@@ -2774,12 +2734,14 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
             );
     }
 
+    // School is the only resource this fixture ever writes, so its root table carries every document
+    // row the counts are about.
     private async Task<long> ReadDocumentCountAsync()
     {
         var rows = await _database.QueryRowsAsync(
             """
             SELECT COUNT(*) AS "Count"
-            FROM "dms"."Document";
+            FROM "edfi"."School";
             """
         );
 
@@ -2793,7 +2755,7 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
         var rows = await _database.QueryRowsAsync(
             """
             SELECT COUNT(*) AS "Count"
-            FROM "dms"."Document"
+            FROM "edfi"."School"
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -2802,25 +2764,6 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
         return rows.Count == 1
             ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
             : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
-    }
-
-    private async Task<Guid> ComputeSchoolReferentialIdAsync()
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "dms"."uuidv5"(
-                'edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid,
-                'Ed-FiSchool' || '$.schoolId=' || @schoolId
-            ) AS "ReferentialId";
-            """,
-            new NpgsqlParameter("schoolId", "255901")
-        );
-
-        return rows.Count == 1
-            ? PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId")
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential-id row, but found {rows.Count}."
-            );
     }
 
     private async Task<FocusedPostAsUpdateSchoolRow> ReadSchoolAsync(long documentId)
@@ -2872,7 +2815,6 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
 internal sealed record AuthoritativePostAsUpdateDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
-    short ResourceKeyId,
     long ContentVersion
 );
 
@@ -2906,7 +2848,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         }
         """;
 
-    private static readonly QualifiedResourceName SchoolYearTypeResource = new("Ed-Fi", "SchoolYearType");
     private static readonly ResourceInfo SchoolYearTypeResourceInfo = new(
         ProjectName: new ProjectName("Ed-Fi"),
         ResourceName: new ResourceName("SchoolYearType"),
@@ -2996,9 +2937,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             .Be(ExistingSchoolYearTypeDocumentUuid);
         _documentAfterPostAsUpdate.DocumentUuid.Should().Be(ExistingSchoolYearTypeDocumentUuid.Value);
         _documentAfterPostAsUpdate
-            .ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[SchoolYearTypeResource]);
-        _documentAfterPostAsUpdate
             .ContentVersion.Should()
             .BeGreaterThan(_documentBeforePostAsUpdate.ContentVersion);
         _documentCount.Should().Be(1);
@@ -3084,9 +3022,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            SELECT root."DocumentId", root."DocumentUuid", root."ContentVersion"
             FROM "edfi"."SchoolYearType" root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -3096,7 +3033,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             ? new AuthoritativePostAsUpdateDocumentRow(
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
@@ -3104,12 +3040,14 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             );
     }
 
+    // SchoolYearType is the only resource this fixture ever writes, so its root table carries every
+    // document row the counts are about.
     private async Task<long> ReadDocumentCountAsync()
     {
         var rows = await _database.QueryRowsAsync(
             """
             SELECT COUNT(*) AS "Count"
-            FROM "dms"."Document";
+            FROM "edfi"."SchoolYearType";
             """
         );
 
@@ -3123,7 +3061,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var rows = await _database.QueryRowsAsync(
             """
             SELECT COUNT(*) AS "Count"
-            FROM "dms"."Document"
+            FROM "edfi"."SchoolYearType"
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -3389,10 +3327,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         }
         """;
 
-    private static readonly QualifiedResourceName StudentAcademicRecordResource = new(
-        "Ed-Fi",
-        "StudentAcademicRecord"
-    );
     private static readonly DocumentUuid ExistingStudentAcademicRecordDocumentUuid = new(
         Guid.Parse("dddddddd-0000-0000-0000-000000000001")
     );
@@ -3503,9 +3437,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         _stateAfterRepeatPostAsUpdate = await ReadPersistedStateAsync(
             ExistingStudentAcademicRecordDocumentUuid.Value
         );
-        _resourceDocumentCount = await ReadDocumentCountAsync(
-            _mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]
-        );
+        _resourceDocumentCount = await ReadResourceDocumentCountAsync();
         _incomingDocumentUuidCount = await ReadDocumentCountAsync(
             IncomingStudentAcademicRecordDocumentUuid.Value
         );
@@ -3540,9 +3472,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             .Document.DocumentUuid.Should()
             .Be(ExistingStudentAcademicRecordDocumentUuid.Value);
         _stateAfterPostAsUpdate.Document.DocumentId.Should().Be(_stateAfterCreate.Document.DocumentId);
-        _stateAfterPostAsUpdate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]);
         _stateAfterPostAsUpdate
             .Document.ContentVersion.Should()
             .BeGreaterThan(_stateAfterCreate.Document.ContentVersion);
@@ -3837,9 +3766,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
 
     private async Task<AuthoritativeStudentAcademicRecordSeedData> SeedReferenceDataAsync()
     {
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
         var termDescriptorResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "TermDescriptor");
         var academicHonorCategoryDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
@@ -3858,23 +3784,27 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             "RecognitionTypeDescriptor"
         );
 
-        var schoolDocumentId = await InsertDocumentAsync(
+        // Each seeded resource root row is its own document: the root INSERT hands back the
+        // DocumentId its DEFAULT drew from dms.DocumentIdSequence.
+        var schoolDocumentId = await InsertSchoolAsync(
             Guid.Parse("11111111-0000-0000-0000-000000000001"),
-            schoolResourceKeyId
+            100,
+            "Alpha Academy"
         );
-        await InsertSchoolAsync(schoolDocumentId, 100, "Alpha Academy");
 
-        var schoolYearTypeDocumentId = await InsertDocumentAsync(
+        var schoolYearTypeDocumentId = await InsertSchoolYearTypeAsync(
             Guid.Parse("22222222-0000-0000-0000-000000000002"),
-            schoolYearTypeResourceKeyId
+            2026,
+            true,
+            "2025-2026"
         );
-        await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, 2026, true, "2025-2026");
 
-        var studentDocumentId = await InsertDocumentAsync(
+        var studentDocumentId = await InsertStudentAsync(
             Guid.Parse("33333333-0000-0000-0000-000000000003"),
-            studentResourceKeyId
+            "10001",
+            "Casey",
+            "Cole"
         );
-        await InsertStudentAsync(studentDocumentId, "10001", "Casey", "Cole");
 
         var fallTermDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("44444444-0000-0000-0000-000000000004"),
@@ -4040,19 +3970,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
-    {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
     private async Task<long> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
@@ -4063,12 +3980,10 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
-
-        await _database.ExecuteNonQueryAsync(
+        // dms.Descriptor is the descriptor's document row and originates its own DocumentId.
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "dms"."Descriptor" (
-                "DocumentId",
                 "DocumentUuid",
                 "ResourceKeyId",
                 "Namespace",
@@ -4079,7 +3994,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "Uri"
             )
             VALUES (
-                @documentId,
                 @documentUuid,
                 @resourceKeyId,
                 @namespace,
@@ -4088,9 +4002,9 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 @description,
                 @discriminator,
                 @uri
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
@@ -4100,69 +4014,66 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             new NpgsqlParameter("discriminator", discriminator),
             new NpgsqlParameter("uri", uri)
         );
-
-        return documentId;
     }
 
-    private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
+    private async Task<long> InsertSchoolAsync(Guid documentUuid, int schoolId, string nameOfInstitution)
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "edfi"."School" ("DocumentId", "DocumentUuid", "NameOfInstitution", "SchoolId")
-            SELECT @documentId, document."DocumentUuid", @nameOfInstitution, @schoolId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            INSERT INTO "edfi"."School" ("DocumentUuid", "NameOfInstitution", "SchoolId")
+            VALUES (@documentUuid, @nameOfInstitution, @schoolId)
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
             new NpgsqlParameter("schoolId", schoolId)
         );
     }
 
-    private async Task InsertSchoolYearTypeAsync(
-        long documentId,
+    private async Task<long> InsertSchoolYearTypeAsync(
+        Guid documentUuid,
         int schoolYear,
         bool currentSchoolYear,
         string schoolYearDescription
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "edfi"."SchoolYearType" (
-                "DocumentId",
+                "DocumentUuid",
                 "CurrentSchoolYear",
                 "SchoolYear",
                 "SchoolYearDescription"
             )
             VALUES (
-                @documentId,
+                @documentUuid,
                 @currentSchoolYear,
                 @schoolYear,
                 @schoolYearDescription
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("currentSchoolYear", currentSchoolYear),
             new NpgsqlParameter("schoolYear", schoolYear),
             new NpgsqlParameter("schoolYearDescription", schoolYearDescription)
         );
     }
 
-    private async Task InsertStudentAsync(
-        long documentId,
+    private async Task<long> InsertStudentAsync(
+        Guid documentUuid,
         string studentUniqueId,
         string firstName,
         string lastSurname
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "edfi"."Student" ("DocumentId", "DocumentUuid", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
-            SELECT @documentId, document."DocumentUuid", @birthDate, @firstName, @lastSurname, @studentUniqueId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            INSERT INTO "edfi"."Student" ("DocumentUuid", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
+            VALUES (@documentUuid, @birthDate, @firstName, @lastSurname, @studentUniqueId)
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("birthDate", new DateOnly(2010, 1, 1)),
             new NpgsqlParameter("firstName", firstName),
             new NpgsqlParameter("lastSurname", lastSurname),
@@ -4191,9 +4102,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            SELECT root."DocumentId", root."DocumentUuid", root."ContentVersion"
             FROM "edfi"."StudentAcademicRecord" root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -4203,7 +4113,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             ? new AuthoritativePostAsUpdateDocumentRow(
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
@@ -4406,15 +4315,15 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             .ToArray();
     }
 
-    private async Task<long> ReadDocumentCountAsync(short resourceKeyId)
+    // The StudentAcademicRecord root row is the document, so counting that table counts exactly the
+    // documents of this resource.
+    private async Task<long> ReadResourceDocumentCountAsync()
     {
         var rows = await _database.QueryRowsAsync(
             """
             SELECT COUNT(*) AS "Count"
-            FROM "dms"."Document"
-            WHERE "ResourceKeyId" = @resourceKeyId;
-            """,
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            FROM "edfi"."StudentAcademicRecord";
+            """
         );
 
         return rows.Count == 1
@@ -4427,7 +4336,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var rows = await _database.QueryRowsAsync(
             """
             SELECT COUNT(*) AS "Count"
-            FROM "dms"."Document"
+            FROM "edfi"."StudentAcademicRecord"
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)

@@ -350,8 +350,7 @@ public class Given_A_Profiled_Put_With_Hidden_Inlined_Column_Preservation
             """
             SELECT nsi."NamingStressItemId", nsi."ShortName", nsi."Order"
             FROM "edfi"."NamingStressItem" nsi
-            INNER JOIN "dms"."Document" d ON d."DocumentId" = nsi."DocumentId"
-            WHERE d."DocumentUuid" = @documentUuid;
+            WHERE nsi."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", DocumentUuid.Value)
         );
@@ -481,8 +480,7 @@ public class Given_A_Profiled_Post_Create_New_For_Root_Only_Resource
             """
             SELECT nsi."NamingStressItemId", nsi."ShortName", nsi."Order"
             FROM "edfi"."NamingStressItem" nsi
-            INNER JOIN "dms"."Document" d ON d."DocumentId" = nsi."DocumentId"
-            WHERE d."DocumentUuid" = @documentUuid;
+            WHERE nsi."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", DocumentUuid.Value)
         );
@@ -626,8 +624,7 @@ public class Given_A_Profiled_Post_As_Update_With_Hidden_Inlined_Preservation
             """
             SELECT nsi."NamingStressItemId", nsi."ShortName", nsi."Order"
             FROM "edfi"."NamingStressItem" nsi
-            INNER JOIN "dms"."Document" d ON d."DocumentId" = nsi."DocumentId"
-            WHERE d."DocumentUuid" = @documentUuid;
+            WHERE nsi."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", SeedDocumentUuid.Value)
         );

@@ -12,8 +12,8 @@ namespace EdFi.DataManagementService.Backend.Tests.Integration.Common;
 /// </summary>
 /// <remarks>
 /// The resource root row — or the <c>dms.Descriptor</c> row for a descriptor — owns
-/// <c>ContentVersion</c>, <c>IdentityVersion</c> and their timestamps: no trigger writes
-/// <c>dms.Document</c> any more. A stamp read therefore has to name the owning table. Fixtures that hold
+/// <c>ContentVersion</c>, <c>IdentityVersion</c> and their timestamps. A stamp read therefore has to
+/// name the owning table. Fixtures that hold
 /// only a <c>DocumentId</c> select across every candidate stamp table; <c>DocumentId</c> is the primary
 /// key of each, so at most one branch yields a row and the caller can still take the single result.
 /// </remarks>
@@ -35,8 +35,8 @@ public static class DocumentStampSourceSql
     /// <summary>
     /// Builds a PostgreSQL query counting the documents carrying <c>@documentUuid</c> across every stamp
     /// table. The resource root row (or the <c>dms.Descriptor</c> row) <em>is</em> the document now —
-    /// <c>DocumentId</c> comes from <c>dms.DocumentIdSequence</c> and nothing writes <c>dms.Document</c> —
-    /// so "does this document exist" is answered by the owning table, and each table's
+    /// <c>DocumentId</c> comes from <c>dms.DocumentIdSequence</c> — so "does this document exist" is
+    /// answered by the owning table, and each table's
     /// <c>UX_&lt;Root&gt;_DocumentUuid</c> keeps the count at most 1 per branch.
     /// </summary>
     public static string BuildPostgresqlDocumentExistsQuery(
@@ -52,8 +52,9 @@ public static class DocumentStampSourceSql
 
     /// <summary>
     /// Builds a PostgreSQL query for the whole document-state row keyed by <c>@documentUuid</c>: the
-    /// identity and stamp columns come from whichever stamp table owns the uuid, and
-    /// <c>ResourceKeyId</c> — the one column only <c>dms.Document</c> carries — is joined in.
+    /// identity and stamp columns come from whichever stamp table owns the uuid. There is no
+    /// <c>ResourceKeyId</c> — that column lived only on <c>dms.Document</c>; a row's resource identity
+    /// is now the table it lives in.
     /// </summary>
     public static string BuildPostgresqlDocumentStateQuery(
         IEnumerable<(string Schema, string Table)> stampTables
@@ -88,7 +89,6 @@ public static class DocumentStampSourceSql
             SELECT
                 root."DocumentId",
                 root."DocumentUuid",
-                document."ResourceKeyId",
                 root."ContentVersion",
                 root."IdentityVersion",
                 root."ContentLastModifiedAt",
@@ -97,7 +97,6 @@ public static class DocumentStampSourceSql
             FROM (
             {builder}
             ) root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """;
     }
@@ -136,7 +135,6 @@ public static class DocumentStampSourceSql
             SELECT
                 root.[DocumentId],
                 root.[DocumentUuid],
-                document.[ResourceKeyId],
                 root.[ContentVersion],
                 root.[IdentityVersion],
                 root.[ContentLastModifiedAt],
@@ -145,7 +143,6 @@ public static class DocumentStampSourceSql
             FROM (
             {builder}
             ) root
-            INNER JOIN [dms].[Document] document ON document.[DocumentId] = root.[DocumentId]
             WHERE root.[DocumentUuid] = @documentUuid;
             """;
     }

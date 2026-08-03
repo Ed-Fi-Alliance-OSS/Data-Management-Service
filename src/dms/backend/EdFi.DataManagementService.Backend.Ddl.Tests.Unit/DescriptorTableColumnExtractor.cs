@@ -11,9 +11,9 @@ internal static class DescriptorTableColumnExtractor
 {
     /// <summary>
     /// The <c>dms.Descriptor</c> mirror columns the descriptor stamping trigger writes on every stamp:
-    /// the content stamp pair plus the remaining <c>dms.Document</c> metadata. They must not appear in the
-    /// trigger's no-op change detection, because that exclusion is what stops the mirror <c>UPDATE</c> from
-    /// re-firing the trigger and recursing.
+    /// the content stamp pair plus the rest of the document metadata the descriptor row owns itself. They
+    /// must not appear in the trigger's no-op change detection, because that exclusion is what stops the
+    /// mirror <c>UPDATE</c> from re-firing the trigger and recursing.
     /// </summary>
     public static readonly string[] TriggerMaintainedColumns =
     [
@@ -28,7 +28,7 @@ internal static class DescriptorTableColumnExtractor
 
     /// <summary>
     /// <c>dms.Descriptor</c> columns that carry no client content and are never written by anything: this
-    /// v8.0.0 base has no <c>dms.Document.CreatedByOwnershipTokenId</c> to copy, so the column is a
+    /// v8.0.0 base has no ownership-token source for <c>CreatedByOwnershipTokenId</c>, so the column is a
     /// permanently-NULL forward-compatible placeholder. It must not appear in the trigger's no-op change
     /// detection either — not for recursion reasons, but because diffing a column no writer ever sets is
     /// dead weight that would also wrongly imply the trigger maintains it.

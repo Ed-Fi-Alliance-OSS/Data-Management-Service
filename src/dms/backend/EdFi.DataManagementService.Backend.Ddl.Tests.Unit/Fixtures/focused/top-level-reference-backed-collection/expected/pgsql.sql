@@ -23,12 +23,6 @@ END $$;
 CREATE SCHEMA IF NOT EXISTS "dms";
 
 -- ==========================================================
--- Phase 2: Extensions
--- ==========================================================
-
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
--- ==========================================================
 -- Phase 3: Sequences
 -- ==========================================================
 
@@ -60,25 +54,6 @@ BEGIN
     RAISE EXCEPTION '%', msg USING ERRCODE = code;
 END
 $throw_error$;
-
-CREATE OR REPLACE FUNCTION "dms"."uuidv5"(namespace_uuid uuid, name_text text)
-RETURNS uuid
-LANGUAGE plpgsql
-IMMUTABLE STRICT PARALLEL SAFE
-AS $uuidv5$
-DECLARE
-    hash bytea;
-BEGIN
-    hash := digest(
-        decode(replace(namespace_uuid::text, '-', ''), 'hex')
-        || convert_to(name_text, 'UTF8'),
-        'sha1'
-    );
-    hash := set_byte(hash, 6, (get_byte(hash, 6) & x'0f'::int) | x'50'::int);
-    hash := set_byte(hash, 8, (get_byte(hash, 8) & x'3f'::int) | x'80'::int);
-    RETURN encode(substring(hash from 1 for 16), 'hex')::uuid;
-END
-$uuidv5$;
 
 -- ==========================================================
 -- Phase 5: Tables (PK/UNIQUE/CHECK only, no cross-table FKs)
@@ -146,73 +121,6 @@ BEGIN
     END IF;
 END $$;
 
-CREATE TABLE IF NOT EXISTS "dms"."Document"
-(
-    "DocumentId" bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-    "DocumentUuid" uuid NOT NULL,
-    "ResourceKeyId" smallint NOT NULL,
-    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
-    "IdentityVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
-    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
-    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
-    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
-    CONSTRAINT "PK_Document" PRIMARY KEY ("DocumentId")
-);
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'UX_Document_DocumentUuid'
-        AND conrelid = to_regclass('"dms"."Document"')
-    )
-    THEN
-        ALTER TABLE "dms"."Document"
-        ADD CONSTRAINT "UX_Document_DocumentUuid" UNIQUE ("DocumentUuid");
-    END IF;
-END $$;
-
-CREATE TABLE IF NOT EXISTS "dms"."DocumentCache"
-(
-    "DocumentId" bigint NOT NULL,
-    "DocumentUuid" uuid NOT NULL,
-    "ProjectName" varchar(256) NOT NULL,
-    "ResourceName" varchar(256) NOT NULL,
-    "ResourceVersion" varchar(32) NOT NULL,
-    "Etag" varchar(64) NOT NULL,
-    "ContentVersion" bigint NOT NULL,
-    "LastModifiedAt" timestamp with time zone NOT NULL,
-    "DocumentJson" jsonb NOT NULL,
-    "ComputedAt" timestamp with time zone NOT NULL DEFAULT now(),
-    CONSTRAINT "PK_DocumentCache" PRIMARY KEY ("DocumentId")
-);
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'UX_DocumentCache_DocumentUuid'
-        AND conrelid = to_regclass('"dms"."DocumentCache"')
-    )
-    THEN
-        ALTER TABLE "dms"."DocumentCache"
-        ADD CONSTRAINT "UX_DocumentCache_DocumentUuid" UNIQUE ("DocumentUuid");
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'CK_DocumentCache_JsonObject'
-        AND conrelid = to_regclass('"dms"."DocumentCache"')
-    )
-    THEN
-        ALTER TABLE "dms"."DocumentCache"
-        ADD CONSTRAINT "CK_DocumentCache_JsonObject" CHECK (jsonb_typeof("DocumentJson") = 'object');
-    END IF;
-END $$;
-
 CREATE TABLE IF NOT EXISTS "dms"."EffectiveSchema"
 (
     "EffectiveSchemaSingletonId" smallint NOT NULL,
@@ -276,15 +184,6 @@ BEGIN
     END IF;
 END $$;
 
-CREATE TABLE IF NOT EXISTS "dms"."ReferentialIdentity"
-(
-    "ReferentialId" uuid NOT NULL,
-    "DocumentId" bigint NOT NULL,
-    "ResourceKeyId" smallint NOT NULL,
-    CONSTRAINT "PK_ReferentialIdentity" PRIMARY KEY ("ReferentialId"),
-    CONSTRAINT "UX_ReferentialIdentity_DocumentId_ResourceKeyId" UNIQUE ("DocumentId", "ResourceKeyId")
-);
-
 CREATE TABLE IF NOT EXISTS "dms"."ResourceKey"
 (
     "ResourceKeyId" smallint NOT NULL,
@@ -325,74 +224,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_Document_ResourceKey'
-        AND conrelid = to_regclass('"dms"."Document"')
-    )
-    THEN
-        ALTER TABLE "dms"."Document"
-        ADD CONSTRAINT "FK_Document_ResourceKey"
-        FOREIGN KEY ("ResourceKeyId")
-        REFERENCES "dms"."ResourceKey" ("ResourceKeyId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_DocumentCache_Document'
-        AND conrelid = to_regclass('"dms"."DocumentCache"')
-    )
-    THEN
-        ALTER TABLE "dms"."DocumentCache"
-        ADD CONSTRAINT "FK_DocumentCache_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ReferentialIdentity_Document'
-        AND conrelid = to_regclass('"dms"."ReferentialIdentity"')
-    )
-    THEN
-        ALTER TABLE "dms"."ReferentialIdentity"
-        ADD CONSTRAINT "FK_ReferentialIdentity_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ReferentialIdentity_ResourceKey'
-        AND conrelid = to_regclass('"dms"."ReferentialIdentity"')
-    )
-    THEN
-        ALTER TABLE "dms"."ReferentialIdentity"
-        ADD CONSTRAINT "FK_ReferentialIdentity_ResourceKey"
-        FOREIGN KEY ("ResourceKeyId")
-        REFERENCES "dms"."ResourceKey" ("ResourceKeyId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_SchemaComponent_EffectiveSchemaHash'
         AND conrelid = to_regclass('"dms"."SchemaComponent"')
     )
@@ -413,12 +244,6 @@ END $$;
 CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_DocumentId" ON "dms"."Descriptor" ("ResourceKeyId", "DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Descriptor_Uri_Discriminator" ON "dms"."Descriptor" ("Uri", "Discriminator");
-
-CREATE INDEX IF NOT EXISTS "IX_Document_ResourceKeyId_DocumentId" ON "dms"."Document" ("ResourceKeyId", "DocumentId");
-
-CREATE INDEX IF NOT EXISTS "IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt" ON "dms"."DocumentCache" ("ProjectName", "ResourceName", "LastModifiedAt", "DocumentId");
-
-CREATE INDEX IF NOT EXISTS "IX_ReferentialIdentity_DocumentId" ON "dms"."ReferentialIdentity" ("DocumentId");
 
 -- ==========================================================
 -- Phase 8: Triggers

@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
-using System.Globalization;
 using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Security;
@@ -338,22 +337,7 @@ internal static class PeopleRelationshipGetManyStudentScenario
     )
     {
         long termDescriptorId = await ReadDescriptorIdAsync(harness, TermDescriptor);
-        short resourceKeyId = Convert.ToInt16(
-            await ReadInt64Async(
-                harness.DbConnection,
-                """
-                SELECT "ResourceKeyId"
-                FROM "dms"."ResourceKey"
-                WHERE "ProjectName" = @projectName
-                  AND "ResourceName" = @resourceName
-                """,
-                ("@projectName", AuthzProjectName),
-                ("@resourceName", AuthorizationStudentAcademicRecordResourceName)
-            ),
-            CultureInfo.InvariantCulture
-        );
-
-        long documentId = await InsertDocumentAsync(harness.DbConnection, resourceKeyId);
+        long documentId = await ReserveDocumentIdAsync(harness.DbConnection);
         long resolvedStudentAcademicRecordDocumentId =
             studentAcademicRecordDocumentId ?? documentId + 100_000;
 
@@ -502,25 +486,17 @@ internal static class PeopleRelationshipGetManyStudentScenario
             ("@uri", uri)
         );
 
-    private static async Task<long> InsertDocumentAsync(DbConnection connection, short resourceKeyId)
+    /// <summary>
+    /// Reserves a DocumentId for a hand-seeded row. It must come from dms.DocumentIdSequence — the same
+    /// counter the root-table DEFAULT draws from — or the seeded id would collide with the next
+    /// production-created one.
+    /// </summary>
+    private static async Task<long> ReserveDocumentIdAsync(DbConnection connection)
     {
         string sql = IsMssql(connection)
-            ? """
-                INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-                OUTPUT INSERTED.[DocumentId]
-                VALUES (@documentUuid, @resourceKeyId);
-                """
-            : """
-                INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-                VALUES (@documentUuid, @resourceKeyId)
-                RETURNING "DocumentId";
-                """;
+            ? "SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];"
+            : """SELECT nextval('"dms"."DocumentIdSequence"');""";
 
-        return await ReadInt64Async(
-            connection,
-            sql,
-            ("@documentUuid", Guid.NewGuid()),
-            ("@resourceKeyId", resourceKeyId)
-        );
+        return await ReadInt64Async(connection, sql);
     }
 }

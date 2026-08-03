@@ -24,11 +24,11 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 // DMS-1145 task 30 (MSSQL side) — FK non-null but auxiliary-lookup miss. The orphan is
-// manufactured target-side: a dms.Document row is created for a School with NO edfi.School
-// root row, FK_AcademicWeek_School_RefKey is dropped, and AcademicWeek.School_DocumentId is
-// pointed at it. The auxiliary lookup joins the TARGET ROOT table, so the reference resolves
-// to nothing and the link is suppressed. CK_AcademicWeek_School_AllNone stays satisfied
-// because School_SchoolId remains non-null.
+// manufactured target-side: a School DocumentId is drawn from dms.DocumentIdSequence but no
+// edfi.School root row is ever written for it, FK_AcademicWeek_School_RefKey is dropped, and
+// AcademicWeek.School_DocumentId is pointed at it. The auxiliary lookup joins the TARGET ROOT
+// table, so the reference resolves to nothing and the link is suppressed.
+// CK_AcademicWeek_School_AllNone stays satisfied because School_SchoolId remains non-null.
 
 [TestFixture]
 [NonParallelizable]
@@ -46,11 +46,6 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
         Guid.Parse("aaaaaaaa-3000-0000-0000-000000000001")
     );
 
-    // A School document that exists ONLY in dms.Document — no edfi.School root row. The
-    // auxiliary lookup joins the target root table, so this document is unreachable from it.
-    private static readonly DocumentUuid OrphanedSchoolDocumentUuid = new(
-        Guid.Parse("aaaaaaaa-3000-0000-0000-00000000000f")
-    );
     private static readonly DocumentUuid AcademicWeekDocumentUuid = new(
         Guid.Parse("bbbbbbbb-3000-0000-0000-000000000002")
     );
@@ -349,11 +344,9 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
 
     private async Task OrphanAcademicWeekSchoolReferenceAsync()
     {
-        short schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        long orphanedSchoolDocumentId = await InsertDocumentAsync(
-            OrphanedSchoolDocumentUuid.Value,
-            schoolResourceKeyId
-        );
+        // A DocumentId drawn from the sequence but never landed on any root row: nothing in
+        // edfi.School carries it, which is exactly the orphan shape the auxiliary lookup must miss.
+        long orphanedSchoolDocumentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -369,9 +362,7 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
             """
             UPDATE [edfi].[AcademicWeek]
             SET [School_DocumentId] = @orphanedSchoolDocumentId
-            WHERE [DocumentId] IN (
-                SELECT [DocumentId] FROM [dms].[Document] WHERE [DocumentUuid] = @academicWeekUuid
-            );
+            WHERE [DocumentUuid] = @academicWeekUuid;
             """,
             new SqlParameter("@orphanedSchoolDocumentId", orphanedSchoolDocumentId),
             new SqlParameter("@academicWeekUuid", AcademicWeekDocumentUuid.Value)
@@ -444,19 +435,14 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Draws the next <c>DocumentId</c> from <c>dms.DocumentIdSequence</c> — the same counter the
+    /// <c>DocumentId</c> column default on <c>dms.Descriptor</c> and the resource root tables draws
+    /// from, so a seeded id can never collide with one a production write allocates.
+    /// </summary>
+    private async Task<long> NextDocumentIdAsync()
     {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT inserted.[DocumentId] INTO @Inserted ([DocumentId])
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
+        return await _database.ExecuteScalarAsync<long>("SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];");
     }
 
     private async Task<long> InsertDescriptorAsync(
@@ -469,7 +455,7 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
         string shortDescription
     )
     {
-        long documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        long documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """

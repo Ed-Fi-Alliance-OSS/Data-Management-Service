@@ -24,12 +24,7 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-internal sealed record UpdateSemanticsDocumentRow(
-    long DocumentId,
-    Guid DocumentUuid,
-    short ResourceKeyId,
-    long ContentVersion
-);
+internal sealed record UpdateSemanticsDocumentRow(long DocumentId, Guid DocumentUuid, long ContentVersion);
 
 internal sealed record UpdateSemanticsSchoolRow(long DocumentId, long SchoolId, string? ShortName);
 
@@ -117,7 +112,6 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
         }
         """;
 
-    private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly ResourceInfo SchoolResourceInfo = new(
         ProjectName: new ProjectName("Ed-Fi"),
         ResourceName: new ResourceName("School"),
@@ -200,7 +194,6 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
         _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
         _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
         _documentAfterUpdate.DocumentUuid.Should().Be(SchoolDocumentUuid.Value);
-        _documentAfterUpdate.ResourceKeyId.Should().Be(_mappingSet.ResourceKeyIdByResource[SchoolResource]);
         _documentAfterUpdate.ContentVersion.Should().BeGreaterThan(_documentBeforeUpdate.ContentVersion);
     }
 
@@ -347,9 +340,8 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            SELECT root."DocumentId", root."DocumentUuid", root."ContentVersion"
             FROM "edfi"."School" root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", SchoolDocumentUuid.Value)
@@ -359,7 +351,6 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             ? new UpdateSemanticsDocumentRow(
                 GetInt64(rows[0], "DocumentId"),
                 GetGuid(rows[0], "DocumentUuid"),
-                GetInt16(rows[0], "ResourceKeyId"),
                 GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
@@ -433,9 +424,6 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             ))
             .ToArray();
     }
-
-    private static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
-        Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
     private static int GetInt32(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt32(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);

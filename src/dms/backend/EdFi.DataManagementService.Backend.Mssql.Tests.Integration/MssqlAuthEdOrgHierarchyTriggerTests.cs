@@ -31,11 +31,6 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
 
     private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
-    private short _stateEducationAgencyResourceKeyId;
-    private short _educationServiceCenterResourceKeyId;
-    private short _localEducationAgencyResourceKeyId;
-    private short _schoolResourceKeyId;
-    private short _organizationDepartmentResourceKeyId;
     private short _localEducationAgencyCategoryDescriptorResourceKeyId;
     private long _localEducationAgencyCategoryDescriptorDocumentId;
 
@@ -60,11 +55,6 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         );
         _database = _databaseLease.Database;
 
-        _stateEducationAgencyResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StateEducationAgency");
-        _educationServiceCenterResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "EducationServiceCenter");
-        _localEducationAgencyResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "LocalEducationAgency");
-        _schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        _organizationDepartmentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "OrganizationDepartment");
         _localEducationAgencyCategoryDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "LocalEducationAgencyCategoryDescriptor"
@@ -1024,14 +1014,8 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             200,
             "SEA 2"
         );
-        var lea1DocumentId = await InsertDocumentAsync(
-            Guid.Parse("c0000000-0000-0000-0000-000000000500"),
-            _localEducationAgencyResourceKeyId
-        );
-        var lea2DocumentId = await InsertDocumentAsync(
-            Guid.Parse("c0000000-0000-0000-0000-000000000600"),
-            _localEducationAgencyResourceKeyId
-        );
+        var lea1DocumentId = await NextDocumentIdAsync();
+        var lea2DocumentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -1170,14 +1154,8 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             100,
             "Test SEA"
         );
-        var lea1DocumentId = await InsertDocumentAsync(
-            Guid.Parse("c0000000-0000-0000-0000-000000000500"),
-            _localEducationAgencyResourceKeyId
-        );
-        var lea2DocumentId = await InsertDocumentAsync(
-            Guid.Parse("c0000000-0000-0000-0000-000000000600"),
-            _localEducationAgencyResourceKeyId
-        );
+        var lea1DocumentId = await NextDocumentIdAsync();
+        var lea2DocumentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -1306,19 +1284,14 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Draws the next <c>DocumentId</c> from <c>dms.DocumentIdSequence</c> — the same counter the
+    /// <c>DocumentId</c> column default on <c>dms.Descriptor</c> and the resource root tables draws
+    /// from, so a seeded id can never collide with one a production write allocates.
+    /// </summary>
+    private async Task<long> NextDocumentIdAsync()
     {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT inserted.[DocumentId] INTO @Inserted ([DocumentId])
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
+        return await _database.ExecuteScalarAsync<long>("SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];");
     }
 
     private async Task<long> InsertDescriptorAsync(
@@ -1331,7 +1304,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -1373,9 +1346,10 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
     }
 
     /// <summary>
-    /// Inserts a row into <c>dms.Document</c> and <c>edfi.StateEducationAgency</c>. The
-    /// abstract-identity triggers on the concrete table populate
-    /// <c>edfi.EducationOrganizationIdentity</c> automatically; do not pre-seed it.
+    /// Inserts a row into <c>edfi.StateEducationAgency</c> — the root row is the document, so it
+    /// carries the <c>DocumentId</c> and <c>DocumentUuid</c> itself. The abstract-identity triggers
+    /// on the concrete table populate <c>edfi.EducationOrganizationIdentity</c> automatically; do
+    /// not pre-seed it.
     /// </summary>
     private async Task<long> InsertStateEducationAgencyAsync(
         Guid documentUuid,
@@ -1383,18 +1357,20 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         string nameOfInstitution
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _stateEducationAgencyResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[StateEducationAgency] (
                 [DocumentId],
+                [DocumentUuid],
                 [StateEducationAgencyId],
                 [NameOfInstitution]
             )
-            VALUES (@documentId, @stateEducationAgencyId, @nameOfInstitution);
+            VALUES (@documentId, @documentUuid, @stateEducationAgencyId, @nameOfInstitution);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@stateEducationAgencyId", stateEducationAgencyId),
             new SqlParameter("@nameOfInstitution", nameOfInstitution)
         );
@@ -1410,7 +1386,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         long? parentStateEducationAgencyId = null
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _educationServiceCenterResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -1446,7 +1422,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
     }
 
     /// <summary>
-    /// Inserts a row into <c>dms.Document</c> and <c>edfi.LocalEducationAgency</c>. Every parent
+    /// Inserts a row into <c>edfi.LocalEducationAgency</c> — the root row is the document. Every parent
     /// FK is a nullable subtype-specific pair (<c>_DocumentId</c> + scoped natural-key id); a
     /// CHECK constraint on the table requires both members of each pair to be NULL or both
     /// NOT NULL. The category descriptor is required.
@@ -1464,7 +1440,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         long? parentLocalEducationAgencyId = null
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _localEducationAgencyResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -1531,7 +1507,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         long parentLocalEducationAgencyId
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _schoolResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -1564,7 +1540,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
     }
 
     /// <summary>
-    /// Inserts a row into <c>dms.Document</c> and <c>edfi.OrganizationDepartment</c>. Unlike the
+    /// Inserts a row into <c>edfi.OrganizationDepartment</c> — the root row is the document. Unlike the
     /// other concrete EdOrgs, OrganizationDepartment's parent FK references the abstract
     /// <c>edfi.EducationOrganizationIdentity</c> via the generic
     /// <c>ParentEducationOrganization_EducationOrganizationId</c> column rather than a
@@ -1579,7 +1555,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         long? parentEducationOrganizationEducationOrganizationId = null
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _organizationDepartmentResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """

@@ -10,11 +10,7 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-internal sealed record MssqlGeneratedDdlBaselineMutableCounts(
-    long DocumentCount,
-    long SchoolCount,
-    long SchoolAddressCount
-);
+internal sealed record MssqlGeneratedDdlBaselineMutableCounts(long SchoolCount, long SchoolAddressCount);
 
 [TestFixture]
 [Category(MssqlCiShards.Shard4)]
@@ -121,7 +117,7 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
         secondLease.Database.DatabaseName.Should().Be(databaseName);
         secondLease.SnapshotName.Should().Be(snapshotName);
         resetBaselineCounts.Should().Be(baselineCounts);
-        resetMutableCounts.Should().Be(new MssqlGeneratedDdlBaselineMutableCounts(0, 0, 0));
+        resetMutableCounts.Should().Be(new MssqlGeneratedDdlBaselineMutableCounts(0, 0));
         secondDocumentState.Should().Be(firstDocumentState);
         secondCollectionItemId.Should().Be(firstCollectionItemId);
     }
@@ -202,7 +198,7 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
             "Austin"
         );
 
-        secondMutableCountsBeforeInsert.Should().Be(new MssqlGeneratedDdlBaselineMutableCounts(0, 0, 0));
+        secondMutableCountsBeforeInsert.Should().Be(new MssqlGeneratedDdlBaselineMutableCounts(0, 0));
         secondDocumentState.Should().Be(firstDocumentState);
         secondCollectionItemId.Should().Be(firstCollectionItemId);
     }
@@ -239,7 +235,7 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
             snapshotExistsAfterManagerDispose.Should().BeTrue();
 
             var mutableCounts = await ReadMutableCountsAsync(baselineLease.Database);
-            mutableCounts.Should().Be(new MssqlGeneratedDdlBaselineMutableCounts(0, 0, 0));
+            mutableCounts.Should().Be(new MssqlGeneratedDdlBaselineMutableCounts(0, 0));
         }
         finally
         {
@@ -280,8 +276,8 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
         MssqlGeneratedDdlTestDatabase database
     )
     {
+        // edfi.School is the School document's root row, so counting it is the document count.
         return new(
-            await ReadTableCountAsync(database, "[dms].[Document]"),
             await ReadTableCountAsync(database, "[edfi].[School]"),
             await ReadTableCountAsync(database, "[edfi].[SchoolAddress]")
         );
@@ -327,53 +323,32 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
         int schoolId
     )
     {
-        var resourceKeyId = await database.ExecuteScalarAsync<short>(
-            """
-            SELECT [ResourceKeyId]
-            FROM [dms].[ResourceKey]
-            WHERE [ProjectName] = @projectName
-              AND [ResourceName] = @resourceName;
-            """,
-            new SqlParameter("@projectName", "Ed-Fi"),
-            new SqlParameter("@resourceName", "School")
-        );
-
+        // The root row is the document: DocumentId comes from its dms.DocumentIdSequence default and
+        // the stamping trigger writes ContentVersion / IdentityVersion onto the same row.
         await database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            VALUES (@documentUuid, @resourceKeyId);
+            INSERT INTO [edfi].[School] ([DocumentUuid], [SchoolId])
+            VALUES (@documentUuid, @schoolId);
             """,
             new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
+            new SqlParameter("@schoolId", schoolId)
         );
 
         var documentRows = await database.QueryRowsAsync(
             """
             SELECT [DocumentId], [ContentVersion], [IdentityVersion]
-            FROM [dms].[Document]
+            FROM [edfi].[School]
             WHERE [DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid)
         );
         var documentRow = documentRows.Should().ContainSingle().Which;
-        var documentState = new MssqlGeneratedDdlDocumentState(
+
+        return new MssqlGeneratedDdlDocumentState(
             Convert.ToInt64(documentRow["DocumentId"]),
             Convert.ToInt64(documentRow["ContentVersion"]),
             Convert.ToInt64(documentRow["IdentityVersion"])
         );
-
-        await database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [SchoolId])
-            SELECT @documentId, document.[DocumentUuid], @schoolId
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
-            """,
-            new SqlParameter("@documentId", documentState.DocumentId),
-            new SqlParameter("@schoolId", schoolId)
-        );
-
-        return documentState;
     }
 
     private static Task<long> InsertSchoolAddressAsync(

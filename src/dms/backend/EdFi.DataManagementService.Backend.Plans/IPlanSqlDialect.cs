@@ -53,8 +53,7 @@ internal interface IPlanSqlDialect
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="keyset">The keyset table contract specifying table and column names.</param>
     /// <param name="metadataTable">
-    /// The table the metadata columns are read from — <c>dms.Document</c> or a resource root table
-    /// carrying the mirror columns.
+    /// The resource root table the metadata columns are read from.
     /// </param>
     void AppendDocumentMetadataSelect(
         SqlWriter writer,
@@ -68,8 +67,7 @@ internal interface IPlanSqlDialect
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="documentIdParameterName">The bare document id parameter name.</param>
     /// <param name="metadataTable">
-    /// The table the metadata columns are read from — <c>dms.Document</c> or a resource root table
-    /// carrying the mirror columns.
+    /// The resource root table the metadata columns are read from.
     /// </param>
     void AppendSingleDocumentMetadataSelect(
         SqlWriter writer,

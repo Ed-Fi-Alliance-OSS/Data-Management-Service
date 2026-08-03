@@ -11,15 +11,16 @@ public sealed partial class MssqlGeneratedDdlTestDatabase
 {
     /// <summary>
     /// Runs a raw root-table seeding statement with the table's triggers disabled, then re-asserts the
-    /// <c>dms.Document</c> metadata mirror on the seeded root row before re-enabling them.
+    /// stamp the suppressed trigger would have written on the seeded root row before re-enabling them.
     /// </summary>
     /// <remarks>
-    /// The root stamping trigger is what normally dual-writes <c>DocumentUuid</c>, the content stamp, and
-    /// the identity stamp from <c>dms.Document</c> onto the root row; disabling it leaves those mirrors at
-    /// their column defaults (<c>newid()</c> / <c>0</c> / <c>sysutcdatetime()</c>). Read paths now source
-    /// document metadata — including the GET-by-id target probe on <c>UX_&lt;Root&gt;_DocumentUuid</c> —
-    /// from those mirrors, so a seeder that bypasses the trigger must restore the invariant itself. The
-    /// mirror runs while triggers are still disabled so it does not itself bump the content stamp.
+    /// The root row owns its document metadata outright. The root stamping trigger is what normally
+    /// writes the content and identity stamps; disabling it leaves them at their column defaults
+    /// (<c>0</c> / <c>sysutcdatetime()</c>), which would hand the fixture a document whose stamps never
+    /// came off <c>dms.ChangeVersionSequence</c> and therefore do not order against production-written
+    /// rows. The re-assertion is root-local — there is no second table to copy from — and it runs while
+    /// triggers are still disabled so it does not itself bump the stamp a second time.
+    /// <c>DocumentUuid</c> is not touched: the seeding statement binds it directly.
     /// </remarks>
     public async Task ExecuteWithTriggersTemporarilyDisabledAsync(
         string schema,
@@ -50,14 +51,11 @@ public sealed partial class MssqlGeneratedDdlTestDatabase
         await ExecuteNonQueryAsync(
             $"""
             UPDATE root
-            SET root.[DocumentUuid] = document.[DocumentUuid],
-                root.[ContentVersion] = document.[ContentVersion],
-                root.[ContentLastModifiedAt] = document.[ContentLastModifiedAt],
-                root.[IdentityVersion] = document.[IdentityVersion],
-                root.[IdentityLastModifiedAt] = document.[IdentityLastModifiedAt],
-                root.[CreatedAt] = document.[CreatedAt]
+            SET root.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],
+                root.[ContentLastModifiedAt] = SYSUTCDATETIME(),
+                root.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],
+                root.[IdentityLastModifiedAt] = SYSUTCDATETIME()
             FROM [{schema}].[{table}] root
-            INNER JOIN [dms].[Document] document ON document.[DocumentId] = root.[DocumentId]
             WHERE root.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId)

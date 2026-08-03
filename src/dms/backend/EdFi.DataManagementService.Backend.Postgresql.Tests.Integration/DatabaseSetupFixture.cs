@@ -11,13 +11,24 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 /// <summary>
-/// One-time setup fixture that provisions the pgcrypto extension and the
-/// dms.uuidv5() helper function required by the parity tests.
-/// Runs once per test assembly before any test fixtures execute.
+/// One-time setup fixture that provisions the dms schema, the change-version sequence and the
+/// dms.GetMaxChangeVersion() helper function, and owns the assembly-wide data source the
+/// core-function fixtures share. Runs once per test assembly before any test fixtures execute.
 /// </summary>
 [SetUpFixture]
 public class DatabaseSetupFixture
 {
+    private static NpgsqlDataSource? _dataSource;
+
+    /// <summary>
+    /// The assembly-wide data source opened by <see cref="OneTimeSetUp"/>.
+    /// </summary>
+    internal static NpgsqlDataSource DataSource =>
+        _dataSource
+        ?? throw new InvalidOperationException(
+            "DataSource has not been initialized. Ensure DatabaseSetupFixture has run."
+        );
+
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
@@ -27,9 +38,7 @@ public class DatabaseSetupFixture
         var schema = new DbSchemaName("dms");
 
         var createSchema = dialect.CreateSchemaIfNotExists(schema);
-        var createExtension = dialect.CreateExtensionIfNotExists("pgcrypto");
         var createSequence = dialect.CreateSequenceIfNotExists(schema, "ChangeVersionSequence");
-        var createUuidv5 = dialect.CreateUuidv5Function(schema);
         var createGetMax = dialect.CreateGetMaxChangeVersionFunction(schema);
 
         var dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
@@ -43,17 +52,7 @@ public class DatabaseSetupFixture
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            await using (var cmd = new NpgsqlCommand(createExtension, connection))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
-
             await using (var cmd = new NpgsqlCommand(createSequence, connection))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
-
-            await using (var cmd = new NpgsqlCommand(createUuidv5, connection))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
@@ -63,7 +62,7 @@ public class DatabaseSetupFixture
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            Uuidv5ParityTestBase.InitializeDataSource(dataSource);
+            _dataSource = dataSource;
         }
         catch
         {
@@ -75,7 +74,11 @@ public class DatabaseSetupFixture
     [OneTimeTearDown]
     public async Task OneTimeTearDown()
     {
-        await Uuidv5ParityTestBase.DisposeDataSourceAsync();
+        if (_dataSource is not null)
+        {
+            await _dataSource.DisposeAsync();
+            _dataSource = null;
+        }
     }
 
     /// <summary>

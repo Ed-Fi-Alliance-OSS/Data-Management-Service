@@ -755,11 +755,11 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ta
     }
 
     [Test]
-    public void It_should_emit_fk_from_abstract_identity_table_to_dms_document()
+    public void It_should_emit_fk_from_abstract_identity_table_to_a_core_table()
     {
-        // Design requirement: abstract identity tables must have FK to dms.Document
-        _ddl.Should().Contain("FK_TestIdentity_Document");
-        _ddl.Should().Contain("REFERENCES \"dms\".\"Document\"");
+        // A declared abstract-identity FK to a core dms table must be rendered by the emitter.
+        _ddl.Should().Contain("FK_TestIdentity_Descriptor");
+        _ddl.Should().Contain("REFERENCES \"dms\".\"Descriptor\"");
     }
 
     [Test]
@@ -767,7 +767,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ta
     {
         // FK emission for abstract identity tables should come after table creation
         var tableIndex = _ddl.IndexOf("CREATE TABLE IF NOT EXISTS \"edfi\".\"TestIdentity\"");
-        var fkIndex = _ddl.IndexOf("FK_TestIdentity_Document");
+        var fkIndex = _ddl.IndexOf("FK_TestIdentity_Descriptor");
 
         tableIndex.Should().BeGreaterOrEqualTo(0, "expected identity table CREATE TABLE in DDL");
         fkIndex.Should().BeGreaterOrEqualTo(0, "expected identity table FK in DDL");
@@ -777,8 +777,8 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ta
     [Test]
     public void It_should_emit_fk_with_cascade_delete()
     {
-        // Abstract identity table FK to dms.Document must use CASCADE delete
-        // so rows are cleaned up when the Document is deleted.
+        // A declared abstract identity table FK must keep its CASCADE delete action
+        // so rows are cleaned up when the referenced row is deleted.
         _ddl.Should().Contain("ON DELETE CASCADE");
     }
 
@@ -786,7 +786,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ta
     public void It_should_follow_fk_naming_convention()
     {
         // FK constraint should follow FK_{TableName}_{TargetTableName} convention.
-        _ddl.Should().MatchRegex(@"CONSTRAINT\s+""FK_TestIdentity_Document""");
+        _ddl.Should().MatchRegex(@"CONSTRAINT\s+""FK_TestIdentity_Descriptor""");
     }
 }
 
@@ -806,11 +806,11 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ta
     }
 
     [Test]
-    public void It_should_emit_fk_from_abstract_identity_table_to_dms_document()
+    public void It_should_emit_fk_from_abstract_identity_table_to_a_core_table()
     {
-        // Design requirement: abstract identity tables must have FK to dms.Document
-        _ddl.Should().Contain("FK_TestIdentity_Document");
-        _ddl.Should().Contain("REFERENCES [dms].[Document]");
+        // A declared abstract-identity FK to a core dms table must be rendered by the emitter.
+        _ddl.Should().Contain("FK_TestIdentity_Descriptor");
+        _ddl.Should().Contain("REFERENCES [dms].[Descriptor]");
     }
 
     [Test]
@@ -818,7 +818,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ta
     {
         // FK emission for abstract identity tables should come after table creation
         var tableIndex = _ddl.IndexOf("CREATE TABLE [edfi].[TestIdentity]");
-        var fkIndex = _ddl.IndexOf("FK_TestIdentity_Document");
+        var fkIndex = _ddl.IndexOf("FK_TestIdentity_Descriptor");
 
         tableIndex.Should().BeGreaterOrEqualTo(0, "expected identity table CREATE TABLE in DDL");
         fkIndex.Should().BeGreaterOrEqualTo(0, "expected identity table FK in DDL");
@@ -828,8 +828,8 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ta
     [Test]
     public void It_should_emit_fk_with_cascade_delete()
     {
-        // Abstract identity table FK to dms.Document must use CASCADE delete
-        // so rows are cleaned up when the Document is deleted.
+        // A declared abstract identity table FK must keep its CASCADE delete action
+        // so rows are cleaned up when the referenced row is deleted.
         _ddl.Should().Contain("ON DELETE CASCADE");
     }
 
@@ -837,7 +837,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ta
     public void It_should_follow_fk_naming_convention()
     {
         // FK constraint should follow FK_{TableName}_{TargetTableName} convention.
-        _ddl.Should().MatchRegex(@"CONSTRAINT\s+\[FK_TestIdentity_Document\]");
+        _ddl.Should().MatchRegex(@"CONSTRAINT\s+\[FK_TestIdentity_Descriptor\]");
     }
 }
 
@@ -2257,7 +2257,7 @@ internal static class AbstractIdentityTableFixture
                     SourceJsonPath: null,
                     TargetResource: null
                 ),
-                // The DocumentUuid carried from dms.Document by the abstract identity maintenance trigger,
+                // The DocumentUuid copied from the root row by the abstract identity maintenance trigger,
                 // as derived by AbstractIdentityTableAndUnionViewDerivationPass.
                 new DbColumnModel(
                     documentUuidColumn,
@@ -3309,7 +3309,7 @@ internal static class AbstractIdentityTableFkFixture
         var abstractResource = new QualifiedResourceName("Ed-Fi", "Test");
         var abstractResourceKey = new ResourceKeyEntry(1, abstractResource, "1.0.0", true);
 
-        // Abstract identity table with FK to dms.Document
+        // Abstract identity table carrying a declared FK to a core dms table
         var identityTableName = new DbTableName(edfiSchema, "TestIdentity");
         var identityTable = new AbstractIdentityTableInfo(
             abstractResourceKey,
@@ -3347,11 +3347,12 @@ internal static class AbstractIdentityTableFkFixture
                     ),
                 ],
                 [
-                    // FK from abstract identity table to dms.Document (as created by BuildIdentityTableConstraints)
+                    // A declared FK from an abstract identity table to a core dms table, shaped the way
+                    // BuildIdentityTableConstraints emits one.
                     new TableConstraint.ForeignKey(
-                        "FK_TestIdentity_Document",
+                        "FK_TestIdentity_Descriptor",
                         [documentIdColumn],
-                        new DbTableName(dmsSchema, "Document"),
+                        new DbTableName(dmsSchema, "Descriptor"),
                         [documentIdColumn],
                         ReferentialAction.Cascade,
                         ReferentialAction.NoAction
@@ -4032,9 +4033,8 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
     public void It_should_source_the_delete_branch_change_version_from_the_sequence()
     {
         // The tombstone's ChangeVersion is a fresh sequence value taken inside the trigger: the
-        // deleted row is gone and the dms.Document row may already be gone too, so nothing
-        // surviving can supply a post-delete stamp. Taking it here also means the delete order
-        // (root row before dms.Document) no longer decides whether a tombstone is written.
+        // deleted row is gone, so nothing surviving can supply a post-delete stamp. Taking it
+        // here also means no cross-table delete ordering decides whether a tombstone is written.
         var deleteBranch = TrackedChangeTriggerFixture.PgsqlDeleteBranch(_ddl);
 
         deleteBranch
@@ -4273,7 +4273,7 @@ internal static class TrackedChangeTriggerFixture
     /// <summary>
     /// Slices the first tracked-change <c>INSERT … ;</c> statement out of an emitted script so
     /// assertions cannot accidentally match the surrounding stamp statements, which legitimately
-    /// still reference <c>dms.Document</c>.
+    /// reference the stamped root row and its document metadata columns.
     /// </summary>
     internal static string FirstTrackedChangeInsert(string ddl, string insertPrefix)
     {
@@ -4287,7 +4287,7 @@ internal static class TrackedChangeTriggerFixture
     /// <summary>
     /// Slices the PostgreSQL stamping trigger's <c>IF TG_OP = 'DELETE' THEN … RETURN OLD;</c> body out
     /// of an emitted script, so a delete-branch assertion cannot match the INSERT/UPDATE branches that
-    /// legitimately still stamp <c>dms.Document</c> during the dual-write phase.
+    /// legitimately stamp the root row's own document metadata columns.
     /// </summary>
     internal static string PgsqlDeleteBranch(string ddl)
     {

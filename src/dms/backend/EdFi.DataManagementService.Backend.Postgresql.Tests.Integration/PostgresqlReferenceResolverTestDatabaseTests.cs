@@ -63,10 +63,7 @@ public class Given_PostgresqlReferenceResolverTestDatabase
             .Should()
             .Contain([
                 "dms.Descriptor",
-                "dms.Document",
-                "dms.DocumentCache",
                 "dms.EffectiveSchema",
-                "dms.ReferentialIdentity",
                 "dms.ResourceKey",
                 "dms.SchemaComponent",
                 "edfi.LocalEducationAgency",
@@ -109,7 +106,7 @@ public class Given_PostgresqlReferenceResolverTestDatabase
                 new Dictionary<string, long>
                 {
                     ["dms.ResourceKey"] = _database.Fixture.SeedData.ResourceKeys.Count,
-                    ["dms.Document"] = _database.Fixture.SeedData.Documents.Count,
+                    ["edfi.School"] = _database.Fixture.SeedData.Schools.Count,
                     ["dms.Descriptor"] = _database.Fixture.SeedData.Descriptors.Count,
                 }
             );
@@ -126,7 +123,8 @@ public class Given_PostgresqlReferenceResolverTestDatabase
         return new Dictionary<string, long>
         {
             ["dms.ResourceKey"] = await ReadTableCountAsync(connectionString, "dms.\"ResourceKey\""),
-            ["dms.Document"] = await ReadTableCountAsync(connectionString, "dms.\"Document\""),
+            // The School root row is the document now, so the seeded document count is the root count.
+            ["edfi.School"] = await ReadTableCountAsync(connectionString, "edfi.\"School\""),
             ["dms.Descriptor"] = await ReadTableCountAsync(connectionString, "dms.\"Descriptor\""),
         };
     }

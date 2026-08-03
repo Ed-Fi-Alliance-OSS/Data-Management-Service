@@ -26,9 +26,6 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private RecordingPostgresqlRelationalCommandExecutor _commandExecutor = null!;
-    private short _stateEducationAgencyResourceKeyId;
-    private short _localEducationAgencyResourceKeyId;
-    private short _schoolResourceKeyId;
     private short _localEducationAgencyCategoryDescriptorResourceKeyId;
     private long _localEducationAgencyCategoryDescriptorDocumentId;
 
@@ -41,9 +38,6 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
         );
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
 
-        _stateEducationAgencyResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StateEducationAgency");
-        _localEducationAgencyResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "LocalEducationAgency");
-        _schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         _localEducationAgencyCategoryDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "LocalEducationAgencyCategoryDescriptor"
@@ -286,16 +280,16 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Dispenses a DocumentId from <c>dms.DocumentIdSequence</c> — the same sequence the seeded row's
+    /// column DEFAULT draws from, so a seeded id can never collide with one the write path produces.
+    /// </summary>
+    private async Task<long> NextDocumentIdAsync()
     {
         return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            SELECT nextval('"dms"."DocumentIdSequence"');
+            """
         );
     }
 
@@ -309,7 +303,7 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -356,18 +350,20 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
         string nameOfInstitution
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _stateEducationAgencyResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "edfi"."StateEducationAgency" (
                 "DocumentId",
+                "DocumentUuid",
                 "StateEducationAgencyId",
                 "NameOfInstitution"
             )
-            VALUES (@documentId, @stateEducationAgencyId, @nameOfInstitution);
+            VALUES (@documentId, @documentUuid, @stateEducationAgencyId, @nameOfInstitution);
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("stateEducationAgencyId", stateEducationAgencyId),
             new NpgsqlParameter("nameOfInstitution", nameOfInstitution)
         );
@@ -383,7 +379,7 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
         long? parentStateEducationAgencyId = null
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _localEducationAgencyResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -432,7 +428,7 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
         long parentLocalEducationAgencyId
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _schoolResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """

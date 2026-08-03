@@ -200,17 +200,6 @@ internal static class CollectionDescriptorProjectionFixture
             DROP SCHEMA IF EXISTS "{TestSchema}" CASCADE;
             CREATE SCHEMA "{TestSchema}";
 
-            CREATE TABLE IF NOT EXISTS dms."Document" (
-                "DocumentId" bigint PRIMARY KEY,
-                "DocumentUuid" uuid NOT NULL,
-                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
-                "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
-            );
-
             CREATE TABLE IF NOT EXISTS dms."Descriptor" (
                 "DocumentId" bigint PRIMARY KEY,
                 "Namespace" varchar(255) NOT NULL DEFAULT '',
@@ -246,10 +235,6 @@ internal static class CollectionDescriptorProjectionFixture
         await using var cmd = new NpgsqlCommand(
             $"""
             DELETE FROM dms."Descriptor" WHERE "DocumentId" IN ({DescriptorId920}, {DescriptorId921});
-            DELETE FROM dms."Document" WHERE "DocumentId" IN ({SchoolDocumentId1});
-
-            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion") VALUES
-                ({SchoolDocumentId1}, '82000000-0000-0000-0000-000000000820', 0, 1, 1);
 
             INSERT INTO dms."Descriptor" ("DocumentId", "Namespace", "CodeValue", "ShortDescription", "Discriminator", "Uri") VALUES
                 ({DescriptorId920}, 'uri://ed-fi.org/AddressTypeDescriptor', 'Physical', 'Physical', 'edfi.AddressTypeDescriptor', '{Uri920}'),
@@ -266,7 +251,6 @@ internal static class CollectionDescriptorProjectionFixture
             $"""
             DROP SCHEMA IF EXISTS "{TestSchema}" CASCADE;
             DELETE FROM dms."Descriptor" WHERE "DocumentId" IN ({DescriptorId920}, {DescriptorId921});
-            DELETE FROM dms."Document" WHERE "DocumentId" IN ({SchoolDocumentId1});
             """,
             connection
         );

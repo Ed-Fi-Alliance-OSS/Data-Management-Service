@@ -451,7 +451,7 @@ internal static class DescriptorRuntimeScenario
 
         (await CountDocumentRowsAsync(harness, resourceId))
             .Should()
-            .Be(0, "descriptor DELETE must remove the dms.Document row");
+            .Be(0, "descriptor DELETE must remove the dms.Descriptor row");
     }
 
     public static async Task It_rejects_descriptor_delete_when_referenced(ApiIntegrationHarness harness)
@@ -678,7 +678,7 @@ internal static class DescriptorRuntimeScenario
     {
         await using DbCommand command = harness.DbConnection.CreateCommand();
         command.CommandText = """
-            SELECT COUNT(*) FROM "dms"."Document" WHERE "DocumentUuid" = @documentUuid
+            SELECT COUNT(*) FROM "dms"."Descriptor" WHERE "DocumentUuid" = @documentUuid
             """;
         DbParameter parameter = command.CreateParameter();
         parameter.ParameterName = "@documentUuid";
@@ -697,7 +697,7 @@ internal static class DescriptorRuntimeScenario
         await using DbCommand command = harness.DbConnection.CreateCommand();
         command.CommandText = """
             SELECT "ContentVersion", "ContentLastModifiedAt"
-            FROM "dms"."Document"
+            FROM "dms"."Descriptor"
             WHERE "DocumentUuid" = @documentUuid
             """;
         DbParameter parameter = command.CreateParameter();

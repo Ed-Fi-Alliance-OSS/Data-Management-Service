@@ -1319,7 +1319,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
     /// <summary>
     /// Returns the fixed SQL alias for a predicate target. <c>?id=</c> filtering binds to the root
-    /// alias because every root table mirrors <c>DocumentUuid</c>, so no <c>dms.Document</c> join is
+    /// alias because every root table carries its own <c>DocumentUuid</c> column, so no extra join is
     /// needed. The target is kept distinct from <see cref="QueryPredicateTarget.RootColumn"/> so the
     /// pinned predicate sort order stays stable and the uuid comparison stays scalar-kind free.
     /// </summary>

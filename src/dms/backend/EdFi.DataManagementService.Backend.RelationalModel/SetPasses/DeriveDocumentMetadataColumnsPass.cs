@@ -6,7 +6,7 @@
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 
 /// <summary>
-/// Synthesizes the <c>dms.Document</c> metadata columns (<c>DocumentUuid</c>, <c>IdentityVersion</c>,
+/// Synthesizes the document metadata columns (<c>DocumentUuid</c>, <c>IdentityVersion</c>,
 /// <c>IdentityLastModifiedAt</c>, <c>CreatedAt</c>, and <c>CreatedByOwnershipTokenId</c>) onto the root table
 /// of every concrete resource stored as relational tables, along with the per-root
 /// <c>UX_&lt;Table&gt;_DocumentUuid</c> unique constraint that keeps the public API id unique within the

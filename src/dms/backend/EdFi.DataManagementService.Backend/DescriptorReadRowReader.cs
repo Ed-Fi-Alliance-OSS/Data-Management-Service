@@ -26,7 +26,7 @@ internal sealed class DescriptorReadInvariantException(string message) : Invalid
 
 /// <summary>
 /// Shared relational reader for descriptor rows emitted from <c>dms.Descriptor</c>. That row carries
-/// both the descriptor content columns and the trigger-owned <c>dms.Document</c> metadata mirrors, so
+/// both the descriptor content columns and its own trigger-owned document metadata, so
 /// every column this reader materializes comes from the one table.
 /// </summary>
 internal static class DescriptorReadRowReader
@@ -129,10 +129,10 @@ internal static class DescriptorReadRowReader
 
     /// <summary>
     /// Reads the required <c>ResourceKeyId</c> descriptor type discriminator.
-    /// <c>dms.Descriptor.ResourceKeyId</c> is a nullable trigger-owned mirror of
-    /// <c>dms.Document.ResourceKeyId</c> with no default, so a stored NULL means the row was written
-    /// with the stamping trigger bypassed. That is tamper, not a readable descriptor: it fails closed
-    /// with a named invariant rather than escaping as a provider cast error.
+    /// <c>dms.Descriptor.ResourceKeyId</c> is nullable with no default and is bound only by the
+    /// descriptor write path's <c>INSERT</c>, so a stored NULL means the row was written out of band.
+    /// That is tamper, not a readable descriptor: it fails closed with a named invariant rather than
+    /// escaping as a provider cast error.
     /// </summary>
     private static short ReadRequiredResourceKeyId(IRelationalCommandReader reader, long documentId)
     {

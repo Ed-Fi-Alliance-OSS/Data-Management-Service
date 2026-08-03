@@ -17,8 +17,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// Integration tests for <see cref="HydrationExecutor"/> against a real PostgreSQL database.
 /// </summary>
 /// <remarks>
-/// These tests provision a temporary schema with <c>dms.Document</c> and test resource tables,
-/// insert known data, execute hydration, and assert the returned row structure.
+/// These tests provision a temporary schema with test resource tables, insert known data,
+/// execute hydration, and assert the returned row structure.
 /// </remarks>
 [TestFixture]
 [NonParallelizable]
@@ -26,7 +26,6 @@ public class Given_A_Page_With_Multiple_Documents
 {
     private NpgsqlDataSource _dataSource = null!;
     private HydratedPage _result = null!;
-    private HydratedPage _rootSourcedResult = null!;
 
     private const string TestSchema = "hydtest";
 
@@ -43,28 +42,16 @@ public class Given_A_Page_With_Multiple_Documents
             """
             DROP SCHEMA IF EXISTS hydtest CASCADE;
             CREATE SCHEMA hydtest;
-            CREATE SCHEMA IF NOT EXISTS dms;
 
-            CREATE TABLE IF NOT EXISTS dms."Document" (
-                "DocumentId" bigint PRIMARY KEY,
-                "DocumentUuid" uuid NOT NULL,
-                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
-                "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
-            );
-
-            -- Root tables carry trigger-maintained mirrors of the dms."Document" metadata columns.
+            -- The resource root row is the document: it carries the metadata columns itself.
             CREATE TABLE hydtest."School" (
                 "DocumentId" bigint PRIMARY KEY,
                 "SchoolId" integer NOT NULL,
-                "DocumentUuid" uuid NULL,
-                "ContentVersion" bigint NULL,
-                "IdentityVersion" bigint NULL,
-                "ContentLastModifiedAt" timestamptz NULL,
-                "IdentityLastModifiedAt" timestamptz NULL
+                "DocumentUuid" uuid NOT NULL,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "IdentityVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydtest."SchoolAddress" (
@@ -88,17 +75,10 @@ public class Given_A_Page_With_Multiple_Documents
         await ExecuteSql(
             connection,
             """
-            DELETE FROM dms."Document" WHERE "DocumentId" IN (101, 102);
-
-            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ContentVersion", "IdentityVersion")
+            INSERT INTO hydtest."School" ("DocumentId", "SchoolId", "DocumentUuid", "ContentVersion", "IdentityVersion")
             VALUES
-                (101, 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa', 10, 10),
-                (102, 'bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb', 20, 20);
-
-            INSERT INTO hydtest."School" ("DocumentId", "SchoolId")
-            VALUES
-                (101, 255901),
-                (102, 255902);
+                (101, 255901, 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa', 10, 10),
+                (102, 255902, 'bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb', 20, 20);
 
             INSERT INTO hydtest."SchoolAddress" ("CollectionItemId", "School_DocumentId", "Ordinal", "City")
             VALUES
@@ -112,16 +92,6 @@ public class Given_A_Page_With_Multiple_Documents
                 (5002, 101, 1001, 1, '2021-06-15'),
                 (5003, 101, 1002, 0, '2022-09-01'),
                 (5004, 102, 1003, 0, '2023-03-01');
-
-            -- Stand in for the generated dual-write trigger: the root row mirrors dms."Document".
-            UPDATE hydtest."School" s
-            SET "DocumentUuid" = d."DocumentUuid",
-                "ContentVersion" = d."ContentVersion",
-                "IdentityVersion" = d."IdentityVersion",
-                "ContentLastModifiedAt" = d."ContentLastModifiedAt",
-                "IdentityLastModifiedAt" = d."IdentityLastModifiedAt"
-            FROM dms."Document" d
-            WHERE d."DocumentId" = s."DocumentId";
             """
         );
 
@@ -155,16 +125,6 @@ public class Given_A_Page_With_Multiple_Documents
             SqlDialect.Pgsql,
             CancellationToken.None
         );
-
-        await using var rootSourcedConnection = await _dataSource.OpenConnectionAsync();
-        _rootSourcedResult = await HydrationExecutor.ExecuteAsync(
-            rootSourcedConnection,
-            plan,
-            keyset,
-            SqlDialect.Pgsql,
-            new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable },
-            CancellationToken.None
-        );
     }
 
     [OneTimeTearDown]
@@ -173,13 +133,7 @@ public class Given_A_Page_With_Multiple_Documents
         if (_dataSource is not null)
         {
             await using var connection = await _dataSource.OpenConnectionAsync();
-            await ExecuteSql(
-                connection,
-                """
-                DROP SCHEMA IF EXISTS hydtest CASCADE;
-                DELETE FROM dms."Document" WHERE "DocumentId" IN (101, 102);
-                """
-            );
+            await ExecuteSql(connection, "DROP SCHEMA IF EXISTS hydtest CASCADE;");
             await _dataSource.DisposeAsync();
         }
     }
@@ -306,38 +260,31 @@ public class Given_A_Page_With_Multiple_Documents
     }
 
     [Test]
-    public void It_returns_the_same_document_metadata_from_the_root_table_mirrors()
+    public void It_returns_metadata_values_seeded_on_the_root_rows()
     {
-        _rootSourcedResult.DocumentMetadata.Should().Equal(_result.DocumentMetadata);
-    }
-
-    [Test]
-    public void It_returns_root_sourced_metadata_values_matching_the_document_rows()
-    {
-        _rootSourcedResult.DocumentMetadata.Should().HaveCount(2);
-        _rootSourcedResult.DocumentMetadata[0].DocumentId.Should().Be(101);
-        _rootSourcedResult
+        _result.DocumentMetadata.Should().HaveCount(2);
+        _result.DocumentMetadata[0].DocumentId.Should().Be(101);
+        _result
             .DocumentMetadata[0]
             .DocumentUuid.Should()
             .Be(Guid.Parse("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"));
-        _rootSourcedResult.DocumentMetadata[0].ContentVersion.Should().Be(10);
-        _rootSourcedResult.DocumentMetadata[0].IdentityVersion.Should().Be(10);
-        _rootSourcedResult.DocumentMetadata[1].DocumentId.Should().Be(102);
-        _rootSourcedResult
+        _result.DocumentMetadata[0].ContentVersion.Should().Be(10);
+        _result.DocumentMetadata[0].IdentityVersion.Should().Be(10);
+        _result.DocumentMetadata[1].DocumentId.Should().Be(102);
+        _result
             .DocumentMetadata[1]
             .DocumentUuid.Should()
             .Be(Guid.Parse("bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb"));
-        _rootSourcedResult.DocumentMetadata[1].ContentVersion.Should().Be(20);
+        _result.DocumentMetadata[1].ContentVersion.Should().Be(20);
     }
 
     [Test]
-    public void It_reads_root_sourced_metadata_without_touching_the_document_table()
+    public void It_reads_metadata_without_touching_the_document_table()
     {
         var batchSql = HydrationBatchBuilder.Build(
             HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Pgsql),
             new PageKeysetSpec.Single(101L),
-            SqlDialect.Pgsql,
-            new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable }
+            SqlDialect.Pgsql
         );
 
         batchSql.Should().Contain("FROM \"hydtest\".\"School\" d");
@@ -372,22 +319,16 @@ public class Given_A_Single_DocumentId_Keyset
             """
             DROP SCHEMA IF EXISTS hydsingle CASCADE;
             CREATE SCHEMA hydsingle;
-            CREATE SCHEMA IF NOT EXISTS dms;
 
-            CREATE TABLE IF NOT EXISTS dms."Document" (
+            -- The resource root row is the document: it carries the metadata columns itself.
+            CREATE TABLE hydsingle."School" (
                 "DocumentId" bigint PRIMARY KEY,
+                "SchoolId" integer NOT NULL,
                 "DocumentUuid" uuid NOT NULL,
-                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
                 "IdentityVersion" bigint NOT NULL DEFAULT 1,
                 "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
-            );
-
-            CREATE TABLE hydsingle."School" (
-                "DocumentId" bigint PRIMARY KEY,
-                "SchoolId" integer NOT NULL
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydsingle."SchoolAddress" (
@@ -410,15 +351,10 @@ public class Given_A_Single_DocumentId_Keyset
         await ExecuteSql(
             connection,
             """
-            DELETE FROM dms."Document" WHERE "DocumentId" IN (201, 202);
-
-            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid")
+            INSERT INTO hydsingle."School" ("DocumentId", "SchoolId", "DocumentUuid")
             VALUES
-                (201, 'cccccccc-3333-3333-3333-cccccccccccc'),
-                (202, 'dddddddd-4444-4444-4444-dddddddddddd');
-
-            INSERT INTO hydsingle."School" ("DocumentId", "SchoolId")
-            VALUES (201, 100001), (202, 100002);
+                (201, 100001, 'cccccccc-3333-3333-3333-cccccccccccc'),
+                (202, 100002, 'dddddddd-4444-4444-4444-dddddddddddd');
 
             INSERT INTO hydsingle."SchoolAddress" ("CollectionItemId", "School_DocumentId", "Ordinal", "City")
             VALUES (2001, 201, 0, 'Alpha'), (2002, 202, 0, 'Beta');
@@ -448,13 +384,7 @@ public class Given_A_Single_DocumentId_Keyset
         if (_dataSource is not null)
         {
             await using var connection = await _dataSource.OpenConnectionAsync();
-            await ExecuteSql(
-                connection,
-                """
-                DROP SCHEMA IF EXISTS hydsingle CASCADE;
-                DELETE FROM dms."Document" WHERE "DocumentId" IN (201, 202);
-                """
-            );
+            await ExecuteSql(connection, "DROP SCHEMA IF EXISTS hydsingle CASCADE;");
             await _dataSource.DisposeAsync();
         }
     }
@@ -521,22 +451,12 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
         IncludeDocumentReferenceLookup: true,
         UseSingleDocumentFastPath: true
     );
-    private static readonly HydrationExecutionOptions _rootSourcedFastPathOptions = new(
-        IncludeDescriptorProjection: true,
-        IncludeDocumentReferenceLookup: true,
-        UseSingleDocumentFastPath: true
-    )
-    {
-        DocumentMetadataSource = DocumentMetadataSource.RootTable,
-    };
 
     private NpgsqlDataSource _dataSource = null!;
     private ResourceReadPlan _plan = null!;
     private HydratedPage _keysetResult = null!;
     private HydratedPage _fastPathResult = null!;
-    private HydratedPage _rootSourcedFastPathResult = null!;
     private string _fastPathBatchSql = null!;
-    private string _rootSourcedFastPathBatchSql = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -552,17 +472,6 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
             CREATE SCHEMA hydfastpath;
             CREATE SCHEMA IF NOT EXISTS dms;
 
-            CREATE TABLE IF NOT EXISTS dms."Document" (
-                "DocumentId" bigint PRIMARY KEY,
-                "DocumentUuid" uuid NOT NULL,
-                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
-                "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
-            );
-
             CREATE TABLE IF NOT EXISTS dms."Descriptor" (
                 "DocumentId" bigint PRIMARY KEY,
                 "Namespace" varchar(255) NOT NULL DEFAULT '',
@@ -575,17 +484,17 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 "Uri" varchar(306) NOT NULL
             );
 
-            -- Root tables carry trigger-maintained mirrors of the dms."Document" metadata columns.
+            -- The resource root row is the document: it carries the metadata columns itself.
             CREATE TABLE hydfastpath."StudentSchoolAssociation" (
                 "DocumentId" bigint PRIMARY KEY,
                 "School_DocumentId" bigint NULL,
                 "School_SchoolId" bigint NULL,
                 "EntryGradeLevelDescriptor_DescriptorId" bigint NULL,
-                "DocumentUuid" uuid NULL,
-                "ContentVersion" bigint NULL,
-                "IdentityVersion" bigint NULL,
-                "ContentLastModifiedAt" timestamptz NULL,
-                "IdentityLastModifiedAt" timestamptz NULL
+                "DocumentUuid" uuid NOT NULL,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "IdentityVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydfastpath."StudentSchoolAssociationProgram" (
@@ -598,7 +507,7 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
             );
 
             -- Reference-target root tables: the document-reference auxiliary lookup resolves
-            -- each reference through its TARGET resource's root table, not dms."Document".
+            -- each reference through its TARGET resource's own root table.
             CREATE TABLE hydfastpath."School" (
                 "DocumentId" bigint PRIMARY KEY,
                 "DocumentUuid" uuid NOT NULL
@@ -615,18 +524,6 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
             connection,
             """
             DELETE FROM dms."Descriptor" WHERE "DocumentId" IN (12001, 12002, 12003);
-            DELETE FROM dms."Document" WHERE "DocumentId" IN (10001, 10002, 11001, 11002, 11003, 12001, 12002, 12003);
-
-            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion")
-            VALUES
-                (10001, '00000000-0000-0000-0000-000000010001', 1, 11, 11),
-                (10002, '00000000-0000-0000-0000-000000010002', 1, 12, 12),
-                (11001, '00000000-0000-0000-0000-000000011001', 2, 1, 1),
-                (11002, '00000000-0000-0000-0000-000000011002', 3, 1, 1),
-                (11003, '00000000-0000-0000-0000-000000011003', 4, 1, 1),
-                (12001, '00000000-0000-0000-0000-000000012001', 5, 1, 1),
-                (12002, '00000000-0000-0000-0000-000000012002', 6, 1, 1),
-                (12003, '00000000-0000-0000-0000-000000012003', 7, 1, 1);
 
             INSERT INTO dms."Descriptor" ("DocumentId", "Namespace", "CodeValue", "ShortDescription", "Discriminator", "Uri")
             VALUES
@@ -644,10 +541,10 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 (11002, '00000000-0000-0000-0000-000000011002');
 
             INSERT INTO hydfastpath."StudentSchoolAssociation"
-                ("DocumentId", "School_DocumentId", "School_SchoolId", "EntryGradeLevelDescriptor_DescriptorId")
+                ("DocumentId", "School_DocumentId", "School_SchoolId", "EntryGradeLevelDescriptor_DescriptorId", "DocumentUuid", "ContentVersion", "IdentityVersion")
             VALUES
-                (10001, 11001, 255901, 12001),
-                (10002, 11003, 255902, 12003);
+                (10001, 11001, 255901, 12001, '00000000-0000-0000-0000-000000010001', 11, 11),
+                (10002, 11003, 255902, 12003, '00000000-0000-0000-0000-000000010002', 12, 12);
 
             INSERT INTO hydfastpath."StudentSchoolAssociationProgram"
                 ("CollectionItemId", "StudentSchoolAssociation_DocumentId", "Ordinal", "Program_DocumentId", "Program_ProgramName", "ProgramTypeDescriptor_DescriptorId")
@@ -655,27 +552,11 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 (20001, 10001, 0, 11002, 'Gifted', 12002),
                 (20002, 10001, 1, NULL, NULL, NULL),
                 (20003, 10002, 0, 11003, 'Other', 12003);
-
-            -- Stand in for the generated dual-write trigger: the root row mirrors dms."Document".
-            UPDATE hydfastpath."StudentSchoolAssociation" r
-            SET "DocumentUuid" = d."DocumentUuid",
-                "ContentVersion" = d."ContentVersion",
-                "IdentityVersion" = d."IdentityVersion",
-                "ContentLastModifiedAt" = d."ContentLastModifiedAt",
-                "IdentityLastModifiedAt" = d."IdentityLastModifiedAt"
-            FROM dms."Document" d
-            WHERE d."DocumentId" = r."DocumentId";
             """
         );
 
         _plan = BuildReadPlan();
         _fastPathBatchSql = HydrationBatchBuilder.Build(_plan, _keyset, SqlDialect.Pgsql, _fastPathOptions);
-        _rootSourcedFastPathBatchSql = HydrationBatchBuilder.Build(
-            _plan,
-            _keyset,
-            SqlDialect.Pgsql,
-            _rootSourcedFastPathOptions
-        );
 
         await using var keysetConnection = await _dataSource.OpenConnectionAsync();
         _keysetResult = await HydrationExecutor.ExecuteAsync(
@@ -696,16 +577,6 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
             _fastPathOptions,
             CancellationToken.None
         );
-
-        await using var rootSourcedFastPathConnection = await _dataSource.OpenConnectionAsync();
-        _rootSourcedFastPathResult = await HydrationExecutor.ExecuteAsync(
-            rootSourcedFastPathConnection,
-            _plan,
-            _keyset,
-            SqlDialect.Pgsql,
-            _rootSourcedFastPathOptions,
-            CancellationToken.None
-        );
     }
 
     [OneTimeTearDown]
@@ -719,7 +590,6 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 """
                 DROP SCHEMA IF EXISTS hydfastpath CASCADE;
                 DELETE FROM dms."Descriptor" WHERE "DocumentId" IN (12001, 12002, 12003);
-                DELETE FROM dms."Document" WHERE "DocumentId" IN (10001, 10002, 11001, 11002, 11003, 12001, 12002, 12003);
                 """
             );
             await _dataSource.DisposeAsync();
@@ -741,12 +611,12 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
     }
 
     [Test]
-    public void It_reads_root_sourced_single_document_metadata_from_the_root_table()
+    public void It_reads_single_document_metadata_from_the_root_table()
     {
         // The metadata SELECT is the first statement and is the only one aliased "d". The
-        // document-reference lookup no longer joins dms."Document" at all — it resolves each
-        // reference through the target resource's own root table.
-        _rootSourcedFastPathBatchSql
+        // document-reference lookup resolves each reference through the target resource's own
+        // root table.
+        _fastPathBatchSql
             .Should()
             .StartWith(
                 """
@@ -762,22 +632,20 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 ORDER BY d."DocumentId";
                 """
             );
-        _rootSourcedFastPathBatchSql.Should().NotContain("FROM \"dms\".\"Document\" d");
-        _fastPathBatchSql.Should().Contain("FROM \"dms\".\"Document\" d");
+        _fastPathBatchSql.Should().NotContain("\"dms\".\"Document\"");
     }
 
     [Test]
-    public void It_matches_the_document_table_hydration_result_when_reading_root_table_mirrors()
+    public void It_returns_the_metadata_seeded_on_the_root_row()
     {
-        AssertHydratedPagesMatch(_fastPathResult, _rootSourcedFastPathResult);
-        _rootSourcedFastPathResult.DocumentMetadata.Should().ContainSingle();
-        _rootSourcedFastPathResult.DocumentMetadata[0].DocumentId.Should().Be(ResourceDocumentId);
-        _rootSourcedFastPathResult
+        _fastPathResult.DocumentMetadata.Should().ContainSingle();
+        _fastPathResult.DocumentMetadata[0].DocumentId.Should().Be(ResourceDocumentId);
+        _fastPathResult
             .DocumentMetadata[0]
             .DocumentUuid.Should()
             .Be(Guid.Parse("00000000-0000-0000-0000-000000010001"));
-        _rootSourcedFastPathResult.DocumentMetadata[0].ContentVersion.Should().Be(11);
-        _rootSourcedFastPathResult.DocumentMetadata[0].IdentityVersion.Should().Be(11);
+        _fastPathResult.DocumentMetadata[0].ContentVersion.Should().Be(11);
+        _fastPathResult.DocumentMetadata[0].IdentityVersion.Should().Be(11);
     }
 
     [Test]
@@ -1130,22 +998,16 @@ public class Given_A_Query_With_TotalCount_Requested
             """
             DROP SCHEMA IF EXISTS hydcount CASCADE;
             CREATE SCHEMA hydcount;
-            CREATE SCHEMA IF NOT EXISTS dms;
 
-            CREATE TABLE IF NOT EXISTS dms."Document" (
+            -- The resource root row is the document: it carries the metadata columns itself.
+            CREATE TABLE hydcount."School" (
                 "DocumentId" bigint PRIMARY KEY,
+                "SchoolId" integer NOT NULL,
                 "DocumentUuid" uuid NOT NULL,
-                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
                 "IdentityVersion" bigint NOT NULL DEFAULT 1,
                 "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
-            );
-
-            CREATE TABLE hydcount."School" (
-                "DocumentId" bigint PRIMARY KEY,
-                "SchoolId" integer NOT NULL
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydcount."SchoolAddress" (
@@ -1168,16 +1030,11 @@ public class Given_A_Query_With_TotalCount_Requested
         await ExecuteSql(
             connection,
             """
-            DELETE FROM dms."Document" WHERE "DocumentId" IN (301, 302, 303);
-
-            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid")
+            INSERT INTO hydcount."School" ("DocumentId", "SchoolId", "DocumentUuid")
             VALUES
-                (301, 'eeeeeeee-5555-5555-5555-eeeeeeeeeeee'),
-                (302, 'ffffffff-6666-6666-6666-ffffffffffff'),
-                (303, '11111111-7777-7777-7777-111111111111');
-
-            INSERT INTO hydcount."School" ("DocumentId", "SchoolId")
-            VALUES (301, 900001), (302, 900002), (303, 900003);
+                (301, 900001, 'eeeeeeee-5555-5555-5555-eeeeeeeeeeee'),
+                (302, 900002, 'ffffffff-6666-6666-6666-ffffffffffff'),
+                (303, 900003, '11111111-7777-7777-7777-111111111111');
             """
         );
 
@@ -1217,13 +1074,7 @@ public class Given_A_Query_With_TotalCount_Requested
         if (_dataSource is not null)
         {
             await using var connection = await _dataSource.OpenConnectionAsync();
-            await ExecuteSql(
-                connection,
-                """
-                DROP SCHEMA IF EXISTS hydcount CASCADE;
-                DELETE FROM dms."Document" WHERE "DocumentId" IN (301, 302, 303);
-                """
-            );
+            await ExecuteSql(connection, "DROP SCHEMA IF EXISTS hydcount CASCADE;");
             await _dataSource.DisposeAsync();
         }
     }
@@ -1269,30 +1120,24 @@ public class Given_A_Reference_Bearing_Resource
             """
             DROP SCHEMA IF EXISTS hydref CASCADE;
             CREATE SCHEMA hydref;
-            CREATE SCHEMA IF NOT EXISTS dms;
 
-            CREATE TABLE IF NOT EXISTS dms."Document" (
-                "DocumentId" bigint PRIMARY KEY,
-                "DocumentUuid" uuid NOT NULL,
-                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
-                "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
-            );
-
+            -- The resource root row is the document: it carries the metadata columns itself.
             CREATE TABLE hydref."StudentSchoolAssociation" (
                 "DocumentId" bigint PRIMARY KEY,
                 "School_DocumentId" bigint NULL,
                 "School_SchoolId" bigint NULL,
                 "Calendar_DocumentId" bigint NULL,
-                "Calendar_CalendarCode" varchar(60) NULL
+                "Calendar_CalendarCode" varchar(60) NULL,
+                "DocumentUuid" uuid NOT NULL,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "IdentityVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             -- Reference-target root tables. The document-reference auxiliary lookup resolves
-            -- each reference through its TARGET resource's root table (never dms."Document"),
-            -- so the referenced School/Calendar roots must exist in this test schema.
+            -- each reference through its TARGET resource's own root table, so the referenced
+            -- School/Calendar roots must exist in this test schema.
             CREATE TABLE hydref."School" (
                 "DocumentId" bigint PRIMARY KEY,
                 "DocumentUuid" uuid NOT NULL
@@ -1308,14 +1153,6 @@ public class Given_A_Reference_Bearing_Resource
         await ExecuteSql(
             connection,
             """
-            DELETE FROM dms."Document" WHERE "DocumentId" IN (401, 402, 403);
-
-            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid")
-            VALUES
-                (401, 'aaaa0001-0001-0001-0001-aaaa00000001'),
-                (402, 'aaaa0002-0002-0002-0002-aaaa00000002'),
-                (403, 'aaaa0003-0003-0003-0003-aaaa00000003');
-
             INSERT INTO hydref."School" ("DocumentId", "DocumentUuid")
             VALUES
                 (10, 'cccc0010-0010-0010-0010-cccc00000010'),
@@ -1326,11 +1163,11 @@ public class Given_A_Reference_Bearing_Resource
                 (50, 'dddd0050-0050-0050-0050-dddd00000050'),
                 (60, 'dddd0060-0060-0060-0060-dddd00000060');
 
-            INSERT INTO hydref."StudentSchoolAssociation" ("DocumentId", "School_DocumentId", "School_SchoolId", "Calendar_DocumentId", "Calendar_CalendarCode")
+            INSERT INTO hydref."StudentSchoolAssociation" ("DocumentId", "School_DocumentId", "School_SchoolId", "Calendar_DocumentId", "Calendar_CalendarCode", "DocumentUuid")
             VALUES
-                (401, 10, 255901, 50, 'CAL-101'),
-                (402, NULL, NULL, NULL, NULL),
-                (403, 20, 255902, 60, 'CAL-202');
+                (401, 10, 255901, 50, 'CAL-101', 'aaaa0001-0001-0001-0001-aaaa00000001'),
+                (402, NULL, NULL, NULL, NULL, 'aaaa0002-0002-0002-0002-aaaa00000002'),
+                (403, 20, 255902, 60, 'CAL-202', 'aaaa0003-0003-0003-0003-aaaa00000003');
             """
         );
 
@@ -1370,13 +1207,7 @@ public class Given_A_Reference_Bearing_Resource
         if (_dataSource is not null)
         {
             await using var connection = await _dataSource.OpenConnectionAsync();
-            await ExecuteSql(
-                connection,
-                """
-                DROP SCHEMA IF EXISTS hydref CASCADE;
-                DELETE FROM dms."Document" WHERE "DocumentId" IN (401, 402, 403);
-                """
-            );
+            await ExecuteSql(connection, "DROP SCHEMA IF EXISTS hydref CASCADE;");
             await _dataSource.DisposeAsync();
         }
     }
@@ -1504,22 +1335,16 @@ public class Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction
             """
             DROP SCHEMA IF EXISTS hydreuse CASCADE;
             CREATE SCHEMA hydreuse;
-            CREATE SCHEMA IF NOT EXISTS dms;
 
-            CREATE TABLE IF NOT EXISTS dms."Document" (
+            -- The resource root row is the document: it carries the metadata columns itself.
+            CREATE TABLE hydreuse."School" (
                 "DocumentId" bigint PRIMARY KEY,
+                "SchoolId" integer NOT NULL,
                 "DocumentUuid" uuid NOT NULL,
-                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
                 "IdentityVersion" bigint NOT NULL DEFAULT 1,
                 "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
-            );
-
-            CREATE TABLE hydreuse."School" (
-                "DocumentId" bigint PRIMARY KEY,
-                "SchoolId" integer NOT NULL
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydreuse."SchoolAddress" (
@@ -1542,15 +1367,10 @@ public class Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction
         await ExecuteSql(
             connection,
             """
-            DELETE FROM dms."Document" WHERE "DocumentId" IN (401, 402);
-
-            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid")
+            INSERT INTO hydreuse."School" ("DocumentId", "SchoolId", "DocumentUuid")
             VALUES
-                (401, '12121212-1111-1111-1111-121212121212'),
-                (402, '34343434-2222-2222-2222-343434343434');
-
-            INSERT INTO hydreuse."School" ("DocumentId", "SchoolId")
-            VALUES (401, 700001), (402, 700002);
+                (401, 700001, '12121212-1111-1111-1111-121212121212'),
+                (402, 700002, '34343434-2222-2222-2222-343434343434');
 
             INSERT INTO hydreuse."SchoolAddress" ("CollectionItemId", "School_DocumentId", "Ordinal", "City")
             VALUES (4001, 401, 0, 'Gamma'), (4002, 402, 0, 'Delta');
@@ -1594,13 +1414,7 @@ public class Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction
         if (_dataSource is not null)
         {
             await using var connection = await _dataSource.OpenConnectionAsync();
-            await ExecuteSql(
-                connection,
-                """
-                DROP SCHEMA IF EXISTS hydreuse CASCADE;
-                DELETE FROM dms."Document" WHERE "DocumentId" IN (401, 402);
-                """
-            );
+            await ExecuteSql(connection, "DROP SCHEMA IF EXISTS hydreuse CASCADE;");
             await _dataSource.DisposeAsync();
         }
     }

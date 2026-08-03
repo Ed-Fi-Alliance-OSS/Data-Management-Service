@@ -8,7 +8,7 @@ using EdFi.DataManagementService.Backend.External.Plans;
 namespace EdFi.DataManagementService.Backend.External;
 
 /// <summary>
-/// One row of document metadata from <c>dms.Document</c> joined to the page keyset.
+/// One row of document metadata joined to the page keyset.
 /// </summary>
 /// <param name="DocumentId">The internal document identity.</param>
 /// <param name="DocumentUuid">The public document UUID exposed as <c>id</c> in API responses.</param>
@@ -79,7 +79,7 @@ public sealed record HydratedDocumentReferenceLookup(IReadOnlyList<DocumentRefer
 /// Optional total row count when requested by the caller (e.g., <c>totalCount=true</c>).
 /// </param>
 /// <param name="DocumentMetadata">
-/// Document metadata rows from <c>dms.Document</c> for the page, ordered by <c>DocumentId</c>.
+/// Document metadata rows for the page, ordered by <c>DocumentId</c>.
 /// </param>
 /// <param name="TableRowsInDependencyOrder">
 /// Per-table hydrated rows in deterministic dependency order (root table first, then children).

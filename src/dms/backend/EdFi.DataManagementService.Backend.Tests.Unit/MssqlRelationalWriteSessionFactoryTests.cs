@@ -49,7 +49,7 @@ public class Given_MssqlRelationalWriteSessionFactory
         await using var session = await sut.CreateAsync();
         await using var command = session.CreateCommand(
             new RelationalCommand(
-                "update dms.Document set ContentVersion = ContentVersion where DocumentId = @documentId",
+                "update edfi.School set ContentVersion = ContentVersion where DocumentId = @documentId",
                 [new RelationalParameter("@documentId", 101L)]
             )
         );

@@ -166,9 +166,9 @@ internal static class AbstractIdentitySchoolTestData
                     [new DbColumnName("EducationOrganizationId"), new DbColumnName("DocumentId")]
                 ),
                 new TableConstraint.ForeignKey(
-                    "FK_EducationOrganizationIdentity_Document",
+                    "FK_EducationOrganizationIdentity_Descriptor",
                     [new DbColumnName("DocumentId")],
-                    new DbTableName(new DbSchemaName("dms"), "Document"),
+                    new DbTableName(new DbSchemaName("dms"), "Descriptor"),
                     [new DbColumnName("DocumentId")],
                     OnDelete: ReferentialAction.Cascade
                 ),

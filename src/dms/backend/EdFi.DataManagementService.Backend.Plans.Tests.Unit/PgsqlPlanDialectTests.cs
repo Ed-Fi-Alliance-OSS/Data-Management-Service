@@ -15,7 +15,6 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 [TestFixture]
 public class Given_PgsqlPlanDialect
 {
-    private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
     private static readonly DbTableName _rootTable = new(new DbSchemaName("edfi"), "Student");
 
     private PgsqlPlanDialect _dialect = null!;
@@ -50,60 +49,6 @@ public class Given_PgsqlPlanDialect
                 """
                 DROP TABLE IF EXISTS "page";
                 CREATE TEMP TABLE "page" ("DocumentId" bigint PRIMARY KEY) ON COMMIT DROP;
-
-                """
-            );
-    }
-
-    [Test]
-    public void It_should_emit_canonical_document_metadata_select()
-    {
-        _dialect.AppendDocumentMetadataSelect(_writer, _keyset, _documentTable);
-
-        _writer
-            .ToString()
-            .Should()
-            .Be(
-                """
-                SELECT
-                    d."DocumentId",
-                    d."DocumentUuid",
-                    d."ContentVersion",
-                    d."IdentityVersion",
-                    d."ContentLastModifiedAt",
-                    d."IdentityLastModifiedAt"
-                FROM "dms"."Document" d
-                INNER JOIN "page" k ON d."DocumentId" = k."DocumentId"
-                ORDER BY d."DocumentId";
-
-                """
-            );
-    }
-
-    [Test]
-    public void It_should_emit_single_document_metadata_select()
-    {
-        _dialect.AppendSingleDocumentMetadataSelect(
-            _writer,
-            HydrationSqlConventions.SingleDocumentIdParameterName,
-            _documentTable
-        );
-
-        _writer
-            .ToString()
-            .Should()
-            .Be(
-                """
-                SELECT
-                    d."DocumentId",
-                    d."DocumentUuid",
-                    d."ContentVersion",
-                    d."IdentityVersion",
-                    d."ContentLastModifiedAt",
-                    d."IdentityLastModifiedAt"
-                FROM "dms"."Document" d
-                WHERE d."DocumentId" = @DocumentId
-                ORDER BY d."DocumentId";
 
                 """
             );

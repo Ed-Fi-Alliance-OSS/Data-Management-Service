@@ -385,11 +385,7 @@ public class Given_A_Mssql_Relational_Update_With_A_Stale_IfMatch_After_An_Ident
             """
             UPDATE [edfi].[Student]
             SET [StudentUniqueId] = @studentUniqueId
-            WHERE [DocumentId] = (
-                SELECT [DocumentId]
-                FROM [dms].[Document]
-                WHERE [DocumentUuid] = @documentUuid
-            );
+            WHERE [DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@studentUniqueId", studentUniqueId),
             new SqlParameter("@documentUuid", StudentDocumentUuid.Value)

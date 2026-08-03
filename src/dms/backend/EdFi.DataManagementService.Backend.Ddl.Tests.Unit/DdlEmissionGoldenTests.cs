@@ -1558,7 +1558,7 @@ internal static class PolymorphicAbstractFixture
                     SourceJsonPath: null,
                     TargetResource: null
                 ),
-                // The DocumentUuid carried from dms.Document by the abstract identity maintenance trigger,
+                // The DocumentUuid copied from the root row by the abstract identity maintenance trigger,
                 // as derived by AbstractIdentityTableAndUnionViewDerivationPass.
                 new DbColumnModel(
                     documentUuidColumn,
@@ -1589,11 +1589,12 @@ internal static class PolymorphicAbstractFixture
                 ),
             ],
             [
-                // FK from abstract identity table to dms.Document (as created by BuildIdentityTableConstraints)
+                // Declared FK on the abstract identity table, shaped the way
+                // BuildIdentityTableConstraints emits one
                 new TableConstraint.ForeignKey(
-                    "FK_EducationOrganizationIdentity_Document",
+                    "FK_EducationOrganizationIdentity_Descriptor",
                     [documentIdColumn],
-                    new DbTableName(new DbSchemaName("dms"), "Document"),
+                    new DbTableName(new DbSchemaName("dms"), "Descriptor"),
                     [documentIdColumn],
                     ReferentialAction.Cascade,
                     ReferentialAction.NoAction
@@ -2834,7 +2835,7 @@ internal static class AuthEdOrgHierarchyFixture
                     SourceJsonPath: null,
                     TargetResource: null
                 ),
-                // The DocumentUuid carried from dms.Document by the abstract identity maintenance trigger,
+                // The DocumentUuid copied from the root row by the abstract identity maintenance trigger,
                 // as derived by AbstractIdentityTableAndUnionViewDerivationPass.
                 new DbColumnModel(
                     documentUuidColumn,
@@ -2866,9 +2867,9 @@ internal static class AuthEdOrgHierarchyFixture
             ],
             [
                 new TableConstraint.ForeignKey(
-                    "FK_EducationOrganizationIdentity_Document",
+                    "FK_EducationOrganizationIdentity_Descriptor",
                     [documentIdColumn],
-                    new DbTableName(new DbSchemaName("dms"), "Document"),
+                    new DbTableName(new DbSchemaName("dms"), "Descriptor"),
                     [documentIdColumn],
                     ReferentialAction.Cascade,
                     ReferentialAction.NoAction

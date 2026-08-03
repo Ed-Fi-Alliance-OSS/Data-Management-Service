@@ -104,9 +104,6 @@ file static class AuthoritativeDs52ContactWriteIntegrationTestSupport
             mappingSet
         );
 
-    public static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
-        Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
-
     public static int GetInt32(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt32(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
@@ -187,7 +184,6 @@ internal sealed record AuthoritativeDs52ContactSeedData(
 internal sealed record AuthoritativeDs52ContactDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
-    short ResourceKeyId,
     long ContentVersion
 );
 
@@ -341,7 +337,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
     private static readonly DateOnly TemporaryFirstPeriodEndDate = new(2024, 5, 31);
     private static readonly DateOnly TemporarySecondPeriodBeginDate = new(2024, 6, 1);
 
-    private static readonly QualifiedResourceName ContactResource = new("Ed-Fi", "Contact");
     private static readonly DocumentUuid ContactDocumentUuid = new(
         Guid.Parse("eeeeeeee-0000-0000-0000-000000000001")
     );
@@ -423,9 +418,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
     {
         _createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         _stateAfterCreate.Document.DocumentUuid.Should().Be(ContactDocumentUuid.Value);
-        _stateAfterCreate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[ContactResource]);
         _stateAfterCreate
             .Contact.Should()
             .Be(
@@ -788,19 +780,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
-    {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
     private async Task<long> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
@@ -811,12 +790,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
-
-        await _database.ExecuteNonQueryAsync(
+        // dms.Descriptor is the descriptor's document row and originates its own DocumentId.
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "dms"."Descriptor" (
-                "DocumentId",
                 "DocumentUuid",
                 "ResourceKeyId",
                 "Namespace",
@@ -827,7 +804,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
                 "Uri"
             )
             VALUES (
-                @documentId,
                 @documentUuid,
                 @resourceKeyId,
                 @namespace,
@@ -836,9 +812,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
                 @description,
                 @discriminator,
                 @uri
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
@@ -848,8 +824,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
             new NpgsqlParameter("discriminator", discriminator),
             new NpgsqlParameter("uri", uri)
         );
-
-        return documentId;
     }
 
     private async Task<AuthoritativeDs52ContactPersistedState> ReadPersistedStateAsync(Guid documentUuid)
@@ -868,9 +842,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            SELECT root."DocumentId", root."DocumentUuid", root."ContentVersion"
             FROM "edfi"."Contact" root
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
             WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -880,7 +853,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
             ? new AuthoritativeDs52ContactDocumentRow(
                 AuthoritativeDs52ContactWriteIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 AuthoritativeDs52ContactWriteIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
-                AuthoritativeDs52ContactWriteIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 AuthoritativeDs52ContactWriteIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(

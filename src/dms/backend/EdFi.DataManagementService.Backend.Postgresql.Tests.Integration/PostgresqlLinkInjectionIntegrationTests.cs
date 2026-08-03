@@ -408,16 +408,16 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Dispenses a DocumentId from <c>dms.DocumentIdSequence</c> — the same sequence the seeded row's
+    /// column DEFAULT draws from, so a seeded id can never collide with one the write path produces.
+    /// </summary>
+    private async Task<long> NextDocumentIdAsync()
     {
         return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            SELECT nextval('"dms"."DocumentIdSequence"');
+            """
         );
     }
 
@@ -431,7 +431,7 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
         string shortDescription
     )
     {
-        long documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        long documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """

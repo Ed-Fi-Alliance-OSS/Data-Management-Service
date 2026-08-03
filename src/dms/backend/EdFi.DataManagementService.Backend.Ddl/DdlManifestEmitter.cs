@@ -128,7 +128,7 @@ public static class DdlManifestEmitter
     /// <c>CREATE</c>/<c>ALTER FUNCTION</c> or <c>CREATE</c>/<c>ALTER TRIGGER</c> count as a
     /// single statement; all other batches count semicolon-terminated statements.</para>
     /// <para><b>PostgreSQL:</b> Tracks dollar-quote state using tag-aware matching for all tags
-    /// matching <c>$[A-Za-z0-9_]*$</c> (e.g. <c>$$</c>, <c>$func$</c>, <c>$uuidv5$</c>).
+    /// matching <c>$[A-Za-z0-9_]*$</c> (e.g. <c>$$</c>, <c>$func$</c>, <c>$GetMaxChangeVersion$</c>).
     /// Only tags at line boundaries toggle state. Counts lines ending with <c>;</c>
     /// only outside dollar-quoted blocks.</para>
     /// </remarks>
@@ -207,7 +207,7 @@ public static class DdlManifestEmitter
     /// <summary>
     /// Counts PostgreSQL statements by tracking dollar-quote state with tag-aware matching.
     /// Supports all PostgreSQL dollar-quote tags matching <c>$[A-Za-z0-9_]*$</c> (e.g.
-    /// <c>$$</c>, <c>$func$</c>, <c>$uuidv5$</c>). Only dollar-quote tags at line boundaries
+    /// <c>$$</c>, <c>$func$</c>, <c>$GetMaxChangeVersion$</c>). Only dollar-quote tags at line boundaries
     /// (end of trimmed line for entry, start of trimmed line or after <c>END </c> for exit)
     /// toggle state, avoiding false matches inside string literals.
     /// </summary>

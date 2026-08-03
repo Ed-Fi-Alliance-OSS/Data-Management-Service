@@ -330,8 +330,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
                 i."ProfileScopeClearableText",
                 i."ProfileScopePreservedText"
             FROM "edfi"."ProfileRootOnlyMergeItem" i
-            INNER JOIN "dms"."Document" d ON d."DocumentId" = i."DocumentId"
-            WHERE d."DocumentUuid" = @documentUuid;
+            WHERE i."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid.Value)
         );
@@ -365,20 +364,16 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         );
     }
 
-    public static async Task<long> InsertDocumentRowAsync(
-        PostgresqlGeneratedDdlTestDatabase database,
-        Guid documentUuid,
-        short resourceKeyId
-    )
+    /// <summary>
+    /// Mints the next DocumentId from the same sequence the resource root tables draw their
+    /// DEFAULT from, so a seeded row can never collide with a production-created one.
+    /// </summary>
+    public static async Task<long> NextDocumentIdAsync(PostgresqlGeneratedDdlTestDatabase database)
     {
         return await database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            SELECT nextval('"dms"."DocumentIdSequence"');
+            """
         );
     }
 
@@ -389,16 +384,14 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         string firstName = "Seed"
     )
     {
-        var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "Student");
-        var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync(database);
         await database.ExecuteNonQueryAsync(
             """
             INSERT INTO "edfi"."Student" ("DocumentId", "DocumentUuid", "StudentUniqueId", "FirstName")
-            SELECT @documentId, document."DocumentUuid", @studentUniqueId, @firstName
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            VALUES (@documentId, @documentUuid, @studentUniqueId, @firstName);
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("studentUniqueId", studentUniqueId),
             new NpgsqlParameter("firstName", firstName)
         );
@@ -414,7 +407,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "SchoolTypeDescriptor");
-        var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync(database);
         var uri = $"{@namespace}#{codeValue}";
         const string discriminator = "SchoolTypeDescriptor";
         await database.ExecuteNonQueryAsync(
@@ -469,8 +462,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         bool secondaryPresent
     )
     {
-        var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "ProfileRootOnlyMergeItem");
-        var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync(database);
 
         await database.ExecuteNonQueryAsync(
             """
@@ -535,8 +527,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
                 i."SecondarySchoolTypeDescriptor_DescriptorId_Present",
                 i."PrimarySchoolTypeDescriptor_Unified_DescriptorId"
             FROM "edfi"."ProfileRootOnlyMergeItem" i
-            INNER JOIN "dms"."Document" d ON d."DocumentId" = i."DocumentId"
-            WHERE d."DocumentUuid" = @documentUuid;
+            WHERE i."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid.Value)
         );

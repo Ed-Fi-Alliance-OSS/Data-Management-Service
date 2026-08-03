@@ -118,8 +118,8 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         upsert.Should().BeOfType<UpsertResult.InsertSuccess>();
 
         // Capture DocumentId before delete; counting cascaded rows by DocumentId (rather than
-        // joining child tables back to dms.Document on DocumentUuid) guarantees the post-delete
-        // assertions are not trivially satisfied by the Document row already being gone.
+        // joining child tables back to the root row on DocumentUuid) guarantees the post-delete
+        // assertions are not trivially satisfied by the root row already being gone.
         var documentId = await GetDocumentIdAsync("School", documentUuid);
         documentId.Should().NotBeNull();
         (await CountRootRowsAsync("School", documentUuid)).Should().Be(1);
@@ -171,18 +171,18 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         // This also exercises the cross-resource model walk: the violated FK lives on a grandchild
         // table of the School resource while the delete target is Program. The resolver has to
         // scan across all ConcreteResourcesInNameOrder to land on School. The fixture's compiled
-        // model has no concrete descriptor resource and no direct root-to-root cross-resource FKs
-        // (DMS routes cross-resource references through dms.Document), so this grandchild-child
-        // case is the sharpest cross-resource proof available here; descriptor-delete +
-        // FK-violation behaviour is covered exhaustively by the Given_Descriptor_Write_Handler_Delete
-        // unit fixture.
+        // model has no concrete descriptor resource and no direct root-to-root cross-resource FKs,
+        // because DMS routes cross-resource references through the referenced resource's root row.
+        // This grandchild-child case is therefore the sharpest cross-resource proof available here.
+        // Descriptor-delete behaviour under an FK violation is covered exhaustively by the
+        // Given_Descriptor_Write_Handler_Delete unit fixture.
         var programDocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-0000-0000-0000-000000000100"));
-        var programDocumentId = await InsertDocumentAsync(programDocumentUuid.Value, "Ed-Fi", "Program");
-        await InsertProgramAsync(programDocumentId, "Robotics");
+        var programDocumentId = await NextDocumentIdAsync();
+        await InsertProgramAsync(programDocumentId, programDocumentUuid.Value, "Robotics");
 
         var schoolDocumentUuid = Guid.Parse("dddddddd-0000-0000-0000-000000000101");
-        var schoolDocumentId = await InsertDocumentAsync(schoolDocumentUuid, "Ed-Fi", "School");
-        await InsertSchoolAsync(schoolDocumentId, schoolId: 900001);
+        var schoolDocumentId = await NextDocumentIdAsync();
+        await InsertSchoolAsync(schoolDocumentId, schoolDocumentUuid, schoolId: 900001);
         await InsertSchoolExtensionAsync(schoolDocumentId, "North");
         var addressCollectionItemId = await InsertSchoolAddressAsync(schoolDocumentId, 1, "Austin");
         await InsertSchoolExtensionAddressAsync(addressCollectionItemId, schoolDocumentId, "Zone-1");
@@ -381,63 +381,43 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         return Convert.ToInt64(rows[0]["Count"]);
     }
 
-    private async Task<short> GetResourceKeyIdAsync(string projectName, string resourceName)
+    /// <summary>
+    /// Mints the next DocumentId from the sequence the resource root tables draw their DEFAULT
+    /// from, so a seeded root row can never collide with a production-created one.
+    /// </summary>
+    private async Task<long> NextDocumentIdAsync()
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "ResourceKeyId"
-            FROM "dms"."ResourceKey"
-            WHERE "ProjectName" = @projectName
-              AND "ResourceName" = @resourceName;
-            """,
-            new NpgsqlParameter("projectName", projectName),
-            new NpgsqlParameter("resourceName", resourceName)
-        );
-
-        return Convert.ToInt16(rows[0]["ResourceKeyId"]);
-    }
-
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, string projectName, string resourceName)
-    {
-        var resourceKeyId = await GetResourceKeyIdAsync(projectName, resourceName);
-
-        var rows = await _database.QueryRowsAsync(
+            SELECT nextval('"dms"."DocumentIdSequence"') AS "DocumentId";
             """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
         );
 
         return Convert.ToInt64(rows[0]["DocumentId"]);
     }
 
-    private async Task InsertProgramAsync(long documentId, string programName)
+    private async Task InsertProgramAsync(long documentId, Guid documentUuid, string programName)
     {
         await _database.QueryRowsAsync(
             """
             INSERT INTO "edfi"."Program" ("DocumentId", "DocumentUuid", "ProgramName")
-            SELECT @documentId, document."DocumentUuid", @programName
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            VALUES (@documentId, @documentUuid, @programName);
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("programName", programName)
         );
     }
 
-    private async Task InsertSchoolAsync(long documentId, int schoolId)
+    private async Task InsertSchoolAsync(long documentId, Guid documentUuid, int schoolId)
     {
         await _database.QueryRowsAsync(
             """
             INSERT INTO "edfi"."School" ("DocumentId", "DocumentUuid", "SchoolId")
-            SELECT @documentId, document."DocumentUuid", @schoolId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            VALUES (@documentId, @documentUuid, @schoolId);
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("schoolId", schoolId)
         );
     }

@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Naming;
 public static class RelationalNameConventions
 {
     /// <summary>
-    /// The standard <c>DocumentId</c> column name used by <c>dms.Document</c> and resource root tables.
+    /// The standard <c>DocumentId</c> column name used by resource root tables and <c>dms.Descriptor</c>.
     /// </summary>
     public static DbColumnName DocumentIdColumnName { get; } = new("DocumentId");
 
@@ -52,39 +52,37 @@ public static class RelationalNameConventions
     public static DbColumnName OrdinalColumnName { get; } = new("Ordinal");
 
     /// <summary>
-    /// The synthesized root-table column that mirrors <c>dms.Document.ContentVersion</c> for the row.
+    /// The synthesized root-table column carrying the row's authoritative content stamp version.
     /// </summary>
     public static DbColumnName ContentVersionColumnName { get; } = new("ContentVersion");
 
     /// <summary>
-    /// The synthesized root-table column that mirrors <c>dms.Document.ContentLastModifiedAt</c> for the row.
+    /// The synthesized root-table column carrying the row's authoritative content stamp timestamp.
     /// </summary>
     public static DbColumnName ContentLastModifiedAtColumnName { get; } = new("ContentLastModifiedAt");
 
     /// <summary>
-    /// The synthesized root-table column that mirrors <c>dms.Document.DocumentUuid</c> — the public API id —
-    /// for the row.
+    /// The synthesized root-table column carrying the row's public API id.
     /// </summary>
     public static DbColumnName DocumentUuidColumnName { get; } = new("DocumentUuid");
 
     /// <summary>
-    /// The synthesized root-table column that mirrors <c>dms.Document.IdentityVersion</c> for the row.
+    /// The synthesized root-table column carrying the row's authoritative identity stamp version.
     /// </summary>
     public static DbColumnName IdentityVersionColumnName { get; } = new("IdentityVersion");
 
     /// <summary>
-    /// The synthesized root-table column that mirrors <c>dms.Document.IdentityLastModifiedAt</c> for the row.
+    /// The synthesized root-table column carrying the row's authoritative identity stamp timestamp.
     /// </summary>
     public static DbColumnName IdentityLastModifiedAtColumnName { get; } = new("IdentityLastModifiedAt");
 
     /// <summary>
-    /// The synthesized root-table column that mirrors <c>dms.Document.CreatedAt</c> for the row.
+    /// The synthesized root-table column carrying the row's creation timestamp.
     /// </summary>
     public static DbColumnName CreatedAtColumnName { get; } = new("CreatedAt");
 
     /// <summary>
-    /// The synthesized root-table column that mirrors <c>dms.Document.CreatedByOwnershipTokenId</c> for the
-    /// row.
+    /// The synthesized root-table column reserved for the row's creating ownership token.
     /// </summary>
     public static DbColumnName CreatedByOwnershipTokenIdColumnName { get; } =
         new("CreatedByOwnershipTokenId");

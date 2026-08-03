@@ -10,7 +10,6 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 internal sealed record ProfileGuardedNoOpDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
-    short ResourceKeyId,
     long ContentVersion,
     DateTime ContentLastModifiedAt,
     long IdentityVersion,
@@ -60,7 +59,6 @@ internal static class ProfileGuardedNoOpPersistedStateSupport
         return new ProfileGuardedNoOpDocumentRow(
             DocumentId: Convert.ToInt64(row["DocumentId"], CultureInfo.InvariantCulture),
             DocumentUuid: (Guid)row["DocumentUuid"]!,
-            ResourceKeyId: Convert.ToInt16(row["ResourceKeyId"], CultureInfo.InvariantCulture),
             ContentVersion: Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
             ContentLastModifiedAt: Convert.ToDateTime(
                 row["ContentLastModifiedAt"],

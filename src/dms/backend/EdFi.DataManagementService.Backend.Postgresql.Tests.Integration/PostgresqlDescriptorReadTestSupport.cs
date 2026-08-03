@@ -13,20 +13,16 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 internal static class PostgresqlDescriptorReadTestSupport
 {
-    public static async Task<long> InsertDocumentAsync(
-        PostgresqlGeneratedDdlTestDatabase database,
-        DocumentUuid documentUuid,
-        short resourceKeyId
-    )
+    /// <summary>
+    /// Dispenses a DocumentId from the same sequence the descriptor row's column DEFAULT draws from,
+    /// so a seeded id can never collide with one the write path produces.
+    /// </summary>
+    public static async Task<long> NextDocumentIdAsync(PostgresqlGeneratedDdlTestDatabase database)
     {
         return await database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid.Value),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            SELECT nextval('"dms"."DocumentIdSequence"');
+            """
         );
     }
 
@@ -41,7 +37,7 @@ internal static class PostgresqlDescriptorReadTestSupport
             mappingSet,
             resource
         );
-        var documentId = await InsertDocumentAsync(database, seed.DocumentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync(database);
 
         await InsertDescriptorRowAsync(database, resource, documentId, resourceKeyId, seed);
 
@@ -111,35 +107,18 @@ internal static class PostgresqlDescriptorReadTestSupport
         );
     }
 
-    public static async Task<IReadOnlyDictionary<string, object?>> ReadDocumentRowAsync(
+    /// <summary>
+    /// Reads the row that carries the document metadata for a descriptor. The descriptor row is the
+    /// document, so this is the descriptor row.
+    /// </summary>
+    public static Task<IReadOnlyDictionary<string, object?>> ReadDocumentRowAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         long documentId
-    )
-    {
-        var rows = await database.QueryRowsAsync(
-            """
-            SELECT
-                "DocumentId",
-                "DocumentUuid",
-                "ResourceKeyId",
-                "ContentVersion",
-                "IdentityVersion",
-                "ContentLastModifiedAt",
-                "IdentityLastModifiedAt",
-                "CreatedAt"
-            FROM "dms"."Document"
-            WHERE "DocumentId" = @documentId;
-            """,
-            new NpgsqlParameter("documentId", documentId)
-        );
-
-        return GetSingleRowOrThrow(rows, "Document", documentId);
-    }
+    ) => ReadDescriptorStampRowAsync(database, documentId);
 
     /// <summary>
     /// Reads the descriptor row's authoritative stamps. The descriptor row owns
-    /// <c>ContentVersion</c>/<c>IdentityVersion</c> and their timestamps; the <c>dms.Document</c> row
-    /// carries only the id it dispensed.
+    /// <c>DocumentUuid</c>, <c>ContentVersion</c>/<c>IdentityVersion</c> and their timestamps.
     /// </summary>
     public static async Task<IReadOnlyDictionary<string, object?>> ReadDescriptorStampRowAsync(
         PostgresqlGeneratedDdlTestDatabase database,

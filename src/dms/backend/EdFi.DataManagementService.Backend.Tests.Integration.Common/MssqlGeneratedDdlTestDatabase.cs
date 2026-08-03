@@ -597,9 +597,8 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         await connection.OpenAsync();
         await using SqlCommand command = connection.CreateCommand();
         command.CommandText = sql;
-        // dms.Document is referenced by ON DELETE CASCADE FKs from every resource root
-        // table, so even a single-row delete compiles a plan spanning the full cascade
-        // graph — on cold CI runners that can exceed the 30s driver default.
+        // Resource deletes compile plans that span the child/collection cascade graph — on cold CI
+        // runners that can exceed the 30s driver default.
         command.CommandTimeout = DefaultCommandTimeoutSeconds;
         command.Parameters.AddRange(parameters);
 

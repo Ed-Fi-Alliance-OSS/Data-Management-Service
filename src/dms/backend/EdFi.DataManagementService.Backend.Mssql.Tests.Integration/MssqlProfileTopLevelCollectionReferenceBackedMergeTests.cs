@@ -103,9 +103,6 @@ internal static class MssqlReferenceBackedTopLevelCollectionMergeSupport
 
     public const string ProgramsScope = "$.programs[*]";
 
-    // ResourceKeyId values are fixed by the DDL seed: Program=1, School=2
-    private const short ProgramResourceKeyId = 1;
-
     public static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
 
     public static readonly BaseResourceInfo ProgramBaseResourceInfo = new(
@@ -339,26 +336,21 @@ internal static class MssqlReferenceBackedTopLevelCollectionMergeSupport
         string programName
     )
     {
+        // The root table's DocumentId DEFAULT draws from this same sequence, so a seeded id can
+        // never collide with a production-created one.
         var dbDocumentId = await database.ExecuteScalarAsync<long>(
             """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId] INTO @Inserted
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", ProgramResourceKeyId)
+            SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];
+            """
         );
 
         await database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[Program] ([DocumentId], [DocumentUuid], [ProgramId], [ProgramName])
-            SELECT @documentId, document.[DocumentUuid], @programId, @programName
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            VALUES (@documentId, @documentUuid, @programId, @programName);
             """,
             new SqlParameter("@documentId", dbDocumentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@programId", programId),
             new SqlParameter("@programName", programName)
         );
@@ -430,7 +422,7 @@ internal static class MssqlReferenceBackedTopLevelCollectionMergeSupport
 
     // ── Read-back helpers ──────────────────────────────────────────────────────
 
-    /// <summary>Reads the DocumentId for a document by UUID.</summary>
+    /// <summary>Reads the DocumentId for a School document by UUID.</summary>
     public static async Task<long> ReadDocumentIdAsync(
         MssqlGeneratedDdlTestDatabase database,
         DocumentUuid documentUuid
@@ -439,7 +431,7 @@ internal static class MssqlReferenceBackedTopLevelCollectionMergeSupport
         var rows = await database.QueryRowsAsync(
             """
             SELECT [DocumentId]
-            FROM [dms].[Document]
+            FROM [edfi].[School]
             WHERE [DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid.Value)

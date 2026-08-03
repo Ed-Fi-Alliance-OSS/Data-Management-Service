@@ -117,13 +117,11 @@ public sealed class ReadPlanCompiler
     /// </summary>
     private ResourceReadPlan CompileCore(RelationalResourceModel resourceModel)
     {
-        // Hydration reads exclude the synthesized dms.Document mirror columns — both the change-version
-        // mirrors and the document-metadata mirrors: they are not read for reconstitution (read metadata
-        // comes from the separate hydration metadata SELECT, whose source table is selected by
-        // HydrationExecutionOptions.DocumentMetadataSource — the root table or dms.Document). Building all
-        // hydration artifacts from this filtered model keeps the read SELECT and every read-plan ordinal
-        // unaffected by the mirror columns. The full model is retained on ResourceReadPlan.Model below for
-        // query planning.
+        // Hydration reads exclude the synthesized document-metadata and change-version columns: they
+        // are not read for reconstitution (read metadata comes from the separate hydration metadata
+        // SELECT over the resource root table). Building all hydration artifacts from this filtered
+        // model keeps the read SELECT and every read-plan ordinal unaffected by those columns. The full
+        // model is retained on ResourceReadPlan.Model below for query planning.
         var hydrationModel = ToHydrationProjectionModel(resourceModel);
 
         var rootScopeTableModel = RelationalResourceModelCompileValidator.ResolveRootScopeTableModelOrThrow(

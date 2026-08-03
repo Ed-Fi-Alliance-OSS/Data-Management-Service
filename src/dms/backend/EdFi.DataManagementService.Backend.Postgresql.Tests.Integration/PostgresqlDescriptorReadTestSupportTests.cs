@@ -162,7 +162,7 @@ public class Given_A_Postgresql_DescriptorRead_Test_Support
     }
 
     [Test]
-    public async Task It_seeds_wrong_resource_and_missing_descriptor_rows_deterministically()
+    public async Task It_seeds_a_wrong_resource_descriptor_row_deterministically()
     {
         var schoolTypeDescriptorResourceKeyId =
             DescriptorReadIntegrationTestSupport.GetDescriptorResourceKeyIdOrThrow(
@@ -174,49 +174,28 @@ public class Given_A_Postgresql_DescriptorRead_Test_Support
                 _mappingSet,
                 GradeLevelDescriptorResource
             );
-        var missingDescriptorDocumentUuid = new DocumentUuid(
-            Guid.Parse("10000000-0000-0000-0000-000000000201")
-        );
         var wrongResourceSeed = new DescriptorReadSeed(
-            DocumentUuid: new DocumentUuid(Guid.Parse("10000000-0000-0000-0000-000000000202")),
+            DocumentUuid: new DocumentUuid(Guid.Parse("20000000-0000-0000-0000-000000000202")),
             Namespace: "uri://ed-fi.org/GradeLevelDescriptor",
             CodeValue: "Twelve",
             ShortDescription: "Twelfth grade"
         );
 
-        var missingDescriptorDocumentId = await PostgresqlDescriptorReadTestSupport.InsertDocumentAsync(
-            _database,
-            missingDescriptorDocumentUuid,
-            schoolTypeDescriptorResourceKeyId
-        );
         var wrongResourceDocumentId = await PostgresqlDescriptorReadTestSupport.SeedDescriptorAsync(
             _database,
             _mappingSet,
             GradeLevelDescriptorResource,
             wrongResourceSeed
         );
-        var missingDescriptorDocumentRow = await PostgresqlDescriptorReadTestSupport.ReadDocumentRowAsync(
-            _database,
-            missingDescriptorDocumentId
-        );
         var wrongResourceDocumentRow = await PostgresqlDescriptorReadTestSupport.ReadDocumentRowAsync(
             _database,
             wrongResourceDocumentId
-        );
-        var missingDescriptorRowExists = await PostgresqlDescriptorReadTestSupport.DescriptorRowExistsAsync(
-            _database,
-            missingDescriptorDocumentId
         );
         var wrongResourceDescriptorRowExists =
             await PostgresqlDescriptorReadTestSupport.DescriptorRowExistsAsync(
                 _database,
                 wrongResourceDocumentId
             );
-
-        GetRequiredInt16(missingDescriptorDocumentRow, "ResourceKeyId")
-            .Should()
-            .Be(schoolTypeDescriptorResourceKeyId);
-        missingDescriptorRowExists.Should().BeFalse();
 
         GetRequiredInt16(wrongResourceDocumentRow, "ResourceKeyId")
             .Should()

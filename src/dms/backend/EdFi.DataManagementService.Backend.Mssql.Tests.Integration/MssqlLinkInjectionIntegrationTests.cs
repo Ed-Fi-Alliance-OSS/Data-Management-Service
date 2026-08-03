@@ -416,19 +416,14 @@ public class Given_A_Mssql_AcademicWeek_To_School_Reference_With_Link_Injection
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Draws the next <c>DocumentId</c> from <c>dms.DocumentIdSequence</c> — the same counter the
+    /// <c>DocumentId</c> column default on <c>dms.Descriptor</c> and the resource root tables draws
+    /// from, so a seeded id can never collide with one a production write allocates.
+    /// </summary>
+    private async Task<long> NextDocumentIdAsync()
     {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT inserted.[DocumentId] INTO @Inserted ([DocumentId])
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
+        return await _database.ExecuteScalarAsync<long>("SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];");
     }
 
     private async Task<long> InsertDescriptorAsync(
@@ -441,7 +436,7 @@ public class Given_A_Mssql_AcademicWeek_To_School_Reference_With_Link_Injection
         string shortDescription
     )
     {
-        long documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        long documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """

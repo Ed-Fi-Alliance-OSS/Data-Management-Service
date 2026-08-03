@@ -136,9 +136,9 @@ internal static class MssqlProfileGuardedNoOpIntegrationTestSupport
             .ConfigureAwait(false);
 
     /// <summary>
-    /// Reads the document's identity and stamp state. The shape's own resource root row is the stamp
-    /// store, so the read scopes to that table; <c>ResourceKeyId</c> is the one column only
-    /// <c>dms.Document</c> carries and is joined in.
+    /// Reads the document's identity and stamp state. The shape's own resource root row IS the
+    /// document — it carries the identity and every stamp column — so the read scopes to that table
+    /// and needs no join.
     /// </summary>
     private static async Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> ReadDocumentRowsAsync(
         MssqlGeneratedDdlTestDatabase database,
@@ -148,11 +148,10 @@ internal static class MssqlProfileGuardedNoOpIntegrationTestSupport
         await database
             .QueryRowsAsync(
                 $"""
-                SELECT root.[DocumentId], root.[DocumentUuid], document.[ResourceKeyId],
+                SELECT root.[DocumentId], root.[DocumentUuid],
                        root.[ContentVersion], root.[ContentLastModifiedAt],
                        root.[IdentityVersion], root.[IdentityLastModifiedAt]
                 FROM [{shapeRootTable.Schema}].[{shapeRootTable.Table}] root
-                INNER JOIN [dms].[Document] document ON document.[DocumentId] = root.[DocumentId]
                 WHERE root.[DocumentUuid] = @documentUuid;
                 """,
                 new SqlParameter("@documentUuid", documentUuid)
@@ -301,16 +300,16 @@ internal abstract class MssqlProfileGuardedNoOpGeneratedDdlFixtureTestBase
         });
 
     /// <summary>
-    /// Counts rows in <c>dms.Document</c> matching the supplied
-    /// <paramref name="documentUuid"/>. Used to assert that a profiled
-    /// POST-as-update did NOT insert a new document under the incoming UUID.
+    /// Counts the shape's root rows matching the supplied <paramref name="documentUuid"/>. The root
+    /// row is the document, so a row under the incoming UUID would be the new document; used to
+    /// assert that a profiled POST-as-update did NOT insert one.
     /// </summary>
     protected async Task<long> CountDocumentRowsByUuidAsync(Guid documentUuid)
     {
         var rows = await _database.QueryRowsAsync(
-            """
+            $"""
             SELECT COUNT_BIG(*) AS [RowCount]
-            FROM [dms].[Document]
+            FROM [{ShapeRootTable.Schema}].[{ShapeRootTable.Table}]
             WHERE [DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid)
@@ -767,7 +766,7 @@ internal class Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Put
         // metadata. We substitute the bumper's ContentVersion bump back to the
         // before-state so the deep-equivalence assertion proves the no-op retry
         // preserves every other field (ContentLastModifiedAt, IdentityVersion,
-        // IdentityLastModifiedAt, RootRow, ResourceKeyId, DocumentUuid, DocumentId).
+        // IdentityLastModifiedAt, RootRow, DocumentUuid, DocumentId).
         var adjustedAfterState = _stateAfterUpdate with
         {
             Document = _stateAfterUpdate.Document with

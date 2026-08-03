@@ -372,22 +372,22 @@ public class Given_DdlManifestEmitter_CountStatements_For_Pgsql
     }
 
     [Test]
-    public void It_should_count_tagged_uuidv5_dollar_quoted_block_as_one_statement()
+    public void It_should_count_tagged_hashname_dollar_quoted_block_as_one_statement()
     {
         var sql = string.Join(
             "\n",
             "CREATE TABLE foo (id INT);",
-            "CREATE OR REPLACE FUNCTION uuidv5(namespace_uuid uuid, name_text text)",
+            "CREATE OR REPLACE FUNCTION hashname(namespace_uuid uuid, name_text text)",
             "RETURNS uuid",
             "LANGUAGE plpgsql",
-            "AS $uuidv5$",
+            "AS $hashname$",
             "DECLARE",
             "    hash bytea;",
             "BEGIN",
             "    hash := digest('test', 'sha1');",
             "    RETURN encode(substring(hash from 1 for 16), 'hex')::uuid;",
             "END",
-            "$uuidv5$;",
+            "$hashname$;",
             ""
         );
 
@@ -400,11 +400,11 @@ public class Given_DdlManifestEmitter_CountStatements_For_Pgsql
         var sql = string.Join(
             "\n",
             "CREATE TABLE foo (id INT);",
-            "CREATE OR REPLACE FUNCTION uuidv5() RETURNS uuid AS $uuidv5$",
+            "CREATE OR REPLACE FUNCTION hashname() RETURNS uuid AS $hashname$",
             "BEGIN",
             "    RETURN uuid_generate_v5(uuid_nil(), 'test');",
             "END",
-            "$uuidv5$;",
+            "$hashname$;",
             "CREATE OR REPLACE FUNCTION my_func() RETURNS TRIGGER AS $func$",
             "BEGIN",
             "    INSERT INTO foo VALUES (1);",
@@ -413,7 +413,7 @@ public class Given_DdlManifestEmitter_CountStatements_For_Pgsql
             ""
         );
 
-        // 1 CREATE TABLE + 1 uuidv5 function + 1 trigger function = 3
+        // 1 CREATE TABLE + 1 hashname function + 1 trigger function = 3
         DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, sql).Should().Be(3);
     }
 }
@@ -593,7 +593,7 @@ public class Given_DdlManifestEmitter_CountStatements_For_Mssql
             "\n",
             "CREATE TABLE foo (id INT);",
             "GO",
-            "CREATE OR ALTER FUNCTION dms.uuidv5(@ns uniqueidentifier, @name nvarchar(max))",
+            "CREATE OR ALTER FUNCTION dms.hashname(@ns uniqueidentifier, @name nvarchar(max))",
             "RETURNS uniqueidentifier",
             "AS",
             "BEGIN",
@@ -906,7 +906,7 @@ public class Given_DdlManifestEmitter_CountStatements_With_Two_Mssql_Function_Ba
                 RETURN @Result;
             END;
             GO
-            CREATE OR ALTER FUNCTION [dms].[uuidv5](@a uniqueidentifier)
+            CREATE OR ALTER FUNCTION [dms].[hashname](@a uniqueidentifier)
             RETURNS uniqueidentifier
             AS
             BEGIN

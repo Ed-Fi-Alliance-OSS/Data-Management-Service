@@ -795,25 +795,23 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
 
     private async Task<IReadOnlyList<PersistedQuerySchool>> ReadPersistedSchoolsInDocumentOrderAsync()
     {
-        var resourceKeyId = _mappingSet.ResourceKeyIdByResource[SchoolResource];
         var physicalSchema = _mappingSet.ReadPlansByResource[SchoolResource].Model.PhysicalSchema.Value;
+        // The School root row is the document: it carries DocumentId, DocumentUuid and the stamps.
+        // Naming the School table is itself the "these are School documents" restriction that the
+        // old dms.Document.ResourceKeyId predicate expressed.
         var rows = await _database.QueryRowsAsync(
             $"""
             SELECT
-                doc.[DocumentId],
-                doc.[DocumentUuid],
+                school.[DocumentId],
+                school.[DocumentUuid],
                 school.[SchoolId],
                 school.[NameOfInstitution],
                 school.[ContentVersion]
-            FROM [dms].[Document] doc
-            INNER JOIN [{physicalSchema}].[School] school
-                ON school.[DocumentId] = doc.[DocumentId]
+            FROM [{physicalSchema}].[School] school
             INNER JOIN [dms].[Descriptor] schoolType
                 ON schoolType.[DocumentId] = school.[SchoolTypeDescriptor_DescriptorId]
-            WHERE doc.[ResourceKeyId] = @resourceKeyId
-            ORDER BY doc.[DocumentId];
-            """,
-            new SqlParameter("@resourceKeyId", resourceKeyId)
+            ORDER BY school.[DocumentId];
+            """
         );
 
         return
@@ -942,8 +940,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
 
     private async Task SeedSchoolAsync(QuerySchoolSeed schoolSeed)
     {
-        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var documentId = await InsertDocumentAsync(schoolSeed.DocumentUuid.Value, resourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
@@ -951,6 +948,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             async () =>
                 await InsertSchoolAsync(
                     documentId,
+                    schoolSeed.DocumentUuid.Value,
                     schoolSeed.SchoolId,
                     schoolSeed.NameOfInstitution,
                     _descriptorIdBySchoolTypeUri[_schoolTypeDescriptorUriBySchoolId[schoolSeed.SchoolId]]
@@ -1096,23 +1094,23 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Mints the next DocumentId from the same sequence the resource root tables and
+    /// <c>dms.Descriptor</c> draw their DEFAULT from, so a seeded id can never collide with a
+    /// production-created one.
+    /// </summary>
+    private async Task<long> NextDocumentIdAsync()
     {
         return await _database.ExecuteScalarAsync<long>(
             """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
+            SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];
+            """
         );
     }
 
     private async Task InsertSchoolAsync(
         long documentId,
+        Guid documentUuid,
         int schoolId,
         string nameOfInstitution,
         long schoolTypeDescriptorId
@@ -1122,13 +1120,15 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             """
             INSERT INTO [edfi].[School] (
                 [DocumentId],
+                [DocumentUuid],
                 [NameOfInstitution],
                 [SchoolId],
                 [SchoolTypeDescriptor_DescriptorId]
             )
-            VALUES (@documentId, @nameOfInstitution, @schoolId, @schoolTypeDescriptorId);
+            VALUES (@documentId, @documentUuid, @nameOfInstitution, @schoolId, @schoolTypeDescriptorId);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
             new SqlParameter("@schoolId", schoolId),
             new SqlParameter("@schoolTypeDescriptorId", schoolTypeDescriptorId)
@@ -1240,7 +1240,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """

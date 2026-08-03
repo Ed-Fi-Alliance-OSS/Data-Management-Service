@@ -73,7 +73,7 @@ public class Given_PostgresqlGeneratedDdlBaselineDatabase
 
         secondClone.DatabaseName.Should().NotBe(firstCloneDatabaseName);
         secondBaselineCounts.Should().Be(baselineCounts);
-        secondMutableCounts.Should().Be(new PostgresqlGeneratedDdlMutableCounts(0, 0, 0));
+        secondMutableCounts.Should().Be(new PostgresqlGeneratedDdlMutableCounts(0, 0));
         secondDocumentState.Should().Be(firstDocumentState);
         secondCollectionItemId.Should().Be(firstCollectionItemId);
     }
@@ -103,7 +103,7 @@ public class Given_PostgresqlGeneratedDdlBaselineDatabase
 
             await using var isolatedDatabase = await secondBaseline.CreateIsolatedDatabaseAsync();
             var mutableCounts = await ReadMutableCountsAsync(isolatedDatabase);
-            mutableCounts.Should().Be(new PostgresqlGeneratedDdlMutableCounts(0, 0, 0));
+            mutableCounts.Should().Be(new PostgresqlGeneratedDdlMutableCounts(0, 0));
         }
         finally
         {
@@ -138,7 +138,6 @@ public class Given_PostgresqlGeneratedDdlBaselineDatabase
     )
     {
         return new(
-            await ReadTableCountAsync(database, "dms.\"Document\""),
             await ReadTableCountAsync(database, "edfi.\"School\""),
             await ReadTableCountAsync(database, "edfi.\"SchoolAddress\"")
         );
@@ -158,45 +157,25 @@ public class Given_PostgresqlGeneratedDdlBaselineDatabase
         int schoolId
     )
     {
-        var resourceKeyId = await database.ExecuteScalarAsync<short>(
-            """
-            SELECT "ResourceKeyId"
-            FROM "dms"."ResourceKey"
-            WHERE "ProjectName" = @projectName
-              AND "ResourceName" = @resourceName;
-            """,
-            new NpgsqlParameter("projectName", "Ed-Fi"),
-            new NpgsqlParameter("resourceName", "School")
-        );
-
+        // The School root row is the document: it originates its own DocumentId from
+        // dms.DocumentIdSequence and its BEFORE INSERT stamp trigger writes ContentVersion /
+        // IdentityVersion onto the same row, so one INSERT returns the whole document state.
         var documentRows = await database.QueryRowsAsync(
             """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
+            INSERT INTO "edfi"."School" ("DocumentUuid", "SchoolId")
+            VALUES (@documentUuid, @schoolId)
             RETURNING "DocumentId", "ContentVersion", "IdentityVersion";
             """,
             new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            new NpgsqlParameter("schoolId", schoolId)
         );
         var documentRow = documentRows.Should().ContainSingle().Which;
-        var documentState = new PostgresqlGeneratedDdlDocumentState(
+
+        return new PostgresqlGeneratedDdlDocumentState(
             Convert.ToInt64(documentRow["DocumentId"]),
             Convert.ToInt64(documentRow["ContentVersion"]),
             Convert.ToInt64(documentRow["IdentityVersion"])
         );
-
-        await database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO "edfi"."School" ("DocumentId", "DocumentUuid", "SchoolId")
-            SELECT @documentId, document."DocumentUuid", @schoolId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
-            """,
-            new NpgsqlParameter("documentId", documentState.DocumentId),
-            new NpgsqlParameter("schoolId", schoolId)
-        );
-
-        return documentState;
     }
 
     private static Task<long> InsertSchoolAddressAsync(

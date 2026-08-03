@@ -287,8 +287,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
                 i.[ProfileScopeClearableText],
                 i.[ProfileScopePreservedText]
             FROM [edfi].[ProfileRootOnlyMergeItem] i
-            INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]
-            WHERE d.[DocumentUuid] = @documentUuid;
+            WHERE i.[DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid.Value)
         );
@@ -299,8 +298,8 @@ internal static class MssqlProfileRootOnlyFixtureSupport
     // ─────────────────────────────────────────────────────────────────────────
     //  Prerequisite-seed helpers (MSSQL dialect). Mirror of the pgsql sibling
     //  file; dialect differences: bracket identifiers, SqlParameter, bit (0/1)
-    //  for boolean, OUTPUT INSERTED for scalar return. See the pgsql file header
-    //  comment for rationale.
+    //  for boolean, NEXT VALUE FOR instead of nextval(). See the pgsql file
+    //  header comment for rationale.
     // ─────────────────────────────────────────────────────────────────────────
 
     public static async Task<short> GetResourceKeyIdAsync(
@@ -321,20 +320,16 @@ internal static class MssqlProfileRootOnlyFixtureSupport
         );
     }
 
-    public static async Task<long> InsertDocumentRowAsync(
-        MssqlGeneratedDdlTestDatabase database,
-        Guid documentUuid,
-        short resourceKeyId
-    )
+    /// <summary>
+    /// Mints the next DocumentId from the same sequence the resource root tables draw their
+    /// DEFAULT from, so a seeded row can never collide with a production-created one.
+    /// </summary>
+    public static async Task<long> NextDocumentIdAsync(MssqlGeneratedDdlTestDatabase database)
     {
         return await database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId]
-            VALUES (@documentUuid, @resourceKeyId);
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
+            SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];
+            """
         );
     }
 
@@ -345,16 +340,14 @@ internal static class MssqlProfileRootOnlyFixtureSupport
         string firstName = "Seed"
     )
     {
-        var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "Student");
-        var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync(database);
         await database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[Student] ([DocumentId], [DocumentUuid], [StudentUniqueId], [FirstName])
-            SELECT @documentId, document.[DocumentUuid], @studentUniqueId, @firstName
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            VALUES (@documentId, @documentUuid, @studentUniqueId, @firstName);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@studentUniqueId", studentUniqueId),
             new SqlParameter("@firstName", firstName)
         );
@@ -370,7 +363,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "SchoolTypeDescriptor");
-        var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync(database);
         var uri = $"{@namespace}#{codeValue}";
         const string discriminator = "SchoolTypeDescriptor";
         await database.ExecuteNonQueryAsync(
@@ -425,8 +418,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
         bool secondaryPresent
     )
     {
-        var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "ProfileRootOnlyMergeItem");
-        var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync(database);
 
         await database.ExecuteNonQueryAsync(
             """
@@ -491,8 +483,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
                 i.[SecondarySchoolTypeDescriptor_DescriptorId_Present],
                 i.[PrimarySchoolTypeDescriptor_Unified_DescriptorId]
             FROM [edfi].[ProfileRootOnlyMergeItem] i
-            INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]
-            WHERE d.[DocumentUuid] = @documentUuid;
+            WHERE i.[DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid.Value)
         );

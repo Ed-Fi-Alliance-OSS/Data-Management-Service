@@ -483,23 +483,22 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
 
     private async Task<MssqlStudentArtProgramAssociationSeedData> SeedReferenceDataAsync()
     {
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
-        var programResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Program");
         var programTypeDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "ProgramTypeDescriptor"
         );
 
-        var schoolDocumentId = await InsertDocumentAsync(
-            Guid.Parse("11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
-            schoolResourceKeyId
-        );
+        var schoolDocumentId = await NextDocumentIdAsync();
         await _database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "School",
             async () =>
-                await InsertSchoolAsync(schoolDocumentId, (int)EducationOrganizationId, "Alpha Academy"),
+                await InsertSchoolAsync(
+                    schoolDocumentId,
+                    Guid.Parse("11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                    (int)EducationOrganizationId,
+                    "Alpha Academy"
+                ),
             mirrorMetadataForDocumentId: schoolDocumentId
         );
         await InsertEducationOrganizationIdentityAsync(
@@ -508,11 +507,14 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             "Ed-Fi:School"
         );
 
-        var studentDocumentId = await InsertDocumentAsync(
+        var studentDocumentId = await NextDocumentIdAsync();
+        await InsertStudentAsync(
+            studentDocumentId,
             Guid.Parse("22222222-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
-            studentResourceKeyId
+            StudentUniqueId,
+            "Casey",
+            "Cole"
         );
-        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Casey", "Cole");
 
         var extracurricularProgramTypeDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("33333333-cccc-cccc-cccc-ccccccccccc1"),
@@ -524,10 +526,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             "Extracurricular"
         );
 
-        var roboticsClubProgramDocumentId = await InsertDocumentAsync(
-            Guid.Parse("44444444-dddd-dddd-dddd-ddddddddddd1"),
-            programResourceKeyId
-        );
+        var roboticsClubProgramDocumentId = await NextDocumentIdAsync();
         await InsertProgramAsync(
             roboticsClubProgramDocumentId,
             schoolDocumentId,
@@ -564,10 +563,8 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
                     association.[Student_StudentUniqueId],
                     association.[BeginDate],
                     association.[PrivateArtProgram]
-                FROM [dms].[Document] document
-                INNER JOIN [sample].[StudentArtProgramAssociation] association
-                    ON association.[DocumentId] = document.[DocumentId]
-                WHERE document.[DocumentUuid] = @documentUuid;
+                FROM [sample].[StudentArtProgramAssociation] association
+                WHERE association.[DocumentUuid] = @documentUuid;
                 """,
                 new SqlParameter("@documentUuid", documentUuid)
             )
@@ -629,20 +626,12 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
-    {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
+    /// <summary>
+    /// Mints a DocumentId from the same counter the root tables and <c>dms.Descriptor</c> default from,
+    /// so a hand-seeded row can never collide with one the write path creates.
+    /// </summary>
+    private Task<long> NextDocumentIdAsync() =>
+        _database.ExecuteScalarAsync<long>("SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];");
 
     private async Task<long> InsertDescriptorAsync(
         Guid documentUuid,
@@ -654,7 +643,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -695,16 +684,20 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         return documentId;
     }
 
-    private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
+    private async Task InsertSchoolAsync(
+        long documentId,
+        Guid documentUuid,
+        int schoolId,
+        string nameOfInstitution
+    )
     {
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [NameOfInstitution], [SchoolId])
-            SELECT @documentId, document.[DocumentUuid], @nameOfInstitution, @schoolId
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            VALUES (@documentId, @documentUuid, @nameOfInstitution, @schoolId);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
             new SqlParameter("@schoolId", schoolId)
         );
@@ -716,14 +709,14 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         string discriminator
     )
     {
-        // DocumentUuid has no default (m23), so this out-of-band insert must carry the seeded
-        // dms.Document row's value — the same value the maintenance trigger would have copied.
+        // DocumentUuid has no default (m23), so this out-of-band insert must carry the seeded School
+        // root row's value — the same value the maintenance trigger would have copied.
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-            SELECT @documentId, d.[DocumentUuid], @educationOrganizationId, @discriminator
-            FROM [dms].[Document] d
-            WHERE d.[DocumentId] = @documentId;
+            SELECT @documentId, root.[DocumentUuid], @educationOrganizationId, @discriminator
+            FROM [edfi].[School] root
+            WHERE root.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@educationOrganizationId", educationOrganizationId),
@@ -733,6 +726,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
 
     private async Task InsertStudentAsync(
         long documentId,
+        Guid documentUuid,
         string studentUniqueId,
         string firstName,
         string lastSurname
@@ -741,11 +735,10 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[Student] ([DocumentId], [DocumentUuid], [BirthDate], [FirstName], [LastSurname], [StudentUniqueId])
-            SELECT @documentId, document.[DocumentUuid], @birthDate, @firstName, @lastSurname, @studentUniqueId
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            VALUES (@documentId, @documentUuid, @birthDate, @firstName, @lastSurname, @studentUniqueId);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@birthDate", new DateOnly(2010, 1, 1)),
             new SqlParameter("@firstName", firstName),
             new SqlParameter("@lastSurname", lastSurname),

@@ -18,13 +18,14 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 internal static class IdentityProjectionResolver
 {
     /// <summary>
-    /// Builds identity element mappings for UUIDv5 computation by pairing each identity JSON path
-    /// with exactly one column, preserving identity-path order and cardinality so the computed
-    /// UUIDv5 hash matches Core's <c>ReferentialIdCalculator</c> (one element per document identity
-    /// element). For identity-component references, this resolves to locally stored identity-part
-    /// columns (not the FK <c>..._DocumentId</c>); when key unification fans one reference-site
-    /// logical field out to multiple member columns, only the first member represents the path.
-    /// Distinct identity paths are never merged, even when they share a canonical storage column.
+    /// Builds identity element mappings by pairing each identity JSON path with exactly one column,
+    /// preserving identity-path order and cardinality. The one-element-per-identity-path guarantee is
+    /// load-bearing for <see cref="DeriveTrackedChangeInventoryPass"/>, which keys these mappings by
+    /// <c>IdentityJsonPath</c> through <c>ToDictionary</c> and throws on a duplicate key. For
+    /// identity-component references, this resolves to locally stored identity-part columns (not the FK
+    /// <c>..._DocumentId</c>); when key unification fans one reference-site logical field out to
+    /// multiple member columns, only the first member represents the path. Distinct identity paths are
+    /// never merged, even when they share a canonical storage column.
     /// </summary>
     internal static IReadOnlyList<IdentityElementMapping> BuildIdentityElementMappings(
         RelationalResourceModel resourceModel,
@@ -42,16 +43,6 @@ internal static class IdentityProjectionResolver
         var referenceBindingsByIdentityPath = BuildReferenceIdentityBindings(
             resourceModel.DocumentReferenceBindings,
             resource
-        );
-
-        // Build a column-name-to-scalar-type lookup for type-aware identity hash formatting.
-        var columnScalarTypes = rootTable
-            .Columns.Where(c => c.ScalarType is not null)
-            .ToDictionary(c => c.ColumnName.Value, c => c.ScalarType!, StringComparer.Ordinal);
-        var columnKinds = rootTable.Columns.ToDictionary(
-            c => c.ColumnName.Value,
-            c => c.Kind,
-            StringComparer.Ordinal
         );
 
         List<IdentityElementMapping> mappings = new(builderContext.IdentityJsonPaths.Count);
@@ -79,26 +70,19 @@ internal static class IdentityProjectionResolver
                 );
             }
 
-            mappings.Add(
-                new IdentityElementMapping(
-                    columnName,
-                    canonical,
-                    LookupColumnScalarType(columnScalarTypes, columnName, canonical, resource),
-                    IsDescriptorReference(columnKinds, columnName, canonical, resource)
-                )
-            );
+            mappings.Add(new IdentityElementMapping(columnName, canonical));
         }
 
         return mappings.ToArray();
     }
 
     /// <summary>
-    /// Selects the single hash-element column representing one identity JSON path out of its
-    /// same-site logical reference field group. Key unification can fan one identity path out to
-    /// multiple physical member columns (persisted unified aliases over one canonical storage
-    /// column); the hash must contain one element per identity path, so the first member in binding
-    /// order represents the path. Every member must resolve to the same canonical storage column —
-    /// members with different stored values cannot be collapsed into a single element.
+    /// Selects the single column representing one identity JSON path out of its same-site logical
+    /// reference field group. Key unification can fan one identity path out to multiple physical member
+    /// columns (persisted unified aliases over one canonical storage column); callers require one
+    /// element per identity path, so the first member in binding order represents the path. Every
+    /// member must resolve to the same canonical storage column — members with different stored values
+    /// cannot be collapsed into a single element.
     /// </summary>
     internal static DbColumnName SelectIdentityElementColumn(
         IReadOnlyList<DbColumnName> memberColumns,
@@ -141,44 +125,6 @@ internal static class IdentityProjectionResolver
         }
 
         return first;
-    }
-
-    /// <summary>
-    /// Resolves the <see cref="RelationalScalarType"/> for a given column from the pre-built lookup.
-    /// </summary>
-    internal static RelationalScalarType LookupColumnScalarType(
-        Dictionary<string, RelationalScalarType> columnScalarTypes,
-        DbColumnName column,
-        string identityPath,
-        QualifiedResourceName resource
-    )
-    {
-        if (!columnScalarTypes.TryGetValue(column.Value, out var scalarType))
-        {
-            throw new InvalidOperationException(
-                $"Identity column '{column.Value}' for path '{identityPath}' on resource "
-                    + $"'{FormatResource(resource)}' has no scalar type metadata."
-            );
-        }
-        return scalarType;
-    }
-
-    private static bool IsDescriptorReference(
-        Dictionary<string, ColumnKind> columnKinds,
-        DbColumnName column,
-        string identityPath,
-        QualifiedResourceName resource
-    )
-    {
-        if (!columnKinds.TryGetValue(column.Value, out var kind))
-        {
-            throw new InvalidOperationException(
-                $"Identity column '{column.Value}' for path '{identityPath}' on resource "
-                    + $"'{FormatResource(resource)}' has no column kind metadata."
-            );
-        }
-
-        return kind is ColumnKind.DescriptorFk;
     }
 
     /// <summary>

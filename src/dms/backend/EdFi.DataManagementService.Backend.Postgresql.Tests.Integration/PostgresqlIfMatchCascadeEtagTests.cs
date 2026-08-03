@@ -373,11 +373,7 @@ public class Given_A_Postgresql_Relational_Update_With_A_Stale_IfMatch_After_An_
             """
             UPDATE "edfi"."Student"
             SET "StudentUniqueId" = @studentUniqueId
-            WHERE "DocumentId" = (
-                SELECT "DocumentId"
-                FROM "dms"."Document"
-                WHERE "DocumentUuid" = @documentUuid
-            );
+            WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("studentUniqueId", studentUniqueId),
             new NpgsqlParameter("documentUuid", StudentDocumentUuid.Value)

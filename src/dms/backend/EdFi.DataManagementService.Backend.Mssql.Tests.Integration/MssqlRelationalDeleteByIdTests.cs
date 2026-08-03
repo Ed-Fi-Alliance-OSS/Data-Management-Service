@@ -83,24 +83,6 @@ public class Given_A_Mssql_Relational_Delete_By_Id
             _fixture.GeneratedDdl
         );
         _database = _databaseLease.Database;
-
-        // SQL Server's "DBCC CHECKIDENT(..., RESEED, 0)" (used by MssqlDatabaseResetSql) makes the
-        // next INSERT use 0 on a table that has never been populated — but RESEED N + 1 on a table
-        // that has ever been populated. Issue a single insert-then-delete against dms.Document so
-        // the identity counter is "activated"; subsequent ResetAsync() calls then correctly yield
-        // next-value = 1 on an empty table instead of 0 (which would otherwise fail
-        // DefaultRelationalWriteExecutor.ValidatePersistedTargetIdentity with DocumentId == 0).
-        var resourceKeyId = _mappingSet.ResourceKeyIdByResource[new QualifiedResourceName("Ed-Fi", "School")];
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            VALUES (@documentUuid, @resourceKeyId);
-
-            DELETE FROM [dms].[Document] WHERE [DocumentUuid] = @documentUuid;
-            """,
-            new SqlParameter("@documentUuid", Guid.NewGuid()),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
     }
 
     [SetUp]
@@ -142,8 +124,8 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         upsert.Should().BeOfType<UpsertResult.InsertSuccess>();
 
         // Capture DocumentId before delete; counting cascaded rows by DocumentId (rather than
-        // joining child tables back to dms.Document on DocumentUuid) guarantees the post-delete
-        // assertions are not trivially satisfied by the Document row already being gone.
+        // joining child tables back to the School root row on DocumentUuid) guarantees the
+        // post-delete assertions are not trivially satisfied by the root row already being gone.
         var documentId = await GetDocumentIdAsync("School", documentUuid);
         documentId.Should().NotBeNull();
         (await CountRootRowsAsync("School", documentUuid)).Should().Be(1);
@@ -205,12 +187,12 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         // unit fixtures, which exercise UnrecognizedWriteFailure directly through the classifier
         // stub.
         var programDocumentUuid = new DocumentUuid(Guid.Parse("eeeeeeee-0000-0000-0000-000000000100"));
-        var programDocumentId = await InsertDocumentAsync(programDocumentUuid.Value, "Ed-Fi", "Program");
-        await InsertProgramAsync(programDocumentId, "Robotics");
+        var programDocumentId = await NextDocumentIdAsync();
+        await InsertProgramAsync(programDocumentId, programDocumentUuid.Value, "Robotics");
 
         var schoolDocumentUuid = Guid.Parse("eeeeeeee-0000-0000-0000-000000000101");
-        var schoolDocumentId = await InsertDocumentAsync(schoolDocumentUuid, "Ed-Fi", "School");
-        await InsertSchoolAsync(schoolDocumentId, schoolId: 900001);
+        var schoolDocumentId = await NextDocumentIdAsync();
+        await InsertSchoolAsync(schoolDocumentId, schoolDocumentUuid, schoolId: 900001);
         await InsertSchoolExtensionAsync(schoolDocumentId, "North");
         var addressCollectionItemId = await InsertSchoolAddressAsync(schoolDocumentId, 1, "Austin");
         await InsertSchoolExtensionAddressAsync(addressCollectionItemId, schoolDocumentId, "Zone-1");
@@ -407,59 +389,32 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         return Convert.ToInt64(rows[0]["Count"]);
     }
 
-    private Task<short> GetResourceKeyIdAsync(string projectName, string resourceName) =>
-        _database.ExecuteScalarAsync<short>(
-            """
-            SELECT [ResourceKeyId]
-            FROM [dms].[ResourceKey]
-            WHERE [ProjectName] = @projectName
-              AND [ResourceName] = @resourceName;
-            """,
-            new SqlParameter("@projectName", projectName),
-            new SqlParameter("@resourceName", resourceName)
-        );
+    /// <summary>
+    /// Mints a DocumentId from the same counter the root tables default from, so a hand-seeded root
+    /// row can never collide with one the write path creates.
+    /// </summary>
+    private Task<long> NextDocumentIdAsync() =>
+        _database.ExecuteScalarAsync<long>("SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];");
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, string projectName, string resourceName)
-    {
-        var resourceKeyId = await GetResourceKeyIdAsync(projectName, resourceName);
-
-        // Use OUTPUT INTO (rather than bare OUTPUT or SCOPE_IDENTITY()) so this works against
-        // dms.Document even though the table has an enabled trigger (SQL Server error 334
-        // forbids bare OUTPUT on triggered tables). OUTPUT ... INTO @tmp is allowed.
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            DECLARE @ids TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId] INTO @ids
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT [DocumentId] FROM @ids;
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private Task InsertProgramAsync(long documentId, string programName) =>
+    private Task InsertProgramAsync(long documentId, Guid documentUuid, string programName) =>
         _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[Program] ([DocumentId], [DocumentUuid], [ProgramName])
-            SELECT @documentId, document.[DocumentUuid], @programName
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            VALUES (@documentId, @documentUuid, @programName);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@programName", programName)
         );
 
-    private Task InsertSchoolAsync(long documentId, int schoolId) =>
+    private Task InsertSchoolAsync(long documentId, Guid documentUuid, int schoolId) =>
         _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [SchoolId])
-            SELECT @documentId, document.[DocumentUuid], @schoolId
-            FROM [dms].[Document] document
-            WHERE document.[DocumentId] = @documentId;
+            VALUES (@documentId, @documentUuid, @schoolId);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@schoolId", schoolId)
         );
 

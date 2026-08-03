@@ -252,7 +252,7 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
         var rows = await database.QueryRowsAsync(
             """
             SELECT [DocumentId]
-            FROM [dms].[Document]
+            FROM [edfi].[ParentResource]
             WHERE [DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid.Value)
@@ -262,11 +262,13 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
         return GetInt64(rows[0], "DocumentId");
     }
 
+    // The root row is the document. This fixture only ever writes ParentResource documents, so
+    // counting the root table is the "how many documents exist" probe.
     public static Task<long> ReadDocumentCountAsync(MssqlGeneratedDdlTestDatabase database) =>
         database.ExecuteScalarAsync<long>(
             """
             SELECT COUNT(*)
-            FROM [dms].[Document];
+            FROM [edfi].[ParentResource];
             """
         );
 
@@ -284,7 +286,7 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
                 p.[ParentCode],
                 p.[ParentName]
             FROM [edfi].[ParentResourceParent] p
-            INNER JOIN [dms].[Document] d ON d.[DocumentId] = p.[ParentResource_DocumentId]
+            INNER JOIN [edfi].[ParentResource] d ON d.[DocumentId] = p.[ParentResource_DocumentId]
             WHERE d.[DocumentUuid] = @documentUuid
             ORDER BY p.[Ordinal], p.[CollectionItemId];
             """,
@@ -314,7 +316,7 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
                 ext.[AlignedVisibleScalar],
                 ext.[AlignedHiddenScalar]
             FROM [aligned].[ParentResourceExtensionParent] ext
-            INNER JOIN [dms].[Document] d ON d.[DocumentId] = ext.[ParentResource_DocumentId]
+            INNER JOIN [edfi].[ParentResource] d ON d.[DocumentId] = ext.[ParentResource_DocumentId]
             WHERE d.[DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid.Value)
@@ -339,7 +341,7 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
             """
             SELECT COUNT(*)
             FROM [aligned].[ParentResourceExtensionParent] ext
-            INNER JOIN [dms].[Document] d ON d.[DocumentId] = ext.[ParentResource_DocumentId]
+            INNER JOIN [edfi].[ParentResource] d ON d.[DocumentId] = ext.[ParentResource_DocumentId]
             WHERE d.[DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid.Value)
@@ -370,7 +372,7 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
                 c.[ChildCode],
                 c.[ChildValue]
             FROM [aligned].[ParentResourceExtensionParentChildren] c
-            INNER JOIN [dms].[Document] d ON d.[DocumentId] = c.[ParentResource_DocumentId]
+            INNER JOIN [edfi].[ParentResource] d ON d.[DocumentId] = c.[ParentResource_DocumentId]
             WHERE d.[DocumentUuid] = @documentUuid
             ORDER BY c.[BaseCollectionItemId], c.[Ordinal], c.[CollectionItemId];
             """,
@@ -403,7 +405,7 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
                 ec.[ExtensionChildCode],
                 ec.[ExtensionChildValue]
             FROM [aligned].[ParentResourceExtensionParentChildrenExtensionChildren] ec
-            INNER JOIN [dms].[Document] d ON d.[DocumentId] = ec.[ParentResource_DocumentId]
+            INNER JOIN [edfi].[ParentResource] d ON d.[DocumentId] = ec.[ParentResource_DocumentId]
             WHERE d.[DocumentUuid] = @documentUuid
             ORDER BY ec.[ParentCollectionItemId], ec.[Ordinal], ec.[CollectionItemId];
             """,

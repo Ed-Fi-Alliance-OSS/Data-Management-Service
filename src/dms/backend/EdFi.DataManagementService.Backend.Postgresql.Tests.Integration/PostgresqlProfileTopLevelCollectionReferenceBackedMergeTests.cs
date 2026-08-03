@@ -103,9 +103,6 @@ internal static class ReferenceBackedTopLevelCollectionMergeSupport
 
     public const string ProgramsScope = "$.programs[*]";
 
-    // ResourceKeyId values are fixed by the DDL seed: Program=1, School=2
-    private const short ProgramResourceKeyId = 1;
-
     public static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
 
     public static readonly BaseResourceInfo ProgramBaseResourceInfo = new(
@@ -346,24 +343,21 @@ internal static class ReferenceBackedTopLevelCollectionMergeSupport
         string programName
     )
     {
+        // The root table's DocumentId DEFAULT draws from this same sequence, so a seeded id can
+        // never collide with a production-created one.
         var dbDocumentId = await database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", ProgramResourceKeyId)
+            SELECT nextval('"dms"."DocumentIdSequence"');
+            """
         );
 
         await database.ExecuteNonQueryAsync(
             """
             INSERT INTO "edfi"."Program" ("DocumentId", "DocumentUuid", "ProgramId", "ProgramName")
-            SELECT @documentId, document."DocumentUuid", @programId, @programName
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            VALUES (@documentId, @documentUuid, @programId, @programName);
             """,
             new NpgsqlParameter("documentId", dbDocumentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("programId", programId),
             new NpgsqlParameter("programName", programName)
         );
@@ -435,7 +429,7 @@ internal static class ReferenceBackedTopLevelCollectionMergeSupport
 
     // ── Read-back helpers ──────────────────────────────────────────────────────
 
-    /// <summary>Reads the DocumentId for a document by UUID.</summary>
+    /// <summary>Reads the DocumentId for a School document by UUID.</summary>
     public static async Task<long> ReadDocumentIdAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         DocumentUuid documentUuid
@@ -444,7 +438,7 @@ internal static class ReferenceBackedTopLevelCollectionMergeSupport
         var rows = await database.QueryRowsAsync(
             """
             SELECT "DocumentId"
-            FROM "dms"."Document"
+            FROM "edfi"."School"
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid.Value)
@@ -505,14 +499,6 @@ internal static class ReferenceBackedTopLevelCollectionMergeSupport
         database.ExecuteScalarAsync<long>(
             """
             SELECT COUNT(*) FROM "edfi"."SchoolProgram";
-            """
-        );
-
-    /// <summary>Returns the count of rows in dms.Document.</summary>
-    public static Task<long> ReadDocumentCountAsync(PostgresqlGeneratedDdlTestDatabase database) =>
-        database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT(*) FROM "dms"."Document";
             """
         );
 }

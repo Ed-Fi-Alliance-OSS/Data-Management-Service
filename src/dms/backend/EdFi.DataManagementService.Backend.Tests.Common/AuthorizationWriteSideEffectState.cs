@@ -8,7 +8,6 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 internal sealed record AuthorizationDocumentState(
     long DocumentId,
     Guid DocumentUuid,
-    short ResourceKeyId,
     long ContentVersion,
     long IdentityVersion,
     DateTime ContentLastModifiedAt,

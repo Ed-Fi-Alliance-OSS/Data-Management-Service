@@ -26,7 +26,7 @@ Feature: OWASP critical attack path protections
              When a POST request is made to "/ed-fi/schools" with
                   """
                   {
-                      "schoolId": "'; DROP TABLE dms.Document; --",
+                      "schoolId": "'; DROP TABLE dms.ResourceKey; --",
                       "nameOfInstitution": "Injected School",
                       "gradeLevels": [
                           {

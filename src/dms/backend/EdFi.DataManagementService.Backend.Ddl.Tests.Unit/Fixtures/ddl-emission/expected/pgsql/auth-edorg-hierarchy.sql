@@ -70,14 +70,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationIdentity_Document'
+        WHERE conname = 'FK_EducationOrganizationIdentity_Descriptor'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationIdentity"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationIdentity"
-        ADD CONSTRAINT "FK_EducationOrganizationIdentity_Document"
+        ADD CONSTRAINT "FK_EducationOrganizationIdentity_Descriptor"
         FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;

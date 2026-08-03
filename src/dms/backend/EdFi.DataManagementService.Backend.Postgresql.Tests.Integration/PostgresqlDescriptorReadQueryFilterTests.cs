@@ -263,62 +263,6 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
     }
 
     [Test]
-    public async Task It_excludes_a_document_without_a_descriptor_row_from_the_page_and_the_total_count()
-    {
-        // The page keyset and the total count both root on dms.Descriptor, so a dms.Document row with
-        // no descriptor row is invisible to the query instead of inflating the count by one.
-        await SeedDescriptorsAsync([PagingFirstSeed]);
-
-        var resourceKeyId = DescriptorReadIntegrationTestSupport.GetDescriptorResourceKeyIdOrThrow(
-            _mappingSet,
-            SchoolTypeDescriptorResource
-        );
-        await PostgresqlDescriptorReadTestSupport.InsertDocumentAsync(
-            _database,
-            new DocumentUuid(Guid.Parse("30000000-0000-0000-0000-000000000207")),
-            resourceKeyId
-        );
-
-        var result = await ExecuteQueryAsync(
-            [],
-            "pg-descriptor-query-orphan-document-outside-page",
-            totalCount: true,
-            limit: 1,
-            offset: 0
-        );
-
-        AssertDescriptorPage(result, [PagingFirstSeed], expectedTotalCount: 1);
-    }
-
-    [Test]
-    public async Task It_returns_an_empty_page_beyond_the_documents_that_have_descriptor_rows()
-    {
-        // The former corruption 500 for a selected document without a descriptor row is unreachable:
-        // the keyset never selects it, so paging past the descriptor rows yields an empty page.
-        await SeedDescriptorsAsync([PagingFirstSeed]);
-
-        var resourceKeyId = DescriptorReadIntegrationTestSupport.GetDescriptorResourceKeyIdOrThrow(
-            _mappingSet,
-            SchoolTypeDescriptorResource
-        );
-        await PostgresqlDescriptorReadTestSupport.InsertDocumentAsync(
-            _database,
-            new DocumentUuid(Guid.Parse("30000000-0000-0000-0000-000000000208")),
-            resourceKeyId
-        );
-
-        var result = await ExecuteQueryAsync(
-            [],
-            "pg-descriptor-query-orphan-document-selected",
-            totalCount: true,
-            limit: 1,
-            offset: 1
-        );
-
-        AssertEmptyPage(result, expectedTotalCount: 1);
-    }
-
-    [Test]
     public async Task It_returns_only_descriptors_inside_the_change_version_window()
     {
         await SeedDescriptorsAsync(PagingDescriptorSeeds);
@@ -529,9 +473,8 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT doc."DocumentUuid", descriptor."ContentVersion"
-            FROM "dms"."Descriptor" descriptor
-            INNER JOIN "dms"."Document" doc ON doc."DocumentId" = descriptor."DocumentId";
+            SELECT descriptor."DocumentUuid", descriptor."ContentVersion"
+            FROM "dms"."Descriptor" descriptor;
             """
         );
 

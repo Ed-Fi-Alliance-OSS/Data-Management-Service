@@ -19,9 +19,8 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// and ensure deterministic, byte-for-byte stable output:
 /// <list type="number">
 /// <item>Schemas</item>
-/// <item>Extensions (pgcrypto for PostgreSQL; no-op for SQL Server)</item>
 /// <item>Sequences</item>
-/// <item>Functions (GetMaxChangeVersion, UUIDv5 helper)</item>
+/// <item>Functions (GetMaxChangeVersion)</item>
 /// <item>Tables (PK / UNIQUE / CHECK inline; no cross-table FKs)</item>
 /// <item>Foreign keys (ALTER TABLE ADD CONSTRAINT)</item>
 /// <item>Indexes</item>
@@ -73,8 +72,6 @@ public sealed class CoreDdlEmitter
     private const string DescriptorStampingTriggerName = "TR_Descriptor_Stamp_Document";
 
     private static readonly DbTableName _descriptorTable = DmsTableNames.Descriptor;
-    private static readonly DbTableName _documentTable = DmsTableNames.Document;
-    private static readonly DbTableName _documentCacheTable = DmsTableNames.DocumentCache;
     private static readonly DbTableName _effectiveSchemaTable = EffectiveSchemaTableDefinition.Table;
     private static readonly DbColumnName _effectiveSchemaSingletonIdColumn =
         EffectiveSchemaTableDefinition.EffectiveSchemaSingletonId;
@@ -87,7 +84,6 @@ public sealed class CoreDdlEmitter
     private static readonly DbColumnName _resourceKeySeedHashColumn =
         EffectiveSchemaTableDefinition.ResourceKeySeedHash;
     private static readonly DbColumnName _appliedAtColumn = EffectiveSchemaTableDefinition.AppliedAt;
-    private static readonly DbTableName _referentialIdentityTable = DmsTableNames.ReferentialIdentity;
     private static readonly DbTableName _resourceKeyTable = DmsTableNames.ResourceKey;
     private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
 
@@ -118,15 +114,6 @@ public sealed class CoreDdlEmitter
     private string BooleanType => _dialect.Rules.ScalarTypeDefaults.BooleanType;
 
     /// <summary>
-    /// Gets the default expression for generating change/version values from the core change-version sequence.
-    /// </summary>
-    private string SequenceDefault =>
-        _dialect.RenderSequenceDefaultExpression(
-            DmsTableNames.DmsSchema,
-            DmsTableNames.ChangeVersionSequence
-        );
-
-    /// <summary>
     /// Gets the default expression that originates <c>DocumentId</c> from <c>dms.DocumentIdSequence</c>.
     /// </summary>
     private string DocumentIdSequenceDefault =>
@@ -143,7 +130,6 @@ public sealed class CoreDdlEmitter
         var writer = new SqlWriter(_dialect);
 
         EmitSchemas(writer);
-        EmitExtensions(writer);
         EmitSequences(writer);
         EmitFunctions(writer);
         EmitTables(writer);
@@ -164,30 +150,6 @@ public sealed class CoreDdlEmitter
         writer.WritePhaseHeader(1, "Schemas");
 
         writer.AppendLine(_dialect.CreateSchemaIfNotExists(DmsTableNames.DmsSchema));
-        writer.AppendLine();
-    }
-
-    // ── Phase 2: Extensions ─────────────────────────────────────────────
-
-    /// <summary>
-    /// Emits database extension creation statements required by core functions.
-    /// For PostgreSQL this includes <c>pgcrypto</c> (used by the UUIDv5 helper).
-    /// For SQL Server this is a no-op.
-    /// </summary>
-    private void EmitExtensions(SqlWriter writer)
-    {
-        var pgcrypto = _dialect.CreateExtensionIfNotExists("pgcrypto");
-        if (pgcrypto.Length == 0)
-        {
-            return;
-        }
-
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine("-- Phase 2: Extensions");
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine();
-
-        writer.AppendLine(pgcrypto);
         writer.AppendLine();
     }
 
@@ -246,9 +208,8 @@ public sealed class CoreDdlEmitter
 
     /// <summary>
     /// Emits database functions and type definitions required by core infrastructure.
-    /// Includes the <c>GetMaxChangeVersion</c> helper and the UUIDv5 helper (both dialects),
-    /// the <c>throw_error</c> function (PostgreSQL), and user-defined table types for
-    /// authorization TVPs (SQL Server).
+    /// Includes the <c>GetMaxChangeVersion</c> helper (both dialects), the <c>throw_error</c>
+    /// function (PostgreSQL), and user-defined table types for authorization TVPs (SQL Server).
     /// </summary>
     private void EmitFunctions(SqlWriter writer)
     {
@@ -261,11 +222,9 @@ public sealed class CoreDdlEmitter
         {
             // Each CREATE OR ALTER FUNCTION must be the first statement in its T-SQL
             // batch. Alphabetical (case-insensitive) within Phase 4:
-            //   GetMaxChangeVersion -> uuidv5 -> BigIntTable -> UniqueIdentifierTable.
+            //   GetMaxChangeVersion -> BigIntTable.
             writer.AppendLine("GO");
             writer.AppendLine(_dialect.CreateGetMaxChangeVersionFunction(DmsTableNames.DmsSchema));
-            writer.AppendLine("GO");
-            writer.AppendLine(_dialect.CreateUuidv5Function(DmsTableNames.DmsSchema));
             writer.AppendLine("GO");
             writer.AppendLine();
 
@@ -279,15 +238,6 @@ public sealed class CoreDdlEmitter
                 )
             );
             writer.AppendLine();
-            writer.AppendLine(
-                _dialect.CreateUserDefinedTableTypeIfNotExists(
-                    DmsTableNames.DmsSchema,
-                    DmsTableNames.UniqueIdentifierTableType,
-                    "Id",
-                    "uniqueidentifier"
-                )
-            );
-            writer.AppendLine();
             return;
         }
 
@@ -295,8 +245,6 @@ public sealed class CoreDdlEmitter
         writer.AppendLine(_dialect.CreateGetMaxChangeVersionFunction(DmsTableNames.DmsSchema));
         writer.AppendLine();
         writer.AppendLine(_dialect.CreateThrowErrorFunction(DmsTableNames.DmsSchema));
-        writer.AppendLine();
-        writer.AppendLine(_dialect.CreateUuidv5Function(DmsTableNames.DmsSchema));
         writer.AppendLine();
     }
 
@@ -311,10 +259,7 @@ public sealed class CoreDdlEmitter
 
         // Alphabetical order by table name within the dms schema.
         EmitDescriptorTable(writer);
-        EmitDocumentTable(writer);
-        EmitDocumentCacheTable(writer);
         EmitEffectiveSchemaTable(writer);
-        EmitReferentialIdentityTable(writer);
         EmitResourceKeyTable(writer);
         EmitSchemaComponentTable(writer);
     }
@@ -370,8 +315,8 @@ public sealed class CoreDdlEmitter
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("CreatedAt"), DateTimeType, false, "DF_Descriptor_CreatedAt", _dialect.CurrentTimestampDefaultExpression)},"
             );
-            // Forward-compatible placeholder: dms.Document has no CreatedByOwnershipTokenId column,
-            // so nothing copies a value here and the column stays nullable and unwritten.
+            // Forward-compatible placeholder: no write path binds CreatedByOwnershipTokenId, so the
+            // column stays nullable and unwritten.
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("CreatedByOwnershipTokenId"), _dialect.SmallintColumnType, true)},"
             );
@@ -457,122 +402,6 @@ public sealed class CoreDdlEmitter
     }
 
     /// <summary>
-    /// Emits the <c>dms.Document</c> table definition.
-    /// </summary>
-    private void EmitDocumentTable(SqlWriter writer)
-    {
-        writer.AppendLine(_dialect.CreateTableHeader(_documentTable));
-        writer.AppendLine("(");
-        using (writer.Indent())
-        {
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("DocumentId"), _dialect.IdentityBigintColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("DocumentUuid"), _dialect.UuidColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("ResourceKeyId"), _dialect.SmallintColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentVersion"), "bigint", false, "DF_Document_ContentVersion", SequenceDefault)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("IdentityVersion"), "bigint", false, "DF_Document_IdentityVersion", SequenceDefault)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentLastModifiedAt"), DateTimeType, false, "DF_Document_ContentLastModifiedAt", _dialect.CurrentTimestampDefaultExpression)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("IdentityLastModifiedAt"), DateTimeType, false, "DF_Document_IdentityLastModifiedAt", _dialect.CurrentTimestampDefaultExpression)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("CreatedAt"), DateTimeType, false, "DF_Document_CreatedAt", _dialect.CurrentTimestampDefaultExpression)},"
-            );
-            writer.AppendLine(_dialect.RenderNamedPrimaryKeyClause("PK_Document", [Col("DocumentId")]));
-        }
-        writer.AppendLine(");");
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.AddUniqueConstraint(_documentTable, "UX_Document_DocumentUuid", [Col("DocumentUuid")])
-        );
-        writer.AppendLine();
-    }
-
-    /// <summary>
-    /// Emits the <c>dms.DocumentCache</c> table definition.
-    /// </summary>
-    private void EmitDocumentCacheTable(SqlWriter writer)
-    {
-        writer.AppendLine(_dialect.CreateTableHeader(_documentCacheTable));
-        writer.AppendLine("(");
-        using (writer.Indent())
-        {
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("DocumentId"), _dialect.DocumentIdColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("DocumentUuid"), _dialect.UuidColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("ProjectName"), StringType(256), false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("ResourceName"), StringType(256), false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("ResourceVersion"), StringType(32), false)},"
-            );
-            writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("Etag"), StringType(64), false)},");
-            writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("ContentVersion"), "bigint", false)},");
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("LastModifiedAt"), DateTimeType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("DocumentJson"), _dialect.JsonColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ComputedAt"), DateTimeType, false, "DF_DocumentCache_ComputedAt", _dialect.CurrentTimestampDefaultExpression)},"
-            );
-            writer.AppendLine(_dialect.RenderNamedPrimaryKeyClause("PK_DocumentCache", [Col("DocumentId")]));
-        }
-        writer.AppendLine(");");
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.AddUniqueConstraint(
-                _documentCacheTable,
-                "UX_DocumentCache_DocumentUuid",
-                [Col("DocumentUuid")]
-            )
-        );
-        writer.AppendLine();
-
-        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
-        {
-            writer.AppendLine(
-                _dialect.AddCheckConstraint(
-                    _documentCacheTable,
-                    "CK_DocumentCache_JsonObject",
-                    $"jsonb_typeof({_dialect.QuoteIdentifier("DocumentJson")}) = 'object'"
-                )
-            );
-        }
-        else
-        {
-            writer.AppendLine(
-                _dialect.AddCheckConstraint(
-                    _documentCacheTable,
-                    "CK_DocumentCache_IsJsonObject",
-                    $"ISJSON({_dialect.QuoteIdentifier("DocumentJson")}) = 1 AND LEFT(LTRIM({_dialect.QuoteIdentifier("DocumentJson")}), 1) = '{{'"
-                )
-            );
-        }
-        writer.AppendLine();
-    }
-
-    /// <summary>
     /// Emits the <c>dms.EffectiveSchema</c> table definition.
     /// </summary>
     private void EmitEffectiveSchemaTable(SqlWriter writer)
@@ -651,66 +480,6 @@ public sealed class CoreDdlEmitter
                 [_effectiveSchemaHashColumn]
             )
         );
-        writer.AppendLine();
-    }
-
-    /// <summary>
-    /// Emits the <c>dms.ReferentialIdentity</c> table definition.
-    /// </summary>
-    private void EmitReferentialIdentityTable(SqlWriter writer)
-    {
-        writer.AppendLine(_dialect.CreateTableHeader(_referentialIdentityTable));
-        writer.AppendLine("(");
-        using (writer.Indent())
-        {
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("ReferentialId"), _dialect.UuidColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("DocumentId"), _dialect.DocumentIdColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("ResourceKeyId"), _dialect.SmallintColumnType, false)},"
-            );
-
-            if (_dialect.Rules.Dialect == SqlDialect.Mssql)
-            {
-                // MSSQL: PK NONCLUSTERED + inline UNIQUE CLUSTERED
-                writer.AppendLine(
-                    _dialect.RenderNamedPrimaryKeyClause(
-                        "PK_ReferentialIdentity",
-                        [Col("ReferentialId")],
-                        clustered: false
-                    ) + ","
-                );
-                var clusteredCols = string.Join(
-                    ", ",
-                    new[] { Col("DocumentId"), Col("ResourceKeyId") }.Select(c =>
-                        _dialect.QuoteIdentifier(c.Value)
-                    )
-                );
-                writer.AppendLine(
-                    $"CONSTRAINT {_dialect.QuoteIdentifier("UX_ReferentialIdentity_DocumentId_ResourceKeyId")} UNIQUE CLUSTERED ({clusteredCols})"
-                );
-            }
-            else
-            {
-                writer.AppendLine(
-                    _dialect.RenderNamedPrimaryKeyClause("PK_ReferentialIdentity", [Col("ReferentialId")])
-                        + ","
-                );
-                var uniqueCols = string.Join(
-                    ", ",
-                    new[] { Col("DocumentId"), Col("ResourceKeyId") }.Select(c =>
-                        _dialect.QuoteIdentifier(c.Value)
-                    )
-                );
-                writer.AppendLine(
-                    $"CONSTRAINT {_dialect.QuoteIdentifier("UX_ReferentialIdentity_DocumentId_ResourceKeyId")} UNIQUE ({uniqueCols})"
-                );
-            }
-        }
-        writer.AppendLine(");");
         writer.AppendLine();
     }
 
@@ -798,52 +567,6 @@ public sealed class CoreDdlEmitter
 
         writer.AppendLine(
             _dialect.AddForeignKeyConstraint(
-                _documentTable,
-                "FK_Document_ResourceKey",
-                [Col("ResourceKeyId")],
-                _resourceKeyTable,
-                [Col("ResourceKeyId")]
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.AddForeignKeyConstraint(
-                _documentCacheTable,
-                "FK_DocumentCache_Document",
-                [Col("DocumentId")],
-                _documentTable,
-                [Col("DocumentId")],
-                onDelete: ReferentialAction.Cascade
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.AddForeignKeyConstraint(
-                _referentialIdentityTable,
-                "FK_ReferentialIdentity_Document",
-                [Col("DocumentId")],
-                _documentTable,
-                [Col("DocumentId")],
-                onDelete: ReferentialAction.Cascade
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.AddForeignKeyConstraint(
-                _referentialIdentityTable,
-                "FK_ReferentialIdentity_ResourceKey",
-                [Col("ResourceKeyId")],
-                _resourceKeyTable,
-                [Col("ResourceKeyId")]
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.AddForeignKeyConstraint(
                 _schemaComponentTable,
                 "FK_SchemaComponent_EffectiveSchemaHash",
                 [Col("EffectiveSchemaHash")],
@@ -867,7 +590,7 @@ public sealed class CoreDdlEmitter
         // Ordered by (table name, index name).
 
         // Keyset support for the descriptor page read: WHERE ResourceKeyId = @resourceKeyId
-        // ORDER BY DocumentId, matching IX_Document_ResourceKeyId_DocumentId on dms.Document.
+        // ORDER BY DocumentId.
         writer.AppendLine(
             _dialect.CreateIndexIfNotExists(
                 _descriptorTable,
@@ -882,33 +605,6 @@ public sealed class CoreDdlEmitter
                 _descriptorTable,
                 "IX_Descriptor_Uri_Discriminator",
                 [Col("Uri"), Col("Discriminator")]
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.CreateIndexIfNotExists(
-                _documentTable,
-                "IX_Document_ResourceKeyId_DocumentId",
-                [Col("ResourceKeyId"), Col("DocumentId")]
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.CreateIndexIfNotExists(
-                _documentCacheTable,
-                "IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt",
-                [Col("ProjectName"), Col("ResourceName"), Col("LastModifiedAt"), Col("DocumentId")]
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.CreateIndexIfNotExists(
-                _referentialIdentityTable,
-                "IX_ReferentialIdentity_DocumentId",
-                [Col("DocumentId")]
             )
         );
         writer.AppendLine();
@@ -946,7 +642,7 @@ public sealed class CoreDdlEmitter
     /// The kind metadata is load-bearing for the MSSQL trigger: <see cref="ScalarKind.String"/>
     /// columns are compared via <c>CAST(... AS varbinary(max))</c> so that trailing-space-only
     /// and case-only changes (which default CI collation + ANSI padding would miss) are still
-    /// detected — matching the byte-comparison behavior used by <c>[dms].[uuidv5]</c>.
+    /// detected as real content changes.
     /// </summary>
     private static readonly IReadOnlyList<(DbColumnName Column, ScalarKind Kind)> _descriptorStoredColumns =
         new (DbColumnName, ScalarKind)[]

@@ -326,12 +326,7 @@ file sealed class GuardedNoOpPreLoadContentVersionBumpCurrentStateLoader(
     }
 }
 
-internal sealed record GuardedNoOpDocumentRow(
-    long DocumentId,
-    Guid DocumentUuid,
-    short ResourceKeyId,
-    long ContentVersion
-);
+internal sealed record GuardedNoOpDocumentRow(long DocumentId, Guid DocumentUuid, long ContentVersion);
 
 internal sealed record GuardedNoOpSchoolRow(long DocumentId, long SchoolId, string? ShortName);
 
@@ -431,7 +426,6 @@ file static class GuardedNoOpIntegrationTestSupport
         }
         """;
 
-    public static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     public static readonly ResourceInfo SchoolResourceInfo = new(
         ProjectName: new ProjectName("Ed-Fi"),
         ResourceName: new ResourceName("School"),
@@ -579,7 +573,7 @@ file static class GuardedNoOpIntegrationTestSupport
         var rows = await database.QueryRowsAsync(
             """
             SELECT COUNT(*) AS "Count"
-            FROM "dms"."Document"
+            FROM "edfi"."School"
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -589,9 +583,6 @@ file static class GuardedNoOpIntegrationTestSupport
             ? GetInt64(rows[0], "Count")
             : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
     }
-
-    public static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
-        Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
     public static int GetInt32(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt32(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
@@ -647,9 +638,8 @@ file static class GuardedNoOpIntegrationTestSupport
         // columns too, so the whole row comes from one table.
         var rows = await database.QueryRowsAsync(
             """
-            SELECT school."DocumentId", school."DocumentUuid", document."ResourceKeyId", school."ContentVersion"
+            SELECT school."DocumentId", school."DocumentUuid", school."ContentVersion"
             FROM "edfi"."School" school
-            INNER JOIN "dms"."Document" document ON document."DocumentId" = school."DocumentId"
             WHERE school."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
@@ -659,7 +649,6 @@ file static class GuardedNoOpIntegrationTestSupport
             ? new GuardedNoOpDocumentRow(
                 GetInt64(rows[0], "DocumentId"),
                 GetGuid(rows[0], "DocumentUuid"),
-                GetInt16(rows[0], "ResourceKeyId"),
                 GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
@@ -738,12 +727,16 @@ file static class GuardedNoOpIntegrationTestSupport
             .ToArray();
     }
 
+    /// <summary>
+    /// Total document count. The root row is the document, and School is the only resource these
+    /// fixtures ever write, so its root table is the whole document estate here.
+    /// </summary>
     private static async Task<long> ReadDocumentCountAsync(PostgresqlGeneratedDdlTestDatabase database)
     {
         var rows = await database.QueryRowsAsync(
             """
             SELECT COUNT(*) AS "Count"
-            FROM "dms"."Document";
+            FROM "edfi"."School";
             """
         );
 
@@ -858,9 +851,6 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_St
     public void It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_put()
     {
         _stateAfterUpdate.Should().BeEquivalentTo(_stateBeforeUpdate);
-        _stateAfterUpdate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]);
     }
 
     private async Task ExecuteCreateAsync()
@@ -977,9 +967,6 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A
     public void It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_post_as_update()
     {
         _stateAfterPostAsUpdate.Should().BeEquivalentTo(_stateBeforePostAsUpdate);
-        _stateAfterPostAsUpdate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]);
     }
 
     private async Task ExecuteCreateAsync()
@@ -1097,9 +1084,6 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_When_Current_Stat
 
         adjustedAfterState.Should().BeEquivalentTo(_stateBeforeUpdate);
         _stateAfterUpdate.Document.ContentVersion.Should().Be(_stateBeforeUpdate.Document.ContentVersion + 1);
-        _stateAfterUpdate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]);
     }
 
     private async Task ExecuteCreateAsync()
@@ -1233,9 +1217,6 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_When_C
         _stateAfterPostAsUpdate
             .Document.ContentVersion.Should()
             .Be(_stateBeforePostAsUpdate.Document.ContentVersion + 1);
-        _stateAfterPostAsUpdate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]);
     }
 
     private async Task ExecuteCreateAsync()
@@ -1340,9 +1321,6 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_After_A_Full_Surf
     {
         _stateBeforeNoOpUpdate.Addresses.Select(address => address.City).Should().Equal("Dallas", "Austin");
         _stateAfterNoOpUpdate.Should().BeEquivalentTo(_stateBeforeNoOpUpdate);
-        _stateAfterNoOpUpdate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]);
     }
 
     private async Task ExecuteCreateAsync()
@@ -1491,9 +1469,6 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_After_
     {
         _stateBeforePostAsUpdate.Addresses.Select(address => address.City).Should().Equal("Dallas", "Austin");
         _stateAfterPostAsUpdate.Should().BeEquivalentTo(_stateBeforePostAsUpdate);
-        _stateAfterPostAsUpdate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]);
     }
 
     private async Task ExecuteCreateAsync()
@@ -1635,9 +1610,6 @@ internal class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Put_With_A_Focu
 
         adjustedAfterState.Should().BeEquivalentTo(_stateBeforeUpdate);
         _stateAfterUpdate.Document.ContentVersion.Should().Be(_stateBeforeUpdate.Document.ContentVersion + 1);
-        _stateAfterUpdate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]);
     }
 
     private async Task ExecuteCreateAsync()
@@ -1765,9 +1737,6 @@ internal class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Post_As_Update_
         _stateAfterPostAsUpdate
             .Document.ContentVersion.Should()
             .Be(_stateBeforePostAsUpdate.Document.ContentVersion + 1);
-        _stateAfterPostAsUpdate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]);
     }
 
     private async Task ExecuteCreateAsync()
@@ -1884,9 +1853,6 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Commit_Win
 
         adjustedAfterState.Should().BeEquivalentTo(_stateBeforeUpdate);
         _stateAfterUpdate.Document.ContentVersion.Should().Be(_stateBeforeUpdate.Document.ContentVersion + 1);
-        _stateAfterUpdate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]);
     }
 
     private async Task ExecuteCreateAsync()
@@ -2032,9 +1998,6 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A
         _stateAfterPostAsUpdate
             .Document.ContentVersion.Should()
             .Be(_stateBeforePostAsUpdate.Document.ContentVersion + 1);
-        _stateAfterPostAsUpdate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]);
     }
 
     private async Task ExecuteCreateAsync()

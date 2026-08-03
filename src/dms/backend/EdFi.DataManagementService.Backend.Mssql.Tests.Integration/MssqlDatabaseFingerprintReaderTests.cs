@@ -89,17 +89,7 @@ public class Given_MssqlDatabaseFingerprintReaderTests_A_Provisioned_Core_Dms_Sc
     [Test]
     public void It_provisions_the_core_dms_tables_required_for_reader_tests()
     {
-        _dmsTableNames
-            .Should()
-            .Equal(
-                "Descriptor",
-                "Document",
-                "DocumentCache",
-                "EffectiveSchema",
-                "ReferentialIdentity",
-                "ResourceKey",
-                "SchemaComponent"
-            );
+        _dmsTableNames.Should().Equal("Descriptor", "EffectiveSchema", "ResourceKey", "SchemaComponent");
     }
 
     [Test]

@@ -896,110 +896,6 @@ public class Given_MssqlDialect_Create_Extension_With_Null_Name
 }
 
 [TestFixture]
-public class Given_MssqlDialect_Create_Uuidv5_Function
-{
-    private string _ddl = default!;
-
-    [SetUp]
-    public void Setup()
-    {
-        var dialect = new MssqlDialect(new MssqlDialectRules());
-        _ddl = dialect.CreateUuidv5Function(new DbSchemaName("dms"));
-    }
-
-    [Test]
-    public void It_should_use_create_or_alter_pattern()
-    {
-        _ddl.Should().Contain("CREATE OR ALTER FUNCTION");
-    }
-
-    [Test]
-    public void It_should_qualify_function_name_with_schema()
-    {
-        _ddl.Should().Contain("[dms].[uuidv5]");
-    }
-
-    [Test]
-    public void It_should_accept_uniqueidentifier_and_nvarchar_parameters()
-    {
-        _ddl.Should().Contain("@namespace_uuid uniqueidentifier").And.Contain("@name_text nvarchar(max)");
-    }
-
-    [Test]
-    public void It_should_return_uniqueidentifier()
-    {
-        _ddl.Should().Contain("RETURNS uniqueidentifier");
-    }
-
-    [Test]
-    public void It_should_use_hashbytes_sha1()
-    {
-        _ddl.Should().Contain("HASHBYTES('SHA1'");
-    }
-
-    [Test]
-    public void It_should_apply_utf8_collation_before_casting_name_text_to_varchar()
-    {
-        _ddl.Should().Contain("CAST(@name_text COLLATE Latin1_General_100_CI_AS_SC_UTF8 AS varchar(max))");
-    }
-
-    [Test]
-    public void It_should_convert_namespace_to_big_endian_by_swapping_bytes()
-    {
-        // Verifies the mixed-endian to big-endian byte swap for the namespace
-        _ddl.Should()
-            .Contain("SUBSTRING(@ns_bytes, 4, 1)")
-            .And.Contain("SUBSTRING(@ns_bytes, 3, 1)")
-            .And.Contain("SUBSTRING(@ns_bytes, 2, 1)")
-            .And.Contain("SUBSTRING(@ns_bytes, 1, 1)");
-    }
-
-    [Test]
-    public void It_should_convert_result_back_to_mixed_endian()
-    {
-        // Verifies the big-endian to mixed-endian byte swap for the result
-        _ddl.Should()
-            .Contain("SUBSTRING(@result, 4, 1)")
-            .And.Contain("SUBSTRING(@result, 3, 1)")
-            .And.Contain("SUBSTRING(@result, 2, 1)")
-            .And.Contain("SUBSTRING(@result, 1, 1)");
-    }
-
-    [Test]
-    public void It_should_set_version_5_on_byte_6()
-    {
-        // Byte 6 (0-indexed) = SUBSTRING position 7 (1-indexed)
-        _ddl.Should().Contain("SUBSTRING(@result, 7, 1)").And.Contain("0x50");
-    }
-
-    [Test]
-    public void It_should_set_variant_rfc4122_on_byte_8()
-    {
-        // Byte 8 (0-indexed) = SUBSTRING position 9 (1-indexed)
-        _ddl.Should().Contain("SUBSTRING(@result, 9, 1)").And.Contain("0x80");
-    }
-
-    [Test]
-    public void It_should_include_schemabinding()
-    {
-        _ddl.Should().Contain("WITH SCHEMABINDING");
-    }
-
-    [Test]
-    public void It_should_convert_name_to_utf8_bytes_via_collation()
-    {
-        _ddl.Should()
-            .Contain(
-                "CAST(CAST(@name_text COLLATE Latin1_General_100_CI_AS_SC_UTF8 AS varchar(max)) AS varbinary(max))"
-            );
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// Authorization helper tests
-// ═══════════════════════════════════════════════════════════════════
-
-[TestFixture]
 public class Given_MssqlDialect_Create_Throw_Error_Function
 {
     private string _ddl = default!;
@@ -1069,42 +965,6 @@ public class Given_MssqlDialect_Create_BigIntTable_Type
     public void It_should_include_quoted_column_with_type()
     {
         _ddl.Should().Contain("[Id] bigint NOT NULL");
-    }
-}
-
-[TestFixture]
-public class Given_MssqlDialect_Create_UniqueIdentifierTable_Type
-{
-    private string _ddl = default!;
-
-    [SetUp]
-    public void Setup()
-    {
-        var dialect = new MssqlDialect(new MssqlDialectRules());
-        _ddl = dialect.CreateUserDefinedTableTypeIfNotExists(
-            new DbSchemaName("dms"),
-            "UniqueIdentifierTable",
-            "Id",
-            "uniqueidentifier"
-        );
-    }
-
-    [Test]
-    public void It_should_include_create_type()
-    {
-        _ddl.Should().Contain("CREATE TYPE [dms].[UniqueIdentifierTable]");
-    }
-
-    [Test]
-    public void It_should_include_quoted_column_with_type()
-    {
-        _ddl.Should().Contain("[Id] uniqueidentifier NOT NULL");
-    }
-
-    [Test]
-    public void It_should_use_idempotent_guard()
-    {
-        _ddl.Should().Contain("IF NOT EXISTS");
     }
 }
 
@@ -1180,7 +1040,7 @@ public class Given_MssqlDialect_Create_TableType_With_Disallowed_ColumnType
                 new DbSchemaName("dms"),
                 "BadType",
                 "Id",
-                "nvarchar(max); DROP TABLE dms.Document; --"
+                "nvarchar(max); DROP TABLE dms.ResourceKey; --"
             );
 
         act.Should().Throw<ArgumentException>().WithParameterName("columnType");

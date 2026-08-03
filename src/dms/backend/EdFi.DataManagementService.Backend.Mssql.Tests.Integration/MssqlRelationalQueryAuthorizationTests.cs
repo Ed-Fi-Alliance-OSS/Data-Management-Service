@@ -443,8 +443,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         AuthorizationStudentAcademicRecordSeed seed
     )
     {
-        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationStudentAcademicRecordResource");
-        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
         var studentAcademicRecordDocumentId = await GetStudentAcademicRecordDocumentIdAsync(
             seed.EducationOrganizationId,
             seed.SchoolYear,
@@ -698,8 +697,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
     public async Task SeedSchoolYearTypeAsync(SchoolYearTypeSeed seed)
     {
-        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
 
         await Database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
@@ -734,8 +732,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
     public async Task SeedStudentAsync(StudentSeed seed)
     {
-        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
-        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
 
         await Database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
@@ -773,8 +770,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
     public async Task SeedStudentSchoolAssociationAsync(StudentSchoolAssociationSeed seed)
     {
-        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StudentSchoolAssociation");
-        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
         var schoolDocumentId = await GetSchoolDocumentIdAsync(seed.SchoolId);
         var studentDocumentId = await GetStudentDocumentIdAsync(seed.StudentUniqueId);
         var entryGradeLevelDescriptorId = await GetDescriptorDocumentIdAsync(
@@ -824,8 +820,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
     public async Task SeedStudentAcademicRecordAsync(StudentAcademicRecordSeed seed)
     {
-        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StudentAcademicRecord");
-        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
         var schoolDocumentId = await GetSchoolDocumentIdAsync(seed.EducationOrganizationId);
         var schoolYearDocumentId = await GetSchoolYearDocumentIdAsync(seed.SchoolYear);
         var studentDocumentId = await GetStudentDocumentIdAsync(seed.StudentUniqueId);
@@ -913,8 +908,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
     public async Task SeedSchoolReferenceResourceAsync(QuerySchoolSeed seed)
     {
-        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
 
         await Database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
@@ -922,10 +916,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             async () =>
                 await Database.ExecuteNonQueryAsync(
                     """
-                    INSERT INTO [edfi].[School] ([DocumentId], [NameOfInstitution], [SchoolId], [ContentVersion])
-                    SELECT @documentId, @nameOfInstitution, @schoolId, doc.[ContentVersion]
-                    FROM [dms].[Document] doc
-                    WHERE doc.[DocumentId] = @documentId;
+                    INSERT INTO [edfi].[School] ([DocumentId], [NameOfInstitution], [SchoolId])
+                    VALUES (@documentId, @nameOfInstitution, @schoolId);
                     """,
                     new SqlParameter("@documentId", documentId),
                     new SqlParameter("@nameOfInstitution", seed.NameOfInstitution),
@@ -939,8 +931,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
     public async Task SeedClassPeriodReferenceResourceAsync(ClassPeriodSeed seed)
     {
-        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "ClassPeriod");
-        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
 
         if (!_schoolDocumentIdsBySchoolId.TryGetValue(seed.SchoolId, out var schoolDocumentId))
         {
@@ -1212,8 +1203,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         DocumentUuid documentUuid
     )
     {
-        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationRootChildResource");
-        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+        var document = await ReadDocumentStateAsync(documentUuid);
 
         return new AuthorizationWriteSideEffectState(
             Document: document,
@@ -1229,8 +1219,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         DocumentUuid documentUuid
     )
     {
-        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationNullableResource");
-        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+        var document = await ReadDocumentStateAsync(documentUuid);
 
         return new AuthorizationWriteSideEffectState(
             Document: document,
@@ -1246,8 +1235,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         DocumentUuid documentUuid
     )
     {
-        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationStudentAcademicRecordResource");
-        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+        var document = await ReadDocumentStateAsync(documentUuid);
 
         return new AuthorizationWriteSideEffectState(
             Document: document,
@@ -1263,8 +1251,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         DocumentUuid documentUuid
     )
     {
-        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationStudentSchoolResource");
-        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+        var document = await ReadDocumentStateAsync(documentUuid);
 
         return new AuthorizationWriteSideEffectState(
             Document: document,
@@ -1410,23 +1397,19 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     public async Task<IReadOnlyList<PersistedQuerySchool>> ReadPersistedSchoolsInDocumentOrderAsync()
     {
         var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
-        var resourceKeyId = MappingSet.ResourceKeyIdByResource[schoolResource];
         var physicalSchema = MappingSet.ReadPlansByResource[schoolResource].Model.PhysicalSchema.Value;
+        // The School root table is the School document, so reading it needs no resource-key filter.
         var rows = await Database.QueryRowsAsync(
             $"""
             SELECT
-                doc.[DocumentId],
-                doc.[DocumentUuid],
+                school.[DocumentId],
+                school.[DocumentUuid],
                 school.[SchoolId],
                 school.[NameOfInstitution],
                 school.[ContentVersion]
-            FROM [dms].[Document] doc
-            INNER JOIN [{physicalSchema}].[School] school
-                ON school.[DocumentId] = doc.[DocumentId]
-            WHERE doc.[ResourceKeyId] = @resourceKeyId
-            ORDER BY doc.[DocumentId];
-            """,
-            new SqlParameter("@resourceKeyId", resourceKeyId)
+            FROM [{physicalSchema}].[School] school
+            ORDER BY school.[DocumentId];
+            """
         );
 
         return
@@ -1563,21 +1546,22 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             .UpdateDocumentById(request);
     }
 
-    private async Task<AuthorizationDocumentState> ReadDocumentStateAsync(
-        DocumentUuid documentUuid,
-        short resourceKeyId
-    )
+    /// <summary>
+    /// Reads a document's identity and stamp state from the owning resource root row (or dms.Descriptor).
+    /// There is no ResourceKeyId to cross-check: that column lived only on dms.Document, and a row's
+    /// resource identity is now the table it lives in.
+    /// </summary>
+    private async Task<AuthorizationDocumentState> ReadDocumentStateAsync(DocumentUuid documentUuid)
     {
         var rows = await Database.QueryRowsAsync(
             _documentStateQuery,
             new SqlParameter("@documentUuid", documentUuid.Value)
         );
 
-        return rows.Count == 1 && GetRequiredInt16(rows[0], "ResourceKeyId") == resourceKeyId
+        return rows.Count == 1
             ? new AuthorizationDocumentState(
                 GetRequiredInt64(rows[0], "DocumentId"),
                 GetRequiredGuid(rows[0], "DocumentUuid"),
-                GetRequiredInt16(rows[0], "ResourceKeyId"),
                 GetRequiredInt64(rows[0], "ContentVersion"),
                 GetRequiredInt64(rows[0], "IdentityVersion"),
                 GetRequiredDateTime(rows[0], "ContentLastModifiedAt"),
@@ -1585,7 +1569,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 GetRequiredDateTime(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
-                $"Expected one AuthorizationRootChildResource document row for '{documentUuid.Value}', but found {rows.Count}."
+                $"Expected one resource-root document row for '{documentUuid.Value}', but found {rows.Count}."
             );
     }
 
@@ -1651,17 +1635,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
 
         return MappingSet.WritePlansByResource[resource];
-    }
-
-    private short GetCompiledResourceKeyId(string projectEndpointName, string resourceName)
-    {
-        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
-        var resource = new QualifiedResourceName(
-            resourceHandle.ResourceInfo.ProjectName.Value,
-            resourceHandle.ResourceInfo.ResourceName.Value
-        );
-
-        return MappingSet.ResourceKeyIdByResource[resource];
     }
 
     private async Task<long> CountRowsInTableAsync(DbTableName table)
@@ -1837,12 +1810,14 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
+    // The only caller is MutateAuthorizationRootChildSchoolAsync, so the uuid resolves against that
+    // resource's own root row.
     private async Task<long> GetDocumentIdByUuidAsync(DocumentUuid documentUuid)
     {
         return await Database.ExecuteScalarAsync<long>(
             """
             SELECT [DocumentId]
-            FROM [dms].[Document]
+            FROM [authz].[AuthorizationRootChildResource]
             WHERE [DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid.Value)
@@ -1918,9 +1893,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             """
             SELECT descriptor.[DocumentId]
             FROM [dms].[Descriptor] descriptor
-            INNER JOIN [dms].[Document] document
-                ON document.[DocumentId] = descriptor.[DocumentId]
-            WHERE document.[ResourceKeyId] = @resourceKeyId
+            WHERE descriptor.[ResourceKeyId] = @resourceKeyId
               AND descriptor.[Uri] = @uri;
             """,
             new SqlParameter("@resourceKeyId", resourceKeyId),
@@ -1928,19 +1901,14 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Reserves a DocumentId for a hand-seeded row. It must come from dms.DocumentIdSequence — the same
+    /// counter the root-table DEFAULT draws from — or a seeded id would collide with the next
+    /// production-created one.
+    /// </summary>
+    private async Task<long> ReserveDocumentIdAsync()
     {
-        return await Database.ExecuteScalarAsync<long>(
-            """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
+        return await Database.ExecuteScalarAsync<long>("SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];");
     }
 
     private async Task<long> InsertDescriptorAsync(
@@ -1953,7 +1921,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
 
         await Database.ExecuteNonQueryAsync(
             """
@@ -2014,9 +1982,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
     private static long GetRequiredInt64(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt64(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
-
-    private static short GetRequiredInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
-        Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
     private static int GetRequiredInt32(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt32(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
@@ -2116,8 +2081,14 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         commandText.Contains("[AuthorizationResult]", StringComparison.Ordinal)
         && commandText.Contains("AUTH1", StringComparison.Ordinal);
 
+    // The delete is a single statement against the resource root row: it is the only DELETE the
+    // session issues and the only one that captures the deleted DocumentId into @deletedDocumentId.
     private static bool IsMssqlDocumentDeleteCommand(string commandText) =>
-        commandText.Contains("DELETE FROM [dms].[Document]", StringComparison.Ordinal);
+        commandText.Contains("DELETE FROM", StringComparison.Ordinal)
+        && commandText.Contains(
+            "OUTPUT DELETED.[DocumentId] INTO @deletedDocumentId",
+            StringComparison.Ordinal
+        );
 
     /// <summary>
     /// The POST-create composition: the proposed-relationship authorization SQL concatenated in front of

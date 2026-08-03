@@ -27,11 +27,6 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";
 
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private short _stateEducationAgencyResourceKeyId;
-    private short _educationServiceCenterResourceKeyId;
-    private short _localEducationAgencyResourceKeyId;
-    private short _schoolResourceKeyId;
-    private short _organizationDepartmentResourceKeyId;
     private short _localEducationAgencyCategoryDescriptorResourceKeyId;
     private long _localEducationAgencyCategoryDescriptorDocumentId;
 
@@ -44,11 +39,6 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         );
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(fixture.GeneratedDdl);
 
-        _stateEducationAgencyResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StateEducationAgency");
-        _educationServiceCenterResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "EducationServiceCenter");
-        _localEducationAgencyResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "LocalEducationAgency");
-        _schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        _organizationDepartmentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "OrganizationDepartment");
         _localEducationAgencyCategoryDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "LocalEducationAgencyCategoryDescriptor"
@@ -1002,16 +992,16 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Dispenses a DocumentId from <c>dms.DocumentIdSequence</c> — the same sequence the seeded row's
+    /// column DEFAULT draws from, so a seeded id can never collide with one the write path produces.
+    /// </summary>
+    private async Task<long> NextDocumentIdAsync()
     {
         return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            SELECT nextval('"dms"."DocumentIdSequence"');
+            """
         );
     }
 
@@ -1025,7 +1015,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -1067,7 +1057,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
     }
 
     /// <summary>
-    /// Inserts a row into <c>dms.Document</c> and <c>edfi.StateEducationAgency</c>. The
+    /// Inserts a row into <c>edfi.StateEducationAgency</c> — the root row is the document. The
     /// abstract-identity triggers on the concrete table populate
     /// <c>edfi.EducationOrganizationIdentity</c> automatically; do not pre-seed it.
     /// </summary>
@@ -1077,18 +1067,20 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         string nameOfInstitution
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _stateEducationAgencyResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "edfi"."StateEducationAgency" (
                 "DocumentId",
+                "DocumentUuid",
                 "StateEducationAgencyId",
                 "NameOfInstitution"
             )
-            VALUES (@documentId, @stateEducationAgencyId, @nameOfInstitution);
+            VALUES (@documentId, @documentUuid, @stateEducationAgencyId, @nameOfInstitution);
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("stateEducationAgencyId", stateEducationAgencyId),
             new NpgsqlParameter("nameOfInstitution", nameOfInstitution)
         );
@@ -1104,7 +1096,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         long? parentStateEducationAgencyId = null
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _educationServiceCenterResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -1140,8 +1132,8 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
     }
 
     /// <summary>
-    /// Inserts a row into <c>dms.Document</c> and <c>edfi.LocalEducationAgency</c>. Every parent
-    /// FK is a nullable subtype-specific pair (<c>_DocumentId</c> + scoped natural-key id); a
+    /// Inserts a row into <c>edfi.LocalEducationAgency</c> — the root row is the document. Every
+    /// parent FK is a nullable subtype-specific pair (<c>_DocumentId</c> + scoped natural-key id); a
     /// CHECK constraint on the table requires both members of each pair to be NULL or both
     /// NOT NULL. The category descriptor is required.
     /// </summary>
@@ -1158,7 +1150,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         long? parentLocalEducationAgencyId = null
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _localEducationAgencyResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -1225,7 +1217,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         long parentLocalEducationAgencyId
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _schoolResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -1258,8 +1250,8 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
     }
 
     /// <summary>
-    /// Inserts a row into <c>dms.Document</c> and <c>edfi.OrganizationDepartment</c>. Unlike the
-    /// other concrete EdOrgs, OrganizationDepartment's parent FK references the abstract
+    /// Inserts a row into <c>edfi.OrganizationDepartment</c> — the root row is the document. Unlike
+    /// the other concrete EdOrgs, OrganizationDepartment's parent FK references the abstract
     /// <c>edfi.EducationOrganizationIdentity</c> via the generic
     /// <c>ParentEducationOrganization_EducationOrganizationId</c> column rather than a
     /// subtype-scoped pair. A CHECK constraint on the table requires both members of the parent
@@ -1273,7 +1265,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         long? parentEducationOrganizationEducationOrganizationId = null
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, _organizationDepartmentResourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """

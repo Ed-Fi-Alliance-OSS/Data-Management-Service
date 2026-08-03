@@ -241,24 +241,6 @@ public class Given_A_Mssql_DescriptorRead_Get_Request
     }
 
     [Test]
-    public async Task It_returns_not_exists_when_a_document_row_has_no_descriptor_row()
-    {
-        // Descriptor GET-by-id reads dms.Descriptor alone, so a dms.Document row with no descriptor
-        // row is simply not found. The former corruption 500 for this shape is unreachable now: the
-        // reader's invariant messages only fire for NULL columns on a descriptor row that exists.
-        var documentUuid = new DocumentUuid(Guid.Parse("40000000-0000-0000-0000-000000000106"));
-        var resourceKeyId = DescriptorReadIntegrationTestSupport.GetDescriptorResourceKeyIdOrThrow(
-            _mappingSet,
-            SchoolTypeDescriptorResource
-        );
-        await MssqlDescriptorReadTestSupport.InsertDocumentAsync(_database, documentUuid, resourceKeyId);
-
-        var result = await ExecuteGetByIdAsync(documentUuid, "mssql-descriptor-get-missing-row");
-
-        result.Should().BeOfType<GetResult.GetFailureNotExists>();
-    }
-
-    [Test]
     public async Task It_omits_null_optional_fields_from_external_descriptor_responses()
     {
         var seed = new DescriptorReadSeed(

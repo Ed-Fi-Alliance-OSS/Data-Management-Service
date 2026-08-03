@@ -908,25 +908,22 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
 
     private async Task<IReadOnlyList<PersistedQuerySchool>> ReadPersistedSchoolsInDocumentOrderAsync()
     {
-        var resourceKeyId = _mappingSet.ResourceKeyIdByResource[SchoolResource];
         var physicalSchema = _mappingSet.ReadPlansByResource[SchoolResource].Model.PhysicalSchema.Value;
+        // The School root row IS the School document, so naming that one table both supplies the
+        // stamp/identity columns and confines the read to the School resource.
         var rows = await _database.QueryRowsAsync(
             $"""
             SELECT
-                doc."DocumentId",
-                doc."DocumentUuid",
+                school."DocumentId",
+                school."DocumentUuid",
                 school."SchoolId",
                 school."NameOfInstitution",
                 school."ContentVersion"
-            FROM "dms"."Document" doc
-            INNER JOIN "{physicalSchema}"."School" school
-                ON school."DocumentId" = doc."DocumentId"
+            FROM "{physicalSchema}"."School" school
             INNER JOIN "dms"."Descriptor" schoolType
                 ON schoolType."DocumentId" = school."SchoolTypeDescriptor_DescriptorId"
-            WHERE doc."ResourceKeyId" = @resourceKeyId
-            ORDER BY doc."DocumentId";
-            """,
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            ORDER BY school."DocumentId";
+            """
         );
 
         return
@@ -1093,16 +1090,16 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Mints the next DocumentId from the sequence <c>dms.Descriptor</c> draws its DEFAULT from,
+    /// so a seeded descriptor id can never collide with a production-created one.
+    /// </summary>
+    private async Task<long> NextDocumentIdAsync()
     {
         return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            SELECT nextval('"dms"."DocumentIdSequence"');
+            """
         );
     }
 
@@ -1116,7 +1113,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        var documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """

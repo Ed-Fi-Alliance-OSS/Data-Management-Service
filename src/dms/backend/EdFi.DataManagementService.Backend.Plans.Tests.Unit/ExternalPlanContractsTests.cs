@@ -1015,12 +1015,6 @@ public class Given_ExternalPlanContracts
         options.IncludeDescriptorProjection.Should().BeTrue();
         options.IncludeDocumentReferenceLookup.Should().BeTrue();
         options.UseSingleDocumentFastPath.Should().BeFalse();
-        options
-            .DocumentMetadataSource.Should()
-            .Be(
-                ExternalPlans.DocumentMetadataSource.DocumentTable,
-                "the write path relies on the default reading the dms.Document row it locked"
-            );
     }
 
     private static ExternalPlans.TableWritePlan CreateCollectionTableWritePlan(

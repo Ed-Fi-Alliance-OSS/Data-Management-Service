@@ -19,7 +19,7 @@ public abstract class GetMaxChangeVersionTestBase
 
     public static async Task<long> CallFunction()
     {
-        await using SqlConnection connection = new(Uuidv5ParityTestBase.ConnectionString);
+        await using SqlConnection connection = new(DatabaseSetupFixture.ConnectionString);
         await connection.OpenAsync();
         await using SqlCommand cmd = new("SELECT [dms].[GetMaxChangeVersion]()", connection);
         var result = await cmd.ExecuteScalarAsync();
@@ -28,7 +28,7 @@ public abstract class GetMaxChangeVersionTestBase
 
     public static async Task AdvanceSequence(int times)
     {
-        await using SqlConnection connection = new(Uuidv5ParityTestBase.ConnectionString);
+        await using SqlConnection connection = new(DatabaseSetupFixture.ConnectionString);
         await connection.OpenAsync();
         for (var i = 0; i < times; i++)
         {
@@ -44,7 +44,7 @@ public abstract class GetMaxChangeVersionTestBase
     // assertions that depend on the fresh start state.
     public static async Task ResetSequenceToStart()
     {
-        await using SqlConnection connection = new(Uuidv5ParityTestBase.ConnectionString);
+        await using SqlConnection connection = new(DatabaseSetupFixture.ConnectionString);
         await connection.OpenAsync();
         await using SqlCommand cmd = new("ALTER SEQUENCE [dms].[ChangeVersionSequence] RESTART", connection);
         await cmd.ExecuteNonQueryAsync();

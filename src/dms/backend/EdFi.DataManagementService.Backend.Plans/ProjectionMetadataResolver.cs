@@ -15,12 +15,12 @@ internal static class ProjectionMetadataResolver
 {
     /// <summary>
     /// Returns <see langword="true"/> when the column participates in the hydration (read) projection.
-    /// The synthesized <c>dms.Document</c> mirror columns are excluded: they are stamp targets maintained by
-    /// triggers and are not read for reconstitution (read response document metadata stays sourced from
-    /// <c>dms.Document</c>). They remain in the relational model for DDL, indexing, and future query planning.
-    /// The excluded kinds are the change-version mirrors
+    /// The synthesized document-metadata columns are excluded: they are stamp targets maintained by
+    /// triggers and are not read for reconstitution (read response document metadata is sourced from the
+    /// dedicated document-metadata result set). They remain in the relational model for DDL, indexing,
+    /// and future query planning. The excluded kinds are the change-version stamps
     /// (<see cref="ColumnKind.MirroredContentVersion"/>, <see cref="ColumnKind.MirroredContentLastModifiedAt"/>
-    /// — DMS-1182) and the document-metadata mirrors (<see cref="ColumnKind.DocumentUuid"/>,
+    /// — DMS-1182) and the document-metadata stamps (<see cref="ColumnKind.DocumentUuid"/>,
     /// <see cref="ColumnKind.MirroredIdentityVersion"/>,
     /// <see cref="ColumnKind.MirroredIdentityLastModifiedAt"/>, <see cref="ColumnKind.CreatedAt"/>,
     /// <see cref="ColumnKind.CreatedByOwnershipTokenId"/>).
@@ -43,8 +43,8 @@ internal static class ProjectionMetadataResolver
 
     /// <summary>
     /// Returns a table model whose columns are restricted to hydration projection columns, so the read
-    /// SELECT and hydration ordinal maps exclude the synthesized <c>dms.Document</c> mirror columns. Returns
-    /// the same instance when no columns are excluded (only resource root tables carry mirror columns),
+    /// SELECT and hydration ordinal maps exclude the synthesized document-metadata columns. Returns
+    /// the same instance when no columns are excluded (only resource root tables carry those columns),
     /// preserving reference identity for unaffected tables.
     /// </summary>
     public static DbTableModel ToHydrationProjectionTableModel(DbTableModel tableModel)

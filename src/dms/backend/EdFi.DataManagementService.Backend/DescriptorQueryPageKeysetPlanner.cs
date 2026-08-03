@@ -90,9 +90,8 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
 
     /// <summary>
     /// Appends <c>dms.Descriptor.ContentVersion</c> range predicates for the validated change-version
-    /// window. The DMS-1173 stamping triggers keep that mirror in lock-step with
-    /// <c>dms.Document.ContentVersion</c>, so filtering the mirrored column is equivalent and stays on
-    /// the page keyset root.
+    /// window. The DMS-1173 stamping triggers maintain that column as the descriptor row's
+    /// authoritative change version, so filtering it is exact and stays on the page keyset root.
     /// </summary>
     private static void AppendChangeVersionPredicates(
         ChangeVersionRange? changeVersionRange,

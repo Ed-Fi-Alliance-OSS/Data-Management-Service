@@ -489,13 +489,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Resolves the named default constraint for a synthesized <c>dms.Document</c> mirror column:
+    /// Resolves the named default constraint for a synthesized document-metadata column:
     /// <c>ContentVersion</c> and <c>IdentityVersion</c> default to a non-null sentinel,
     /// <c>ContentLastModifiedAt</c> / <c>IdentityLastModifiedAt</c> / <c>CreatedAt</c> default to the current
     /// UTC timestamp, and <c>DocumentUuid</c> defaults to a freshly generated UUID. All use a
-    /// <c>DF_&lt;Table&gt;_&lt;Column&gt;</c> constraint name (rendered by SQL Server; ignored by PostgreSQL),
-    /// matching the <c>dms.Document</c> convention. The trigger overwrites these defaults at write time.
-    /// The nullable <c>CreatedByOwnershipTokenId</c> mirror has no default.
+    /// <c>DF_&lt;Table&gt;_&lt;Column&gt;</c> constraint name (rendered by SQL Server; ignored by
+    /// PostgreSQL). The trigger overwrites these defaults at write time.
+    /// The nullable <c>CreatedByOwnershipTokenId</c> column has no default.
     /// </summary>
     /// <remarks>
     /// Abstract identity tables suppress these defaults: their single <c>INSERT</c> from the maintenance
@@ -596,7 +596,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             }
         }
 
-        // Emit FKs for abstract identity tables (e.g., DocumentId -> dms.Document)
+        // Emit any FKs declared on abstract identity tables (the derivation declares none today)
         foreach (var tableInfo in abstractIdentityTables)
         {
             EmitTableForeignKeys(writer, tableInfo.TableModel);
@@ -2824,10 +2824,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         string triggerName
     )
     {
-        // Exclude every synthesized dms.Document mirror column: they are stamp targets, not client
-        // content, so a stamp-only mirror update must not be treated as a representation change. This
+        // Exclude every synthesized document-metadata column: they are stamp targets, not client
+        // content, so a stamp-only update must not be treated as a representation change. This
         // matches change-queries.md invariant #5 (affectedDocs excludes rows differing only in stamp
-        // columns) and keeps mirror columns out of the no-op diff predicate.
+        // columns) and keeps those columns out of the no-op diff predicate.
         var storedColumns = tableModel
             .Columns.Where(column =>
                 column.Storage is ColumnStorage.Stored && !IsDocumentMetadataMirrorColumn(column.Kind)
@@ -2846,23 +2846,20 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Returns <see langword="true"/> for the synthesized root-table columns that mirror
-    /// <c>dms.Document</c> metadata. These are system columns maintained only by document-stamping
+    /// Returns <see langword="true"/> for the synthesized root-table columns that carry the row's own
+    /// document metadata. These are system columns maintained only by document-stamping
     /// triggers, never client content, so they are excluded wherever the emitter reasons about a row's
     /// client-visible representation.
     /// </summary>
     /// <remarks>
-    /// Dual-write invariant for these columns, which Phase 2 consumers depend on:
-    /// only the generated triggers write them (<c>IsWritable=false</c> keeps them out of write plans, so no
-    /// runtime write plan ever supplies a value). The two dialects differ in tamper repair.
-    /// PostgreSQL's <c>BEFORE</c> trigger assigns <c>DocumentUuid</c> and <c>CreatedAt</c> only on the
-    /// <c>INSERT</c> branch (see <see cref="EmitPgsqlExistingDocumentStampAndMetadataRead" />); a later
-    /// out-of-band <c>UPDATE</c> of those two columns is <em>not</em> self-healed, because the
-    /// <c>UPDATE</c> branch re-asserts only the stamp values it just bumped. SQL Server's <c>AFTER</c>
-    /// trigger re-mirrors all six columns from the post-update <c>dms.Document</c> row image on every stamp,
-    /// so it does overwrite such a change whenever the same statement also touched a stored column.
-    /// Phase 2 must therefore not assume tamper repair on PostgreSQL: <c>dms.Document</c> remains
-    /// authoritative in this phase.
+    /// Write invariant for these columns, which downstream consumers depend on: no client content ever
+    /// reaches them (<c>IsWritable=false</c> keeps them out of client-writable projections), and the
+    /// stamp values are assigned by the generated triggers and the column defaults. Neither dialect
+    /// repairs out-of-band tampering: <c>DocumentUuid</c> and <c>CreatedAt</c> are settled on the
+    /// insert path and each stamping trigger re-asserts only the stamp values it just bumped, so a
+    /// later out-of-band <c>UPDATE</c> of those two columns is <em>not</em> self-healed on either
+    /// dialect. Consumers must therefore not assume tamper repair; the root row is authoritative for
+    /// this metadata.
     /// </remarks>
     private static bool IsDocumentMetadataMirrorColumn(ColumnKind kind)
     {
@@ -3028,6 +3025,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private string FormatSequenceName()
     {
-        return $"{Quote(DmsTableNames.Document.Schema)}.{Quote(DmsTableNames.ChangeVersionSequence)}";
+        return $"{Quote(DmsTableNames.DmsSchema)}.{Quote(DmsTableNames.ChangeVersionSequence)}";
     }
 }

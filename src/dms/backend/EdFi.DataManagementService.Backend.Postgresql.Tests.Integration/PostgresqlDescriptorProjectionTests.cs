@@ -175,17 +175,6 @@ internal static class DescriptorProjectionFixture
             CREATE SCHEMA {TestSchema};
             CREATE SCHEMA IF NOT EXISTS dms;
 
-            CREATE TABLE IF NOT EXISTS dms."Document" (
-                "DocumentId" bigint PRIMARY KEY,
-                "DocumentUuid" uuid NOT NULL,
-                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
-                "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
-            );
-
             CREATE TABLE IF NOT EXISTS dms."Descriptor" (
                 "DocumentId" bigint PRIMARY KEY,
                 "Namespace" varchar(255) NOT NULL DEFAULT '',
@@ -213,13 +202,6 @@ internal static class DescriptorProjectionFixture
         await using var cmd = new NpgsqlCommand(
             $"""
             DELETE FROM dms."Descriptor" WHERE "DocumentId" IN (901, 902, 903);
-            DELETE FROM dms."Document" WHERE "DocumentId" IN (700, 701, 702, 703);
-
-            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion") VALUES
-                (700, '70000000-0000-0000-0000-000000000700', 0, 1, 1),
-                (701, '70100000-0000-0000-0000-000000000701', 0, 1, 1),
-                (702, '70200000-0000-0000-0000-000000000702', 0, 1, 1),
-                (703, '70300000-0000-0000-0000-000000000703', 0, 1, 1);
 
             INSERT INTO dms."Descriptor" ("DocumentId", "Namespace", "CodeValue", "ShortDescription", "Discriminator", "Uri") VALUES
                 (901, 'uri://ed-fi.org/GradeLevelDescriptor', 'Ninth grade', 'Ninth grade', 'edfi.GradeLevelDescriptor', '{Uri901}'),
@@ -237,7 +219,6 @@ internal static class DescriptorProjectionFixture
             $"""
             DROP SCHEMA IF EXISTS {TestSchema} CASCADE;
             DELETE FROM dms."Descriptor" WHERE "DocumentId" IN (901, 902, 903);
-            DELETE FROM dms."Document" WHERE "DocumentId" IN (700, 701, 702, 703);
             """,
             connection
         );

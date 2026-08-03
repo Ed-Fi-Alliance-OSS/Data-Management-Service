@@ -56,8 +56,8 @@ internal static class NaturalKeyLookupResultReader
                         Discriminator: projectsDiscriminator
                             ? reader.GetNullableFieldValue<string>(NaturalKeyLookupColumns.Discriminator)
                             : null,
-                        // Mirrored from dms.Document by the descriptor stamping trigger and declared
-                        // nullable, so it is read nullable rather than assumed present.
+                        // Bound by the descriptor write path's INSERT and declared nullable on the
+                        // descriptor row, so it is read nullable rather than assumed present.
                         ResourceKeyId: projectsResourceKeyId
                             ? ReadNullableInt16(reader, NaturalKeyLookupColumns.ResourceKeyId)
                             : null

@@ -152,7 +152,7 @@ public abstract record RelationalQueryFieldTarget
     public sealed record RootColumn(DbColumnName Column) : RelationalQueryFieldTarget;
 
     /// <summary>
-    /// A query field that targets <c>dms.Document.DocumentUuid</c> and therefore requires the special-case document join.
+    /// A query field that targets the row's <c>DocumentUuid</c>.
     /// </summary>
     public sealed record DocumentUuid : RelationalQueryFieldTarget;
 

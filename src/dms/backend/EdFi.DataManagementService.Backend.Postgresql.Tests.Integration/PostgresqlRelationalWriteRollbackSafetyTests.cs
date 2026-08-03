@@ -193,14 +193,6 @@ file static class RollbackSafetyIntegrationTestSupport
         );
     }
 
-    public static Task<long> ReadDocumentCountAsync(PostgresqlGeneratedDdlTestDatabase database) =>
-        database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT(*)
-            FROM "dms"."Document";
-            """
-        );
-
     public static Task<long> ReadSchoolCountAsync(PostgresqlGeneratedDdlTestDatabase database) =>
         database.ExecuteScalarAsync<long>(
             """
@@ -233,7 +225,6 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
     private ServiceProvider _serviceProvider = null!;
     private RollbackSafetyCommandRecorder _commandRecorder = null!;
     private Exception _exception = null!;
-    private long _documentCount;
     private long _schoolCount;
     private long _schoolAddressCount;
 
@@ -269,7 +260,6 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
             capturedException
             ?? throw new AssertionException("Expected the injected SchoolAddress failure to be thrown.");
 
-        _documentCount = await RollbackSafetyIntegrationTestSupport.ReadDocumentCountAsync(_database);
         _schoolCount = await RollbackSafetyIntegrationTestSupport.ReadSchoolCountAsync(_database);
         _schoolAddressCount = await RollbackSafetyIntegrationTestSupport.ReadSchoolAddressCountAsync(
             _database
@@ -302,19 +292,16 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
         _exception.Should().BeOfType<InvalidOperationException>();
         _exception.Message.Should().Be("Injected write failure after early executor writes.");
 
-        var documentInsertIndex = FindCommandIndex("INSERT INTO dms.\"Document\"");
         var schoolInsertIndex = FindCommandIndex("INSERT INTO \"edfi\".\"School\"");
         var schoolAddressInsertIndex = FindCommandIndex("INSERT INTO \"edfi\".\"SchoolAddress\"");
 
-        documentInsertIndex.Should().BeGreaterThanOrEqualTo(0);
-        schoolInsertIndex.Should().BeGreaterThan(documentInsertIndex);
+        schoolInsertIndex.Should().BeGreaterThanOrEqualTo(0);
         schoolAddressInsertIndex.Should().BeGreaterThan(schoolInsertIndex);
     }
 
     [Test]
     public void It_leaves_no_partial_relational_state_after_the_transaction_rolls_back()
     {
-        _documentCount.Should().Be(0);
         _schoolCount.Should().Be(0);
         _schoolAddressCount.Should().Be(0);
     }

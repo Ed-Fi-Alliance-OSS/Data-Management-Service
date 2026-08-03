@@ -47,7 +47,7 @@ public static class HydrationReader
         .Length;
 
     /// <summary>
-    /// Reads <c>dms.Document</c> metadata rows from the current result set.
+    /// Reads document metadata rows from the current result set.
     /// </summary>
     /// <remarks>
     /// Expects columns at fixed ordinals aligned to <see cref="DocumentMetadataColumns"/>:

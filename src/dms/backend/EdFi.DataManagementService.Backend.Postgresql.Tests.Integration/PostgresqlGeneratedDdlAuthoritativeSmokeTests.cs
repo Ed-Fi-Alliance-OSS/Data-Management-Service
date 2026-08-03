@@ -729,12 +729,9 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     [Test]
     public async Task It_should_stamp_root_extension_inserts_without_touching_identity_stamps()
     {
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var documentId = await InsertDocumentAsync(
-            Guid.Parse("12121212-1212-1212-1212-121212121212"),
-            schoolResourceKeyId
-        );
-        await InsertSchoolAsync(documentId, 101, "Beta Academy");
+        var documentUuid = Guid.Parse("12121212-1212-1212-1212-121212121212");
+        var documentId = await ReserveDocumentIdAsync();
+        await InsertSchoolAsync(documentId, documentUuid, 101, "Beta Academy");
 
         var before = await GetDocumentStampStateAsync(documentId);
 
@@ -1143,17 +1140,14 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     [Test]
     public async Task It_should_stamp_extension_project_root_resource_rows_across_every_write_path()
     {
-        var busResourceKeyId = await GetResourceKeyIdAsync("Sample", "Bus");
-        var busDocumentId = await InsertDocumentAsync(
-            Guid.Parse("abababab-abab-abab-abab-abababababab"),
-            busResourceKeyId
-        );
+        var busDocumentUuid = Guid.Parse("abababab-abab-abab-abab-abababababab");
+        var busDocumentId = await ReserveDocumentIdAsync();
         var beforeInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
         var initialBusId = $"BUS-{busDocumentId}-001";
         var updatedBusId = $"BUS-{busDocumentId}-002";
 
         await DelayForDistinctTimestampsAsync();
-        await InsertBusAsync(busDocumentId, initialBusId);
+        await InsertBusAsync(busDocumentId, busDocumentUuid, initialBusId);
 
         // The root row is the stamp store, so it only exists to be read once the insert lands. A new
         // row has no prior stamp to preserve, so the INSERT branch allocates both the content and the
@@ -1211,13 +1205,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     [Test]
     public async Task It_should_not_stamp_document_or_track_changes_for_direct_root_stamp_only_updates()
     {
-        var busResourceKeyId = await GetResourceKeyIdAsync("Sample", "Bus");
-        var busDocumentId = await InsertDocumentAsync(
-            Guid.Parse("bcbcbcbc-bcbc-bcbc-bcbc-bcbcbcbcbcbc"),
-            busResourceKeyId
-        );
+        var busDocumentUuid = Guid.Parse("bcbcbcbc-bcbc-bcbc-bcbc-bcbcbcbcbcbc");
+        var busDocumentId = await ReserveDocumentIdAsync();
 
-        await InsertBusAsync(busDocumentId, $"BUS-{busDocumentId}-STAMP-ONLY");
+        await InsertBusAsync(busDocumentId, busDocumentUuid, $"BUS-{busDocumentId}-STAMP-ONLY");
 
         var beforeDocument = await GetDocumentStampStateAsync(busDocumentId);
         var beforeMirror = await GetRootMirrorStampStateAsync(_busTable, busDocumentId);
@@ -1402,18 +1393,19 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         const string GradingPeriodDescriptorNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";
         const string GradingPeriodDescriptorCodeValue = "FirstSixWeeks";
 
-        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var gradingPeriodResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GradingPeriod");
         var gradingPeriodDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "GradingPeriodDescriptor"
         );
 
-        var schoolYearTypeDocumentId = await InsertDocumentAsync(
-            Guid.Parse("d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1"),
-            schoolYearTypeResourceKeyId
+        var schoolYearTypeDocumentUuid = Guid.Parse("d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1");
+        var schoolYearTypeDocumentId = await ReserveDocumentIdAsync();
+        await InsertSchoolYearTypeAsync(
+            schoolYearTypeDocumentId,
+            schoolYearTypeDocumentUuid,
+            SchoolYear,
+            "2024-2025"
         );
-        await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, SchoolYear, "2024-2025");
 
         // GradingPeriod pairs School_SchoolId with School_DocumentId in its FK to the
         // EducationOrganizationIdentity projection, so read the seeded school's id back
@@ -1434,12 +1426,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
 
         var firstGradingPeriodDocumentUuid = Guid.Parse("d3d3d3d3-d3d3-d3d3-d3d3-d3d3d3d3d3d3");
-        var firstGradingPeriodDocumentId = await InsertDocumentAsync(
-            firstGradingPeriodDocumentUuid,
-            gradingPeriodResourceKeyId
-        );
+        var firstGradingPeriodDocumentId = await ReserveDocumentIdAsync();
         await InsertGradingPeriodAsync(
             firstGradingPeriodDocumentId,
+            firstGradingPeriodDocumentUuid,
             schoolYearTypeDocumentId,
             SchoolYear,
             _seedData.SchoolDocumentId,
@@ -1449,12 +1439,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
 
         var secondGradingPeriodDocumentUuid = Guid.Parse("d4d4d4d4-d4d4-d4d4-d4d4-d4d4d4d4d4d4");
-        var secondGradingPeriodDocumentId = await InsertDocumentAsync(
-            secondGradingPeriodDocumentUuid,
-            gradingPeriodResourceKeyId
-        );
+        var secondGradingPeriodDocumentId = await ReserveDocumentIdAsync();
         await InsertGradingPeriodAsync(
             secondGradingPeriodDocumentId,
+            secondGradingPeriodDocumentUuid,
             schoolYearTypeDocumentId,
             SchoolYear,
             _seedData.SchoolDocumentId,
@@ -1544,18 +1532,19 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         const string GradingPeriodDescriptorNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";
         const string GradingPeriodDescriptorCodeValue = "SecondSixWeeks";
 
-        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var gradingPeriodResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GradingPeriod");
         var gradingPeriodDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "GradingPeriodDescriptor"
         );
 
-        var schoolYearTypeDocumentId = await InsertDocumentAsync(
-            Guid.Parse("d5d5d5d5-d5d5-d5d5-d5d5-d5d5d5d5d5d5"),
-            schoolYearTypeResourceKeyId
+        var schoolYearTypeDocumentUuid = Guid.Parse("d5d5d5d5-d5d5-d5d5-d5d5-d5d5d5d5d5d5");
+        var schoolYearTypeDocumentId = await ReserveDocumentIdAsync();
+        await InsertSchoolYearTypeAsync(
+            schoolYearTypeDocumentId,
+            schoolYearTypeDocumentUuid,
+            SchoolYear,
+            "2026-2027"
         );
-        await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, SchoolYear, "2026-2027");
 
         // GradingPeriod pairs School_SchoolId with School_DocumentId in its FK to the
         // EducationOrganizationIdentity projection, so read the seeded school's id back
@@ -1576,9 +1565,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
 
         var changedDocumentUuid = Guid.Parse("d7d7d7d7-d7d7-d7d7-d7d7-d7d7d7d7d7d7");
-        var changedDocumentId = await InsertDocumentAsync(changedDocumentUuid, gradingPeriodResourceKeyId);
+        var changedDocumentId = await ReserveDocumentIdAsync();
         await InsertGradingPeriodAsync(
             changedDocumentId,
+            changedDocumentUuid,
             schoolYearTypeDocumentId,
             SchoolYear,
             _seedData.SchoolDocumentId,
@@ -1588,12 +1578,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
 
         var unchangedDocumentUuid = Guid.Parse("d8d8d8d8-d8d8-d8d8-d8d8-d8d8d8d8d8d8");
-        var unchangedDocumentId = await InsertDocumentAsync(
-            unchangedDocumentUuid,
-            gradingPeriodResourceKeyId
-        );
+        var unchangedDocumentId = await ReserveDocumentIdAsync();
         await InsertGradingPeriodAsync(
             unchangedDocumentId,
+            unchangedDocumentUuid,
             schoolYearTypeDocumentId,
             SchoolYear,
             _seedData.SchoolDocumentId,
@@ -1656,18 +1644,19 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         const int SchoolYear = 2027;
         const string DescriptorNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";
 
-        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var gradingPeriodResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GradingPeriod");
         var gradingPeriodDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "GradingPeriodDescriptor"
         );
 
-        var schoolYearTypeDocumentId = await InsertDocumentAsync(
-            Guid.Parse("e4e4e4e4-e4e4-e4e4-e4e4-e4e4e4e4e4e4"),
-            schoolYearTypeResourceKeyId
+        var schoolYearTypeDocumentUuid = Guid.Parse("e4e4e4e4-e4e4-e4e4-e4e4-e4e4e4e4e4e4");
+        var schoolYearTypeDocumentId = await ReserveDocumentIdAsync();
+        await InsertSchoolYearTypeAsync(
+            schoolYearTypeDocumentId,
+            schoolYearTypeDocumentUuid,
+            SchoolYear,
+            "2027-2028"
         );
-        await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, SchoolYear, "2027-2028");
 
         // GradingPeriod pairs School_SchoolId with School_DocumentId in its FK to the
         // EducationOrganizationIdentity projection, so read the seeded school's id back
@@ -1697,12 +1686,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
 
         var gradingPeriodDocumentUuid = Guid.Parse("e7e7e7e7-e7e7-e7e7-e7e7-e7e7e7e7e7e7");
-        var gradingPeriodDocumentId = await InsertDocumentAsync(
-            gradingPeriodDocumentUuid,
-            gradingPeriodResourceKeyId
-        );
+        var gradingPeriodDocumentId = await ReserveDocumentIdAsync();
         await InsertGradingPeriodAsync(
             gradingPeriodDocumentId,
+            gradingPeriodDocumentUuid,
             schoolYearTypeDocumentId,
             SchoolYear,
             _seedData.SchoolDocumentId,
@@ -1768,34 +1755,25 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         const string AssessmentIdentifier = "ASMT-NULLT-001";
         const string StudentUniqueId = "20001";
 
-        var assessmentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Assessment");
-        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
-        var studentAssessmentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StudentAssessment");
-
-        var assessmentDocumentId = await InsertDocumentAsync(
-            Guid.Parse("b5b5b5b5-b5b5-b5b5-b5b5-b5b5b5b5b5b5"),
-            assessmentResourceKeyId
-        );
+        var assessmentDocumentUuid = Guid.Parse("b5b5b5b5-b5b5-b5b5-b5b5-b5b5b5b5b5b5");
+        var assessmentDocumentId = await ReserveDocumentIdAsync();
         await InsertAssessmentAsync(
             assessmentDocumentId,
+            assessmentDocumentUuid,
             AssessmentIdentifier,
             "Null Transition Assessment",
             AssessmentNamespace
         );
 
-        var studentDocumentId = await InsertDocumentAsync(
-            Guid.Parse("b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6"),
-            studentResourceKeyId
-        );
-        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Nola", "Vale");
+        var studentDocumentUuid = Guid.Parse("b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6");
+        var studentDocumentId = await ReserveDocumentIdAsync();
+        await InsertStudentAsync(studentDocumentId, studentDocumentUuid, StudentUniqueId, "Nola", "Vale");
 
         var studentAssessmentDocumentUuid = Guid.Parse("b7b7b7b7-b7b7-b7b7-b7b7-b7b7b7b7b7b7");
-        var studentAssessmentDocumentId = await InsertDocumentAsync(
-            studentAssessmentDocumentUuid,
-            studentAssessmentResourceKeyId
-        );
+        var studentAssessmentDocumentId = await ReserveDocumentIdAsync();
         await InsertStudentAssessmentAsync(
             studentAssessmentDocumentId,
+            studentAssessmentDocumentUuid,
             assessmentDocumentId,
             AssessmentIdentifier,
             AssessmentNamespace,
@@ -1868,38 +1846,31 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         const string ReplacementAssessmentIdentifier = "ASMT-002";
         const string ScoreRangeId = "SR-001";
 
-        var assessmentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Assessment");
-        var scoreRangeResourceKeyId = await GetResourceKeyIdAsync(
-            "Ed-Fi",
-            "AssessmentScoreRangeLearningStandard"
-        );
-
-        var originalAssessmentDocumentId = await InsertDocumentAsync(
-            Guid.Parse("e1e1e1e1-e1e1-e1e1-e1e1-e1e1e1e1e1e1"),
-            assessmentResourceKeyId
-        );
+        var originalAssessmentDocumentUuid = Guid.Parse("e1e1e1e1-e1e1-e1e1-e1e1-e1e1e1e1e1e1");
+        var originalAssessmentDocumentId = await ReserveDocumentIdAsync();
         await InsertAssessmentAsync(
             originalAssessmentDocumentId,
+            originalAssessmentDocumentUuid,
             OriginalAssessmentIdentifier,
             "Original Assessment",
             AssessmentNamespace
         );
 
-        var replacementAssessmentDocumentId = await InsertDocumentAsync(
-            Guid.Parse("e2e2e2e2-e2e2-e2e2-e2e2-e2e2e2e2e2e2"),
-            assessmentResourceKeyId
-        );
+        var replacementAssessmentDocumentUuid = Guid.Parse("e2e2e2e2-e2e2-e2e2-e2e2-e2e2e2e2e2e2");
+        var replacementAssessmentDocumentId = await ReserveDocumentIdAsync();
         await InsertAssessmentAsync(
             replacementAssessmentDocumentId,
+            replacementAssessmentDocumentUuid,
             ReplacementAssessmentIdentifier,
             "Replacement Assessment",
             AssessmentNamespace
         );
 
         var scoreRangeDocumentUuid = Guid.Parse("e3e3e3e3-e3e3-e3e3-e3e3-e3e3e3e3e3e3");
-        var scoreRangeDocumentId = await InsertDocumentAsync(scoreRangeDocumentUuid, scoreRangeResourceKeyId);
+        var scoreRangeDocumentId = await ReserveDocumentIdAsync();
         await InsertAssessmentScoreRangeLearningStandardAsync(
             scoreRangeDocumentId,
+            scoreRangeDocumentUuid,
             OriginalAssessmentIdentifier,
             AssessmentNamespace,
             originalAssessmentDocumentId,
@@ -1968,9 +1939,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var seed = await SeedKeyChangeStudentEducationOrganizationAssociationAsync();
         var before = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
 
-        // DMS-1180 two-statement order, statement 1: delete the resource row while the
-        // dms.Document row still exists, so the stamping trigger can read the doc-stamp
-        // linkage for the tombstone.
+        // The resource root row IS the document, so one DELETE retires the whole document and
+        // fires the stamping trigger's delete branch.
         await DelayForDistinctTimestampsAsync();
         var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
             """DELETE FROM "edfi"."StudentEducationOrganizationAssociation" WHERE "DocumentId" = @documentId;""",
@@ -1978,7 +1948,14 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
         resourceRowsAffected.Should().Be(1);
 
-        (await CountDocumentRowsAsync(seed.AssociationDocumentId)).Should().Be(1);
+        (
+            await CountRowsAsync(
+                """SELECT COUNT(*) FROM "edfi"."StudentEducationOrganizationAssociation" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", seed.AssociationDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
 
         (
             await CountTrackedChangeRowsAsync(
@@ -2001,10 +1978,9 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
 
         // The delete branch takes the tombstone's ChangeVersion straight from
-        // dms.ChangeVersionSequence instead of stamping dms.Document and reading it back, so the
-        // tombstone stays post-delete and monotonic without depending on the dms.Document row
-        // still being there: it is the last change version this delete allocated, and the
-        // dms.Document stamp the second statement removes never overtakes it.
+        // dms.ChangeVersionSequence rather than stamping the row it is deleting and reading the
+        // stamp back, so the tombstone stays post-delete and monotonic: it is the last change
+        // version this delete allocated.
         tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
         trackedRow["Id"].Should().Be(seed.AssociationDocumentUuid);
@@ -2022,23 +1998,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             .Be(seed.StudentDocumentId);
         AssertAllNewColumnsAreNull(trackedRow);
 
-        // Statement 2: delete the dms.Document row.
-        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
-            """DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId;""",
-            new NpgsqlParameter("documentId", seed.AssociationDocumentId)
-        );
-        documentRowsAffected.Should().Be(1);
-
-        (await CountDocumentRowsAsync(seed.AssociationDocumentId)).Should().Be(0);
-        (
-            await CountTrackedChangeRowsAsync(
-                "tracked_changes_edfi",
-                "StudentEducationOrganizationAssociation",
-                seed.AssociationDocumentUuid
-            )
-        )
-            .Should()
-            .Be(1);
+        // No later visible tracked row may advance an extraction watermark past the tombstone.
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "StudentEducationOrganizationAssociation",
@@ -2067,8 +2027,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
         var before = await GetDocumentStampStateAsync(descriptorDocumentId);
 
-        // Statement 1: delete the shared descriptor row while the dms.Document row
-        // still exists.
+        // The dms.Descriptor row IS the descriptor document, so one DELETE retires it.
         await DelayForDistinctTimestampsAsync();
         var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
             """DELETE FROM "dms"."Descriptor" WHERE "DocumentId" = @documentId;""",
@@ -2076,7 +2035,14 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
         resourceRowsAffected.Should().Be(1);
 
-        (await CountDocumentRowsAsync(descriptorDocumentId)).Should().Be(1);
+        (
+            await CountRowsAsync(
+                """SELECT COUNT(*) FROM "dms"."Descriptor" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", descriptorDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Descriptor", descriptorDocumentUuid))
             .Should()
@@ -2093,10 +2059,9 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
 
         // The delete branch takes the tombstone's ChangeVersion straight from
-        // dms.ChangeVersionSequence instead of stamping dms.Document and reading it back, so the
-        // tombstone stays post-delete and monotonic without depending on the dms.Document row
-        // still being there: it is the last change version this delete allocated, and the
-        // dms.Document stamp the second statement removes never overtakes it.
+        // dms.ChangeVersionSequence rather than stamping the row it is deleting and reading the
+        // stamp back, so the tombstone stays post-delete and monotonic: it is the last change
+        // version this delete allocated.
         tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
         trackedRow["Id"].Should().Be(descriptorDocumentUuid);
@@ -2105,17 +2070,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         trackedRow["OldCodeValue"].Should().Be(DescriptorCodeValue);
         AssertAllNewColumnsAreNull(trackedRow);
 
-        // Statement 2: delete the dms.Document row.
-        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
-            """DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId;""",
-            new NpgsqlParameter("documentId", descriptorDocumentId)
-        );
-        documentRowsAffected.Should().Be(1);
-
-        (await CountDocumentRowsAsync(descriptorDocumentId)).Should().Be(0);
-        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Descriptor", descriptorDocumentUuid))
-            .Should()
-            .Be(1);
+        // No later visible tracked row may advance an extraction watermark past the tombstone.
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "Descriptor",
@@ -2130,14 +2085,13 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         // 400 chosen distinct from the seeded SchoolId=100 to avoid PK collisions.
         const int FreshSchoolId = 400;
 
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         var schoolDocumentUuid = Guid.Parse("f2f2f2f2-f2f2-f2f2-f2f2-f2f2f2f2f2f2");
-        var schoolDocumentId = await InsertDocumentAsync(schoolDocumentUuid, schoolResourceKeyId);
-        await InsertSchoolAsync(schoolDocumentId, FreshSchoolId, "Delta Academy");
+        var schoolDocumentId = await ReserveDocumentIdAsync();
+        await InsertSchoolAsync(schoolDocumentId, schoolDocumentUuid, FreshSchoolId, "Delta Academy");
         var before = await GetDocumentStampStateAsync(schoolDocumentId);
 
-        // Statement 1: delete the concrete-abstract resource row while the dms.Document
-        // row still exists. School tombstones into its OWN tracked-change table.
+        // Delete the concrete-abstract resource row, which is the document itself. School
+        // tombstones into its OWN tracked-change table.
         await DelayForDistinctTimestampsAsync();
         var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
             """DELETE FROM "edfi"."School" WHERE "DocumentId" = @documentId;""",
@@ -2145,7 +2099,14 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
         resourceRowsAffected.Should().Be(1);
 
-        (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(1);
+        (
+            await CountRowsAsync(
+                """SELECT COUNT(*) FROM "edfi"."School" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", schoolDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
             .Should()
@@ -2162,27 +2123,16 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
 
         // The delete branch takes the tombstone's ChangeVersion straight from
-        // dms.ChangeVersionSequence instead of stamping dms.Document and reading it back, so the
-        // tombstone stays post-delete and monotonic without depending on the dms.Document row
-        // still being there: it is the last change version this delete allocated, and the
-        // dms.Document stamp the second statement removes never overtakes it.
+        // dms.ChangeVersionSequence rather than stamping the row it is deleting and reading the
+        // stamp back, so the tombstone stays post-delete and monotonic: it is the last change
+        // version this delete allocated.
         tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
         trackedRow["Id"].Should().Be(schoolDocumentUuid);
         Convert.ToInt64(trackedRow["OldSchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
         AssertAllNewColumnsAreNull(trackedRow);
 
-        // Statement 2: delete the dms.Document row.
-        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
-            """DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId;""",
-            new NpgsqlParameter("documentId", schoolDocumentId)
-        );
-        documentRowsAffected.Should().Be(1);
-
-        (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(0);
-        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
-            .Should()
-            .Be(1);
+        // No later visible tracked row may advance an extraction watermark past the tombstone.
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "School",
@@ -2198,10 +2148,9 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         const int OriginalSchoolId = 500;
         const int ReplacementSchoolId = 501;
 
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         var schoolDocumentUuid = Guid.Parse("f3f3f3f3-f3f3-f3f3-f3f3-f3f3f3f3f3f3");
-        var schoolDocumentId = await InsertDocumentAsync(schoolDocumentUuid, schoolResourceKeyId);
-        await InsertSchoolAsync(schoolDocumentId, OriginalSchoolId, "Epsilon Academy");
+        var schoolDocumentId = await ReserveDocumentIdAsync();
+        await InsertSchoolAsync(schoolDocumentId, schoolDocumentUuid, OriginalSchoolId, "Epsilon Academy");
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
             .Should()
@@ -2240,7 +2189,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         // (StudentEducationOrganizationAssociationExtensionAddress), and _ext
         // grandchildren (SchoolDistrict/Term) — all FK-cascaded from the root row.
         var associationDocumentId = _seedData.StudentEducationOrganizationAssociationDocumentId;
-        var associationDocumentUuid = await GetDocumentUuidAsync(associationDocumentId);
+        var associationDocumentUuid = await _database.ExecuteScalarAsync<Guid>(
+            """SELECT "DocumentUuid" FROM "edfi"."StudentEducationOrganizationAssociation" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", associationDocumentId)
+        );
 
         (
             await CountRowsAsync(
@@ -2261,8 +2213,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         var before = await GetDocumentStampStateAsync(associationDocumentId);
 
-        // Statement 1: delete the root resource row; FK cascades remove the child and
-        // _ext rows and fire their stamping triggers.
+        // Delete the root resource row, which is the document itself; FK cascades remove the
+        // child and _ext rows and fire their stamping triggers.
         await DelayForDistinctTimestampsAsync();
         var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
             """DELETE FROM "edfi"."StudentEducationOrganizationAssociation" WHERE "DocumentId" = @documentId;""",
@@ -2313,25 +2265,6 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         // The tombstone must be the final visible root delete stamp. Cascaded child trigger
         // activity must not advance the document extraction watermark past the tombstone.
-        (await CountDocumentRowsAsync(associationDocumentId))
-            .Should()
-            .Be(1);
-        tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
-        await AssertMaxTrackedChangeVersionAsync(
-            "tracked_changes_edfi",
-            "StudentEducationOrganizationAssociation",
-            associationDocumentUuid,
-            tombstoneChangeVersion
-        );
-
-        // Statement 2: delete the dms.Document row.
-        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
-            """DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId;""",
-            new NpgsqlParameter("documentId", associationDocumentId)
-        );
-        documentRowsAffected.Should().Be(1);
-
-        (await CountDocumentRowsAsync(associationDocumentId)).Should().Be(0);
         (
             await CountRowsAsync(
                 """SELECT COUNT(*) FROM "edfi"."StudentEducationOrganizationAssociation" WHERE "DocumentId" = @documentId;""",
@@ -2340,15 +2273,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         )
             .Should()
             .Be(0);
-        (
-            await CountTrackedChangeRowsAsync(
-                "tracked_changes_edfi",
-                "StudentEducationOrganizationAssociation",
-                associationDocumentUuid
-            )
-        )
-            .Should()
-            .Be(1);
+        tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
 
         // No later visible tracked row may advance an extraction watermark past the
         // tombstone.
@@ -2369,19 +2294,14 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         // of cascaded extension-trigger activity.
         const int FreshSchoolId = 401;
 
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var busResourceKeyId = await GetResourceKeyIdAsync("Sample", "Bus");
-
         var schoolDocumentUuid = Guid.Parse("f7f7f7f7-f7f7-f7f7-f7f7-f7f7f7f7f7f7");
-        var schoolDocumentId = await InsertDocumentAsync(schoolDocumentUuid, schoolResourceKeyId);
-        await InsertSchoolAsync(schoolDocumentId, FreshSchoolId, "Zeta Academy");
+        var schoolDocumentId = await ReserveDocumentIdAsync();
+        await InsertSchoolAsync(schoolDocumentId, schoolDocumentUuid, FreshSchoolId, "Zeta Academy");
         await InsertSchoolExtensionAsync(schoolDocumentId);
 
-        var busDocumentId = await InsertDocumentAsync(
-            Guid.Parse("f8f8f8f8-f8f8-f8f8-f8f8-f8f8f8f8f8f8"),
-            busResourceKeyId
-        );
-        await InsertBusAsync(busDocumentId, "BUS-401");
+        var busDocumentUuid = Guid.Parse("f8f8f8f8-f8f8-f8f8-f8f8-f8f8f8f8f8f8");
+        var busDocumentId = await ReserveDocumentIdAsync();
+        await InsertBusAsync(busDocumentId, busDocumentUuid, "BUS-401");
         _ = await InsertSchoolExtensionDirectlyOwnedBusAsync(schoolDocumentId, 1, busDocumentId, "BUS-401");
 
         var before = await GetDocumentStampStateAsync(schoolDocumentId);
@@ -2411,8 +2331,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             .Should()
             .Be(1);
 
-        // Statement 1: delete the root School row; FK cascades remove the _ext row
-        // and its grandchild and fire their stamping triggers.
+        // Delete the root School row, which is the document itself; FK cascades remove the
+        // _ext row and its grandchild and fire their stamping triggers.
         await DelayForDistinctTimestampsAsync();
         var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
             """DELETE FROM "edfi"."School" WHERE "DocumentId" = @documentId;""",
@@ -2458,36 +2378,15 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         // The tombstone must be the final visible root delete stamp. Cascaded extension trigger
         // activity must not advance the document extraction watermark past the tombstone.
-        (await CountDocumentRowsAsync(schoolDocumentId))
-            .Should()
-            .Be(1);
-        tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
-        await AssertMaxTrackedChangeVersionAsync(
-            "tracked_changes_edfi",
-            "School",
-            schoolDocumentUuid,
-            tombstoneChangeVersion
-        );
-
-        // Statement 2: delete the dms.Document row.
-        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
-            """DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId;""",
-            new NpgsqlParameter("documentId", schoolDocumentId)
-        );
-        documentRowsAffected.Should().Be(1);
-
-        (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(0);
         (
             await CountRowsAsync(
-                """SELECT COUNT(*) FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = @documentId;""",
+                """SELECT COUNT(*) FROM "edfi"."School" WHERE "DocumentId" = @documentId;""",
                 new NpgsqlParameter("documentId", schoolDocumentId)
             )
         )
             .Should()
             .Be(0);
-        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
-            .Should()
-            .Be(1);
+        tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "School",
@@ -2500,13 +2399,6 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
     private async Task<AuthoritativeSampleSmokeSeedData> SeedSmokeRowsAsync()
     {
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
-        var busResourceKeyId = await GetResourceKeyIdAsync("Sample", "Bus");
-        var studentEducationOrganizationAssociationResourceKeyId = await GetResourceKeyIdAsync(
-            "Ed-Fi",
-            "StudentEducationOrganizationAssociation"
-        );
         var addressTypeDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "AddressTypeDescriptor"
@@ -2517,18 +2409,14 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
         var termDescriptorResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "TermDescriptor");
 
-        var schoolDocumentId = await InsertDocumentAsync(
-            Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            schoolResourceKeyId
-        );
-        await InsertSchoolAsync(schoolDocumentId, 100, "Alpha Academy");
+        var schoolDocumentUuid = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var schoolDocumentId = await ReserveDocumentIdAsync();
+        await InsertSchoolAsync(schoolDocumentId, schoolDocumentUuid, 100, "Alpha Academy");
         await InsertSchoolExtensionAsync(schoolDocumentId);
 
-        var directlyOwnedBusDocumentId = await InsertDocumentAsync(
-            Guid.Parse("10101010-1010-1010-1010-101010101010"),
-            busResourceKeyId
-        );
-        await InsertBusAsync(directlyOwnedBusDocumentId, "BUS-001");
+        var directlyOwnedBusDocumentUuid = Guid.Parse("10101010-1010-1010-1010-101010101010");
+        var directlyOwnedBusDocumentId = await ReserveDocumentIdAsync();
+        await InsertBusAsync(directlyOwnedBusDocumentId, directlyOwnedBusDocumentUuid, "BUS-001");
 
         var schoolExtensionDirectlyOwnedBusCollectionItemId =
             await InsertSchoolExtensionDirectlyOwnedBusAsync(
@@ -2538,36 +2426,34 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 "BUS-001"
             );
 
-        var studentDocumentId = await InsertDocumentAsync(
-            Guid.Parse("22222222-2222-2222-2222-222222222222"),
-            studentResourceKeyId
-        );
-        await InsertStudentAsync(studentDocumentId, "10001", "Casey", "Cole");
+        var studentDocumentUuid = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var studentDocumentId = await ReserveDocumentIdAsync();
+        await InsertStudentAsync(studentDocumentId, studentDocumentUuid, "10001", "Casey", "Cole");
 
-        var otherStudentDocumentId = await InsertDocumentAsync(
-            Guid.Parse("33333333-3333-3333-3333-333333333333"),
-            studentResourceKeyId
-        );
-        await InsertStudentAsync(otherStudentDocumentId, "10002", "Morgan", "Lane");
+        var otherStudentDocumentUuid = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var otherStudentDocumentId = await ReserveDocumentIdAsync();
+        await InsertStudentAsync(otherStudentDocumentId, otherStudentDocumentUuid, "10002", "Morgan", "Lane");
 
-        var studentEducationOrganizationAssociationDocumentId = await InsertDocumentAsync(
-            Guid.Parse("44444444-4444-4444-4444-444444444444"),
-            studentEducationOrganizationAssociationResourceKeyId
+        var studentEducationOrganizationAssociationDocumentUuid = Guid.Parse(
+            "44444444-4444-4444-4444-444444444444"
         );
+        var studentEducationOrganizationAssociationDocumentId = await ReserveDocumentIdAsync();
         await InsertStudentEducationOrganizationAssociationAsync(
             studentEducationOrganizationAssociationDocumentId,
+            studentEducationOrganizationAssociationDocumentUuid,
             schoolDocumentId,
             100,
             studentDocumentId,
             "10001"
         );
 
-        var otherStudentEducationOrganizationAssociationDocumentId = await InsertDocumentAsync(
-            Guid.Parse("55555555-5555-5555-5555-555555555555"),
-            studentEducationOrganizationAssociationResourceKeyId
+        var otherStudentEducationOrganizationAssociationDocumentUuid = Guid.Parse(
+            "55555555-5555-5555-5555-555555555555"
         );
+        var otherStudentEducationOrganizationAssociationDocumentId = await ReserveDocumentIdAsync();
         await InsertStudentEducationOrganizationAssociationAsync(
             otherStudentEducationOrganizationAssociationDocumentId,
+            otherStudentEducationOrganizationAssociationDocumentUuid,
             schoolDocumentId,
             100,
             otherStudentDocumentId,
@@ -2686,17 +2572,14 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Reserves a DocumentId off the same sequence the root-table column DEFAULT draws from, so a
+    /// seeded row that supplies its id explicitly can never collide with a row that lets the DEFAULT
+    /// allocate one.
+    /// </summary>
+    private async Task<long> ReserveDocumentIdAsync()
     {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
+        return await _database.ExecuteScalarAsync<long>("""SELECT nextval('"dms"."DocumentIdSequence"');""");
     }
 
     private async Task<long> InsertDescriptorAsync(
@@ -2709,7 +2592,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         string shortDescription
     )
     {
-        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        var documentId = await ReserveDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -2750,16 +2633,20 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         return documentId;
     }
 
-    private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
+    private async Task InsertSchoolAsync(
+        long documentId,
+        Guid documentUuid,
+        int schoolId,
+        string nameOfInstitution
+    )
     {
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "edfi"."School" ("DocumentId", "DocumentUuid", "NameOfInstitution", "SchoolId")
-            SELECT @documentId, document."DocumentUuid", @nameOfInstitution, @schoolId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            VALUES (@documentId, @documentUuid, @nameOfInstitution, @schoolId);
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
             new NpgsqlParameter("schoolId", schoolId)
         );
@@ -2776,16 +2663,15 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
     }
 
-    private async Task InsertBusAsync(long documentId, string busId)
+    private async Task InsertBusAsync(long documentId, Guid documentUuid, string busId)
     {
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "sample"."Bus" ("DocumentId", "DocumentUuid", "BusId")
-            SELECT @documentId, document."DocumentUuid", @busId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            VALUES (@documentId, @documentUuid, @busId);
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("busId", busId)
         );
     }
@@ -2812,6 +2698,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
     private async Task InsertStudentAsync(
         long documentId,
+        Guid documentUuid,
         string studentUniqueId,
         string firstName,
         string lastSurname
@@ -2820,11 +2707,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "edfi"."Student" ("DocumentId", "DocumentUuid", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
-            SELECT @documentId, document."DocumentUuid", @birthDate, @firstName, @lastSurname, @studentUniqueId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            VALUES (@documentId, @documentUuid, @birthDate, @firstName, @lastSurname, @studentUniqueId);
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("birthDate", new DateOnly(2010, 1, 1)),
             new NpgsqlParameter("firstName", firstName),
             new NpgsqlParameter("lastSurname", lastSurname),
@@ -2834,6 +2720,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
     private async Task InsertStudentEducationOrganizationAssociationAsync(
         long documentId,
+        Guid documentUuid,
         long educationOrganizationDocumentId,
         int educationOrganizationId,
         long studentDocumentId,
@@ -2850,17 +2737,17 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 "Student_DocumentId",
                 "Student_StudentUniqueId"
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document."DocumentUuid",
+                @documentUuid,
                 @educationOrganizationDocumentId,
                 @educationOrganizationId,
                 @studentDocumentId,
                 @studentUniqueId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("educationOrganizationDocumentId", educationOrganizationDocumentId),
             new NpgsqlParameter("educationOrganizationId", educationOrganizationId),
             new NpgsqlParameter("studentDocumentId", studentDocumentId),
@@ -3016,36 +2903,24 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         const long OriginalEducationOrganizationId = 100;
         const long ReplacementEducationOrganizationId = 200;
 
-        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
-        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        var associationResourceKeyId = await GetResourceKeyIdAsync(
-            "Ed-Fi",
-            "StudentEducationOrganizationAssociation"
-        );
+        var studentDocumentUuid = Guid.Parse("c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1");
+        var studentDocumentId = await ReserveDocumentIdAsync();
+        await InsertStudentAsync(studentDocumentId, studentDocumentUuid, StudentUniqueId, "Riley", "Quinn");
 
-        var studentDocumentId = await InsertDocumentAsync(
-            Guid.Parse("c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1"),
-            studentResourceKeyId
-        );
-        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Riley", "Quinn");
-
-        var replacementSchoolDocumentId = await InsertDocumentAsync(
-            Guid.Parse("c2c2c2c2-c2c2-c2c2-c2c2-c2c2c2c2c2c2"),
-            schoolResourceKeyId
-        );
+        var replacementSchoolDocumentUuid = Guid.Parse("c2c2c2c2-c2c2-c2c2-c2c2-c2c2c2c2c2c2");
+        var replacementSchoolDocumentId = await ReserveDocumentIdAsync();
         await InsertSchoolAsync(
             replacementSchoolDocumentId,
+            replacementSchoolDocumentUuid,
             (int)ReplacementEducationOrganizationId,
             "Gamma Academy"
         );
 
         var associationDocumentUuid = Guid.Parse("c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3");
-        var associationDocumentId = await InsertDocumentAsync(
-            associationDocumentUuid,
-            associationResourceKeyId
-        );
+        var associationDocumentId = await ReserveDocumentIdAsync();
         await InsertStudentEducationOrganizationAssociationAsync(
             associationDocumentId,
+            associationDocumentUuid,
             _seedData.SchoolDocumentId,
             (int)OriginalEducationOrganizationId,
             studentDocumentId,
@@ -3089,6 +2964,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
     private async Task InsertSchoolYearTypeAsync(
         long documentId,
+        Guid documentUuid,
         int schoolYear,
         string schoolYearDescription
     )
@@ -3096,11 +2972,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "edfi"."SchoolYearType" ("DocumentId", "DocumentUuid", "CurrentSchoolYear", "SchoolYear", "SchoolYearDescription")
-            SELECT @documentId, document."DocumentUuid", @currentSchoolYear, @schoolYear, @schoolYearDescription
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            VALUES (@documentId, @documentUuid, @currentSchoolYear, @schoolYear, @schoolYearDescription);
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("currentSchoolYear", true),
             new NpgsqlParameter("schoolYear", schoolYear),
             new NpgsqlParameter("schoolYearDescription", schoolYearDescription)
@@ -3109,6 +2984,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
     private async Task InsertGradingPeriodAsync(
         long documentId,
+        Guid documentUuid,
         long schoolYearTypeDocumentId,
         int schoolYear,
         long schoolDocumentId,
@@ -3132,9 +3008,9 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 "GradingPeriodName",
                 "TotalInstructionalDays"
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document."DocumentUuid",
+                @documentUuid,
                 @schoolYearTypeDocumentId,
                 @schoolYear,
                 @schoolDocumentId,
@@ -3144,10 +3020,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 @endDate,
                 @gradingPeriodName,
                 @totalInstructionalDays
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("schoolYearTypeDocumentId", schoolYearTypeDocumentId),
             new NpgsqlParameter("schoolYear", schoolYear),
             new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
@@ -3162,6 +3038,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
     private async Task InsertAssessmentAsync(
         long documentId,
+        Guid documentUuid,
         string assessmentIdentifier,
         string assessmentTitle,
         string @namespace
@@ -3170,11 +3047,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "edfi"."Assessment" ("DocumentId", "DocumentUuid", "AssessmentIdentifier", "AssessmentTitle", "Namespace")
-            SELECT @documentId, document."DocumentUuid", @assessmentIdentifier, @assessmentTitle, @namespace
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            VALUES (@documentId, @documentUuid, @assessmentIdentifier, @assessmentTitle, @namespace);
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("assessmentIdentifier", assessmentIdentifier),
             new NpgsqlParameter("assessmentTitle", assessmentTitle),
             new NpgsqlParameter("namespace", @namespace)
@@ -3183,6 +3059,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
     private async Task InsertStudentAssessmentAsync(
         long documentId,
+        Guid documentUuid,
         long assessmentDocumentId,
         string assessmentIdentifier,
         string assessmentNamespace,
@@ -3203,19 +3080,19 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 "Student_StudentUniqueId",
                 "StudentAssessmentIdentifier"
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document."DocumentUuid",
+                @documentUuid,
                 @assessmentDocumentId,
                 @assessmentIdentifier,
                 @assessmentNamespace,
                 @studentDocumentId,
                 @studentUniqueId,
                 @studentAssessmentIdentifier
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("assessmentDocumentId", assessmentDocumentId),
             new NpgsqlParameter("assessmentIdentifier", assessmentIdentifier),
             new NpgsqlParameter("assessmentNamespace", assessmentNamespace),
@@ -3227,6 +3104,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
     private async Task InsertAssessmentScoreRangeLearningStandardAsync(
         long documentId,
+        Guid documentUuid,
         string assessmentIdentifier,
         string @namespace,
         long assessmentDocumentId,
@@ -3247,19 +3125,19 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 "MinimumScore",
                 "ScoreRangeId"
             )
-            SELECT
+            VALUES (
                 @documentId,
-                document."DocumentUuid",
+                @documentUuid,
                 @assessmentIdentifier,
                 @namespace,
                 @assessmentDocumentId,
                 @maximumScore,
                 @minimumScore,
                 @scoreRangeId
-            FROM "dms"."Document" document
-            WHERE document."DocumentId" = @documentId;
+            );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("assessmentIdentifier", assessmentIdentifier),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("assessmentDocumentId", assessmentDocumentId),
@@ -3342,22 +3220,6 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         {
             trackedRow[columnName].Should().BeNull($"tombstone column \"{columnName}\" must be NULL");
         }
-    }
-
-    private async Task<long> CountDocumentRowsAsync(long documentId)
-    {
-        return await CountRowsAsync(
-            """SELECT COUNT(*) FROM "dms"."Document" WHERE "DocumentId" = @documentId;""",
-            new NpgsqlParameter("documentId", documentId)
-        );
-    }
-
-    private async Task<Guid> GetDocumentUuidAsync(long documentId)
-    {
-        return await _database.ExecuteScalarAsync<Guid>(
-            """SELECT "DocumentUuid" FROM "dms"."Document" WHERE "DocumentId" = @documentId;""",
-            new NpgsqlParameter("documentId", documentId)
-        );
     }
 
     private async Task<long> CountRowsAsync(string sql, params NpgsqlParameter[] parameters)

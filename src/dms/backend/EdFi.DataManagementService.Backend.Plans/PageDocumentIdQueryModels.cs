@@ -21,7 +21,7 @@ public abstract record QueryPredicateTarget
     public sealed record RootColumn(DbColumnName Column) : QueryPredicateTarget;
 
     /// <summary>
-    /// Predicate targets <c>dms.Document.DocumentUuid</c> and therefore requires the special-case document join.
+    /// Predicate targets the root row's own <c>DocumentUuid</c> column.
     /// </summary>
     public sealed record DocumentUuid : QueryPredicateTarget;
 

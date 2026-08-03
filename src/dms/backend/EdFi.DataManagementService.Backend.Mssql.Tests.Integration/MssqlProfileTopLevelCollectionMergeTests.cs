@@ -329,7 +329,7 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
         var rows = await database.QueryRowsAsync(
             """
             SELECT [DocumentId]
-            FROM [dms].[Document]
+            FROM [edfi].[School]
             WHERE [DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid.Value)
@@ -386,11 +386,13 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
         return GetNullableInt64(rows[0], "AddressTypeDescriptor_DescriptorId");
     }
 
+    // The root row is the document. The profiled writes under test only ever create School
+    // documents, so counting the School root table is the "how many documents exist" probe.
     public static Task<int> ReadDocumentCountAsync(MssqlGeneratedDdlTestDatabase database) =>
         database.ExecuteScalarAsync<int>(
             """
             SELECT COUNT(*)
-            FROM [dms].[Document];
+            FROM [edfi].[School];
             """
         );
 
@@ -414,16 +416,12 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "AddressTypeDescriptor");
+        // dms.Descriptor draws its DocumentId DEFAULT from this same sequence, so a seeded
+        // descriptor id can never collide with a production-created one.
         var documentId = await database.ExecuteScalarAsync<long>(
             """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId] INTO @Inserted
-            VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
-            """,
-            new SqlParameter("@documentUuid", documentUuid),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
+            SELECT NEXT VALUE FOR [dms].[DocumentIdSequence];
+            """
         );
 
         var uri = $"uri://ed-fi.org/AddressTypeDescriptor#{codeValue}";

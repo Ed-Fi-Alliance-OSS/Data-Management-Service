@@ -37,7 +37,7 @@ public abstract record PreprocessedDescriptorQueryValue
     public sealed record Raw(string Value) : PreprocessedDescriptorQueryValue;
 
     /// <summary>
-    /// Query value was parsed as a <c>dms.Document.DocumentUuid</c> filter.
+    /// Query value was parsed as a <c>DocumentUuid</c> filter.
     /// </summary>
     public sealed record DocumentUuid(Guid Value) : PreprocessedDescriptorQueryValue;
 

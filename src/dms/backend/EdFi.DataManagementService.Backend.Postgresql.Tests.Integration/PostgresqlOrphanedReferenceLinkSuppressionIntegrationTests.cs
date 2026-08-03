@@ -31,13 +31,11 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // root table drops it. Reconstitution must surface the reference's identity fields and
 // silently suppress link emission — no exception.
 //
-// The orphan is manufactured target-side: a dms.Document row is created for a School that
-// has NO edfi.School root row, the local FK_AcademicWeek_School_RefKey constraint is
-// dropped, and the academic-week row's School_DocumentId is pointed at that DocumentId. The
-// CHECK constraint CK_AcademicWeek_School_AllNone stays satisfied (School_SchoolId is also
-// non-null). This shape is deliberately sharper than a phantom id: the referenced document
-// IS resolvable in dms.Document, so only a lookup that joins the target root table can
-// suppress the link.
+// The orphan is manufactured target-side: a School DocumentId is reserved from
+// dms.DocumentIdSequence without an edfi.School root row ever carrying it, the local
+// FK_AcademicWeek_School_RefKey constraint is dropped, and the academic-week row's
+// School_DocumentId is pointed at that DocumentId. The CHECK constraint
+// CK_AcademicWeek_School_AllNone stays satisfied (School_SchoolId is also non-null).
 
 [TestFixture]
 [NonParallelizable]
@@ -55,11 +53,6 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
         Guid.Parse("aaaaaaaa-3000-0000-0000-000000000001")
     );
 
-    // A School document that exists ONLY in dms.Document — no edfi.School root row. The
-    // auxiliary lookup joins the target root table, so this document is unreachable from it.
-    private static readonly DocumentUuid OrphanedSchoolDocumentUuid = new(
-        Guid.Parse("aaaaaaaa-3000-0000-0000-00000000000f")
-    );
     private static readonly DocumentUuid AcademicWeekDocumentUuid = new(
         Guid.Parse("bbbbbbbb-3000-0000-0000-000000000002")
     );
@@ -349,18 +342,13 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
             .QueryDocuments(request);
     }
 
-    // Orphan-FK fabricator. Creates a School document that exists only in dms.Document (no
-    // edfi.School root row), drops the AcademicWeek -> School FK constraint, then points the
-    // academic week's School_DocumentId at it. Reconstitution at read time sees a non-null FK
-    // whose target root row is missing — the exact "auxiliary lookup miss" condition the test
-    // asserts behavior for.
+    // Orphan-FK fabricator. Reserves a School DocumentId that no edfi.School root row carries,
+    // drops the AcademicWeek -> School FK constraint, then points the academic week's
+    // School_DocumentId at it. Reconstitution at read time sees a non-null FK whose target root
+    // row is missing — the exact "auxiliary lookup miss" condition the test asserts behavior for.
     private async Task OrphanAcademicWeekSchoolReferenceAsync()
     {
-        short schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
-        long orphanedSchoolDocumentId = await InsertDocumentAsync(
-            OrphanedSchoolDocumentUuid.Value,
-            schoolResourceKeyId
-        );
+        long orphanedSchoolDocumentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -371,9 +359,7 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
             """
             UPDATE "edfi"."AcademicWeek"
             SET "School_DocumentId" = @orphanedSchoolDocumentId
-            WHERE "DocumentId" IN (
-                SELECT "DocumentId" FROM "dms"."Document" WHERE "DocumentUuid" = @academicWeekUuid
-            );
+            WHERE "DocumentUuid" = @academicWeekUuid;
             """,
             new NpgsqlParameter("orphanedSchoolDocumentId", orphanedSchoolDocumentId),
             new NpgsqlParameter("academicWeekUuid", AcademicWeekDocumentUuid.Value)
@@ -446,16 +432,16 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    /// <summary>
+    /// Dispenses a DocumentId from <c>dms.DocumentIdSequence</c> — the same sequence the seeded row's
+    /// column DEFAULT draws from, so a seeded id can never collide with one the write path produces.
+    /// </summary>
+    private async Task<long> NextDocumentIdAsync()
     {
         return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
-            VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId";
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            SELECT nextval('"dms"."DocumentIdSequence"');
+            """
         );
     }
 
@@ -469,7 +455,7 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
         string shortDescription
     )
     {
-        long documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+        long documentId = await NextDocumentIdAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
