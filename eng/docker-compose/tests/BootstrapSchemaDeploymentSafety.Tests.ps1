@@ -5388,11 +5388,27 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             @{ Name = "MSSQL LOCALHOST. mixed case"; ServerSegment = 'Server=LOCALHOST.,15433'; ExpectLocal = $true }
             @{ Name = "MSSQL 127.0.0.1 (control)"; ServerSegment = 'Server=127.0.0.1,15433'; ExpectLocal = $true }
             @{ Name = "MSSQL tcp: with the short form"; ServerSegment = 'Server=tcp:127.1,15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL IPv4-mapped IPv6, bracketed"; ServerSegment = 'Server=[::ffff:127.0.0.1],15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL IPv4-mapped IPv6 behind tcp:"; ServerSegment = 'Server=tcp:[::ffff:127.0.0.1],15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL SqlClient (local) token"; ServerSegment = 'Server=(local),15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL (local) behind tcp:"; ServerSegment = 'Server=tcp:(local),15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL (LOCAL) case variant"; ServerSegment = 'Server=(LOCAL),15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL (local) on the wrong port"; ServerSegment = 'Server=(local),19999'; ExpectLocal = $false }
+            @{ Name = "MSSQL native IPv6 [::1] is not the IPv4 listener"; ServerSegment = 'Server=[::1],15433'; ExpectLocal = $false }
+            @{ Name = "MSSQL mapped 127.0.0.2 is a different listener"; ServerSegment = 'Server=[::ffff:127.0.0.2],15433'; ExpectLocal = $false }
             @{ Name = "MSSQL 127.0.0.2 is a different listener"; ServerSegment = 'Server=127.0.0.2,15433'; ExpectLocal = $false }
             @{ Name = "MSSQL 127.1 on the wrong port"; ServerSegment = 'Server=127.1,19999'; ExpectLocal = $false }
             @{ Name = "MSSQL localhost. on the wrong port"; ServerSegment = 'Server=localhost.,19999'; ExpectLocal = $false }
             @{ Name = "MSSQL an ordinary external hostname"; ServerSegment = 'Server=sql.example.com,15433'; ExpectLocal = $false }
         ) {
+            # Also covers two further spellings of the same reachable endpoint. An IPv4-MAPPED IPv6
+            # address represents an IPv4 node, so [::ffff:127.0.0.1] reaches the IPv4-published listener;
+            # reading it as an unrecognized IPv6 host skipped the guard. Native [::1] is NOT mapped and
+            # stays external, because these services are published on IPv4 only, and mapped 127.0.0.2
+            # stays external for the same reason its plain form does. '(local)' is a SqlClient
+            # data-source token for the local SQL Server and is therefore recognized on THIS engine only -
+            # a PostgreSQL row asserting it stays external lives in the Npgsql host-value table.
+            #
             # The loopback rule was PostgreSQL-only, so 'Server=127.1,<MSSQL_PORT>' reached the local
             # Compose server while classifying as external - the reserved-database guard was skipped
             # entirely. One shared rule now decides both engines. 'localhost.' is the absolute DNS
@@ -5455,6 +5471,13 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             @{ Name = "localhost. absolute DNS spelling"; HostSegment = 'host=localhost.;port=5544'; ExpectRefused = $true }
             @{ Name = "localhost. inside a host list"; HostSegment = 'host=pg.example.com:5432,localhost.:5544;port=5432'; ExpectRefused = $true }
             @{ Name = "localhost. on the wrong port"; HostSegment = 'host=localhost.;port=9999'; ExpectRefused = $false }
+            @{ Name = "IPv4-mapped IPv6, bracketed with a per-host port"; HostSegment = 'host=[::ffff:127.0.0.1]:5544;port=5432'; ExpectRefused = $true }
+            @{ Name = "IPv4-mapped IPv6, unbracketed on the global port"; HostSegment = 'host=::ffff:127.0.0.1;port=5544'; ExpectRefused = $true }
+            @{ Name = "IPv4-mapped IPv6 as a host-list member"; HostSegment = 'host=pg.example.com:5432,[::ffff:127.0.0.1]:5544;port=5432'; ExpectRefused = $true }
+            @{ Name = "IPv4-mapped IPv6 on the wrong port"; HostSegment = 'host=[::ffff:127.0.0.1]:9999;port=5432'; ExpectRefused = $false }
+            @{ Name = "native IPv6 [::1] is not the IPv4 listener"; HostSegment = 'host=[::1]:5544;port=5432'; ExpectRefused = $false }
+            @{ Name = "IPv4-mapped 127.0.0.2 is a different listener"; HostSegment = 'host=::ffff:127.0.0.2;port=5544'; ExpectRefused = $false }
+            @{ Name = "SqlClient (local) is not an Npgsql local host"; HostSegment = 'host=(local);port=5544'; ExpectRefused = $false }
             @{ Name = "plain localhost (control)"; HostSegment = 'host=localhost;port=5544'; ExpectRefused = $true }
             @{ Name = "external-only list keeps the reserved name"; HostSegment = 'host=pg.example.com:5432,other.example.com;port=5432'; ExpectRefused = $false }
             @{ Name = "localhost on another port"; HostSegment = 'host=localhost;port=9999'; ExpectRefused = $false }
@@ -5473,6 +5496,13 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             # different instance; and 127.0.0.2 is a different listener, NOT the Compose one - it is in
             # 127/8 and IPAddress.IsLoopback calls it loopback, which is exactly why classification
             # compares the canonical address to 127.0.0.1 instead.
+            #
+            # The mapped-IPv6 rows carry that same reasoning into the other address family: an
+            # IPv4-mapped IPv6 address represents an IPv4 node and so reaches the IPv4-published listener,
+            # bracketed or not and wherever it sits in the list, while native [::1] is not mapped and
+            # mapped 127.0.0.2 maps to a different listener - both stay external. '(local)' is a
+            # SqlClient-only token: Npgsql would treat it as an ordinary hostname, so it must NOT be
+            # local here even though the SQL Server table accepts it.
             $capturePath = Initialize-CanonicalMssqlWorkspace
             try {
                 . $script:repo.ProvisionScript
