@@ -5146,7 +5146,7 @@ if (Test-Path -LiteralPath $ChildCapturePath) {
 
                 $outcome = Invoke-ProvisionInProviderChildProcess `
                     -EnvironmentFile (New-CanonicalMssqlEnvFile) `
-                    -ConnectionString 'Server=ignored.example.com;Data Source=also-ignored.example.com;Database=ignored_db;Initial Catalog=also_ignored_db;User Id=ignored_user;UID=also_ignored_user;Password=abcdefgh1!;TrustServerCertificate=true' `
+                    -ConnectionString 'Server=ignored.example.com;Data Source=also-ignored.example.com;Database=ignored_db;Initial Catalog=also_ignored_db;User Id=ignored_user;UID=also_ignored_user;User=third_ignored_user;Password=abcdefgh1!;TrustServerCertificate=true' `
                     -SchemaToolPath $env:DMS_SCHEMA_TOOL_PATH `
                     -CapturePath $capturePath
 
@@ -5155,11 +5155,17 @@ if (Test-Path -LiteralPath $ChildCapturePath) {
                 $keyValue = Get-ConnectionStringKeyValue -ConnectionString $outcome.CapturedConnectionString
                 $databaseKeys = @($keyValue.Keys | Where-Object { $_ -in @("database", "initial catalog") })
                 $serverKeys = @($keyValue.Keys | Where-Object { $_ -in @("server", "data source", "addr", "address", "network address") })
+                $userKeys = @($keyValue.Keys | Where-Object { $_ -in @("user id", "uid", "user") })
 
                 $databaseKeys.Count | Should -Be 1 -Because "no losing synonym may survive to override the validated database"
                 $serverKeys.Count | Should -Be 1 -Because "no losing synonym may survive to override the validated server"
+                # All three user-ID spellings are present in the input; only the one carrying the
+                # provider's verdict may survive, or SchemaTools reparses a different principal than
+                # Username and TargetKey name.
+                $userKeys.Count | Should -Be 1 -Because "the user-id family is collapsed like the other two"
                 $keyValue[$databaseKeys[0]] | Should -Be "provider_selected_database" -Because "the database is the staged provider's verdict, not a first-listed key"
                 $keyValue[$serverKeys[0]] | Should -Be "127.0.0.1,$($script:canonicalMssqlPort)" -Because "the Docker-internal translation is applied to the provider-selected server"
+                $keyValue[$userKeys[0]] | Should -Be "provider_selected_user" -Because "the surviving user key carries the provider's verdict, not a first-listed alias"
                 $outcome.AuthorityDatabase | Should -Be "provider_selected_database" -Because "the topology authority judges the same verdict SchemaTools receives"
 
                 # Unrelated options still pass through the generic builder untouched.
@@ -5203,11 +5209,14 @@ if (Test-Path -LiteralPath $ChildCapturePath) {
         }
 
         It "agrees with the REAL Microsoft.Data.SqlClient build when one is present: <Name>" -ForEach @(
-            @{ Name = "Database first, Initial Catalog last"; DatabaseSegment = 'Database=ignored_first;Initial Catalog=effective_last'; Effective = "effective_last" }
-            @{ Name = "Initial Catalog first, Database last"; DatabaseSegment = 'Initial Catalog=ignored_first;Database=effective_last'; Effective = "effective_last" }
-            @{ Name = "Initial Catalog repeated around Database"; DatabaseSegment = 'Initial Catalog=first_ic;Database=middle_db;Initial Catalog=effective_last_ic'; Effective = "effective_last_ic" }
-            @{ Name = "Database repeated around Initial Catalog"; DatabaseSegment = 'Database=first;Initial Catalog=second;Database=effective_last'; Effective = "effective_last" }
-            @{ Name = "ambiguous family alongside a provider-only keyword"; DatabaseSegment = 'Database=ignored_first;Initial Catalog=effective_last;Host Name In Certificate=cert.example.com'; Effective = "effective_last" }
+            @{ Name = "Database first, Initial Catalog last"; DatabaseSegment = 'Database=ignored_first;Initial Catalog=effective_last'; Effective = "effective_last"; UserSegment = 'User Id=sa'; EffectiveUser = "sa" }
+            @{ Name = "Initial Catalog first, Database last"; DatabaseSegment = 'Initial Catalog=ignored_first;Database=effective_last'; Effective = "effective_last"; UserSegment = 'User Id=sa'; EffectiveUser = "sa" }
+            @{ Name = "Initial Catalog repeated around Database"; DatabaseSegment = 'Initial Catalog=first_ic;Database=middle_db;Initial Catalog=effective_last_ic'; Effective = "effective_last_ic"; UserSegment = 'User Id=sa'; EffectiveUser = "sa" }
+            @{ Name = "Database repeated around Initial Catalog"; DatabaseSegment = 'Database=first;Initial Catalog=second;Database=effective_last'; Effective = "effective_last"; UserSegment = 'User Id=sa'; EffectiveUser = "sa" }
+            @{ Name = "ambiguous family alongside a provider-only keyword"; DatabaseSegment = 'Database=ignored_first;Initial Catalog=effective_last;Host Name In Certificate=cert.example.com'; Effective = "effective_last"; UserSegment = 'User Id=sa'; EffectiveUser = "sa" }
+            @{ Name = "UID repeated around User ID"; DatabaseSegment = 'Database=edfi_datastore'; Effective = "edfi_datastore"; UserSegment = 'UID=first;User ID=middle;UID=effective_last'; EffectiveUser = "effective_last" }
+            @{ Name = "User ID then plain User"; DatabaseSegment = 'Database=edfi_datastore'; Effective = "edfi_datastore"; UserSegment = 'User ID=ignored_first;User=effective_last'; EffectiveUser = "effective_last" }
+            @{ Name = "plain User then UID"; DatabaseSegment = 'Database=edfi_datastore'; Effective = "edfi_datastore"; UserSegment = 'User=ignored_first;UID=effective_last'; EffectiveUser = "effective_last" }
         ) {
             # The last row is the one the legacy in-box provider cannot serve at all: it must parse the
             # WHOLE string to settle the family, and Host Name In Certificate is a keyword only
@@ -5240,17 +5249,178 @@ if (Test-Path -LiteralPath $ChildCapturePath) {
 
                 $outcome = Invoke-ProvisionInProviderChildProcess `
                     -EnvironmentFile (New-CanonicalMssqlEnvFile) `
-                    -ConnectionString "Server=dms-mssql,1433;$DatabaseSegment;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true" `
+                    -ConnectionString "Server=dms-mssql,1433;$DatabaseSegment;$UserSegment;Password=abcdefgh1!;TrustServerCertificate=true" `
                     -SchemaToolPath $env:DMS_SCHEMA_TOOL_PATH `
                     -CapturePath $capturePath
 
                 $outcome.Error | Should -BeNullOrEmpty
                 $keyValue = Get-ConnectionStringKeyValue -ConnectionString $outcome.CapturedConnectionString
                 $databaseKeys = @($keyValue.Keys | Where-Object { $_ -in @("database", "initial catalog") })
+                $userKeys = @($keyValue.Keys | Where-Object { $_ -in @("user id", "uid", "user") })
 
                 $databaseKeys.Count | Should -Be 1
                 $keyValue[$databaseKeys[0]] | Should -Be $Effective -Because "the real provider resolves the family's last occurrence"
                 $outcome.AuthorityDatabase | Should -Be $Effective -Because "the guard judges what SchemaTools will deploy into"
+
+                # The user-id family, against the real provider: exactly one spelling survives and it
+                # carries the same principal the provider resolves, so a reparse cannot connect as
+                # someone else. The UID/User rows are the ones that fail if any family member is missing
+                # from the alias list or if the family is resolved but never collapsed.
+                $userKeys.Count | Should -Be 1 -Because "no losing user-id alias may survive to override the resolved principal"
+                $keyValue[$userKeys[0]] | Should -Be $EffectiveUser -Because "the real provider resolves the user family's last occurrence"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "resolves and collapses an unambiguous plain User= key with no provider assembly present" {
+            # 'User' is a full member of the provider's user-id family, so a connection string naming only
+            # that spelling has an unambiguous principal - no provider needed. Before the family list
+            # included it, this shape was rejected outright as "missing the user id key".
+            $capturePath = Initialize-CanonicalMssqlWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 808
+                            name = "PlainUserKey"
+                            connectionString = 'Server=dms-mssql,1433;Database=edfi_datamanagementservice;User=only_user;Password=abcdefgh1!;TrustServerCertificate=true'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-CanonicalMssqlEnvFile) `
+                    -DataStoreId @(808) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase *>&1 | Out-Null } |
+                    Should -Not -Throw -Because "'User' is a recognized member of the provider's user-id family"
+
+                $keyValue = Get-ConnectionStringKeyValue `
+                    -ConnectionString (Get-CapturedSchemaToolConnectionString -CapturePath $capturePath)
+                $userKeys = @($keyValue.Keys | Where-Object { $_ -in @("user id", "uid", "user") })
+
+                $userKeys.Count | Should -Be 1
+                $keyValue[$userKeys[0]] | Should -Be "only_user"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "treats a zero-padded local port as the same TCP port the environment configures: <Name>" -ForEach @(
+            @{ Name = "PostgreSQL localhost:05544 against configured 5544"; Engine = "postgresql"; StoredConnectionString = 'host=localhost;port=05544;username=postgres;password=isolated-pass;database=edfi_configurationservice;'; ExpectRefused = $true }
+            @{ Name = "PostgreSQL localhost:5544 against configured 5544 (unpadded control)"; Engine = "postgresql"; StoredConnectionString = 'host=localhost;port=5544;username=postgres;password=isolated-pass;database=edfi_configurationservice;'; ExpectRefused = $true }
+            @{ Name = "PostgreSQL localhost:9999 stays external"; Engine = "postgresql"; StoredConnectionString = 'host=localhost;port=9999;username=postgres;password=isolated-pass;database=edfi_configurationservice;'; ExpectRefused = $false }
+        ) {
+            # '05544' and '5544' are the same TCP port, so a zero-padded spelling of the local Compose
+            # port must not read as a different instance and escape the separate-topology guard. The
+            # unpadded row is the control that the correction did not change existing behaviour, and the
+            # 9999 row is the control that a genuinely different numeric port is still external - it names
+            # the reserved database and must STILL be provisioned, because on another port it is another
+            # server's database.
+            $capturePath = Initialize-CanonicalMssqlWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Get-CmsToken { return "token" }
+                $script:paddedPortConnectionString = $StoredConnectionString
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 809
+                            name = "PaddedPort"
+                            connectionString = $script:paddedPortConnectionString
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                # POSTGRES_PORT=5544 is what the shared fixture env configures.
+                $envFile = Join-Path $script:repo.DockerComposeRoot "env-padded-port-$([Guid]::NewGuid().ToString('N')).env"
+                @"
+POSTGRES_PASSWORD=isolated-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                $invoke = { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile $envFile `
+                    -DataStoreId @(809) `
+                    -SeparateConfigDatabase }
+
+                if ($ExpectRefused) {
+                    # The scriptblock is PIPED, never invoked with &: invoking it lets the terminating
+                    # error escape before Should -Throw can observe it.
+                    ($invoke | Should -Throw -PassThru).Exception.Message |
+                        Should -BeLike "*edfi_configurationservice*" -Because "the local target is the reserved database"
+                    Test-Path -LiteralPath $capturePath |
+                        Should -BeFalse -Because "a refused target must reach SchemaTools with nothing"
+                }
+                else {
+                    $invoke | Should -Not -Throw -Because "another port is another server, whose database of that name is not the local one"
+                    @(Get-Content -LiteralPath $capturePath) | Should -Contain "pgsql"
+                }
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "treats a zero-padded MSSQL port as the same TCP port and consults the live authority: <Name>" -ForEach @(
+            @{ Name = "localhost,015433 against configured 15433"; ServerSegment = 'Server=localhost,015433'; ExpectLocal = $true }
+            @{ Name = "localhost,15433 (unpadded control)"; ServerSegment = 'Server=localhost,15433'; ExpectLocal = $true }
+            @{ Name = "localhost,19999 stays external"; ServerSegment = 'Server=localhost,19999'; ExpectLocal = $false }
+        ) {
+            # The same shared predicate on the other engine: a zero-padded MSSQL port must reach the
+            # running instance's authority, which is the only thing that can refuse the reserved database
+            # there. The refusal is the authority's, so the stub renders its verdict.
+            $capturePath = Initialize-CanonicalMssqlWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:paddedAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:paddedAuthorityCalled = $true
+                    throw "CMS database topology mismatch: SQL Server reports that the datastore name resolved from '$RegisteredDatastoreDatabaseSourceKey' denotes the SAME physical database as the dedicated 'edfi_configurationservice'."
+                }
+                function Get-CmsToken { return "token" }
+                $script:paddedPortConnectionString =
+                    "$ServerSegment;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true"
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 810
+                            name = "PaddedMssqlPort"
+                            connectionString = $script:paddedPortConnectionString
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                $invoke = { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-CanonicalMssqlEnvFile) `
+                    -DataStoreId @(810) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase }
+
+                if ($ExpectLocal) {
+                    ($invoke | Should -Throw -PassThru).Exception.Message | Should -BeLike "*SAME physical database*"
+                    $script:paddedAuthorityCalled | Should -BeTrue -Because "the padded port names the local Compose server, so its authority decides"
+                    Test-Path -LiteralPath $capturePath | Should -BeFalse -Because "the refusal must land before any DDL"
+                }
+                else {
+                    $invoke | Should -Not -Throw
+                    $script:paddedAuthorityCalled | Should -BeFalse -Because "another port is another server; no local authority speaks for it"
+                    @(Get-Content -LiteralPath $capturePath) | Should -Contain "mssql"
+                }
             }
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }

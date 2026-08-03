@@ -662,6 +662,7 @@ param(
     [string]$DatabaseEngine = "postgresql",
     [string]$EnvironmentFile = "",
     [string]$DataStandardVersion = "",
+    [string]$IdentityProvider = "",
     [Switch]$NoDataStore,
     [Switch]$SeparateConfigDatabase
 )
@@ -670,6 +671,7 @@ param(
     DatabaseEngine = $DatabaseEngine
     EnvironmentFile = $EnvironmentFile
     DataStandardVersion = $DataStandardVersion
+    IdentityProvider = $IdentityProvider
     NoDataStore = $NoDataStore.IsPresent
     SeparateConfigDatabase = $SeparateConfigDatabase.IsPresent
 } | ConvertTo-Json -Compress
@@ -954,6 +956,116 @@ param(
             $boundWrapper.EnvironmentFile | Should -Be "/repo/eng/docker-compose/.env.custom" -Because "a fresh wrapper run recomposes its overlays from the operator's base file"
             $boundWrapper.DataStandardVersion | Should -Be "6.1" -Because "the wrapper always recomposes a data-standard overlay and would otherwise fall back to the default"
             $boundWrapper.SeparateConfigDatabase | Should -BeTrue
+        }
+
+        It "the start-script fresh-wrapper command carries the RESOLVED identity provider, and the phase commands do not: <Name>" -ForEach @(
+            @{ Name = "separate topology, explicit keycloak over a self-contained environment"; Provider = "keycloak"; Separate = $true }
+            @{ Name = "shared topology, explicit keycloak over a self-contained environment"; Provider = "keycloak"; Separate = $false }
+            @{ Name = "shared topology, resolved self-contained"; Provider = "self-contained"; Separate = $false }
+        ) {
+            # An explicit -IdentityProvider outranks the environment file's own
+            # DMS_CONFIG_IDENTITY_PROVIDER, so a keycloak run whose environment says self-contained would
+            # advertise a continuation that silently switches providers. The environment file named here
+            # deliberately represents the self-contained value, so the provider can only have come from
+            # this run's resolution.
+            $recorder = New-ContinuationArgumentRecorder -Directory $script:repo.RepoRoot
+            $guidance = @(Get-InfraOnlyTerminalGuidance `
+                -DatabaseEngine "mssql" `
+                -EffectiveEnvironmentFile "/repo/eng/docker-compose/.derived/.env.self-contained.mssql" `
+                -BaseEnvironmentFile "/repo/eng/docker-compose/.env.self-contained" `
+                -DataStandardVersion "6.1" `
+                -IdentityProvider $Provider `
+                -SeparateConfigDatabase:$Separate)
+
+            $wrapperArguments = @(Get-PrintedWrapperContinuationArgumentList -Line $guidance)
+            $wrapperArguments.Count | Should -Be 1 -Because "exactly one fresh-wrapper command may be advertised"
+            ([regex]::Matches($wrapperArguments[0], '-IdentityProvider\b')).Count |
+                Should -Be 1 -Because "the resolved provider appears exactly once, not zero times and not duplicated"
+
+            $bound = Invoke-BoundContinuationArgument -RecorderPath $recorder -ArgumentText $wrapperArguments[0]
+            $bound.IdentityProvider | Should -Be $Provider -Because "following the hint must keep the provider this run resolved"
+            $bound.DatabaseEngine | Should -Be "mssql" -Because "the other preserved state is unaffected"
+            $bound.EnvironmentFile | Should -Be "/repo/eng/docker-compose/.env.self-contained"
+            $bound.DataStandardVersion | Should -Be "6.1"
+            $bound.SeparateConfigDatabase | Should -Be $Separate
+
+            # configure-local-data-store.ps1 and provision-dms-schema.ps1 do not declare the parameter,
+            # so a hint that offered it would not bind at all.
+            foreach ($scriptName in @("configure-local-data-store.ps1", "provision-dms-schema.ps1")) {
+                $line = @($guidance | Where-Object { $_ -match [regex]::Escape($scriptName) }) | Select-Object -First 1
+                $line | Should -Not -BeNullOrEmpty
+                $line | Should -Not -Match '-IdentityProvider' -Because "$scriptName does not accept -IdentityProvider"
+            }
+        }
+
+        It "neither phase script declares -IdentityProvider, so the phase commands must never offer it" {
+            # The reason the previous row's negative assertion matters, stated against the real parameter
+            # surfaces rather than assumed.
+            foreach ($scriptName in @("configure-local-data-store.ps1", "provision-dms-schema.ps1")) {
+                (Get-DeclaredScriptParameters -Path (Join-Path $script:sourceDockerComposeRoot $scriptName)) |
+                    Should -Not -Contain "IdentityProvider" -Because "$scriptName has no such parameter to bind"
+            }
+            # And the command that DOES receive it accepts it.
+            (Get-DeclaredScriptParameters -Path (Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1")) |
+                Should -Contain "IdentityProvider"
+        }
+
+        It "the wrapper's own terminal continuation carries the resolved identity provider exactly once" {
+            # The wrapper-owned half: an explicit -IdentityProvider is resolved by the wrapper and must
+            # travel on the single hint it prints, over an environment file whose own value differs.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-identity-hint.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            # The fixture env declares self-contained; the run explicitly requests keycloak.
+            $customEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.custom-identity-hint"
+            Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $customEnvFile -Encoding utf8
+            @(Get-Content -LiteralPath $customEnvFile) |
+                Should -Contain "DMS_CONFIG_IDENTITY_PROVIDER=self-contained" -Because "the conflict this row is about must actually exist in the environment"
+
+            $output = & $script:repo.WrapperScript `
+                -EnvironmentFile $customEnvFile `
+                -InfraOnly `
+                -DatabaseEngine mssql `
+                -IdentityProvider keycloak `
+                -SeparateConfigDatabase `
+                *>&1 | Out-String
+
+            $argumentText = Get-PrintedWrapperContinuationArgument -Output $output
+            ([regex]::Matches($argumentText, '-IdentityProvider\b')).Count | Should -Be 1
+
+            $recorder = New-ContinuationArgumentRecorder -Directory $script:repo.RepoRoot
+            $bound = Invoke-BoundContinuationArgument -RecorderPath $recorder -ArgumentText $argumentText
+            $bound.IdentityProvider | Should -Be "keycloak" -Because "the wrapper resolved keycloak, not the environment file's self-contained"
+            $bound.DatabaseEngine | Should -Be "mssql"
+            $bound.EnvironmentFile | Should -Be $customEnvFile
+            $bound.SeparateConfigDatabase | Should -BeTrue
+            $bound.NoDataStore | Should -BeTrue
+        }
+
+        It "the wrapper's terminal continuation carries the environment-derived provider when none is explicit" {
+            # Shared-topology control with no explicit provider: the hint still names what the run
+            # resolved, so following it cannot drift to a different default.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-identity-hint-default.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $output = & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                *>&1 | Out-String
+
+            $recorder = New-ContinuationArgumentRecorder -Directory $script:repo.RepoRoot
+            $bound = Invoke-BoundContinuationArgument `
+                -RecorderPath $recorder `
+                -ArgumentText (Get-PrintedWrapperContinuationArgument -Output $output)
+
+            $bound.IdentityProvider | Should -Be "self-contained" -Because "the environment file's own value is what this run resolved"
+            $bound.SeparateConfigDatabase | Should -BeFalse
         }
 
         It "the start script emits NO fresh-wrapper command when the wrapper owns the workflow, but keeps the phase commands" {

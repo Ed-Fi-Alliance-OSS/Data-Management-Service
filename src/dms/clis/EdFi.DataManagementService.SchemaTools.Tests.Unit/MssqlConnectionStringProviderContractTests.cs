@@ -19,7 +19,9 @@ namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 /// Microsoft.Data.SqlClient assembly - exists in that job. A provider assertion written there could
 /// only skip. These assertions run on every pull request through build-dms.ps1 UnitTest.
 ///
-/// Three contracts are pinned, each one an assumption that phase would otherwise be making silently.
+/// Each contract below is an assumption that phase would otherwise be making silently: the precedence
+/// rule it resolves synonym families by, the complete membership of every family it collapses, the
+/// keywords it must not reject, and the shape of the canonical string it emits.
 /// </summary>
 public class MssqlConnectionStringProviderContractTests
 {
@@ -93,12 +95,59 @@ public class MssqlConnectionStringProviderContractTests
     }
 
     /// <summary>
+    /// The user-ID family, which the phase resolves for Username and TargetKey AND collapses in the
+    /// string it hands the tool. Same last-occurrence rule, across all three spellings: leaving a losing
+    /// alias in that string let the tool reparse - and therefore connect as - a different principal than
+    /// the one the phase reported.
+    /// </summary>
+    [TestCase("UID=first;User ID=middle;UID=effective_last", "effective_last")]
+    [TestCase("User ID=ignored_first;UID=effective_last", "effective_last")]
+    [TestCase("User ID=ignored_first;User=effective_last", "effective_last")]
+    [TestCase("User=ignored_first;UID=effective_last", "effective_last")]
+    [TestCase("UID=ignored_first;User=effective_last", "effective_last")]
+    [TestCase("User Id=only", "only")]
+    public void User_synonym_family_resolves_to_its_last_occurrence(
+        string connectionString,
+        string expectedUserId
+    )
+    {
+        new SqlConnectionStringBuilder(connectionString).UserID.Should().Be(expectedUserId);
+    }
+
+    /// <summary>
+    /// Complete membership of the user-ID family the phase collapses. 'User' is the member the phase
+    /// originally omitted, which both mis-resolved the principal and left the family uncollapsed.
+    /// </summary>
+    [TestCase("User ID", "value")]
+    [TestCase("User Id", "value")]
+    [TestCase("UID", "value")]
+    [TestCase("User", "value")]
+    public void User_family_membership_is_exactly_the_keywords_the_phase_collapses(
+        string keyword,
+        string value
+    )
+    {
+        new SqlConnectionStringBuilder($"{keyword}={value}").UserID.Should().Be(value);
+    }
+
+    /// <summary>
+    /// Closed-world half of the user-family contract: keywords that merely look like members are not
+    /// keywords at all to this provider, so the phase's alias list is not silently short.
+    /// </summary>
+    [TestCase("Username")]
+    [TestCase("User Name")]
+    public void Keywords_outside_the_user_family_are_not_recognized_at_all(string keyword)
+    {
+        Assert.Throws<ArgumentException>(() => _ = new SqlConnectionStringBuilder($"{keyword}=value"));
+    }
+
+    /// <summary>
     /// Closed-world half of the membership contract: a keyword the phase does NOT treat as a family
     /// member must not feed that family's property. Without this, the lists above could be incomplete
     /// and still pass.
     /// </summary>
     [Test]
-    public void Unrelated_keywords_do_not_participate_in_either_collapsed_family()
+    public void Unrelated_keywords_do_not_participate_in_any_collapsed_family()
     {
         var builder = new SqlConnectionStringBuilder(
             "Application Name=app;Workstation ID=ws;Failover Partner=partner.example.com"
@@ -106,6 +155,7 @@ public class MssqlConnectionStringProviderContractTests
 
         builder.DataSource.Should().BeEmpty();
         builder.InitialCatalog.Should().BeEmpty();
+        builder.UserID.Should().BeEmpty();
     }
 
     /// <summary>
@@ -136,8 +186,9 @@ public class MssqlConnectionStringProviderContractTests
     }
 
     /// <summary>
-    /// What the phase's canonical output must round-trip through: exactly one member of each family
-    /// plus every unrelated option, reparsed by this provider to the same values the phase validated.
+    /// What the phase's canonical output must round-trip through: exactly one member of each of the
+    /// THREE collapsed families plus every unrelated option, reparsed by this provider to the same
+    /// values the phase validated.
     /// </summary>
     [Test]
     public void Canonical_single_member_string_round_trips_with_unrelated_options_preserved()
