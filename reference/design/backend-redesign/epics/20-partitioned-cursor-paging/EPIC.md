@@ -147,9 +147,9 @@ Partition validation is also phase-gated. A malformed or out-of-range `number` p
 exact error `Number of partitions must be between 1 and 200.` Partition-reserved parameters are
 reported as unsupported without first parsing their values, using the exact error
 `The '{parameter}' parameter is not supported by the partitions endpoint.` If several reserved
-parameters are present, report them in canonical order `limit`, `offset`, `totalCount`,
-`pageToken`, `pageSize`. The syntax/range phase for `number` takes precedence over the unsupported
-parameter phase.
+parameters are present, report them in canonical order `pageToken`, `pageSize`, `limit`, `offset`,
+`totalCount`. The syntax/range phase for `number` takes precedence over the unsupported parameter
+phase.
 
 The ODS-compatible partition calculation is:
 
