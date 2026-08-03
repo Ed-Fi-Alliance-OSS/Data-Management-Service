@@ -4642,6 +4642,73 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
+        It "refuses a PostgreSQL target spelled 127.0.0.1, the address the Compose service actually publishes" {
+            # postgresql.yml publishes on 127.0.0.1 while the host-side translation writes
+            # "localhost", so matching one canonical spelling would classify the OTHER spelling of
+            # the same server as external and skip the guard entirely.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 714
+                            name = "LoopbackLiteral"
+                            connectionString = 'host=127.0.0.1;port=5544;username=postgres;password=isolated-pass;database=edfi_configurationservice;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardPostgresEnvFile) `
+                    -DataStoreId @(714) `
+                    -SeparateConfigDatabase } |
+                    Should -Throw "*edfi_configurationservice*"
+
+                Test-Path -LiteralPath $capturePath | Should -BeFalse
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "refuses a SQL Server target spelled localhost, the converse loopback spelling" {
+            # The mirror image: the SQL Server translation writes 127.0.0.1, so "localhost,<port>" is
+            # the spelling that would look external there. Also proves the host is compared as a
+            # parsed part, not inside the combined "host,port" text.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    throw "CMS database topology mismatch: SQL Server reports that the datastore name resolved from '$RegisteredDatastoreDatabaseSourceKey' denotes the SAME physical database as the dedicated 'edfi_configurationservice'."
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 715
+                            name = "LoopbackName"
+                            connectionString = 'Server=localhost,15433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardMssqlEnvFile) `
+                    -DataStoreId @(715) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase } |
+                    Should -Throw "*SAME physical database*"
+
+                Test-Path -LiteralPath $capturePath | Should -BeFalse
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
         It "still refuses a target authored directly against the local host-side coordinates" {
             # Endpoint identity, not provenance: a stored connection string written straight to the
             # published host/port IS the local Compose database, so it must not slip past the guard
