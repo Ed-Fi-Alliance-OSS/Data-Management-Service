@@ -478,7 +478,7 @@ function DockerRun {
 function Run {
     Push-Location src
     try {
-        dotnet run --no-build --no-restore --project ./frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore
+        dotnet run --no-build --no-restore --project ./config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore
     }
     finally {
         Pop-Location

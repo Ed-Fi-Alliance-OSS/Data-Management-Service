@@ -1,0 +1,29 @@
+{
+    // Copy to appsettings.Development.json (gitignored) before running the Configuration Service
+    // locally. The shipped appsettings.json leaves every secret below blank on purpose, so the
+    // service cannot run until they are supplied here. A blank DatabaseSettings:EncryptionKey stops
+    // startup; the others fail later, at request or token time.
+    "DatabaseSettings": {
+        // Must match the PostgreSQL instance started for local development.
+        "DatabaseConnection": "host=localhost;port=5432;username=postgres;database=edfi_configurationservice;",
+        // At least 32 ASCII characters, and not the former shipped default. Only the first 32
+        // characters contribute to the AES-256 key. This is the same local-development value the
+        // eng/docker-compose environment files use, so connection strings encrypted here stay
+        // readable from a Compose stack and vice versa. Change it for any deployment: it is
+        // public in this repository.
+        "EncryptionKey": "secret!_32_chars_xxxxxxxxxxxxxxx"
+    },
+    "IdentitySettings": {
+        "AllowRegistration": true,
+        // Local-development default created by setup-keycloak.ps1 / setup-openiddict.ps1.
+        "ClientSecret": "ValidClientSecret1234567890!Abcd",
+        // Protects the token signing key stored in the database. Required because signing keys come
+        // from the database unless IdentitySettings:UseCertificates is set, which nothing sets.
+        "EncryptionKey": "QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz"
+    },
+    "Serilog": {
+        "MinimumLevel": {
+            "Default": "Debug"
+        }
+    }
+}

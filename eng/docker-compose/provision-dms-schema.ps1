@@ -906,7 +906,7 @@ function Get-ProvisionCmsReadOnlyAccessGuidance {
         $lines.Add("  ConfigurationServiceSettings__ClientSecret = (present in environment file)")
     }
     if ([string]::IsNullOrWhiteSpace($encryptionKey)) {
-        $lines.Add("  ConfigurationServiceSettings__EncryptionKey = (set to DMS_CONFIG_DATABASE_ENCRYPTION_KEY from your .env file; .env.example default DefaultEncryptionKey32CharactersX1)")
+        $lines.Add("  ConfigurationServiceSettings__EncryptionKey = (set to DMS_CONFIG_DATABASE_ENCRYPTION_KEY from your .env file; .env.example default secret!_32_chars_xxxxxxxxxxxxxxx)")
     }
     else {
         $lines.Add("  ConfigurationServiceSettings__EncryptionKey = (present in environment file as DMS_CONFIG_DATABASE_ENCRYPTION_KEY)")

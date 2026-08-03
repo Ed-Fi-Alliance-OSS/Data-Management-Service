@@ -75,6 +75,17 @@ app.UseExceptionHandler(o => { });
 
 app.UseMiddleware<TenantResolutionMiddleware>();
 
+// Deliberately validated outside ReportInvalidConfiguration: that gate installs reporting middleware
+// and lets the host keep running, whereas a rejected connection-string encryption key must stop
+// startup before any schema deployment. Resolving it here also means a rejected key stops startup
+// even when another configuration section is invalid as well, and it runs every DatabaseSettings
+// rule, so a blank DatabaseConnection stops startup too. The unhandled OptionsValidationException
+// exits non-zero and carries the validator's failure text. It is left unhandled rather than following
+// the LogCritical + Environment.Exit(-1) pattern used further down this file because
+// DatabaseOptionsStartupTests asserts on that exception, and terminating the process instead would
+// make the behavior untestable under WebApplicationFactory.
+_ = app.Services.GetRequiredService<IOptions<DatabaseOptions>>().Value;
+
 if (!ReportInvalidConfiguration(app))
 {
     InitializeDatabase(app);
@@ -159,7 +170,12 @@ async Task InitializeClaimsData(WebApplication app)
         app.Logger.LogInformation("Checking if initial claims data needs to be loaded");
         try
         {
-            IClaimsDataLoader claimsLoader = app.Services.GetRequiredService<IClaimsDataLoader>();
+            // IClaimsDataLoader is scoped (it reaches the scoped ITenantContextProvider through its
+            // repositories), so startup resolution needs its own scope: the root provider rejects
+            // scoped services when scope validation is on.
+            using IServiceScope claimsLoaderScope = app.Services.CreateScope();
+            IClaimsDataLoader claimsLoader =
+                claimsLoaderScope.ServiceProvider.GetRequiredService<IClaimsDataLoader>();
             ClaimsDataLoadResult result = await claimsLoader.LoadInitialClaimsAsync();
 
             switch (result)

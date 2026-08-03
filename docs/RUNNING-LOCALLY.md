@@ -40,6 +40,41 @@ different supported version, pass `-DataStandardVersion` (e.g. `6.1`) to
 [Data Standard Versions](./DATA-STANDARD-VERSIONS.md) for how version selection
 works and how to add or drop a version.
 
+## Running the Configuration Service
+
+The shipped `appsettings.json` for the Configuration Service leaves
+`DatabaseSettings:EncryptionKey` blank, and the service refuses to start until it
+is supplied. `IdentitySettings:ClientSecret` and `IdentitySettings:EncryptionKey`
+are blank as well; the service starts without those, but a blank `ClientSecret`
+makes it answer every request with a configuration report, and a blank
+`IdentitySettings:EncryptionKey` fails the first token request. Copy the starter
+file and adjust it for your machine:
+
+```shell
+# From base directory
+cd src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore
+cp appsettings.Development.json.example appsettings.Development.json
+cd ../../../../
+./build-config.ps1 build
+./build-config.ps1 run
+```
+
+If you already have an `appsettings.Development.json`, add the missing values to
+it instead of copying over it. Replacing the file changes the derived encryption
+key, which orphans any connection strings already stored in your local
+Configuration Service database.
+
+`appsettings.Development.json` is gitignored, so the values stay on your
+machine. `DatabaseSettings:EncryptionKey` must be at least 32 ASCII characters;
+only the first 32 contribute to the AES-256 key that protects stored connection
+strings. The starter file uses the same value as the `eng/docker-compose`
+environment files, so a locally run
+Configuration Service and a Compose stack can read each other's encrypted
+connection strings. Replace it for any real deployment — see
+[Configuration](./CONFIGURATION.md#configurationservicesettings) for the full
+rules, and for what to do after changing a key that already has data encrypted
+under it.
+
 ## Running the EdFi.DataManagementService.Backend.Postgresql.Test.Integration
 
 To run the integration tests locally, execute the following command in a PowerShell

@@ -112,8 +112,12 @@ public static class WebApplicationBuilderExtensions
         >();
         webApplicationBuilder.Services.AddSingleton<IClaimsValidator, ClaimsValidator>();
         webApplicationBuilder.Services.AddSingleton<IClaimsFragmentComposer, ClaimsFragmentComposer>();
-        webApplicationBuilder.Services.AddSingleton<IClaimsDataLoader, ClaimsDataLoader>();
-        webApplicationBuilder.Services.AddSingleton<IClaimsUploadService, ClaimsUploadService>();
+        // Scoped, not singleton: both depend (via IClaimSetRepository) on the scoped
+        // ITenantContextProvider below, and a singleton registration fails DI scope validation at
+        // startup in the Development environment. Neither holds state of its own — the shared
+        // in-memory claims state lives in the singleton IClaimsProvider.
+        webApplicationBuilder.Services.AddScoped<IClaimsDataLoader, ClaimsDataLoader>();
+        webApplicationBuilder.Services.AddScoped<IClaimsUploadService, ClaimsUploadService>();
         webApplicationBuilder.Services.AddSingleton<
             IConnectionStringEncryptionService,
             ConnectionStringEncryptionService
