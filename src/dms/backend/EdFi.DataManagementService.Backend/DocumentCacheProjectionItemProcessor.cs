@@ -258,6 +258,11 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         RecordWriterOutcome(targetContext, invocationKind, writerResult);
         switch (writerResult)
         {
+            case DocumentCacheWriterResult.AlreadyCurrentNoWork:
+                targetContext.FailureBackoffState.ClearFailure(workItem.DocumentId);
+                LogContinuingWriterOutcome(targetContext, writerResult);
+                return DocumentCacheProjectionItemProcessResult.Continue;
+
             case DocumentCacheWriterResult.AlreadyCurrentAcknowledged:
             case DocumentCacheWriterResult.CandidateWrittenAcknowledged:
                 targetContext.FailureBackoffState.ClearFailure(workItem.DocumentId);

@@ -74,12 +74,16 @@ public class Given_DocumentCacheWriterClassification
         );
 
         selection.Action.Should().Be(DocumentCacheWriterSelectedAction.ReturnAlreadyCurrentWithoutWork);
-        selection.Outcome.Should().Be(DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged);
+        selection.Outcome.Should().Be(DocumentCacheWriterOutcome.AlreadyCurrentNoWork);
         selection.WritesCache.Should().BeFalse();
         selection.AcknowledgesWork.Should().BeFalse();
         selection.RequestsCacheAheadLatchFlow.Should().BeFalse();
         selection.ExpectedContentVersion.Should().BeNull();
-        selection.TerminalResult.Should().BeOfType<DocumentCacheWriterResult.AlreadyCurrentAcknowledged>();
+        selection
+            .TerminalResult.Should()
+            .BeOfType<DocumentCacheWriterResult.AlreadyCurrentNoWork>()
+            .Which.CurrentContentVersion.Should()
+            .Be(11);
     }
 
     [Test]

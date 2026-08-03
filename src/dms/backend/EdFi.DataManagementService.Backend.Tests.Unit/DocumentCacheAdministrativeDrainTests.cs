@@ -145,6 +145,71 @@ public class Given_DocumentCacheAdministrativeDrain
     }
 
     [Test]
+    public async Task It_does_not_mark_mutated_or_acknowledged_when_selected_work_disappears_before_writer_classification()
+    {
+        var pager = new RecordingWorkPager(
+            new DocumentProjectionWorkPage([WorkItem(101, requiredContentVersion: 10)], pageSize: 3),
+            new DocumentProjectionWorkPage([], pageSize: 3),
+            new DocumentProjectionWorkPage([], pageSize: 3)
+        );
+        var materializer = new RecordingDocumentCacheMaterializer();
+        var ordinaryWriter = new RecordingDocumentCacheWriter();
+        var sessionBoundWriter = new RecordingSessionBoundWriter(
+            DocumentCacheSessionBoundWriterResult.FromWriterResult(
+                new DocumentCacheWriterResult.AlreadyCurrentNoWork(10),
+                commandExecutionMutated: false
+            )
+        );
+        DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext(
+            materializer,
+            ordinaryWriter,
+            sessionBoundWriter
+        );
+        var primitives = new RecordingAdministrativePrimitives(
+            new DocumentCacheAdministrativeProjectedStateEmptinessResult(
+                documentCacheEmpty: true,
+                documentProjectionWorkEmpty: true,
+                "empty"
+            )
+        );
+        DocumentCacheAdministrativeCommandExecutionContext context = CreateCommandContext(
+            primitives,
+            new RecordingMutexLease(),
+            targetContext
+        );
+        DocumentCacheProjectionScheduler scheduler = CreateRealScheduler(
+            new DocumentCacheProjectionDrainPageProcessor(
+                pager,
+                new DocumentCacheProjectionItemProcessor(
+                    new MutableTimeProvider(ObservedAt),
+                    NullLogger<DocumentCacheProjectionItemProcessor>.Instance
+                ),
+                NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+                new MutableTimeProvider(ObservedAt)
+            )
+        );
+        DocumentCacheAdministrativeDrainer drainer = CreateDrainer(
+            scheduler,
+            new RecordingDrainDelay(new MutableTimeProvider(ObservedAt))
+        );
+
+        DocumentCacheAdministrativeDrainToEmptyResult result =
+            await targetContext.DrainExecutor.RunAdministrativeCommandAsync(async cancellationToken =>
+            {
+                using IDisposable binding = targetContext.BindAdministrativeCommand(context);
+                return await drainer.DrainToEmptyAsync(context, cancellationToken).ConfigureAwait(false);
+            });
+
+        result.Completed.Should().BeTrue();
+        result.ProcessedItemCount.Should().Be(1);
+        result.AcknowledgedOrRemovedItemCount.Should().Be(0);
+        context.Mutated.Should().BeFalse();
+        ordinaryWriter.Calls.Should().BeEmpty();
+        materializer.Calls.Should().BeEmpty();
+        sessionBoundWriter.Calls.Should().ContainSingle();
+    }
+
+    [Test]
     public async Task It_fails_immediately_when_session_bound_writer_delete_race_retry_is_exhausted()
     {
         var pager = new RecordingWorkPager(

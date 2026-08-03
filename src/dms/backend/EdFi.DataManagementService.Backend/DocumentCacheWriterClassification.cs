@@ -296,10 +296,10 @@ internal sealed record DocumentCacheWriterClassificationSelection
     ) =>
         new(
             DocumentCacheWriterSelectedAction.ReturnAlreadyCurrentWithoutWork,
-            DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged,
+            DocumentCacheWriterOutcome.AlreadyCurrentNoWork,
             expectedContentVersion: null,
             candidate: null,
-            terminalResult: new DocumentCacheWriterResult.AlreadyCurrentAcknowledged(currentContentVersion)
+            terminalResult: new DocumentCacheWriterResult.AlreadyCurrentNoWork(currentContentVersion)
         );
 
     public static DocumentCacheWriterClassificationSelection WriteCandidateThenAcknowledgeWork(

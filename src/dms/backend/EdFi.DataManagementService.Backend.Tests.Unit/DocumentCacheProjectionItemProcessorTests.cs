@@ -64,6 +64,30 @@ public class Given_DocumentCacheProjectionItemProcessor
     }
 
     [Test]
+    public async Task It_treats_already_current_no_work_as_non_acknowledging_success()
+    {
+        RecordingDocumentCacheWriter writer = new(new DocumentCacheWriterResult.AlreadyCurrentNoWork(10));
+        RecordingDocumentCacheMaterializer materializer = new();
+        DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext(materializer, writer);
+        targetContext.FailureBackoffState.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly,
+            "previous failure",
+            ObservedAt.AddSeconds(-1),
+            TimeSpan.FromSeconds(10)
+        );
+
+        DocumentCacheProjectionItemProcessResult result = await CreateProcessor()
+            .ProcessItemAsync(Request(targetContext, WorkItem(101, requiredContentVersion: 10)));
+
+        result.Outcome.Should().Be(DocumentCacheProjectionItemProcessOutcome.Continue);
+        result.AcknowledgedOrRemovedDurableWork.Should().BeFalse();
+        result.DocumentScopedFailureRecorded.Should().BeFalse();
+        targetContext.FailureBackoffState.Count.Should().Be(0);
+        materializer.Calls.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_materializes_only_when_the_writer_requests_materialization_and_then_writes_the_candidate()
     {
         DocumentCacheMaterializationCandidate candidate = Candidate(101, contentVersion: 11);

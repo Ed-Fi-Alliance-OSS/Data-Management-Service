@@ -119,6 +119,7 @@ public enum DocumentCacheWriterOutcome
     DeleteRaceRetryExhausted = 13,
     CacheAheadUnconfirmedCallerAbort = 14,
     DeterministicInvariantOrTargetFailure = 15,
+    AlreadyCurrentNoWork = 16,
 }
 
 public enum DocumentCacheWriterFenceReason
@@ -167,6 +168,21 @@ public abstract record DocumentCacheWriterResult
             DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged;
 
         public long AcknowledgedContentVersion { get; }
+    }
+
+    public sealed record AlreadyCurrentNoWork : DocumentCacheWriterResult
+    {
+        public AlreadyCurrentNoWork(long currentContentVersion)
+        {
+            CurrentContentVersion = RequirePositiveContentVersion(
+                currentContentVersion,
+                nameof(currentContentVersion)
+            );
+        }
+
+        public override DocumentCacheWriterOutcome Outcome => DocumentCacheWriterOutcome.AlreadyCurrentNoWork;
+
+        public long CurrentContentVersion { get; }
     }
 
     public sealed record CandidateWrittenAcknowledged : DocumentCacheWriterResult

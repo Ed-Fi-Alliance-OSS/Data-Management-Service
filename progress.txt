@@ -197,3 +197,8 @@ Completed administrative-runner follow-up task for reference/design/backend-rede
 Key decisions: runner retains resolved target context before mutex acquisition; supervisor treats that retention as command ownership for replacement/removal reconciliation; removed post-mutex snapshot/current-generation rejection so accepted commands continue on pinned context and report noncurrent diagnostics.
 Files changed: DocumentCacheAdministrativeCommandRunner.cs; DocumentCacheProjectionSupervisor.cs; DocumentCacheAdministrativeCommandRunnerTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Remaining follow-up tasks still open in tasks.json.
+
+Completed session-bound-writer no-work mutation accounting follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added AlreadyCurrentNoWork writer result for cache-current/no-work observations; session-bound result mutation remains true only for prior command mutation or writer DML outcomes; item processing clears local failure but does not ack/count/MarkMutated for no-work observation.
+Files changed: DocumentCacheWriterContracts.cs; DocumentCacheWriterClassification.cs; DocumentCacheProjectionItemProcessor.cs; focused writer/session-bound/drain tests; PG/MSSQL writer integration tests; tasks.json; progress.txt.
+Blockers/notes: default MSSQL admin env unset; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Remaining follow-up tasks still open in tasks.json.

@@ -178,7 +178,8 @@ public class Given_DocumentCacheWriterContract
                 "CallerAbortedRetry",
                 "DeleteRaceRetryExhausted",
                 "CacheAheadUnconfirmedCallerAbort",
-                "DeterministicInvariantOrTargetFailure"
+                "DeterministicInvariantOrTargetFailure",
+                "AlreadyCurrentNoWork"
             );
 
         CreateRepresentativeResults()
@@ -343,6 +344,7 @@ public class Given_DocumentCacheWriterContract
     private static DocumentCacheWriterResult[] CreateRepresentativeResults() =>
         [
             new DocumentCacheWriterResult.AlreadyCurrentAcknowledged(11),
+            new DocumentCacheWriterResult.AlreadyCurrentNoWork(11),
             new DocumentCacheWriterResult.CandidateWrittenAcknowledged(CreateCandidate(), 11),
             new DocumentCacheWriterResult.NeedsMaterialization(11),
             new DocumentCacheWriterResult.LifecycleOrLatchFenced(

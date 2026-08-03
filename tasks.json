@@ -737,7 +737,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheWriter|FullyQualifiedName~DocumentCacheSessionBoundWriter\"",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheWriter|FullyQualifiedName~DocumentCacheSessionBoundWriter\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "transaction-cancellation",

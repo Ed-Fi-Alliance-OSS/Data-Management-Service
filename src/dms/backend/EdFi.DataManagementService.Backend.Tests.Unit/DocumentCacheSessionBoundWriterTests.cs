@@ -132,4 +132,19 @@ public class Given_A_DocumentCacheSessionBoundWriterResult
         result.DiagnosticCategory.Should().BeNull();
         result.Mutated.Should().BeTrue();
     }
+
+    [Test]
+    public void It_keeps_already_current_no_work_observations_non_mutating()
+    {
+        DocumentCacheSessionBoundWriterResult result = DocumentCacheSessionBoundWriterResult.FromWriterResult(
+            new DocumentCacheWriterResult.AlreadyCurrentNoWork(currentContentVersion: 12),
+            commandExecutionMutated: false
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+        result.DiagnosticCategory.Should().BeNull();
+        result.Mutated.Should().BeFalse();
+        result.WriterResult.Should().BeOfType<DocumentCacheWriterResult.AlreadyCurrentNoWork>();
+    }
 }

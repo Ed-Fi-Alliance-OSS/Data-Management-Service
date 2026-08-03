@@ -168,6 +168,46 @@ public class Given_A_Mssql_DocumentCacheWriter
             .Be("session-bound");
     }
 
+    [Test]
+    [Category("DocumentCacheSessionBoundWriter")]
+    public async Task DocumentCacheSessionBoundWriter_it_returns_non_mutating_already_current_without_work_on_the_mutex_session()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await InsertCacheRowAsync(source, contentVersion: 10);
+        await DeleteWorkAsync(source.DocumentId);
+        var mutex = new MssqlDocumentCacheAdministrativeMutex(
+            NullLogger<MssqlDocumentCacheAdministrativeMutex>.Instance
+        );
+
+        await using IDocumentCacheAdministrativeMutexLease lease = await mutex.AcquireAsync(
+            new DocumentCacheTargetConnectionInput(
+                RelationalProviderToken.SqlServer,
+                _database.ConnectionString
+            )
+        );
+
+        DocumentCacheSessionBoundWriterResult result = await (
+            (IDocumentCacheSessionBoundWriter)_writer
+        ).WriteAsync(
+            new DocumentCacheSessionBoundWriterRequest(
+                lease,
+                CreateRequest(source, candidate: null),
+                commandExecutionMutated: false
+            )
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+        result.Mutated.Should().BeFalse();
+        result
+            .WriterResult.Should()
+            .BeOfType<DocumentCacheWriterResult.AlreadyCurrentNoWork>()
+            .Which.CurrentContentVersion.Should()
+            .Be(10);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+    }
+
     [TestCaseSource(nameof(CancellationRollbackHookCases))]
     [Category("DocumentCacheWriterCancellation")]
     public async Task DocumentCacheWriterCancellation_it_finishes_started_transactions_after_caller_cancellation(
@@ -289,8 +329,8 @@ public class Given_A_Mssql_DocumentCacheWriter
 
         result
             .Should()
-            .BeOfType<DocumentCacheWriterResult.AlreadyCurrentAcknowledged>()
-            .Which.AcknowledgedContentVersion.Should()
+            .BeOfType<DocumentCacheWriterResult.AlreadyCurrentNoWork>()
+            .Which.CurrentContentVersion.Should()
             .Be(10);
         (await ReadCacheRowAsync(source.DocumentId)).ContentVersion.Should().Be(10);
         (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
@@ -901,6 +941,7 @@ public class Given_A_Mssql_DocumentCacheWriter
             .BeSubsetOf([
                 DocumentCacheWriterOutcome.CandidateWrittenAcknowledged,
                 DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged,
+                DocumentCacheWriterOutcome.AlreadyCurrentNoWork,
                 DocumentCacheWriterOutcome.RacingWriterLost,
             ]);
         (await ReadCacheCountAsync(source.DocumentId)).Should().Be(1);
@@ -1072,6 +1113,7 @@ public class Given_A_Mssql_DocumentCacheWriter
             .BeSubsetOf([
                 DocumentCacheWriterOutcome.CandidateWrittenAcknowledged,
                 DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged,
+                DocumentCacheWriterOutcome.AlreadyCurrentNoWork,
                 DocumentCacheWriterOutcome.RacingWriterLost,
             ]);
         (await ReadCacheCountAsync(duplicate.DocumentId)).Should().Be(1);
