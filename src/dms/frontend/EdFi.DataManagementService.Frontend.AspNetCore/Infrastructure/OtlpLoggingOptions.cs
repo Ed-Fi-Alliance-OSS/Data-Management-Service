@@ -26,6 +26,10 @@ public class OtlpLoggingOptions
 
     public string? ServiceInstanceId { get; set; }
 
+    // Header values are secret material: source them from a secret store or environment
+    // variable, never a committed configuration file.
+    public Dictionary<string, string> Headers { get; set; } = [];
+
     /// <summary>
     /// Builds the OpenTelemetry resource attributes for this service. Optional attributes that
     /// have not been configured are simply absent from the exported resource. The deployment

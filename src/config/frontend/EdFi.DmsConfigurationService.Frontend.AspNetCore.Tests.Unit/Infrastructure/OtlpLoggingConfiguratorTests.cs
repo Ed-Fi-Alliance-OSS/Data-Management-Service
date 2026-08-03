@@ -48,6 +48,7 @@ public class OtlpLoggingConfiguratorTests
         options.Endpoint.Should().BeNull();
         options.DeploymentEnvironment.Should().BeNull();
         options.ServiceInstanceId.Should().BeNull();
+        options.Headers.Should().BeEmpty();
     }
 
     [Test]
@@ -175,6 +176,8 @@ public class OtlpLoggingConfiguratorTests
                     ["OtlpLogging:ServiceVersion"] = "9.9.9",
                     ["OtlpLogging:DeploymentEnvironment"] = "production",
                     ["OtlpLogging:ServiceInstanceId"] = "instance-42",
+                    ["OtlpLogging:Headers:Authorization"] = "Bearer test-token",
+                    ["OtlpLogging:Headers:X-Api-Key"] = "k-123",
                 }
             )
             .Build();
@@ -190,6 +193,69 @@ public class OtlpLoggingConfiguratorTests
         options.ServiceVersion.Should().Be("9.9.9");
         options.DeploymentEnvironment.Should().Be("production");
         options.ServiceInstanceId.Should().Be("instance-42");
+        options
+            .Headers.Should()
+            .BeEquivalentTo(
+                new Dictionary<string, string>
+                {
+                    ["Authorization"] = "Bearer test-token",
+                    ["X-Api-Key"] = "k-123",
+                }
+            );
+    }
+
+    private sealed class NeverCompletingHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return new HttpResponseMessage();
+        }
+    }
+
+    private sealed class ImmediateOkHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        ) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+    }
+
+    [Test]
+    public async Task BoundedExportTimeoutHandler_Cancels_A_Request_That_Exceeds_The_Timeout()
+    {
+        // Arrange
+        using var handler = new BoundedExportTimeoutHandler(
+            TimeSpan.FromMilliseconds(100),
+            new NeverCompletingHandler()
+        );
+        using var client = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
+
+        // Act
+        var act = async () => await client.GetAsync("http://127.0.0.1:9/never-reached");
+
+        // Assert
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Test]
+    public async Task BoundedExportTimeoutHandler_Passes_Through_A_Request_That_Completes_In_Time()
+    {
+        // Arrange
+        using var handler = new BoundedExportTimeoutHandler(
+            TimeSpan.FromSeconds(5),
+            new ImmediateOkHandler()
+        );
+        using var client = new HttpClient(handler);
+
+        // Act
+        var response = await client.GetAsync("http://127.0.0.1:9/never-reached");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Test]

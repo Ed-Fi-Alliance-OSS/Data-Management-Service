@@ -60,6 +60,13 @@ public class OtlpLoggingOptions
     public string? ServiceInstanceId { get; set; }
 
     /// <summary>
+    /// Optional headers sent with every OTLP export request, e.g. an "Authorization" value for an
+    /// authenticated collector receiver. Header values are secret material: source them from a
+    /// secret store or environment variable, never a committed configuration file.
+    /// </summary>
+    public Dictionary<string, string> Headers { get; set; } = [];
+
+    /// <summary>
     /// Builds the OTLP resource attributes for this configuration. "service.name" and "service.version"
     /// are always included; optional attributes are included only when set and are otherwise simply
     /// absent from the exported resource. The deployment environment is emitted under both the legacy

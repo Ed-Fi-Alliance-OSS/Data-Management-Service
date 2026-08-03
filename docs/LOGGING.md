@@ -251,6 +251,11 @@ The `OtlpLogging` section supports these keys:
   the legacy `deployment.environment` resource attribute and its stable
   semantic-convention replacement `deployment.environment.name`.
 * `ServiceInstanceId`: optional `service.instance.id` resource attribute.
+* `Headers`: optional headers sent with every export request, for example an
+  `Authorization` value for an authenticated collector receiver. Header
+  values are secrets: supply them through environment variables (for
+  example, `OtlpLogging__Headers__Authorization`) or a secret store, never a
+  committed configuration file.
 
 > [!NOTE]
 > OTLP export is disabled by default. Enabling it does not replace console
@@ -267,16 +272,55 @@ The `OtlpLogging` section supports these keys:
 > `ReadFrom.Configuration`. The `OtlpLogging` section is the only supported
 > surface for enabling OTLP export. The standard `OTEL_EXPORTER_OTLP_*`
 > environment variables are likewise ignored by the exporter, so they cannot
-> silently override the configured endpoint, protocol, or resource identity.
+> silently override the configured endpoint, protocol, headers, or resource
+> identity. A sink enabled through raw Serilog configuration bypasses every
+> `OtlpLogging` safeguard described in this section, including the ignored
+> OTLP environment variables and the bounded export attempts.
 
 Vendor-specific integrations belong outside the CMS and DMS processes: send
 OTLP directly to a compatible service, or through an OpenTelemetry Collector,
 to Splunk, Datadog, Elastic, Seq, CloudWatch, Azure, or another backend of
 choice. CMS and DMS do not document or bundle vendor-specific sinks. The
-`OtlpLogging` section has no authentication-header key, and the standard
-`OTEL_EXPORTER_OTLP_HEADERS` variable is ignored along with the other OTLP
-environment variables, so backends that require authentication must be
-reached through an OpenTelemetry Collector rather than directly.
+standard `OTEL_EXPORTER_OTLP_HEADERS` variable is ignored along with the
+other OTLP environment variables; authentication headers for the receiving
+endpoint are configured through the `OtlpLogging:Headers` section instead.
+
+### Security Considerations for OTLP Export
+
+OTLP export sends the full structured log stream out of the process, so the
+export path deserves the same care as a database connection string.
+
+* **Prefer `https://` endpoints.** A cleartext `http://` endpoint provides
+  neither confidentiality nor server authentication: anyone on the network
+  path, or in control of DNS for the collector hostname, can read or divert
+  the exported stream. TLS endpoints are validated with standard platform
+  certificate validation, and no `OtlpLogging` setting can weaken that
+  validation. Reserve cleartext for a same-host or otherwise trusted hop,
+  such as a localhost agent or an in-cluster sidecar.
+* **Treat the endpoint and headers as trust-sensitive configuration.** Any
+  configuration layer that can set `OtlpLogging__Endpoint` silently redirects
+  the log stream, and successful delivery produces no console evidence.
+  Audit the same configuration sources you would for a connection string,
+  and source header values from a secret store or environment variable.
+* **Secure the collector's receiver.** A receiver reachable beyond a trusted
+  network boundary should require authentication (for example, a bearer
+  token checked by the collector), which CMS and DMS supply through
+  `OtlpLogging:Headers`. Alternatively, keep the first hop inside a trusted
+  boundary - a localhost agent, a sidecar, or a cluster service restricted
+  by network policy - and let the collector make the authenticated,
+  TLS-protected connection to the backend. Never expose an unauthenticated
+  OTLP receiver to untrusted networks: anyone who can reach it can inject
+  forged log records or flood the pipeline.
+* **Verbosity governs what leaves the host.** The exporter ships the same
+  events the console sink sees, so raising `Serilog:MinimumLevel` to `Debug`
+  sends debug detail (including anonymized request payloads) to the
+  collector.
+* **Delivery is bounded and fail-safe.** Export batches up to 1,000 events
+  every 2 seconds, queues at most 100,000 events while the collector is
+  unreachable, abandons a failing batch after 10 minutes, and caps every
+  export attempt at 30 seconds so a stalled collector cannot wedge the
+  exporter or delay shutdown. Delivery failures never block startup or
+  request serving; they are visible only on stderr through `SelfLog`.
 
 ### Deployment Recipes
 

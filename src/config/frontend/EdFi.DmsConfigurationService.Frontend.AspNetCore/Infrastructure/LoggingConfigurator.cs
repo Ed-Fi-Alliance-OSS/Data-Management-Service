@@ -60,12 +60,31 @@ public static class LoggingConfigurator
                 o.Endpoint = options.Endpoint;
                 o.Protocol = options.Protocol;
                 o.ResourceAttributes = new Dictionary<string, object>(options.ToResourceAttributes());
+
+                foreach (var header in options.Headers)
+                {
+                    if (!string.IsNullOrWhiteSpace(header.Key))
+                    {
+                        o.Headers[header.Key] = header.Value;
+                    }
+                }
+
+                // Bound every export attempt: the sink's gRPC calls carry no deadline and would
+                // otherwise hang indefinitely on a stalled collector, wedging the batch worker
+                // and blocking logger disposal at shutdown.
+                o.HttpMessageHandler = new BoundedExportTimeoutHandler(
+                    ExportAttemptTimeout,
+                    new SocketsHttpHandler()
+                );
             },
             ignoreEnvironment: true
         );
 
         return true;
     }
+
+    // Cap on a single OTLP export attempt, applied to both protocols through the message handler.
+    internal static readonly TimeSpan ExportAttemptTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Configures the application's Serilog logger from <paramref name="configuration"/>, including
