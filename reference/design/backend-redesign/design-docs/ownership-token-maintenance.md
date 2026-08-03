@@ -313,7 +313,7 @@ client's tenant continues to be inferred through `ApiClient -> Application -> Ve
 
 | Column | Type | Rules |
 | --- | --- | --- |
-| `ApiClientId` | `BIGINT` | Required |
+| `ApiClientId` | `INT` | Required |
 | `OwnershipTokenId` | `SMALLINT` | Required |
 | `CreatedAt` | Existing provider timestamp type | Required |
 | `CreatedBy` | Existing audit-user type | Nullable per existing CMS convention |
@@ -329,6 +329,9 @@ Constraints and indexes:
 
 The composite key deliberately improves on the legacy ODS table, which did not prevent duplicate
 assignment rows.
+`ApiClientId` follows the parent `dmscs.ApiClient.Id` type, which DMS-1337 retyped to `INT`
+after this record's evidence baseline; see the
+[operational-lifecycle record's erratum](ownership-token-operational-lifecycle.md#errata-to-the-dms-1058-record).
 
 ### Tenant rules
 
