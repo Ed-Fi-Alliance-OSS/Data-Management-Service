@@ -1095,9 +1095,14 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
     /// maintenance trigger (which copies it from the concrete root row image), so it is not writable by
     /// write-plan compilation. No scalar type is carried because <c>uuid</c>/<c>uniqueidentifier</c> has no
     /// dialect-neutral <see cref="ScalarKind"/>; the DDL emitter renders it from
-    /// <see cref="ColumnKind.DocumentUuid"/>. No unique constraint is added: the <c>DocumentId</c> primary
-    /// key already keeps the value unique, because the concrete root table's
-    /// <c>UX_&lt;Root&gt;_DocumentUuid</c> owns the uniqueness of <c>DocumentUuid</c> per document.
+    /// <see cref="ColumnKind.DocumentUuid"/>. No unique constraint is added, and that is a behavioral
+    /// argument rather than a structural one: the two constraints do not compose into uniqueness here.
+    /// The <c>DocumentId</c> primary key makes each identity row unique, and each concrete root table's
+    /// <c>UX_&lt;Root&gt;_DocumentUuid</c> makes the uuid unique <em>within that root table</em>, but
+    /// no declared constraint spans the concrete tables that feed one abstract identity table. The
+    /// column stays unique in practice because the maintenance trigger only ever copies the uuid of the
+    /// root row keyed by the same <c>DocumentId</c>, and <c>DocumentId</c> is drawn from one sequence
+    /// shared by every root table.
     /// </summary>
     private static DbColumnModel BuildDocumentUuidColumn()
     {

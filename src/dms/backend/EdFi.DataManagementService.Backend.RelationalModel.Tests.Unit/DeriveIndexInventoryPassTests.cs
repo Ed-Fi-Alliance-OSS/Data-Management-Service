@@ -44,9 +44,11 @@ public class Given_FK_Columns_Covered_By_PK
     [Test]
     public void It_should_suppress_FK_support_index_when_PK_covers_FK_columns()
     {
-        // The Enrollment root table has PK on DocumentId and FK to dms.Document on DocumentId.
-        // The FK columns [DocumentId] are a leftmost prefix of PK [DocumentId], so the
-        // FK-support index should be suppressed.
+        // The Enrollment root table has PK on DocumentId. The single-column FK on that same
+        // DocumentId used to be FK_Enrollment_Document, and it is gone with dms.Document, so no
+        // foreign key declares [DocumentId] here any more. The assertion therefore pins an absence:
+        // whether by leftmost-prefix suppression or by there being no FK to support, nothing emits a
+        // DocumentId FK-support index on a root table.
         var enrollmentFkIndexes = _indexes.Where(index =>
             index.Table.Name == "Enrollment"
             && index.Kind == DbIndexKind.ForeignKeySupport

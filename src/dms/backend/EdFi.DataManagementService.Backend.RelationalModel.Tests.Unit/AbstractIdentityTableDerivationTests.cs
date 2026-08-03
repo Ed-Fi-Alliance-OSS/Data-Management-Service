@@ -68,7 +68,8 @@ public class Given_Abstract_Identity_Table_Derivation
     }
 
     /// <summary>
-    /// It should include the DocumentUuid column carried from dms.Document.
+    /// It should include the DocumentUuid column the abstract identity maintenance trigger copies
+    /// from the concrete root row.
     /// </summary>
     [Test]
     public void It_should_include_document_uuid_column()

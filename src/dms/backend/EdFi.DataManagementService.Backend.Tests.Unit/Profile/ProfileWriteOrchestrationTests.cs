@@ -93,8 +93,10 @@ public class Given_No_Profile_Relational_Post
     public void It_routes_through_the_executor()
     {
         _result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(_documentUuid, "\"51\""));
-        // POST target resolution moved into the write session, so the pre-session lookup service is never
-        // called. The executor still receives one request carrying the caller-reserved candidate uuid.
+        // Resource POST target resolution lives in the write session, and IRelationalWriteTargetLookupService
+        // no longer declares a resource arm at all -- only the two descriptor methods -- so the faked
+        // lookup service here is never reached. The executor receives one request, carrying the
+        // caller-reserved candidate uuid on RelationalWriteTargetRequest.Post.
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )

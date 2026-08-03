@@ -89,7 +89,7 @@ file sealed class GuardedNoOpConcurrentContentVersionBumpFreshnessChecker(
         if (rowsAffected != GuardedNoOpContentVersionBump.ExpectedRowsAffected)
         {
             throw new InvalidOperationException(
-                $"Expected a document and root-mirror content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
+                $"Expected the root content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
             );
         }
     }
@@ -153,7 +153,7 @@ internal sealed class GuardedNoOpCommitWindowCoordinator(NpgsqlDataSourceProvide
         if (rowsAffected != GuardedNoOpContentVersionBump.ExpectedRowsAffected)
         {
             throw new InvalidOperationException(
-                $"Expected a pending document and root-mirror content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
+                $"Expected the pending root content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
             );
         }
 
