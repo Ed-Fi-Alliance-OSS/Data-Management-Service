@@ -3,8 +3,8 @@
 Status: Draft (planning aid derived from `reference/design/backend-redesign/epics/*`).
 
 Scope:
-- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 20 epic files and
-  200 story/support files).
+- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 21 epic files and
+  224 story/support files).
 - Captures *implementation* dependencies implied by acceptance criteria and shared design contracts.
 - Does not attempt to define ownership, sequencing within sprints, or exact delivery dates.
 
@@ -45,6 +45,7 @@ graph TD
   E17["E17 MSSQL implementation and parity gap closure"]
   E18["E18 DocumentCache projection"]
   E19["E19 Relational CDC/Kafka streaming"]
+  E20["E20 Partitioned cursor paging"]
 
   E00 --> E01 --> E02 --> E03 --> E04
 
@@ -85,6 +86,10 @@ graph TD
   E16 --> E19
   E18 --> E19
 
+  E08 --> E20
+  E10 --> E20
+  E14 --> E20
+
   E14
   E17
 ```
@@ -95,6 +100,8 @@ Notes:
 - `E19` connector-template and fixture work can proceed in parallel, but its integrated
   delivery consumes the E18 projection and status outputs. Behavioral ownership is defined
   only by the design documents linked from the two epics.
+- `E20` reuses E08 page selection/hydration, E10 live change-version filters, and E14 row-level
+  authorization. E12 benchmarks and E13 parity/E2E infrastructure are soft delivery inputs.
 
 ---
 
@@ -122,6 +129,7 @@ Notes:
 | E17 | [Close MSSQL Implementation and Parity Gaps](17-mssql-gap-closure/EPIC.md) | — | SQL Server deployment, runtime-validation, persistence-correctness, and operational-workflow parity |
 | E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Projection schema, runtime, verification, utility, and operator work packages |
 | E19 | [Relational CDC/Kafka Streaming](19-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Provider, connector, bootstrap, verification, E2E, and operator work packages |
+| E20 | [Partitioned Cursor Paging](20-partitioned-cursor-paging/EPIC.md) | E08, E10, E14 | ODS-compatible cursor GET-many paging, authorized partition boundaries, OpenAPI, parity, and performance evidence |
 
 ---
 
