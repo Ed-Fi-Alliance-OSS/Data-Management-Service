@@ -422,10 +422,19 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
 
     .DESCRIPTION
     Compares the target's effective host/port - the identity the host-side translation already
-    produced, and the same fields TargetKey is built from - against
-    Get-LocalComposeDatabaseHostSideEndpoint. No new parsing: a Docker-internal target has already
-    been rewritten to the local coordinates by this point, and a target authored directly against
-    those coordinates is the same physical server, so both answer true.
+    produced, and the same fields TargetKey is built from - against the published port from
+    Get-LocalComposeDatabaseHostSideEndpoint. A Docker-internal target has already been rewritten to
+    the local coordinates by this point, and a target authored directly against those coordinates is
+    the same physical server, so both answer true.
+
+    The host is matched as a LOOPBACK EQUIVALENCE CLASS, not against one canonical spelling, and the
+    SQL Server host is compared as a parsed part rather than inside its combined "host,port" text.
+    Both Compose services publish on 127.0.0.1 (postgresql.yml, mssql.yml) while the PostgreSQL
+    translation writes "localhost" and the SQL Server translation writes "127.0.0.1" - so exact text
+    equality against either canonical spelling leaves the other spelling of the SAME server looking
+    external, and a stored connection string may legitimately carry either. The port must still
+    match the configured published port EXACTLY: another server listening on a different port of
+    this same host is a different instance.
 
     An external server (a managed PostgreSQL, a shared SQL Server) keeps its own host and answers
     false. That distinction is load-bearing for the separate-topology guard: this provisioner
@@ -445,7 +454,15 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
 
     $localEndpoint = Get-LocalComposeDatabaseHostSideEndpoint -Dialect $Target.Dialect -EnvValues $EnvValues
 
-    return ([string]::Equals([string]$Target.Host, $localEndpoint.Host, [System.StringComparison]::OrdinalIgnoreCase) -and
+    # SQL Server carries host and port in one value ("host,port"); take the host part alone. The
+    # port is already available separately on the target for both dialects.
+    $targetHostName =
+        if ($Target.Dialect -eq "mssql") { ([string]$Target.Host -split ',', 2)[0].Trim() }
+        else { ([string]$Target.Host).Trim() }
+
+    $isLoopbackHost = @("localhost", "127.0.0.1") -contains $targetHostName.ToLowerInvariant()
+
+    return ($isLoopbackHost -and
         [string]::Equals([string]$Target.Port, $localEndpoint.Port, [System.StringComparison]::Ordinal))
 }
 
