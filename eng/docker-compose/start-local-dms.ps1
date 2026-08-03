@@ -736,7 +736,17 @@ else {
             Write-Output "Infrastructure phase complete. DMS service was not started."
             Write-Output ""
             Write-Output "Next steps for the manual IDE / debugger phase flow:"
-            Write-Output "  1. configure-local-data-store.ps1    (instance creation / selection)"
+            # The configure phase registers the DMS datastore and cannot infer the topology from
+            # the environment file the operator hands it - the marker lives in the derived file
+            # this start wrote - so a separate-topology start prints the switch that declares it.
+            # Without it the continuation could register the dedicated Configuration Service
+            # database as the datastore.
+            if ($SeparateConfigDatabase) {
+                Write-Output "  1. configure-local-data-store.ps1 -SeparateConfigDatabase    (instance creation / selection)"
+            }
+            else {
+                Write-Output "  1. configure-local-data-store.ps1    (instance creation / selection)"
+            }
             Write-Output "  2. provision-dms-schema.ps1          (schema provisioning; prints IDE configuration guidance)"
             Write-Output "  3. Launch DMS in your IDE / debugger"
             Write-Output "  4. load-dms-seed-data.ps1 -DmsBaseUrl <url>   (optional seed delivery to the IDE-hosted DMS)"

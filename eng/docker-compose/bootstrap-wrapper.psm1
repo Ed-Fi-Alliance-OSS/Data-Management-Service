@@ -901,6 +901,10 @@ function Invoke-BootstrapWrapper {
         if ($AddSmokeTestCredentials) { $configureArgs.AddSmokeTestCredentials = $true }
         if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) { $configureArgs.SchoolYearRange = $SchoolYearRange }
         $configureArgs.DatabaseEngine = $DatabaseEngine
+        # The configure phase registers the DMS datastore, so it needs the same topology
+        # declaration the start phase got: in separate mode the datastore must not land in the
+        # dedicated Configuration Service database. Forwarded exactly as the start args are.
+        if ($SeparateConfigDatabase) { $configureArgs.SeparateConfigDatabase = $true }
 
         # configure-local-data-store.ps1 throws on failure (no exit code); clear any stale native exit code first.
         $global:LASTEXITCODE = 0
