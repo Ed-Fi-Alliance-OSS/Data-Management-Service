@@ -781,8 +781,21 @@ function Get-PostgresHostCandidateEndpoint {
         its own port uses the standalone Port value, which is the list's global default; when that is
         absent too the port is reported as $null and the caller applies its own default.
 
-        A trailing ":<port>" is only taken as a port when the suffix really is one, so a host spelling
-        that merely contains a colon is left whole rather than split into a bogus host and port.
+        The host/port split follows Npgsql's own TrySplitHostPort decision
+        (github.com/npgsql/npgsql/blob/v8.0.4/src/Npgsql/NpgsqlConnectionStringBuilder.cs) rather than a
+        heuristic of our own, because the two disagreed on unbracketed IPv6. Given the last colon in an
+        entry, the last ']' and the last colon before it, the final colon is a port separator only when
+        there is NO earlier colon, or the final colon is after ']' while the earlier colon is inside the
+        brackets. Otherwise the whole entry is one host taking the standalone port.
+
+        That is what stops an unbracketed IPv6 address being torn apart: '::ffff:7f00:1' has an earlier
+        colon and no bracket, so it is one host - previously its final ':1' was read as port 1, leaving
+        host '::ffff:7f00'. Since that address maps to 127.0.0.1, the provider reached the local Compose
+        database while classification called it external. A final numeric IPv6 segment is not a port just
+        because it parses as an integer.
+
+        A suffix the algorithm does identify as a port is still validated as one, so a trailing ":<junk>"
+        leaves the entry whole rather than producing a bogus port.
 
         Note what this does NOT decide: whether a candidate is acceptable. The provisioning classifier
         asks whether ANY candidate is the local Compose endpoint (a local member anywhere means the
@@ -801,12 +814,28 @@ function Get-PostgresHostCandidateEndpoint {
             $text = $entry.Trim()
             if ([string]::IsNullOrEmpty($text)) { continue }
 
-            $separatorIndex = $text.LastIndexOf(':')
-            $suffix = if ($separatorIndex -gt 0) { $text.Substring($separatorIndex + 1).Trim() } else { "" }
+            # Npgsql's TrySplitHostPort decision, in its terms.
+            $portSeparator = $text.LastIndexOf(':')
+            $isPortSeparator = $false
+            $suffix = ""
 
-            if ($separatorIndex -gt 0 -and (Test-PortNumberEquivalent -Left $suffix -Right $suffix)) {
+            if ($portSeparator -gt 0) {
+                $closingBracket = $text.LastIndexOf(']')
+                $previousColon = $text.Substring(0, $portSeparator).LastIndexOf(':')
+
+                # No earlier colon -> "host:port". An earlier colon means IPv6 text, and then the final
+                # colon is a port separator only when it sits outside a bracketed address that the earlier
+                # colon sits inside.
+                if ($previousColon -eq -1 -or
+                    ($portSeparator -gt $closingBracket -and $previousColon -lt $closingBracket)) {
+                    $suffix = $text.Substring($portSeparator + 1).Trim()
+                    $isPortSeparator = Test-PortNumberEquivalent -Left $suffix -Right $suffix
+                }
+            }
+
+            if ($isPortSeparator) {
                 [pscustomobject]@{
-                    Host = $text.Substring(0, $separatorIndex).Trim()
+                    Host = $text.Substring(0, $portSeparator).Trim()
                     Port = $suffix
                 }
             }

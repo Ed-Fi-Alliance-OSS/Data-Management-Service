@@ -517,10 +517,17 @@ function Split-MssqlServerEndpoint {
     (tcp:dms-mssql,1433 stays untranslated) and it reads as an external server to the separate-topology
     guard, which is the whole point of the guard.
 
-    Deliberately narrow, and MSSQL-only: exactly one "tcp:" prefix, then the existing comma split.
-    Named pipes, IPv6 literals, "(local)", ".", LocalDB, and named instances are untouched - each is a
-    distinct endpoint grammar, and inventing rules for them here would decide reachability questions
-    this phase has no way to verify.
+    The comma/backslash rule follows SqlClient's own TCP server-name parsing
+    (github.com/dotnet/SqlClient/blob/v6.1.4/src/Microsoft.Data.SqlClient/src/Microsoft/Data/SqlClient/ManagedSni/SniProxy.netcore.cs):
+    when an EXPLICIT comma port is present the provider uses that port and does not resolve an instance
+    suffix through SSRP, so the effective endpoint is the text before the first comma or backslash. That
+    is why 'tcp:localhost\ignored,<port>' reaches the same listener 'tcp:localhost,<port>' does; reading
+    the whole 'localhost\ignored' as the host name classified it external.
+
+    With NO explicit comma port the instance semantics are left exactly as they were: the suffix stays
+    attached, so 'localhost\ignored' is not silently treated as the local Compose listener. No SSRP, no
+    named-instance resolution, no LocalDB, no named pipes, no lpc:, no admin/DAC - each is a distinct
+    endpoint grammar this phase has no way to verify.
     #>
     param(
         [string]
@@ -532,11 +539,22 @@ function Split-MssqlServerEndpoint {
         $text = $text.Substring(4).Trim()
     }
 
-    $parts = $text.Split(',', 2)
+    $commaIndex = $text.IndexOf(',')
+    if ($commaIndex -lt 0) {
+        # No explicit port: existing semantics, instance suffix and all.
+        return [pscustomobject]@{
+            HostName = $text
+            Port = ""
+        }
+    }
+
+    # Explicit port wins, and the server name ends at whichever of ',' or '\' comes first.
+    $backslashIndex = $text.IndexOf('\')
+    $hostEnd = if ($backslashIndex -ge 0 -and $backslashIndex -lt $commaIndex) { $backslashIndex } else { $commaIndex }
 
     return [pscustomobject]@{
-        HostName = $parts[0].Trim()
-        Port = if ($parts.Count -gt 1) { $parts[1].Trim() } else { "" }
+        HostName = $text.Substring(0, $hostEnd).Trim()
+        Port = $text.Substring($commaIndex + 1).Trim()
     }
 }
 
@@ -848,15 +866,16 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
         # spelling like 127.1 or localhost. cannot be local on one engine and external on the other.
         $targetHostName = (Split-MssqlServerEndpoint -DataSource $Target.Host).HostName
 
-        # '(local)' is a SqlClient data-source token for the local SQL Server
-        # (learn.microsoft.com/dotnet/api/microsoft.data.sqlclient.sqlconnection.datasource), so on this
-        # engine it names the Compose server and was reaching it while classified external. Checked HERE
-        # rather than in the engine-neutral helper on purpose: it is SqlClient-only, and PostgreSQL must
-        # not inherit it - Npgsql would treat '(local)' as an ordinary hostname. Exactly this token, no
-        # other endpoint form; the port comparison below stays load-bearing, so '(local)' on a different
-        # port remains external.
+        # SqlClient's CLOSED set of local server tokens, per its IsLocalHost check
+        # (github.com/dotnet/SqlClient/blob/v6.1.4/src/Microsoft.Data.SqlClient/src/Microsoft/Data/SqlClient/ManagedSni/SniProxy.netcore.cs):
+        # '.', '(local)' and 'localhost'. Each names the local SQL Server, so on this engine each names the
+        # Compose server. Checked HERE rather than in the engine-neutral helper on purpose: these are
+        # SqlClient-only tokens and PostgreSQL must not inherit them - Npgsql would treat '(local)' or '.'
+        # as an ordinary hostname. The set is closed: no LocalDB, named pipes, lpc:, admin/DAC,
+        # machine-name discovery, or arbitrary named instance is added to it. The port comparison below
+        # stays load-bearing, so any of these on a different port remains external.
         $isSqlClientLocalToken =
-            [string]::Equals($targetHostName.Trim(), "(local)", [System.StringComparison]::OrdinalIgnoreCase)
+            @(".", "(local)", "localhost") -contains $targetHostName.Trim().ToLowerInvariant()
 
         return (($isSqlClientLocalToken -or (Test-LocalComposeLoopbackHostSpelling -HostName $targetHostName)) -and
             (Test-PortNumberEquivalent -Left $Target.Port -Right $localEndpoint.Port))
