@@ -761,8 +761,31 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
 
     $isLoopbackHost = @("localhost", "127.0.0.1") -contains $targetHostName.ToLowerInvariant()
 
-    return ($isLoopbackHost -and
-        [string]::Equals([string]$Target.Port, $localEndpoint.Port, [System.StringComparison]::Ordinal))
+    # The port is compared NUMERICALLY, not as text. '05544' and '5544' are the same TCP port to both
+    # engines, so an Ordinal comparison read the zero-padded spelling as a different instance and let a
+    # target ON the local Compose database past the separate-topology guard. Parsed as invariant decimal
+    # digits only - NumberStyles::None rejects a sign, surrounding whitespace, and a thousands separator -
+    # and required to be in the valid TCP range, so a value that is not a port at all is never claimed
+    # equivalent to one. A genuinely different numeric port stays external, as before. Both engines share
+    # this predicate, so both are corrected by it.
+    [int]$targetPortNumber = 0
+    [int]$localPortNumber = 0
+    $portsAreEquivalent =
+        [int]::TryParse(
+            ([string]$Target.Port).Trim(),
+            [System.Globalization.NumberStyles]::None,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [ref]$targetPortNumber) -and
+        [int]::TryParse(
+            ([string]$localEndpoint.Port).Trim(),
+            [System.Globalization.NumberStyles]::None,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [ref]$localPortNumber) -and
+        $targetPortNumber -ge 1 -and $targetPortNumber -le 65535 -and
+        $localPortNumber -ge 1 -and $localPortNumber -le 65535 -and
+        $targetPortNumber -eq $localPortNumber
+
+    return ($isLoopbackHost -and $portsAreEquivalent)
 }
 
 function Convert-MssqlCmsConnectionStringToHostSideTarget {
@@ -813,7 +836,10 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
     # provider's own synonym table by the SchemaTools unit tests.
     $serverAliases = @("server", "data source", "addr", "address", "network address")
     $databaseAliases = @("database", "initial catalog")
-    $userAliases = @("user id", "uid")
+    # User ID also answers to UID and to plain User - the complete family measured in the provider the
+    # tool ships, and pinned by the SchemaTools unit tests. Omitting 'user' both mis-resolved the
+    # principal (a lone User= read as no user at all) and left the family uncollapsed.
+    $userAliases = @("user id", "uid", "user")
 
     $databaseName = Get-MssqlEffectiveConnectionStringValue `
         -Builder $Builder `
@@ -835,9 +861,8 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
         throw "CMS data store connection string is missing the server key."
     }
 
-    # Not written back into the canonical string, so an ambiguous user-id family needs no collapsing -
-    # but the value that identifies the target must still be the one the provider resolves, or two
-    # instances on one database could be grouped under a user neither of them connects as.
+    # Collapsed like the other two families below, not merely resolved: leaving a losing user-id alias in
+    # the emitted string let SchemaTools reparse a DIFFERENT principal than Username and TargetKey name.
     $instanceUser = Get-MssqlEffectiveConnectionStringValue `
         -Builder $Builder `
         -Aliases $userAliases `
@@ -857,7 +882,7 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
         $effectiveServer = (Get-LocalComposeDatabaseHostSideEndpoint -Dialect "mssql" -EnvValues $EnvValues).Host
     }
 
-    # Write back only the two synonym families, each collapsed onto the single key the source used for
+    # Write back only the three synonym families, each collapsed onto the single key the source used for
     # it. Every other stored option (password, TrustServerCertificate, Encrypt, a quoted password
     # containing ';' or '=', etc.) is carried through verbatim and correctly re-quoted by the builder.
     # The server value keeps any "tcp:" prefix it came with - that prefix selects the protocol SqlClient
@@ -865,6 +890,7 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
     # SchemaTools receives.
     Set-ConnectionStringFamilyValue -Builder $Builder -Aliases $serverAliases -Value $effectiveServer
     Set-ConnectionStringFamilyValue -Builder $Builder -Aliases $databaseAliases -Value $databaseName
+    Set-ConnectionStringFamilyValue -Builder $Builder -Aliases $userAliases -Value $instanceUser
 
     $hostConnectionString = $Builder.get_ConnectionString()
 

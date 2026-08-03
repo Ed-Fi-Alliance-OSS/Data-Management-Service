@@ -494,6 +494,12 @@ else {
         its own AND only when this run selected a version explicitly. With no selection this script
         composed no overlay, so there is no version to carry and naming one would compose an overlay the
         run never had.
+
+        -IdentityProvider is emitted only when a caller supplies one, because only the fresh-wrapper
+        command accepts it: an explicit provider outranks the environment file's own
+        DMS_CONFIG_IDENTITY_PROVIDER, so a keycloak run over a self-contained environment would otherwise
+        advertise a continuation that silently switches providers. The two phase commands do not declare
+        the parameter and are never given it.
         #>
         param(
             [Parameter(Mandatory)]
@@ -508,13 +514,19 @@ else {
             $SeparateConfigDatabase,
 
             [string]
-            $DataStandardVersion = ""
+            $DataStandardVersion = "",
+
+            [string]
+            $IdentityProvider = ""
         )
 
         $quotedEnvironmentFile = "'" + $EnvironmentFile.Replace("'", "''") + "'"
         $argumentText = "-DatabaseEngine $DatabaseEngine -EnvironmentFile $quotedEnvironmentFile"
         if (-not [string]::IsNullOrWhiteSpace($DataStandardVersion)) {
             $argumentText += " -DataStandardVersion $DataStandardVersion"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($IdentityProvider)) {
+            $argumentText += " -IdentityProvider $IdentityProvider"
         }
         if ($SeparateConfigDatabase) {
             $argumentText += " -SeparateConfigDatabase"
@@ -575,6 +587,12 @@ else {
             [string]
             $DataStandardVersion = "",
 
+            # The provider this run RESOLVED (explicit parameter, then the environment file, then
+            # self-contained). Travels on the fresh-wrapper command only; configure and provision do not
+            # declare it.
+            [string]
+            $IdentityProvider = "",
+
             [switch]
             $SeparateConfigDatabase,
 
@@ -607,6 +625,7 @@ else {
                 -DatabaseEngine $DatabaseEngine `
                 -EnvironmentFile $BaseEnvironmentFile `
                 -DataStandardVersion $DataStandardVersion `
+                -IdentityProvider $IdentityProvider `
                 -SeparateConfigDatabase:$SeparateConfigDatabase
             $lines.Add("  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> $wrapperContinuationArgument [-LoadSeedData ...]")
         }
@@ -900,6 +919,7 @@ else {
                 -EffectiveEnvironmentFile $EnvironmentFile `
                 -BaseEnvironmentFile $baseEnvironmentFile `
                 -DataStandardVersion $DataStandardVersion `
+                -IdentityProvider $IdentityProvider `
                 -SeparateConfigDatabase:$SeparateConfigDatabase `
                 -SuppressWrapperContinuationGuidance:$SuppressWrapperContinuationGuidance)) {
                 Write-Output $line

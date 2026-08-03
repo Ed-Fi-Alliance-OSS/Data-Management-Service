@@ -990,7 +990,10 @@ function Invoke-BootstrapWrapper {
                 # $effectiveEnvFile nor the by-then-overlaid $baseEnvFile, both of which are derived paths
                 # the fresh run would compose a second generation of overlays over. The data standard,
                 # only when this run actually composed an overlay: the fresh run always recomposes one for
-                # a local bootstrap and would otherwise fall back to the default version.
+                # a local bootstrap and would otherwise fall back to the default version. The identity
+                # provider, as RESOLVED here: an explicit provider outranks the environment file's own
+                # DMS_CONFIG_IDENTITY_PROVIDER, so a keycloak run over a self-contained environment would
+                # otherwise advertise a continuation that silently switches providers.
                 #
                 # Emitted as a single-quoted PowerShell literal so a path with spaces stays one argument
                 # and an embedded apostrophe is doubled instead of ending the quote.
@@ -998,6 +1001,7 @@ function Invoke-BootstrapWrapper {
                 if ($composeDataStandardOverlay) {
                     $continuationArgument += " -DataStandardVersion $DataStandardVersion"
                 }
+                $continuationArgument += " -IdentityProvider $resolvedIdentityProvider"
                 if ($SeparateConfigDatabase) {
                     $continuationArgument += " -SeparateConfigDatabase"
                 }
