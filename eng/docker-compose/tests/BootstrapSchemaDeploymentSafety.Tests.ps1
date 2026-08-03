@@ -4778,14 +4778,25 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
     }
 
     Context "one canonical MSSQL target: what is validated is what SchemaTools receives" {
-        # SchemaTools reparses the connection string this phase hands it with
-        # Microsoft.Data.SqlClient (MssqlDatabaseProvisioner.GetDatabaseName reads
-        # SqlConnectionStringBuilder.InitialCatalog), where a synonym family resolves to its LAST
-        # occurrence. A first-listed-synonym lookup therefore validated one database while the tool
-        # deployed DMS DDL into another, and a "tcp:"-prefixed loopback server read as an external
-        # host that the topology guard does not cover at all. These rows pin the single boundary that
-        # closes both: the server and database the guard judges are the ones the provider selects, and
-        # the string handed to the tool carries exactly those.
+        # SchemaTools reparses the connection string this phase hands it with Microsoft.Data.SqlClient
+        # (MssqlDatabaseProvisioner.GetDatabaseName reads SqlConnectionStringBuilder.InitialCatalog),
+        # where a synonym family resolves to its LAST occurrence. A first-listed-synonym lookup therefore
+        # validated one database while the tool deployed DMS DDL into another, and a "tcp:"-prefixed
+        # loopback server read as an external host the topology guard does not cover.
+        #
+        # Coverage is split deliberately, because the bootstrap Pester CI job installs Pester and the
+        # dotnet SDK but never builds the solution, so no Microsoft.Data.SqlClient assembly exists there:
+        #
+        #   - The PROVIDER'S OWN semantics (last-occurrence precedence, the exact membership of each
+        #     collapsed family, acceptance of keywords the legacy in-box provider rejects) are pinned in
+        #     EdFi.DataManagementService.SchemaTools.Tests.Unit, which always builds against that very
+        #     provider and runs on every pull request.
+        #   - THIS file pins the phase's own behaviour, and every row below runs unconditionally: the
+        #     unambiguous rows need no provider at all, and the rows that do stage a purpose-built
+        #     provider assembly whose answers are recognizable, so what is proven is that the phase asks
+        #     the assembly shipped with the resolved tool and uses ITS verdict.
+        #   - One further row runs against the REAL provider when a SchemaTools build happens to be
+        #     present. It is corroboration, never the guarantee, and skips when the build is absent.
         BeforeAll {
             $script:canonicalMssqlPort = "15433"
 
@@ -4827,40 +4838,253 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
                 return $captured[$index + 1]
             }
 
-            # The oracle is a real SqlClient parser, not a reimplementation of its precedence rules.
-            function script:Get-SqlClientEffectiveValue {
+            # Parses a connection string with the keyword-agnostic generic builder, which is what the
+            # unambiguous assertions need: it reports the keys and values present without applying any
+            # provider's keyword table, so a Microsoft.Data.SqlClient-only keyword can be observed
+            # surviving rather than rejected.
+            function script:Get-ConnectionStringKeyValue {
                 param([Parameter(Mandatory)] [string]$ConnectionString)
 
-                $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($ConnectionString)
-                return [pscustomobject]@{
-                    InitialCatalog = $builder.InitialCatalog
-                    DataSource = $builder.DataSource
+                $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+                $builder.set_ConnectionString($ConnectionString)
+                $map = @{}
+                foreach ($key in $builder.PSBase.Keys) {
+                    $map[([string]$key).ToLowerInvariant()] = [string]$builder.PSBase.get_Item($key)
                 }
+                return $map
+            }
+
+            # Stages a Microsoft.Data.SqlClient assembly beside the resolved tool, in one of the two
+            # layouts production probes, and returns nothing.
+            #
+            # The staged implementation is NOT a re-implementation of the provider: its properties return
+            # fixed, recognizable values, so an assertion that those values reached the topology authority
+            # and the final connection string can only be satisfied by the phase having loaded THIS
+            # assembly and used its verdict. The provider's real precedence is pinned in the SchemaTools
+            # unit project instead. Compiling with -OutputAssembly writes the file without loading the
+            # type into this session, so staging different variants across rows stays independent.
+            function script:Add-StagedProviderAssembly {
+                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test fixture staging helper; no -WhatIf surface.')]
+                param(
+                    [Parameter(Mandatory)] [string]$ToolDirectory,
+                    [Parameter(Mandatory)] [ValidateSet("RidSpecific", "Flat")] [string]$Layout,
+                    [string]$InitialCatalog = "provider_selected_database",
+                    [string]$DataSource = "provider-selected.example.com",
+                    [string]$UserId = "provider_selected_user",
+                    # Stages a throwing reference facade at the top level as well, reproducing a real build
+                    # output. Production must still bind the RID-specific implementation.
+                    [switch]$WithTopLevelFacade
+                )
+
+                $sentinelSource = @"
+namespace Microsoft.Data.SqlClient
+{
+    public class SqlConnectionStringBuilder
+    {
+        public SqlConnectionStringBuilder() { }
+        public SqlConnectionStringBuilder(string connectionString) { ConnectionString = connectionString; }
+        public string ConnectionString { get; set; }
+        public string InitialCatalog { get { return "$InitialCatalog"; } }
+        public string DataSource { get { return "$DataSource"; } }
+        public string UserID { get { return "$UserId"; } }
+    }
+}
+"@
+
+                $targetPath =
+                    if ($Layout -eq "RidSpecific") {
+                        $ridFamily = if ($IsWindows) { "win" } else { "unix" }
+                        $ridDirectory = Join-Path $ToolDirectory "runtimes/$ridFamily/lib/net9.0"
+                        New-Item -ItemType Directory -Path $ridDirectory -Force | Out-Null
+                        Join-Path $ridDirectory "Microsoft.Data.SqlClient.dll"
+                    }
+                    else {
+                        Join-Path $ToolDirectory "Microsoft.Data.SqlClient.dll"
+                    }
+
+                Add-Type -TypeDefinition $sentinelSource -OutputAssembly $targetPath
+
+                if ($WithTopLevelFacade) {
+                    # Mirrors the real facade: it loads, and only fails when constructed.
+                    $facadeSource = @"
+namespace Microsoft.Data.SqlClient
+{
+    public class SqlConnectionStringBuilder
+    {
+        public SqlConnectionStringBuilder() { throw new System.PlatformNotSupportedException("Microsoft.Data.SqlClient is not supported on this platform."); }
+        public SqlConnectionStringBuilder(string connectionString) { throw new System.PlatformNotSupportedException("Microsoft.Data.SqlClient is not supported on this platform."); }
+        public string InitialCatalog { get { return "facade"; } }
+        public string DataSource { get { return "facade"; } }
+        public string UserID { get { return "facade"; } }
+    }
+}
+"@
+                    Add-Type -TypeDefinition $facadeSource -OutputAssembly (Join-Path $ToolDirectory "Microsoft.Data.SqlClient.dll")
+                }
+            }
+
+            # Runs the phase in a CHILD process. Required whenever a row causes production to load a
+            # provider assembly: Add-Type is per-process and permanent, so two rows staging different
+            # assemblies would otherwise silently share whichever loaded first, and the suite's own
+            # session would keep a fake Microsoft.Data.SqlClient for every later test.
+            function script:Invoke-ProvisionInProviderChildProcess {
+                param(
+                    [Parameter(Mandatory)] [string]$EnvironmentFile,
+                    [Parameter(Mandatory)] [string]$ConnectionString,
+                    [Parameter(Mandatory)] [string]$SchemaToolPath,
+                    [Parameter(Mandatory)] [string]$CapturePath
+                )
+
+                $childScript = Join-Path $script:repo.RepoRoot "provider-child-$([Guid]::NewGuid().ToString('N')).ps1"
+                @'
+# Every parameter is Child-prefixed deliberately. Dot-sourcing provision-dms-schema.ps1 runs its own
+# param() block in this scope with no arguments, rebinding any same-named variable to that script's
+# default: $EnvironmentFile silently became empty, the phase fell back to the default .env, and the run
+# read a different MSSQL_PORT than the fixture had written.
+param(
+    [string]$ChildProvisionScript,
+    [string]$ChildEnvironmentFile,
+    [string]$ChildConnectionString,
+    [string]$ChildSchemaToolPath,
+    [string]$ChildCapturePath
+)
+
+$env:DMS_SCHEMA_TOOL_PATH = $ChildSchemaToolPath
+$outcome = [ordered]@{
+    Error = $null
+    AuthorityCalled = $false
+    AuthorityDatabase = $null
+    CapturedConnectionString = $null
+    SchemaToolInvoked = $false
+}
+
+try {
+    . $ChildProvisionScript
+
+    $script:childConnectionString = $ChildConnectionString
+    $script:childAuthorityCalled = $false
+    $script:childAuthorityDatabase = $null
+
+    function Assert-MssqlTopologyPhysicalConsistency {
+        param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+        $script:childAuthorityCalled = $true
+        $script:childAuthorityDatabase = $RegisteredDatastoreDatabaseName
+    }
+    function Get-CmsToken { return "token" }
+    function Get-DataStore {
+        return @(
+            [pscustomobject]@{
+                id = 901
+                name = "ProviderChild"
+                connectionString = $script:childConnectionString
+                dataStoreContexts = @()
+            }
+        )
+    }
+
+    # Asserted, not assumed: the run must have read the fixture's own environment file. Without this the
+    # param-block collision above reappears as a silently different MSSQL_PORT rather than a failure.
+    if ((Get-ComposeResolvedEnvValue -EnvironmentValues (ReadValuesFromEnvFile -EnvironmentFile $ChildEnvironmentFile) -Name "MSSQL_PORT" -DefaultValue "") -eq "") {
+        throw "The child fixture environment file carries no MSSQL_PORT; the run would fall back to a default port."
+    }
+
+    Invoke-ProvisionDmsSchema `
+        -EnvironmentFile $ChildEnvironmentFile `
+        -DataStoreId @(901) `
+        -DatabaseEngine mssql `
+        -SeparateConfigDatabase *>&1 | Out-Null
+
+    $outcome.AuthorityCalled = $script:childAuthorityCalled
+    $outcome.AuthorityDatabase = $script:childAuthorityDatabase
+}
+catch {
+    $outcome.Error = $_.Exception.Message
+}
+
+if (Test-Path -LiteralPath $ChildCapturePath) {
+    $outcome.SchemaToolInvoked = $true
+    $captured = @(Get-Content -LiteralPath $ChildCapturePath)
+    $index = [array]::IndexOf($captured, "--connection-string")
+    if ($index -ge 0) { $outcome.CapturedConnectionString = $captured[$index + 1] }
+}
+
+[pscustomobject]$outcome | ConvertTo-Json -Compress
+'@ | Set-Content -LiteralPath $childScript -Encoding utf8
+
+                $json = & ([Environment]::ProcessPath) -NoProfile -File $childScript `
+                    -ChildProvisionScript $script:repo.ProvisionScript `
+                    -ChildEnvironmentFile $EnvironmentFile `
+                    -ChildConnectionString $ConnectionString `
+                    -ChildSchemaToolPath $SchemaToolPath `
+                    -ChildCapturePath $CapturePath | Select-Object -Last 1
+
+                if ([string]::IsNullOrWhiteSpace($json)) {
+                    throw "The provider child process produced no result."
+                }
+
+                return $json | ConvertFrom-Json
             }
         }
 
-        It "hands SchemaTools a string whose SqlClient database IS the one the topology authority judged: <Name>" -ForEach @(
-            @{ Name = "Database first, Initial Catalog last"; DatabaseSegment = 'Database=ignored_first;Initial Catalog=effective_last'; Effective = "effective_last" }
-            @{ Name = "Initial Catalog first, Database last"; DatabaseSegment = 'Initial Catalog=edfi_configurationservice;Database=cms_safe_store'; Effective = "cms_safe_store" }
-            @{ Name = "Initial Catalog repeated around Database"; DatabaseSegment = 'Initial Catalog=first_ic;Database=middle_db;Initial Catalog=effective_last_ic'; Effective = "effective_last_ic" }
-            @{ Name = "Database repeated around Initial Catalog"; DatabaseSegment = 'Database=first;Initial Catalog=second;Database=last'; Effective = "last" }
+        It "preserves a provider-only keyword into the string SchemaTools receives, parsing no family through a strict validator: <Name>" -ForEach @(
+            @{ Name = "Host Name In Certificate"; ExtraSegment = 'Host Name In Certificate=cert.example.com'; ExtraKey = "host name in certificate"; ExtraValue = "cert.example.com" }
+            @{ Name = "Server Certificate"; ExtraSegment = 'Server Certificate=/etc/ssl/sql.cer'; ExtraKey = "server certificate"; ExtraValue = "/etc/ssl/sql.cer" }
+            @{ Name = "Enclave Attestation Url"; ExtraSegment = 'Enclave Attestation Url=https://attest.example.com'; ExtraKey = "enclave attestation url"; ExtraValue = "https://attest.example.com" }
+        ) {
+            # These keywords are valid to Microsoft.Data.SqlClient and rejected outright by the legacy
+            # in-box System.Data.SqlClient (pinned in the SchemaTools unit project). Parsing the WHOLE
+            # string with the legacy builder therefore refused external SQL Server datastores SchemaTools
+            # accepts, so this row is the regression guard for that: a return to full-string legacy
+            # parsing fails here, in the CI lane, with no provider assembly staged and no build required.
+            $capturePath = Initialize-CanonicalMssqlWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                }
+                function Get-CmsToken { return "token" }
+                $script:canonicalStoredConnectionString =
+                    "Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;$ExtraSegment"
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 806
+                            name = "ProviderOnlyKeyword"
+                            connectionString = $script:canonicalStoredConnectionString
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-CanonicalMssqlEnvFile) `
+                    -DataStoreId @(806) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase *>&1 | Out-Null } |
+                    Should -Not -Throw -Because "an unambiguous connection string must never be subjected to a keyword validator this phase does not own"
+
+                $captured = Get-CapturedSchemaToolConnectionString -CapturePath $capturePath
+                $keyValue = Get-ConnectionStringKeyValue -ConnectionString $captured
+
+                $keyValue[$ExtraKey] | Should -Be $ExtraValue -Because "the keyword and its value must reach SchemaTools untouched"
+                $keyValue["database"] | Should -Be "edfi_datamanagementservice"
+                $keyValue["server"] | Should -Be "127.0.0.1,$($script:canonicalMssqlPort)" -Because "the Docker-internal translation still applies"
+                $keyValue["trustservercertificate"] | Should -Be "true"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "resolves an unambiguous family without any provider assembly present: <Name>" -ForEach @(
             @{ Name = "only Database"; DatabaseSegment = 'Database=only_database'; Effective = "only_database" }
             @{ Name = "only Initial Catalog"; DatabaseSegment = 'Initial Catalog=only_initial_catalog'; Effective = "only_initial_catalog" }
+            @{ Name = "Database repeated alone"; DatabaseSegment = 'Database=ignored_first;Database=effective_last'; Effective = "effective_last" }
+            @{ Name = "Initial Catalog repeated alone"; DatabaseSegment = 'Initial Catalog=ignored_first;Initial Catalog=effective_last'; Effective = "effective_last" }
         ) {
-            # The load-bearing assertion is not that the guard was called: it is that the FINAL captured
-            # string, parsed by the real provider, yields the same database the guard was handed - and that
-            # this value is the one SqlClient actually selects, which is what makes the expected value
-            # independent of the implementation.
-            #
-            # Two rows are what discriminate a provider parse from the ordered-alias-list lookup this phase
-            # used to use, and neither is redundant. That lookup returns the 'database' key whenever it is
-            # present, carrying the LAST Database= value - so it coincidentally agrees wherever Database is
-            # the last member of the family, including in the repeated-Database row. It disagrees when the
-            # family's last member is Initial Catalog: 'Database first, Initial Catalog last' and the
-            # repeated-Initial-Catalog row are the rows a return to that lookup fails on. The
-            # repeated-Database row stays because it is what fails an implementation built on
-            # DbConnectionStringBuilder key order, which keeps a repeated key's FIRST position with its
-            # LAST value.
+            # One family key, even repeated, needs no provider: the generic builder already holds a
+            # repeated key's LAST value, which is the occurrence SqlClient resolves. That is what keeps
+            # the common path off a strict keyword validator, and the repeated rows are what would fail if
+            # this shortcut ever took the FIRST value instead.
             $capturePath = Initialize-CanonicalMssqlWorkspace
             try {
                 . $script:repo.ProvisionScript
@@ -4876,8 +5100,8 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
                 function Get-DataStore {
                     return @(
                         [pscustomobject]@{
-                            id = 801
-                            name = "Canonical"
+                            id = 807
+                            name = "Unambiguous"
                             connectionString = $script:canonicalStoredConnectionString
                             dataStoreContexts = @()
                         }
@@ -4886,171 +5110,149 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
 
                 Invoke-ProvisionDmsSchema `
                     -EnvironmentFile (New-CanonicalMssqlEnvFile) `
-                    -DataStoreId @(801) `
+                    -DataStoreId @(807) `
                     -DatabaseEngine mssql `
                     -SeparateConfigDatabase *>&1 | Out-Null
 
-                $captured = Get-CapturedSchemaToolConnectionString -CapturePath $capturePath
-                $reparsed = Get-SqlClientEffectiveValue -ConnectionString $captured
+                $keyValue = Get-ConnectionStringKeyValue `
+                    -ConnectionString (Get-CapturedSchemaToolConnectionString -CapturePath $capturePath)
+                $captured = @($keyValue.Keys | Where-Object { $_ -in @("database", "initial catalog") })
 
-                $reparsed.InitialCatalog | Should -Be $Effective -Because "the provider resolves the LAST occurrence of the database synonym family"
-                $script:canonicalAuthorityDatabase | Should -Be $Effective -Because "the topology authority must judge that same value"
-                $script:canonicalAuthorityDatabase | Should -Be $reparsed.InitialCatalog -Because "the validated database and the deployed database are one value, not two"
-                $reparsed.DataSource | Should -Be "127.0.0.1,$($script:canonicalMssqlPort)" -Because "the Docker-internal server is translated in the same canonical result"
+                $captured.Count | Should -Be 1 -Because "the family is collapsed onto one key"
+                $keyValue[$captured[0]] | Should -Be $Effective
+                $script:canonicalAuthorityDatabase | Should -Be $Effective -Because "the guard judges that same value"
             }
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
-        It "refuses when a LATER database synonym names the reserved database and the first-listed one is safe" {
-            # The reviewer's case, and the reason a first-listed lookup is unsafe here: the guard saw
-            # 'cms_safe_store' and let the run through while SchemaTools would have deployed into
-            # edfi_configurationservice.
+        It "settles an ambiguous family with the provider assembly shipped beside the resolved tool, in the <Layout> layout" -ForEach @(
+            @{ Layout = "RidSpecific"; WithFacade = $true }
+            @{ Layout = "Flat"; WithFacade = $false }
+        ) {
+            # The verdict here cannot come from anywhere but the staged assembly: its answers are values
+            # that appear nowhere in the connection string, the environment file, or this phase. Both
+            # layouts production probes are covered, and the RID-specific row also stages the throwing
+            # reference facade a real build output carries at its top level - if that facade were bound
+            # instead, the run would fail with the facade diagnostic rather than reach these values.
             $capturePath = Initialize-CanonicalMssqlWorkspace
             try {
-                . $script:repo.ProvisionScript
+                Add-StagedProviderAssembly `
+                    -ToolDirectory $script:repo.RepoRoot `
+                    -Layout $Layout `
+                    -InitialCatalog "provider_selected_database" `
+                    -DataSource "dms-mssql,1433" `
+                    -UserId "provider_selected_user" `
+                    -WithTopLevelFacade:$WithFacade
 
-                $script:canonicalAuthorityDatabase = $null
-                function Assert-MssqlTopologyPhysicalConsistency {
-                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
-                    $script:canonicalAuthorityDatabase = $RegisteredDatastoreDatabaseName
-                    if ($RegisteredDatastoreDatabaseName -eq "edfi_configurationservice") {
-                        throw "CMS database topology mismatch: SQL Server reports that the datastore name resolved from '$RegisteredDatastoreDatabaseSourceKey' denotes the SAME physical database as the dedicated 'edfi_configurationservice'."
-                    }
-                }
-                function Get-CmsToken { return "token" }
-                function Get-DataStore {
-                    return @(
-                        [pscustomobject]@{
-                            id = 802
-                            name = "LaterSynonymWins"
-                            connectionString = 'Server=dms-mssql,1433;Database=cms_safe_store;Initial Catalog=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true'
-                            dataStoreContexts = @()
-                        }
-                    )
-                }
-
-                $thrown = { Invoke-ProvisionDmsSchema `
+                $outcome = Invoke-ProvisionInProviderChildProcess `
                     -EnvironmentFile (New-CanonicalMssqlEnvFile) `
-                    -DataStoreId @(802) `
-                    -DatabaseEngine mssql `
-                    -SeparateConfigDatabase } |
-                    Should -Throw -PassThru
+                    -ConnectionString 'Server=ignored.example.com;Data Source=also-ignored.example.com;Database=ignored_db;Initial Catalog=also_ignored_db;User Id=ignored_user;UID=also_ignored_user;Password=abcdefgh1!;TrustServerCertificate=true' `
+                    -SchemaToolPath $env:DMS_SCHEMA_TOOL_PATH `
+                    -CapturePath $capturePath
 
-                $thrown.Exception.Message | Should -BeLike "*SAME physical database*"
-                $script:canonicalAuthorityDatabase | Should -Be "edfi_configurationservice" -Because "the judged value is the one the provider selects"
-                $script:canonicalAuthorityDatabase | Should -Not -Be "cms_safe_store" -Because "the first-listed synonym is not what SchemaTools would have deployed into"
-                Test-Path -LiteralPath $capturePath | Should -BeFalse -Because "the refusal must land before any DDL"
+                $outcome.Error | Should -BeNullOrEmpty -Because "the staged provider must be found and used"
+
+                $keyValue = Get-ConnectionStringKeyValue -ConnectionString $outcome.CapturedConnectionString
+                $databaseKeys = @($keyValue.Keys | Where-Object { $_ -in @("database", "initial catalog") })
+                $serverKeys = @($keyValue.Keys | Where-Object { $_ -in @("server", "data source", "addr", "address", "network address") })
+
+                $databaseKeys.Count | Should -Be 1 -Because "no losing synonym may survive to override the validated database"
+                $serverKeys.Count | Should -Be 1 -Because "no losing synonym may survive to override the validated server"
+                $keyValue[$databaseKeys[0]] | Should -Be "provider_selected_database" -Because "the database is the staged provider's verdict, not a first-listed key"
+                $keyValue[$serverKeys[0]] | Should -Be "127.0.0.1,$($script:canonicalMssqlPort)" -Because "the Docker-internal translation is applied to the provider-selected server"
+                $outcome.AuthorityDatabase | Should -Be "provider_selected_database" -Because "the topology authority judges the same verdict SchemaTools receives"
+
+                # Unrelated options still pass through the generic builder untouched.
+                $keyValue["trustservercertificate"] | Should -Be "true"
+                $keyValue["password"] | Should -Be "abcdefgh1!"
             }
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
-        It "leaves exactly one member of each synonym family in the string SchemaTools receives" {
-            # Validating the right value but passing the original ambiguous string would let the losing
-            # synonym override it on reparse, so the canonical result must carry no second member of
-            # either family at all.
+        It "refuses an ambiguous family before any DDL when the tool ships no usable provider: <Name>" -ForEach @(
+            @{ Name = "no provider assembly at all"; StageFacadeOnly = $false }
+            @{ Name = "only the throwing reference facade"; StageFacadeOnly = $true }
+        ) {
+            # Guessing which synonym the tool would resolve is the defect this whole boundary exists to
+            # remove, so an unanswerable ambiguity must stop the phase rather than pick one. Both
+            # unusable shapes are covered: nothing shipped, and a facade that loads but cannot construct.
             $capturePath = Initialize-CanonicalMssqlWorkspace
             try {
-                . $script:repo.ProvisionScript
-
-                function Assert-MssqlTopologyPhysicalConsistency {
-                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
-                }
-                function Get-CmsToken { return "token" }
-                function Get-DataStore {
-                    return @(
-                        [pscustomobject]@{
-                            id = 803
-                            name = "BothFamilies"
-                            connectionString = 'Server=other.example.com;Data Source=dms-mssql,1433;Initial Catalog=ignored_catalog;Database=chosen_db;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true'
-                            dataStoreContexts = @()
-                        }
-                    )
+                if ($StageFacadeOnly) {
+                    Add-StagedProviderAssembly `
+                        -ToolDirectory $script:repo.RepoRoot `
+                        -Layout "RidSpecific" `
+                        -WithTopLevelFacade
+                    # Remove the usable RID-specific copy, leaving only the facade.
+                    $ridFamily = if ($IsWindows) { "win" } else { "unix" }
+                    Remove-Item -LiteralPath (Join-Path $script:repo.RepoRoot "runtimes/$ridFamily/lib/net9.0/Microsoft.Data.SqlClient.dll") -Force
                 }
 
-                Invoke-ProvisionDmsSchema `
+                $outcome = Invoke-ProvisionInProviderChildProcess `
                     -EnvironmentFile (New-CanonicalMssqlEnvFile) `
-                    -DataStoreId @(803) `
-                    -DatabaseEngine mssql `
-                    -SeparateConfigDatabase *>&1 | Out-Null
+                    -ConnectionString 'Server=dms-mssql,1433;Database=safe_looking;Initial Catalog=edfi_configurationservice;User Id=sa;Password=abcdefgh1!' `
+                    -SchemaToolPath $env:DMS_SCHEMA_TOOL_PATH `
+                    -CapturePath $capturePath
 
-                $captured = Get-CapturedSchemaToolConnectionString -CapturePath $capturePath
-                $keyBuilder = [System.Data.Common.DbConnectionStringBuilder]::new()
-                $keyBuilder.set_ConnectionString($captured)
-                $keys = @($keyBuilder.PSBase.Keys | ForEach-Object { ([string]$_).ToLowerInvariant() })
-
-                @($keys | Where-Object { $_ -in @("database", "initial catalog") }).Count |
-                    Should -Be 1 -Because "the database family is collapsed onto one key"
-                @($keys | Where-Object { $_ -in @("server", "data source", "addr", "address", "network address") }).Count |
-                    Should -Be 1 -Because "the server family is collapsed onto one key"
-
-                $reparsed = Get-SqlClientEffectiveValue -ConnectionString $captured
-                $reparsed.InitialCatalog | Should -Be "chosen_db"
-                $reparsed.DataSource | Should -Be "127.0.0.1,$($script:canonicalMssqlPort)" -Because "Data Source was the provider-selected server and it names the Docker-internal host"
-
-                # And nothing unrelated was dropped on the way through.
-                $captured | Should -Match "(?i)user id=sa"
-                $captured | Should -Match "(?i)trustservercertificate=true"
+                $outcome.Error | Should -Not -BeNullOrEmpty
+                $outcome.Error | Should -BeLike "*Microsoft.Data.SqlClient*" -Because "the diagnostic must name what is missing"
+                $outcome.Error | Should -Not -BeLike "*abcdefgh1!*" -Because "diagnostics never echo the connection string or its credentials"
+                $outcome.SchemaToolInvoked | Should -BeFalse -Because "an unresolvable target must reach SchemaTools with nothing"
             }
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
-        It "the SqlClient provider this phase parses with agrees with the Microsoft.Data.SqlClient build SchemaTools links" {
-            # The equivalence is asserted, not assumed. Microsoft.Data.SqlClient is not loadable at the
-            # provisioning boundary itself (the copy beside the tool is a platform stub whose constructor
-            # throws, the real implementation sits in a RID-specific runtimes/ subdirectory, and the tool
-            # path is resolved only after the guard has run), so production parses with the in-box
-            # System.Data.SqlClient and this row pins that the two providers select the same values.
-            # Loaded in a child process so no permanent assembly load leaks into the suite's session.
+        It "agrees with the REAL Microsoft.Data.SqlClient build when one is present: <Name>" -ForEach @(
+            @{ Name = "Database first, Initial Catalog last"; DatabaseSegment = 'Database=ignored_first;Initial Catalog=effective_last'; Effective = "effective_last" }
+            @{ Name = "Initial Catalog first, Database last"; DatabaseSegment = 'Initial Catalog=ignored_first;Database=effective_last'; Effective = "effective_last" }
+            @{ Name = "Initial Catalog repeated around Database"; DatabaseSegment = 'Initial Catalog=first_ic;Database=middle_db;Initial Catalog=effective_last_ic'; Effective = "effective_last_ic" }
+            @{ Name = "Database repeated around Initial Catalog"; DatabaseSegment = 'Database=first;Initial Catalog=second;Database=effective_last'; Effective = "effective_last" }
+            @{ Name = "ambiguous family alongside a provider-only keyword"; DatabaseSegment = 'Database=ignored_first;Initial Catalog=effective_last;Host Name In Certificate=cert.example.com'; Effective = "effective_last" }
+        ) {
+            # The last row is the one the legacy in-box provider cannot serve at all: it must parse the
+            # WHOLE string to settle the family, and Host Name In Certificate is a keyword only
+            # Microsoft.Data.SqlClient accepts. It fails outright if this boundary is ever pointed back at
+            # System.Data.SqlClient.
+            #
+            # Corroboration against the genuine provider, not the guarantee: the precedence rule itself is
+            # pinned in the SchemaTools unit project, which always builds. This row skips where no build
+            # output exists (the bootstrap Pester CI job never builds the solution), and where one does it
+            # proves the phase's plumbing and the real provider agree end to end.
             $providerAssembly = @(
                 Get-ChildItem `
                     -Path (Join-Path $script:sourceRepoRoot "src/dms/clis/EdFi.DataManagementService.SchemaTools/bin") `
                     -Filter "Microsoft.Data.SqlClient.dll" -Recurse -File -ErrorAction SilentlyContinue |
-                    Where-Object { $_.DirectoryName -match "[\\/]runtimes[\\/]" } |
-                    Sort-Object FullName
+                    Where-Object { $_.DirectoryName -match "[\\/]runtimes[\\/]$(if ($IsWindows) { 'win' } else { 'unix' })[\\/]" } |
+                    Sort-Object FullName -Descending
             ) | Select-Object -First 1
 
             if ($null -eq $providerAssembly) {
-                Set-ItResult -Skipped -Because "SchemaTools has not been built in this workspace, so its Microsoft.Data.SqlClient assembly is unavailable to compare against"
+                Set-ItResult -Skipped -Because "no SchemaTools build output is present, so the real provider assembly is unavailable; its semantics are pinned in EdFi.DataManagementService.SchemaTools.Tests.Unit"
                 return
             }
 
-            $cases = @(
-                'Database=safe;Initial Catalog=edfi_configurationservice'
-                'Initial Catalog=edfi_configurationservice;Database=safe'
-                'Database=first;Initial Catalog=second;Database=last'
-                'Initial Catalog=a;Database=b;Initial Catalog=c'
-                'Server=tcp:localhost,15433;Data Source=sql.example.com'
-                'Data Source=sql.example.com;Server=tcp:localhost,15433'
-            )
+            $capturePath = Initialize-CanonicalMssqlWorkspace
+            try {
+                $ridFamily = if ($IsWindows) { "win" } else { "unix" }
+                $ridDirectory = Join-Path $script:repo.RepoRoot "runtimes/$ridFamily/lib/net9.0"
+                New-Item -ItemType Directory -Path $ridDirectory -Force | Out-Null
+                Copy-Item -LiteralPath $providerAssembly.FullName -Destination $ridDirectory
 
-            $childScript = Join-Path $script:repo.RepoRoot "provider-parity.ps1"
-            @(
-                "Add-Type -Path '$($providerAssembly.FullName)'",
-                "`$rows = foreach (`$case in @($(($cases | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }) -join ", "))) {",
-                "    `$microsoft = [Microsoft.Data.SqlClient.SqlConnectionStringBuilder]::new(`$case)",
-                "    `$system = [System.Data.SqlClient.SqlConnectionStringBuilder]::new(`$case)",
-                "    [pscustomobject]@{",
-                "        Case = `$case",
-                "        Agrees = (`$microsoft.InitialCatalog -ceq `$system.InitialCatalog) -and (`$microsoft.DataSource -ceq `$system.DataSource)",
-                "        MicrosoftInitialCatalog = `$microsoft.InitialCatalog",
-                "        MicrosoftDataSource = `$microsoft.DataSource",
-                "    }",
-                "}",
-                "@(`$rows) | ConvertTo-Json -Compress -AsArray"
-            ) -join "`n" | Set-Content -LiteralPath $childScript -Encoding utf8
+                $outcome = Invoke-ProvisionInProviderChildProcess `
+                    -EnvironmentFile (New-CanonicalMssqlEnvFile) `
+                    -ConnectionString "Server=dms-mssql,1433;$DatabaseSegment;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true" `
+                    -SchemaToolPath $env:DMS_SCHEMA_TOOL_PATH `
+                    -CapturePath $capturePath
 
-            $parity = @((& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json)
+                $outcome.Error | Should -BeNullOrEmpty
+                $keyValue = Get-ConnectionStringKeyValue -ConnectionString $outcome.CapturedConnectionString
+                $databaseKeys = @($keyValue.Keys | Where-Object { $_ -in @("database", "initial catalog") })
 
-            $parity.Count | Should -Be $cases.Count -Because "every case must have been compared in the child process"
-            foreach ($row in $parity) {
-                $row.Agrees | Should -BeTrue -Because "the two providers must select the same server and database for '$($row.Case)'"
+                $databaseKeys.Count | Should -Be 1
+                $keyValue[$databaseKeys[0]] | Should -Be $Effective -Because "the real provider resolves the family's last occurrence"
+                $outcome.AuthorityDatabase | Should -Be $Effective -Because "the guard judges what SchemaTools will deploy into"
             }
-
-            # Anchored spot-checks so a child that silently reported agreement on empty values fails.
-            ($parity | Where-Object { $_.Case -eq 'Database=first;Initial Catalog=second;Database=last' }).MicrosoftInitialCatalog |
-                Should -Be "last"
-            ($parity | Where-Object { $_.Case -eq 'Data Source=sql.example.com;Server=tcp:localhost,15433' }).MicrosoftDataSource |
-                Should -Be "tcp:localhost,15433"
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
         It "classifies the MSSQL endpoint from the protocol-prefixed server: <Name>" -ForEach @(
@@ -5065,7 +5267,8 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             # "tcp:host,port" is documented SqlClient syntax that reaches the same server "host,port"
             # does, so it must be covered by the topology guard rather than read as an external host.
             # A loopback address on another port, and any non-loopback name, stay external: a different
-            # instance is a different namespace and no local authority can speak for it.
+            # instance is a different namespace and no local authority can speak for it. Each row names
+            # the server family once, so no provider assembly is involved.
             $capturePath = Initialize-CanonicalMssqlWorkspace
             try {
                 . $script:repo.ProvisionScript
@@ -5101,45 +5304,34 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
-        It "endpoint classification and the canonical string both follow the provider-selected server: <Name>" -ForEach @(
-            @{ Name = "Data Source listed last wins"; ServerSegment = 'Server=tcp:localhost,15433;Data Source=sql.example.com'; Winner = "sql.example.com"; IsLocal = $false }
-            @{ Name = "Server listed last wins"; ServerSegment = 'Data Source=sql.example.com;Server=tcp:localhost,15433'; Winner = "tcp:localhost,15433"; IsLocal = $true }
-        ) {
-            # Both orders, because a classifier and a renderer that disagree about the winner are the
-            # same defect as the database case: guarded against one server, connected to another.
+        It "endpoint classification and the canonical string both follow the provider-selected server" {
+            # A classifier and a renderer that disagree about the family winner are the same defect as the
+            # database case: guarded against one server, connected to another. The staged provider names an
+            # external host, so BOTH must conclude external even though the string's first server key is a
+            # guarded loopback endpoint.
             $capturePath = Initialize-CanonicalMssqlWorkspace
             try {
-                . $script:repo.ProvisionScript
+                Add-StagedProviderAssembly `
+                    -ToolDirectory $script:repo.RepoRoot `
+                    -Layout "RidSpecific" `
+                    -InitialCatalog "edfi_datamanagementservice" `
+                    -DataSource "sql.example.com" `
+                    -UserId "ops_user"
 
-                $script:canonicalAuthorityCalled = $false
-                function Assert-MssqlTopologyPhysicalConsistency {
-                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
-                    $script:canonicalAuthorityCalled = $true
-                }
-                function Get-CmsToken { return "token" }
-                $script:canonicalStoredConnectionString =
-                    "$ServerSegment;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true"
-                function Get-DataStore {
-                    return @(
-                        [pscustomobject]@{
-                            id = 805
-                            name = "ConflictingServer"
-                            connectionString = $script:canonicalStoredConnectionString
-                            dataStoreContexts = @()
-                        }
-                    )
-                }
-
-                Invoke-ProvisionDmsSchema `
+                $outcome = Invoke-ProvisionInProviderChildProcess `
                     -EnvironmentFile (New-CanonicalMssqlEnvFile) `
-                    -DataStoreId @(805) `
-                    -DatabaseEngine mssql `
-                    -SeparateConfigDatabase *>&1 | Out-Null
+                    -ConnectionString "Server=tcp:localhost,$($script:canonicalMssqlPort);Data Source=sql.example.com;Database=edfi_datamanagementservice;User Id=ops_user;Password=abcdefgh1!" `
+                    -SchemaToolPath $env:DMS_SCHEMA_TOOL_PATH `
+                    -CapturePath $capturePath
 
-                $reparsed = Get-SqlClientEffectiveValue `
-                    -ConnectionString (Get-CapturedSchemaToolConnectionString -CapturePath $capturePath)
-                $reparsed.DataSource | Should -Be $Winner -Because "SchemaTools must connect to the server the provider selected"
-                $script:canonicalAuthorityCalled | Should -Be $IsLocal -Because "classification must follow that same winner"
+                $outcome.Error | Should -BeNullOrEmpty
+                $keyValue = Get-ConnectionStringKeyValue -ConnectionString $outcome.CapturedConnectionString
+                $serverKeys = @($keyValue.Keys | Where-Object { $_ -in @("server", "data source", "addr", "address", "network address") })
+
+                $serverKeys.Count | Should -Be 1
+                $keyValue[$serverKeys[0]] | Should -Be "sql.example.com" -Because "SchemaTools must connect to the server the provider selected"
+                $outcome.AuthorityCalled | Should -BeFalse -Because "classification must follow that same winner, which is external"
+                $outcome.SchemaToolInvoked | Should -BeTrue -Because "an external target is still provisioned"
             }
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
