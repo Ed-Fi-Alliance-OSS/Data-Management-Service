@@ -66,23 +66,6 @@ BEGIN
     END IF;
 END $$;
 
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationIdentity_Descriptor'
-        AND conrelid = to_regclass('"edfi"."EducationOrganizationIdentity"')
-    )
-    THEN
-        ALTER TABLE "edfi"."EducationOrganizationIdentity"
-        ADD CONSTRAINT "FK_EducationOrganizationIdentity_Descriptor"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationIdToEducationOrganizationId_Target" ON "auth"."EducationOrganizationIdToEducationOrganizationId" ("TargetEducationOrganizationId") INCLUDE ("SourceEducationOrganizationId");
 
 CREATE OR REPLACE VIEW "edfi"."EducationOrganization_View" AS

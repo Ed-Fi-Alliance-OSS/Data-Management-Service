@@ -61,17 +61,6 @@ ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationOrganizationIdentity_Descriptor' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationIdentity')
-)
-ALTER TABLE [edfi].[EducationOrganizationIdentity]
-ADD CONSTRAINT [FK_EducationOrganizationIdentity_Descriptor]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id

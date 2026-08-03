@@ -1588,18 +1588,9 @@ internal static class PolymorphicAbstractFixture
                     TargetResource: null
                 ),
             ],
-            [
-                // Declared FK on the abstract identity table, shaped the way
-                // BuildIdentityTableConstraints emits one
-                new TableConstraint.ForeignKey(
-                    "FK_EducationOrganizationIdentity_Descriptor",
-                    [documentIdColumn],
-                    new DbTableName(new DbSchemaName("dms"), "Descriptor"),
-                    [documentIdColumn],
-                    ReferentialAction.Cascade,
-                    ReferentialAction.NoAction
-                ),
-            ]
+            // BuildIdentityTableConstraints declares no foreign key on an abstract identity table, so
+            // neither does this hand-built model.
+            []
         );
 
         // School concrete table
@@ -2865,16 +2856,9 @@ internal static class AuthEdOrgHierarchyFixture
                     TargetResource: null
                 ),
             ],
-            [
-                new TableConstraint.ForeignKey(
-                    "FK_EducationOrganizationIdentity_Descriptor",
-                    [documentIdColumn],
-                    new DbTableName(new DbSchemaName("dms"), "Descriptor"),
-                    [documentIdColumn],
-                    ReferentialAction.Cascade,
-                    ReferentialAction.NoAction
-                ),
-            ]
+            // BuildIdentityTableConstraints declares no foreign key on an abstract identity table, so
+            // neither does this hand-built model.
+            []
         );
 
         // StateEducationAgency concrete table (leaf)
