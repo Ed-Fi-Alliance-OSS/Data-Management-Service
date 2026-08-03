@@ -62,13 +62,14 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
             DocumentCacheAdministrativeWorkflow.CreateCancellationScope(context, cancellationToken);
         CancellationToken effectiveCancellationToken = cancellationScope.Token;
 
-        DocumentCacheLifecycleObservation lifecycle = CurrentLifecycle(context);
-        if (
-            lifecycle
-            is not { State: DocumentCacheLifecycleState.Tracking, CacheAheadRecoveryRequired: false }
-        )
+        DocumentCacheAdministrativeCommandResult? admissionFailure = await VerifyAdmissionAsync(
+                context,
+                effectiveCancellationToken
+            )
+            .ConfigureAwait(false);
+        if (admissionFailure is not null)
         {
-            return CreateLifecycleFailure(context, lifecycle);
+            return admissionFailure;
         }
 
         DocumentCacheAdministrativeBaselineBoundaryResult boundary = await CaptureBoundaryAsync(
@@ -191,6 +192,45 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
             cancellationToken
         );
 
+    private static async Task<DocumentCacheAdministrativeCommandResult?> VerifyAdmissionAsync(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        DocumentCacheLifecycleReadResult lifecycleReadResult = await DocumentCacheAdministrativeWorkflow
+            .ExecuteInTransactionAsync(
+                context.MutexLease,
+                IsolationLevel.ReadCommitted,
+                (session, transactionCancellationToken) =>
+                    context.Primitives.ReadLifecycleAsync(
+                        session,
+                        DocumentCacheAdministrativeStateLockMode.Shared,
+                        transactionCancellationToken
+                    ),
+                commit: true,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (!lifecycleReadResult.Succeeded)
+        {
+            return context.Failed(
+                DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+                DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
+                DocumentCacheAdministrativeDiagnosticCategory.LifecycleObservationFailure,
+                lifecycleReadResult.Message,
+                retryable: false
+            );
+        }
+
+        DocumentCacheLifecycleObservation lifecycle = lifecycleReadResult.Lifecycle!;
+        context.SetLiveTargetObservation(CreateTargetObservation(context, lifecycle));
+
+        return lifecycle is { State: DocumentCacheLifecycleState.Tracking, CacheAheadRecoveryRequired: false }
+            ? null
+            : CreateLifecycleFailure(context, lifecycle);
+    }
+
     private static DocumentCacheAdministrativeCommandResult CreateLifecycleFailure(
         DocumentCacheAdministrativeCommandExecutionContext context,
         DocumentCacheLifecycleObservation lifecycle
@@ -217,14 +257,25 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
         );
     }
 
-    private static DocumentCacheLifecycleObservation CurrentLifecycle(
-        DocumentCacheAdministrativeCommandExecutionContext context
-    ) =>
-        context.LiveTargetObservation?.Lifecycle
-        ?? context.ObservedLifecycle
-        ?? throw new InvalidOperationException(
-            "Explicit integrity scrub requires a live lifecycle observation."
+    private static DocumentCacheTargetObservation CreateTargetObservation(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        DocumentCacheLifecycleObservation lifecycle
+    )
+    {
+        DocumentCacheTargetExecutionContext executionContext = context.TargetContext.TargetExecutionContext;
+
+        return DocumentCacheTargetObservation.ResolvedEligible(
+            executionContext.TargetKey,
+            executionContext.EffectiveSettings,
+            executionContext.Generation,
+            executionContext.ProviderToken,
+            executionContext.PhysicalSourceFingerprint,
+            lifecycle,
+            executionContext.Inventory,
+            executionContext.EnqueueTrigger,
+            executionContext.SqlServerPrerequisites
         );
+    }
 
     private static DocumentCacheExplicitIntegrityScrubRequest Request(
         DocumentCacheAdministrativeCommandExecutionContext context

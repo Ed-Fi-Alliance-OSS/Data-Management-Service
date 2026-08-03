@@ -211,6 +211,57 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         (await ReadWorkVersionsByDocumentIdAsync())[source.DocumentId].Should().Be(5);
     }
 
+    [Test]
+    public async Task It_rechecks_cache_ahead_latch_after_preflight_before_boundary_capture()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
+        SourceDocument source = await InsertDocumentAsync(contentVersion: 10);
+        await ClearProjectionWorkAsync();
+        var primitives = new BeforeSecondLifecycleReadPrimitives(
+            new MssqlDocumentCacheAdministrativePrimitives(),
+            () => SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: true)
+        );
+        RecordingObservationSink observationSink = new();
+        DocumentCacheExplicitIntegrityScrubCommand command = CreateCommand(
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
+            observationSink,
+            primitives
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
+            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet);
+        result.Mutated.Should().BeFalse();
+        result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Tracking);
+        result.CacheAheadRecoveryRequired.Should().BeTrue();
+        result
+            .PhaseDiagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.Preflight
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.CacheAheadLatchSet
+            );
+
+        primitives.CaptureBoundaryCallCount.Should().Be(0);
+        primitives.ScrubPageCallCount.Should().Be(0);
+        (await ReadWorkVersionsByDocumentIdAsync()).Should().BeEmpty();
+        (await ReadLifecycleAsync())
+            .Should()
+            .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, true));
+        observationSink
+            .AdministrativeCommandSnapshots.Should()
+            .NotContain(snapshot =>
+                snapshot.CurrentPhase == DocumentCacheAdministrativeCommandPhase.CaptureBoundary
+                || snapshot.CurrentPhase == DocumentCacheAdministrativeCommandPhase.ScrubScan
+            );
+        source.DocumentId.Should().BePositive();
+    }
+
     [TestCase(DocumentCacheLifecycleState.Disabled, false)]
     [TestCase(DocumentCacheLifecycleState.Resetting, false)]
     [TestCase(DocumentCacheLifecycleState.Rebuilding, false)]
@@ -627,6 +678,120 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
 
         public void EndAdministrativeCommand(DocumentCacheAdministrativeCommandExecutionId executionId) =>
             _ = executionId;
+    }
+
+    private sealed class BeforeSecondLifecycleReadPrimitives(
+        IDocumentCacheAdministrativePrimitives inner,
+        Func<Task> beforeSecondLifecycleRead
+    ) : IDocumentCacheAdministrativePrimitives
+    {
+        private int _captureBoundaryCallCount;
+        private int _lifecycleReadCount;
+        private int _scrubPageCallCount;
+
+        public int CaptureBoundaryCallCount => _captureBoundaryCallCount;
+
+        public int ScrubPageCallCount => _scrubPageCallCount;
+
+        public RelationalProviderToken ProviderToken => inner.ProviderToken;
+
+        public async Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeStateLockMode lockMode =
+                DocumentCacheAdministrativeStateLockMode.Shared,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (Interlocked.Increment(ref _lifecycleReadCount) == 2)
+            {
+                await beforeSecondLifecycleRead().ConfigureAwait(false);
+            }
+
+            return await inner
+                .ReadLifecycleAsync(mutexSession, lockMode, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        public Task LockCanonicalDocumentsForGuardedActivationAsync(
+            IRelationalWriteSession mutexSession,
+            CancellationToken cancellationToken = default
+        ) => inner.LockCanonicalDocumentsForGuardedActivationAsync(mutexSession, cancellationToken);
+
+        public Task<DocumentCacheGuardedNewEmptyActivationState> ReadGuardedNewEmptyActivationStateAsync(
+            IRelationalWriteSession mutexSession,
+            CancellationToken cancellationToken = default
+        ) => inner.ReadGuardedNewEmptyActivationStateAsync(mutexSession, cancellationToken);
+
+        public Task<DocumentCacheProviderPrerequisiteValidationResult> ValidateActivationPrerequisitesAsync(
+            IRelationalWriteSession mutexSession,
+            CancellationToken cancellationToken = default
+        ) => inner.ValidateActivationPrerequisitesAsync(mutexSession, cancellationToken);
+
+        public Task<DocumentCacheAdministrativeLifecycleTransitionResult> TryTransitionLifecycleAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeLifecycleTransitionRequest request,
+            CancellationToken cancellationToken = default
+        ) => inner.TryTransitionLifecycleAsync(mutexSession, request, cancellationToken);
+
+        public Task<DocumentCacheAdministrativeActivationTransitionResult> TryTransitionLifecycleAfterActivationPrerequisitesAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeLifecycleTransitionRequest request,
+            CancellationToken cancellationToken = default
+        ) =>
+            inner.TryTransitionLifecycleAfterActivationPrerequisitesAsync(
+                mutexSession,
+                request,
+                cancellationToken
+            );
+
+        public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentCacheBatchAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeClearBatchRequest request,
+            CancellationToken cancellationToken = default
+        ) => inner.ClearDocumentCacheBatchAsync(mutexSession, request, cancellationToken);
+
+        public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentProjectionWorkBatchAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeClearBatchRequest request,
+            DocumentCacheAdministrativeWorkClearance clearance,
+            CancellationToken cancellationToken = default
+        ) => inner.ClearDocumentProjectionWorkBatchAsync(mutexSession, request, clearance, cancellationToken);
+
+        public Task<DocumentCacheAdministrativeProjectedStateEmptinessResult> ReadProjectedStateEmptinessAsync(
+            IRelationalWriteSession mutexSession,
+            CancellationToken cancellationToken = default
+        ) => inner.ReadProjectedStateEmptinessAsync(mutexSession, cancellationToken);
+
+        public Task<DocumentCacheAdministrativeBaselineBoundaryResult> CaptureBaselineBoundaryAsync(
+            IRelationalWriteSession mutexSession,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Interlocked.Increment(ref _captureBoundaryCallCount);
+            return inner.CaptureBaselineBoundaryAsync(mutexSession, cancellationToken);
+        }
+
+        public Task<DocumentCacheAdministrativeWorkHighWaterObservationResult> ObserveWorkHighWaterAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeWorkHighWaterObservationRequest request,
+            CancellationToken cancellationToken = default
+        ) => inner.ObserveWorkHighWaterAsync(mutexSession, request, cancellationToken);
+
+        public Task<DocumentCacheAdministrativeBaselineSeedPageResult> SeedBaselinePageAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeBaselineSeedPageRequest request,
+            CancellationToken cancellationToken = default
+        ) => inner.SeedBaselinePageAsync(mutexSession, request, cancellationToken);
+
+        public Task<DocumentCacheAdministrativeScrubPageResult> ScrubPageAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeScrubPageRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Interlocked.Increment(ref _scrubPageCallCount);
+            return inner.ScrubPageAsync(mutexSession, request, cancellationToken);
+        }
     }
 
     private sealed class BeforeFirstScrubPagePrimitives(

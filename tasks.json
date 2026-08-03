@@ -718,7 +718,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheExplicitIntegrityScrub|FullyQualifiedName~DocumentCacheAdministrativePrimitives\"",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheExplicitIntegrityScrub|FullyQualifiedName~DocumentCacheAdministrativePrimitives\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "session-bound-writer",

@@ -202,3 +202,8 @@ Completed session-bound-writer no-work mutation accounting follow-up task for re
 Key decisions: added AlreadyCurrentNoWork writer result for cache-current/no-work observations; session-bound result mutation remains true only for prior command mutation or writer DML outcomes; item processing clears local failure but does not ack/count/MarkMutated for no-work observation.
 Files changed: DocumentCacheWriterContracts.cs; DocumentCacheWriterClassification.cs; DocumentCacheProjectionItemProcessor.cs; focused writer/session-bound/drain tests; PG/MSSQL writer integration tests; tasks.json; progress.txt.
 Blockers/notes: default MSSQL admin env unset; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Remaining follow-up tasks still open in tasks.json.
+
+Completed explicit-integrity-scrub follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: explicit scrub now rereads lifecycle/latch on mutex session after live preflight and before boundary capture; stale latch/lifecycle returns no-mutation failure with current diagnostics, no new scrub state or retry policy.
+Files changed: DocumentCacheExplicitIntegrityScrub.cs; PG/MSSQL ExplicitIntegrityScrub integration tests; tasks.json; progress.txt.
+Blockers/notes: default MSSQL admin env unset; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Remaining follow-up tasks still open in tasks.json.
