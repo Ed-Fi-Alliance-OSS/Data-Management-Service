@@ -168,6 +168,11 @@ public class Given_DocumentCacheBaselineSeeding
     [Test]
     public async Task It_waits_with_bounded_diagnostics_when_work_is_at_the_baseline_high_water_mark()
     {
+        var drainer = new RecordingAdministrativeDrainer(
+            DocumentCacheAdministrativeDrainSliceResult.Succeeded(
+                DocumentCacheProjectionDrainPageResult.NoEligibleWork
+            )
+        );
         var primitives = new RecordingAdministrativePrimitives(
             new DocumentCacheAdministrativeBaselineBoundaryResult(1, "boundary"),
             new DocumentCacheAdministrativeWorkHighWaterObservationResult(
@@ -196,9 +201,11 @@ public class Given_DocumentCacheBaselineSeeding
             new RecordingMutexLease()
         );
 
-        DocumentCacheBaselineSeedingResult result = await CreateSeeder(delay).SeedAsync(context);
+        DocumentCacheBaselineSeedingResult result = await CreateSeeder(delay, drainer).SeedAsync(context);
 
+        result.Completed.Should().BeTrue();
         result.LastCommittedDocumentId.Should().Be(1);
+        drainer.BackpressureReliefCalls.Should().ContainSingle().Which.Should().BeSameAs(context);
         delay.Delays.Should().Equal(TimeSpan.FromSeconds(5));
         context
             .PhaseDiagnostics.Should()
@@ -216,11 +223,71 @@ public class Given_DocumentCacheBaselineSeeding
             );
     }
 
+    [Test]
+    public async Task It_retries_high_water_without_poll_sleep_when_relief_slice_acknowledges_work()
+    {
+        var drainer = new RecordingAdministrativeDrainer(
+            DocumentCacheAdministrativeDrainSliceResult.Succeeded(
+                DocumentCacheProjectionDrainPageResult.PageProcessed(
+                    processedItemCount: 1,
+                    acknowledgedOrRemovedItemCount: 1
+                )
+            )
+        );
+        var primitives = new RecordingAdministrativePrimitives(
+            new DocumentCacheAdministrativeBaselineBoundaryResult(1, "boundary"),
+            new DocumentCacheAdministrativeWorkHighWaterObservationResult(
+                highWaterMark: 2,
+                observedWorkRows: 2,
+                diagnosticDocumentIds: [7, 9],
+                "at high-water"
+            ),
+            HighWaterBelow()
+        );
+        primitives.SeedPages.Enqueue(
+            Page(
+                boundaryDocumentId: 1,
+                afterDocumentId: 0,
+                Document(
+                    1,
+                    10,
+                    previousRequiredContentVersion: null,
+                    DocumentCacheAdministrativeBaselineWorkMutationKind.Inserted
+                )
+            )
+        );
+        var delay = new RecordingBaselineSeedDelay();
+        DocumentCacheAdministrativeCommandExecutionContext context = CreateCommandContext(
+            primitives,
+            new RecordingMutexLease()
+        );
+
+        DocumentCacheBaselineSeedingResult result = await CreateSeeder(delay, drainer).SeedAsync(context);
+
+        result.Completed.Should().BeTrue();
+        result.LastCommittedDocumentId.Should().Be(1);
+        drainer.BackpressureReliefCalls.Should().ContainSingle().Which.Should().BeSameAs(context);
+        delay.Delays.Should().BeEmpty();
+        primitives.SeedRequests.Should().ContainSingle();
+        context.LastCompletedPhase.Should().Be(DocumentCacheAdministrativeCommandPhase.SeedBaseline);
+    }
+
     private static DocumentCacheBaselineSeeder CreateSeeder(IDocumentCacheBaselineSeedDelay? delay = null) =>
         new(
             delay ?? new RecordingBaselineSeedDelay(),
             new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheBaselineSeeder>.Instance
+        );
+
+    private static DocumentCacheBaselineSeeder CreateSeeder(
+        IDocumentCacheBaselineSeedDelay? delay,
+        IDocumentCacheAdministrativeDrainer drainer
+    ) =>
+        new(
+            delay ?? new RecordingBaselineSeedDelay(),
+            new FixedTimeProvider(ObservedAt),
+            NullLogger<DocumentCacheBaselineSeeder>.Instance,
+            drainer
         );
 
     private static DocumentCacheAdministrativeCommandExecutionContext CreateCommandContext(
@@ -516,6 +583,32 @@ public class Given_DocumentCacheBaselineSeeding
             Delays.Add(delay);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class RecordingAdministrativeDrainer(
+        params DocumentCacheAdministrativeDrainSliceResult[] reliefResults
+    ) : IDocumentCacheAdministrativeDrainer
+    {
+        private readonly Queue<DocumentCacheAdministrativeDrainSliceResult> _reliefResults = new(
+            reliefResults
+        );
+
+        public List<DocumentCacheAdministrativeCommandExecutionContext> BackpressureReliefCalls { get; } = [];
+
+        public Task<DocumentCacheAdministrativeDrainSliceResult> DrainBackpressureReliefSliceAsync(
+            DocumentCacheAdministrativeCommandExecutionContext context,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            BackpressureReliefCalls.Add(context);
+            return Task.FromResult(_reliefResults.Dequeue());
+        }
+
+        public Task<DocumentCacheAdministrativeDrainToEmptyResult> DrainToEmptyAsync(
+            DocumentCacheAdministrativeCommandExecutionContext context,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
     }
 
     private sealed class NoOpObservationSink : IDocumentCacheProjectionObservationSink

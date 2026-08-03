@@ -758,5 +758,129 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheWriter|FullyQualifiedName~DocumentCacheSessionBoundWriter|FullyQualifiedName~DocumentCacheAdministration\""
     ],
     "completed": true
+  },
+  {
+    "category": "projection-supervisor",
+    "description": "Medium: Retain a replaced or removed DocumentCache target context only until its currently running ordinary drain slice exits. Keep this to supervisor context lifetime around existing DrainExecutor ownership; do not change scheduling, add durable leases, work ownership columns, item concurrency, or a second scheduler.",
+    "acceptance-criteria": [
+      "When a refresh proves target replacement, removal, or ineligibility while the old context has ordinary DrainExecutor ownership, the supervisor cancels and removes the old context from current contexts but defers DisposeAsync until the drain executor is no longer owned.",
+      "Administrative command-owned retention keeps its existing behavior, including noncurrent-generation command diagnostics and release through IDocumentCacheProjectionRetainedTargetContextReleaser.",
+      "The old ordinary context is not scheduled for new work after it is removed from CurrentTargetContexts, and the replacement/current generation can be created immediately with fresh cursor and health state.",
+      "The currently running ordinary page observes cancellation at the next existing item or short transaction boundary and completes or aborts using the existing scoped materializer, writer, mapping, and provider dependencies.",
+      "Retained ordinary contexts are ended and disposed when their current slice releases the drain executor, using the original replacement, removed, or ineligible end reason; shutdown still cancels and disposes current and retained contexts without leaking scopes.",
+      "Retained ordinary contexts do not contribute to current target health, caught-up status, or ready-target planning while retained.",
+      "Focused supervisor/scheduler tests cover CMS or supervisor refresh replacing/removing a target while an ordinary drain page is blocked in materialization or writer work."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionSupervisor|FullyQualifiedName~DocumentCacheProjectionScheduler|FullyQualifiedName~DocumentCacheProjectionShutdown\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "target-refresh",
+    "description": "Medium: Wire the existing production CMS/data-store refresh/load path to notify the DocumentCache projection supervisor with the CmsRefreshNotification reason after data-store metadata is refreshed. Keep the existing startup refresh and Projector:PollInterval supervisor tick; do not introduce an independent DocumentCache refresh timer, provider-specific branch, direct registry mutation path, or public endpoint.",
+    "acceptance-criteria": [
+      "The production path that refreshes or reloads IDataStoreProvider metadata invokes IDocumentCacheProjectionSupervisor.RefreshAsync(DocumentCacheTargetRefreshReason.CmsRefreshNotification) for the running DMS process after that refresh completes.",
+      "The notification path uses the existing supervisor reconciliation logic so transient CMS refresh failures keep the current resolved target generation and attach diagnostics rather than tearing it down.",
+      "Successful notification refresh detects configured target replacement, removal, or newly resolved targets without waiting for the next Projector:PollInterval tick.",
+      "The hook is safe when no DocumentCache targets are configured and does not force queue paging, materialization, cache writes, or prerequisite revalidation outside the target-registry/supervisor initialization path.",
+      "Notification failures are logged or surfaced as bounded diagnostics without making ordinary request data-store refresh fail solely because the projection supervisor notification failed.",
+      "The implementation does not add a second hosted polling loop, direct registry mutation path, public Resources API endpoint, provider-specific notification branch, or extra target-refresh abstraction.",
+      "Focused tests cover notification-triggered refresh for replacement/removal and verify the supervisor receives the CmsRefreshNotification reason."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCache|FullyQualifiedName~Configuration\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionSupervisor|FullyQualifiedName~DocumentCacheTargetRegistry\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "startup-cleanup",
+    "description": "Low cleanup: Remove the unused InitializeDocumentCacheTargets startup phase constant so startup status does not advertise a DocumentCache phase that is never emitted. Do not expand startup to track the hosted supervisor's initial refresh as part of this task.",
+    "acceptance-criteria": [
+      "DmsStartupPhases no longer contains an unreachable InitializeDocumentCacheTargets value.",
+      "Startup status still writes Ready only through the existing startup-status flow and does not duplicate or conflict with the hosted DocumentCacheProjectionSupervisor lifecycle.",
+      "Malformed DocumentCache options remain fatal through options validation, while per-target unresolved/ineligible projection diagnostics remain target-scoped and do not stop peer targets or process startup.",
+      "The change does not add Program.cs DocumentCache startup phases, a second supervisor instance, a second startup refresh path, or a new hosted service.",
+      "Focused frontend startup/status tests cover the resulting phase list or constants only where tests intentionally pin them."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit",
+      "dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~StartupStatus|FullyQualifiedName~WebApplicationBuilderExtensions|FullyQualifiedName~Configuration\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "administrative-command-runner",
+    "description": "Medium: Classify provider statement and transaction command timeouts escaping administrative primitive workflows as providerCommandTimeout instead of unexpectedProviderFailure. Keep the change to exception classification on the existing mutex-owned administrative execution path; do not introduce timeout configuration, reconnect behavior, retry policy, or durable command state.",
+    "acceptance-criteria": [
+      "SQL Server administrative primitive command timeouts surfaced as SqlException number -2 are converted by the command runner to DocumentCacheAdministrativeCommandClassification.ProviderCommandTimeout.",
+      "PostgreSQL administrative primitive command timeouts surfaced as provider query-canceled or timeout exceptions are converted by the command runner to DocumentCacheAdministrativeCommandClassification.ProviderCommandTimeout.",
+      "Provider timeout classification applies to primitive read/write commands and transaction commit or rollback failures on the mutex-owned session when those failures escape as provider command timeouts.",
+      "The result status and mutated flag still follow the existing mutation-aware rules: FailedNoMutation before any durable mutation and IncompleteRetryable after durable mutation.",
+      "Non-timeout provider failures continue to use unexpectedProviderFailure, and session-loss handling remains distinct from providerCommandTimeout.",
+      "Focused command-runner tests cover provider-specific timeout exceptions escaping a non-writer administrative primitive path before and after commandContext.MarkMutated; provider primitive code is changed only if needed to avoid swallowing timeout exceptions."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend.Postgresql",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeCommandRunner|FullyQualifiedName~DocumentCacheAdministrativeWorkflow|FullyQualifiedName~DocumentCacheAdministrativePrimitives\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "projection-supervisor",
+    "description": "Medium: Make the hosted DocumentCache projection supervisor wait until the earlier of the next Projector:PollInterval tick or the earliest existing per-target retry/backoff deadline. Keep Projector:PollInterval as the only target-registry and lifecycle/latch refresh cadence; do not add per-document timers, a second queue, a second scheduler, or worker ownership columns.",
+    "acceptance-criteria": [
+      "After the scheduler records PollSleepUntil from a suppressed-work pass, the hosted supervisor re-runs ready-target dispatch at that deadline when it is earlier than the next Projector:PollInterval tick.",
+      "After the scheduler records TargetBackoffUntil, the hosted supervisor re-runs ready-target dispatch at that deadline when it is earlier than the next Projector:PollInterval tick.",
+      "The earlier-deadline wake is computed from existing process-local SchedulingState values on current target contexts only; it does not create per-document timers or durable wake records.",
+      "The supervisor still performs target registry refresh and lifecycle/latch refresh no less often than the configured Projector:PollInterval and does not spin when all blocked deadlines are in the future or no targets are configured.",
+      "No eligible target waits a full poll interval solely because its retry or target-backoff deadline became ready between poll ticks.",
+      "Shutdown cancellation still stops the wait promptly and starts no new page or item after cancellation.",
+      "Focused hosted-supervisor tests use a controllable TimeProvider to prove a target with retry/backoff earlier than PollInterval is dispatched before the full poll interval elapses."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionSupervisor|FullyQualifiedName~DocumentCacheProjectionScheduler|FullyQualifiedName~DocumentCacheProjectionFailureBackoff\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "baseline-seeding",
+    "description": "High: On baseline high-water backpressure, run the existing command-owned administrative drain slice before sleeping so activation, rebuild, and cache-ahead recovery can make progress when the active command is the only local projector. Keep the fix inside the existing seeder, administrative drainer, scheduler, and session-bound writer path; do not add durable work ownership, a second queue, a durable baseline cursor, or a backpressure-specific timeout.",
+    "acceptance-criteria": [
+      "When baseline seeding observes DocumentProjectionWork at or above Projector:BaselineHighWaterMark, the command invokes the existing shared administrative drain slice path for that pinned target before sleeping or retrying the high-water observation.",
+      "Backpressure relief runs at most one bounded drain slice per high-water observation cycle, acquires the global target gate only for that slice, reuses the per-target drain executor already owned by the administrative flow, and releases the global gate before returning to seed or wait logic.",
+      "Any cache, work, latch, or acknowledgement mutations performed during backpressure relief execute through the session-bound writer on the administrative mutex-owning physical session.",
+      "A single-process offline activation, online rebuild, or internal-only cache-ahead recovery with baseline work reaching the high-water mark can continue draining and seeding without relying on peer projectors.",
+      "If the relief slice cannot reduce durable work because of persistent poison, target-fatal failure, lifecycle fence, cancellation, provider timeout, session loss, or WorkflowTimeout, the existing administrative drain and command result classifications are reused.",
+      "Backpressure diagnostics remain bounded by Projector:PageSize and WorkflowTimeout still classifies prolonged high-water waits through the existing administrative result rules; no backpressureTimeout classification or setting is added.",
+      "Focused tests cover the high-water branch invoking one administrative drain relief slice and a no-peer workflow that progresses after seeded work reaches the high-water mark."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheBaselineSeeding|FullyQualifiedName~DocumentCacheAdministrativeDrain|FullyQualifiedName~DocumentCacheAdministrativeCommandRunner\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheOfflineActivation|FullyQualifiedName~DocumentCacheOnlineCacheRebuild|FullyQualifiedName~DocumentCacheInternalOnlyCacheAheadRecovery\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheOfflineActivation|FullyQualifiedName~DocumentCacheOnlineCacheRebuild|FullyQualifiedName~DocumentCacheInternalOnlyCacheAheadRecovery\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "configuration-docs",
+    "description": "Low docs-only: Add Administration:WorkflowTimeout to the supported DocumentCache appsettings examples so operators can discover the configurable 24-hour administrative workflow budget alongside the other projector settings. Keep the change to examples and operator-facing configuration documentation; do not change runtime code.",
+    "acceptance-criteria": [
+      "The committed DocumentCache appsettings example includes DataManagement:DocumentCache:Administration:WorkflowTimeout with a 24-hour sample value.",
+      "The example continues to link to the authoritative DocumentCache design reference and keeps Targets, ReadAcceleration, and Projector settings in their existing shape.",
+      "No runtime options binding, validation, startup diagnostic behavior, command execution semantics, or default values change as part of the documentation/example update.",
+      "Focused configuration tests or snapshot assertions are updated only if they intentionally pin the example shape; no new runtime tests are added solely for this docs-only change."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit",
+      "dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheOptions|FullyQualifiedName~WebApplicationBuilderExtensions|FullyQualifiedName~DocumentCacheStartupDiagnostics\"",
+      "rg -n 'Administration|WorkflowTimeout' src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings*.json reference/design/backend-redesign/design-docs/bootstrap/appsettings.Development.json.example"
+    ],
+    "completed": false
   }
 ]

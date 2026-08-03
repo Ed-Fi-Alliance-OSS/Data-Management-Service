@@ -16,6 +16,11 @@ internal interface IDocumentCacheAdministrativeDrainer
         DocumentCacheAdministrativeCommandExecutionContext context,
         CancellationToken cancellationToken = default
     );
+
+    Task<DocumentCacheAdministrativeDrainSliceResult> DrainBackpressureReliefSliceAsync(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        CancellationToken cancellationToken = default
+    );
 }
 
 internal interface IDocumentCacheAdministrativeDrainDelay
@@ -148,6 +153,117 @@ internal sealed class DocumentCacheAdministrativeDrainStats
     }
 }
 
+internal sealed record DocumentCacheAdministrativeDrainSliceResult
+{
+    private DocumentCacheAdministrativeDrainSliceResult(
+        bool completed,
+        int drainSliceCount,
+        int processedItemCount,
+        int acknowledgedOrRemovedItemCount,
+        int documentScopedFailureCount,
+        DateTimeOffset? nextRetryAt,
+        DocumentCacheAdministrativeCommandResult? failureResult
+    )
+    {
+        if (!completed && failureResult is null)
+        {
+            throw new ArgumentException(
+                "Incomplete administrative drain slice results require a failure result."
+            );
+        }
+
+        if (completed && failureResult is not null)
+        {
+            throw new ArgumentException(
+                "Completed administrative drain slice results cannot carry a failure result."
+            );
+        }
+
+        Completed = completed;
+        DrainSliceCount = RequireNonNegative(drainSliceCount, nameof(drainSliceCount));
+        ProcessedItemCount = RequireNonNegative(processedItemCount, nameof(processedItemCount));
+        AcknowledgedOrRemovedItemCount = RequireNonNegative(
+            acknowledgedOrRemovedItemCount,
+            nameof(acknowledgedOrRemovedItemCount)
+        );
+        DocumentScopedFailureCount = RequireNonNegative(
+            documentScopedFailureCount,
+            nameof(documentScopedFailureCount)
+        );
+        NextRetryAt = nextRetryAt;
+        FailureResult = failureResult;
+    }
+
+    public bool Completed { get; }
+
+    public int DrainSliceCount { get; }
+
+    public int ProcessedItemCount { get; }
+
+    public int AcknowledgedOrRemovedItemCount { get; }
+
+    public int DocumentScopedFailureCount { get; }
+
+    public DateTimeOffset? NextRetryAt { get; }
+
+    public DocumentCacheAdministrativeCommandResult? FailureResult { get; }
+
+    public static DocumentCacheAdministrativeDrainSliceResult Succeeded(
+        DocumentCacheProjectionDrainPageResult drainResult
+    )
+    {
+        ArgumentNullException.ThrowIfNull(drainResult);
+
+        var stats = new DocumentCacheAdministrativeDrainStats();
+        stats.Record(drainResult);
+
+        return Succeeded(stats, drainResult);
+    }
+
+    public static DocumentCacheAdministrativeDrainSliceResult Succeeded(
+        DocumentCacheAdministrativeDrainStats stats,
+        DocumentCacheProjectionDrainPageResult drainResult
+    )
+    {
+        ArgumentNullException.ThrowIfNull(stats);
+        ArgumentNullException.ThrowIfNull(drainResult);
+
+        return new(
+            completed: true,
+            stats.DrainSliceCount,
+            stats.ProcessedItemCount,
+            stats.AcknowledgedOrRemovedItemCount,
+            stats.DocumentScopedFailureCount,
+            drainResult.NextRetryAt,
+            failureResult: null
+        );
+    }
+
+    public static DocumentCacheAdministrativeDrainSliceResult Failed(
+        DocumentCacheAdministrativeDrainStats stats,
+        DocumentCacheAdministrativeCommandResult failureResult
+    )
+    {
+        ArgumentNullException.ThrowIfNull(stats);
+        ArgumentNullException.ThrowIfNull(failureResult);
+
+        return new(
+            completed: false,
+            stats.DrainSliceCount,
+            stats.ProcessedItemCount,
+            stats.AcknowledgedOrRemovedItemCount,
+            stats.DocumentScopedFailureCount,
+            nextRetryAt: null,
+            failureResult
+        );
+    }
+
+    private static int RequireNonNegative(int value, string parameterName) =>
+        value < 0
+            ? throw new ArgumentOutOfRangeException(parameterName, value, "Value cannot be negative.")
+            : value;
+}
+
 internal sealed class DocumentCacheAdministrativeDrainer(
     IDocumentCacheProjectionScheduler scheduler,
     IDocumentCacheAdministrativeDrainDelay delay,
@@ -155,6 +271,80 @@ internal sealed class DocumentCacheAdministrativeDrainer(
     ILogger<DocumentCacheAdministrativeDrainer> logger
 ) : IDocumentCacheAdministrativeDrainer
 {
+    public async Task<DocumentCacheAdministrativeDrainSliceResult> DrainBackpressureReliefSliceAsync(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        using DocumentCacheAdministrativeWorkflowCancellationScope cancellationScope =
+            DocumentCacheAdministrativeWorkflow.CreateCancellationScope(context, cancellationToken);
+        CancellationToken effectiveCancellationToken = cancellationScope.Token;
+
+        context.EnterPhase(DocumentCacheAdministrativeCommandPhase.DrainWork);
+
+        var stats = new DocumentCacheAdministrativeDrainStats();
+
+        DocumentCacheProjectionDrainPageResult drainResult = await RunDrainSliceAsync(
+                context,
+                effectiveCancellationToken
+            )
+            .ConfigureAwait(false);
+
+        stats.Record(drainResult);
+
+        if (drainResult.AdministrativeFailure is not null)
+        {
+            return FailSlice(context, stats, drainResult.AdministrativeFailure);
+        }
+
+        switch (drainResult.Outcome)
+        {
+            case DocumentCacheProjectionDrainPageOutcome.PageProcessed:
+            case DocumentCacheProjectionDrainPageOutcome.NoEligibleWork:
+                context.CompletePhase(DocumentCacheAdministrativeCommandPhase.DrainWork);
+                return DocumentCacheAdministrativeDrainSliceResult.Succeeded(stats, drainResult);
+
+            case DocumentCacheProjectionDrainPageOutcome.LifecycleFenced:
+                return FailSlice(
+                    context,
+                    stats,
+                    CreateFailure(
+                        context,
+                        DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
+                        DocumentCacheAdministrativeDiagnosticCategory.LifecycleMismatch,
+                        "Administrative drain encountered a lifecycle or latch fence.",
+                        retryable: context.Mutated
+                    )
+                );
+
+            case DocumentCacheProjectionDrainPageOutcome.TargetBackoff:
+            case DocumentCacheProjectionDrainPageOutcome.TargetPaused:
+                return FailSlice(
+                    context,
+                    stats,
+                    CreateFailure(
+                        context,
+                        DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
+                        DocumentCacheAdministrativeDiagnosticCategory.UnexpectedProviderFailure,
+                        "Administrative drain encountered a target-scoped projector failure.",
+                        retryable: context.Mutated
+                    )
+                );
+
+            case DocumentCacheProjectionDrainPageOutcome.AdministrativeFailure:
+                throw new InvalidOperationException(
+                    "Administrative drain failure results require failure details."
+                );
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported administrative drain page outcome '{drainResult.Outcome}'."
+                );
+        }
+    }
+
     public async Task<DocumentCacheAdministrativeDrainToEmptyResult> DrainToEmptyAsync(
         DocumentCacheAdministrativeCommandExecutionContext context,
         CancellationToken cancellationToken = default
@@ -178,15 +368,11 @@ internal sealed class DocumentCacheAdministrativeDrainer(
         {
             effectiveCancellationToken.ThrowIfCancellationRequested();
 
-            DocumentCacheProjectionSchedulerDispatchResult dispatch = await scheduler
-                .RunAdministrativeDrainSliceAsync(context.TargetContext, effectiveCancellationToken)
+            DocumentCacheProjectionDrainPageResult drainResult = await RunDrainSliceAsync(
+                    context,
+                    effectiveCancellationToken
+                )
                 .ConfigureAwait(false);
-
-            DocumentCacheProjectionDrainPageResult drainResult =
-                dispatch.DrainResult
-                ?? throw new InvalidOperationException(
-                    "Administrative drain scheduler dispatch did not return a drain result."
-                );
 
             stats.Record(drainResult);
             currentPass.Record(drainResult);
@@ -311,6 +497,39 @@ internal sealed class DocumentCacheAdministrativeDrainer(
     private static DocumentCacheAdministrativeDrainPass NewPass(
         DocumentCacheAdministrativeCommandExecutionContext context
     ) => new(context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize);
+
+    private async Task<DocumentCacheProjectionDrainPageResult> RunDrainSliceAsync(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        DocumentCacheProjectionSchedulerDispatchResult dispatch = await scheduler
+            .RunAdministrativeDrainSliceAsync(context.TargetContext, cancellationToken)
+            .ConfigureAwait(false);
+
+        return dispatch.DrainResult
+            ?? throw new InvalidOperationException(
+                "Administrative drain scheduler dispatch did not return a drain result."
+            );
+    }
+
+    private static DocumentCacheAdministrativeDrainSliceResult FailSlice(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        DocumentCacheAdministrativeDrainStats stats,
+        DocumentCacheAdministrativeDrainFailure failure
+    )
+    {
+        DocumentCacheAdministrativeCommandResult failureResult = context.Failed(
+            failure.Status,
+            failure.Classification,
+            failure.DiagnosticCategory,
+            failure.Message,
+            failure.Retryable,
+            failure.AffectedDocumentIds
+        );
+
+        return DocumentCacheAdministrativeDrainSliceResult.Failed(stats, failureResult);
+    }
 
     private static DocumentCacheAdministrativeDrainToEmptyResult Fail(
         DocumentCacheAdministrativeCommandExecutionContext context,

@@ -678,11 +678,16 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
         DocumentCacheLifecycleObservation lifecycle,
         DocumentCacheDownstreamPublicationStatus downstreamPublicationStatus
     ) =>
-        new(
-            CreateRunner(lifecycle),
-            new FixedDownstreamPublicationHistoryProvider(downstreamPublicationStatus),
-            CreateBaselineSeeder(),
-            CreateDrainer(new RecordingObservationSink())
+        CreateBaselineDrainCommand(
+            lifecycle,
+            downstreamPublicationStatus,
+            static (runner, downstreamPublicationHistoryProvider, baselineSeeder, drainer) =>
+                new DocumentCacheOfflineActivationCommand(
+                    runner,
+                    downstreamPublicationHistoryProvider,
+                    baselineSeeder,
+                    drainer
+                )
         );
 
     private DocumentCacheOfflineDeactivationCommand CreateOfflineDeactivationCommand(
@@ -699,23 +704,52 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
         TimeSpan? workflowTimeout = null,
         int projectorBaselineHighWaterMark = 1000,
         IDocumentCacheBaselineSeedDelay? baselineSeedDelay = null
-    ) =>
-        new(
+    )
+    {
+        DocumentCacheAdministrativeDrainer drainer = CreateDrainer(new RecordingObservationSink());
+        return new(
             CreateRunner(lifecycle, workflowTimeout, projectorBaselineHighWaterMark),
-            CreateBaselineSeeder(baselineSeedDelay),
-            CreateDrainer(new RecordingObservationSink())
+            CreateBaselineSeeder(baselineSeedDelay, drainer),
+            drainer
         );
+    }
 
     private DocumentCacheInternalOnlyCacheAheadRecoveryCommand CreateCacheAheadRecoveryCommand(
         DocumentCacheLifecycleObservation lifecycle,
         DocumentCacheDownstreamPublicationStatus downstreamPublicationStatus
     ) =>
-        new(
+        CreateBaselineDrainCommand(
+            lifecycle,
+            downstreamPublicationStatus,
+            static (runner, downstreamPublicationHistoryProvider, baselineSeeder, drainer) =>
+                new DocumentCacheInternalOnlyCacheAheadRecoveryCommand(
+                    runner,
+                    downstreamPublicationHistoryProvider,
+                    baselineSeeder,
+                    drainer
+                )
+        );
+
+    private TCommand CreateBaselineDrainCommand<TCommand>(
+        DocumentCacheLifecycleObservation lifecycle,
+        DocumentCacheDownstreamPublicationStatus downstreamPublicationStatus,
+        Func<
+            DocumentCacheAdministrativeCommandRunner,
+            IDocumentCacheDownstreamPublicationHistoryProvider,
+            IDocumentCacheBaselineSeeder,
+            IDocumentCacheAdministrativeDrainer,
+            TCommand
+        > createCommand
+    )
+    {
+        DocumentCacheAdministrativeDrainer drainer = CreateDrainer(new RecordingObservationSink());
+        return createCommand(
             CreateRunner(lifecycle),
             new FixedDownstreamPublicationHistoryProvider(downstreamPublicationStatus),
-            CreateBaselineSeeder(),
-            CreateDrainer(new RecordingObservationSink())
+            CreateBaselineSeeder(drainer: drainer),
+            drainer
         );
+    }
 
     private DocumentCacheExplicitIntegrityScrubCommand CreateScrubCommand(
         DocumentCacheLifecycleObservation lifecycle
@@ -737,12 +771,14 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
         );
 
     private static DocumentCacheBaselineSeeder CreateBaselineSeeder(
-        IDocumentCacheBaselineSeedDelay? delay = null
+        IDocumentCacheBaselineSeedDelay? delay = null,
+        IDocumentCacheAdministrativeDrainer? drainer = null
     ) =>
         new(
             delay ?? new DocumentCacheBaselineSeedDelay(),
             new FixedTimeProvider(ObservedAtOffset),
-            NullLogger<DocumentCacheBaselineSeeder>.Instance
+            NullLogger<DocumentCacheBaselineSeeder>.Instance,
+            drainer
         );
 
     private static DocumentCacheAdministrativeDrainer CreateDrainer(

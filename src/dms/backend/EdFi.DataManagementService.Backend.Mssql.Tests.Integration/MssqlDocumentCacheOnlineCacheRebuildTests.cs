@@ -235,7 +235,7 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
             ? drainer
             : new ProbingDrainer(drainStartProbe, drainer);
 
-        return new(runner, CreateBaselineSeeder(), effectiveDrainer);
+        return new(runner, CreateBaselineSeeder(effectiveDrainer), effectiveDrainer);
     }
 
     private static MssqlDocumentCacheWriter CreateWriter() =>
@@ -253,11 +253,14 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
             NullLogger<MssqlDocumentCacheWriter>.Instance
         );
 
-    private static DocumentCacheBaselineSeeder CreateBaselineSeeder() =>
+    private static DocumentCacheBaselineSeeder CreateBaselineSeeder(
+        IDocumentCacheAdministrativeDrainer? drainer = null
+    ) =>
         new(
             new DocumentCacheBaselineSeedDelay(),
             new FixedTimeProvider(ObservedAtOffset),
-            NullLogger<DocumentCacheBaselineSeeder>.Instance
+            NullLogger<DocumentCacheBaselineSeeder>.Instance,
+            drainer
         );
 
     private static DocumentCacheAdministrativeDrainer CreateDrainer(
@@ -682,6 +685,17 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
         {
             await probe.RecordAsync().ConfigureAwait(false);
             return await inner.DrainToEmptyAsync(context, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<DocumentCacheAdministrativeDrainSliceResult> DrainBackpressureReliefSliceAsync(
+            DocumentCacheAdministrativeCommandExecutionContext context,
+            CancellationToken cancellationToken = default
+        )
+        {
+            await probe.RecordAsync().ConfigureAwait(false);
+            return await inner
+                .DrainBackpressureReliefSliceAsync(context, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 

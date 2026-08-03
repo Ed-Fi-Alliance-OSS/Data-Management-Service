@@ -217,19 +217,24 @@ public class Given_A_Mssql_DocumentCacheOfflineActivation_Command
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
         );
 
+        DocumentCacheAdministrativeDrainer drainer = CreateDrainer(observationSink);
+
         return new(
             runner,
             new FixedDownstreamPublicationHistoryProvider(downstreamPublicationStatus),
-            CreateBaselineSeeder(),
-            CreateDrainer(observationSink)
+            CreateBaselineSeeder(drainer),
+            drainer
         );
     }
 
-    private static DocumentCacheBaselineSeeder CreateBaselineSeeder() =>
+    private static DocumentCacheBaselineSeeder CreateBaselineSeeder(
+        IDocumentCacheAdministrativeDrainer? drainer = null
+    ) =>
         new(
             new DocumentCacheBaselineSeedDelay(),
             new FixedTimeProvider(ObservedAtOffset),
-            NullLogger<DocumentCacheBaselineSeeder>.Instance
+            NullLogger<DocumentCacheBaselineSeeder>.Instance,
+            drainer
         );
 
     private static DocumentCacheAdministrativeDrainer CreateDrainer(

@@ -217,3 +217,8 @@ Completed simplification follow-up task for reference/design/backend-redesign/ep
 Key decisions: removed production-dead activation-prerequisite lifecycle transition result/helper from shared primitive contract; kept current workflows on separate prerequisite validation plus guarded lifecycle transitions so fail-closed behavior stays unchanged.
 Files changed: DocumentCacheAdministrativePrimitives.cs; PG/MSSQL primitive wrappers; unit/integration primitive fakes and decorators; tasks.json; progress.txt.
 Blockers/notes: none. All tasks in tasks.json now complete.
+
+Completed baseline-seeding follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: baseline high-water now invokes one command-owned administrative drain relief slice before sleeping; seeding retries immediately when relief acknowledges/removes work; relief failures return existing admin drain classifications through workflow callers.
+Files changed: DocumentCacheBaselineSeeder.cs; DocumentCacheAdministrativeDrain.cs; online/offline/recovery workflows; focused baseline unit tests; PG/MSSQL workflow integration factories; tasks.json; progress.txt.
+Blockers/notes: default MSSQL admin env unset; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Remaining follow-up tasks still open in tasks.json.

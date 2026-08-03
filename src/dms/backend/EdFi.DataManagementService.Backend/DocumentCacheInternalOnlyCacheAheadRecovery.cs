@@ -160,7 +160,13 @@ internal sealed class DocumentCacheInternalOnlyCacheAheadRecoveryCommand(
             );
         }
 
-        await baselineSeeder.SeedAsync(context, effectiveCancellationToken).ConfigureAwait(false);
+        DocumentCacheBaselineSeedingResult seedResult = await baselineSeeder
+            .SeedAsync(context, effectiveCancellationToken)
+            .ConfigureAwait(false);
+        if (!seedResult.Completed)
+        {
+            return seedResult.FailureResult!;
+        }
 
         DocumentCacheAdministrativeDrainToEmptyResult drainResult = await drainer
             .DrainToEmptyAsync(context, effectiveCancellationToken)

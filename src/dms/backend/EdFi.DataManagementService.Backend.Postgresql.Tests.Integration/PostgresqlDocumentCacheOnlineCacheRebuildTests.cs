@@ -218,7 +218,7 @@ public class Given_A_Postgresql_DocumentCacheOnlineCacheRebuild_Command
             ? drainer
             : new ProbingDrainer(drainStartProbe, drainer);
 
-        return new(runner, CreateBaselineSeeder(), effectiveDrainer);
+        return new(runner, CreateBaselineSeeder(effectiveDrainer), effectiveDrainer);
     }
 
     private PostgresqlDocumentCacheWriter CreateWriter() =>
@@ -237,11 +237,14 @@ public class Given_A_Postgresql_DocumentCacheOnlineCacheRebuild_Command
             NullLogger<PostgresqlDocumentCacheWriter>.Instance
         );
 
-    private static DocumentCacheBaselineSeeder CreateBaselineSeeder() =>
+    private static DocumentCacheBaselineSeeder CreateBaselineSeeder(
+        IDocumentCacheAdministrativeDrainer? drainer = null
+    ) =>
         new(
             new DocumentCacheBaselineSeedDelay(),
             new FixedTimeProvider(ObservedAt),
-            NullLogger<DocumentCacheBaselineSeeder>.Instance
+            NullLogger<DocumentCacheBaselineSeeder>.Instance,
+            drainer
         );
 
     private DocumentCacheAdministrativeDrainer CreateDrainer(
@@ -621,6 +624,17 @@ public class Given_A_Postgresql_DocumentCacheOnlineCacheRebuild_Command
         {
             await probe.RecordAsync().ConfigureAwait(false);
             return await inner.DrainToEmptyAsync(context, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<DocumentCacheAdministrativeDrainSliceResult> DrainBackpressureReliefSliceAsync(
+            DocumentCacheAdministrativeCommandExecutionContext context,
+            CancellationToken cancellationToken = default
+        )
+        {
+            await probe.RecordAsync().ConfigureAwait(false);
+            return await inner
+                .DrainBackpressureReliefSliceAsync(context, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 

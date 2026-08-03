@@ -40,7 +40,8 @@ internal sealed record DocumentCacheBaselineSeedingResult
         int pagesSeeded,
         int documentsVisited,
         int workMutationCount,
-        ImmutableArray<long> lastAffectedDocumentIds
+        ImmutableArray<long> lastAffectedDocumentIds,
+        DocumentCacheAdministrativeCommandResult? failureResult = null
     )
     {
         if (boundaryDocumentId is <= 0)
@@ -94,7 +95,10 @@ internal sealed record DocumentCacheBaselineSeedingResult
         DocumentsVisited = documentsVisited;
         WorkMutationCount = workMutationCount;
         LastAffectedDocumentIds = lastAffectedDocumentIds.IsDefault ? [] : lastAffectedDocumentIds;
+        FailureResult = failureResult;
     }
+
+    public bool Completed => FailureResult is null;
 
     public long? BoundaryDocumentId { get; }
 
@@ -107,12 +111,15 @@ internal sealed record DocumentCacheBaselineSeedingResult
     public int WorkMutationCount { get; }
 
     public ImmutableArray<long> LastAffectedDocumentIds { get; }
+
+    public DocumentCacheAdministrativeCommandResult? FailureResult { get; }
 }
 
 internal sealed class DocumentCacheBaselineSeeder(
     IDocumentCacheBaselineSeedDelay delay,
     TimeProvider timeProvider,
-    ILogger<DocumentCacheBaselineSeeder> logger
+    ILogger<DocumentCacheBaselineSeeder> logger,
+    IDocumentCacheAdministrativeDrainer? drainer = null
 ) : IDocumentCacheBaselineSeeder
 {
     public async Task<DocumentCacheBaselineSeedingResult> SeedAsync(
@@ -187,14 +194,42 @@ internal sealed class DocumentCacheBaselineSeeder(
                 );
 
                 logger.LogInformation(
-                    "DocumentCache baseline seeding for target {TargetKey} is waiting on high-water backpressure with {ObservedWorkRows} observed work rows.",
+                    "DocumentCache baseline seeding for target {TargetKey} is relieving high-water backpressure with {ObservedWorkRows} observed work rows.",
                     context.TargetContext.TargetKey,
                     highWater.ObservedWorkRows
                 );
 
+                DocumentCacheAdministrativeDrainSliceResult? reliefResult = null;
+                if (drainer is not null)
+                {
+                    reliefResult = await drainer
+                        .DrainBackpressureReliefSliceAsync(context, effectiveCancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (!reliefResult.Completed)
+                    {
+                        return new DocumentCacheBaselineSeedingResult(
+                            boundary.BoundaryDocumentId,
+                            afterDocumentId,
+                            pagesSeeded,
+                            documentsVisited,
+                            workMutationCount,
+                            lastAffectedDocumentIds,
+                            reliefResult.FailureResult
+                        );
+                    }
+
+                    context.EnterPhase(DocumentCacheAdministrativeCommandPhase.SeedBaseline);
+                }
+
+                if (reliefResult?.AcknowledgedOrRemovedItemCount > 0)
+                {
+                    continue;
+                }
+
                 await delay
                     .DelayAsync(
-                        context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPollInterval,
+                        BackpressureDelay(context, reliefResult),
                         timeProvider,
                         effectiveCancellationToken
                     )
@@ -243,6 +278,30 @@ internal sealed class DocumentCacheBaselineSeeder(
             workMutationCount,
             lastAffectedDocumentIds
         );
+    }
+
+    private TimeSpan BackpressureDelay(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        DocumentCacheAdministrativeDrainSliceResult? reliefResult
+    )
+    {
+        TimeSpan pollInterval = context
+            .TargetContext
+            .TargetExecutionContext
+            .EffectiveSettings
+            .ProjectorPollInterval;
+        if (reliefResult?.NextRetryAt is null)
+        {
+            return pollInterval;
+        }
+
+        TimeSpan retryDelay = reliefResult.NextRetryAt.Value - timeProvider.GetUtcNow();
+        if (retryDelay <= TimeSpan.Zero)
+        {
+            return TimeSpan.Zero;
+        }
+
+        return retryDelay < pollInterval ? retryDelay : pollInterval;
     }
 
     private static Task<DocumentCacheAdministrativeWorkHighWaterObservationResult> ObserveHighWaterAsync(
