@@ -6,6 +6,7 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Pester stubs intentionally keep production-compatible signatures.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Pester stubs intentionally shadow production plural-noun helpers.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', '', Justification = 'Pester tests intentionally shadow Invoke-WebRequest to stub HTTP calls.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Test stand-ins mirror the real authority parameter surface to bind named arguments; see the suppression on Assert-MssqlTopologyPhysicalConsistency.')]
 param()
 
 # Exact workspace ownership, recorded at creation. Fixtures below stage copies of repository
@@ -1224,6 +1225,67 @@ Add-Content -LiteralPath '$sequencePath' -Value `"seed years=`$(`$SchoolYear -jo
             $sequence[2] | Should -Be "provision ids=101,102"
             $sequence[3] | Should -Be "start-dms"
             $sequence[4] | Should -Be "seed years=2024,2025 ids="
+        }
+
+        It "forwards -SeparateConfigDatabase to the configure phase, not only to the start phase" {
+            # The configure phase registers the DMS datastore, so it needs the same topology
+            # declaration the start phase gets: without the forward it would judge a
+            # separate-topology run as shared and could register the reserved CMS database.
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $sequencePath = Join-Path $script:repo.RepoRoot "topology-forwarding.txt"
+
+            "param([switch] `$InfraOnly, [switch] `$DmsOnly, [switch] `$SeparateConfigDatabase, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest); if (`$InfraOnly) { Add-Content -LiteralPath '$sequencePath' -Value `"start-infra separate=`$SeparateConfigDatabase`" }" |
+                Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "start-local-dms.ps1") -Encoding utf8
+
+            @"
+param([switch] `$SeparateConfigDatabase, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$sequencePath' -Value `"configure separate=`$SeparateConfigDatabase`"
+[pscustomobject]@{
+    DataStoreIds = [long[]] @(51)
+    SelectedDataStoreIds = [long[]] @(51)
+    RouteContexts = @()
+    Tenant = ''
+    SchoolYears = [int[]] @()
+    HasRouteQualifiedDataStores = `$false
+}
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-data-store.ps1") -Encoding utf8
+
+            "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest); Add-Content -LiteralPath '$sequencePath' -Value 'provision'" |
+                Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "provision-dms-schema.ps1") -Encoding utf8
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -InfraOnly -SeparateConfigDatabase
+
+            $sequence = @(Get-Content -LiteralPath $sequencePath)
+            $sequence | Should -Contain "start-infra separate=True"
+            $sequence | Should -Contain "configure separate=True"
+        }
+
+        It "does not declare a separate topology to the configure phase when the run is shared" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $sequencePath = Join-Path $script:repo.RepoRoot "topology-forwarding-shared.txt"
+
+            "param([switch] `$InfraOnly, [switch] `$DmsOnly, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest); if (`$InfraOnly) { Add-Content -LiteralPath '$sequencePath' -Value 'start-infra' }" |
+                Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "start-local-dms.ps1") -Encoding utf8
+
+            @"
+param([switch] `$SeparateConfigDatabase, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$sequencePath' -Value `"configure separate=`$SeparateConfigDatabase`"
+[pscustomobject]@{
+    DataStoreIds = [long[]] @(52)
+    SelectedDataStoreIds = [long[]] @(52)
+    RouteContexts = @()
+    Tenant = ''
+    SchoolYears = [int[]] @()
+    HasRouteQualifiedDataStores = `$false
+}
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-data-store.ps1") -Encoding utf8
+
+            "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest); Add-Content -LiteralPath '$sequencePath' -Value 'provision'" |
+                Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "provision-dms-schema.ps1") -Encoding utf8
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -InfraOnly
+
+            @(Get-Content -LiteralPath $sequencePath) | Should -Contain "configure separate=False"
         }
 
         It "passes route-unqualified configured data store to seed by DataStoreId" {
@@ -3791,6 +3853,368 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_O
                 @(Get-Content -LiteralPath $capturePath) | Should -Contain "mssql"
             }
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+    }
+
+    Context "separate-topology datastore guard at the manual configure boundary" {
+        # The configure phase registers the DMS datastore after the start phase's live check has
+        # already run, so the `-InfraOnly -SeparateConfigDatabase` continuation is its own
+        # boundary. These rows pin WHAT is judged, WHEN, and by WHOM. The MSSQL collation verdicts
+        # themselves are not re-litigated here - they belong to the running instance and are
+        # covered against real servers in MssqlPhysicalDistinctnessLive.Tests.ps1; what matters at
+        # this boundary is that the same authority is consulted, on the same effective file, with
+        # the same provider-parsed candidate, before CMS is touched.
+        BeforeAll {
+            function script:New-GuardMssqlEnvFile {
+                param([string]$DatastoreName = "edfi_datamanagementservice")
+
+                $path = Join-Path $script:repo.DockerComposeRoot "env-guard-mssql-$([Guid]::NewGuid().ToString('N')).env"
+                @"
+POSTGRES_PASSWORD=isolated-pass
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+MSSQL_SA_PASSWORD=abcdefgh1!
+MSSQL_DB_NAME=$DatastoreName
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+"@ | Set-Content -LiteralPath $path -Encoding utf8
+                return $path
+            }
+
+            function script:New-GuardPostgresEnvFile {
+                param([string]$DatastoreName = "edfi_datamanagementservice")
+
+                $path = Join-Path $script:repo.DockerComposeRoot "env-guard-pg-$([Guid]::NewGuid().ToString('N')).env"
+                @"
+POSTGRES_PASSWORD=isolated-pass
+POSTGRES_DB_NAME=$DatastoreName
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $path -Encoding utf8
+                return $path
+            }
+
+            # One trace for both questions the ordering rows ask: which calls happened, and in
+            # which order relative to the first CMS mutation.
+            function script:Reset-GuardTrace {
+                $script:guardTrace = [System.Collections.Generic.List[string]]::new()
+                $script:guardAuthorityArgument = $null
+                $script:guardRegisteredName = $null
+            }
+        }
+
+        It "asks the live authority - on the derived topology environment, for the container the datastore uses - before any CMS mutation" {
+            . $script:repo.ConfigureScript
+            Reset-GuardTrace
+
+            function Assert-MssqlTopologyPhysicalConsistency {
+                param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $TimeoutSeconds)
+                $script:guardTrace.Add("authority")
+                $script:guardAuthorityArgument = @{
+                    EnvironmentFile = $EnvironmentFile
+                    ContainerName = $ContainerName
+                    SaPassword = $SaPassword
+                    Registered = $RegisteredDatastoreDatabaseName
+                }
+            }
+            function Add-CmsClient { $script:guardTrace.Add("Add-CmsClient") }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { $script:guardTrace.Add("Add-DataStore"); return 601 }
+
+            $envFile = New-GuardMssqlEnvFile
+            Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile $envFile `
+                -DatabaseEngine mssql `
+                -SeparateConfigDatabase `
+                -DataStoreDatabaseName "edfi_datamanagementservice" | Out-Null
+
+            $script:guardTrace[0] | Should -Be "authority" -Because "a refusal must be able to leave CMS with no client, tenant, or data store"
+            @($script:guardTrace) | Should -Be @("authority", "Add-CmsClient", "Add-DataStore")
+            $script:guardAuthorityArgument.ContainerName | Should -Be "dms-mssql"
+            $script:guardAuthorityArgument.SaPassword | Should -Be "abcdefgh1!" -Because "the same resolved credential the registered connection string carries"
+            $script:guardAuthorityArgument.Registered | Should -Be "edfi_datamanagementservice"
+            # The marker is what selects separate-mode semantics inside the authority, and it lives
+            # only in the derived file this phase re-derived - never in the caller's own file.
+            @(Get-Content -LiteralPath $script:guardAuthorityArgument.EnvironmentFile) |
+                Should -Contain "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true"
+            @(Get-Content -LiteralPath $envFile) |
+                Should -Not -Contain "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true" -Because "the caller's source file is never edited"
+        }
+
+        It "hands the authority the value a provider receives, not the raw parameter text" {
+            # A bare trailing line feed survives the parameter but not the connection-string
+            # transport, so judging the text would ask about a name no provider will ever see.
+            . $script:repo.ConfigureScript
+            Reset-GuardTrace
+
+            function Assert-MssqlTopologyPhysicalConsistency {
+                param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $TimeoutSeconds)
+                $script:guardRegisteredName = $RegisteredDatastoreDatabaseName
+            }
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { return 602 }
+
+            Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile (New-GuardMssqlEnvFile) `
+                -DatabaseEngine mssql `
+                -SeparateConfigDatabase `
+                -DataStoreDatabaseName "edfi_configurationservice`n" | Out-Null
+
+            $script:guardRegisteredName | Should -Be "edfi_configurationservice" -Because "the transport drops the trailing line feed before the provider sees the name"
+        }
+
+        It "registers nothing when the server reports the datastore is the reserved database" {
+            . $script:repo.ConfigureScript
+            Reset-GuardTrace
+
+            function Assert-MssqlTopologyPhysicalConsistency {
+                param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $TimeoutSeconds)
+                throw "CMS database topology mismatch: SQL Server reports that the datastore name resolved from '-DataStoreDatabaseName' denotes the SAME physical database as the dedicated 'edfi_configurationservice'."
+            }
+            function Add-CmsClient { $script:guardTrace.Add("Add-CmsClient") }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { $script:guardTrace.Add("Add-DataStore"); return 603 }
+
+            { Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile (New-GuardMssqlEnvFile) `
+                -DatabaseEngine mssql `
+                -SeparateConfigDatabase `
+                -DataStoreDatabaseName "EDFI_ConfigurationService" } |
+                Should -Throw "*SAME physical database*"
+
+            @($script:guardTrace) | Should -BeNullOrEmpty -Because "the server's verdict governs, and it arrives before CMS is mutated"
+        }
+
+        It "leaves the environment's own datastore key to the authority when no override is supplied" {
+            # With no override the registered name IS the effective MSSQL_DB_NAME, which the
+            # authority resolves and reports under that key - so it is still checked, and the
+            # diagnostic still names the input the operator actually supplied.
+            . $script:repo.ConfigureScript
+            Reset-GuardTrace
+
+            function Assert-MssqlTopologyPhysicalConsistency {
+                param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $TimeoutSeconds)
+                $script:guardTrace.Add("authority")
+                $script:guardRegisteredName = $RegisteredDatastoreDatabaseName
+            }
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { return 604 }
+
+            Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile (New-GuardMssqlEnvFile) `
+                -DatabaseEngine mssql `
+                -SeparateConfigDatabase | Out-Null
+
+            @($script:guardTrace) | Should -Be @("authority")
+            $script:guardRegisteredName | Should -BeNullOrEmpty -Because "no parameter was supplied, so no parameter-sourced candidate is asserted"
+        }
+
+        It "asks the server nothing when -NoDataStore makes the name inert" {
+            . $script:repo.ConfigureScript
+            Reset-GuardTrace
+
+            function Assert-MssqlTopologyPhysicalConsistency {
+                param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $TimeoutSeconds)
+                $script:guardTrace.Add("authority")
+            }
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore { return @([pscustomobject]@{ id = 605; name = "Existing"; dataStoreContexts = @() }) }
+
+            $result = Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile (New-GuardMssqlEnvFile) `
+                -DatabaseEngine mssql `
+                -SeparateConfigDatabase `
+                -NoDataStore `
+                -DataStoreDatabaseName "edfi_configurationservice"
+
+            @($script:guardTrace) | Should -BeNullOrEmpty -Because "no name is registered, so there is nothing to verify"
+            $result.SelectedDataStoreIds | Should -Be @([long]605)
+        }
+
+        It "asks the server nothing in shared mode, where the datastore and the Configuration Service share one database by design" {
+            . $script:repo.ConfigureScript
+            Reset-GuardTrace
+
+            function Assert-MssqlTopologyPhysicalConsistency {
+                param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $TimeoutSeconds)
+                $script:guardTrace.Add("authority")
+            }
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore {
+                param($CmsUrl, $AccessToken, $PostgresCredential, $PostgresDbName, $ConnectionString, $Name, $DataStoreType, $Tenant)
+                $script:guardRegisteredName = $ConnectionString
+                return 606
+            }
+
+            Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile (New-GuardMssqlEnvFile) `
+                -DatabaseEngine mssql `
+                -DataStoreDatabaseName "edfi_configurationservice" | Out-Null
+
+            @($script:guardTrace) | Should -BeNullOrEmpty
+            $script:guardRegisteredName | Should -BeLike "*Database=edfi_configurationservice;*" -Because "shared mode's behavior is unchanged by this guard"
+        }
+
+        It "refuses the exact reserved name on PostgreSQL, naming the parameter and registering nothing" {
+            . $script:repo.ConfigureScript
+            Reset-GuardTrace
+
+            function Add-CmsClient { $script:guardTrace.Add("Add-CmsClient") }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { $script:guardTrace.Add("Add-DataStore"); return 607 }
+
+            $thrown = { Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile (New-GuardPostgresEnvFile) `
+                -SeparateConfigDatabase `
+                -DataStoreDatabaseName "edfi_configurationservice" } |
+                Should -Throw -PassThru
+
+            $thrown.Exception.Message | Should -BeLike "*'-DataStoreDatabaseName'*"
+            $thrown.Exception.Message | Should -BeLike "*edfi_configurationservice*" -Because "the fixed reserved literal is allowed in diagnostics"
+            @($script:guardTrace) | Should -BeNullOrEmpty
+        }
+
+        It "refuses a PostgreSQL name the provider parses back as the reserved database" {
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { return 608 }
+
+            { Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile (New-GuardPostgresEnvFile) `
+                -SeparateConfigDatabase `
+                -DataStoreDatabaseName "edfi_configurationservice`n" } |
+                Should -Throw "*must be provably distinct*"
+        }
+
+        It "accepts a PostgreSQL case variant, which is a genuinely distinct database there" {
+            # The unquoted-CREATE folding that governs the initialization path must not be borrowed
+            # here: SchemaTools creates the registered name with a quoted identifier.
+            . $script:repo.ConfigureScript
+            Reset-GuardTrace
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore {
+                param($CmsUrl, $AccessToken, $PostgresCredential, $PostgresDbName, $ConnectionString, $Name, $DataStoreType, $Tenant)
+                $script:guardRegisteredName = $PostgresDbName
+                return 609
+            }
+
+            Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile (New-GuardPostgresEnvFile) `
+                -SeparateConfigDatabase `
+                -DataStoreDatabaseName "EDFI_ConfigurationService" | Out-Null
+
+            $script:guardRegisteredName | Should -Be "EDFI_ConfigurationService"
+        }
+
+        It "names the environment key when the reserved name came from POSTGRES_DB_NAME rather than the parameter" {
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { return 610 }
+
+            $thrown = { Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile (New-GuardPostgresEnvFile -DatastoreName "edfi_configurationservice") `
+                -SeparateConfigDatabase } |
+                Should -Throw -PassThru
+
+            $thrown.Exception.Message | Should -BeLike "*'POSTGRES_DB_NAME'*"
+            $thrown.Exception.Message | Should -Not -BeLike "*'-DataStoreDatabaseName'*" -Because "the diagnostic must point at the input the operator actually supplied"
+        }
+
+        It "leaves PostgreSQL shared mode unchanged" {
+            . $script:repo.ConfigureScript
+            Reset-GuardTrace
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore {
+                param($CmsUrl, $AccessToken, $PostgresCredential, $PostgresDbName, $ConnectionString, $Name, $DataStoreType, $Tenant)
+                $script:guardRegisteredName = $PostgresDbName
+                return 611
+            }
+
+            Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile (New-GuardPostgresEnvFile) `
+                -DataStoreDatabaseName "edfi_configurationservice" | Out-Null
+
+            $script:guardRegisteredName | Should -Be "edfi_configurationservice" -Because "shared mode never required the datastore to differ from the reserved name"
+        }
+
+        It "treats the PostgreSQL name as inert under -NoDataStore" {
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore { return @([pscustomobject]@{ id = 612; name = "Existing"; dataStoreContexts = @() }) }
+
+            $result = Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile (New-GuardPostgresEnvFile) `
+                -SeparateConfigDatabase `
+                -NoDataStore `
+                -DataStoreDatabaseName "edfi_configurationservice"
+
+            $result.SelectedDataStoreIds | Should -Be @([long]612)
+        }
+
+        It "refuses before any school-year data store is created" {
+            . $script:repo.ConfigureScript
+            Reset-GuardTrace
+
+            function Add-CmsClient { $script:guardTrace.Add("Add-CmsClient") }
+            function Get-CmsToken { return "token" }
+            function Add-DmsSchoolYearInstances { $script:guardTrace.Add("Add-DmsSchoolYearInstances"); return @() }
+
+            { Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile (New-GuardPostgresEnvFile) `
+                -SeparateConfigDatabase `
+                -SchoolYearRange "2024-2025" `
+                -DataStoreDatabaseName "edfi_configurationservice" } |
+                Should -Throw "*must be provably distinct*"
+
+            @($script:guardTrace) | Should -BeNullOrEmpty -Because "the name is not inert under -SchoolYearRange; it is what every year would register"
+        }
+
+        It "registers the validated name for every school year, unsuffixed" {
+            # Why one candidate is enough: the per-year helper varies the data store's display name
+            # and route context, never the database. A name that passes here is the name each year
+            # gets, so there is no post-suffix value left unchecked.
+            . $script:repo.ConfigureScript
+            Reset-GuardTrace
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DmsSchoolYearInstances {
+                param($CmsUrl, $AccessToken, $StartYear, $EndYear, $PostgresCredential, $PostgresDbName, $ConnectionString, $Tenant)
+                $script:guardRegisteredName = $PostgresDbName
+                return @(
+                    @{ DataStoreId = [long]613; Year = 2024 },
+                    @{ DataStoreId = [long]614; Year = 2025 }
+                )
+            }
+
+            $result = Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile (New-GuardPostgresEnvFile) `
+                -SeparateConfigDatabase `
+                -SchoolYearRange "2024-2025" `
+                -DataStoreDatabaseName "edfi_datamanagementservice_sy"
+
+            $script:guardRegisteredName | Should -Be "edfi_datamanagementservice_sy" -Because "every year registers the single validated name"
+            $result.DataStoreIds | Should -Be @([long]613, [long]614)
         }
     }
 }

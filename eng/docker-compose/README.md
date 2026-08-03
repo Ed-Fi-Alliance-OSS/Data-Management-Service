@@ -362,14 +362,25 @@ closed rather than proceeding unverified. A verification failure names the offen
 parameter and never prints the configured value.
 
 Shapes that never start the Configuration Service — `-DmsOnly`, `-DbOnly`, teardown, and a bare
-published Keycloak start that omits `published-config.yml` — get structural validation only:
-presence, parseability, database-segment discovery, and host/port. No SQL Server name is judged for
-them, because there is no running instance to ask and no offline rule can answer. This is also what
-lets the manual phases continue from a `-SeparateConfigDatabase -InfraOnly` start:
-`configure-local-data-store.ps1` and `provision-dms-schema.ps1` invoked directly against your
-original `-EnvironmentFile` own the DMS datastore and take no part in the Configuration Service
-seam, so they no longer need the topology marker — which lives only in the derived file — to
-proceed.
+published Keycloak start that omits `published-config.yml` — get structural screening only, and
+only on SQL Server: every connection string the `.env.mssql` overlay owns must be present,
+non-blank, and carry a SQL Server data-source keyword (`Server=`, `Data Source=`, `Address=`,
+`Addr=`, or `Network Address=`) at a segment boundary. That is the entire check. The value is not
+parsed with ADO.NET, no database segment is discovered or validated, and no host or port is
+inspected. On PostgreSQL these shapes get no engine-composition check at all. No SQL Server name is
+judged for any of them: `-DbOnly` does start a database server, but the Configuration Service takes
+no part in these shapes, so CMS topology consistency is not evaluated — and where nothing is
+running there is no instance to ask, and no offline rule can answer in its place.
+
+To continue the manual phases from a `-SeparateConfigDatabase -InfraOnly` start, declare the same
+topology to the configure phase: `configure-local-data-store.ps1 -SeparateConfigDatabase` (the
+start script prints the switch in its next-step guidance). That phase registers the DMS datastore,
+so it re-derives the same effective environment the start wrote — the topology marker lives only in
+the derived file — and checks the name it is about to register, on SQL Server against the running
+instance and on PostgreSQL against the reserved name as the provider parses it, before it creates
+any Configuration Service state. `provision-dms-schema.ps1` takes its targets from what CMS already
+holds, so it needs no such declaration. Omit the switch and both phases behave exactly as they do
+for a shared-topology stack.
 
 Switching an existing stack between modes re-points CMS but does not move data: `dmscs` content
 already written in one database stays there. For a clean switch, tear down with `-d -v` and start
