@@ -564,7 +564,7 @@ recognizing before hunting one.
 
 #### What is left on `dms.Document` and `dms.ReferentialIdentity`
 
-At this point both tables are **write-only**:
+At this point `dms.Document` is **write-only** and `dms.ReferentialIdentity` is **inert**:
 
 - `dms.Document` is still `INSERT`ed — it is what **originates `DocumentId`**, through `RETURNING` on
   PostgreSQL and `SCOPE_IDENTITY()` on SQL Server, for both resources
@@ -583,33 +583,38 @@ At this point both tables are **write-only**:
   seeks `dms.Descriptor` or a resource root table, never `dms.Document`. The **test tree still reads
   it**, in dozens of integration suites that assert on what the write path and the stamping triggers
   put there; those assertions are what has to be re-pointed or deleted when the table goes.
-- `dms.ReferentialIdentity` is still maintained by the generated `TR_<Root>_ReferentialIdentity`
-  triggers on non-descriptor **root** tables (`AFTER INSERT OR UPDATE`; deletes are handled by
-  `FK_ReferentialIdentity_Document`'s `ON DELETE CASCADE`). **Descriptor rows in it are no longer
-  maintained at all** — the descriptor write path dropped its `ReferentialIdentity` statements, and no
-  descriptor trigger ever wrote them, so existing descriptor rows are only ever *removed*, by that
-  cascade. **No production code path reads it**: the hash resolver that read it has been deleted, so no
-  registration — production or test — can resolve a reference through it. **No fixture seeds it**
-  either; every row in it now comes from a trigger. The test tree still touches it in two ways, both of
-  which die with the table and its triggers:
-  - **writers** — `{Postgresql,Mssql}ReferentialIdentityTests`, where the table *is* the subject under
-    test (PK and unique-constraint pins), not a fixture dependency;
-  - **readers** — twelve suites asserting trigger side effects:
-    `{Postgresql,Mssql}GeneratedDdlAuthoritativeSmokeTests` (via the `dms_test.ReferentialIdentityAudit`
-    capture table), `{Postgresql,Mssql}RelationalQueryAuthorizationTests`,
-    `{Postgresql,Mssql}RelationalPostAuthorizationTests`, `{Postgresql,Mssql}RelationalDeleteByIdTests`,
-    `PostgresqlRelationalWrite{PostAsUpdate,GuardedNoOp}Tests`, and the two
-    `*ReferentialIdentityTests` files above.
+- `dms.ReferentialIdentity` is **no longer written by anything**. The generated
+  `TR_<Root>_ReferentialIdentity` triggers that maintained it are neither derived nor emitted
+  (commit `c90f35be1`), so no generated object touches the table. The table itself, its two foreign
+  keys and `IX_ReferentialIdentity_DocumentId` are still emitted — a freshly provisioned database
+  has it and it stays **permanently empty**. An already-populated database keeps the rows it has
+  until the table is dropped; nothing adds to them, and `FK_ReferentialIdentity_Document`'s
+  `ON DELETE CASCADE` still removes them alongside their `dms.Document` row. **No production code
+  path reads it** either: the hash resolver that read it has been deleted, so no registration —
+  production or test — can resolve a reference through it. **No fixture seeds it.** And the test
+  tree no longer asserts on it: the two suites where the table *was* the subject under test
+  (`{Postgresql,Mssql}ReferentialIdentityTests`) are deleted, and the trigger-output assertions in
+  the surviving reader suites — `{Postgresql,Mssql}GeneratedDdlAuthoritativeSmokeTests` together
+  with the `dms_test.ReferentialIdentityAudit` capture table that observed the triggers firing,
+  `{Postgresql,Mssql}Relational{Query,Post}AuthorizationTests`,
+  `{Postgresql,Mssql}RelationalDeleteByIdTests`, and
+  `PostgresqlRelationalWrite{PostAsUpdate,GuardedNoOp}Tests` — are stripped, leaving each suite's
+  stamping and authorization assertions intact. What still names the table is the DDL surface
+  itself: `CoreDdlEmitter`, its `CoreDdlEmitterTests` pins, and the schema-inventory lists in
+  `MssqlDatabaseFingerprintReaderTests`, `ProvisionTestHelper` and
+  `{Postgresql,Mssql}ReferenceResolverTestDatabaseTests` — all of which move when the table is
+  dropped.
 
-That means a stale or missing `dms.Document` / `dms.ReferentialIdentity` row can no longer explain a
-wrong *served* value or a failed lookup — if one of those tables looks wrong, look for what wrote it,
-not for what read it. It can still explain a failing **test**, since the suites listed above assert on
-trigger output directly.
+That means a stale or missing `dms.Document` row can no longer explain a wrong *served* value or a
+failed lookup — if that table looks wrong, look for what wrote it, not for what read it. It can still
+explain a failing **test**, since the suites listed above assert on stamping-trigger output directly.
+`dms.ReferentialIdentity` can explain nothing at all: nothing writes it and nothing reads it.
 
 These columns, the read-path re-point, and the natural-key write path above are the first three phases
 of the planned removal of `dms.Document` and `dms.ReferentialIdentity` as the read/write path's central
-tables: nothing reads them any more, both are still written, and the mirrors' permanent shape
-(defaults, foreign keys, indexes) is settled by the phase that drops the originals. For the design
+tables: nothing reads them any more, `dms.Document` is still written while `dms.ReferentialIdentity`
+no longer is, and the mirrors' permanent shape (defaults, foreign keys, indexes) is settled by the
+phase that drops the originals. For the design
 context on why that removal is hard, see
 [`the-problem-with-removing-referentialids.md`](../reference/design/backend-redesign/design-docs/the-problem-with-removing-referentialids.md).
 
