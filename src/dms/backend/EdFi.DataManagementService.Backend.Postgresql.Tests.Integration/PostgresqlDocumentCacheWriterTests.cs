@@ -738,7 +738,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
 
     [Test]
     [Category("DocumentCacheWriterTelemetry")]
-    public async Task DocumentCacheWriterTelemetry_it_records_DMS_1313_metric_coverage()
+    public async Task DocumentCacheWriterTelemetry_it_records_expected_metric_coverage()
     {
         var telemetry = new RecordingDocumentCacheWriterTelemetry();
         _writer = CreateWriter(telemetry: telemetry, maxRetryAttempts: 1);
@@ -885,7 +885,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
             .BeOfType<DocumentCacheWriterResult.CacheAheadLatchSet>();
         (await ReadCacheAheadLatchAsync()).Should().BeTrue();
 
-        AssertDms1313TelemetryCoverage(telemetry, "postgresql");
+        AssertDocumentCacheWriterTelemetryCoverage(telemetry, "postgresql");
     }
 
     private async Task<DocumentCacheWriterResult> WriteAsync(
@@ -1383,7 +1383,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
         return fenced;
     }
 
-    private static void AssertDms1313TelemetryCoverage(
+    private static void AssertDocumentCacheWriterTelemetryCoverage(
         RecordingDocumentCacheWriterTelemetry telemetry,
         string provider
     )
