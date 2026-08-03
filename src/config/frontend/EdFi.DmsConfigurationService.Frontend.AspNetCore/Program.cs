@@ -170,7 +170,12 @@ async Task InitializeClaimsData(WebApplication app)
         app.Logger.LogInformation("Checking if initial claims data needs to be loaded");
         try
         {
-            IClaimsDataLoader claimsLoader = app.Services.GetRequiredService<IClaimsDataLoader>();
+            // IClaimsDataLoader is scoped (it reaches the scoped ITenantContextProvider through its
+            // repositories), so startup resolution needs its own scope: the root provider rejects
+            // scoped services when scope validation is on.
+            using IServiceScope claimsLoaderScope = app.Services.CreateScope();
+            IClaimsDataLoader claimsLoader =
+                claimsLoaderScope.ServiceProvider.GetRequiredService<IClaimsDataLoader>();
             ClaimsDataLoadResult result = await claimsLoader.LoadInitialClaimsAsync();
 
             switch (result)

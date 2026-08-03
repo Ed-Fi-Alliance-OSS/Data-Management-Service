@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -13,6 +14,7 @@ using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration;
 
@@ -202,6 +204,132 @@ public class DataStoreTests : DatabaseTest
                 instanceFromDb.ConnectionString,
                 "Server=updated;Database=UpdatedDb;"
             );
+        }
+    }
+
+    /// <summary>
+    /// A deployment moving off a rejected encryption key recovers by re-submitting each connection
+    /// string once the new key is configured. That procedure is only sound if update re-encrypts with
+    /// the currently configured key instead of leaving the stored cipher text keyed to the previous
+    /// one, which is what this fixture pins. The SQL Server repository is a separate implementation
+    /// from the PostgreSQL one, so it carries its own copy of the PostgreSQL suite's twin fixture.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_data_store_updated_after_the_encryption_key_changed : DataStoreTests
+    {
+        private const string OriginalConnectionString = "Server=original;Database=OriginalDb;";
+        private const string ResubmittedConnectionString = "Server=resubmitted;Database=ResubmittedDb;";
+
+        /// <summary>
+        /// 32 characters, and deliberately different from the configured test key: the key an operator
+        /// rotates to.
+        /// </summary>
+        private const string RotatedEncryptionKey = "Rk3pQ8sT2vW9xZ4bC6dE1gH5jL7mN0rY";
+
+        private IConnectionStringEncryptionService _rotatedKeyEncryptionService = null!;
+        private string _storedCipherTextBeforeRotation = null!;
+        private string _storedCipherTextAfterRotation = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var insertResult = await _repository.InsertDataStore(
+                new DataStoreInsertCommand
+                {
+                    DataStoreType = "Production",
+                    Name = "Re-keyed Instance",
+                    ConnectionString = OriginalConnectionString,
+                }
+            );
+            insertResult.Should().BeOfType<DataStoreInsertResult.Success>();
+            var id = ((DataStoreInsertResult.Success)insertResult).Id;
+
+            _storedCipherTextBeforeRotation = await StoredCipherText(id);
+
+            _rotatedKeyEncryptionService = new ConnectionStringEncryptionService(
+                Options.Create(
+                    new DatabaseOptions
+                    {
+                        DatabaseConnection = MssqlTestConfiguration.DatabaseOptions.Value.DatabaseConnection,
+                        EncryptionKey = RotatedEncryptionKey,
+                    }
+                )
+            );
+
+            // Stands in for the Configuration Service running on the new key when the operator
+            // re-submits the connection string.
+            IDataStoreRepository repositoryOnRotatedKey = new DataStoreRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<DataStoreRepository>.Instance,
+                _rotatedKeyEncryptionService,
+                _routeContextRepository,
+                _derivativeRepository,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+
+            var updateResult = await repositoryOnRotatedKey.UpdateDataStore(
+                new DataStoreUpdateCommand
+                {
+                    Id = id,
+                    DataStoreType = "Production",
+                    Name = "Re-keyed Instance",
+                    ConnectionString = ResubmittedConnectionString,
+                }
+            );
+            updateResult.Should().BeOfType<DataStoreUpdateResult.Success>();
+
+            _storedCipherTextAfterRotation = await StoredCipherText(id);
+        }
+
+        /// <summary>
+        /// A get returns the stored bytes as Base64 without decrypting them, so this is the cipher text
+        /// as persisted.
+        /// </summary>
+        private async Task<string> StoredCipherText(int id)
+        {
+            var getResult = await _repository.GetDataStore(id);
+            getResult.Should().BeOfType<DataStoreGetResult.Success>();
+
+            var storedConnectionString = ((DataStoreGetResult.Success)getResult)
+                .DataStoreResponse
+                .ConnectionString;
+            storedConnectionString.Should().NotBeNullOrEmpty();
+            return storedConnectionString!;
+        }
+
+        [Test]
+        public void It_replaces_the_stored_cipher_text() =>
+            _storedCipherTextAfterRotation.Should().NotBe(_storedCipherTextBeforeRotation);
+
+        [Test]
+        public void It_decrypts_cleanly_under_the_new_key() =>
+            _rotatedKeyEncryptionService
+                .Decrypt(Convert.FromBase64String(_storedCipherTextAfterRotation))
+                .Should()
+                .Be(ResubmittedConnectionString);
+
+        [Test]
+        public void It_no_longer_yields_the_connection_string_under_the_previous_key()
+        {
+            // AES-CBC with PKCS7 padding is unauthenticated, so the previous key either throws on
+            // invalid padding or returns unrelated bytes, and both outcomes prove the row was
+            // re-keyed. Requiring the throw would make this intermittent, because a wrong key lands
+            // on structurally valid padding often enough to matter.
+            string? decryptedWithPreviousKey = null;
+            try
+            {
+                decryptedWithPreviousKey = new ConnectionStringEncryptionService(
+                    MssqlTestConfiguration.DatabaseOptions
+                ).Decrypt(Convert.FromBase64String(_storedCipherTextAfterRotation));
+            }
+            catch (CryptographicException)
+            {
+                // Left null: the assertions below hold either way.
+            }
+
+            decryptedWithPreviousKey.Should().NotBe(ResubmittedConnectionString);
+            decryptedWithPreviousKey.Should().NotBe(OriginalConnectionString);
         }
     }
 
