@@ -180,10 +180,6 @@ fingerprint check, not this seed check.)
 
 ## 4. Debugging the write/read paths and update tracking (stored stamps)
 
-> Commit SHAs cited in this section are **branch-local** and date a change rather than identify a
-> commit you can check out — they do not survive a squash merge. The `file:line` citations are the
-> durable references.
-
 ### Write and read at a glance
 
 On **write**, a document's JSON is *flattened* into the per-resource relational tables; on
@@ -200,7 +196,8 @@ Each document carries two stamp **pairs**, both written by the same **stamping t
 document tables. The *content* pair is set together on every write: a `ContentVersion` (the
 change-version number, from the shared change-version sequence) and a `ContentLastModifiedAt`
 timestamp (the current UTC time). The *identity* pair — `IdentityVersion` / `IdentityLastModifiedAt`
-— is bumped by the same triggers only when a stored identity value actually changes. Those triggers
+— is set unconditionally on `INSERT` (a new row has no prior identity to preserve) and on `UPDATE` is
+bumped by the same triggers only when a stored identity value actually changes. Those triggers
 also populate per-resource **tracked-change tables** that live under a per-project schema named
 `tracked_changes_<projectSchema>` (for example the `tracked_changes_edfi` schema), recording the
 old/new identity and securable values plus a `ChangeVersion`. (Descriptors share a single
@@ -233,9 +230,9 @@ values therefore come from the same row the read already loaded. When a served `
 #### Change-version filtering (`minChangeVersion` / `maxChangeVersion`)
 
 Root and descriptor tables carry **mirrored** `ContentVersion` / `ContentLastModifiedAt` columns
-(`ColumnKind.MirroredContentVersion`) that the query change-version filter ranges over. This
-query-time filter **is wired up and works** — unlike the `/deletes` and `/keyChanges` change-query
-endpoints, which are still a placeholder shim (see the note below).
+(`ColumnKind.MirroredContentVersion`) that the query change-version filter ranges over. It is the
+resource-page filter only; the `/deletes` and `/keyChanges` endpoints range over the tracked-change
+tables through their own planner (see [Change-query reads](#change-query-reads) below).
 
 The **"mirror" name is historical**: it dates from when these columns duplicated a `dms.Document` row.
 That table is gone, so a mirror column is now the only copy of the value — the code names (`Mirrored…`,
@@ -474,10 +471,9 @@ stale-versus-fresh comparison never straddles two tables
 > while a cascade from another transaction took `dms.Document(D)` before `Root(D)`. That narrow
 > contention pattern could deadlock, and was absorbed rather than prevented: deadlock and serialization
 > failures classify as transient and Core's Polly pipeline replays the **whole write transaction**. The
-> write path stopped writing `dms.Document` (commits `064f08650`, `5db216110`) and the table itself is
-> gone (`efd40ea20`), so the root row is the only row either side takes and the cycle cannot re-form.
-> The full analysis lives in
-> `RelationalDocumentLockCommandBuilder`'s remarks; the descriptor path never had such a cycle
+> write path stopped writing `dms.Document` — first for the id, then for the delete signal — and the
+> table itself then left the generated DDL, so the root row is the only row either side takes and the
+> cycle cannot re-form. The full analysis lives in `RelationalDocumentLockCommandBuilder`'s remarks; the descriptor path never had such a cycle
 > (`DescriptorWriteHandler._descriptorLockTable`'s remarks).
 
 #### Case sensitivity and fail-closed postures
@@ -626,9 +622,10 @@ Two things ride on that single statement that used to ride on a cascade out of `
 
 - **The `<Abstract>Identity` row is retired by a trigger arm, not by a foreign key.** Dropping
   `FK_<Abstract>Identity_Document` removed the `ON DELETE CASCADE` that used to retire the identity row
-  along with its document, so `TR_<Concrete>_AbstractIdentity` gained a `DELETE` arm on both dialects
-  (commit `d25da8005`). PostgreSQL runs `DELETE FROM <Abstract>Identity WHERE "DocumentId" =
-  OLD."DocumentId"` in a `TG_OP = 'DELETE'` branch and returns `OLD`; SQL Server leads the body with
+  along with its document, so retiring it moved onto `TR_<Root>_AbstractIdentity`, which gained a
+  `DELETE` arm on both dialects. PostgreSQL runs
+  `DELETE FROM <Abstract>Identity WHERE "DocumentId" = OLD."DocumentId"` in a `TG_OP = 'DELETE'`
+  branch and returns `OLD`; SQL Server leads the body with
   `IF NOT EXISTS (SELECT 1 FROM inserted)` and deletes every identity row named by the `deleted` image,
   with the insert/update dispatch in the `ELSE` arm
   ([`RelationalModelDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs),
@@ -650,14 +647,20 @@ Two things ride on that single statement that used to ride on a cascade out of `
 
 #### `dms.Document`, `dms.DocumentCache` and `dms.ReferentialIdentity` are gone
 
-The three tables are **dropped from the generated DDL** (commit `efd40ea20`). A provisioned database now
-carries exactly four `dms.*` tables — `Descriptor`, `EffectiveSchema`, `ResourceKey`, `SchemaComponent` —
+The three tables are **dropped from the generated DDL**. A provisioned database now carries exactly
+four `dms.*` tables — `Descriptor`, `EffectiveSchema`, `ResourceKey`, `SchemaComponent` —
 plus the sequences `ChangeVersionSequence`, `CollectionItemIdSequence` and `DocumentIdSequence`, the
 `GetMaxChangeVersion` function (and `throw_error` on PostgreSQL), and the SQL Server table type
-`BigIntTable`. What went, and what took over each job:
+`BigIntTable`. One consequence worth knowing before you debug a "missing" descriptor: `dms.ResourceKey`
+is now referenced by **zero** foreign keys — `FK_Document_ResourceKey` was the only one — so
+`dms.Descriptor.ResourceKeyId` is an unenforced discriminator (nullable, no default, no FK). A row
+carrying a wrong or `NULL` value falls out of the scope of every descriptor probe and reads as absent
+(404) rather than erroring, and a `DELETE FROM dms.ResourceKey` now succeeds and orphans descriptor
+rows instead of being refused. What went, and what took over each job:
 
-- **`dms.Document`.** It stopped being read first, stopped being written at commits `064f08650` +
-  `5db216110`, and left the emitter at `efd40ea20` together with `FK_Document_ResourceKey` and
+- **`dms.Document`.** It stopped being read first; then the write path stopped inserting it, in two
+  steps — `DocumentId` origination moved to the sequence, then the delete signal moved to the root
+  row; then it left the emitter together with `FK_Document_ResourceKey` and
   `IX_Document_ResourceKeyId_DocumentId`. Both of its remaining jobs moved onto the row that replaced it:
   - **Originating `DocumentId`** — every resource root table and `dms.Descriptor` carries a
     `dms.DocumentIdSequence` column default. The root `INSERT` omits the column and returns the drawn
@@ -667,12 +670,18 @@ plus the sequences `ChangeVersionSequence`, `CollectionItemIdSequence` and `Docu
     [`RelationalWriteNoProfilePersister.InsertRootRowAsync`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs));
     the descriptor insert does the same on `dms.Descriptor`
     ([`DescriptorWriteHandler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs)).
+    Note what changed in kind: `PK_Document` made `DocumentId` unique across *all* resources
+    structurally, whereas each root table now declares only its own `PK_<Root>` and cross-resource
+    uniqueness rests on the convention that every default draws from the one shared sequence. Nothing
+    enforces it, and the `TR_<Root>_AbstractIdentity` insert is `ON CONFLICT ("DocumentId") DO UPDATE`
+    — so two root rows sharing a `DocumentId` would silently rebind an abstract identity row to the
+    other document rather than raising.
   - **Carrying the delete signal** — now the first and only `DELETE`'s `RETURNING` / `OUTPUT`, per
     [Deleting a document](#deleting-a-document) above.
 - **`dms.ReferentialIdentity`.** The generated `TR_<Root>_ReferentialIdentity` triggers that maintained
-  it stopped being derived and emitted at commit `c90f35be1`; the UUIDv5 hash resolver that read it was
-  deleted with them. Its table, both foreign keys and `IX_ReferentialIdentity_DocumentId` are now gone
-  too, and with them **`dms.uuidv5()`** on both dialects, the **pgcrypto** extension that existed only
+  it stopped being derived and emitted, and the UUIDv5 hash resolver that read the table was deleted
+  with them. Its table, both foreign keys and `IX_ReferentialIdentity_DocumentId` are now gone too,
+  and with them **`dms.uuidv5()`** on both dialects, the **pgcrypto** extension that existed only
   for that function's `digest()`, and the **`dms.UniqueIdentifierTable`** TVP that bound referential-id
   lists. (`BigIntTable` stays — it serves the surviving authorization TVPs.)
 - **`dms.DocumentCache`** was never wired to a runtime reader or writer; its table, unique constraint,
@@ -701,18 +710,30 @@ argument against removing `ReferentialId`s — the analysis this work supersedes
 which now carries a superseded banner, as does the rest of the design corpus that describes these
 tables as current.
 
-> [!NOTE]
-> **Change-query read endpoints are not wired up yet.** The tracked-change tables and triggers
-> are real and populated, but the runtime read side is a placeholder. `IChangeQueryRepository`'s
-> relational implementation
-> ([`RelationalChangeQueryRepository.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalChangeQueryRepository.cs))
-> only returns the newest change version through dialect-specific SQL. PostgreSQL calls
-> `SELECT "dms"."GetMaxChangeVersion"() AS "NewestChangeVersion"` and SQL Server calls
-> `SELECT [dms].[GetMaxChangeVersion]() AS [NewestChangeVersion]`. The
-> `/deletes` and `/keyChanges` endpoints are a temporary empty-response shim
-> ([`TrackedChangesEndpointModule.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/TrackedChangesEndpointModule.cs))
-> that returns `[]` (with a `Total-Count: 0` header only when `totalCount=true` is requested). Do not
-> expect `/deletes` or `/keyChanges` to read the tracked-change tables yet.
+#### Change-query reads
+
+`/deletes` and `/keyChanges` read the tracked-change tables for real.
+[`TrackedChangesEndpointModule.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/TrackedChangesEndpointModule.cs)
+routes both onto `IApiService` like any other endpoint, and `IChangeQueryRepository`'s relational
+implementation
+([`RelationalChangeQueryRepository.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalChangeQueryRepository.cs))
+plans, authorizes and executes the query: `ReadChangesAuthorizationPlanner` builds the authorization
+plan, `TrackedChangeAuthorizationSqlEmitter` renders it as SQL, `ChangeQueryResponseFieldMapper`
+resolves the response fields from the mapping set, `TrackedChangeQueryPlanner` builds the command, and
+`TrackedChangeQueryRowReader` reads the rows. End-to-end coverage lives in
+`Features/ChangeQueries/TrackedChange{DeletesByResource,KeyChangesByResource,Endpoints,Authorization}.feature`.
+
+An empty response is a specific outcome, not the default one. `QueryTrackedChanges` returns `[]`
+without touching the database only when the authorization plan fails closed (an unavailable strategy,
+or a namespace strategy with no configured prefixes), when the planner produces an empty plan, when
+the emitted command would exceed the dialect's parameter budget, or for a `/keyChanges` request
+against a tracked-change table that is tombstone-only by design — the shared descriptor table and the
+concrete-abstract tables, which record deletes but never key changes.
+
+`GetNewestChangeVersion` is separate and still a single dialect-specific call:
+`SELECT "dms"."GetMaxChangeVersion"() AS "NewestChangeVersion"` on PostgreSQL,
+`SELECT [dms].[GetMaxChangeVersion]() AS [NewestChangeVersion]` on SQL Server
+([`ChangeVersionSqlProvider.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/ChangeQueries/ChangeVersionSqlProvider.cs)).
 
 ## 5. Mapping packs (optional)
 
