@@ -761,24 +761,30 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
 
     $isLoopbackHost = @("localhost", "127.0.0.1") -contains $targetHostName.ToLowerInvariant()
 
-    # The port is compared NUMERICALLY, not as text. '05544' and '5544' are the same TCP port to both
-    # engines, so an Ordinal comparison read the zero-padded spelling as a different instance and let a
-    # target ON the local Compose database past the separate-topology guard. Parsed as invariant decimal
-    # digits only - NumberStyles::None rejects a sign, surrounding whitespace, and a thousands separator -
-    # and required to be in the valid TCP range, so a value that is not a port at all is never claimed
-    # equivalent to one. A genuinely different numeric port stays external, as before. Both engines share
-    # this predicate, so both are corrected by it.
+    # The port is compared NUMERICALLY, not as text, and by the rules the PROVIDERS use rather than a
+    # stricter set of our own. '05544' and '5544' are the same TCP port, and so is '+5544': Npgsql
+    # accepts a leading sign and leading zeros alike (measured - Port=+5544, Port=+05544 and Port= 5544
+    # all resolve to 5544), so any spelling this predicate refuses to parse becomes a target classified
+    # as EXTERNAL that the provider will nonetheless connect to on the local port - which is how a
+    # padded or signed spelling of the local Compose port escaped the separate-topology guard.
+    #
+    # NumberStyles::Integer is therefore the right set: a leading sign and surrounding whitespace, but no
+    # thousands separator and no decimal point, both of which Npgsql rejects outright. The 1-65535 range
+    # check still stands, so a negative value - which parses here but which Npgsql refuses to set as a
+    # port at all - is never claimed equivalent, and neither is anything else that is not a port. A
+    # genuinely different numeric port stays external, as before. Both engines share this predicate, so
+    # both are corrected by it.
     [int]$targetPortNumber = 0
     [int]$localPortNumber = 0
     $portsAreEquivalent =
         [int]::TryParse(
             ([string]$Target.Port).Trim(),
-            [System.Globalization.NumberStyles]::None,
+            [System.Globalization.NumberStyles]::Integer,
             [System.Globalization.CultureInfo]::InvariantCulture,
             [ref]$targetPortNumber) -and
         [int]::TryParse(
             ([string]$localEndpoint.Port).Trim(),
-            [System.Globalization.NumberStyles]::None,
+            [System.Globalization.NumberStyles]::Integer,
             [System.Globalization.CultureInfo]::InvariantCulture,
             [ref]$localPortNumber) -and
         $targetPortNumber -ge 1 -and $targetPortNumber -le 65535 -and
