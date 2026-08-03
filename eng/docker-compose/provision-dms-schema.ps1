@@ -1584,8 +1584,9 @@ function Invoke-ProvisionDmsSchema {
     # Separate-topology guard for EVERY selected target, whether this run's configure phase
     # registered its name or reused an existing data store's stored connection string. It runs
     # after the targets are built - each target's DatabaseName is the resolved, decrypted,
-    # dialect-aware database SchemaTools will receive - and before the tool is resolved, so a refusal
-    # deploys no DDL anywhere, including into targets that would have been provisioned first.
+    # dialect-aware database SchemaTools will receive - and after the tool is resolved but before it is
+    # invoked, so a refusal deploys no DDL anywhere, including into targets that would have been
+    # provisioned first.
     if ($SeparateConfigDatabase) {
         foreach ($candidateTarget in $targets) {
             Assert-SeparateTopologyProvisionTarget `
