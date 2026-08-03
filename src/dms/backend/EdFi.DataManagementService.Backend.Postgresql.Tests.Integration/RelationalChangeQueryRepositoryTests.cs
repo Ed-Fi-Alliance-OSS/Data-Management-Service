@@ -761,7 +761,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         return await _database.ExecuteScalarAsync<long>(
             """
             SELECT "DocumentId"
-            FROM "dms"."Document"
+            FROM "edfi"."AcademicWeek"
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", AcademicWeekDocumentUuid.Value)
@@ -773,7 +773,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         return await _database.ExecuteScalarAsync<long>(
             """
             SELECT "DocumentId"
-            FROM "dms"."Document"
+            FROM "edfi"."School"
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", SchoolDocumentUuid.Value)
