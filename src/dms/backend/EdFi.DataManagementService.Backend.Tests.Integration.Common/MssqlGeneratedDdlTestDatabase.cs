@@ -40,6 +40,8 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
     private const string ProvisionMaxConcurrencyVariable = "MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY";
     private static readonly (string Schema, string Table)[] _generatedDdlBaselineTables =
     [
+        ("dms", "DataStoreIdentity"),
+        ("dms", "DocumentCacheState"),
         ("dms", "EffectiveSchema"),
         ("dms", "ResourceKey"),
         ("dms", "SchemaComponent"),

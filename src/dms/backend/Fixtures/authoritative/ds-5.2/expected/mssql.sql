@@ -1,19 +1,96 @@
 -- ==========================================================
--- Phase 0: Preflight (fail fast on schema hash mismatch)
+-- Phase 0: Bounded Provisioning Guards
 -- ==========================================================
 
--- Preflight: fail fast if database is provisioned for a different schema hash
+-- Preflight: validate EffectiveSchema hash compatibility
 DECLARE @preflight_stored_hash nvarchar(200);
 
 IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
 BEGIN
     SELECT @preflight_stored_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
     WHERE [EffectiveSchemaSingletonId] = 1;
-    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'64a32532f39ea0a6c0c660b0b030dfac095326072330e66dd0e26e5da0d855f1'
+    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'6e60cfa6542d6b591e4cb527850c1431eb114de346d9aa3d0ab466fa615bda61'
     BEGIN
-        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'64a32532f39ea0a6c0c660b0b030dfac095326072330e66dd0e26e5da0d855f1', N'''');
+        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'6e60cfa6542d6b591e4cb527850c1431eb114de346d9aa3d0ab466fa615bda61', N'''');
         THROW 50000, @preflight_msg, 1;
     END
+END
+
+-- Preflight: protect completed DocumentCache mutable singleton state before mutation
+DECLARE @preflight_completed_hash nvarchar(200);
+
+IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
+BEGIN
+    SELECT @preflight_completed_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
+    WHERE [EffectiveSchemaSingletonId] = 1;
+    IF @preflight_completed_hash = N'6e60cfa6542d6b591e4cb527850c1431eb114de346d9aa3d0ab466fa615bda61'
+    BEGIN
+        IF OBJECT_ID(N'dms.DataStoreIdentity', N'U') IS NULL
+        BEGIN
+            THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DataStoreIdentity is missing. Drop and recreate the database before re-provisioning.', 1;
+        END
+
+        DECLARE @preflight_source_identity uniqueidentifier;
+        EXEC sys.sp_executesql
+            N'SELECT @source_identity = [SourceIdentity] FROM [dms].[DataStoreIdentity] WHERE [DataStoreIdentitySingletonId] = 1;',
+            N'@source_identity uniqueidentifier OUTPUT',
+            @source_identity = @preflight_source_identity OUTPUT;
+        IF @preflight_source_identity IS NULL
+        BEGIN
+            THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DataStoreIdentity singleton row is missing. Drop and recreate the database before re-provisioning.', 1;
+        END
+        IF @preflight_source_identity = CAST('00000000-0000-0000-0000-000000000000' AS uniqueidentifier)
+        BEGIN
+            THROW 50000, N'dms.DataStoreIdentity.SourceIdentity must not be the zero UUID. Drop and recreate the database before re-provisioning.', 1;
+        END
+
+        IF OBJECT_ID(N'dms.DocumentCacheState', N'U') IS NULL
+        BEGIN
+            THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DocumentCacheState is missing. Drop and recreate the database before re-provisioning.', 1;
+        END
+
+        DECLARE @preflight_lifecycle_state varchar(16);
+        DECLARE @preflight_cache_ahead_recovery_required bit;
+        EXEC sys.sp_executesql
+            N'SELECT @lifecycle_state = [ProjectionLifecycleState], @cache_ahead_recovery_required = [CacheAheadRecoveryRequired] FROM [dms].[DocumentCacheState] WHERE [StateId] = 1;',
+            N'@lifecycle_state varchar(16) OUTPUT, @cache_ahead_recovery_required bit OUTPUT',
+            @lifecycle_state = @preflight_lifecycle_state OUTPUT,
+            @cache_ahead_recovery_required = @preflight_cache_ahead_recovery_required OUTPUT;
+        IF @preflight_lifecycle_state IS NULL
+        BEGIN
+            THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DocumentCacheState singleton row is missing. Drop and recreate the database before re-provisioning.', 1;
+        END
+        IF NOT (
+            (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@preflight_lifecycle_state) = 8)
+            OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Resetting' AND DATALENGTH(@preflight_lifecycle_state) = 9)
+            OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Rebuilding' AND DATALENGTH(@preflight_lifecycle_state) = 10)
+            OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Tracking' AND DATALENGTH(@preflight_lifecycle_state) = 8)
+        )
+        BEGIN
+            THROW 50000, N'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value during provisioning preflight.', 1;
+        END
+        IF @preflight_cache_ahead_recovery_required IS NULL
+        BEGIN
+            THROW 50000, N'dms.DocumentCacheState.CacheAheadRecoveryRequired must not be null during provisioning preflight.', 1;
+        END
+    END
+END
+
+-- Preflight: reject known legacy DocumentCache artifacts before mutation
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'dms.DocumentCache', N'U') AND name = N'Etag')
+BEGIN
+    THROW 50000, N'Known legacy artifact dms.DocumentCache.Etag was found. Drop and recreate the database before provisioning E18 DocumentCache schema.', 1;
+END
+
+IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE parent_object_id = OBJECT_ID(N'dms.DocumentCache', N'U') AND name = N'UX_DocumentCache_DocumentUuid')
+OR EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dms.DocumentCache', N'U') AND name = N'UX_DocumentCache_DocumentUuid')
+BEGIN
+    THROW 50000, N'Known legacy artifact UX_DocumentCache_DocumentUuid was found. Drop and recreate the database before provisioning E18 DocumentCache schema.', 1;
+END
+
+IF EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dms.DocumentCache', N'U') AND name = N'IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt')
+BEGIN
+    THROW 50000, N'Known legacy artifact IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt was found. Drop and recreate the database before provisioning E18 DocumentCache schema.', 1;
 END
 
 -- ==========================================================
@@ -130,10 +207,26 @@ CREATE TYPE [dms].[UniqueIdentifierTable] AS TABLE(
 -- Phase 5: Tables (PK/UNIQUE/CHECK only, no cross-table FKs)
 -- ==========================================================
 
+IF OBJECT_ID(N'dms.DataStoreIdentity', N'U') IS NULL
+CREATE TABLE [dms].[DataStoreIdentity]
+(
+    [DataStoreIdentitySingletonId] smallint NOT NULL,
+    [SourceIdentity] uniqueidentifier NOT NULL,
+    CONSTRAINT [PK_DataStoreIdentity] PRIMARY KEY CLUSTERED ([DataStoreIdentitySingletonId])
+);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_DataStoreIdentity_Singleton' AND parent_object_id = OBJECT_ID(N'dms.DataStoreIdentity')
+)
+ALTER TABLE [dms].[DataStoreIdentity]
+ADD CONSTRAINT [CK_DataStoreIdentity_Singleton] CHECK ([DataStoreIdentitySingletonId] = 1);
+
 IF OBJECT_ID(N'dms.Descriptor', N'U') IS NULL
 CREATE TABLE [dms].[Descriptor]
 (
     [DocumentId] bigint NOT NULL,
+    [ResourceKeyId] smallint NOT NULL,
     [Namespace] nvarchar(255) NOT NULL,
     [CodeValue] nvarchar(50) NOT NULL,
     [ShortDescription] nvarchar(75) NOT NULL,
@@ -160,6 +253,7 @@ CREATE TABLE [dms].[Document]
     [DocumentId] bigint IDENTITY(1,1) NOT NULL,
     [DocumentUuid] uniqueidentifier NOT NULL,
     [ResourceKeyId] smallint NOT NULL,
+    [CreatedByOwnershipTokenId] smallint NULL,
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [IdentityVersion] bigint NOT NULL CONSTRAINT [DF_Document_IdentityVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
@@ -183,8 +277,8 @@ CREATE TABLE [dms].[DocumentCache]
     [ProjectName] nvarchar(256) NOT NULL,
     [ResourceName] nvarchar(256) NOT NULL,
     [ResourceVersion] nvarchar(32) NOT NULL,
-    [Etag] nvarchar(64) NOT NULL,
     [ContentVersion] bigint NOT NULL,
+    [StreamEtag] varchar(64) NOT NULL,
     [LastModifiedAt] datetime2(7) NOT NULL,
     [DocumentJson] nvarchar(max) NOT NULL,
     [ComputedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DocumentCache_ComputedAt] DEFAULT (sysutcdatetime()),
@@ -192,18 +286,44 @@ CREATE TABLE [dms].[DocumentCache]
 );
 
 IF NOT EXISTS (
-    SELECT 1 FROM sys.key_constraints
-    WHERE name = N'UX_DocumentCache_DocumentUuid' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.DocumentCache')
-)
-ALTER TABLE [dms].[DocumentCache]
-ADD CONSTRAINT [UX_DocumentCache_DocumentUuid] UNIQUE ([DocumentUuid]);
-
-IF NOT EXISTS (
     SELECT 1 FROM sys.check_constraints
     WHERE name = N'CK_DocumentCache_IsJsonObject' AND parent_object_id = OBJECT_ID(N'dms.DocumentCache')
 )
 ALTER TABLE [dms].[DocumentCache]
 ADD CONSTRAINT [CK_DocumentCache_IsJsonObject] CHECK (ISJSON([DocumentJson]) = 1 AND LEFT(LTRIM([DocumentJson]), 1) = '{');
+
+IF OBJECT_ID(N'dms.DocumentCacheState', N'U') IS NULL
+CREATE TABLE [dms].[DocumentCacheState]
+(
+    [StateId] smallint NOT NULL,
+    [ProjectionLifecycleState] varchar(16) COLLATE Latin1_General_100_BIN2 NOT NULL,
+    [CacheAheadRecoveryRequired] bit NOT NULL,
+    CONSTRAINT [PK_DocumentCacheState] PRIMARY KEY CLUSTERED ([StateId])
+);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_DocumentCacheState_Singleton' AND parent_object_id = OBJECT_ID(N'dms.DocumentCacheState')
+)
+ALTER TABLE [dms].[DocumentCacheState]
+ADD CONSTRAINT [CK_DocumentCacheState_Singleton] CHECK ([StateId] = 1);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_DocumentCacheState_Lifecycle' AND parent_object_id = OBJECT_ID(N'dms.DocumentCacheState')
+)
+ALTER TABLE [dms].[DocumentCacheState]
+ADD CONSTRAINT [CK_DocumentCacheState_Lifecycle] CHECK (([ProjectionLifecycleState] = 'Disabled' AND DATALENGTH([ProjectionLifecycleState]) = 8) OR ([ProjectionLifecycleState] = 'Resetting' AND DATALENGTH([ProjectionLifecycleState]) = 9) OR ([ProjectionLifecycleState] = 'Rebuilding' AND DATALENGTH([ProjectionLifecycleState]) = 10) OR ([ProjectionLifecycleState] = 'Tracking' AND DATALENGTH([ProjectionLifecycleState]) = 8));
+
+IF OBJECT_ID(N'dms.DocumentProjectionWork', N'U') IS NULL
+CREATE TABLE [dms].[DocumentProjectionWork]
+(
+    [DocumentId] bigint NOT NULL,
+    [RequiredContentVersion] bigint NOT NULL,
+    [FirstEnqueuedAt] datetime2(7) NOT NULL,
+    [LastEnqueuedAt] datetime2(7) NOT NULL,
+    CONSTRAINT [PK_DocumentProjectionWork] PRIMARY KEY CLUSTERED ([DocumentId])
+);
 
 IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NULL
 CREATE TABLE [dms].[EffectiveSchema]
@@ -293,6 +413,17 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_Descriptor_ResourceKey' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
+)
+ALTER TABLE [dms].[Descriptor]
+ADD CONSTRAINT [FK_Descriptor_ResourceKey]
+FOREIGN KEY ([ResourceKeyId])
+REFERENCES [dms].[ResourceKey] ([ResourceKeyId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_Document_ResourceKey' AND parent_object_id = OBJECT_ID(N'dms.Document')
 )
 ALTER TABLE [dms].[Document]
@@ -308,6 +439,17 @@ IF NOT EXISTS (
 )
 ALTER TABLE [dms].[DocumentCache]
 ADD CONSTRAINT [FK_DocumentCache_Document]
+FOREIGN KEY ([DocumentId])
+REFERENCES [dms].[Document] ([DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_DocumentProjectionWork_Document' AND parent_object_id = OBJECT_ID(N'dms.DocumentProjectionWork')
+)
+ALTER TABLE [dms].[DocumentProjectionWork]
+ADD CONSTRAINT [FK_DocumentProjectionWork_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
 ON DELETE CASCADE
@@ -354,33 +496,25 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'IX_Descriptor_Uri_Discriminator'
+    WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'IX_Descriptor_ResourceKeyId_DocumentId'
 )
-CREATE INDEX [IX_Descriptor_Uri_Discriminator] ON [dms].[Descriptor] ([Uri], [Discriminator]);
+CREATE INDEX [IX_Descriptor_ResourceKeyId_DocumentId] ON [dms].[Descriptor] ([ResourceKeyId], [DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'Document' AND i.name = N'IX_Document_ResourceKeyId_DocumentId'
+    WHERE s.name = N'dms' AND t.name = N'Document' AND i.name = N'IX_Document_CreatedByOwnershipTokenId'
 )
-CREATE INDEX [IX_Document_ResourceKeyId_DocumentId] ON [dms].[Document] ([ResourceKeyId], [DocumentId]);
+CREATE INDEX [IX_Document_CreatedByOwnershipTokenId] ON [dms].[Document] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'DocumentCache' AND i.name = N'IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt'
+    WHERE s.name = N'dms' AND t.name = N'DocumentProjectionWork' AND i.name = N'IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId'
 )
-CREATE INDEX [IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt] ON [dms].[DocumentCache] ([ProjectName], [ResourceName], [LastModifiedAt], [DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'ReferentialIdentity' AND i.name = N'IX_ReferentialIdentity_DocumentId'
-)
-CREATE INDEX [IX_ReferentialIdentity_DocumentId] ON [dms].[ReferentialIdentity] ([DocumentId]);
+CREATE INDEX [IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId] ON [dms].[DocumentProjectionWork] ([FirstEnqueuedAt], [DocumentId]);
 
 -- ==========================================================
 -- Phase 8: Triggers
@@ -393,6 +527,15 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]
+        WHERE i.[ResourceKeyId] <> d.[ResourceKeyId]
+    )
+    BEGIN
+        THROW 50000, N'dms.Descriptor.ResourceKeyId diverges from the owning dms.Document row.', 1;
+    END
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
         [ContentVersion] bigint NOT NULL,
@@ -445,6 +588,90 @@ BEGIN
             doc.[ContentVersion]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+END;
+GO
+
+GO
+CREATE OR ALTER TRIGGER [dms].[TR_Document_EnqueueProjectionWork]
+ON [dms].[Document]
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @lifecycleState varchar(16);
+    SELECT @lifecycleState = [ProjectionLifecycleState]
+    FROM [dms].[DocumentCacheState]
+    WHERE [StateId] = 1;
+
+    IF @lifecycleState IS NULL
+    BEGIN
+        THROW 50000, N'dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.', 1;
+    END
+
+    IF NOT (
+        (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@lifecycleState) = 8)
+        OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Resetting' AND DATALENGTH(@lifecycleState) = 9)
+        OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Rebuilding' AND DATALENGTH(@lifecycleState) = 10)
+        OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Tracking' AND DATALENGTH(@lifecycleState) = 8)
+    )
+    BEGIN
+        THROW 50000, N'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value for projection enqueue.', 1;
+    END
+
+    IF @lifecycleState COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@lifecycleState) = 8
+    BEGIN
+        RETURN;
+    END
+
+    DECLARE @required TABLE (
+        [DocumentId] bigint NOT NULL PRIMARY KEY,
+        [RequiredContentVersion] bigint NOT NULL
+    );
+
+    INSERT INTO @required ([DocumentId], [RequiredContentVersion])
+    SELECT i.[DocumentId], MAX(i.[ContentVersion])
+    FROM inserted i
+    LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+    WHERE del.[DocumentId] IS NULL OR i.[ContentVersion] <> del.[ContentVersion]
+    GROUP BY i.[DocumentId];
+
+    DECLARE @enqueuedAt datetime2(7) = SYSUTCDATETIME();
+
+    UPDATE work
+    SET work.[RequiredContentVersion] = req.[RequiredContentVersion],
+        work.[LastEnqueuedAt] = @enqueuedAt
+    FROM @required req
+    INNER LOOP JOIN [dms].[DocumentProjectionWork] work WITH (UPDLOCK, ROWLOCK) ON work.[DocumentId] = req.[DocumentId]
+    WHERE work.[RequiredContentVersion] < req.[RequiredContentVersion]
+    OPTION (FORCE ORDER);
+
+    INSERT INTO [dms].[DocumentProjectionWork] ([DocumentId], [RequiredContentVersion], [FirstEnqueuedAt], [LastEnqueuedAt])
+    SELECT req.[DocumentId], req.[RequiredContentVersion], @enqueuedAt, @enqueuedAt
+    FROM @required req
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM [dms].[DocumentProjectionWork] work WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+        WHERE work.[DocumentId] = req.[DocumentId]
+    );
+END;
+GO
+
+GO
+CREATE OR ALTER TRIGGER [dms].[TR_DocumentCache_ValidateDocumentUuid]
+ON [dms].[DocumentCache]
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]
+        WHERE i.[DocumentUuid] <> d.[DocumentUuid]
+    )
+    BEGIN
+        THROW 50000, N'dms.DocumentCache.DocumentUuid diverges from the owning dms.Document row.', 1;
     END
 END;
 GO
@@ -11205,14 +11432,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_AccountabilityRating_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.AccountabilityRating')
+    WHERE name = N'FK_AccountabilityRating_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.AccountabilityRating')
 )
 ALTER TABLE [edfi].[AccountabilityRating]
-ADD CONSTRAINT [FK_AccountabilityRating_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_AccountabilityRating_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -11260,23 +11487,23 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Assessment_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.Assessment')
+    WHERE name = N'FK_Assessment_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.Assessment')
 )
 ALTER TABLE [edfi].[Assessment]
-ADD CONSTRAINT [FK_Assessment_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_Assessment_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Assessment_MandatingEducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.Assessment')
+    WHERE name = N'FK_Assessment_MandatingEducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.Assessment')
 )
 ALTER TABLE [edfi].[Assessment]
-ADD CONSTRAINT [FK_Assessment_MandatingEducationOrganization]
-FOREIGN KEY ([MandatingEducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_Assessment_MandatingEducationOrganization_RefKey]
+FOREIGN KEY ([MandatingEducationOrganization_EducationOrganizationId], [MandatingEducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -11480,17 +11707,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_AssessmentProgram_SectionOrProgramChoiceProgram' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentProgram')
-)
-ALTER TABLE [edfi].[AssessmentProgram]
-ADD CONSTRAINT [FK_AssessmentProgram_SectionOrProgramChoiceProgram]
-FOREIGN KEY ([SectionOrProgramChoiceProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_AssessmentProgram_SectionOrProgramChoiceProgram_ProgramTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentProgram')
 )
 ALTER TABLE [edfi].[AssessmentProgram]
@@ -11499,6 +11715,17 @@ FOREIGN KEY ([SectionOrProgramChoiceProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_AssessmentProgram_SectionOrProgramChoiceProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentProgram')
+)
+ALTER TABLE [edfi].[AssessmentProgram]
+ADD CONSTRAINT [FK_AssessmentProgram_SectionOrProgramChoiceProgram_RefKey]
+FOREIGN KEY ([SectionOrProgramChoiceProgram_EducationOrganizationId], [SectionOrProgramChoiceProgram_ProgramName], [SectionOrProgramChoiceProgram_ProgramTypeDescriptor_DescriptorId], [SectionOrProgramChoiceProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -11546,14 +11773,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_AssessmentSection_SectionOrProgramChoiceSection' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentSection')
+    WHERE name = N'FK_AssessmentSection_SectionOrProgramChoiceSection_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentSection')
 )
 ALTER TABLE [edfi].[AssessmentSection]
-ADD CONSTRAINT [FK_AssessmentSection_SectionOrProgramChoiceSection]
-FOREIGN KEY ([SectionOrProgramChoiceSection_DocumentId])
-REFERENCES [edfi].[Section] ([DocumentId])
+ADD CONSTRAINT [FK_AssessmentSection_SectionOrProgramChoiceSection_RefKey]
+FOREIGN KEY ([SectionOrProgramChoiceSection_LocalCourseCode], [SectionOrProgramChoiceSection_SchoolId], [SectionOrProgramChoiceSection_SchoolYear], [SectionOrProgramChoiceSection_SessionName], [SectionOrProgramChoiceSection_SectionIdentifier], [SectionOrProgramChoiceSection_DocumentId])
+REFERENCES [edfi].[Section] ([CourseOffering_LocalCourseCode], [SchoolId_Unified], [CourseOffering_SchoolYear], [CourseOffering_SessionName], [SectionIdentifier], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -11568,14 +11795,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_AssessmentAdministration_AssigningEducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentAdministration')
+    WHERE name = N'FK_AssessmentAdministration_AssigningEducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentAdministration')
 )
 ALTER TABLE [edfi].[AssessmentAdministration]
-ADD CONSTRAINT [FK_AssessmentAdministration_AssigningEducationOrganization]
-FOREIGN KEY ([AssigningEducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_AssessmentAdministration_AssigningEducationOrganization_RefKey]
+FOREIGN KEY ([AssigningEducationOrganization_EducationOrganizationId], [AssigningEducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -11623,14 +11850,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_AssessmentAdministrationParticipation_AssessmentAdministration' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentAdministrationParticipation')
+    WHERE name = N'FK_AssessmentAdministrationParticipation_AssessmentAdministration_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentAdministrationParticipation')
 )
 ALTER TABLE [edfi].[AssessmentAdministrationParticipation]
-ADD CONSTRAINT [FK_AssessmentAdministrationParticipation_AssessmentAdministration]
-FOREIGN KEY ([AssessmentAdministration_DocumentId])
-REFERENCES [edfi].[AssessmentAdministration] ([DocumentId])
+ADD CONSTRAINT [FK_AssessmentAdministrationParticipation_AssessmentAdministration_RefKey]
+FOREIGN KEY ([AssessmentAdministration_AdministrationIdentifier], [AssessmentAdministration_AssessmentIdentifier], [AssessmentAdministration_Namespace], [AssessmentAdministration_AssigningEducationOrganizationId], [AssessmentAdministration_DocumentId])
+REFERENCES [edfi].[AssessmentAdministration] ([AdministrationIdentifier], [Assessment_AssessmentIdentifier], [Assessment_Namespace], [AssigningEducationOrganization_EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -11645,25 +11872,25 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_AssessmentAdministrationParticipation_ParticipatingEducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentAdministrationParticipation')
+    WHERE name = N'FK_AssessmentAdministrationParticipation_ParticipatingEducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentAdministrationParticipation')
 )
 ALTER TABLE [edfi].[AssessmentAdministrationParticipation]
-ADD CONSTRAINT [FK_AssessmentAdministrationParticipation_ParticipatingEducationOrganization]
-FOREIGN KEY ([ParticipatingEducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_AssessmentAdministrationParticipation_ParticipatingEducationOrganization_RefKey]
+FOREIGN KEY ([ParticipatingEducationOrganization_EducationOrganizationId], [ParticipatingEducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_AssessmentAdministrationParticipationAdministrationPointOfContact_AdministrationPointOfContactEducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentAdministrationParticipationAdministrationPointOfContact')
+    WHERE name = N'FK_AssessmentAdministrationParticipationAdministrationPointOfContact_AdministrationPointOfContactEducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.AssessmentAdministrationParticipationAdministrationPointOfContact')
 )
 ALTER TABLE [edfi].[AssessmentAdministrationParticipationAdministrationPointOfContact]
-ADD CONSTRAINT [FK_AssessmentAdministrationParticipationAdministrationPointOfContact_AdministrationPointOfContactEducationOrganization]
-FOREIGN KEY ([AdministrationPointOfContactEducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_AssessmentAdministrationParticipationAdministrationPointOfContact_AdministrationPointOfContactEducationOrganization_RefKey]
+FOREIGN KEY ([AdministrationPointOfContactEducationOrganization_EducationOrganizationId], [AdministrationPointOfContactEducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -11920,14 +12147,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_BellScheduleClassPeriod_ClassPeriod' AND parent_object_id = OBJECT_ID(N'edfi.BellScheduleClassPeriod')
+    WHERE name = N'FK_BellScheduleClassPeriod_ClassPeriod_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.BellScheduleClassPeriod')
 )
 ALTER TABLE [edfi].[BellScheduleClassPeriod]
-ADD CONSTRAINT [FK_BellScheduleClassPeriod_ClassPeriod]
-FOREIGN KEY ([ClassPeriod_DocumentId])
-REFERENCES [edfi].[ClassPeriod] ([DocumentId])
+ADD CONSTRAINT [FK_BellScheduleClassPeriod_ClassPeriod_RefKey]
+FOREIGN KEY ([ClassPeriod_ClassPeriodName], [ClassPeriod_SchoolId], [ClassPeriod_DocumentId])
+REFERENCES [edfi].[ClassPeriod] ([ClassPeriodName], [School_SchoolId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -12107,14 +12334,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ChartOfAccount_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.ChartOfAccount')
+    WHERE name = N'FK_ChartOfAccount_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.ChartOfAccount')
 )
 ALTER TABLE [edfi].[ChartOfAccount]
-ADD CONSTRAINT [FK_ChartOfAccount_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_ChartOfAccount_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -12294,14 +12521,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Cohort_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.Cohort')
+    WHERE name = N'FK_Cohort_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.Cohort')
 )
 ALTER TABLE [edfi].[Cohort]
-ADD CONSTRAINT [FK_Cohort_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_Cohort_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -12316,17 +12543,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CohortProgram_ProgramProgram' AND parent_object_id = OBJECT_ID(N'edfi.CohortProgram')
-)
-ALTER TABLE [edfi].[CohortProgram]
-ADD CONSTRAINT [FK_CohortProgram_ProgramProgram]
-FOREIGN KEY ([ProgramProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_CohortProgram_ProgramProgram_ProgramTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.CohortProgram')
 )
 ALTER TABLE [edfi].[CohortProgram]
@@ -12335,6 +12551,17 @@ FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_CohortProgram_ProgramProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.CohortProgram')
+)
+ALTER TABLE [edfi].[CohortProgram]
+ADD CONSTRAINT [FK_CohortProgram_ProgramProgram_RefKey]
+FOREIGN KEY ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -12899,14 +13126,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CompetencyObjective_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.CompetencyObjective')
+    WHERE name = N'FK_CompetencyObjective_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.CompetencyObjective')
 )
 ALTER TABLE [edfi].[CompetencyObjective]
-ADD CONSTRAINT [FK_CompetencyObjective_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_CompetencyObjective_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -13262,14 +13489,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Course_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.Course')
+    WHERE name = N'FK_Course_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.Course')
 )
 ALTER TABLE [edfi].[Course]
-ADD CONSTRAINT [FK_Course_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_Course_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -13427,14 +13654,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CourseOffering_Course' AND parent_object_id = OBJECT_ID(N'edfi.CourseOffering')
+    WHERE name = N'FK_CourseOffering_Course_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.CourseOffering')
 )
 ALTER TABLE [edfi].[CourseOffering]
-ADD CONSTRAINT [FK_CourseOffering_Course]
-FOREIGN KEY ([Course_DocumentId])
-REFERENCES [edfi].[Course] ([DocumentId])
+ADD CONSTRAINT [FK_CourseOffering_Course_RefKey]
+FOREIGN KEY ([Course_CourseCode], [Course_EducationOrganizationId], [Course_DocumentId])
+REFERENCES [edfi].[Course] ([CourseCode], [EducationOrganization_EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -13460,14 +13687,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CourseOffering_Session' AND parent_object_id = OBJECT_ID(N'edfi.CourseOffering')
+    WHERE name = N'FK_CourseOffering_Session_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.CourseOffering')
 )
 ALTER TABLE [edfi].[CourseOffering]
-ADD CONSTRAINT [FK_CourseOffering_Session]
-FOREIGN KEY ([Session_DocumentId])
-REFERENCES [edfi].[Session] ([DocumentId])
+ADD CONSTRAINT [FK_CourseOffering_Session_RefKey]
+FOREIGN KEY ([SchoolId_Unified], [Session_SchoolYear], [Session_SessionName], [Session_DocumentId])
+REFERENCES [edfi].[Session] ([School_SchoolId], [SchoolYear_SchoolYear], [SessionName], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -13559,14 +13786,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CourseTranscript_CourseCourse' AND parent_object_id = OBJECT_ID(N'edfi.CourseTranscript')
+    WHERE name = N'FK_CourseTranscript_CourseCourse_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.CourseTranscript')
 )
 ALTER TABLE [edfi].[CourseTranscript]
-ADD CONSTRAINT [FK_CourseTranscript_CourseCourse]
-FOREIGN KEY ([CourseCourse_DocumentId])
-REFERENCES [edfi].[Course] ([DocumentId])
+ADD CONSTRAINT [FK_CourseTranscript_CourseCourse_RefKey]
+FOREIGN KEY ([CourseCourse_CourseCode], [CourseCourse_EducationOrganizationId], [CourseCourse_DocumentId])
+REFERENCES [edfi].[Course] ([CourseCode], [EducationOrganization_EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -13603,12 +13830,12 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CourseTranscript_ExternalEducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.CourseTranscript')
+    WHERE name = N'FK_CourseTranscript_ExternalEducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.CourseTranscript')
 )
 ALTER TABLE [edfi].[CourseTranscript]
-ADD CONSTRAINT [FK_CourseTranscript_ExternalEducationOrganization]
-FOREIGN KEY ([ExternalEducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_CourseTranscript_ExternalEducationOrganization_RefKey]
+FOREIGN KEY ([ExternalEducationOrganization_EducationOrganizationId], [ExternalEducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13636,12 +13863,12 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CourseTranscript_StudentAcademicRecord' AND parent_object_id = OBJECT_ID(N'edfi.CourseTranscript')
+    WHERE name = N'FK_CourseTranscript_StudentAcademicRecord_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.CourseTranscript')
 )
 ALTER TABLE [edfi].[CourseTranscript]
-ADD CONSTRAINT [FK_CourseTranscript_StudentAcademicRecord]
-FOREIGN KEY ([StudentAcademicRecord_DocumentId])
-REFERENCES [edfi].[StudentAcademicRecord] ([DocumentId])
+ADD CONSTRAINT [FK_CourseTranscript_StudentAcademicRecord_RefKey]
+FOREIGN KEY ([StudentAcademicRecord_EducationOrganizationId], [StudentAcademicRecord_SchoolYear], [StudentAcademicRecord_StudentUniqueId], [StudentAcademicRecord_TermDescriptor_DescriptorId], [StudentAcademicRecord_DocumentId])
+REFERENCES [edfi].[StudentAcademicRecord] ([EducationOrganization_EducationOrganizationId], [SchoolYear_SchoolYear], [Student_StudentUniqueId], [TermDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13713,17 +13940,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CourseTranscriptCourseProgram_CourseProgram' AND parent_object_id = OBJECT_ID(N'edfi.CourseTranscriptCourseProgram')
-)
-ALTER TABLE [edfi].[CourseTranscriptCourseProgram]
-ADD CONSTRAINT [FK_CourseTranscriptCourseProgram_CourseProgram]
-FOREIGN KEY ([CourseProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_CourseTranscriptCourseProgram_CourseProgram_ProgramTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.CourseTranscriptCourseProgram')
 )
 ALTER TABLE [edfi].[CourseTranscriptCourseProgram]
@@ -13732,6 +13948,17 @@ FOREIGN KEY ([CourseProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_CourseTranscriptCourseProgram_CourseProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.CourseTranscriptCourseProgram')
+)
+ALTER TABLE [edfi].[CourseTranscriptCourseProgram]
+ADD CONSTRAINT [FK_CourseTranscriptCourseProgram_CourseProgram_RefKey]
+FOREIGN KEY ([CourseProgram_EducationOrganizationId], [CourseProgram_ProgramName], [CourseProgram_ProgramTypeDescriptor_DescriptorId], [CourseProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -13823,14 +14050,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_CourseTranscriptSection_Section' AND parent_object_id = OBJECT_ID(N'edfi.CourseTranscriptSection')
+    WHERE name = N'FK_CourseTranscriptSection_Section_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.CourseTranscriptSection')
 )
 ALTER TABLE [edfi].[CourseTranscriptSection]
-ADD CONSTRAINT [FK_CourseTranscriptSection_Section]
-FOREIGN KEY ([Section_DocumentId])
-REFERENCES [edfi].[Section] ([DocumentId])
+ADD CONSTRAINT [FK_CourseTranscriptSection_Section_RefKey]
+FOREIGN KEY ([Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId])
+REFERENCES [edfi].[Section] ([CourseOffering_LocalCourseCode], [SchoolId_Unified], [CourseOffering_SchoolYear], [CourseOffering_SessionName], [SectionIdentifier], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -14439,23 +14666,23 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationOrganizationInterventionPrescriptionAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationInterventionPrescriptionAssociation')
+    WHERE name = N'FK_EducationOrganizationInterventionPrescriptionAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationInterventionPrescriptionAssociation')
 )
 ALTER TABLE [edfi].[EducationOrganizationInterventionPrescriptionAssociation]
-ADD CONSTRAINT [FK_EducationOrganizationInterventionPrescriptionAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_EducationOrganizationInterventionPrescriptionAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationOrganizationInterventionPrescriptionAssociation_InterventionPrescriptionInterventionPrescription' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationInterventionPrescriptionAssociation')
+    WHERE name = N'FK_EducationOrganizationInterventionPrescriptionAssociation_InterventionPrescriptionInterventionPrescription_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationInterventionPrescriptionAssociation')
 )
 ALTER TABLE [edfi].[EducationOrganizationInterventionPrescriptionAssociation]
-ADD CONSTRAINT [FK_EducationOrganizationInterventionPrescriptionAssociation_InterventionPrescriptionInterventionPrescription]
-FOREIGN KEY ([InterventionPrescriptionInterventionPrescription_DocumentId])
-REFERENCES [edfi].[InterventionPrescription] ([DocumentId])
+ADD CONSTRAINT [FK_EducationOrganizationInterventionPrescriptionAssociation_InterventionPrescriptionInterventionPrescription_RefKey]
+FOREIGN KEY ([InterventionPrescriptionInterventionPrescription_EducationOrganizationId], [InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode], [InterventionPrescriptionInterventionPrescription_DocumentId])
+REFERENCES [edfi].[InterventionPrescription] ([EducationOrganization_EducationOrganizationId], [InterventionPrescriptionIdentificationCode], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14725,14 +14952,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationOrganizationNetworkAssociation_MemberEducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationNetworkAssociation')
+    WHERE name = N'FK_EducationOrganizationNetworkAssociation_MemberEducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationNetworkAssociation')
 )
 ALTER TABLE [edfi].[EducationOrganizationNetworkAssociation]
-ADD CONSTRAINT [FK_EducationOrganizationNetworkAssociation_MemberEducationOrganization]
-FOREIGN KEY ([MemberEducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_EducationOrganizationNetworkAssociation_MemberEducationOrganization_RefKey]
+FOREIGN KEY ([MemberEducationOrganization_EducationOrganizationId], [MemberEducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -14747,23 +14974,23 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationOrganizationPeerAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationPeerAssociation')
+    WHERE name = N'FK_EducationOrganizationPeerAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationPeerAssociation')
 )
 ALTER TABLE [edfi].[EducationOrganizationPeerAssociation]
-ADD CONSTRAINT [FK_EducationOrganizationPeerAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_EducationOrganizationPeerAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationOrganizationPeerAssociation_PeerEducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationPeerAssociation')
+    WHERE name = N'FK_EducationOrganizationPeerAssociation_PeerEducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationPeerAssociation')
 )
 ALTER TABLE [edfi].[EducationOrganizationPeerAssociation]
-ADD CONSTRAINT [FK_EducationOrganizationPeerAssociation_PeerEducationOrganization]
-FOREIGN KEY ([PeerEducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_EducationOrganizationPeerAssociation_PeerEducationOrganization_RefKey]
+FOREIGN KEY ([PeerEducationOrganization_EducationOrganizationId], [PeerEducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15033,17 +15260,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EvaluationRubricDimension_ProgramEvaluationElement' AND parent_object_id = OBJECT_ID(N'edfi.EvaluationRubricDimension')
-)
-ALTER TABLE [edfi].[EvaluationRubricDimension]
-ADD CONSTRAINT [FK_EvaluationRubricDimension_ProgramEvaluationElement]
-FOREIGN KEY ([ProgramEvaluationElement_DocumentId])
-REFERENCES [edfi].[ProgramEvaluationElement] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_EvaluationRubricDimension_ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.EvaluationRubricDimension')
 )
 ALTER TABLE [edfi].[EvaluationRubricDimension]
@@ -15074,6 +15290,17 @@ FOREIGN KEY ([ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_EvaluationRubricDimension_ProgramEvaluationElement_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.EvaluationRubricDimension')
+)
+ALTER TABLE [edfi].[EvaluationRubricDimension]
+ADD CONSTRAINT [FK_EvaluationRubricDimension_ProgramEvaluationElement_RefKey]
+FOREIGN KEY ([ProgramEvaluationElement_ProgramEvaluationElementTitle], [ProgramEvaluationElement_ProgramEducationOrganizationId], [ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId], [ProgramEvaluationElement_ProgramEvaluationTitle], [ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId], [ProgramEvaluationElement_ProgramName], [ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId], [ProgramEvaluationElement_DocumentId])
+REFERENCES [edfi].[ProgramEvaluationElement] ([ProgramEvaluationElementTitle], [ProgramEducationOrganizationId_Unified], [ProgramEvaluationPeriodDescriptor_Unified_DescriptorId], [ProgramEvaluationTitle_Unified], [ProgramEvaluationTypeDescriptor_Unified_DescriptorId], [ProgramName_Unified], [ProgramTypeDescriptor_Unified_DescriptorId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -15231,14 +15458,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Grade_StudentSectionAssociation' AND parent_object_id = OBJECT_ID(N'edfi.Grade')
+    WHERE name = N'FK_Grade_StudentSectionAssociation_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.Grade')
 )
 ALTER TABLE [edfi].[Grade]
-ADD CONSTRAINT [FK_Grade_StudentSectionAssociation]
-FOREIGN KEY ([StudentSectionAssociation_DocumentId])
-REFERENCES [edfi].[StudentSectionAssociation] ([DocumentId])
+ADD CONSTRAINT [FK_Grade_StudentSectionAssociation_RefKey]
+FOREIGN KEY ([StudentSectionAssociation_BeginDate], [StudentSectionAssociation_LocalCourseCode], [SchoolId_Unified], [SchoolYear_Unified], [StudentSectionAssociation_SectionIdentifier], [StudentSectionAssociation_SessionName], [StudentSectionAssociation_StudentUniqueId], [StudentSectionAssociation_DocumentId])
+REFERENCES [edfi].[StudentSectionAssociation] ([BeginDate], [Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SectionIdentifier], [Section_SessionName], [Student_StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -15319,14 +15546,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_GradebookEntry_Section' AND parent_object_id = OBJECT_ID(N'edfi.GradebookEntry')
+    WHERE name = N'FK_GradebookEntry_Section_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.GradebookEntry')
 )
 ALTER TABLE [edfi].[GradebookEntry]
-ADD CONSTRAINT [FK_GradebookEntry_Section]
-FOREIGN KEY ([Section_DocumentId])
-REFERENCES [edfi].[Section] ([DocumentId])
+ADD CONSTRAINT [FK_GradebookEntry_Section_RefKey]
+FOREIGN KEY ([Section_LocalCourseCode], [SchoolId_Unified], [SchoolYear_Unified], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId])
+REFERENCES [edfi].[Section] ([CourseOffering_LocalCourseCode], [SchoolId_Unified], [CourseOffering_SchoolYear], [CourseOffering_SessionName], [SectionIdentifier], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -15407,14 +15634,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_GraduationPlan_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.GraduationPlan')
+    WHERE name = N'FK_GraduationPlan_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.GraduationPlan')
 )
 ALTER TABLE [edfi].[GraduationPlan]
-ADD CONSTRAINT [FK_GraduationPlan_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_GraduationPlan_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -15605,14 +15832,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_GraduationPlanCreditsByCoursCours_CourseCourse' AND parent_object_id = OBJECT_ID(N'edfi.GraduationPlanCreditsByCoursCours')
+    WHERE name = N'FK_GraduationPlanCreditsByCoursCours_CourseCourse_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.GraduationPlanCreditsByCoursCours')
 )
 ALTER TABLE [edfi].[GraduationPlanCreditsByCoursCours]
-ADD CONSTRAINT [FK_GraduationPlanCreditsByCoursCours_CourseCourse]
-FOREIGN KEY ([CourseCourse_DocumentId])
-REFERENCES [edfi].[Course] ([DocumentId])
+ADD CONSTRAINT [FK_GraduationPlanCreditsByCoursCours_CourseCourse_RefKey]
+FOREIGN KEY ([CourseCourse_CourseCode], [CourseCourse_EducationOrganizationId], [CourseCourse_DocumentId])
+REFERENCES [edfi].[Course] ([CourseCode], [EducationOrganization_EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -15682,14 +15909,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Intervention_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.Intervention')
+    WHERE name = N'FK_Intervention_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.Intervention')
 )
 ALTER TABLE [edfi].[Intervention]
-ADD CONSTRAINT [FK_Intervention_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_Intervention_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -15803,14 +16030,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_InterventionInterventionPrescription_InterventionPrescriptionInterventionPrescription' AND parent_object_id = OBJECT_ID(N'edfi.InterventionInterventionPrescription')
+    WHERE name = N'FK_InterventionInterventionPrescription_InterventionPrescriptionInterventionPrescription_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.InterventionInterventionPrescription')
 )
 ALTER TABLE [edfi].[InterventionInterventionPrescription]
-ADD CONSTRAINT [FK_InterventionInterventionPrescription_InterventionPrescriptionInterventionPrescription]
-FOREIGN KEY ([InterventionPrescriptionInterventionPrescription_DocumentId])
-REFERENCES [edfi].[InterventionPrescription] ([DocumentId])
+ADD CONSTRAINT [FK_InterventionInterventionPrescription_InterventionPrescriptionInterventionPrescription_RefKey]
+FOREIGN KEY ([InterventionPrescriptionInterventionPrescription_EducationOrganizationId], [InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode], [InterventionPrescriptionInterventionPrescription_DocumentId])
+REFERENCES [edfi].[InterventionPrescription] ([EducationOrganization_EducationOrganizationId], [InterventionPrescriptionIdentificationCode], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -15913,14 +16140,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_InterventionPrescription_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.InterventionPrescription')
+    WHERE name = N'FK_InterventionPrescription_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.InterventionPrescription')
 )
 ALTER TABLE [edfi].[InterventionPrescription]
-ADD CONSTRAINT [FK_InterventionPrescription_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_InterventionPrescription_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -16089,14 +16316,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_InterventionStudy_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.InterventionStudy')
+    WHERE name = N'FK_InterventionStudy_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.InterventionStudy')
 )
 ALTER TABLE [edfi].[InterventionStudy]
-ADD CONSTRAINT [FK_InterventionStudy_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_InterventionStudy_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -16111,12 +16338,12 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_InterventionStudy_InterventionPrescriptionInterventionPrescription' AND parent_object_id = OBJECT_ID(N'edfi.InterventionStudy')
+    WHERE name = N'FK_InterventionStudy_InterventionPrescriptionInterventionPrescription_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.InterventionStudy')
 )
 ALTER TABLE [edfi].[InterventionStudy]
-ADD CONSTRAINT [FK_InterventionStudy_InterventionPrescriptionInterventionPrescription]
-FOREIGN KEY ([InterventionPrescriptionInterventionPrescription_DocumentId])
-REFERENCES [edfi].[InterventionPrescription] ([DocumentId])
+ADD CONSTRAINT [FK_InterventionStudy_InterventionPrescriptionInterventionPrescription_RefKey]
+FOREIGN KEY ([InterventionPrescriptionInterventionPrescription_EducationOrganizationId], [InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode], [InterventionPrescriptionInterventionPrescription_DocumentId])
+REFERENCES [edfi].[InterventionPrescription] ([EducationOrganization_EducationOrganizationId], [InterventionPrescriptionIdentificationCode], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16353,14 +16580,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LearningStandard_MandatingEducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.LearningStandard')
+    WHERE name = N'FK_LearningStandard_MandatingEducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.LearningStandard')
 )
 ALTER TABLE [edfi].[LearningStandard]
-ADD CONSTRAINT [FK_LearningStandard_MandatingEducationOrganization]
-FOREIGN KEY ([MandatingEducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_LearningStandard_MandatingEducationOrganization_RefKey]
+FOREIGN KEY ([MandatingEducationOrganization_EducationOrganizationId], [MandatingEducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -16485,14 +16712,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalAccount_ChartOfAccountChartOfAccount' AND parent_object_id = OBJECT_ID(N'edfi.LocalAccount')
+    WHERE name = N'FK_LocalAccount_ChartOfAccountChartOfAccount_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.LocalAccount')
 )
 ALTER TABLE [edfi].[LocalAccount]
-ADD CONSTRAINT [FK_LocalAccount_ChartOfAccountChartOfAccount]
-FOREIGN KEY ([ChartOfAccountChartOfAccount_DocumentId])
-REFERENCES [edfi].[ChartOfAccount] ([DocumentId])
+ADD CONSTRAINT [FK_LocalAccount_ChartOfAccountChartOfAccount_RefKey]
+FOREIGN KEY ([ChartOfAccountChartOfAccount_AccountIdentifier], [ChartOfAccountChartOfAccount_EducationOrganizationId], [FiscalYear_Unified], [ChartOfAccountChartOfAccount_DocumentId])
+REFERENCES [edfi].[ChartOfAccount] ([AccountIdentifier], [EducationOrganization_EducationOrganizationId], [FiscalYear_Unified], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -16507,12 +16734,12 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalAccount_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.LocalAccount')
+    WHERE name = N'FK_LocalAccount_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.LocalAccount')
 )
 ALTER TABLE [edfi].[LocalAccount]
-ADD CONSTRAINT [FK_LocalAccount_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_LocalAccount_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16562,14 +16789,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalActual_LocalAccount' AND parent_object_id = OBJECT_ID(N'edfi.LocalActual')
+    WHERE name = N'FK_LocalActual_LocalAccount_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.LocalActual')
 )
 ALTER TABLE [edfi].[LocalActual]
-ADD CONSTRAINT [FK_LocalActual_LocalAccount]
-FOREIGN KEY ([LocalAccount_DocumentId])
-REFERENCES [edfi].[LocalAccount] ([DocumentId])
+ADD CONSTRAINT [FK_LocalActual_LocalAccount_RefKey]
+FOREIGN KEY ([LocalAccount_AccountIdentifier], [LocalAccount_EducationOrganizationId], [LocalAccount_FiscalYear], [LocalAccount_DocumentId])
+REFERENCES [edfi].[LocalAccount] ([AccountIdentifier], [EducationOrganization_EducationOrganizationId], [FiscalYear_Unified], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -16595,14 +16822,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalBudget_LocalAccount' AND parent_object_id = OBJECT_ID(N'edfi.LocalBudget')
+    WHERE name = N'FK_LocalBudget_LocalAccount_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.LocalBudget')
 )
 ALTER TABLE [edfi].[LocalBudget]
-ADD CONSTRAINT [FK_LocalBudget_LocalAccount]
-FOREIGN KEY ([LocalAccount_DocumentId])
-REFERENCES [edfi].[LocalAccount] ([DocumentId])
+ADD CONSTRAINT [FK_LocalBudget_LocalAccount_RefKey]
+FOREIGN KEY ([LocalAccount_AccountIdentifier], [LocalAccount_EducationOrganizationId], [LocalAccount_FiscalYear], [LocalAccount_DocumentId])
+REFERENCES [edfi].[LocalAccount] ([AccountIdentifier], [EducationOrganization_EducationOrganizationId], [FiscalYear_Unified], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -16628,14 +16855,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalContractedStaff_LocalAccount' AND parent_object_id = OBJECT_ID(N'edfi.LocalContractedStaff')
+    WHERE name = N'FK_LocalContractedStaff_LocalAccount_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.LocalContractedStaff')
 )
 ALTER TABLE [edfi].[LocalContractedStaff]
-ADD CONSTRAINT [FK_LocalContractedStaff_LocalAccount]
-FOREIGN KEY ([LocalAccount_DocumentId])
-REFERENCES [edfi].[LocalAccount] ([DocumentId])
+ADD CONSTRAINT [FK_LocalContractedStaff_LocalAccount_RefKey]
+FOREIGN KEY ([LocalAccount_AccountIdentifier], [LocalAccount_EducationOrganizationId], [LocalAccount_FiscalYear], [LocalAccount_DocumentId])
+REFERENCES [edfi].[LocalAccount] ([AccountIdentifier], [EducationOrganization_EducationOrganizationId], [FiscalYear_Unified], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -17013,14 +17240,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalEncumbrance_LocalAccount' AND parent_object_id = OBJECT_ID(N'edfi.LocalEncumbrance')
+    WHERE name = N'FK_LocalEncumbrance_LocalAccount_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.LocalEncumbrance')
 )
 ALTER TABLE [edfi].[LocalEncumbrance]
-ADD CONSTRAINT [FK_LocalEncumbrance_LocalAccount]
-FOREIGN KEY ([LocalAccount_DocumentId])
-REFERENCES [edfi].[LocalAccount] ([DocumentId])
+ADD CONSTRAINT [FK_LocalEncumbrance_LocalAccount_RefKey]
+FOREIGN KEY ([LocalAccount_AccountIdentifier], [LocalAccount_EducationOrganizationId], [LocalAccount_FiscalYear], [LocalAccount_DocumentId])
+REFERENCES [edfi].[LocalAccount] ([AccountIdentifier], [EducationOrganization_EducationOrganizationId], [FiscalYear_Unified], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -17046,14 +17273,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalPayroll_LocalAccount' AND parent_object_id = OBJECT_ID(N'edfi.LocalPayroll')
+    WHERE name = N'FK_LocalPayroll_LocalAccount_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.LocalPayroll')
 )
 ALTER TABLE [edfi].[LocalPayroll]
-ADD CONSTRAINT [FK_LocalPayroll_LocalAccount]
-FOREIGN KEY ([LocalAccount_DocumentId])
-REFERENCES [edfi].[LocalAccount] ([DocumentId])
+ADD CONSTRAINT [FK_LocalPayroll_LocalAccount_RefKey]
+FOREIGN KEY ([LocalAccount_AccountIdentifier], [LocalAccount_EducationOrganizationId], [LocalAccount_FiscalYear], [LocalAccount_DocumentId])
+REFERENCES [edfi].[LocalAccount] ([AccountIdentifier], [EducationOrganization_EducationOrganizationId], [FiscalYear_Unified], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -17299,14 +17526,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_OpenStaffPosition_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.OpenStaffPosition')
+    WHERE name = N'FK_OpenStaffPosition_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.OpenStaffPosition')
 )
 ALTER TABLE [edfi].[OpenStaffPosition]
-ADD CONSTRAINT [FK_OpenStaffPosition_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_OpenStaffPosition_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -17464,14 +17691,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_OrganizationDepartment_ParentEducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.OrganizationDepartment')
+    WHERE name = N'FK_OrganizationDepartment_ParentEducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.OrganizationDepartment')
 )
 ALTER TABLE [edfi].[OrganizationDepartment]
-ADD CONSTRAINT [FK_OrganizationDepartment_ParentEducationOrganization]
-FOREIGN KEY ([ParentEducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_OrganizationDepartment_ParentEducationOrganization_RefKey]
+FOREIGN KEY ([ParentEducationOrganization_EducationOrganizationId], [ParentEducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -18036,14 +18263,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Program_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.Program')
+    WHERE name = N'FK_Program_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.Program')
 )
 ALTER TABLE [edfi].[Program]
-ADD CONSTRAINT [FK_Program_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_Program_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -18190,17 +18417,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ProgramEvaluation_ProgramProgram' AND parent_object_id = OBJECT_ID(N'edfi.ProgramEvaluation')
-)
-ALTER TABLE [edfi].[ProgramEvaluation]
-ADD CONSTRAINT [FK_ProgramEvaluation_ProgramProgram]
-FOREIGN KEY ([ProgramProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_ProgramEvaluation_ProgramProgram_ProgramTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.ProgramEvaluation')
 )
 ALTER TABLE [edfi].[ProgramEvaluation]
@@ -18209,6 +18425,17 @@ FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_ProgramEvaluation_ProgramProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.ProgramEvaluation')
+)
+ALTER TABLE [edfi].[ProgramEvaluation]
+ADD CONSTRAINT [FK_ProgramEvaluation_ProgramProgram_RefKey]
+FOREIGN KEY ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -18245,23 +18472,12 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ProgramEvaluationElement_ProgramEvaluation' AND parent_object_id = OBJECT_ID(N'edfi.ProgramEvaluationElement')
+    WHERE name = N'FK_ProgramEvaluationElement_ProgramEvaluationObjective_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.ProgramEvaluationElement')
 )
 ALTER TABLE [edfi].[ProgramEvaluationElement]
-ADD CONSTRAINT [FK_ProgramEvaluationElement_ProgramEvaluation]
-FOREIGN KEY ([ProgramEvaluation_DocumentId])
-REFERENCES [edfi].[ProgramEvaluation] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ProgramEvaluationElement_ProgramEvaluationObjective' AND parent_object_id = OBJECT_ID(N'edfi.ProgramEvaluationElement')
-)
-ALTER TABLE [edfi].[ProgramEvaluationElement]
-ADD CONSTRAINT [FK_ProgramEvaluationElement_ProgramEvaluationObjective]
-FOREIGN KEY ([ProgramEvaluationObjective_DocumentId])
-REFERENCES [edfi].[ProgramEvaluationObjective] ([DocumentId])
+ADD CONSTRAINT [FK_ProgramEvaluationElement_ProgramEvaluationObjective_RefKey]
+FOREIGN KEY ([ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle], [ProgramEducationOrganizationId_Unified], [ProgramEvaluationPeriodDescriptor_Unified_DescriptorId], [ProgramEvaluationTitle_Unified], [ProgramEvaluationTypeDescriptor_Unified_DescriptorId], [ProgramName_Unified], [ProgramTypeDescriptor_Unified_DescriptorId], [ProgramEvaluationObjective_DocumentId])
+REFERENCES [edfi].[ProgramEvaluationObjective] ([ProgramEvaluationObjectiveTitle], [ProgramEvaluation_ProgramEducationOrganizationId], [ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId], [ProgramEvaluation_ProgramEvaluationTitle], [ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId], [ProgramEvaluation_ProgramName], [ProgramEvaluation_ProgramTypeDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18286,6 +18502,17 @@ FOREIGN KEY ([ProgramEvaluationTypeDescriptor_Unified_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_ProgramEvaluationElement_ProgramEvaluation_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.ProgramEvaluationElement')
+)
+ALTER TABLE [edfi].[ProgramEvaluationElement]
+ADD CONSTRAINT [FK_ProgramEvaluationElement_ProgramEvaluation_RefKey]
+FOREIGN KEY ([ProgramEvaluationPeriodDescriptor_Unified_DescriptorId], [ProgramEvaluationTitle_Unified], [ProgramEvaluationTypeDescriptor_Unified_DescriptorId], [ProgramEducationOrganizationId_Unified], [ProgramName_Unified], [ProgramTypeDescriptor_Unified_DescriptorId], [ProgramEvaluation_DocumentId])
+REFERENCES [edfi].[ProgramEvaluation] ([ProgramEvaluationPeriodDescriptor_DescriptorId], [ProgramEvaluationTitle], [ProgramEvaluationTypeDescriptor_DescriptorId], [ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -18333,17 +18560,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ProgramEvaluationObjective_ProgramEvaluation' AND parent_object_id = OBJECT_ID(N'edfi.ProgramEvaluationObjective')
-)
-ALTER TABLE [edfi].[ProgramEvaluationObjective]
-ADD CONSTRAINT [FK_ProgramEvaluationObjective_ProgramEvaluation]
-FOREIGN KEY ([ProgramEvaluation_DocumentId])
-REFERENCES [edfi].[ProgramEvaluation] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_ProgramEvaluationObjective_ProgramEvaluation_ProgramEvaluationPeriodDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.ProgramEvaluationObjective')
 )
 ALTER TABLE [edfi].[ProgramEvaluationObjective]
@@ -18374,6 +18590,17 @@ FOREIGN KEY ([ProgramEvaluation_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_ProgramEvaluationObjective_ProgramEvaluation_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.ProgramEvaluationObjective')
+)
+ALTER TABLE [edfi].[ProgramEvaluationObjective]
+ADD CONSTRAINT [FK_ProgramEvaluationObjective_ProgramEvaluation_RefKey]
+FOREIGN KEY ([ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId], [ProgramEvaluation_ProgramEvaluationTitle], [ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId], [ProgramEvaluation_ProgramEducationOrganizationId], [ProgramEvaluation_ProgramName], [ProgramEvaluation_ProgramTypeDescriptor_DescriptorId], [ProgramEvaluation_DocumentId])
+REFERENCES [edfi].[ProgramEvaluation] ([ProgramEvaluationPeriodDescriptor_DescriptorId], [ProgramEvaluationTitle], [ProgramEvaluationTypeDescriptor_DescriptorId], [ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -18443,14 +18670,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ReportCard_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.ReportCard')
+    WHERE name = N'FK_ReportCard_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.ReportCard')
 )
 ALTER TABLE [edfi].[ReportCard]
-ADD CONSTRAINT [FK_ReportCard_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_ReportCard_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -18509,17 +18736,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ReportCardGrade_Grade' AND parent_object_id = OBJECT_ID(N'edfi.ReportCardGrade')
-)
-ALTER TABLE [edfi].[ReportCardGrade]
-ADD CONSTRAINT [FK_ReportCardGrade_Grade]
-FOREIGN KEY ([Grade_DocumentId])
-REFERENCES [edfi].[Grade] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_ReportCardGrade_Grade_GradeTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.ReportCardGrade')
 )
 ALTER TABLE [edfi].[ReportCardGrade]
@@ -18539,6 +18755,17 @@ FOREIGN KEY ([Grade_GradingPeriodDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_ReportCardGrade_Grade_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.ReportCardGrade')
+)
+ALTER TABLE [edfi].[ReportCardGrade]
+ADD CONSTRAINT [FK_ReportCardGrade_Grade_RefKey]
+FOREIGN KEY ([Grade_GradeTypeDescriptor_DescriptorId], [Grade_GradingPeriodDescriptor_DescriptorId], [Grade_GradingPeriodName], [SchoolId_Unified], [Grade_GradingPeriodSchoolYear], [Grade_BeginDate], [Grade_LocalCourseCode], [Grade_SectionIdentifier], [Grade_SessionName], [Grade_StudentUniqueId], [Grade_DocumentId])
+REFERENCES [edfi].[Grade] ([GradeTypeDescriptor_DescriptorId], [GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId], [GradingPeriodGradingPeriod_GradingPeriodName], [SchoolId_Unified], [SchoolYear_Unified], [StudentSectionAssociation_BeginDate], [StudentSectionAssociation_LocalCourseCode], [StudentSectionAssociation_SectionIdentifier], [StudentSectionAssociation_SessionName], [StudentSectionAssociation_StudentUniqueId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -18564,17 +18791,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ReportCardStudentCompetencyObjective_StudentCompetencyObjective' AND parent_object_id = OBJECT_ID(N'edfi.ReportCardStudentCompetencyObjective')
-)
-ALTER TABLE [edfi].[ReportCardStudentCompetencyObjective]
-ADD CONSTRAINT [FK_ReportCardStudentCompetencyObjective_StudentCompetencyObjective]
-FOREIGN KEY ([StudentCompetencyObjective_DocumentId])
-REFERENCES [edfi].[StudentCompetencyObjective] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_ReportCardStudentCompetencyObjective_StudentCompetencyObjective_GradingPeriodDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.ReportCardStudentCompetencyObjective')
 )
 ALTER TABLE [edfi].[ReportCardStudentCompetencyObjective]
@@ -18594,6 +18810,17 @@ FOREIGN KEY ([StudentCompetencyObjective_ObjectiveGradeLevelDescriptor_Descripto
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_ReportCardStudentCompetencyObjective_StudentCompetencyObjective_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.ReportCardStudentCompetencyObjective')
+)
+ALTER TABLE [edfi].[ReportCardStudentCompetencyObjective]
+ADD CONSTRAINT [FK_ReportCardStudentCompetencyObjective_StudentCompetencyObjective_RefKey]
+FOREIGN KEY ([StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId], [StudentCompetencyObjective_GradingPeriodName], [StudentCompetencyObjective_GradingPeriodSchoolId], [StudentCompetencyObjective_GradingPeriodSchoolYear], [StudentCompetencyObjective_ObjectiveEducationOrganizationId], [StudentCompetencyObjective_Objective], [StudentCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId], [StudentCompetencyObjective_StudentUniqueId], [StudentCompetencyObjective_DocumentId])
+REFERENCES [edfi].[StudentCompetencyObjective] ([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId], [GradingPeriodGradingPeriod_GradingPeriodName], [GradingPeriodGradingPeriod_SchoolId], [GradingPeriodGradingPeriod_SchoolYear], [ObjectiveCompetencyObjective_EducationOrganizationId], [ObjectiveCompetencyObjective_Objective], [ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId], [Student_StudentUniqueId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -18652,17 +18879,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_RestraintEventProgram_Program' AND parent_object_id = OBJECT_ID(N'edfi.RestraintEventProgram')
-)
-ALTER TABLE [edfi].[RestraintEventProgram]
-ADD CONSTRAINT [FK_RestraintEventProgram_Program]
-FOREIGN KEY ([Program_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_RestraintEventProgram_Program_ProgramTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.RestraintEventProgram')
 )
 ALTER TABLE [edfi].[RestraintEventProgram]
@@ -18671,6 +18887,17 @@ FOREIGN KEY ([Program_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_RestraintEventProgram_Program_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.RestraintEventProgram')
+)
+ALTER TABLE [edfi].[RestraintEventProgram]
+ADD CONSTRAINT [FK_RestraintEventProgram_Program_RefKey]
+FOREIGN KEY ([Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Program_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -19103,14 +19330,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Section_CourseOffering' AND parent_object_id = OBJECT_ID(N'edfi.Section')
+    WHERE name = N'FK_Section_CourseOffering_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.Section')
 )
 ALTER TABLE [edfi].[Section]
-ADD CONSTRAINT [FK_Section_CourseOffering]
-FOREIGN KEY ([CourseOffering_DocumentId])
-REFERENCES [edfi].[CourseOffering] ([DocumentId])
+ADD CONSTRAINT [FK_Section_CourseOffering_RefKey]
+FOREIGN KEY ([CourseOffering_LocalCourseCode], [SchoolId_Unified], [CourseOffering_SchoolYear], [CourseOffering_SessionName], [CourseOffering_DocumentId])
+REFERENCES [edfi].[CourseOffering] ([LocalCourseCode], [SchoolId_Unified], [Session_SchoolYear], [Session_SessionName], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -19147,14 +19374,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Section_LocationLocation' AND parent_object_id = OBJECT_ID(N'edfi.Section')
+    WHERE name = N'FK_Section_LocationLocation_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.Section')
 )
 ALTER TABLE [edfi].[Section]
-ADD CONSTRAINT [FK_Section_LocationLocation]
-FOREIGN KEY ([LocationLocation_DocumentId])
-REFERENCES [edfi].[Location] ([DocumentId])
+ADD CONSTRAINT [FK_Section_LocationLocation_RefKey]
+FOREIGN KEY ([LocationLocation_ClassroomIdentificationCode], [SchoolId_U35501e03_Unified], [LocationLocation_DocumentId])
+REFERENCES [edfi].[Location] ([ClassroomIdentificationCode], [School_SchoolId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -19224,14 +19451,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SectionClassPeriod_ClassPeriod' AND parent_object_id = OBJECT_ID(N'edfi.SectionClassPeriod')
+    WHERE name = N'FK_SectionClassPeriod_ClassPeriod_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.SectionClassPeriod')
 )
 ALTER TABLE [edfi].[SectionClassPeriod]
-ADD CONSTRAINT [FK_SectionClassPeriod_ClassPeriod]
-FOREIGN KEY ([ClassPeriod_DocumentId])
-REFERENCES [edfi].[ClassPeriod] ([DocumentId])
+ADD CONSTRAINT [FK_SectionClassPeriod_ClassPeriod_RefKey]
+FOREIGN KEY ([ClassPeriod_ClassPeriodName], [ClassPeriod_SchoolId], [ClassPeriod_DocumentId])
+REFERENCES [edfi].[ClassPeriod] ([ClassPeriodName], [School_SchoolId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -19290,17 +19517,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SectionProgram_Program' AND parent_object_id = OBJECT_ID(N'edfi.SectionProgram')
-)
-ALTER TABLE [edfi].[SectionProgram]
-ADD CONSTRAINT [FK_SectionProgram_Program]
-FOREIGN KEY ([Program_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_SectionProgram_Program_ProgramTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.SectionProgram')
 )
 ALTER TABLE [edfi].[SectionProgram]
@@ -19309,6 +19525,17 @@ FOREIGN KEY ([Program_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_SectionProgram_Program_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.SectionProgram')
+)
+ALTER TABLE [edfi].[SectionProgram]
+ADD CONSTRAINT [FK_SectionProgram_Program_RefKey]
+FOREIGN KEY ([Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Program_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -19345,14 +19572,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SectionAttendanceTakenEvent_Section' AND parent_object_id = OBJECT_ID(N'edfi.SectionAttendanceTakenEvent')
+    WHERE name = N'FK_SectionAttendanceTakenEvent_Section_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.SectionAttendanceTakenEvent')
 )
 ALTER TABLE [edfi].[SectionAttendanceTakenEvent]
-ADD CONSTRAINT [FK_SectionAttendanceTakenEvent_Section]
-FOREIGN KEY ([Section_DocumentId])
-REFERENCES [edfi].[Section] ([DocumentId])
+ADD CONSTRAINT [FK_SectionAttendanceTakenEvent_Section_RefKey]
+FOREIGN KEY ([Section_LocalCourseCode], [SchoolId_Unified], [SchoolYear_Unified], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId])
+REFERENCES [edfi].[Section] ([CourseOffering_LocalCourseCode], [SchoolId_Unified], [CourseOffering_SchoolYear], [CourseOffering_SessionName], [SectionIdentifier], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -20060,14 +20287,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffCohortAssociation_Cohort' AND parent_object_id = OBJECT_ID(N'edfi.StaffCohortAssociation')
+    WHERE name = N'FK_StaffCohortAssociation_Cohort_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StaffCohortAssociation')
 )
 ALTER TABLE [edfi].[StaffCohortAssociation]
-ADD CONSTRAINT [FK_StaffCohortAssociation_Cohort]
-FOREIGN KEY ([Cohort_DocumentId])
-REFERENCES [edfi].[Cohort] ([DocumentId])
+ADD CONSTRAINT [FK_StaffCohortAssociation_Cohort_RefKey]
+FOREIGN KEY ([Cohort_CohortIdentifier], [Cohort_EducationOrganizationId], [Cohort_DocumentId])
+REFERENCES [edfi].[Cohort] ([CohortIdentifier], [EducationOrganization_EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -20181,25 +20408,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffEducationOrganizationAssignmentAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StaffEducationOrganizationAssignmentAssociation')
+    WHERE name = N'FK_StaffEducationOrganizationAssignmentAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StaffEducationOrganizationAssignmentAssociation')
 )
 ALTER TABLE [edfi].[StaffEducationOrganizationAssignmentAssociation]
-ADD CONSTRAINT [FK_StaffEducationOrganizationAssignmentAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StaffEducationOrganizationAssignmentAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffEducationOrganizationAssignmentAssociation_EmploymentStaffEducationOrganizationEmploymentAssociation' AND parent_object_id = OBJECT_ID(N'edfi.StaffEducationOrganizationAssignmentAssociation')
-)
-ALTER TABLE [edfi].[StaffEducationOrganizationAssignmentAssociation]
-ADD CONSTRAINT [FK_StaffEducationOrganizationAssignmentAssociation_EmploymentStaffEducationOrganizationEmploymentAssociation]
-FOREIGN KEY ([EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId])
-REFERENCES [edfi].[StaffEducationOrganizationEmploymentAssociation] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -20209,6 +20425,17 @@ ALTER TABLE [edfi].[StaffEducationOrganizationAssignmentAssociation]
 ADD CONSTRAINT [FK_StaffEducationOrganizationAssignmentAssociation_EmploymentStaffEducationOrganizationEmploymentAssociation_Employme_ac93af6f23]
 FOREIGN KEY ([EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StaffEducationOrganizationAssignmentAssociation_EmploymentStaffEducationOrganizationEmploymentAssociation_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StaffEducationOrganizationAssignmentAssociation')
+)
+ALTER TABLE [edfi].[StaffEducationOrganizationAssignmentAssociation]
+ADD CONSTRAINT [FK_StaffEducationOrganizationAssignmentAssociation_EmploymentStaffEducationOrganizationEmploymentAssociation_RefKey]
+FOREIGN KEY ([EmploymentStaffEducationOrganizationEmploymentAssociation_EducationOrganizationId], [EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId], [EmploymentStaffEducationOrganizationEmploymentAssociation_HireDate], [StaffUniqueId_Unified], [EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId])
+REFERENCES [edfi].[StaffEducationOrganizationEmploymentAssociation] ([EducationOrganization_EducationOrganizationId], [EmploymentStatusDescriptor_DescriptorId], [HireDate], [Staff_StaffUniqueId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20291,14 +20518,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffEducationOrganizationContactAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StaffEducationOrganizationContactAssociation')
+    WHERE name = N'FK_StaffEducationOrganizationContactAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StaffEducationOrganizationContactAssociation')
 )
 ALTER TABLE [edfi].[StaffEducationOrganizationContactAssociation]
-ADD CONSTRAINT [FK_StaffEducationOrganizationContactAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StaffEducationOrganizationContactAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -20379,14 +20606,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffEducationOrganizationEmploymentAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StaffEducationOrganizationEmploymentAssociation')
+    WHERE name = N'FK_StaffEducationOrganizationEmploymentAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StaffEducationOrganizationEmploymentAssociation')
 )
 ALTER TABLE [edfi].[StaffEducationOrganizationEmploymentAssociation]
-ADD CONSTRAINT [FK_StaffEducationOrganizationEmploymentAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StaffEducationOrganizationEmploymentAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -20478,17 +20705,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffProgramAssociation_ProgramProgram' AND parent_object_id = OBJECT_ID(N'edfi.StaffProgramAssociation')
-)
-ALTER TABLE [edfi].[StaffProgramAssociation]
-ADD CONSTRAINT [FK_StaffProgramAssociation_ProgramProgram]
-FOREIGN KEY ([ProgramProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StaffProgramAssociation_ProgramProgram_ProgramTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StaffProgramAssociation')
 )
 ALTER TABLE [edfi].[StaffProgramAssociation]
@@ -20497,6 +20713,17 @@ FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StaffProgramAssociation_ProgramProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StaffProgramAssociation')
+)
+ALTER TABLE [edfi].[StaffProgramAssociation]
+ADD CONSTRAINT [FK_StaffProgramAssociation_ProgramProgram_RefKey]
+FOREIGN KEY ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -20643,14 +20870,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffSectionAssociation_Section' AND parent_object_id = OBJECT_ID(N'edfi.StaffSectionAssociation')
+    WHERE name = N'FK_StaffSectionAssociation_Section_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StaffSectionAssociation')
 )
 ALTER TABLE [edfi].[StaffSectionAssociation]
-ADD CONSTRAINT [FK_StaffSectionAssociation_Section]
-FOREIGN KEY ([Section_DocumentId])
-REFERENCES [edfi].[Section] ([DocumentId])
+ADD CONSTRAINT [FK_StaffSectionAssociation_Section_RefKey]
+FOREIGN KEY ([Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId])
+REFERENCES [edfi].[Section] ([CourseOffering_LocalCourseCode], [SchoolId_Unified], [CourseOffering_SchoolYear], [CourseOffering_SessionName], [SectionIdentifier], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -21171,14 +21398,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentAcademicRecord_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentAcademicRecord')
+    WHERE name = N'FK_StudentAcademicRecord_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentAcademicRecord')
 )
 ALTER TABLE [edfi].[StudentAcademicRecord]
-ADD CONSTRAINT [FK_StudentAcademicRecord_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentAcademicRecord_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -21369,17 +21596,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentAcademicRecordReportCard_ReportCard' AND parent_object_id = OBJECT_ID(N'edfi.StudentAcademicRecordReportCard')
-)
-ALTER TABLE [edfi].[StudentAcademicRecordReportCard]
-ADD CONSTRAINT [FK_StudentAcademicRecordReportCard_ReportCard]
-FOREIGN KEY ([ReportCard_DocumentId])
-REFERENCES [edfi].[ReportCard] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentAcademicRecordReportCard_ReportCard_GradingPeriodDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentAcademicRecordReportCard')
 )
 ALTER TABLE [edfi].[StudentAcademicRecordReportCard]
@@ -21388,6 +21604,17 @@ FOREIGN KEY ([ReportCard_GradingPeriodDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentAcademicRecordReportCard_ReportCard_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentAcademicRecordReportCard')
+)
+ALTER TABLE [edfi].[StudentAcademicRecordReportCard]
+ADD CONSTRAINT [FK_StudentAcademicRecordReportCard_ReportCard_RefKey]
+FOREIGN KEY ([ReportCard_EducationOrganizationId], [ReportCard_GradingPeriodDescriptor_DescriptorId], [ReportCard_GradingPeriodName], [ReportCard_GradingPeriodSchoolId], [ReportCard_GradingPeriodSchoolYear], [ReportCard_StudentUniqueId], [ReportCard_DocumentId])
+REFERENCES [edfi].[ReportCard] ([EducationOrganization_EducationOrganizationId], [GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId], [GradingPeriodGradingPeriod_GradingPeriodName], [GradingPeriodGradingPeriod_SchoolId], [GradingPeriodGradingPeriod_SchoolYear], [Student_StudentUniqueId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -21776,17 +22003,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentAssessmentEducationOrganizationAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentEducationOrganizationAssociation')
-)
-ALTER TABLE [edfi].[StudentAssessmentEducationOrganizationAssociation]
-ADD CONSTRAINT [FK_StudentAssessmentEducationOrganizationAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentAssessmentEducationOrganizationAssociation_EducationOrganizationAssociationTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentEducationOrganizationAssociation')
 )
 ALTER TABLE [edfi].[StudentAssessmentEducationOrganizationAssociation]
@@ -21795,6 +22011,17 @@ FOREIGN KEY ([EducationOrganizationAssociationTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentAssessmentEducationOrganizationAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentEducationOrganizationAssociation')
+)
+ALTER TABLE [edfi].[StudentAssessmentEducationOrganizationAssociation]
+ADD CONSTRAINT [FK_StudentAssessmentEducationOrganizationAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -21820,14 +22047,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentAssessmentRegistration_AssessmentAdministration' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistration')
+    WHERE name = N'FK_StudentAssessmentRegistration_AssessmentAdministration_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistration')
 )
 ALTER TABLE [edfi].[StudentAssessmentRegistration]
-ADD CONSTRAINT [FK_StudentAssessmentRegistration_AssessmentAdministration]
-FOREIGN KEY ([AssessmentAdministration_DocumentId])
-REFERENCES [edfi].[AssessmentAdministration] ([DocumentId])
+ADD CONSTRAINT [FK_StudentAssessmentRegistration_AssessmentAdministration_RefKey]
+FOREIGN KEY ([AssessmentAdministration_AdministrationIdentifier], [AssessmentAdministration_AssessmentIdentifier], [AssessmentAdministration_Namespace], [AssessmentAdministration_AssigningEducationOrganizationId], [AssessmentAdministration_DocumentId])
+REFERENCES [edfi].[AssessmentAdministration] ([AdministrationIdentifier], [Assessment_AssessmentIdentifier], [Assessment_Namespace], [AssigningEducationOrganization_EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -21864,56 +22091,56 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentAssessmentRegistration_ReportingEducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistration')
+    WHERE name = N'FK_StudentAssessmentRegistration_ReportingEducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistration')
 )
 ALTER TABLE [edfi].[StudentAssessmentRegistration]
-ADD CONSTRAINT [FK_StudentAssessmentRegistration_ReportingEducationOrganization]
-FOREIGN KEY ([ReportingEducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentAssessmentRegistration_ReportingEducationOrganization_RefKey]
+FOREIGN KEY ([ReportingEducationOrganization_EducationOrganizationId], [ReportingEducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentAssessmentRegistration_ScheduledStudentEducationOrganizationAssessmentAccommodation' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistration')
+    WHERE name = N'FK_StudentAssessmentRegistration_ScheduledStudentEducationOrganizationAssessmentAccommodation_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistration')
 )
 ALTER TABLE [edfi].[StudentAssessmentRegistration]
-ADD CONSTRAINT [FK_StudentAssessmentRegistration_ScheduledStudentEducationOrganizationAssessmentAccommodation]
-FOREIGN KEY ([ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId])
-REFERENCES [edfi].[StudentEducationOrganizationAssessmentAccommodation] ([DocumentId])
+ADD CONSTRAINT [FK_StudentAssessmentRegistration_ScheduledStudentEducationOrganizationAssessmentAccommodation_RefKey]
+FOREIGN KEY ([ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId], [ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId], [ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId])
+REFERENCES [edfi].[StudentEducationOrganizationAssessmentAccommodation] ([EducationOrganization_EducationOrganizationId], [Student_StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentAssessmentRegistration_StudentEducationOrganizationAssociation' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistration')
+    WHERE name = N'FK_StudentAssessmentRegistration_StudentEducationOrganizationAssociation_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistration')
 )
 ALTER TABLE [edfi].[StudentAssessmentRegistration]
-ADD CONSTRAINT [FK_StudentAssessmentRegistration_StudentEducationOrganizationAssociation]
-FOREIGN KEY ([StudentEducationOrganizationAssociation_DocumentId])
-REFERENCES [edfi].[StudentEducationOrganizationAssociation] ([DocumentId])
+ADD CONSTRAINT [FK_StudentAssessmentRegistration_StudentEducationOrganizationAssociation_RefKey]
+FOREIGN KEY ([StudentEducationOrganizationAssociation_EducationOrganizationId], [StudentUniqueId_Unified], [StudentEducationOrganizationAssociation_DocumentId])
+REFERENCES [edfi].[StudentEducationOrganizationAssociation] ([EducationOrganization_EducationOrganizationId], [Student_StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentAssessmentRegistration_StudentSchoolAssociation' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistration')
+    WHERE name = N'FK_StudentAssessmentRegistration_StudentSchoolAssociation_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistration')
 )
 ALTER TABLE [edfi].[StudentAssessmentRegistration]
-ADD CONSTRAINT [FK_StudentAssessmentRegistration_StudentSchoolAssociation]
-FOREIGN KEY ([StudentSchoolAssociation_DocumentId])
-REFERENCES [edfi].[StudentSchoolAssociation] ([DocumentId])
+ADD CONSTRAINT [FK_StudentAssessmentRegistration_StudentSchoolAssociation_RefKey]
+FOREIGN KEY ([StudentSchoolAssociation_EntryDate], [StudentSchoolAssociation_SchoolId], [StudentUniqueId_Unified], [StudentSchoolAssociation_DocumentId])
+REFERENCES [edfi].[StudentSchoolAssociation] ([EntryDate], [SchoolId_Unified], [Student_StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentAssessmentRegistration_TestingEducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistration')
+    WHERE name = N'FK_StudentAssessmentRegistration_TestingEducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistration')
 )
 ALTER TABLE [edfi].[StudentAssessmentRegistration]
-ADD CONSTRAINT [FK_StudentAssessmentRegistration_TestingEducationOrganization]
-FOREIGN KEY ([TestingEducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentAssessmentRegistration_TestingEducationOrganization_RefKey]
+FOREIGN KEY ([TestingEducationOrganization_EducationOrganizationId], [TestingEducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21974,14 +22201,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentAssessmentRegistrationBatteryPartAssociation_StudentAssessmentRegistration' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistrationBatteryPartAssociation')
+    WHERE name = N'FK_StudentAssessmentRegistrationBatteryPartAssociation_StudentAssessmentRegistration_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentAssessmentRegistrationBatteryPartAssociation')
 )
 ALTER TABLE [edfi].[StudentAssessmentRegistrationBatteryPartAssociation]
-ADD CONSTRAINT [FK_StudentAssessmentRegistrationBatteryPartAssociation_StudentAssessmentRegistration]
-FOREIGN KEY ([StudentAssessmentRegistration_DocumentId])
-REFERENCES [edfi].[StudentAssessmentRegistration] ([DocumentId])
+ADD CONSTRAINT [FK_StudentAssessmentRegistrationBatteryPartAssociation_StudentAssessmentRegistration_RefKey]
+FOREIGN KEY ([StudentAssessmentRegistration_AdministrationIdentifier], [AssessmentIdentifier_Unified], [StudentAssessmentRegistration_AssigningEducationOrganizationId], [Namespace_Unified], [StudentAssessmentRegistration_EducationOrganizationId], [StudentAssessmentRegistration_StudentUniqueId], [StudentAssessmentRegistration_DocumentId])
+REFERENCES [edfi].[StudentAssessmentRegistration] ([AssessmentAdministration_AdministrationIdentifier], [AssessmentAdministration_AssessmentIdentifier], [AssessmentAdministration_AssigningEducationOrganizationId], [AssessmentAdministration_Namespace], [StudentEducationOrganizationAssociation_EducationOrganizationId], [StudentUniqueId_Unified], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -22018,25 +22245,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentCTEProgramAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentCTEProgramAssociation')
+    WHERE name = N'FK_StudentCTEProgramAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentCTEProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentCTEProgramAssociation]
-ADD CONSTRAINT [FK_StudentCTEProgramAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentCTEProgramAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentCTEProgramAssociation_ProgramProgram' AND parent_object_id = OBJECT_ID(N'edfi.StudentCTEProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentCTEProgramAssociation]
-ADD CONSTRAINT [FK_StudentCTEProgramAssociation_ProgramProgram]
-FOREIGN KEY ([ProgramProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -22046,6 +22262,17 @@ ALTER TABLE [edfi].[StudentCTEProgramAssociation]
 ADD CONSTRAINT [FK_StudentCTEProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentCTEProgramAssociation_ProgramProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentCTEProgramAssociation')
+)
+ALTER TABLE [edfi].[StudentCTEProgramAssociation]
+ADD CONSTRAINT [FK_StudentCTEProgramAssociation_ProgramProgram_RefKey]
+FOREIGN KEY ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22128,14 +22355,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentCohortAssociation_Cohort' AND parent_object_id = OBJECT_ID(N'edfi.StudentCohortAssociation')
+    WHERE name = N'FK_StudentCohortAssociation_Cohort_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentCohortAssociation')
 )
 ALTER TABLE [edfi].[StudentCohortAssociation]
-ADD CONSTRAINT [FK_StudentCohortAssociation_Cohort]
-FOREIGN KEY ([Cohort_DocumentId])
-REFERENCES [edfi].[Cohort] ([DocumentId])
+ADD CONSTRAINT [FK_StudentCohortAssociation_Cohort_RefKey]
+FOREIGN KEY ([Cohort_CohortIdentifier], [Cohort_EducationOrganizationId], [Cohort_DocumentId])
+REFERENCES [edfi].[Cohort] ([CohortIdentifier], [EducationOrganization_EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -22161,14 +22388,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentCohortAssociationSection_Section' AND parent_object_id = OBJECT_ID(N'edfi.StudentCohortAssociationSection')
+    WHERE name = N'FK_StudentCohortAssociationSection_Section_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentCohortAssociationSection')
 )
 ALTER TABLE [edfi].[StudentCohortAssociationSection]
-ADD CONSTRAINT [FK_StudentCohortAssociationSection_Section]
-FOREIGN KEY ([Section_DocumentId])
-REFERENCES [edfi].[Section] ([DocumentId])
+ADD CONSTRAINT [FK_StudentCohortAssociationSection_Section_RefKey]
+FOREIGN KEY ([Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId])
+REFERENCES [edfi].[Section] ([CourseOffering_LocalCourseCode], [SchoolId_Unified], [CourseOffering_SchoolYear], [CourseOffering_SessionName], [SectionIdentifier], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -22227,17 +22454,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentCompetencyObjective_ObjectiveCompetencyObjective' AND parent_object_id = OBJECT_ID(N'edfi.StudentCompetencyObjective')
-)
-ALTER TABLE [edfi].[StudentCompetencyObjective]
-ADD CONSTRAINT [FK_StudentCompetencyObjective_ObjectiveCompetencyObjective]
-FOREIGN KEY ([ObjectiveCompetencyObjective_DocumentId])
-REFERENCES [edfi].[CompetencyObjective] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentCompetencyObjective_ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentCompetencyObjective')
 )
 ALTER TABLE [edfi].[StudentCompetencyObjective]
@@ -22246,6 +22462,17 @@ FOREIGN KEY ([ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_Descrip
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentCompetencyObjective_ObjectiveCompetencyObjective_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentCompetencyObjective')
+)
+ALTER TABLE [edfi].[StudentCompetencyObjective]
+ADD CONSTRAINT [FK_StudentCompetencyObjective_ObjectiveCompetencyObjective_RefKey]
+FOREIGN KEY ([ObjectiveCompetencyObjective_EducationOrganizationId], [ObjectiveCompetencyObjective_Objective], [ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId], [ObjectiveCompetencyObjective_DocumentId])
+REFERENCES [edfi].[CompetencyObjective] ([EducationOrganization_EducationOrganizationId], [Objective], [ObjectiveGradeLevelDescriptor_DescriptorId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -22282,14 +22509,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentCompetencyObjectiveGeneralStudentProgramAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceGeneral_4f8329c18b' AND parent_object_id = OBJECT_ID(N'edfi.StudentCompetencyObjectiveGeneralStudentProgramAssociation')
+    WHERE name = N'FK_StudentCompetencyObjectiveGeneralStudentProgramAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceGeneral_bab8d25e1f' AND parent_object_id = OBJECT_ID(N'edfi.StudentCompetencyObjectiveGeneralStudentProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentCompetencyObjectiveGeneralStudentProgramAssociation]
-ADD CONSTRAINT [FK_StudentCompetencyObjectiveGeneralStudentProgramAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceGeneral_4f8329c18b]
-FOREIGN KEY ([StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_DocumentId])
-REFERENCES [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentCompetencyObjectiveGeneralStudentProgramAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceGeneral_bab8d25e1f]
+FOREIGN KEY ([StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_BeginDate], [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_EducationOrganizationId], [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramEducationOrganizationId], [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramName], [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramTypeDescriptor_DescriptorId], [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_StudentUniqueId], [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_DocumentId])
+REFERENCES [edfi].[GeneralStudentProgramAssociationIdentity] ([BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -22304,14 +22531,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentCompetencyObjectiveStudentSectionAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation' AND parent_object_id = OBJECT_ID(N'edfi.StudentCompetencyObjectiveStudentSectionAssociation')
+    WHERE name = N'FK_StudentCompetencyObjectiveStudentSectionAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceStudentSection_fbe7c45842' AND parent_object_id = OBJECT_ID(N'edfi.StudentCompetencyObjectiveStudentSectionAssociation')
 )
 ALTER TABLE [edfi].[StudentCompetencyObjectiveStudentSectionAssociation]
-ADD CONSTRAINT [FK_StudentCompetencyObjectiveStudentSectionAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation]
-FOREIGN KEY ([StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_DocumentId])
-REFERENCES [edfi].[StudentSectionAssociation] ([DocumentId])
+ADD CONSTRAINT [FK_StudentCompetencyObjectiveStudentSectionAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceStudentSection_fbe7c45842]
+FOREIGN KEY ([StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_BeginDate], [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_LocalCourseCode], [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SchoolId], [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SchoolYear], [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SectionIdentifier], [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SessionName], [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_StudentUniqueId], [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_DocumentId])
+REFERENCES [edfi].[StudentSectionAssociation] ([BeginDate], [Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SectionIdentifier], [Section_SessionName], [Student_StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -22513,14 +22740,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentEducationOrganizationAssessmentAccommodation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentEducationOrganizationAssessmentAccommodation')
+    WHERE name = N'FK_StudentEducationOrganizationAssessmentAccommodation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentEducationOrganizationAssessmentAccommodation')
 )
 ALTER TABLE [edfi].[StudentEducationOrganizationAssessmentAccommodation]
-ADD CONSTRAINT [FK_StudentEducationOrganizationAssessmentAccommodation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentEducationOrganizationAssessmentAccommodation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -22579,14 +22806,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentEducationOrganizationAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentEducationOrganizationAssociation')
+    WHERE name = N'FK_StudentEducationOrganizationAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentEducationOrganizationAssociation')
 )
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociation]
-ADD CONSTRAINT [FK_StudentEducationOrganizationAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentEducationOrganizationAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -23151,14 +23378,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentEducationOrganizationResponsibilityAssociation')
+    WHERE name = N'FK_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentEducationOrganizationResponsibilityAssociation')
 )
 ALTER TABLE [edfi].[StudentEducationOrganizationResponsibilityAssociation]
-ADD CONSTRAINT [FK_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -23217,14 +23444,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentGradebookEntry_GradebookEntry' AND parent_object_id = OBJECT_ID(N'edfi.StudentGradebookEntry')
+    WHERE name = N'FK_StudentGradebookEntry_GradebookEntry_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentGradebookEntry')
 )
 ALTER TABLE [edfi].[StudentGradebookEntry]
-ADD CONSTRAINT [FK_StudentGradebookEntry_GradebookEntry]
-FOREIGN KEY ([GradebookEntry_DocumentId])
-REFERENCES [edfi].[GradebookEntry] ([DocumentId])
+ADD CONSTRAINT [FK_StudentGradebookEntry_GradebookEntry_RefKey]
+FOREIGN KEY ([GradebookEntry_GradebookEntryIdentifier], [GradebookEntry_Namespace], [GradebookEntry_DocumentId])
+REFERENCES [edfi].[GradebookEntry] ([GradebookEntryIdentifier], [Namespace], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -23261,14 +23488,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentHealth_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentHealth')
+    WHERE name = N'FK_StudentHealth_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentHealth')
 )
 ALTER TABLE [edfi].[StudentHealth]
-ADD CONSTRAINT [FK_StudentHealth_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentHealth_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -23360,14 +23587,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentHomelessProgramAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentHomelessProgramAssociation')
+    WHERE name = N'FK_StudentHomelessProgramAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentHomelessProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentHomelessProgramAssociation]
-ADD CONSTRAINT [FK_StudentHomelessProgramAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentHomelessProgramAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -23382,23 +23609,23 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentHomelessProgramAssociation_ProgramProgram' AND parent_object_id = OBJECT_ID(N'edfi.StudentHomelessProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentHomelessProgramAssociation]
-ADD CONSTRAINT [FK_StudentHomelessProgramAssociation_ProgramProgram]
-FOREIGN KEY ([ProgramProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentHomelessProgramAssociation_ProgramProgram_ProgramTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentHomelessProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentHomelessProgramAssociation]
 ADD CONSTRAINT [FK_StudentHomelessProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentHomelessProgramAssociation_ProgramProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentHomelessProgramAssociation')
+)
+ALTER TABLE [edfi].[StudentHomelessProgramAssociation]
+ADD CONSTRAINT [FK_StudentHomelessProgramAssociation_ProgramProgram_RefKey]
+FOREIGN KEY ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23470,14 +23697,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentInterventionAssociation_CohortCohort' AND parent_object_id = OBJECT_ID(N'edfi.StudentInterventionAssociation')
+    WHERE name = N'FK_StudentInterventionAssociation_CohortCohort_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentInterventionAssociation')
 )
 ALTER TABLE [edfi].[StudentInterventionAssociation]
-ADD CONSTRAINT [FK_StudentInterventionAssociation_CohortCohort]
-FOREIGN KEY ([CohortCohort_DocumentId])
-REFERENCES [edfi].[Cohort] ([DocumentId])
+ADD CONSTRAINT [FK_StudentInterventionAssociation_CohortCohort_RefKey]
+FOREIGN KEY ([CohortCohort_CohortIdentifier], [CohortCohort_EducationOrganizationId], [CohortCohort_DocumentId])
+REFERENCES [edfi].[Cohort] ([CohortIdentifier], [EducationOrganization_EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -23492,12 +23719,12 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentInterventionAssociation_Intervention' AND parent_object_id = OBJECT_ID(N'edfi.StudentInterventionAssociation')
+    WHERE name = N'FK_StudentInterventionAssociation_Intervention_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentInterventionAssociation')
 )
 ALTER TABLE [edfi].[StudentInterventionAssociation]
-ADD CONSTRAINT [FK_StudentInterventionAssociation_Intervention]
-FOREIGN KEY ([Intervention_DocumentId])
-REFERENCES [edfi].[Intervention] ([DocumentId])
+ADD CONSTRAINT [FK_StudentInterventionAssociation_Intervention_RefKey]
+FOREIGN KEY ([Intervention_EducationOrganizationId], [Intervention_InterventionIdentificationCode], [Intervention_DocumentId])
+REFERENCES [edfi].[Intervention] ([EducationOrganization_EducationOrganizationId], [InterventionIdentificationCode], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23602,14 +23829,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentInterventionAttendanceEvent_Intervention' AND parent_object_id = OBJECT_ID(N'edfi.StudentInterventionAttendanceEvent')
+    WHERE name = N'FK_StudentInterventionAttendanceEvent_Intervention_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentInterventionAttendanceEvent')
 )
 ALTER TABLE [edfi].[StudentInterventionAttendanceEvent]
-ADD CONSTRAINT [FK_StudentInterventionAttendanceEvent_Intervention]
-FOREIGN KEY ([Intervention_DocumentId])
-REFERENCES [edfi].[Intervention] ([DocumentId])
+ADD CONSTRAINT [FK_StudentInterventionAttendanceEvent_Intervention_RefKey]
+FOREIGN KEY ([Intervention_EducationOrganizationId], [Intervention_InterventionIdentificationCode], [Intervention_DocumentId])
+REFERENCES [edfi].[Intervention] ([EducationOrganization_EducationOrganizationId], [InterventionIdentificationCode], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -23635,25 +23862,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentLanguageInstructionProgramAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentLanguageInstructionProgramAssociation')
+    WHERE name = N'FK_StudentLanguageInstructionProgramAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentLanguageInstructionProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentLanguageInstructionProgramAssociation]
-ADD CONSTRAINT [FK_StudentLanguageInstructionProgramAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentLanguageInstructionProgramAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentLanguageInstructionProgramAssociation_ProgramProgram' AND parent_object_id = OBJECT_ID(N'edfi.StudentLanguageInstructionProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentLanguageInstructionProgramAssociation]
-ADD CONSTRAINT [FK_StudentLanguageInstructionProgramAssociation_ProgramProgram]
-FOREIGN KEY ([ProgramProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -23663,6 +23879,17 @@ ALTER TABLE [edfi].[StudentLanguageInstructionProgramAssociation]
 ADD CONSTRAINT [FK_StudentLanguageInstructionProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentLanguageInstructionProgramAssociation_ProgramProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentLanguageInstructionProgramAssociation')
+)
+ALTER TABLE [edfi].[StudentLanguageInstructionProgramAssociation]
+ADD CONSTRAINT [FK_StudentLanguageInstructionProgramAssociation_ProgramProgram_RefKey]
+FOREIGN KEY ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23822,25 +24049,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentMigrantEducationProgramAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentMigrantEducationProgramAssociation')
+    WHERE name = N'FK_StudentMigrantEducationProgramAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentMigrantEducationProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentMigrantEducationProgramAssociation]
-ADD CONSTRAINT [FK_StudentMigrantEducationProgramAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentMigrantEducationProgramAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentMigrantEducationProgramAssociation_ProgramProgram' AND parent_object_id = OBJECT_ID(N'edfi.StudentMigrantEducationProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentMigrantEducationProgramAssociation]
-ADD CONSTRAINT [FK_StudentMigrantEducationProgramAssociation_ProgramProgram]
-FOREIGN KEY ([ProgramProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -23850,6 +24066,17 @@ ALTER TABLE [edfi].[StudentMigrantEducationProgramAssociation]
 ADD CONSTRAINT [FK_StudentMigrantEducationProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentMigrantEducationProgramAssociation_ProgramProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentMigrantEducationProgramAssociation')
+)
+ALTER TABLE [edfi].[StudentMigrantEducationProgramAssociation]
+ADD CONSTRAINT [FK_StudentMigrantEducationProgramAssociation_ProgramProgram_RefKey]
+FOREIGN KEY ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23932,14 +24159,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentNeglectedOrDelinquentProgramAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentNeglectedOrDelinquentProgramAssociation')
+    WHERE name = N'FK_StudentNeglectedOrDelinquentProgramAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentNeglectedOrDelinquentProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
-ADD CONSTRAINT [FK_StudentNeglectedOrDelinquentProgramAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentNeglectedOrDelinquentProgramAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -23976,23 +24203,23 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentNeglectedOrDelinquentProgramAssociation_ProgramProgram' AND parent_object_id = OBJECT_ID(N'edfi.StudentNeglectedOrDelinquentProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
-ADD CONSTRAINT [FK_StudentNeglectedOrDelinquentProgramAssociation_ProgramProgram]
-FOREIGN KEY ([ProgramProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentNeglectedOrDelinquentProgramAssociation_ProgramProgram_ProgramTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentNeglectedOrDelinquentProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
 ADD CONSTRAINT [FK_StudentNeglectedOrDelinquentProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentNeglectedOrDelinquentProgramAssociation_ProgramProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentNeglectedOrDelinquentProgramAssociation')
+)
+ALTER TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
+ADD CONSTRAINT [FK_StudentNeglectedOrDelinquentProgramAssociation_ProgramProgram_RefKey]
+FOREIGN KEY ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24075,25 +24302,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentProgramAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramAssociation')
+    WHERE name = N'FK_StudentProgramAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentProgramAssociation]
-ADD CONSTRAINT [FK_StudentProgramAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentProgramAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentProgramAssociation_ProgramProgram' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentProgramAssociation]
-ADD CONSTRAINT [FK_StudentProgramAssociation_ProgramProgram]
-FOREIGN KEY ([ProgramProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -24103,6 +24319,17 @@ ALTER TABLE [edfi].[StudentProgramAssociation]
 ADD CONSTRAINT [FK_StudentProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentProgramAssociation_ProgramProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramAssociation')
+)
+ALTER TABLE [edfi].[StudentProgramAssociation]
+ADD CONSTRAINT [FK_StudentProgramAssociation_ProgramProgram_RefKey]
+FOREIGN KEY ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24196,14 +24423,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentProgramAttendanceEvent_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramAttendanceEvent')
+    WHERE name = N'FK_StudentProgramAttendanceEvent_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramAttendanceEvent')
 )
 ALTER TABLE [edfi].[StudentProgramAttendanceEvent]
-ADD CONSTRAINT [FK_StudentProgramAttendanceEvent_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentProgramAttendanceEvent_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -24218,23 +24445,23 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentProgramAttendanceEvent_ProgramProgram' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramAttendanceEvent')
-)
-ALTER TABLE [edfi].[StudentProgramAttendanceEvent]
-ADD CONSTRAINT [FK_StudentProgramAttendanceEvent_ProgramProgram]
-FOREIGN KEY ([ProgramProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentProgramAttendanceEvent_ProgramProgram_ProgramTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramAttendanceEvent')
 )
 ALTER TABLE [edfi].[StudentProgramAttendanceEvent]
 ADD CONSTRAINT [FK_StudentProgramAttendanceEvent_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentProgramAttendanceEvent_ProgramProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramAttendanceEvent')
+)
+ALTER TABLE [edfi].[StudentProgramAttendanceEvent]
+ADD CONSTRAINT [FK_StudentProgramAttendanceEvent_ProgramProgram_RefKey]
+FOREIGN KEY ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24262,25 +24489,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentProgramEvaluation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluation')
+    WHERE name = N'FK_StudentProgramEvaluation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluation')
 )
 ALTER TABLE [edfi].[StudentProgramEvaluation]
-ADD CONSTRAINT [FK_StudentProgramEvaluation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentProgramEvaluation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentProgramEvaluation_ProgramEvaluation' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluation')
-)
-ALTER TABLE [edfi].[StudentProgramEvaluation]
-ADD CONSTRAINT [FK_StudentProgramEvaluation_ProgramEvaluation]
-FOREIGN KEY ([ProgramEvaluation_DocumentId])
-REFERENCES [edfi].[ProgramEvaluation] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -24312,6 +24528,17 @@ ALTER TABLE [edfi].[StudentProgramEvaluation]
 ADD CONSTRAINT [FK_StudentProgramEvaluation_ProgramEvaluation_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramEvaluation_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentProgramEvaluation_ProgramEvaluation_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluation')
+)
+ALTER TABLE [edfi].[StudentProgramEvaluation]
+ADD CONSTRAINT [FK_StudentProgramEvaluation_ProgramEvaluation_RefKey]
+FOREIGN KEY ([ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId], [ProgramEvaluation_ProgramEvaluationTitle], [ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId], [ProgramEvaluation_ProgramEducationOrganizationId], [ProgramEvaluation_ProgramName], [ProgramEvaluation_ProgramTypeDescriptor_DescriptorId], [ProgramEvaluation_DocumentId])
+REFERENCES [edfi].[ProgramEvaluation] ([ProgramEvaluationPeriodDescriptor_DescriptorId], [ProgramEvaluationTitle], [ProgramEvaluationTypeDescriptor_DescriptorId], [ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24372,17 +24599,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationElement')
-)
-ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationElement]
-ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement]
-FOREIGN KEY ([StudentEvaluationElementProgramEvaluationElement_DocumentId])
-REFERENCES [edfi].[ProgramEvaluationElement] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramEvaluatio_98a4d86359' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationElement')
 )
 ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationElement]
@@ -24416,6 +24632,17 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationElement')
+)
+ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationElement]
+ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_RefKey]
+FOREIGN KEY ([StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationElementTitle], [StudentEvaluationElementProgramEvaluationElement_ProgramEducationOrganizationId], [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId], [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTitle], [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId], [StudentEvaluationElementProgramEvaluationElement_ProgramName], [StudentEvaluationElementProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId], [StudentEvaluationElementProgramEvaluationElement_DocumentId])
+REFERENCES [edfi].[ProgramEvaluationElement] ([ProgramEvaluationElementTitle], [ProgramEducationOrganizationId_Unified], [ProgramEvaluationPeriodDescriptor_Unified_DescriptorId], [ProgramEvaluationTitle_Unified], [ProgramEvaluationTypeDescriptor_Unified_DescriptorId], [ProgramName_Unified], [ProgramTypeDescriptor_Unified_DescriptorId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentProgramEvaluationStudentEvaluationElement_StudentProgramEvaluation' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationElement')
 )
 ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationElement]
@@ -24433,17 +24660,6 @@ ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationObjective]
 ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationObjective_EvaluationObjectiveRatingLevelDescriptor]
 FOREIGN KEY ([EvaluationObjectiveRatingLevelDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationObjective')
-)
-ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationObjective]
-ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective]
-FOREIGN KEY ([StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId])
-REFERENCES [edfi].[ProgramEvaluationObjective] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24479,6 +24695,17 @@ FOREIGN KEY ([StudentEvaluationObjectiveProgramEvaluationObjective_ProgramTypeDe
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationObjective')
+)
+ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationObjective]
+ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_RefKey]
+FOREIGN KEY ([StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationObjectiveTitle], [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEducationOrganizationId], [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationPeriodDescriptor_DescriptorId], [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTitle], [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTypeDescriptor_DescriptorId], [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramName], [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId], [StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId])
+REFERENCES [edfi].[ProgramEvaluationObjective] ([ProgramEvaluationObjectiveTitle], [ProgramEvaluation_ProgramEducationOrganizationId], [ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId], [ProgramEvaluation_ProgramEvaluationTitle], [ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId], [ProgramEvaluation_ProgramName], [ProgramEvaluation_ProgramTypeDescriptor_DescriptorId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -24581,17 +24808,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSchoolAssociation_GraduationPlan' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAssociation')
-)
-ALTER TABLE [edfi].[StudentSchoolAssociation]
-ADD CONSTRAINT [FK_StudentSchoolAssociation_GraduationPlan]
-FOREIGN KEY ([GraduationPlan_DocumentId])
-REFERENCES [edfi].[GraduationPlan] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentSchoolAssociation_GraduationPlan_GraduationPlanTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAssociation')
 )
 ALTER TABLE [edfi].[StudentSchoolAssociation]
@@ -24600,6 +24816,17 @@ FOREIGN KEY ([GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentSchoolAssociation_GraduationPlan_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAssociation')
+)
+ALTER TABLE [edfi].[StudentSchoolAssociation]
+ADD CONSTRAINT [FK_StudentSchoolAssociation_GraduationPlan_RefKey]
+FOREIGN KEY ([GraduationPlan_EducationOrganizationId], [GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId], [GraduationPlan_GraduationSchoolYear], [GraduationPlan_DocumentId])
+REFERENCES [edfi].[GraduationPlan] ([EducationOrganization_EducationOrganizationId], [GraduationPlanTypeDescriptor_DescriptorId], [GraduationSchoolYear_GraduationSchoolYear], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -24680,17 +24907,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSchoolAssociationAlternativeGraduationPlan_AlternativeGraduationPlan' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAssociationAlternativeGraduationPlan')
-)
-ALTER TABLE [edfi].[StudentSchoolAssociationAlternativeGraduationPlan]
-ADD CONSTRAINT [FK_StudentSchoolAssociationAlternativeGraduationPlan_AlternativeGraduationPlan]
-FOREIGN KEY ([AlternativeGraduationPlan_DocumentId])
-REFERENCES [edfi].[GraduationPlan] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentSchoolAssociationAlternativeGraduationPlan_AlternativeGraduationPlan_GraduationPlanTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAssociationAlternativeGraduationPlan')
 )
 ALTER TABLE [edfi].[StudentSchoolAssociationAlternativeGraduationPlan]
@@ -24699,6 +24915,17 @@ FOREIGN KEY ([AlternativeGraduationPlan_GraduationPlanTypeDescriptor_DescriptorI
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentSchoolAssociationAlternativeGraduationPlan_AlternativeGraduationPlan_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAssociationAlternativeGraduationPlan')
+)
+ALTER TABLE [edfi].[StudentSchoolAssociationAlternativeGraduationPlan]
+ADD CONSTRAINT [FK_StudentSchoolAssociationAlternativeGraduationPlan_AlternativeGraduationPlan_RefKey]
+FOREIGN KEY ([AlternativeGraduationPlan_EducationOrganizationId], [AlternativeGraduationPlan_GraduationPlanTypeDescriptor_DescriptorId], [AlternativeGraduationPlan_GraduationSchoolYear], [AlternativeGraduationPlan_DocumentId])
+REFERENCES [edfi].[GraduationPlan] ([EducationOrganization_EducationOrganizationId], [GraduationPlanTypeDescriptor_DescriptorId], [GraduationSchoolYear_GraduationSchoolYear], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -24779,14 +25006,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSchoolAttendanceEvent_Session' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAttendanceEvent')
+    WHERE name = N'FK_StudentSchoolAttendanceEvent_Session_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAttendanceEvent')
 )
 ALTER TABLE [edfi].[StudentSchoolAttendanceEvent]
-ADD CONSTRAINT [FK_StudentSchoolAttendanceEvent_Session]
-FOREIGN KEY ([Session_DocumentId])
-REFERENCES [edfi].[Session] ([DocumentId])
+ADD CONSTRAINT [FK_StudentSchoolAttendanceEvent_Session_RefKey]
+FOREIGN KEY ([SchoolId_Unified], [Session_SchoolYear], [Session_SessionName], [Session_DocumentId])
+REFERENCES [edfi].[Session] ([School_SchoolId], [SchoolYear_SchoolYear], [SessionName], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -24812,25 +25039,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSchoolFoodServiceProgramAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolFoodServiceProgramAssociation')
+    WHERE name = N'FK_StudentSchoolFoodServiceProgramAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolFoodServiceProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentSchoolFoodServiceProgramAssociation]
-ADD CONSTRAINT [FK_StudentSchoolFoodServiceProgramAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentSchoolFoodServiceProgramAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSchoolFoodServiceProgramAssociation_ProgramProgram' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolFoodServiceProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentSchoolFoodServiceProgramAssociation]
-ADD CONSTRAINT [FK_StudentSchoolFoodServiceProgramAssociation_ProgramProgram]
-FOREIGN KEY ([ProgramProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -24840,6 +25056,17 @@ ALTER TABLE [edfi].[StudentSchoolFoodServiceProgramAssociation]
 ADD CONSTRAINT [FK_StudentSchoolFoodServiceProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentSchoolFoodServiceProgramAssociation_ProgramProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolFoodServiceProgramAssociation')
+)
+ALTER TABLE [edfi].[StudentSchoolFoodServiceProgramAssociation]
+ADD CONSTRAINT [FK_StudentSchoolFoodServiceProgramAssociation_ProgramProgram_RefKey]
+FOREIGN KEY ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24922,25 +25149,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSection504ProgramAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentSection504ProgramAssociation')
+    WHERE name = N'FK_StudentSection504ProgramAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSection504ProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentSection504ProgramAssociation]
-ADD CONSTRAINT [FK_StudentSection504ProgramAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentSection504ProgramAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSection504ProgramAssociation_ProgramProgram' AND parent_object_id = OBJECT_ID(N'edfi.StudentSection504ProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentSection504ProgramAssociation]
-ADD CONSTRAINT [FK_StudentSection504ProgramAssociation_ProgramProgram]
-FOREIGN KEY ([ProgramProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -24950,6 +25166,17 @@ ALTER TABLE [edfi].[StudentSection504ProgramAssociation]
 ADD CONSTRAINT [FK_StudentSection504ProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentSection504ProgramAssociation_ProgramProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSection504ProgramAssociation')
+)
+ALTER TABLE [edfi].[StudentSection504ProgramAssociation]
+ADD CONSTRAINT [FK_StudentSection504ProgramAssociation_ProgramProgram_RefKey]
+FOREIGN KEY ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25032,14 +25259,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSectionAssociation_DualCreditEducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentSectionAssociation')
+    WHERE name = N'FK_StudentSectionAssociation_DualCreditEducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSectionAssociation')
 )
 ALTER TABLE [edfi].[StudentSectionAssociation]
-ADD CONSTRAINT [FK_StudentSectionAssociation_DualCreditEducationOrganization]
-FOREIGN KEY ([DualCreditEducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentSectionAssociation_DualCreditEducationOrganization_RefKey]
+FOREIGN KEY ([DualCreditEducationOrganization_EducationOrganizationId], [DualCreditEducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -25076,12 +25303,12 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSectionAssociation_Section' AND parent_object_id = OBJECT_ID(N'edfi.StudentSectionAssociation')
+    WHERE name = N'FK_StudentSectionAssociation_Section_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSectionAssociation')
 )
 ALTER TABLE [edfi].[StudentSectionAssociation]
-ADD CONSTRAINT [FK_StudentSectionAssociation_Section]
-FOREIGN KEY ([Section_DocumentId])
-REFERENCES [edfi].[Section] ([DocumentId])
+ADD CONSTRAINT [FK_StudentSectionAssociation_Section_RefKey]
+FOREIGN KEY ([Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId])
+REFERENCES [edfi].[Section] ([CourseOffering_LocalCourseCode], [SchoolId_Unified], [CourseOffering_SchoolYear], [CourseOffering_SessionName], [SectionIdentifier], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25098,17 +25325,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSectionAssociationProgram_Program' AND parent_object_id = OBJECT_ID(N'edfi.StudentSectionAssociationProgram')
-)
-ALTER TABLE [edfi].[StudentSectionAssociationProgram]
-ADD CONSTRAINT [FK_StudentSectionAssociationProgram_Program]
-FOREIGN KEY ([Program_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentSectionAssociationProgram_Program_ProgramTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentSectionAssociationProgram')
 )
 ALTER TABLE [edfi].[StudentSectionAssociationProgram]
@@ -25117,6 +25333,17 @@ FOREIGN KEY ([Program_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentSectionAssociationProgram_Program_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSectionAssociationProgram')
+)
+ALTER TABLE [edfi].[StudentSectionAssociationProgram]
+ADD CONSTRAINT [FK_StudentSectionAssociationProgram_Program_RefKey]
+FOREIGN KEY ([Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Program_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -25164,14 +25391,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSectionAttendanceEvent_Section' AND parent_object_id = OBJECT_ID(N'edfi.StudentSectionAttendanceEvent')
+    WHERE name = N'FK_StudentSectionAttendanceEvent_Section_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSectionAttendanceEvent')
 )
 ALTER TABLE [edfi].[StudentSectionAttendanceEvent]
-ADD CONSTRAINT [FK_StudentSectionAttendanceEvent_Section]
-FOREIGN KEY ([Section_DocumentId])
-REFERENCES [edfi].[Section] ([DocumentId])
+ADD CONSTRAINT [FK_StudentSectionAttendanceEvent_Section_RefKey]
+FOREIGN KEY ([Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId])
+REFERENCES [edfi].[Section] ([CourseOffering_LocalCourseCode], [SchoolId_Unified], [CourseOffering_SchoolYear], [CourseOffering_SessionName], [SectionIdentifier], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -25186,14 +25413,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSectionAttendanceEventClassPeriod_ClassPeriod' AND parent_object_id = OBJECT_ID(N'edfi.StudentSectionAttendanceEventClassPeriod')
+    WHERE name = N'FK_StudentSectionAttendanceEventClassPeriod_ClassPeriod_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSectionAttendanceEventClassPeriod')
 )
 ALTER TABLE [edfi].[StudentSectionAttendanceEventClassPeriod]
-ADD CONSTRAINT [FK_StudentSectionAttendanceEventClassPeriod_ClassPeriod]
-FOREIGN KEY ([ClassPeriod_DocumentId])
-REFERENCES [edfi].[ClassPeriod] ([DocumentId])
+ADD CONSTRAINT [FK_StudentSectionAttendanceEventClassPeriod_ClassPeriod_RefKey]
+FOREIGN KEY ([ClassPeriod_ClassPeriodName], [ClassPeriod_SchoolId], [ClassPeriod_DocumentId])
+REFERENCES [edfi].[ClassPeriod] ([ClassPeriodName], [School_SchoolId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -25219,25 +25446,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSpecialEducationProgramAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentSpecialEducationProgramAssociation')
+    WHERE name = N'FK_StudentSpecialEducationProgramAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSpecialEducationProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentSpecialEducationProgramAssociation]
-ADD CONSTRAINT [FK_StudentSpecialEducationProgramAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentSpecialEducationProgramAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSpecialEducationProgramAssociation_ProgramProgram' AND parent_object_id = OBJECT_ID(N'edfi.StudentSpecialEducationProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentSpecialEducationProgramAssociation]
-ADD CONSTRAINT [FK_StudentSpecialEducationProgramAssociation_ProgramProgram]
-FOREIGN KEY ([ProgramProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -25247,6 +25463,17 @@ ALTER TABLE [edfi].[StudentSpecialEducationProgramAssociation]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentSpecialEducationProgramAssociation_ProgramProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSpecialEducationProgramAssociation')
+)
+ALTER TABLE [edfi].[StudentSpecialEducationProgramAssociation]
+ADD CONSTRAINT [FK_StudentSpecialEducationProgramAssociation_ProgramProgram_RefKey]
+FOREIGN KEY ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25450,14 +25677,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentSpecialEducationProgramEligibilityAssociation')
+    WHERE name = N'FK_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSpecialEducationProgramEligibilityAssociation')
 )
 ALTER TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
-ADD CONSTRAINT [FK_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -25505,23 +25732,23 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSpecialEducationProgramEligibilityAssociation_ProgramProgram' AND parent_object_id = OBJECT_ID(N'edfi.StudentSpecialEducationProgramEligibilityAssociation')
-)
-ALTER TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
-ADD CONSTRAINT [FK_StudentSpecialEducationProgramEligibilityAssociation_ProgramProgram]
-FOREIGN KEY ([ProgramProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentSpecialEducationProgramEligibilityAssociation_ProgramProgram_ProgramTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentSpecialEducationProgramEligibilityAssociation')
 )
 ALTER TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramEligibilityAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentSpecialEducationProgramEligibilityAssociation_ProgramProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSpecialEducationProgramEligibilityAssociation')
+)
+ALTER TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
+ADD CONSTRAINT [FK_StudentSpecialEducationProgramEligibilityAssociation_ProgramProgram_RefKey]
+FOREIGN KEY ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25549,25 +25776,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentTitleIPartAProgramAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentTitleIPartAProgramAssociation')
+    WHERE name = N'FK_StudentTitleIPartAProgramAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentTitleIPartAProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentTitleIPartAProgramAssociation]
-ADD CONSTRAINT [FK_StudentTitleIPartAProgramAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentTitleIPartAProgramAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentTitleIPartAProgramAssociation_ProgramProgram' AND parent_object_id = OBJECT_ID(N'edfi.StudentTitleIPartAProgramAssociation')
-)
-ALTER TABLE [edfi].[StudentTitleIPartAProgramAssociation]
-ADD CONSTRAINT [FK_StudentTitleIPartAProgramAssociation_ProgramProgram]
-FOREIGN KEY ([ProgramProgram_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -25577,6 +25793,17 @@ ALTER TABLE [edfi].[StudentTitleIPartAProgramAssociation]
 ADD CONSTRAINT [FK_StudentTitleIPartAProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentTitleIPartAProgramAssociation_ProgramProgram_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentTitleIPartAProgramAssociation')
+)
+ALTER TABLE [edfi].[StudentTitleIPartAProgramAssociation]
+ADD CONSTRAINT [FK_StudentTitleIPartAProgramAssociation_ProgramProgram_RefKey]
+FOREIGN KEY ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25692,14 +25919,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentTransportation_TransportationEducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.StudentTransportation')
+    WHERE name = N'FK_StudentTransportation_TransportationEducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentTransportation')
 )
 ALTER TABLE [edfi].[StudentTransportation]
-ADD CONSTRAINT [FK_StudentTransportation_TransportationEducationOrganization]
-FOREIGN KEY ([TransportationEducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_StudentTransportation_TransportationEducationOrganization_RefKey]
+FOREIGN KEY ([TransportationEducationOrganization_EducationOrganizationId], [TransportationEducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -25780,14 +26007,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Survey_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.Survey')
+    WHERE name = N'FK_Survey_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.Survey')
 )
 ALTER TABLE [edfi].[Survey]
-ADD CONSTRAINT [FK_Survey_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_Survey_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -25802,14 +26029,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Survey_Session' AND parent_object_id = OBJECT_ID(N'edfi.Survey')
+    WHERE name = N'FK_Survey_Session_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.Survey')
 )
 ALTER TABLE [edfi].[Survey]
-ADD CONSTRAINT [FK_Survey_Session]
-FOREIGN KEY ([Session_DocumentId])
-REFERENCES [edfi].[Session] ([DocumentId])
+ADD CONSTRAINT [FK_Survey_Session_RefKey]
+FOREIGN KEY ([Session_SchoolId], [SchoolYear_Unified], [Session_SessionName], [Session_DocumentId])
+REFERENCES [edfi].[Session] ([School_SchoolId], [SchoolYear_SchoolYear], [SessionName], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -25824,14 +26051,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveyCourseAssociation_Course' AND parent_object_id = OBJECT_ID(N'edfi.SurveyCourseAssociation')
+    WHERE name = N'FK_SurveyCourseAssociation_Course_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.SurveyCourseAssociation')
 )
 ALTER TABLE [edfi].[SurveyCourseAssociation]
-ADD CONSTRAINT [FK_SurveyCourseAssociation_Course]
-FOREIGN KEY ([Course_DocumentId])
-REFERENCES [edfi].[Course] ([DocumentId])
+ADD CONSTRAINT [FK_SurveyCourseAssociation_Course_RefKey]
+FOREIGN KEY ([Course_CourseCode], [Course_EducationOrganizationId], [Course_DocumentId])
+REFERENCES [edfi].[Course] ([CourseCode], [EducationOrganization_EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -25868,17 +26095,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveyProgramAssociation_Program' AND parent_object_id = OBJECT_ID(N'edfi.SurveyProgramAssociation')
-)
-ALTER TABLE [edfi].[SurveyProgramAssociation]
-ADD CONSTRAINT [FK_SurveyProgramAssociation_Program]
-FOREIGN KEY ([Program_DocumentId])
-REFERENCES [edfi].[Program] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_SurveyProgramAssociation_Program_ProgramTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.SurveyProgramAssociation')
 )
 ALTER TABLE [edfi].[SurveyProgramAssociation]
@@ -25887,6 +26103,17 @@ FOREIGN KEY ([Program_ProgramTypeDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_SurveyProgramAssociation_Program_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.SurveyProgramAssociation')
+)
+ALTER TABLE [edfi].[SurveyProgramAssociation]
+ADD CONSTRAINT [FK_SurveyProgramAssociation_Program_RefKey]
+FOREIGN KEY ([Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Program_DocumentId])
+REFERENCES [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [ProgramName], [ProgramTypeDescriptor_DescriptorId], [DocumentId])
+ON DELETE NO ACTION
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -26110,14 +26337,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveyResponseEducationOrganizationTargetAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.SurveyResponseEducationOrganizationTargetAssociation')
+    WHERE name = N'FK_SurveyResponseEducationOrganizationTargetAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.SurveyResponseEducationOrganizationTargetAssociation')
 )
 ALTER TABLE [edfi].[SurveyResponseEducationOrganizationTargetAssociation]
-ADD CONSTRAINT [FK_SurveyResponseEducationOrganizationTargetAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_SurveyResponseEducationOrganizationTargetAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -26198,14 +26425,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveySectionAssociation_Section' AND parent_object_id = OBJECT_ID(N'edfi.SurveySectionAssociation')
+    WHERE name = N'FK_SurveySectionAssociation_Section_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.SurveySectionAssociation')
 )
 ALTER TABLE [edfi].[SurveySectionAssociation]
-ADD CONSTRAINT [FK_SurveySectionAssociation_Section]
-FOREIGN KEY ([Section_DocumentId])
-REFERENCES [edfi].[Section] ([DocumentId])
+ADD CONSTRAINT [FK_SurveySectionAssociation_Section_RefKey]
+FOREIGN KEY ([Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId])
+REFERENCES [edfi].[Section] ([CourseOffering_LocalCourseCode], [SchoolId_Unified], [CourseOffering_SchoolYear], [CourseOffering_SessionName], [SectionIdentifier], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -26264,14 +26491,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_SurveySectionResponseEducationOrganizationTargetAssociation_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.SurveySectionResponseEducationOrganizationTargetAssociation')
+    WHERE name = N'FK_SurveySectionResponseEducationOrganizationTargetAssociation_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.SurveySectionResponseEducationOrganizationTargetAssociation')
 )
 ALTER TABLE [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation]
-ADD CONSTRAINT [FK_SurveySectionResponseEducationOrganizationTargetAssociation_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_SurveySectionResponseEducationOrganizationTargetAssociation_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -26399,6 +26626,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'AccountabilityRating' AND i.name = N'IX_AccountabilityRating_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
+)
+CREATE INDEX [IX_AccountabilityRating_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[AccountabilityRating] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'AccountabilityRating' AND i.name = N'IX_AccountabilityRating_SchoolYear_SchoolYear_SchoolYear_DocumentId'
 )
 CREATE INDEX [IX_AccountabilityRating_SchoolYear_SchoolYear_SchoolYear_DocumentId] ON [edfi].[AccountabilityRating] ([SchoolYear_SchoolYear], [SchoolYear_DocumentId]);
@@ -26431,17 +26666,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Assessment' AND i.name = N'IX_Assessment_EducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'Assessment' AND i.name = N'IX_Assessment_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_Assessment_EducationOrganization_DocumentId] ON [edfi].[Assessment] ([EducationOrganization_DocumentId]);
+CREATE INDEX [IX_Assessment_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[Assessment] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Assessment' AND i.name = N'IX_Assessment_MandatingEducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'Assessment' AND i.name = N'IX_Assessment_MandatingEducationOrganization_EducationOrganizationId_MandatingEducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_Assessment_MandatingEducationOrganization_DocumentId] ON [edfi].[Assessment] ([MandatingEducationOrganization_DocumentId]);
+CREATE INDEX [IX_Assessment_MandatingEducationOrganization_EducationOrganizationId_MandatingEducationOrganization_DocumentId] ON [edfi].[Assessment] ([MandatingEducationOrganization_EducationOrganizationId], [MandatingEducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -26479,9 +26714,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'AssessmentAdministration' AND i.name = N'IX_AssessmentAdministration_AssigningEducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'AssessmentAdministration' AND i.name = N'IX_AssessmentAdministration_AssigningEducationOrganization_EducationOrganizationId_AssigningEducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_AssessmentAdministration_AssigningEducationOrganization_DocumentId] ON [edfi].[AssessmentAdministration] ([AssigningEducationOrganization_DocumentId]);
+CREATE INDEX [IX_AssessmentAdministration_AssigningEducationOrganization_EducationOrganizationId_AssigningEducationOrganization_DocumentId] ON [edfi].[AssessmentAdministration] ([AssigningEducationOrganization_EducationOrganizationId], [AssigningEducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -26511,6 +26746,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'AssessmentAdministrationParticipation' AND i.name = N'IX_AssessmentAdministrationParticipation_AssessmentAdministration_AdministrationIdentifier_AssessmentAdministration_A_1a1a632f27'
+)
+CREATE INDEX [IX_AssessmentAdministrationParticipation_AssessmentAdministration_AdministrationIdentifier_AssessmentAdministration_A_1a1a632f27] ON [edfi].[AssessmentAdministrationParticipation] ([AssessmentAdministration_AdministrationIdentifier], [AssessmentAdministration_AssessmentIdentifier], [AssessmentAdministration_Namespace], [AssessmentAdministration_AssigningEducationOrganizationId], [AssessmentAdministration_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'AssessmentAdministrationParticipation' AND i.name = N'IX_AssessmentAdministrationParticipation_AssessmentAdministration_Namespace_Auth'
 )
 CREATE INDEX [IX_AssessmentAdministrationParticipation_AssessmentAdministration_Namespace_Auth] ON [edfi].[AssessmentAdministrationParticipation] ([AssessmentAdministration_Namespace]);
@@ -26527,17 +26770,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'AssessmentAdministrationParticipation' AND i.name = N'IX_AssessmentAdministrationParticipation_ParticipatingEducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'AssessmentAdministrationParticipation' AND i.name = N'IX_AssessmentAdministrationParticipation_ParticipatingEducationOrganization_EducationOrganizationId_ParticipatingEduc_2e0d5b4318'
 )
-CREATE INDEX [IX_AssessmentAdministrationParticipation_ParticipatingEducationOrganization_DocumentId] ON [edfi].[AssessmentAdministrationParticipation] ([ParticipatingEducationOrganization_DocumentId]);
+CREATE INDEX [IX_AssessmentAdministrationParticipation_ParticipatingEducationOrganization_EducationOrganizationId_ParticipatingEduc_2e0d5b4318] ON [edfi].[AssessmentAdministrationParticipation] ([ParticipatingEducationOrganization_EducationOrganizationId], [ParticipatingEducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'AssessmentAdministrationParticipationAdministrationPointOfContact' AND i.name = N'IX_AssessmentAdministrationParticipationAdministrationPointOfContact_AdministrationPointOfContactEducationOrganizatio_9c6200267d'
+    WHERE s.name = N'edfi' AND t.name = N'AssessmentAdministrationParticipationAdministrationPointOfContact' AND i.name = N'IX_AssessmentAdministrationParticipationAdministrationPointOfContact_AdministrationPointOfContactEducationOrganizatio_66505f028d'
 )
-CREATE INDEX [IX_AssessmentAdministrationParticipationAdministrationPointOfContact_AdministrationPointOfContactEducationOrganizatio_9c6200267d] ON [edfi].[AssessmentAdministrationParticipationAdministrationPointOfContact] ([AdministrationPointOfContactEducationOrganization_DocumentId]);
+CREATE INDEX [IX_AssessmentAdministrationParticipationAdministrationPointOfContact_AdministrationPointOfContactEducationOrganizatio_66505f028d] ON [edfi].[AssessmentAdministrationParticipationAdministrationPointOfContact] ([AdministrationPointOfContactEducationOrganization_EducationOrganizationId], [AdministrationPointOfContactEducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -26687,9 +26930,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'AssessmentProgram' AND i.name = N'IX_AssessmentProgram_SectionOrProgramChoiceProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'AssessmentProgram' AND i.name = N'IX_AssessmentProgram_SectionOrProgramChoiceProgram_EducationOrganizationId_SectionOrProgramChoiceProgram_ProgramName__16f29d7ede'
 )
-CREATE INDEX [IX_AssessmentProgram_SectionOrProgramChoiceProgram_DocumentId] ON [edfi].[AssessmentProgram] ([SectionOrProgramChoiceProgram_DocumentId]);
+CREATE INDEX [IX_AssessmentProgram_SectionOrProgramChoiceProgram_EducationOrganizationId_SectionOrProgramChoiceProgram_ProgramName__16f29d7ede] ON [edfi].[AssessmentProgram] ([SectionOrProgramChoiceProgram_EducationOrganizationId], [SectionOrProgramChoiceProgram_ProgramName], [SectionOrProgramChoiceProgram_ProgramTypeDescriptor_DescriptorId], [SectionOrProgramChoiceProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -26767,9 +27010,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'AssessmentSection' AND i.name = N'IX_AssessmentSection_SectionOrProgramChoiceSection_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'AssessmentSection' AND i.name = N'IX_AssessmentSection_SectionOrProgramChoiceSection_LocalCourseCode_SectionOrProgramChoiceSection_SchoolId_SectionOrPr_1ba8e4cb27'
 )
-CREATE INDEX [IX_AssessmentSection_SectionOrProgramChoiceSection_DocumentId] ON [edfi].[AssessmentSection] ([SectionOrProgramChoiceSection_DocumentId]);
+CREATE INDEX [IX_AssessmentSection_SectionOrProgramChoiceSection_LocalCourseCode_SectionOrProgramChoiceSection_SchoolId_SectionOrPr_1ba8e4cb27] ON [edfi].[AssessmentSection] ([SectionOrProgramChoiceSection_LocalCourseCode], [SectionOrProgramChoiceSection_SchoolId], [SectionOrProgramChoiceSection_SchoolYear], [SectionOrProgramChoiceSection_SessionName], [SectionOrProgramChoiceSection_SectionIdentifier], [SectionOrProgramChoiceSection_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -26815,9 +27058,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'BellScheduleClassPeriod' AND i.name = N'IX_BellScheduleClassPeriod_ClassPeriod_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'BellScheduleClassPeriod' AND i.name = N'IX_BellScheduleClassPeriod_ClassPeriod_ClassPeriodName_ClassPeriod_SchoolId_ClassPeriod_DocumentId'
 )
-CREATE INDEX [IX_BellScheduleClassPeriod_ClassPeriod_DocumentId] ON [edfi].[BellScheduleClassPeriod] ([ClassPeriod_DocumentId]);
+CREATE INDEX [IX_BellScheduleClassPeriod_ClassPeriod_ClassPeriodName_ClassPeriod_SchoolId_ClassPeriod_DocumentId] ON [edfi].[BellScheduleClassPeriod] ([ClassPeriod_ClassPeriodName], [ClassPeriod_SchoolId], [ClassPeriod_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -26935,17 +27178,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ChartOfAccount' AND i.name = N'IX_ChartOfAccount_EducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'ChartOfAccount' AND i.name = N'IX_ChartOfAccount_EducationOrganization_EducationOrganizationId_Auth'
 )
-CREATE INDEX [IX_ChartOfAccount_EducationOrganization_DocumentId] ON [edfi].[ChartOfAccount] ([EducationOrganization_DocumentId]);
+CREATE INDEX [IX_ChartOfAccount_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[ChartOfAccount] ([EducationOrganization_EducationOrganizationId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ChartOfAccount' AND i.name = N'IX_ChartOfAccount_EducationOrganization_EducationOrganizationId_Auth'
+    WHERE s.name = N'edfi' AND t.name = N'ChartOfAccount' AND i.name = N'IX_ChartOfAccount_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_ChartOfAccount_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[ChartOfAccount] ([EducationOrganization_EducationOrganizationId]);
+CREATE INDEX [IX_ChartOfAccount_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[ChartOfAccount] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -27071,14 +27314,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Cohort' AND i.name = N'IX_Cohort_EducationOrganization_DocumentId'
-)
-CREATE INDEX [IX_Cohort_EducationOrganization_DocumentId] ON [edfi].[Cohort] ([EducationOrganization_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Cohort' AND i.name = N'IX_Cohort_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_Cohort_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[Cohort] ([EducationOrganization_EducationOrganizationId]);
@@ -27087,9 +27322,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CohortProgram' AND i.name = N'IX_CohortProgram_ProgramProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'Cohort' AND i.name = N'IX_Cohort_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_CohortProgram_ProgramProgram_DocumentId] ON [edfi].[CohortProgram] ([ProgramProgram_DocumentId]);
+CREATE INDEX [IX_Cohort_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[Cohort] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'CohortProgram' AND i.name = N'IX_CohortProgram_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgram_ProgramTypeDescript_32f1f73774'
+)
+CREATE INDEX [IX_CohortProgram_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgram_ProgramTypeDescript_32f1f73774] ON [edfi].[CohortProgram] ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -27423,6 +27666,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'CompetencyObjective' AND i.name = N'IX_CompetencyObjective_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
+)
+CREATE INDEX [IX_CompetencyObjective_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[CompetencyObjective] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'CompetencyObjective' AND i.name = N'IX_CompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_CompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] ON [edfi].[CompetencyObjective] ([ObjectiveGradeLevelDescriptor_DescriptorId]);
@@ -27623,17 +27874,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Course' AND i.name = N'IX_Course_EducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'Course' AND i.name = N'IX_Course_EducationOrganization_EducationOrganizationId_Auth'
 )
-CREATE INDEX [IX_Course_EducationOrganization_DocumentId] ON [edfi].[Course] ([EducationOrganization_DocumentId]);
+CREATE INDEX [IX_Course_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[Course] ([EducationOrganization_EducationOrganizationId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Course' AND i.name = N'IX_Course_EducationOrganization_EducationOrganizationId_Auth'
+    WHERE s.name = N'edfi' AND t.name = N'Course' AND i.name = N'IX_Course_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_Course_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[Course] ([EducationOrganization_EducationOrganizationId]);
+CREATE INDEX [IX_Course_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[Course] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -27711,9 +27962,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CourseOffering' AND i.name = N'IX_CourseOffering_Course_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'CourseOffering' AND i.name = N'IX_CourseOffering_Course_CourseCode_Course_EducationOrganizationId_Course_DocumentId'
 )
-CREATE INDEX [IX_CourseOffering_Course_DocumentId] ON [edfi].[CourseOffering] ([Course_DocumentId]);
+CREATE INDEX [IX_CourseOffering_Course_CourseCode_Course_EducationOrganizationId_Course_DocumentId] ON [edfi].[CourseOffering] ([Course_CourseCode], [Course_EducationOrganizationId], [Course_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -27735,9 +27986,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CourseOffering' AND i.name = N'IX_CourseOffering_Session_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'CourseOffering' AND i.name = N'IX_CourseOffering_SchoolId_Unified_Session_SchoolYear_Session_SessionName_Session_DocumentId'
 )
-CREATE INDEX [IX_CourseOffering_Session_DocumentId] ON [edfi].[CourseOffering] ([Session_DocumentId]);
+CREATE INDEX [IX_CourseOffering_SchoolId_Unified_Session_SchoolYear_Session_SessionName_Session_DocumentId] ON [edfi].[CourseOffering] ([SchoolId_Unified], [Session_SchoolYear], [Session_SessionName], [Session_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -27783,9 +28034,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CourseTranscript' AND i.name = N'IX_CourseTranscript_CourseCourse_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'CourseTranscript' AND i.name = N'IX_CourseTranscript_CourseCourse_CourseCode_CourseCourse_EducationOrganizationId_CourseCourse_DocumentId'
 )
-CREATE INDEX [IX_CourseTranscript_CourseCourse_DocumentId] ON [edfi].[CourseTranscript] ([CourseCourse_DocumentId]);
+CREATE INDEX [IX_CourseTranscript_CourseCourse_CourseCode_CourseCourse_EducationOrganizationId_CourseCourse_DocumentId] ON [edfi].[CourseTranscript] ([CourseCourse_CourseCode], [CourseCourse_EducationOrganizationId], [CourseCourse_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -27807,9 +28058,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CourseTranscript' AND i.name = N'IX_CourseTranscript_ExternalEducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'CourseTranscript' AND i.name = N'IX_CourseTranscript_ExternalEducationOrganization_EducationOrganizationId_ExternalEducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_CourseTranscript_ExternalEducationOrganization_DocumentId] ON [edfi].[CourseTranscript] ([ExternalEducationOrganization_DocumentId]);
+CREATE INDEX [IX_CourseTranscript_ExternalEducationOrganization_EducationOrganizationId_ExternalEducationOrganization_DocumentId] ON [edfi].[CourseTranscript] ([ExternalEducationOrganization_EducationOrganizationId], [ExternalEducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -27831,14 +28082,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CourseTranscript' AND i.name = N'IX_CourseTranscript_StudentAcademicRecord_DocumentId'
-)
-CREATE INDEX [IX_CourseTranscript_StudentAcademicRecord_DocumentId] ON [edfi].[CourseTranscript] ([StudentAcademicRecord_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'CourseTranscript' AND i.name = N'IX_CourseTranscript_StudentAcademicRecord_DocumentId_Auth'
 )
 CREATE INDEX [IX_CourseTranscript_StudentAcademicRecord_DocumentId_Auth] ON [edfi].[CourseTranscript] ([StudentAcademicRecord_DocumentId]) INCLUDE ([DocumentId]);
@@ -27850,6 +28093,14 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'CourseTranscript' AND i.name = N'IX_CourseTranscript_StudentAcademicRecord_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_CourseTranscript_StudentAcademicRecord_EducationOrganizationId_Auth] ON [edfi].[CourseTranscript] ([StudentAcademicRecord_EducationOrganizationId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'CourseTranscript' AND i.name = N'IX_CourseTranscript_StudentAcademicRecord_EducationOrganizationId_StudentAcademicRecord_SchoolYear_StudentAcademicRec_787ae4cf1c'
+)
+CREATE INDEX [IX_CourseTranscript_StudentAcademicRecord_EducationOrganizationId_StudentAcademicRecord_SchoolYear_StudentAcademicRec_787ae4cf1c] ON [edfi].[CourseTranscript] ([StudentAcademicRecord_EducationOrganizationId], [StudentAcademicRecord_SchoolYear], [StudentAcademicRecord_StudentUniqueId], [StudentAcademicRecord_TermDescriptor_DescriptorId], [StudentAcademicRecord_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -27887,9 +28138,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CourseTranscriptCourseProgram' AND i.name = N'IX_CourseTranscriptCourseProgram_CourseProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'CourseTranscriptCourseProgram' AND i.name = N'IX_CourseTranscriptCourseProgram_CourseProgram_EducationOrganizationId_CourseProgram_ProgramName_CourseProgram_Progra_ff6f57a8f6'
 )
-CREATE INDEX [IX_CourseTranscriptCourseProgram_CourseProgram_DocumentId] ON [edfi].[CourseTranscriptCourseProgram] ([CourseProgram_DocumentId]);
+CREATE INDEX [IX_CourseTranscriptCourseProgram_CourseProgram_EducationOrganizationId_CourseProgram_ProgramName_CourseProgram_Progra_ff6f57a8f6] ON [edfi].[CourseTranscriptCourseProgram] ([CourseProgram_EducationOrganizationId], [CourseProgram_ProgramName], [CourseProgram_ProgramTypeDescriptor_DescriptorId], [CourseProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -27927,9 +28178,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CourseTranscriptSection' AND i.name = N'IX_CourseTranscriptSection_Section_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'CourseTranscriptSection' AND i.name = N'IX_CourseTranscriptSection_Section_LocalCourseCode_Section_SchoolId_Section_SchoolYear_Section_SessionName_Section_Se_d1e7f60323'
 )
-CREATE INDEX [IX_CourseTranscriptSection_Section_DocumentId] ON [edfi].[CourseTranscriptSection] ([Section_DocumentId]);
+CREATE INDEX [IX_CourseTranscriptSection_Section_LocalCourseCode_Section_SchoolId_Section_SchoolYear_Section_SessionName_Section_Se_d1e7f60323] ON [edfi].[CourseTranscriptSection] ([Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -28287,9 +28538,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationInterventionPrescriptionAssociation' AND i.name = N'IX_EducationOrganizationInterventionPrescriptionAssociation_InterventionPrescriptionInterventionPrescription_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationInterventionPrescriptionAssociation' AND i.name = N'IX_EducationOrganizationInterventionPrescriptionAssociation_EducationOrganization_EducationOrganizationId_EducationOr_813d97b08c'
 )
-CREATE INDEX [IX_EducationOrganizationInterventionPrescriptionAssociation_InterventionPrescriptionInterventionPrescription_DocumentId] ON [edfi].[EducationOrganizationInterventionPrescriptionAssociation] ([InterventionPrescriptionInterventionPrescription_DocumentId]);
+CREATE INDEX [IX_EducationOrganizationInterventionPrescriptionAssociation_EducationOrganization_EducationOrganizationId_EducationOr_813d97b08c] ON [edfi].[EducationOrganizationInterventionPrescriptionAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationInterventionPrescriptionAssociation' AND i.name = N'IX_EducationOrganizationInterventionPrescriptionAssociation_InterventionPrescriptionInterventionPrescription_Educatio_d148fc92bd'
+)
+CREATE INDEX [IX_EducationOrganizationInterventionPrescriptionAssociation_InterventionPrescriptionInterventionPrescription_Educatio_d148fc92bd] ON [edfi].[EducationOrganizationInterventionPrescriptionAssociation] ([InterventionPrescriptionInterventionPrescription_EducationOrganizationId], [InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode], [InterventionPrescriptionInterventionPrescription_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -28375,9 +28634,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationNetworkAssociation' AND i.name = N'IX_EducationOrganizationNetworkAssociation_MemberEducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationNetworkAssociation' AND i.name = N'IX_EducationOrganizationNetworkAssociation_MemberEducationOrganization_EducationOrganizationId_MemberEducationOrganiz_5a201defd9'
 )
-CREATE INDEX [IX_EducationOrganizationNetworkAssociation_MemberEducationOrganization_DocumentId] ON [edfi].[EducationOrganizationNetworkAssociation] ([MemberEducationOrganization_DocumentId]);
+CREATE INDEX [IX_EducationOrganizationNetworkAssociation_MemberEducationOrganization_EducationOrganizationId_MemberEducationOrganiz_5a201defd9] ON [edfi].[EducationOrganizationNetworkAssociation] ([MemberEducationOrganization_EducationOrganizationId], [MemberEducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -28471,9 +28730,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationPeerAssociation' AND i.name = N'IX_EducationOrganizationPeerAssociation_PeerEducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationPeerAssociation' AND i.name = N'IX_EducationOrganizationPeerAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_EducationOrganizationPeerAssociation_PeerEducationOrganization_DocumentId] ON [edfi].[EducationOrganizationPeerAssociation] ([PeerEducationOrganization_DocumentId]);
+CREATE INDEX [IX_EducationOrganizationPeerAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[EducationOrganizationPeerAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationPeerAssociation' AND i.name = N'IX_EducationOrganizationPeerAssociation_PeerEducationOrganization_EducationOrganizationId_PeerEducationOrganization_DocumentId'
+)
+CREATE INDEX [IX_EducationOrganizationPeerAssociation_PeerEducationOrganization_EducationOrganizationId_PeerEducationOrganization_DocumentId] ON [edfi].[EducationOrganizationPeerAssociation] ([PeerEducationOrganization_EducationOrganizationId], [PeerEducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -28623,17 +28890,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EvaluationRubricDimension' AND i.name = N'IX_EvaluationRubricDimension_ProgramEvaluationElement_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'EvaluationRubricDimension' AND i.name = N'IX_EvaluationRubricDimension_ProgramEvaluationElement_ProgramEducationOrganizationId_Auth'
 )
-CREATE INDEX [IX_EvaluationRubricDimension_ProgramEvaluationElement_DocumentId] ON [edfi].[EvaluationRubricDimension] ([ProgramEvaluationElement_DocumentId]);
+CREATE INDEX [IX_EvaluationRubricDimension_ProgramEvaluationElement_ProgramEducationOrganizationId_Auth] ON [edfi].[EvaluationRubricDimension] ([ProgramEvaluationElement_ProgramEducationOrganizationId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EvaluationRubricDimension' AND i.name = N'IX_EvaluationRubricDimension_ProgramEvaluationElement_ProgramEducationOrganizationId_Auth'
+    WHERE s.name = N'edfi' AND t.name = N'EvaluationRubricDimension' AND i.name = N'IX_EvaluationRubricDimension_ProgramEvaluationElement_ProgramEvaluationElementTitle_ProgramEvaluationElement_ProgramE_5fb0559117'
 )
-CREATE INDEX [IX_EvaluationRubricDimension_ProgramEvaluationElement_ProgramEducationOrganizationId_Auth] ON [edfi].[EvaluationRubricDimension] ([ProgramEvaluationElement_ProgramEducationOrganizationId]);
+CREATE INDEX [IX_EvaluationRubricDimension_ProgramEvaluationElement_ProgramEvaluationElementTitle_ProgramEvaluationElement_ProgramE_5fb0559117] ON [edfi].[EvaluationRubricDimension] ([ProgramEvaluationElement_ProgramEvaluationElementTitle], [ProgramEvaluationElement_ProgramEducationOrganizationId], [ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId], [ProgramEvaluationElement_ProgramEvaluationTitle], [ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId], [ProgramEvaluationElement_ProgramName], [ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId], [ProgramEvaluationElement_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -28759,9 +29026,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Grade' AND i.name = N'IX_Grade_StudentSectionAssociation_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'Grade' AND i.name = N'IX_Grade_StudentSectionAssociation_BeginDate_StudentSectionAssociation_LocalCourseCode_SchoolId_Unified_SchoolYear_Un_a1d53b4728'
 )
-CREATE INDEX [IX_Grade_StudentSectionAssociation_DocumentId] ON [edfi].[Grade] ([StudentSectionAssociation_DocumentId]);
+CREATE INDEX [IX_Grade_StudentSectionAssociation_BeginDate_StudentSectionAssociation_LocalCourseCode_SchoolId_Unified_SchoolYear_Un_a1d53b4728] ON [edfi].[Grade] ([StudentSectionAssociation_BeginDate], [StudentSectionAssociation_LocalCourseCode], [SchoolId_Unified], [SchoolYear_Unified], [StudentSectionAssociation_SectionIdentifier], [StudentSectionAssociation_SessionName], [StudentSectionAssociation_StudentUniqueId], [StudentSectionAssociation_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -28823,9 +29090,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'GradebookEntry' AND i.name = N'IX_GradebookEntry_Section_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'GradebookEntry' AND i.name = N'IX_GradebookEntry_Section_LocalCourseCode_SchoolId_Unified_SchoolYear_Unified_Section_SessionName_Section_SectionIden_b4e74bc891'
 )
-CREATE INDEX [IX_GradebookEntry_Section_DocumentId] ON [edfi].[GradebookEntry] ([Section_DocumentId]);
+CREATE INDEX [IX_GradebookEntry_Section_LocalCourseCode_SchoolId_Unified_SchoolYear_Unified_Section_SessionName_Section_SectionIden_b4e74bc891] ON [edfi].[GradebookEntry] ([Section_LocalCourseCode], [SchoolId_Unified], [SchoolYear_Unified], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -28879,6 +29146,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'GraduationPlan' AND i.name = N'IX_GraduationPlan_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
+)
+CREATE INDEX [IX_GraduationPlan_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[GraduationPlan] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'GraduationPlan' AND i.name = N'IX_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] ON [edfi].[GraduationPlan] ([GraduationPlanTypeDescriptor_DescriptorId]);
@@ -28919,9 +29194,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'GraduationPlanCreditsByCoursCours' AND i.name = N'IX_GraduationPlanCreditsByCoursCours_CourseCourse_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'GraduationPlanCreditsByCoursCours' AND i.name = N'IX_GraduationPlanCreditsByCoursCours_CourseCourse_CourseCode_CourseCourse_EducationOrganizationId_CourseCourse_DocumentId'
 )
-CREATE INDEX [IX_GraduationPlanCreditsByCoursCours_CourseCourse_DocumentId] ON [edfi].[GraduationPlanCreditsByCoursCours] ([CourseCourse_DocumentId]);
+CREATE INDEX [IX_GraduationPlanCreditsByCoursCours_CourseCourse_CourseCode_CourseCourse_EducationOrganizationId_CourseCourse_DocumentId] ON [edfi].[GraduationPlanCreditsByCoursCours] ([CourseCourse_CourseCode], [CourseCourse_EducationOrganizationId], [CourseCourse_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29047,6 +29322,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'Intervention' AND i.name = N'IX_Intervention_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
+)
+CREATE INDEX [IX_Intervention_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[Intervention] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Intervention' AND i.name = N'IX_Intervention_InterventionClassDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_Intervention_InterventionClassDescriptor_DescriptorId] ON [edfi].[Intervention] ([InterventionClassDescriptor_DescriptorId]);
@@ -29087,9 +29370,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'InterventionInterventionPrescription' AND i.name = N'IX_InterventionInterventionPrescription_InterventionPrescriptionInterventionPrescription_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'InterventionInterventionPrescription' AND i.name = N'IX_InterventionInterventionPrescription_InterventionPrescriptionInterventionPrescription_EducationOrganizationId_Inte_465b245ac8'
 )
-CREATE INDEX [IX_InterventionInterventionPrescription_InterventionPrescriptionInterventionPrescription_DocumentId] ON [edfi].[InterventionInterventionPrescription] ([InterventionPrescriptionInterventionPrescription_DocumentId]);
+CREATE INDEX [IX_InterventionInterventionPrescription_InterventionPrescriptionInterventionPrescription_EducationOrganizationId_Inte_465b245ac8] ON [edfi].[InterventionInterventionPrescription] ([InterventionPrescriptionInterventionPrescription_EducationOrganizationId], [InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode], [InterventionPrescriptionInterventionPrescription_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29114,6 +29397,14 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'InterventionPrescription' AND i.name = N'IX_InterventionPrescription_DeliveryMethodDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_InterventionPrescription_DeliveryMethodDescriptor_DescriptorId] ON [edfi].[InterventionPrescription] ([DeliveryMethodDescriptor_DescriptorId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'InterventionPrescription' AND i.name = N'IX_InterventionPrescription_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
+)
+CREATE INDEX [IX_InterventionPrescription_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[InterventionPrescription] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29199,6 +29490,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'InterventionStudy' AND i.name = N'IX_InterventionStudy_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
+)
+CREATE INDEX [IX_InterventionStudy_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[InterventionStudy] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'InterventionStudy' AND i.name = N'IX_InterventionStudy_InterventionClassDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_InterventionStudy_InterventionClassDescriptor_DescriptorId] ON [edfi].[InterventionStudy] ([InterventionClassDescriptor_DescriptorId]);
@@ -29207,9 +29506,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'InterventionStudy' AND i.name = N'IX_InterventionStudy_InterventionPrescriptionInterventionPrescription_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'InterventionStudy' AND i.name = N'IX_InterventionStudy_InterventionPrescriptionInterventionPrescription_EducationOrganizationId_InterventionPrescriptio_526dfeeb6f'
 )
-CREATE INDEX [IX_InterventionStudy_InterventionPrescriptionInterventionPrescription_DocumentId] ON [edfi].[InterventionStudy] ([InterventionPrescriptionInterventionPrescription_DocumentId]);
+CREATE INDEX [IX_InterventionStudy_InterventionPrescriptionInterventionPrescription_EducationOrganizationId_InterventionPrescriptio_526dfeeb6f] ON [edfi].[InterventionStudy] ([InterventionPrescriptionInterventionPrescription_EducationOrganizationId], [InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode], [InterventionPrescriptionInterventionPrescription_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29319,9 +29618,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LearningStandard' AND i.name = N'IX_LearningStandard_MandatingEducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'LearningStandard' AND i.name = N'IX_LearningStandard_MandatingEducationOrganization_EducationOrganizationId_MandatingEducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_LearningStandard_MandatingEducationOrganization_DocumentId] ON [edfi].[LearningStandard] ([MandatingEducationOrganization_DocumentId]);
+CREATE INDEX [IX_LearningStandard_MandatingEducationOrganization_EducationOrganizationId_MandatingEducationOrganization_DocumentId] ON [edfi].[LearningStandard] ([MandatingEducationOrganization_EducationOrganizationId], [MandatingEducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29391,9 +29690,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LocalAccount' AND i.name = N'IX_LocalAccount_ChartOfAccountChartOfAccount_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'LocalAccount' AND i.name = N'IX_LocalAccount_ChartOfAccountChartOfAccount_AccountIdentifier_ChartOfAccountChartOfAccount_EducationOrganizationId_F_da43e80ecc'
 )
-CREATE INDEX [IX_LocalAccount_ChartOfAccountChartOfAccount_DocumentId] ON [edfi].[LocalAccount] ([ChartOfAccountChartOfAccount_DocumentId]);
+CREATE INDEX [IX_LocalAccount_ChartOfAccountChartOfAccount_AccountIdentifier_ChartOfAccountChartOfAccount_EducationOrganizationId_F_da43e80ecc] ON [edfi].[LocalAccount] ([ChartOfAccountChartOfAccount_AccountIdentifier], [ChartOfAccountChartOfAccount_EducationOrganizationId], [FiscalYear_Unified], [ChartOfAccountChartOfAccount_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29407,17 +29706,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LocalAccount' AND i.name = N'IX_LocalAccount_EducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'LocalAccount' AND i.name = N'IX_LocalAccount_EducationOrganization_EducationOrganizationId_Auth'
 )
-CREATE INDEX [IX_LocalAccount_EducationOrganization_DocumentId] ON [edfi].[LocalAccount] ([EducationOrganization_DocumentId]);
+CREATE INDEX [IX_LocalAccount_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[LocalAccount] ([EducationOrganization_EducationOrganizationId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LocalAccount' AND i.name = N'IX_LocalAccount_EducationOrganization_EducationOrganizationId_Auth'
+    WHERE s.name = N'edfi' AND t.name = N'LocalAccount' AND i.name = N'IX_LocalAccount_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_LocalAccount_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[LocalAccount] ([EducationOrganization_EducationOrganizationId]);
+CREATE INDEX [IX_LocalAccount_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[LocalAccount] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29447,9 +29746,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LocalActual' AND i.name = N'IX_LocalActual_LocalAccount_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'LocalActual' AND i.name = N'IX_LocalActual_LocalAccount_AccountIdentifier_LocalAccount_EducationOrganizationId_LocalAccount_FiscalYear_LocalAccou_aac8009a9f'
 )
-CREATE INDEX [IX_LocalActual_LocalAccount_DocumentId] ON [edfi].[LocalActual] ([LocalAccount_DocumentId]);
+CREATE INDEX [IX_LocalActual_LocalAccount_AccountIdentifier_LocalAccount_EducationOrganizationId_LocalAccount_FiscalYear_LocalAccou_aac8009a9f] ON [edfi].[LocalActual] ([LocalAccount_AccountIdentifier], [LocalAccount_EducationOrganizationId], [LocalAccount_FiscalYear], [LocalAccount_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29479,9 +29778,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LocalBudget' AND i.name = N'IX_LocalBudget_LocalAccount_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'LocalBudget' AND i.name = N'IX_LocalBudget_LocalAccount_AccountIdentifier_LocalAccount_EducationOrganizationId_LocalAccount_FiscalYear_LocalAccou_1305cf33df'
 )
-CREATE INDEX [IX_LocalBudget_LocalAccount_DocumentId] ON [edfi].[LocalBudget] ([LocalAccount_DocumentId]);
+CREATE INDEX [IX_LocalBudget_LocalAccount_AccountIdentifier_LocalAccount_EducationOrganizationId_LocalAccount_FiscalYear_LocalAccou_1305cf33df] ON [edfi].[LocalBudget] ([LocalAccount_AccountIdentifier], [LocalAccount_EducationOrganizationId], [LocalAccount_FiscalYear], [LocalAccount_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29511,9 +29810,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LocalContractedStaff' AND i.name = N'IX_LocalContractedStaff_LocalAccount_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'LocalContractedStaff' AND i.name = N'IX_LocalContractedStaff_LocalAccount_AccountIdentifier_LocalAccount_EducationOrganizationId_LocalAccount_FiscalYear_L_8bfd7b2a2f'
 )
-CREATE INDEX [IX_LocalContractedStaff_LocalAccount_DocumentId] ON [edfi].[LocalContractedStaff] ([LocalAccount_DocumentId]);
+CREATE INDEX [IX_LocalContractedStaff_LocalAccount_AccountIdentifier_LocalAccount_EducationOrganizationId_LocalAccount_FiscalYear_L_8bfd7b2a2f] ON [edfi].[LocalContractedStaff] ([LocalAccount_AccountIdentifier], [LocalAccount_EducationOrganizationId], [LocalAccount_FiscalYear], [LocalAccount_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29743,9 +30042,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LocalEncumbrance' AND i.name = N'IX_LocalEncumbrance_LocalAccount_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'LocalEncumbrance' AND i.name = N'IX_LocalEncumbrance_LocalAccount_AccountIdentifier_LocalAccount_EducationOrganizationId_LocalAccount_FiscalYear_Local_ecc99e94e9'
 )
-CREATE INDEX [IX_LocalEncumbrance_LocalAccount_DocumentId] ON [edfi].[LocalEncumbrance] ([LocalAccount_DocumentId]);
+CREATE INDEX [IX_LocalEncumbrance_LocalAccount_AccountIdentifier_LocalAccount_EducationOrganizationId_LocalAccount_FiscalYear_Local_ecc99e94e9] ON [edfi].[LocalEncumbrance] ([LocalAccount_AccountIdentifier], [LocalAccount_EducationOrganizationId], [LocalAccount_FiscalYear], [LocalAccount_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29775,9 +30074,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LocalPayroll' AND i.name = N'IX_LocalPayroll_LocalAccount_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'LocalPayroll' AND i.name = N'IX_LocalPayroll_LocalAccount_AccountIdentifier_LocalAccount_EducationOrganizationId_LocalAccount_FiscalYear_LocalAcco_5d04aff567'
 )
-CREATE INDEX [IX_LocalPayroll_LocalAccount_DocumentId] ON [edfi].[LocalPayroll] ([LocalAccount_DocumentId]);
+CREATE INDEX [IX_LocalPayroll_LocalAccount_AccountIdentifier_LocalAccount_EducationOrganizationId_LocalAccount_FiscalYear_LocalAcco_5d04aff567] ON [edfi].[LocalPayroll] ([LocalAccount_AccountIdentifier], [LocalAccount_EducationOrganizationId], [LocalAccount_FiscalYear], [LocalAccount_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29967,6 +30266,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'OpenStaffPosition' AND i.name = N'IX_OpenStaffPosition_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
+)
+CREATE INDEX [IX_OpenStaffPosition_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[OpenStaffPosition] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'OpenStaffPosition' AND i.name = N'IX_OpenStaffPosition_EmploymentStatusDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_OpenStaffPosition_EmploymentStatusDescriptor_DescriptorId] ON [edfi].[OpenStaffPosition] ([EmploymentStatusDescriptor_DescriptorId]);
@@ -30055,17 +30362,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'OrganizationDepartment' AND i.name = N'IX_OrganizationDepartment_ParentEducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'OrganizationDepartment' AND i.name = N'IX_OrganizationDepartment_ParentEducationOrganization_EducationOrganizationId_Auth'
 )
-CREATE INDEX [IX_OrganizationDepartment_ParentEducationOrganization_DocumentId] ON [edfi].[OrganizationDepartment] ([ParentEducationOrganization_DocumentId]);
+CREATE INDEX [IX_OrganizationDepartment_ParentEducationOrganization_EducationOrganizationId_Auth] ON [edfi].[OrganizationDepartment] ([ParentEducationOrganization_EducationOrganizationId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'OrganizationDepartment' AND i.name = N'IX_OrganizationDepartment_ParentEducationOrganization_EducationOrganizationId_Auth'
+    WHERE s.name = N'edfi' AND t.name = N'OrganizationDepartment' AND i.name = N'IX_OrganizationDepartment_ParentEducationOrganization_EducationOrganizationId_ParentEducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_OrganizationDepartment_ParentEducationOrganization_EducationOrganizationId_Auth] ON [edfi].[OrganizationDepartment] ([ParentEducationOrganization_EducationOrganizationId]);
+CREATE INDEX [IX_OrganizationDepartment_ParentEducationOrganization_EducationOrganizationId_ParentEducationOrganization_DocumentId] ON [edfi].[OrganizationDepartment] ([ParentEducationOrganization_EducationOrganizationId], [ParentEducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -30383,6 +30690,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'Program' AND i.name = N'IX_Program_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
+)
+CREATE INDEX [IX_Program_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[Program] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Program' AND i.name = N'IX_Program_ProgramTypeDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_Program_ProgramTypeDescriptor_DescriptorId] ON [edfi].[Program] ([ProgramTypeDescriptor_DescriptorId]);
@@ -30431,17 +30746,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluation' AND i.name = N'IX_ProgramEvaluation_ProgramProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluation' AND i.name = N'IX_ProgramEvaluation_ProgramProgram_EducationOrganizationId_Auth'
 )
-CREATE INDEX [IX_ProgramEvaluation_ProgramProgram_DocumentId] ON [edfi].[ProgramEvaluation] ([ProgramProgram_DocumentId]);
+CREATE INDEX [IX_ProgramEvaluation_ProgramProgram_EducationOrganizationId_Auth] ON [edfi].[ProgramEvaluation] ([ProgramProgram_EducationOrganizationId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluation' AND i.name = N'IX_ProgramEvaluation_ProgramProgram_EducationOrganizationId_Auth'
+    WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluation' AND i.name = N'IX_ProgramEvaluation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgram_ProgramTypeDesc_d8be76f82f'
 )
-CREATE INDEX [IX_ProgramEvaluation_ProgramProgram_EducationOrganizationId_Auth] ON [edfi].[ProgramEvaluation] ([ProgramProgram_EducationOrganizationId]);
+CREATE INDEX [IX_ProgramEvaluation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgram_ProgramTypeDesc_d8be76f82f] ON [edfi].[ProgramEvaluation] ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -30471,17 +30786,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluationElement' AND i.name = N'IX_ProgramEvaluationElement_ProgramEvaluationObjective_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluationElement' AND i.name = N'IX_ProgramEvaluationElement_ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle_ProgramEducationOrganizationId_553fc16312'
 )
-CREATE INDEX [IX_ProgramEvaluationElement_ProgramEvaluationObjective_DocumentId] ON [edfi].[ProgramEvaluationElement] ([ProgramEvaluationObjective_DocumentId]);
+CREATE INDEX [IX_ProgramEvaluationElement_ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle_ProgramEducationOrganizationId_553fc16312] ON [edfi].[ProgramEvaluationElement] ([ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle], [ProgramEducationOrganizationId_Unified], [ProgramEvaluationPeriodDescriptor_Unified_DescriptorId], [ProgramEvaluationTitle_Unified], [ProgramEvaluationTypeDescriptor_Unified_DescriptorId], [ProgramName_Unified], [ProgramTypeDescriptor_Unified_DescriptorId], [ProgramEvaluationObjective_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluationElement' AND i.name = N'IX_ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_Unified_DescriptorId'
+    WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluationElement' AND i.name = N'IX_ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_Unified_DescriptorId_ProgramEvaluationTitle_Unified_Pro_5c14efcf1b'
 )
-CREATE INDEX [IX_ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] ON [edfi].[ProgramEvaluationElement] ([ProgramEvaluationPeriodDescriptor_Unified_DescriptorId]);
+CREATE INDEX [IX_ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_Unified_DescriptorId_ProgramEvaluationTitle_Unified_Pro_5c14efcf1b] ON [edfi].[ProgramEvaluationElement] ([ProgramEvaluationPeriodDescriptor_Unified_DescriptorId], [ProgramEvaluationTitle_Unified], [ProgramEvaluationTypeDescriptor_Unified_DescriptorId], [ProgramEducationOrganizationId_Unified], [ProgramName_Unified], [ProgramTypeDescriptor_Unified_DescriptorId], [ProgramEvaluation_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -30490,14 +30805,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluationElement' AND i.name = N'IX_ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_Unified_DescriptorId'
 )
 CREATE INDEX [IX_ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_Unified_DescriptorId] ON [edfi].[ProgramEvaluationElement] ([ProgramEvaluationTypeDescriptor_Unified_DescriptorId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluationElement' AND i.name = N'IX_ProgramEvaluationElement_ProgramEvaluation_DocumentId'
-)
-CREATE INDEX [IX_ProgramEvaluationElement_ProgramEvaluation_DocumentId] ON [edfi].[ProgramEvaluationElement] ([ProgramEvaluation_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -30535,14 +30842,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluationObjective' AND i.name = N'IX_ProgramEvaluationObjective_ProgramEvaluation_DocumentId'
-)
-CREATE INDEX [IX_ProgramEvaluationObjective_ProgramEvaluation_DocumentId] ON [edfi].[ProgramEvaluationObjective] ([ProgramEvaluation_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluationObjective' AND i.name = N'IX_ProgramEvaluationObjective_ProgramEvaluation_ProgramEducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_ProgramEvaluationObjective_ProgramEvaluation_ProgramEducationOrganizationId_Auth] ON [edfi].[ProgramEvaluationObjective] ([ProgramEvaluation_ProgramEducationOrganizationId]);
@@ -30551,9 +30850,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluationObjective' AND i.name = N'IX_ProgramEvaluationObjective_ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId'
+    WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluationObjective' AND i.name = N'IX_ProgramEvaluationObjective_ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId_ProgramEvaluation_Prog_b57b2d1caa'
 )
-CREATE INDEX [IX_ProgramEvaluationObjective_ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] ON [edfi].[ProgramEvaluationObjective] ([ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]);
+CREATE INDEX [IX_ProgramEvaluationObjective_ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId_ProgramEvaluation_Prog_b57b2d1caa] ON [edfi].[ProgramEvaluationObjective] ([ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId], [ProgramEvaluation_ProgramEvaluationTitle], [ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId], [ProgramEvaluation_ProgramEducationOrganizationId], [ProgramEvaluation_ProgramName], [ProgramEvaluation_ProgramTypeDescriptor_DescriptorId], [ProgramEvaluation_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -30623,6 +30922,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'ReportCard' AND i.name = N'IX_ReportCard_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
+)
+CREATE INDEX [IX_ReportCard_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[ReportCard] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'ReportCard' AND i.name = N'IX_ReportCard_GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId_GradingPeriodGradingPeriod_GradingPerio_9ea2b31217'
 )
 CREATE INDEX [IX_ReportCard_GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId_GradingPeriodGradingPeriod_GradingPerio_9ea2b31217] ON [edfi].[ReportCard] ([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId], [GradingPeriodGradingPeriod_GradingPeriodName], [GradingPeriodGradingPeriod_SchoolId], [GradingPeriodGradingPeriod_SchoolYear], [GradingPeriodGradingPeriod_DocumentId]);
@@ -30647,17 +30954,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ReportCardGrade' AND i.name = N'IX_ReportCardGrade_Grade_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'ReportCardGrade' AND i.name = N'IX_ReportCardGrade_Grade_GradeTypeDescriptor_DescriptorId_Grade_GradingPeriodDescriptor_DescriptorId_Grade_GradingPer_b5515dff2c'
 )
-CREATE INDEX [IX_ReportCardGrade_Grade_DocumentId] ON [edfi].[ReportCardGrade] ([Grade_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ReportCardGrade' AND i.name = N'IX_ReportCardGrade_Grade_GradeTypeDescriptor_DescriptorId'
-)
-CREATE INDEX [IX_ReportCardGrade_Grade_GradeTypeDescriptor_DescriptorId] ON [edfi].[ReportCardGrade] ([Grade_GradeTypeDescriptor_DescriptorId]);
+CREATE INDEX [IX_ReportCardGrade_Grade_GradeTypeDescriptor_DescriptorId_Grade_GradingPeriodDescriptor_DescriptorId_Grade_GradingPer_b5515dff2c] ON [edfi].[ReportCardGrade] ([Grade_GradeTypeDescriptor_DescriptorId], [Grade_GradingPeriodDescriptor_DescriptorId], [Grade_GradingPeriodName], [SchoolId_Unified], [Grade_GradingPeriodSchoolYear], [Grade_BeginDate], [Grade_LocalCourseCode], [Grade_SectionIdentifier], [Grade_SessionName], [Grade_StudentUniqueId], [Grade_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -30679,17 +30978,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ReportCardStudentCompetencyObjective' AND i.name = N'IX_ReportCardStudentCompetencyObjective_StudentCompetencyObjective_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'ReportCardStudentCompetencyObjective' AND i.name = N'IX_ReportCardStudentCompetencyObjective_StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId_StudentCompet_3ef6954948'
 )
-CREATE INDEX [IX_ReportCardStudentCompetencyObjective_StudentCompetencyObjective_DocumentId] ON [edfi].[ReportCardStudentCompetencyObjective] ([StudentCompetencyObjective_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ReportCardStudentCompetencyObjective' AND i.name = N'IX_ReportCardStudentCompetencyObjective_StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId'
-)
-CREATE INDEX [IX_ReportCardStudentCompetencyObjective_StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId] ON [edfi].[ReportCardStudentCompetencyObjective] ([StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId]);
+CREATE INDEX [IX_ReportCardStudentCompetencyObjective_StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId_StudentCompet_3ef6954948] ON [edfi].[ReportCardStudentCompetencyObjective] ([StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId], [StudentCompetencyObjective_GradingPeriodName], [StudentCompetencyObjective_GradingPeriodSchoolId], [StudentCompetencyObjective_GradingPeriodSchoolYear], [StudentCompetencyObjective_ObjectiveEducationOrganizationId], [StudentCompetencyObjective_Objective], [StudentCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId], [StudentCompetencyObjective_StudentUniqueId], [StudentCompetencyObjective_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -30759,9 +31050,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'RestraintEventProgram' AND i.name = N'IX_RestraintEventProgram_Program_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'RestraintEventProgram' AND i.name = N'IX_RestraintEventProgram_Program_EducationOrganizationId_Program_ProgramName_Program_ProgramTypeDescriptor_Descriptor_568b448fdd'
 )
-CREATE INDEX [IX_RestraintEventProgram_Program_DocumentId] ON [edfi].[RestraintEventProgram] ([Program_DocumentId]);
+CREATE INDEX [IX_RestraintEventProgram_Program_EducationOrganizationId_Program_ProgramName_Program_ProgramTypeDescriptor_Descriptor_568b448fdd] ON [edfi].[RestraintEventProgram] ([Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Program_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31015,6 +31306,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'Section' AND i.name = N'IX_Section_CourseOffering_LocalCourseCode_SchoolId_Unified_CourseOffering_SchoolYear_CourseOffering_SessionName_Cours_1e931bf166'
+)
+CREATE INDEX [IX_Section_CourseOffering_LocalCourseCode_SchoolId_Unified_CourseOffering_SchoolYear_CourseOffering_SessionName_Cours_1e931bf166] ON [edfi].[Section] ([CourseOffering_LocalCourseCode], [SchoolId_Unified], [CourseOffering_SchoolYear], [CourseOffering_SessionName], [CourseOffering_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Section' AND i.name = N'IX_Section_EducationalEnvironmentDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_Section_EducationalEnvironmentDescriptor_DescriptorId] ON [edfi].[Section] ([EducationalEnvironmentDescriptor_DescriptorId]);
@@ -31031,9 +31330,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Section' AND i.name = N'IX_Section_LocationLocation_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'Section' AND i.name = N'IX_Section_LocationLocation_ClassroomIdentificationCode_SchoolId_U35501e03_Unified_LocationLocation_DocumentId'
 )
-CREATE INDEX [IX_Section_LocationLocation_DocumentId] ON [edfi].[Section] ([LocationLocation_DocumentId]);
+CREATE INDEX [IX_Section_LocationLocation_ClassroomIdentificationCode_SchoolId_U35501e03_Unified_LocationLocation_DocumentId] ON [edfi].[Section] ([LocationLocation_ClassroomIdentificationCode], [SchoolId_U35501e03_Unified], [LocationLocation_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31103,9 +31402,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SectionAttendanceTakenEvent' AND i.name = N'IX_SectionAttendanceTakenEvent_Section_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'SectionAttendanceTakenEvent' AND i.name = N'IX_SectionAttendanceTakenEvent_Section_LocalCourseCode_SchoolId_Unified_SchoolYear_Unified_Section_SessionName_Sectio_58e450d99a'
 )
-CREATE INDEX [IX_SectionAttendanceTakenEvent_Section_DocumentId] ON [edfi].[SectionAttendanceTakenEvent] ([Section_DocumentId]);
+CREATE INDEX [IX_SectionAttendanceTakenEvent_Section_LocalCourseCode_SchoolId_Unified_SchoolYear_Unified_Section_SessionName_Sectio_58e450d99a] ON [edfi].[SectionAttendanceTakenEvent] ([Section_LocalCourseCode], [SchoolId_Unified], [SchoolYear_Unified], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31127,9 +31426,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SectionClassPeriod' AND i.name = N'IX_SectionClassPeriod_ClassPeriod_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'SectionClassPeriod' AND i.name = N'IX_SectionClassPeriod_ClassPeriod_ClassPeriodName_ClassPeriod_SchoolId_ClassPeriod_DocumentId'
 )
-CREATE INDEX [IX_SectionClassPeriod_ClassPeriod_DocumentId] ON [edfi].[SectionClassPeriod] ([ClassPeriod_DocumentId]);
+CREATE INDEX [IX_SectionClassPeriod_ClassPeriod_ClassPeriodName_ClassPeriod_SchoolId_ClassPeriod_DocumentId] ON [edfi].[SectionClassPeriod] ([ClassPeriod_ClassPeriodName], [ClassPeriod_SchoolId], [ClassPeriod_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31151,9 +31450,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SectionProgram' AND i.name = N'IX_SectionProgram_Program_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'SectionProgram' AND i.name = N'IX_SectionProgram_Program_EducationOrganizationId_Program_ProgramName_Program_ProgramTypeDescriptor_DescriptorId_Prog_0c0a4fe723'
 )
-CREATE INDEX [IX_SectionProgram_Program_DocumentId] ON [edfi].[SectionProgram] ([Program_DocumentId]);
+CREATE INDEX [IX_SectionProgram_Program_EducationOrganizationId_Program_ProgramName_Program_ProgramTypeDescriptor_DescriptorId_Prog_0c0a4fe723] ON [edfi].[SectionProgram] ([Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Program_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31343,9 +31642,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffCohortAssociation' AND i.name = N'IX_StaffCohortAssociation_Cohort_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StaffCohortAssociation' AND i.name = N'IX_StaffCohortAssociation_Cohort_CohortIdentifier_Cohort_EducationOrganizationId_Cohort_DocumentId'
 )
-CREATE INDEX [IX_StaffCohortAssociation_Cohort_DocumentId] ON [edfi].[StaffCohortAssociation] ([Cohort_DocumentId]);
+CREATE INDEX [IX_StaffCohortAssociation_Cohort_CohortIdentifier_Cohort_EducationOrganizationId_Cohort_DocumentId] ON [edfi].[StaffCohortAssociation] ([Cohort_CohortIdentifier], [Cohort_EducationOrganizationId], [Cohort_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31471,14 +31770,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationAssignmentAssociation' AND i.name = N'IX_StaffEducationOrganizationAssignmentAssociation_EducationOrganization_DocumentId'
-)
-CREATE INDEX [IX_StaffEducationOrganizationAssignmentAssociation_EducationOrganization_DocumentId] ON [edfi].[StaffEducationOrganizationAssignmentAssociation] ([EducationOrganization_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationAssignmentAssociation' AND i.name = N'IX_StaffEducationOrganizationAssignmentAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_StaffEducationOrganizationAssignmentAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StaffEducationOrganizationAssignmentAssociation] ([EducationOrganization_EducationOrganizationId]) INCLUDE ([Staff_DocumentId]);
@@ -31487,9 +31778,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationAssignmentAssociation' AND i.name = N'IX_StaffEducationOrganizationAssignmentAssociation_EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationAssignmentAssociation' AND i.name = N'IX_StaffEducationOrganizationAssignmentAssociation_EducationOrganization_EducationOrganizationId_EducationOrganizatio_c38b768b13'
 )
-CREATE INDEX [IX_StaffEducationOrganizationAssignmentAssociation_EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId] ON [edfi].[StaffEducationOrganizationAssignmentAssociation] ([EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId]);
+CREATE INDEX [IX_StaffEducationOrganizationAssignmentAssociation_EducationOrganization_EducationOrganizationId_EducationOrganizatio_c38b768b13] ON [edfi].[StaffEducationOrganizationAssignmentAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationAssignmentAssociation' AND i.name = N'IX_StaffEducationOrganizationAssignmentAssociation_EmploymentStaffEducationOrganizationEmploymentAssociation_Educatio_e6fdbc5063'
+)
+CREATE INDEX [IX_StaffEducationOrganizationAssignmentAssociation_EmploymentStaffEducationOrganizationEmploymentAssociation_Educatio_e6fdbc5063] ON [edfi].[StaffEducationOrganizationAssignmentAssociation] ([EmploymentStaffEducationOrganizationEmploymentAssociation_EducationOrganizationId], [EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId], [EmploymentStaffEducationOrganizationEmploymentAssociation_HireDate], [StaffUniqueId_Unified], [EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31567,17 +31866,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationContactAssociation' AND i.name = N'IX_StaffEducationOrganizationContactAssociation_EducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationContactAssociation' AND i.name = N'IX_StaffEducationOrganizationContactAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
-CREATE INDEX [IX_StaffEducationOrganizationContactAssociation_EducationOrganization_DocumentId] ON [edfi].[StaffEducationOrganizationContactAssociation] ([EducationOrganization_DocumentId]);
+CREATE INDEX [IX_StaffEducationOrganizationContactAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StaffEducationOrganizationContactAssociation] ([EducationOrganization_EducationOrganizationId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationContactAssociation' AND i.name = N'IX_StaffEducationOrganizationContactAssociation_EducationOrganization_EducationOrganizationId_Auth'
+    WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationContactAssociation' AND i.name = N'IX_StaffEducationOrganizationContactAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_StaffEducationOrganizationContactAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StaffEducationOrganizationContactAssociation] ([EducationOrganization_EducationOrganizationId]);
+CREATE INDEX [IX_StaffEducationOrganizationContactAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StaffEducationOrganizationContactAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31634,6 +31933,14 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationEmploymentAssociation' AND i.name = N'IX_StaffEducationOrganizationEmploymentAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_StaffEducationOrganizationEmploymentAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StaffEducationOrganizationEmploymentAssociation] ([EducationOrganization_EducationOrganizationId]) INCLUDE ([Staff_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationEmploymentAssociation' AND i.name = N'IX_StaffEducationOrganizationEmploymentAssociation_EducationOrganization_EducationOrganizationId_EducationOrganizatio_291c0fef12'
+)
+CREATE INDEX [IX_StaffEducationOrganizationEmploymentAssociation_EducationOrganization_EducationOrganizationId_EducationOrganizatio_291c0fef12] ON [edfi].[StaffEducationOrganizationEmploymentAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31831,9 +32138,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffProgramAssociation' AND i.name = N'IX_StaffProgramAssociation_ProgramProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StaffProgramAssociation' AND i.name = N'IX_StaffProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgram_ProgramTy_3a595541d2'
 )
-CREATE INDEX [IX_StaffProgramAssociation_ProgramProgram_DocumentId] ON [edfi].[StaffProgramAssociation] ([ProgramProgram_DocumentId]);
+CREATE INDEX [IX_StaffProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgram_ProgramTy_3a595541d2] ON [edfi].[StaffProgramAssociation] ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31975,9 +32282,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffSectionAssociation' AND i.name = N'IX_StaffSectionAssociation_Section_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StaffSectionAssociation' AND i.name = N'IX_StaffSectionAssociation_Section_LocalCourseCode_Section_SchoolId_Section_SchoolYear_Section_SessionName_Section_Se_2909ffaba7'
 )
-CREATE INDEX [IX_StaffSectionAssociation_Section_DocumentId] ON [edfi].[StaffSectionAssociation] ([Section_DocumentId]);
+CREATE INDEX [IX_StaffSectionAssociation_Section_LocalCourseCode_Section_SchoolId_Section_SchoolYear_Section_SessionName_Section_Se_2909ffaba7] ON [edfi].[StaffSectionAssociation] ([Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -32239,6 +32546,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentAcademicRecord' AND i.name = N'IX_StudentAcademicRecord_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
+)
+CREATE INDEX [IX_StudentAcademicRecord_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StudentAcademicRecord] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentAcademicRecord' AND i.name = N'IX_StudentAcademicRecord_SchoolYear_SchoolYear_SchoolYear_DocumentId'
 )
 CREATE INDEX [IX_StudentAcademicRecord_SchoolYear_SchoolYear_SchoolYear_DocumentId] ON [edfi].[StudentAcademicRecord] ([SchoolYear_SchoolYear], [SchoolYear_DocumentId]);
@@ -32351,9 +32666,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAcademicRecordReportCard' AND i.name = N'IX_StudentAcademicRecordReportCard_ReportCard_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentAcademicRecordReportCard' AND i.name = N'IX_StudentAcademicRecordReportCard_ReportCard_EducationOrganizationId_ReportCard_GradingPeriodDescriptor_DescriptorId_0bbda36925'
 )
-CREATE INDEX [IX_StudentAcademicRecordReportCard_ReportCard_DocumentId] ON [edfi].[StudentAcademicRecordReportCard] ([ReportCard_DocumentId]);
+CREATE INDEX [IX_StudentAcademicRecordReportCard_ReportCard_EducationOrganizationId_ReportCard_GradingPeriodDescriptor_DescriptorId_0bbda36925] ON [edfi].[StudentAcademicRecordReportCard] ([ReportCard_EducationOrganizationId], [ReportCard_GradingPeriodDescriptor_DescriptorId], [ReportCard_GradingPeriodName], [ReportCard_GradingPeriodSchoolId], [ReportCard_GradingPeriodSchoolYear], [ReportCard_StudentUniqueId], [ReportCard_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -32511,17 +32826,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentEducationOrganizationAssociation' AND i.name = N'IX_StudentAssessmentEducationOrganizationAssociation_EducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentEducationOrganizationAssociation' AND i.name = N'IX_StudentAssessmentEducationOrganizationAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
-CREATE INDEX [IX_StudentAssessmentEducationOrganizationAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentAssessmentEducationOrganizationAssociation] ([EducationOrganization_DocumentId]);
+CREATE INDEX [IX_StudentAssessmentEducationOrganizationAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentAssessmentEducationOrganizationAssociation] ([EducationOrganization_EducationOrganizationId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentEducationOrganizationAssociation' AND i.name = N'IX_StudentAssessmentEducationOrganizationAssociation_EducationOrganization_EducationOrganizationId_Auth'
+    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentEducationOrganizationAssociation' AND i.name = N'IX_StudentAssessmentEducationOrganizationAssociation_EducationOrganization_EducationOrganizationId_EducationOrganizat_0c8a236f6b'
 )
-CREATE INDEX [IX_StudentAssessmentEducationOrganizationAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentAssessmentEducationOrganizationAssociation] ([EducationOrganization_EducationOrganizationId]);
+CREATE INDEX [IX_StudentAssessmentEducationOrganizationAssociation_EducationOrganization_EducationOrganizationId_EducationOrganizat_0c8a236f6b] ON [edfi].[StudentAssessmentEducationOrganizationAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -32607,6 +32922,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistration' AND i.name = N'IX_StudentAssessmentRegistration_AssessmentAdministration_AdministrationIdentifier_AssessmentAdministration_Assessmen_4d41f73772'
+)
+CREATE INDEX [IX_StudentAssessmentRegistration_AssessmentAdministration_AdministrationIdentifier_AssessmentAdministration_Assessmen_4d41f73772] ON [edfi].[StudentAssessmentRegistration] ([AssessmentAdministration_AdministrationIdentifier], [AssessmentAdministration_AssessmentIdentifier], [AssessmentAdministration_Namespace], [AssessmentAdministration_AssigningEducationOrganizationId], [AssessmentAdministration_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistration' AND i.name = N'IX_StudentAssessmentRegistration_AssessmentAdministration_Namespace_Auth'
 )
 CREATE INDEX [IX_StudentAssessmentRegistration_AssessmentAdministration_Namespace_Auth] ON [edfi].[StudentAssessmentRegistration] ([AssessmentAdministration_Namespace]);
@@ -32639,25 +32962,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistration' AND i.name = N'IX_StudentAssessmentRegistration_ReportingEducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistration' AND i.name = N'IX_StudentAssessmentRegistration_ReportingEducationOrganization_EducationOrganizationId_ReportingEducationOrganizatio_e9ac51921f'
 )
-CREATE INDEX [IX_StudentAssessmentRegistration_ReportingEducationOrganization_DocumentId] ON [edfi].[StudentAssessmentRegistration] ([ReportingEducationOrganization_DocumentId]);
+CREATE INDEX [IX_StudentAssessmentRegistration_ReportingEducationOrganization_EducationOrganizationId_ReportingEducationOrganizatio_e9ac51921f] ON [edfi].[StudentAssessmentRegistration] ([ReportingEducationOrganization_EducationOrganizationId], [ReportingEducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistration' AND i.name = N'IX_StudentAssessmentRegistration_ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistration' AND i.name = N'IX_StudentAssessmentRegistration_ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId_4f6688dd75'
 )
-CREATE INDEX [IX_StudentAssessmentRegistration_ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId] ON [edfi].[StudentAssessmentRegistration] ([ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistration' AND i.name = N'IX_StudentAssessmentRegistration_StudentEducationOrganizationAssociation_DocumentId'
-)
-CREATE INDEX [IX_StudentAssessmentRegistration_StudentEducationOrganizationAssociation_DocumentId] ON [edfi].[StudentAssessmentRegistration] ([StudentEducationOrganizationAssociation_DocumentId]);
+CREATE INDEX [IX_StudentAssessmentRegistration_ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId_4f6688dd75] ON [edfi].[StudentAssessmentRegistration] ([ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId], [ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId], [ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -32679,17 +32994,25 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistration' AND i.name = N'IX_StudentAssessmentRegistration_StudentSchoolAssociation_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistration' AND i.name = N'IX_StudentAssessmentRegistration_StudentEducationOrganizationAssociation_EducationOrganizationId_StudentUniqueId_Unif_beb26986d3'
 )
-CREATE INDEX [IX_StudentAssessmentRegistration_StudentSchoolAssociation_DocumentId] ON [edfi].[StudentAssessmentRegistration] ([StudentSchoolAssociation_DocumentId]);
+CREATE INDEX [IX_StudentAssessmentRegistration_StudentEducationOrganizationAssociation_EducationOrganizationId_StudentUniqueId_Unif_beb26986d3] ON [edfi].[StudentAssessmentRegistration] ([StudentEducationOrganizationAssociation_EducationOrganizationId], [StudentUniqueId_Unified], [StudentEducationOrganizationAssociation_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistration' AND i.name = N'IX_StudentAssessmentRegistration_TestingEducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistration' AND i.name = N'IX_StudentAssessmentRegistration_StudentSchoolAssociation_EntryDate_StudentSchoolAssociation_SchoolId_StudentUniqueId_dbc12942de'
 )
-CREATE INDEX [IX_StudentAssessmentRegistration_TestingEducationOrganization_DocumentId] ON [edfi].[StudentAssessmentRegistration] ([TestingEducationOrganization_DocumentId]);
+CREATE INDEX [IX_StudentAssessmentRegistration_StudentSchoolAssociation_EntryDate_StudentSchoolAssociation_SchoolId_StudentUniqueId_dbc12942de] ON [edfi].[StudentAssessmentRegistration] ([StudentSchoolAssociation_EntryDate], [StudentSchoolAssociation_SchoolId], [StudentUniqueId_Unified], [StudentSchoolAssociation_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistration' AND i.name = N'IX_StudentAssessmentRegistration_TestingEducationOrganization_EducationOrganizationId_TestingEducationOrganization_DocumentId'
+)
+CREATE INDEX [IX_StudentAssessmentRegistration_TestingEducationOrganization_EducationOrganizationId_TestingEducationOrganization_DocumentId] ON [edfi].[StudentAssessmentRegistration] ([TestingEducationOrganization_EducationOrganizationId], [TestingEducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -32727,9 +33050,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistrationBatteryPartAssociation' AND i.name = N'IX_StudentAssessmentRegistrationBatteryPartAssociation_StudentAssessmentRegistration_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistrationBatteryPartAssociation' AND i.name = N'IX_StudentAssessmentRegistrationBatteryPartAssociation_StudentAssessmentRegistration_AdministrationIdentifier_Assessm_4dee150dd7'
 )
-CREATE INDEX [IX_StudentAssessmentRegistrationBatteryPartAssociation_StudentAssessmentRegistration_DocumentId] ON [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] ([StudentAssessmentRegistration_DocumentId]);
+CREATE INDEX [IX_StudentAssessmentRegistrationBatteryPartAssociation_StudentAssessmentRegistration_AdministrationIdentifier_Assessm_4dee150dd7] ON [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] ([StudentAssessmentRegistration_AdministrationIdentifier], [AssessmentIdentifier_Unified], [StudentAssessmentRegistration_AssigningEducationOrganizationId], [Namespace_Unified], [StudentAssessmentRegistration_EducationOrganizationId], [StudentAssessmentRegistration_StudentUniqueId], [StudentAssessmentRegistration_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -32847,14 +33170,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentCTEProgramAssociation' AND i.name = N'IX_StudentCTEProgramAssociation_EducationOrganization_DocumentId'
-)
-CREATE INDEX [IX_StudentCTEProgramAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentCTEProgramAssociation] ([EducationOrganization_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentCTEProgramAssociation' AND i.name = N'IX_StudentCTEProgramAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_StudentCTEProgramAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentCTEProgramAssociation] ([EducationOrganization_EducationOrganizationId]);
@@ -32863,9 +33178,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentCTEProgramAssociation' AND i.name = N'IX_StudentCTEProgramAssociation_ProgramProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentCTEProgramAssociation' AND i.name = N'IX_StudentCTEProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_StudentCTEProgramAssociation_ProgramProgram_DocumentId] ON [edfi].[StudentCTEProgramAssociation] ([ProgramProgram_DocumentId]);
+CREATE INDEX [IX_StudentCTEProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StudentCTEProgramAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentCTEProgramAssociation' AND i.name = N'IX_StudentCTEProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgram_Prog_6a268af143'
+)
+CREATE INDEX [IX_StudentCTEProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgram_Prog_6a268af143] ON [edfi].[StudentCTEProgramAssociation] ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -32927,9 +33250,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentCohortAssociation' AND i.name = N'IX_StudentCohortAssociation_Cohort_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentCohortAssociation' AND i.name = N'IX_StudentCohortAssociation_Cohort_CohortIdentifier_Cohort_EducationOrganizationId_Cohort_DocumentId'
 )
-CREATE INDEX [IX_StudentCohortAssociation_Cohort_DocumentId] ON [edfi].[StudentCohortAssociation] ([Cohort_DocumentId]);
+CREATE INDEX [IX_StudentCohortAssociation_Cohort_CohortIdentifier_Cohort_EducationOrganizationId_Cohort_DocumentId] ON [edfi].[StudentCohortAssociation] ([Cohort_CohortIdentifier], [Cohort_EducationOrganizationId], [Cohort_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -32967,9 +33290,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentCohortAssociationSection' AND i.name = N'IX_StudentCohortAssociationSection_Section_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentCohortAssociationSection' AND i.name = N'IX_StudentCohortAssociationSection_Section_LocalCourseCode_Section_SchoolId_Section_SchoolYear_Section_SessionName_Se_a71f61e48d'
 )
-CREATE INDEX [IX_StudentCohortAssociationSection_Section_DocumentId] ON [edfi].[StudentCohortAssociationSection] ([Section_DocumentId]);
+CREATE INDEX [IX_StudentCohortAssociationSection_Section_LocalCourseCode_Section_SchoolId_Section_SchoolYear_Section_SessionName_Se_a71f61e48d] ON [edfi].[StudentCohortAssociationSection] ([Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -32999,9 +33322,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentCompetencyObjective' AND i.name = N'IX_StudentCompetencyObjective_ObjectiveCompetencyObjective_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentCompetencyObjective' AND i.name = N'IX_StudentCompetencyObjective_ObjectiveCompetencyObjective_EducationOrganizationId_ObjectiveCompetencyObjective_Objec_4e9d8b44da'
 )
-CREATE INDEX [IX_StudentCompetencyObjective_ObjectiveCompetencyObjective_DocumentId] ON [edfi].[StudentCompetencyObjective] ([ObjectiveCompetencyObjective_DocumentId]);
+CREATE INDEX [IX_StudentCompetencyObjective_ObjectiveCompetencyObjective_EducationOrganizationId_ObjectiveCompetencyObjective_Objec_4e9d8b44da] ON [edfi].[StudentCompetencyObjective] ([ObjectiveCompetencyObjective_EducationOrganizationId], [ObjectiveCompetencyObjective_Objective], [ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId], [ObjectiveCompetencyObjective_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33031,6 +33354,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentCompetencyObjectiveGeneralStudentProgramAssociation' AND i.name = N'IX_StudentCompetencyObjectiveGeneralStudentProgramAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceGeneral_0e9cfd7fdf'
+)
+CREATE INDEX [IX_StudentCompetencyObjectiveGeneralStudentProgramAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceGeneral_0e9cfd7fdf] ON [edfi].[StudentCompetencyObjectiveGeneralStudentProgramAssociation] ([StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_BeginDate], [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_EducationOrganizationId], [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramEducationOrganizationId], [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramName], [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramTypeDescriptor_DescriptorId], [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_StudentUniqueId], [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentCompetencyObjectiveGeneralStudentProgramAssociation' AND i.name = N'IX_StudentCompetencyObjectiveGeneralStudentProgramAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceGeneral_8e76d386e9'
 )
 CREATE INDEX [IX_StudentCompetencyObjectiveGeneralStudentProgramAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceGeneral_8e76d386e9] ON [edfi].[StudentCompetencyObjectiveGeneralStudentProgramAssociation] ([StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramTypeDescriptor_DescriptorId]);
@@ -33039,17 +33370,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentCompetencyObjectiveGeneralStudentProgramAssociation' AND i.name = N'IX_StudentCompetencyObjectiveGeneralStudentProgramAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceGeneral_ce35781fe6'
+    WHERE s.name = N'edfi' AND t.name = N'StudentCompetencyObjectiveStudentSectionAssociation' AND i.name = N'IX_StudentCompetencyObjectiveStudentSectionAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceStudentSection_df2d64cb56'
 )
-CREATE INDEX [IX_StudentCompetencyObjectiveGeneralStudentProgramAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceGeneral_ce35781fe6] ON [edfi].[StudentCompetencyObjectiveGeneralStudentProgramAssociation] ([StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentCompetencyObjectiveStudentSectionAssociation' AND i.name = N'IX_StudentCompetencyObjectiveStudentSectionAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceStudentSection_59ba04bf21'
-)
-CREATE INDEX [IX_StudentCompetencyObjectiveStudentSectionAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceStudentSection_59ba04bf21] ON [edfi].[StudentCompetencyObjectiveStudentSectionAssociation] ([StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_DocumentId]);
+CREATE INDEX [IX_StudentCompetencyObjectiveStudentSectionAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceStudentSection_df2d64cb56] ON [edfi].[StudentCompetencyObjectiveStudentSectionAssociation] ([StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_BeginDate], [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_LocalCourseCode], [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SchoolId], [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SchoolYear], [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SectionIdentifier], [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SessionName], [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_StudentUniqueId], [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33215,6 +33538,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentEducationOrganizationAssessmentAccommodation' AND i.name = N'IX_StudentEducationOrganizationAssessmentAccommodation_EducationOrganization_EducationOrganizationId_EducationOrganiz_2cd43dc8f2'
+)
+CREATE INDEX [IX_StudentEducationOrganizationAssessmentAccommodation_EducationOrganization_EducationOrganizationId_EducationOrganiz_2cd43dc8f2] ON [edfi].[StudentEducationOrganizationAssessmentAccommodation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentEducationOrganizationAssessmentAccommodation' AND i.name = N'IX_StudentEducationOrganizationAssessmentAccommodation_Student_DocumentId_Auth'
 )
 CREATE INDEX [IX_StudentEducationOrganizationAssessmentAccommodation_Student_DocumentId_Auth] ON [edfi].[StudentEducationOrganizationAssessmentAccommodation] ([Student_DocumentId]) INCLUDE ([DocumentId]);
@@ -33250,6 +33581,14 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentEducationOrganizationAssociation' AND i.name = N'IX_StudentEducationOrganizationAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StudentEducationOrganizationAssociation_ContentVersion] ON [edfi].[StudentEducationOrganizationAssociation] ([ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentEducationOrganizationAssociation' AND i.name = N'IX_StudentEducationOrganizationAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
+)
+CREATE INDEX [IX_StudentEducationOrganizationAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StudentEducationOrganizationAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33559,17 +33898,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentEducationOrganizationResponsibilityAssociation' AND i.name = N'IX_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentEducationOrganizationResponsibilityAssociation' AND i.name = N'IX_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
-CREATE INDEX [IX_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentEducationOrganizationResponsibilityAssociation] ([EducationOrganization_DocumentId]);
+CREATE INDEX [IX_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentEducationOrganizationResponsibilityAssociation] ([EducationOrganization_EducationOrganizationId]) INCLUDE ([Student_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentEducationOrganizationResponsibilityAssociation' AND i.name = N'IX_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization_EducationOrganizationId_Auth'
+    WHERE s.name = N'edfi' AND t.name = N'StudentEducationOrganizationResponsibilityAssociation' AND i.name = N'IX_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization_EducationOrganizationId_EducationOrgan_c6d47de85a'
 )
-CREATE INDEX [IX_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentEducationOrganizationResponsibilityAssociation] ([EducationOrganization_EducationOrganizationId]) INCLUDE ([Student_DocumentId]);
+CREATE INDEX [IX_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization_EducationOrganizationId_EducationOrgan_c6d47de85a] ON [edfi].[StudentEducationOrganizationResponsibilityAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33623,6 +33962,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentGradebookEntry' AND i.name = N'IX_StudentGradebookEntry_GradebookEntry_GradebookEntryIdentifier_GradebookEntry_Namespace_GradebookEntry_DocumentId'
+)
+CREATE INDEX [IX_StudentGradebookEntry_GradebookEntry_GradebookEntryIdentifier_GradebookEntry_Namespace_GradebookEntry_DocumentId] ON [edfi].[StudentGradebookEntry] ([GradebookEntry_GradebookEntryIdentifier], [GradebookEntry_Namespace], [GradebookEntry_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentGradebookEntry' AND i.name = N'IX_StudentGradebookEntry_GradebookEntry_Namespace_Auth'
 )
 CREATE INDEX [IX_StudentGradebookEntry_GradebookEntry_Namespace_Auth] ON [edfi].[StudentGradebookEntry] ([GradebookEntry_Namespace]);
@@ -33666,6 +34013,14 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentHealth' AND i.name = N'IX_StudentHealth_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_StudentHealth_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentHealth] ([EducationOrganization_EducationOrganizationId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentHealth' AND i.name = N'IX_StudentHealth_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
+)
+CREATE INDEX [IX_StudentHealth_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StudentHealth] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33727,17 +34082,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentHomelessProgramAssociation' AND i.name = N'IX_StudentHomelessProgramAssociation_EducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentHomelessProgramAssociation' AND i.name = N'IX_StudentHomelessProgramAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
-CREATE INDEX [IX_StudentHomelessProgramAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentHomelessProgramAssociation] ([EducationOrganization_DocumentId]);
+CREATE INDEX [IX_StudentHomelessProgramAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentHomelessProgramAssociation] ([EducationOrganization_EducationOrganizationId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentHomelessProgramAssociation' AND i.name = N'IX_StudentHomelessProgramAssociation_EducationOrganization_EducationOrganizationId_Auth'
+    WHERE s.name = N'edfi' AND t.name = N'StudentHomelessProgramAssociation' AND i.name = N'IX_StudentHomelessProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_StudentHomelessProgramAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentHomelessProgramAssociation] ([EducationOrganization_EducationOrganizationId]);
+CREATE INDEX [IX_StudentHomelessProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StudentHomelessProgramAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33751,9 +34106,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentHomelessProgramAssociation' AND i.name = N'IX_StudentHomelessProgramAssociation_ProgramProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentHomelessProgramAssociation' AND i.name = N'IX_StudentHomelessProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgram_447884a0ee'
 )
-CREATE INDEX [IX_StudentHomelessProgramAssociation_ProgramProgram_DocumentId] ON [edfi].[StudentHomelessProgramAssociation] ([ProgramProgram_DocumentId]);
+CREATE INDEX [IX_StudentHomelessProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgram_447884a0ee] ON [edfi].[StudentHomelessProgramAssociation] ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33831,9 +34186,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentInterventionAssociation' AND i.name = N'IX_StudentInterventionAssociation_CohortCohort_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentInterventionAssociation' AND i.name = N'IX_StudentInterventionAssociation_CohortCohort_CohortIdentifier_CohortCohort_EducationOrganizationId_CohortCohort_DocumentId'
 )
-CREATE INDEX [IX_StudentInterventionAssociation_CohortCohort_DocumentId] ON [edfi].[StudentInterventionAssociation] ([CohortCohort_DocumentId]);
+CREATE INDEX [IX_StudentInterventionAssociation_CohortCohort_CohortIdentifier_CohortCohort_EducationOrganizationId_CohortCohort_DocumentId] ON [edfi].[StudentInterventionAssociation] ([CohortCohort_CohortIdentifier], [CohortCohort_EducationOrganizationId], [CohortCohort_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33850,6 +34205,14 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentInterventionAssociation' AND i.name = N'IX_StudentInterventionAssociation_Intervention_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_StudentInterventionAssociation_Intervention_EducationOrganizationId_Auth] ON [edfi].[StudentInterventionAssociation] ([Intervention_EducationOrganizationId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentInterventionAssociation' AND i.name = N'IX_StudentInterventionAssociation_Intervention_EducationOrganizationId_Intervention_InterventionIdentificationCode_In_843bfbff49'
+)
+CREATE INDEX [IX_StudentInterventionAssociation_Intervention_EducationOrganizationId_Intervention_InterventionIdentificationCode_In_843bfbff49] ON [edfi].[StudentInterventionAssociation] ([Intervention_EducationOrganizationId], [Intervention_InterventionIdentificationCode], [Intervention_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33919,17 +34282,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentInterventionAttendanceEvent' AND i.name = N'IX_StudentInterventionAttendanceEvent_Intervention_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentInterventionAttendanceEvent' AND i.name = N'IX_StudentInterventionAttendanceEvent_Intervention_EducationOrganizationId_Auth'
 )
-CREATE INDEX [IX_StudentInterventionAttendanceEvent_Intervention_DocumentId] ON [edfi].[StudentInterventionAttendanceEvent] ([Intervention_DocumentId]);
+CREATE INDEX [IX_StudentInterventionAttendanceEvent_Intervention_EducationOrganizationId_Auth] ON [edfi].[StudentInterventionAttendanceEvent] ([Intervention_EducationOrganizationId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentInterventionAttendanceEvent' AND i.name = N'IX_StudentInterventionAttendanceEvent_Intervention_EducationOrganizationId_Auth'
+    WHERE s.name = N'edfi' AND t.name = N'StudentInterventionAttendanceEvent' AND i.name = N'IX_StudentInterventionAttendanceEvent_Intervention_EducationOrganizationId_Intervention_InterventionIdentificationCod_6d4301989e'
 )
-CREATE INDEX [IX_StudentInterventionAttendanceEvent_Intervention_EducationOrganizationId_Auth] ON [edfi].[StudentInterventionAttendanceEvent] ([Intervention_EducationOrganizationId]);
+CREATE INDEX [IX_StudentInterventionAttendanceEvent_Intervention_EducationOrganizationId_Intervention_InterventionIdentificationCod_6d4301989e] ON [edfi].[StudentInterventionAttendanceEvent] ([Intervention_EducationOrganizationId], [Intervention_InterventionIdentificationCode], [Intervention_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33959,14 +34322,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentLanguageInstructionProgramAssociation' AND i.name = N'IX_StudentLanguageInstructionProgramAssociation_EducationOrganization_DocumentId'
-)
-CREATE INDEX [IX_StudentLanguageInstructionProgramAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentLanguageInstructionProgramAssociation] ([EducationOrganization_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentLanguageInstructionProgramAssociation' AND i.name = N'IX_StudentLanguageInstructionProgramAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_StudentLanguageInstructionProgramAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentLanguageInstructionProgramAssociation] ([EducationOrganization_EducationOrganizationId]);
@@ -33975,9 +34330,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentLanguageInstructionProgramAssociation' AND i.name = N'IX_StudentLanguageInstructionProgramAssociation_ProgramProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentLanguageInstructionProgramAssociation' AND i.name = N'IX_StudentLanguageInstructionProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_StudentLanguageInstructionProgramAssociation_ProgramProgram_DocumentId] ON [edfi].[StudentLanguageInstructionProgramAssociation] ([ProgramProgram_DocumentId]);
+CREATE INDEX [IX_StudentLanguageInstructionProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StudentLanguageInstructionProgramAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentLanguageInstructionProgramAssociation' AND i.name = N'IX_StudentLanguageInstructionProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_Pro_6ae3c6c4ff'
+)
+CREATE INDEX [IX_StudentLanguageInstructionProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_Pro_6ae3c6c4ff] ON [edfi].[StudentLanguageInstructionProgramAssociation] ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34087,14 +34450,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentMigrantEducationProgramAssociation' AND i.name = N'IX_StudentMigrantEducationProgramAssociation_EducationOrganization_DocumentId'
-)
-CREATE INDEX [IX_StudentMigrantEducationProgramAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentMigrantEducationProgramAssociation] ([EducationOrganization_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentMigrantEducationProgramAssociation' AND i.name = N'IX_StudentMigrantEducationProgramAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_StudentMigrantEducationProgramAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentMigrantEducationProgramAssociation] ([EducationOrganization_EducationOrganizationId]);
@@ -34103,9 +34458,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentMigrantEducationProgramAssociation' AND i.name = N'IX_StudentMigrantEducationProgramAssociation_ProgramProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentMigrantEducationProgramAssociation' AND i.name = N'IX_StudentMigrantEducationProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_StudentMigrantEducationProgramAssociation_ProgramProgram_DocumentId] ON [edfi].[StudentMigrantEducationProgramAssociation] ([ProgramProgram_DocumentId]);
+CREATE INDEX [IX_StudentMigrantEducationProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StudentMigrantEducationProgramAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentMigrantEducationProgramAssociation' AND i.name = N'IX_StudentMigrantEducationProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_Progra_2ced7d27df'
+)
+CREATE INDEX [IX_StudentMigrantEducationProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_Progra_2ced7d27df] ON [edfi].[StudentMigrantEducationProgramAssociation] ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34167,17 +34530,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentNeglectedOrDelinquentProgramAssociation' AND i.name = N'IX_StudentNeglectedOrDelinquentProgramAssociation_EducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentNeglectedOrDelinquentProgramAssociation' AND i.name = N'IX_StudentNeglectedOrDelinquentProgramAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
-CREATE INDEX [IX_StudentNeglectedOrDelinquentProgramAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentNeglectedOrDelinquentProgramAssociation] ([EducationOrganization_DocumentId]);
+CREATE INDEX [IX_StudentNeglectedOrDelinquentProgramAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentNeglectedOrDelinquentProgramAssociation] ([EducationOrganization_EducationOrganizationId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentNeglectedOrDelinquentProgramAssociation' AND i.name = N'IX_StudentNeglectedOrDelinquentProgramAssociation_EducationOrganization_EducationOrganizationId_Auth'
+    WHERE s.name = N'edfi' AND t.name = N'StudentNeglectedOrDelinquentProgramAssociation' AND i.name = N'IX_StudentNeglectedOrDelinquentProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_StudentNeglectedOrDelinquentProgramAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentNeglectedOrDelinquentProgramAssociation] ([EducationOrganization_EducationOrganizationId]);
+CREATE INDEX [IX_StudentNeglectedOrDelinquentProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StudentNeglectedOrDelinquentProgramAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34207,9 +34570,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentNeglectedOrDelinquentProgramAssociation' AND i.name = N'IX_StudentNeglectedOrDelinquentProgramAssociation_ProgramProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentNeglectedOrDelinquentProgramAssociation' AND i.name = N'IX_StudentNeglectedOrDelinquentProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_P_38e87fe9d4'
 )
-CREATE INDEX [IX_StudentNeglectedOrDelinquentProgramAssociation_ProgramProgram_DocumentId] ON [edfi].[StudentNeglectedOrDelinquentProgramAssociation] ([ProgramProgram_DocumentId]);
+CREATE INDEX [IX_StudentNeglectedOrDelinquentProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_P_38e87fe9d4] ON [edfi].[StudentNeglectedOrDelinquentProgramAssociation] ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34303,14 +34666,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentProgramAssociation' AND i.name = N'IX_StudentProgramAssociation_EducationOrganization_DocumentId'
-)
-CREATE INDEX [IX_StudentProgramAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentProgramAssociation] ([EducationOrganization_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentProgramAssociation' AND i.name = N'IX_StudentProgramAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_StudentProgramAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentProgramAssociation] ([EducationOrganization_EducationOrganizationId]);
@@ -34319,9 +34674,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentProgramAssociation' AND i.name = N'IX_StudentProgramAssociation_ProgramProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentProgramAssociation' AND i.name = N'IX_StudentProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_StudentProgramAssociation_ProgramProgram_DocumentId] ON [edfi].[StudentProgramAssociation] ([ProgramProgram_DocumentId]);
+CREATE INDEX [IX_StudentProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StudentProgramAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentProgramAssociation' AND i.name = N'IX_StudentProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgram_Program_fd21525299'
+)
+CREATE INDEX [IX_StudentProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgram_Program_fd21525299] ON [edfi].[StudentProgramAssociation] ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34383,17 +34746,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentProgramAttendanceEvent' AND i.name = N'IX_StudentProgramAttendanceEvent_EducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentProgramAttendanceEvent' AND i.name = N'IX_StudentProgramAttendanceEvent_EducationOrganization_EducationOrganizationId_Auth'
 )
-CREATE INDEX [IX_StudentProgramAttendanceEvent_EducationOrganization_DocumentId] ON [edfi].[StudentProgramAttendanceEvent] ([EducationOrganization_DocumentId]);
+CREATE INDEX [IX_StudentProgramAttendanceEvent_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentProgramAttendanceEvent] ([EducationOrganization_EducationOrganizationId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentProgramAttendanceEvent' AND i.name = N'IX_StudentProgramAttendanceEvent_EducationOrganization_EducationOrganizationId_Auth'
+    WHERE s.name = N'edfi' AND t.name = N'StudentProgramAttendanceEvent' AND i.name = N'IX_StudentProgramAttendanceEvent_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_StudentProgramAttendanceEvent_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentProgramAttendanceEvent] ([EducationOrganization_EducationOrganizationId]);
+CREATE INDEX [IX_StudentProgramAttendanceEvent_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StudentProgramAttendanceEvent] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34407,9 +34770,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentProgramAttendanceEvent' AND i.name = N'IX_StudentProgramAttendanceEvent_ProgramProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentProgramAttendanceEvent' AND i.name = N'IX_StudentProgramAttendanceEvent_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgram_Pro_0c027bf73a'
 )
-CREATE INDEX [IX_StudentProgramAttendanceEvent_ProgramProgram_DocumentId] ON [edfi].[StudentProgramAttendanceEvent] ([ProgramProgram_DocumentId]);
+CREATE INDEX [IX_StudentProgramAttendanceEvent_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgram_Pro_0c027bf73a] ON [edfi].[StudentProgramAttendanceEvent] ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34447,25 +34810,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentProgramEvaluation' AND i.name = N'IX_StudentProgramEvaluation_EducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentProgramEvaluation' AND i.name = N'IX_StudentProgramEvaluation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_StudentProgramEvaluation_EducationOrganization_DocumentId] ON [edfi].[StudentProgramEvaluation] ([EducationOrganization_DocumentId]);
+CREATE INDEX [IX_StudentProgramEvaluation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StudentProgramEvaluation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentProgramEvaluation' AND i.name = N'IX_StudentProgramEvaluation_ProgramEvaluation_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentProgramEvaluation' AND i.name = N'IX_StudentProgramEvaluation_ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId_ProgramEvaluation_Progra_6c761de4fe'
 )
-CREATE INDEX [IX_StudentProgramEvaluation_ProgramEvaluation_DocumentId] ON [edfi].[StudentProgramEvaluation] ([ProgramEvaluation_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentProgramEvaluation' AND i.name = N'IX_StudentProgramEvaluation_ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId'
-)
-CREATE INDEX [IX_StudentProgramEvaluation_ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] ON [edfi].[StudentProgramEvaluation] ([ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]);
+CREATE INDEX [IX_StudentProgramEvaluation_ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId_ProgramEvaluation_Progra_6c761de4fe] ON [edfi].[StudentProgramEvaluation] ([ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId], [ProgramEvaluation_ProgramEvaluationTitle], [ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId], [ProgramEvaluation_ProgramEducationOrganizationId], [ProgramEvaluation_ProgramName], [ProgramEvaluation_ProgramTypeDescriptor_DescriptorId], [ProgramEvaluation_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34527,17 +34882,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentProgramEvaluationStudentEvaluationElement' AND i.name = N'IX_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentProgramEvaluationStudentEvaluationElement' AND i.name = N'IX_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramEvaluatio_291705f374'
 )
-CREATE INDEX [IX_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_DocumentId] ON [edfi].[StudentProgramEvaluationStudentEvaluationElement] ([StudentEvaluationElementProgramEvaluationElement_DocumentId]);
+CREATE INDEX [IX_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramEvaluatio_291705f374] ON [edfi].[StudentProgramEvaluationStudentEvaluationElement] ([StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentProgramEvaluationStudentEvaluationElement' AND i.name = N'IX_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramEvaluatio_291705f374'
+    WHERE s.name = N'edfi' AND t.name = N'StudentProgramEvaluationStudentEvaluationElement' AND i.name = N'IX_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramEvaluatio_2f7f147313'
 )
-CREATE INDEX [IX_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramEvaluatio_291705f374] ON [edfi].[StudentProgramEvaluationStudentEvaluationElement] ([StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]);
+CREATE INDEX [IX_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramEvaluatio_2f7f147313] ON [edfi].[StudentProgramEvaluationStudentEvaluationElement] ([StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationElementTitle], [StudentEvaluationElementProgramEvaluationElement_ProgramEducationOrganizationId], [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId], [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTitle], [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId], [StudentEvaluationElementProgramEvaluationElement_ProgramName], [StudentEvaluationElementProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId], [StudentEvaluationElementProgramEvaluationElement_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34567,17 +34922,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentProgramEvaluationStudentEvaluationObjective' AND i.name = N'IX_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentProgramEvaluationStudentEvaluationObjective' AND i.name = N'IX_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEva_325b5e3b79'
 )
-CREATE INDEX [IX_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId] ON [edfi].[StudentProgramEvaluationStudentEvaluationObjective] ([StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId]);
+CREATE INDEX [IX_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEva_325b5e3b79] ON [edfi].[StudentProgramEvaluationStudentEvaluationObjective] ([StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationPeriodDescriptor_DescriptorId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentProgramEvaluationStudentEvaluationObjective' AND i.name = N'IX_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEva_325b5e3b79'
+    WHERE s.name = N'edfi' AND t.name = N'StudentProgramEvaluationStudentEvaluationObjective' AND i.name = N'IX_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEva_47c56649aa'
 )
-CREATE INDEX [IX_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEva_325b5e3b79] ON [edfi].[StudentProgramEvaluationStudentEvaluationObjective] ([StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationPeriodDescriptor_DescriptorId]);
+CREATE INDEX [IX_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEva_47c56649aa] ON [edfi].[StudentProgramEvaluationStudentEvaluationObjective] ([StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationObjectiveTitle], [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEducationOrganizationId], [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationPeriodDescriptor_DescriptorId], [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTitle], [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTypeDescriptor_DescriptorId], [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramName], [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId], [StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34663,9 +35018,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAssociation' AND i.name = N'IX_StudentSchoolAssociation_GraduationPlan_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAssociation' AND i.name = N'IX_StudentSchoolAssociation_GraduationPlan_EducationOrganizationId_GraduationPlan_GraduationPlanTypeDescriptor_Descri_0caf843343'
 )
-CREATE INDEX [IX_StudentSchoolAssociation_GraduationPlan_DocumentId] ON [edfi].[StudentSchoolAssociation] ([GraduationPlan_DocumentId]);
+CREATE INDEX [IX_StudentSchoolAssociation_GraduationPlan_EducationOrganizationId_GraduationPlan_GraduationPlanTypeDescriptor_Descri_0caf843343] ON [edfi].[StudentSchoolAssociation] ([GraduationPlan_EducationOrganizationId], [GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId], [GraduationPlan_GraduationSchoolYear], [GraduationPlan_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34751,9 +35106,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAssociationAlternativeGraduationPlan' AND i.name = N'IX_StudentSchoolAssociationAlternativeGraduationPlan_AlternativeGraduationPlan_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAssociationAlternativeGraduationPlan' AND i.name = N'IX_StudentSchoolAssociationAlternativeGraduationPlan_AlternativeGraduationPlan_EducationOrganizationId_AlternativeGra_78d0911516'
 )
-CREATE INDEX [IX_StudentSchoolAssociationAlternativeGraduationPlan_AlternativeGraduationPlan_DocumentId] ON [edfi].[StudentSchoolAssociationAlternativeGraduationPlan] ([AlternativeGraduationPlan_DocumentId]);
+CREATE INDEX [IX_StudentSchoolAssociationAlternativeGraduationPlan_AlternativeGraduationPlan_EducationOrganizationId_AlternativeGra_78d0911516] ON [edfi].[StudentSchoolAssociationAlternativeGraduationPlan] ([AlternativeGraduationPlan_EducationOrganizationId], [AlternativeGraduationPlan_GraduationPlanTypeDescriptor_DescriptorId], [AlternativeGraduationPlan_GraduationSchoolYear], [AlternativeGraduationPlan_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34807,9 +35162,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAttendanceEvent' AND i.name = N'IX_StudentSchoolAttendanceEvent_Session_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAttendanceEvent' AND i.name = N'IX_StudentSchoolAttendanceEvent_SchoolId_Unified_Session_SchoolYear_Session_SessionName_Session_DocumentId'
 )
-CREATE INDEX [IX_StudentSchoolAttendanceEvent_Session_DocumentId] ON [edfi].[StudentSchoolAttendanceEvent] ([Session_DocumentId]);
+CREATE INDEX [IX_StudentSchoolAttendanceEvent_SchoolId_Unified_Session_SchoolYear_Session_SessionName_Session_DocumentId] ON [edfi].[StudentSchoolAttendanceEvent] ([SchoolId_Unified], [Session_SchoolYear], [Session_SessionName], [Session_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34839,14 +35194,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolFoodServiceProgramAssociation' AND i.name = N'IX_StudentSchoolFoodServiceProgramAssociation_EducationOrganization_DocumentId'
-)
-CREATE INDEX [IX_StudentSchoolFoodServiceProgramAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentSchoolFoodServiceProgramAssociation] ([EducationOrganization_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentSchoolFoodServiceProgramAssociation' AND i.name = N'IX_StudentSchoolFoodServiceProgramAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_StudentSchoolFoodServiceProgramAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentSchoolFoodServiceProgramAssociation] ([EducationOrganization_EducationOrganizationId]);
@@ -34855,9 +35202,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolFoodServiceProgramAssociation' AND i.name = N'IX_StudentSchoolFoodServiceProgramAssociation_ProgramProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolFoodServiceProgramAssociation' AND i.name = N'IX_StudentSchoolFoodServiceProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_StudentSchoolFoodServiceProgramAssociation_ProgramProgram_DocumentId] ON [edfi].[StudentSchoolFoodServiceProgramAssociation] ([ProgramProgram_DocumentId]);
+CREATE INDEX [IX_StudentSchoolFoodServiceProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StudentSchoolFoodServiceProgramAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolFoodServiceProgramAssociation' AND i.name = N'IX_StudentSchoolFoodServiceProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_Progr_4e22fc9a5c'
+)
+CREATE INDEX [IX_StudentSchoolFoodServiceProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_Progr_4e22fc9a5c] ON [edfi].[StudentSchoolFoodServiceProgramAssociation] ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34919,14 +35274,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSection504ProgramAssociation' AND i.name = N'IX_StudentSection504ProgramAssociation_EducationOrganization_DocumentId'
-)
-CREATE INDEX [IX_StudentSection504ProgramAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentSection504ProgramAssociation] ([EducationOrganization_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentSection504ProgramAssociation' AND i.name = N'IX_StudentSection504ProgramAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_StudentSection504ProgramAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentSection504ProgramAssociation] ([EducationOrganization_EducationOrganizationId]);
@@ -34935,9 +35282,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSection504ProgramAssociation' AND i.name = N'IX_StudentSection504ProgramAssociation_ProgramProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentSection504ProgramAssociation' AND i.name = N'IX_StudentSection504ProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_StudentSection504ProgramAssociation_ProgramProgram_DocumentId] ON [edfi].[StudentSection504ProgramAssociation] ([ProgramProgram_DocumentId]);
+CREATE INDEX [IX_StudentSection504ProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StudentSection504ProgramAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentSection504ProgramAssociation' AND i.name = N'IX_StudentSection504ProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgr_370eaee93c'
+)
+CREATE INDEX [IX_StudentSection504ProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProgr_370eaee93c] ON [edfi].[StudentSection504ProgramAssociation] ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35007,9 +35362,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSectionAssociation' AND i.name = N'IX_StudentSectionAssociation_DualCreditEducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentSectionAssociation' AND i.name = N'IX_StudentSectionAssociation_DualCreditEducationOrganization_EducationOrganizationId_DualCreditEducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_StudentSectionAssociation_DualCreditEducationOrganization_DocumentId] ON [edfi].[StudentSectionAssociation] ([DualCreditEducationOrganization_DocumentId]);
+CREATE INDEX [IX_StudentSectionAssociation_DualCreditEducationOrganization_EducationOrganizationId_DualCreditEducationOrganization_DocumentId] ON [edfi].[StudentSectionAssociation] ([DualCreditEducationOrganization_EducationOrganizationId], [DualCreditEducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35039,9 +35394,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSectionAssociation' AND i.name = N'IX_StudentSectionAssociation_Section_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentSectionAssociation' AND i.name = N'IX_StudentSectionAssociation_Section_LocalCourseCode_Section_SchoolId_Section_SchoolYear_Section_SessionName_Section__836e64d24b'
 )
-CREATE INDEX [IX_StudentSectionAssociation_Section_DocumentId] ON [edfi].[StudentSectionAssociation] ([Section_DocumentId]);
+CREATE INDEX [IX_StudentSectionAssociation_Section_LocalCourseCode_Section_SchoolId_Section_SchoolYear_Section_SessionName_Section__836e64d24b] ON [edfi].[StudentSectionAssociation] ([Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35071,9 +35426,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSectionAssociationProgram' AND i.name = N'IX_StudentSectionAssociationProgram_Program_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentSectionAssociationProgram' AND i.name = N'IX_StudentSectionAssociationProgram_Program_EducationOrganizationId_Program_ProgramName_Program_ProgramTypeDescriptor_5dd57abb1f'
 )
-CREATE INDEX [IX_StudentSectionAssociationProgram_Program_DocumentId] ON [edfi].[StudentSectionAssociationProgram] ([Program_DocumentId]);
+CREATE INDEX [IX_StudentSectionAssociationProgram_Program_EducationOrganizationId_Program_ProgramName_Program_ProgramTypeDescriptor_5dd57abb1f] ON [edfi].[StudentSectionAssociationProgram] ([Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Program_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35103,9 +35458,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSectionAttendanceEvent' AND i.name = N'IX_StudentSectionAttendanceEvent_Section_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentSectionAttendanceEvent' AND i.name = N'IX_StudentSectionAttendanceEvent_Section_LocalCourseCode_Section_SchoolId_Section_SchoolYear_Section_SessionName_Sect_60167725fa'
 )
-CREATE INDEX [IX_StudentSectionAttendanceEvent_Section_DocumentId] ON [edfi].[StudentSectionAttendanceEvent] ([Section_DocumentId]);
+CREATE INDEX [IX_StudentSectionAttendanceEvent_Section_LocalCourseCode_Section_SchoolId_Section_SchoolYear_Section_SessionName_Sect_60167725fa] ON [edfi].[StudentSectionAttendanceEvent] ([Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35135,9 +35490,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSectionAttendanceEventClassPeriod' AND i.name = N'IX_StudentSectionAttendanceEventClassPeriod_ClassPeriod_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentSectionAttendanceEventClassPeriod' AND i.name = N'IX_StudentSectionAttendanceEventClassPeriod_ClassPeriod_ClassPeriodName_ClassPeriod_SchoolId_ClassPeriod_DocumentId'
 )
-CREATE INDEX [IX_StudentSectionAttendanceEventClassPeriod_ClassPeriod_DocumentId] ON [edfi].[StudentSectionAttendanceEventClassPeriod] ([ClassPeriod_DocumentId]);
+CREATE INDEX [IX_StudentSectionAttendanceEventClassPeriod_ClassPeriod_ClassPeriodName_ClassPeriod_SchoolId_ClassPeriod_DocumentId] ON [edfi].[StudentSectionAttendanceEventClassPeriod] ([ClassPeriod_ClassPeriodName], [ClassPeriod_SchoolId], [ClassPeriod_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35151,14 +35506,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSpecialEducationProgramAssociation' AND i.name = N'IX_StudentSpecialEducationProgramAssociation_EducationOrganization_DocumentId'
-)
-CREATE INDEX [IX_StudentSpecialEducationProgramAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentSpecialEducationProgramAssociation] ([EducationOrganization_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentSpecialEducationProgramAssociation' AND i.name = N'IX_StudentSpecialEducationProgramAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_StudentSpecialEducationProgramAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentSpecialEducationProgramAssociation] ([EducationOrganization_EducationOrganizationId]);
@@ -35167,9 +35514,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSpecialEducationProgramAssociation' AND i.name = N'IX_StudentSpecialEducationProgramAssociation_ProgramProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentSpecialEducationProgramAssociation' AND i.name = N'IX_StudentSpecialEducationProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_StudentSpecialEducationProgramAssociation_ProgramProgram_DocumentId] ON [edfi].[StudentSpecialEducationProgramAssociation] ([ProgramProgram_DocumentId]);
+CREATE INDEX [IX_StudentSpecialEducationProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StudentSpecialEducationProgramAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentSpecialEducationProgramAssociation' AND i.name = N'IX_StudentSpecialEducationProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_Progra_7775dbb13f'
+)
+CREATE INDEX [IX_StudentSpecialEducationProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_Progra_7775dbb13f] ON [edfi].[StudentSpecialEducationProgramAssociation] ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35303,17 +35658,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSpecialEducationProgramEligibilityAssociation' AND i.name = N'IX_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentSpecialEducationProgramEligibilityAssociation' AND i.name = N'IX_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
-CREATE INDEX [IX_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentSpecialEducationProgramEligibilityAssociation] ([EducationOrganization_DocumentId]);
+CREATE INDEX [IX_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentSpecialEducationProgramEligibilityAssociation] ([EducationOrganization_EducationOrganizationId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSpecialEducationProgramEligibilityAssociation' AND i.name = N'IX_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization_EducationOrganizationId_Auth'
+    WHERE s.name = N'edfi' AND t.name = N'StudentSpecialEducationProgramEligibilityAssociation' AND i.name = N'IX_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization_EducationOrganizationId_EducationOrgani_2ff6d94b8f'
 )
-CREATE INDEX [IX_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentSpecialEducationProgramEligibilityAssociation] ([EducationOrganization_EducationOrganizationId]);
+CREATE INDEX [IX_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization_EducationOrganizationId_EducationOrgani_2ff6d94b8f] ON [edfi].[StudentSpecialEducationProgramEligibilityAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35351,9 +35706,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSpecialEducationProgramEligibilityAssociation' AND i.name = N'IX_StudentSpecialEducationProgramEligibilityAssociation_ProgramProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentSpecialEducationProgramEligibilityAssociation' AND i.name = N'IX_StudentSpecialEducationProgramEligibilityAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_Program_b6ffda8fb7'
 )
-CREATE INDEX [IX_StudentSpecialEducationProgramEligibilityAssociation_ProgramProgram_DocumentId] ON [edfi].[StudentSpecialEducationProgramEligibilityAssociation] ([ProgramProgram_DocumentId]);
+CREATE INDEX [IX_StudentSpecialEducationProgramEligibilityAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_Program_b6ffda8fb7] ON [edfi].[StudentSpecialEducationProgramEligibilityAssociation] ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35391,14 +35746,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentTitleIPartAProgramAssociation' AND i.name = N'IX_StudentTitleIPartAProgramAssociation_EducationOrganization_DocumentId'
-)
-CREATE INDEX [IX_StudentTitleIPartAProgramAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentTitleIPartAProgramAssociation] ([EducationOrganization_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentTitleIPartAProgramAssociation' AND i.name = N'IX_StudentTitleIPartAProgramAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_StudentTitleIPartAProgramAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[StudentTitleIPartAProgramAssociation] ([EducationOrganization_EducationOrganizationId]);
@@ -35407,9 +35754,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentTitleIPartAProgramAssociation' AND i.name = N'IX_StudentTitleIPartAProgramAssociation_ProgramProgram_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentTitleIPartAProgramAssociation' AND i.name = N'IX_StudentTitleIPartAProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_StudentTitleIPartAProgramAssociation_ProgramProgram_DocumentId] ON [edfi].[StudentTitleIPartAProgramAssociation] ([ProgramProgram_DocumentId]);
+CREATE INDEX [IX_StudentTitleIPartAProgramAssociation_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[StudentTitleIPartAProgramAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentTitleIPartAProgramAssociation' AND i.name = N'IX_StudentTitleIPartAProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProg_2b8ed7a21f'
+)
+CREATE INDEX [IX_StudentTitleIPartAProgramAssociation_ProgramProgram_EducationOrganizationId_ProgramProgram_ProgramName_ProgramProg_2b8ed7a21f] ON [edfi].[StudentTitleIPartAProgramAssociation] ([ProgramProgram_EducationOrganizationId], [ProgramProgram_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId], [ProgramProgram_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35503,9 +35858,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentTransportation' AND i.name = N'IX_StudentTransportation_TransportationEducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentTransportation' AND i.name = N'IX_StudentTransportation_TransportationEducationOrganization_EducationOrganizationId_TransportationEducationOrganizat_6c7e6843a1'
 )
-CREATE INDEX [IX_StudentTransportation_TransportationEducationOrganization_DocumentId] ON [edfi].[StudentTransportation] ([TransportationEducationOrganization_DocumentId]);
+CREATE INDEX [IX_StudentTransportation_TransportationEducationOrganization_EducationOrganizationId_TransportationEducationOrganizat_6c7e6843a1] ON [edfi].[StudentTransportation] ([TransportationEducationOrganization_EducationOrganizationId], [TransportationEducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35559,9 +35914,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Survey' AND i.name = N'IX_Survey_EducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'Survey' AND i.name = N'IX_Survey_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_Survey_EducationOrganization_DocumentId] ON [edfi].[Survey] ([EducationOrganization_DocumentId]);
+CREATE INDEX [IX_Survey_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[Survey] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35575,9 +35930,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Survey' AND i.name = N'IX_Survey_Session_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'Survey' AND i.name = N'IX_Survey_Session_SchoolId_SchoolYear_Unified_Session_SessionName_Session_DocumentId'
 )
-CREATE INDEX [IX_Survey_Session_DocumentId] ON [edfi].[Survey] ([Session_DocumentId]);
+CREATE INDEX [IX_Survey_Session_SchoolId_SchoolYear_Unified_Session_SessionName_Session_DocumentId] ON [edfi].[Survey] ([Session_SchoolId], [SchoolYear_Unified], [Session_SessionName], [Session_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35594,6 +35949,14 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'SurveyCourseAssociation' AND i.name = N'IX_SurveyCourseAssociation_ContentVersion'
 )
 CREATE INDEX [IX_SurveyCourseAssociation_ContentVersion] ON [edfi].[SurveyCourseAssociation] ([ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'SurveyCourseAssociation' AND i.name = N'IX_SurveyCourseAssociation_Course_CourseCode_Course_EducationOrganizationId_Course_DocumentId'
+)
+CREATE INDEX [IX_SurveyCourseAssociation_Course_CourseCode_Course_EducationOrganizationId_Course_DocumentId] ON [edfi].[SurveyCourseAssociation] ([Course_CourseCode], [Course_EducationOrganizationId], [Course_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35634,6 +35997,14 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'SurveyProgramAssociation' AND i.name = N'IX_SurveyProgramAssociation_Program_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_SurveyProgramAssociation_Program_EducationOrganizationId_Auth] ON [edfi].[SurveyProgramAssociation] ([Program_EducationOrganizationId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'SurveyProgramAssociation' AND i.name = N'IX_SurveyProgramAssociation_Program_EducationOrganizationId_Program_ProgramName_Program_ProgramTypeDescriptor_Descrip_b6e31a8e2e'
+)
+CREATE INDEX [IX_SurveyProgramAssociation_Program_EducationOrganizationId_Program_ProgramName_Program_ProgramTypeDescriptor_Descrip_b6e31a8e2e] ON [edfi].[SurveyProgramAssociation] ([Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Program_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35791,6 +36162,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'SurveyResponseEducationOrganizationTargetAssociation' AND i.name = N'IX_SurveyResponseEducationOrganizationTargetAssociation_EducationOrganization_EducationOrganizationId_EducationOrgani_a5259b8ffc'
+)
+CREATE INDEX [IX_SurveyResponseEducationOrganizationTargetAssociation_EducationOrganization_EducationOrganizationId_EducationOrgani_a5259b8ffc] ON [edfi].[SurveyResponseEducationOrganizationTargetAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'SurveyResponseEducationOrganizationTargetAssociation' AND i.name = N'IX_SurveyResponseEducationOrganizationTargetAssociation_SurveyResponse_Namespace_Auth'
 )
 CREATE INDEX [IX_SurveyResponseEducationOrganizationTargetAssociation_SurveyResponse_Namespace_Auth] ON [edfi].[SurveyResponseEducationOrganizationTargetAssociation] ([SurveyResponse_Namespace]);
@@ -35879,6 +36258,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'SurveySectionAssociation' AND i.name = N'IX_SurveySectionAssociation_Section_LocalCourseCode_Section_SchoolId_Section_SchoolYear_Section_SessionName_Section_S_3cd789a4ce'
+)
+CREATE INDEX [IX_SurveySectionAssociation_Section_LocalCourseCode_Section_SchoolId_Section_SchoolYear_Section_SessionName_Section_S_3cd789a4ce] ON [edfi].[SurveySectionAssociation] ([Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'SurveySectionAssociation' AND i.name = N'IX_SurveySectionAssociation_Section_SchoolId_Auth'
 )
 CREATE INDEX [IX_SurveySectionAssociation_Section_SchoolId_Auth] ON [edfi].[SurveySectionAssociation] ([Section_SchoolId]);
@@ -35938,6 +36325,14 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'SurveySectionResponseEducationOrganizationTargetAssociation' AND i.name = N'IX_SurveySectionResponseEducationOrganizationTargetAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_SurveySectionResponseEducationOrganizationTargetAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation] ([EducationOrganization_EducationOrganizationId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'SurveySectionResponseEducationOrganizationTargetAssociation' AND i.name = N'IX_SurveySectionResponseEducationOrganizationTargetAssociation_EducationOrganization_EducationOrganizationId_Educatio_7930acb6d4'
+)
+CREATE INDEX [IX_SurveySectionResponseEducationOrganizationTargetAssociation_EducationOrganization_EducationOrganizationId_Educatio_7930acb6d4] ON [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -36580,38 +36975,6 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[Assessment] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_AssessmentAdministration_PropagateIdentity]
-ON [edfi].[AssessmentAdministration]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([Assessment_DocumentId]) OR UPDATE([AssigningEducationOrganization_DocumentId]) OR UPDATE([AdministrationIdentifier]) OR UPDATE([Assessment_AssessmentIdentifier]) OR UPDATE([Assessment_Namespace]) OR UPDATE([AssigningEducationOrganization_EducationOrganizationId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[Assessment_DocumentId] <> d.[Assessment_DocumentId] OR (i.[Assessment_DocumentId] IS NULL AND d.[Assessment_DocumentId] IS NOT NULL) OR (i.[Assessment_DocumentId] IS NOT NULL AND d.[Assessment_DocumentId] IS NULL)) OR (i.[AssigningEducationOrganization_DocumentId] <> d.[AssigningEducationOrganization_DocumentId] OR (i.[AssigningEducationOrganization_DocumentId] IS NULL AND d.[AssigningEducationOrganization_DocumentId] IS NOT NULL) OR (i.[AssigningEducationOrganization_DocumentId] IS NOT NULL AND d.[AssigningEducationOrganization_DocumentId] IS NULL)) OR (CAST(i.[AdministrationIdentifier] AS varbinary(max)) <> CAST(d.[AdministrationIdentifier] AS varbinary(max)) OR (i.[AdministrationIdentifier] IS NULL AND d.[AdministrationIdentifier] IS NOT NULL) OR (i.[AdministrationIdentifier] IS NOT NULL AND d.[AdministrationIdentifier] IS NULL)) OR (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND d.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND d.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(d.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND d.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND d.[Assessment_Namespace] IS NULL)) OR (i.[AssigningEducationOrganization_EducationOrganizationId] <> d.[AssigningEducationOrganization_EducationOrganizationId] OR (i.[AssigningEducationOrganization_EducationOrganizationId] IS NULL AND d.[AssigningEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[AssigningEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[AssigningEducationOrganization_EducationOrganizationId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[AssessmentAdministration_AdministrationIdentifier] = i.[AdministrationIdentifier], r.[AssessmentAdministration_AssessmentIdentifier] = i.[Assessment_AssessmentIdentifier], r.[AssessmentAdministration_Namespace] = i.[Assessment_Namespace], r.[AssessmentAdministration_AssigningEducationOrganizationId] = i.[AssigningEducationOrganization_EducationOrganizationId]
-        FROM [edfi].[AssessmentAdministrationParticipation] r
-        INNER JOIN deleted d ON r.[AssessmentAdministration_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[AdministrationIdentifier] AS varbinary(max)) <> CAST(d.[AdministrationIdentifier] AS varbinary(max)) OR (i.[AdministrationIdentifier] IS NULL AND d.[AdministrationIdentifier] IS NOT NULL) OR (i.[AdministrationIdentifier] IS NOT NULL AND d.[AdministrationIdentifier] IS NULL)) OR (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND d.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND d.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(d.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND d.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND d.[Assessment_Namespace] IS NULL)) OR (i.[AssigningEducationOrganization_EducationOrganizationId] <> d.[AssigningEducationOrganization_EducationOrganizationId] OR (i.[AssigningEducationOrganization_EducationOrganizationId] IS NULL AND d.[AssigningEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[AssigningEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[AssigningEducationOrganization_EducationOrganizationId] IS NULL)))
-        AND ((r.[AssessmentAdministration_AdministrationIdentifier] = d.[AdministrationIdentifier]) OR (r.[AssessmentAdministration_AdministrationIdentifier] IS NULL AND d.[AdministrationIdentifier] IS NULL)) AND ((r.[AssessmentAdministration_AssessmentIdentifier] = d.[Assessment_AssessmentIdentifier]) OR (r.[AssessmentAdministration_AssessmentIdentifier] IS NULL AND d.[Assessment_AssessmentIdentifier] IS NULL)) AND ((r.[AssessmentAdministration_Namespace] = d.[Assessment_Namespace]) OR (r.[AssessmentAdministration_Namespace] IS NULL AND d.[Assessment_Namespace] IS NULL)) AND ((r.[AssessmentAdministration_AssigningEducationOrganizationId] = d.[AssigningEducationOrganization_EducationOrganizationId]) OR (r.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL AND d.[AssigningEducationOrganization_EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[AssessmentAdministration_AdministrationIdentifier] = i.[AdministrationIdentifier], r.[AssessmentAdministration_AssessmentIdentifier] = i.[Assessment_AssessmentIdentifier], r.[AssessmentAdministration_Namespace] = i.[Assessment_Namespace], r.[AssessmentAdministration_AssigningEducationOrganizationId] = i.[AssigningEducationOrganization_EducationOrganizationId]
-        FROM [edfi].[StudentAssessmentRegistration] r
-        INNER JOIN deleted d ON r.[AssessmentAdministration_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[AdministrationIdentifier] AS varbinary(max)) <> CAST(d.[AdministrationIdentifier] AS varbinary(max)) OR (i.[AdministrationIdentifier] IS NULL AND d.[AdministrationIdentifier] IS NOT NULL) OR (i.[AdministrationIdentifier] IS NOT NULL AND d.[AdministrationIdentifier] IS NULL)) OR (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND d.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND d.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(d.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND d.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND d.[Assessment_Namespace] IS NULL)) OR (i.[AssigningEducationOrganization_EducationOrganizationId] <> d.[AssigningEducationOrganization_EducationOrganizationId] OR (i.[AssigningEducationOrganization_EducationOrganizationId] IS NULL AND d.[AssigningEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[AssigningEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[AssigningEducationOrganization_EducationOrganizationId] IS NULL)))
-        AND ((r.[AssessmentAdministration_AdministrationIdentifier] = d.[AdministrationIdentifier]) OR (r.[AssessmentAdministration_AdministrationIdentifier] IS NULL AND d.[AdministrationIdentifier] IS NULL)) AND ((r.[AssessmentAdministration_AssessmentIdentifier] = d.[Assessment_AssessmentIdentifier]) OR (r.[AssessmentAdministration_AssessmentIdentifier] IS NULL AND d.[Assessment_AssessmentIdentifier] IS NULL)) AND ((r.[AssessmentAdministration_Namespace] = d.[Assessment_Namespace]) OR (r.[AssessmentAdministration_Namespace] IS NULL AND d.[Assessment_Namespace] IS NULL)) AND ((r.[AssessmentAdministration_AssigningEducationOrganizationId] = d.[AssigningEducationOrganization_EducationOrganizationId]) OR (r.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL AND d.[AssigningEducationOrganization_EducationOrganizationId] IS NULL));
-
     END
 END;
 GO
@@ -38659,30 +39022,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_ChartOfAccount_PropagateIdentity]
-ON [edfi].[ChartOfAccount]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([BalanceSheetBalanceSheetDimension_DocumentId]) OR UPDATE([EducationOrganization_DocumentId]) OR UPDATE([FunctionFunctionDimension_DocumentId]) OR UPDATE([FundFundDimension_DocumentId]) OR UPDATE([ObjectObjectDimension_DocumentId]) OR UPDATE([OperationalUnitOperationalUnitDimension_DocumentId]) OR UPDATE([ProgramProgramDimension_DocumentId]) OR UPDATE([ProjectProjectDimension_DocumentId]) OR UPDATE([SourceSourceDimension_DocumentId]) OR UPDATE([AccountTypeDescriptor_DescriptorId]) OR UPDATE([AccountIdentifier]) OR UPDATE([AccountName]) OR UPDATE([BalanceSheetBalanceSheetDimension_Code]) OR UPDATE([FiscalYear_Unified]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([FunctionFunctionDimension_Code]) OR UPDATE([FundFundDimension_Code]) OR UPDATE([ObjectObjectDimension_Code]) OR UPDATE([OperationalUnitOperationalUnitDimension_Code]) OR UPDATE([ProgramProgramDimension_Code]) OR UPDATE([ProjectProjectDimension_Code]) OR UPDATE([SourceSourceDimension_Code]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[BalanceSheetBalanceSheetDimension_DocumentId] <> d.[BalanceSheetBalanceSheetDimension_DocumentId] OR (i.[BalanceSheetBalanceSheetDimension_DocumentId] IS NULL AND d.[BalanceSheetBalanceSheetDimension_DocumentId] IS NOT NULL) OR (i.[BalanceSheetBalanceSheetDimension_DocumentId] IS NOT NULL AND d.[BalanceSheetBalanceSheetDimension_DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (i.[FunctionFunctionDimension_DocumentId] <> d.[FunctionFunctionDimension_DocumentId] OR (i.[FunctionFunctionDimension_DocumentId] IS NULL AND d.[FunctionFunctionDimension_DocumentId] IS NOT NULL) OR (i.[FunctionFunctionDimension_DocumentId] IS NOT NULL AND d.[FunctionFunctionDimension_DocumentId] IS NULL)) OR (i.[FundFundDimension_DocumentId] <> d.[FundFundDimension_DocumentId] OR (i.[FundFundDimension_DocumentId] IS NULL AND d.[FundFundDimension_DocumentId] IS NOT NULL) OR (i.[FundFundDimension_DocumentId] IS NOT NULL AND d.[FundFundDimension_DocumentId] IS NULL)) OR (i.[ObjectObjectDimension_DocumentId] <> d.[ObjectObjectDimension_DocumentId] OR (i.[ObjectObjectDimension_DocumentId] IS NULL AND d.[ObjectObjectDimension_DocumentId] IS NOT NULL) OR (i.[ObjectObjectDimension_DocumentId] IS NOT NULL AND d.[ObjectObjectDimension_DocumentId] IS NULL)) OR (i.[OperationalUnitOperationalUnitDimension_DocumentId] <> d.[OperationalUnitOperationalUnitDimension_DocumentId] OR (i.[OperationalUnitOperationalUnitDimension_DocumentId] IS NULL AND d.[OperationalUnitOperationalUnitDimension_DocumentId] IS NOT NULL) OR (i.[OperationalUnitOperationalUnitDimension_DocumentId] IS NOT NULL AND d.[OperationalUnitOperationalUnitDimension_DocumentId] IS NULL)) OR (i.[ProgramProgramDimension_DocumentId] <> d.[ProgramProgramDimension_DocumentId] OR (i.[ProgramProgramDimension_DocumentId] IS NULL AND d.[ProgramProgramDimension_DocumentId] IS NOT NULL) OR (i.[ProgramProgramDimension_DocumentId] IS NOT NULL AND d.[ProgramProgramDimension_DocumentId] IS NULL)) OR (i.[ProjectProjectDimension_DocumentId] <> d.[ProjectProjectDimension_DocumentId] OR (i.[ProjectProjectDimension_DocumentId] IS NULL AND d.[ProjectProjectDimension_DocumentId] IS NOT NULL) OR (i.[ProjectProjectDimension_DocumentId] IS NOT NULL AND d.[ProjectProjectDimension_DocumentId] IS NULL)) OR (i.[SourceSourceDimension_DocumentId] <> d.[SourceSourceDimension_DocumentId] OR (i.[SourceSourceDimension_DocumentId] IS NULL AND d.[SourceSourceDimension_DocumentId] IS NOT NULL) OR (i.[SourceSourceDimension_DocumentId] IS NOT NULL AND d.[SourceSourceDimension_DocumentId] IS NULL)) OR (i.[AccountTypeDescriptor_DescriptorId] <> d.[AccountTypeDescriptor_DescriptorId] OR (i.[AccountTypeDescriptor_DescriptorId] IS NULL AND d.[AccountTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[AccountTypeDescriptor_DescriptorId] IS NOT NULL AND d.[AccountTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(d.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND d.[AccountIdentifier] IS NULL)) OR (CAST(i.[AccountName] AS varbinary(max)) <> CAST(d.[AccountName] AS varbinary(max)) OR (i.[AccountName] IS NULL AND d.[AccountName] IS NOT NULL) OR (i.[AccountName] IS NOT NULL AND d.[AccountName] IS NULL)) OR (CAST(i.[BalanceSheetBalanceSheetDimension_Code] AS varbinary(max)) <> CAST(d.[BalanceSheetBalanceSheetDimension_Code] AS varbinary(max)) OR (i.[BalanceSheetBalanceSheetDimension_Code] IS NULL AND d.[BalanceSheetBalanceSheetDimension_Code] IS NOT NULL) OR (i.[BalanceSheetBalanceSheetDimension_Code] IS NOT NULL AND d.[BalanceSheetBalanceSheetDimension_Code] IS NULL)) OR (i.[FiscalYear_Unified] <> d.[FiscalYear_Unified] OR (i.[FiscalYear_Unified] IS NULL AND d.[FiscalYear_Unified] IS NOT NULL) OR (i.[FiscalYear_Unified] IS NOT NULL AND d.[FiscalYear_Unified] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[FunctionFunctionDimension_Code] AS varbinary(max)) <> CAST(d.[FunctionFunctionDimension_Code] AS varbinary(max)) OR (i.[FunctionFunctionDimension_Code] IS NULL AND d.[FunctionFunctionDimension_Code] IS NOT NULL) OR (i.[FunctionFunctionDimension_Code] IS NOT NULL AND d.[FunctionFunctionDimension_Code] IS NULL)) OR (CAST(i.[FundFundDimension_Code] AS varbinary(max)) <> CAST(d.[FundFundDimension_Code] AS varbinary(max)) OR (i.[FundFundDimension_Code] IS NULL AND d.[FundFundDimension_Code] IS NOT NULL) OR (i.[FundFundDimension_Code] IS NOT NULL AND d.[FundFundDimension_Code] IS NULL)) OR (CAST(i.[ObjectObjectDimension_Code] AS varbinary(max)) <> CAST(d.[ObjectObjectDimension_Code] AS varbinary(max)) OR (i.[ObjectObjectDimension_Code] IS NULL AND d.[ObjectObjectDimension_Code] IS NOT NULL) OR (i.[ObjectObjectDimension_Code] IS NOT NULL AND d.[ObjectObjectDimension_Code] IS NULL)) OR (CAST(i.[OperationalUnitOperationalUnitDimension_Code] AS varbinary(max)) <> CAST(d.[OperationalUnitOperationalUnitDimension_Code] AS varbinary(max)) OR (i.[OperationalUnitOperationalUnitDimension_Code] IS NULL AND d.[OperationalUnitOperationalUnitDimension_Code] IS NOT NULL) OR (i.[OperationalUnitOperationalUnitDimension_Code] IS NOT NULL AND d.[OperationalUnitOperationalUnitDimension_Code] IS NULL)) OR (CAST(i.[ProgramProgramDimension_Code] AS varbinary(max)) <> CAST(d.[ProgramProgramDimension_Code] AS varbinary(max)) OR (i.[ProgramProgramDimension_Code] IS NULL AND d.[ProgramProgramDimension_Code] IS NOT NULL) OR (i.[ProgramProgramDimension_Code] IS NOT NULL AND d.[ProgramProgramDimension_Code] IS NULL)) OR (CAST(i.[ProjectProjectDimension_Code] AS varbinary(max)) <> CAST(d.[ProjectProjectDimension_Code] AS varbinary(max)) OR (i.[ProjectProjectDimension_Code] IS NULL AND d.[ProjectProjectDimension_Code] IS NOT NULL) OR (i.[ProjectProjectDimension_Code] IS NOT NULL AND d.[ProjectProjectDimension_Code] IS NULL)) OR (CAST(i.[SourceSourceDimension_Code] AS varbinary(max)) <> CAST(d.[SourceSourceDimension_Code] AS varbinary(max)) OR (i.[SourceSourceDimension_Code] IS NULL AND d.[SourceSourceDimension_Code] IS NOT NULL) OR (i.[SourceSourceDimension_Code] IS NOT NULL AND d.[SourceSourceDimension_Code] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[ChartOfAccountChartOfAccount_AccountIdentifier] = i.[AccountIdentifier], r.[ChartOfAccountChartOfAccount_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[FiscalYear_Unified] = i.[FiscalYear]
-        FROM [edfi].[LocalAccount] r
-        INNER JOIN deleted d ON r.[ChartOfAccountChartOfAccount_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(d.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND d.[AccountIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL)))
-        AND ((r.[ChartOfAccountChartOfAccount_AccountIdentifier] = d.[AccountIdentifier]) OR (r.[ChartOfAccountChartOfAccount_AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NULL)) AND ((r.[ChartOfAccountChartOfAccount_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ChartOfAccountChartOfAccount_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[FiscalYear_Unified] = d.[FiscalYear]) OR (r.[FiscalYear_Unified] IS NULL AND d.[FiscalYear] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_ChartOfAccount_ReferentialIdentity]
 ON [edfi].[ChartOfAccount]
 AFTER INSERT, UPDATE
@@ -38848,46 +39187,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_ClassPeriod_PropagateIdentity]
-ON [edfi].[ClassPeriod]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([School_DocumentId]) OR UPDATE([ClassPeriodName]) OR UPDATE([OfficialAttendancePeriod]) OR UPDATE([School_SchoolId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[School_DocumentId] <> d.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND d.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND d.[School_DocumentId] IS NULL)) OR (CAST(i.[ClassPeriodName] AS varbinary(max)) <> CAST(d.[ClassPeriodName] AS varbinary(max)) OR (i.[ClassPeriodName] IS NULL AND d.[ClassPeriodName] IS NOT NULL) OR (i.[ClassPeriodName] IS NOT NULL AND d.[ClassPeriodName] IS NULL)) OR (i.[OfficialAttendancePeriod] <> d.[OfficialAttendancePeriod] OR (i.[OfficialAttendancePeriod] IS NULL AND d.[OfficialAttendancePeriod] IS NOT NULL) OR (i.[OfficialAttendancePeriod] IS NOT NULL AND d.[OfficialAttendancePeriod] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[ClassPeriod_ClassPeriodName] = i.[ClassPeriodName], r.[ClassPeriod_SchoolId] = i.[School_SchoolId]
-        FROM [edfi].[BellScheduleClassPeriod] r
-        INNER JOIN deleted d ON r.[ClassPeriod_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[ClassPeriodName] AS varbinary(max)) <> CAST(d.[ClassPeriodName] AS varbinary(max)) OR (i.[ClassPeriodName] IS NULL AND d.[ClassPeriodName] IS NOT NULL) OR (i.[ClassPeriodName] IS NOT NULL AND d.[ClassPeriodName] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)))
-        AND ((r.[ClassPeriod_ClassPeriodName] = d.[ClassPeriodName]) OR (r.[ClassPeriod_ClassPeriodName] IS NULL AND d.[ClassPeriodName] IS NULL)) AND ((r.[ClassPeriod_SchoolId] = d.[School_SchoolId]) OR (r.[ClassPeriod_SchoolId] IS NULL AND d.[School_SchoolId] IS NULL));
-
-        UPDATE r
-        SET r.[ClassPeriod_ClassPeriodName] = i.[ClassPeriodName], r.[ClassPeriod_SchoolId] = i.[School_SchoolId]
-        FROM [edfi].[SectionClassPeriod] r
-        INNER JOIN deleted d ON r.[ClassPeriod_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[ClassPeriodName] AS varbinary(max)) <> CAST(d.[ClassPeriodName] AS varbinary(max)) OR (i.[ClassPeriodName] IS NULL AND d.[ClassPeriodName] IS NOT NULL) OR (i.[ClassPeriodName] IS NOT NULL AND d.[ClassPeriodName] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)))
-        AND ((r.[ClassPeriod_ClassPeriodName] = d.[ClassPeriodName]) OR (r.[ClassPeriod_ClassPeriodName] IS NULL AND d.[ClassPeriodName] IS NULL)) AND ((r.[ClassPeriod_SchoolId] = d.[School_SchoolId]) OR (r.[ClassPeriod_SchoolId] IS NULL AND d.[School_SchoolId] IS NULL));
-
-        UPDATE r
-        SET r.[ClassPeriod_ClassPeriodName] = i.[ClassPeriodName], r.[ClassPeriod_SchoolId] = i.[School_SchoolId]
-        FROM [edfi].[StudentSectionAttendanceEventClassPeriod] r
-        INNER JOIN deleted d ON r.[ClassPeriod_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[ClassPeriodName] AS varbinary(max)) <> CAST(d.[ClassPeriodName] AS varbinary(max)) OR (i.[ClassPeriodName] IS NULL AND d.[ClassPeriodName] IS NOT NULL) OR (i.[ClassPeriodName] IS NOT NULL AND d.[ClassPeriodName] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)))
-        AND ((r.[ClassPeriod_ClassPeriodName] = d.[ClassPeriodName]) OR (r.[ClassPeriod_ClassPeriodName] IS NULL AND d.[ClassPeriodName] IS NULL)) AND ((r.[ClassPeriod_SchoolId] = d.[School_SchoolId]) OR (r.[ClassPeriod_SchoolId] IS NULL AND d.[School_SchoolId] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_ClassPeriod_ReferentialIdentity]
 ON [edfi].[ClassPeriod]
 AFTER INSERT, UPDATE
@@ -39043,46 +39342,6 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[ClassPeriod] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_Cohort_PropagateIdentity]
-ON [edfi].[Cohort]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([EducationOrganization_DocumentId]) OR UPDATE([AcademicSubjectDescriptor_DescriptorId]) OR UPDATE([CohortScopeDescriptor_DescriptorId]) OR UPDATE([CohortTypeDescriptor_DescriptorId]) OR UPDATE([CohortDescription]) OR UPDATE([CohortIdentifier]) OR UPDATE([EducationOrganization_EducationOrganizationId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (i.[AcademicSubjectDescriptor_DescriptorId] <> d.[AcademicSubjectDescriptor_DescriptorId] OR (i.[AcademicSubjectDescriptor_DescriptorId] IS NULL AND d.[AcademicSubjectDescriptor_DescriptorId] IS NOT NULL) OR (i.[AcademicSubjectDescriptor_DescriptorId] IS NOT NULL AND d.[AcademicSubjectDescriptor_DescriptorId] IS NULL)) OR (i.[CohortScopeDescriptor_DescriptorId] <> d.[CohortScopeDescriptor_DescriptorId] OR (i.[CohortScopeDescriptor_DescriptorId] IS NULL AND d.[CohortScopeDescriptor_DescriptorId] IS NOT NULL) OR (i.[CohortScopeDescriptor_DescriptorId] IS NOT NULL AND d.[CohortScopeDescriptor_DescriptorId] IS NULL)) OR (i.[CohortTypeDescriptor_DescriptorId] <> d.[CohortTypeDescriptor_DescriptorId] OR (i.[CohortTypeDescriptor_DescriptorId] IS NULL AND d.[CohortTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[CohortTypeDescriptor_DescriptorId] IS NOT NULL AND d.[CohortTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[CohortDescription] AS varbinary(max)) <> CAST(d.[CohortDescription] AS varbinary(max)) OR (i.[CohortDescription] IS NULL AND d.[CohortDescription] IS NOT NULL) OR (i.[CohortDescription] IS NOT NULL AND d.[CohortDescription] IS NULL)) OR (CAST(i.[CohortIdentifier] AS varbinary(max)) <> CAST(d.[CohortIdentifier] AS varbinary(max)) OR (i.[CohortIdentifier] IS NULL AND d.[CohortIdentifier] IS NOT NULL) OR (i.[CohortIdentifier] IS NOT NULL AND d.[CohortIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[Cohort_CohortIdentifier] = i.[CohortIdentifier], r.[Cohort_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId]
-        FROM [edfi].[StaffCohortAssociation] r
-        INNER JOIN deleted d ON r.[Cohort_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CohortIdentifier] AS varbinary(max)) <> CAST(d.[CohortIdentifier] AS varbinary(max)) OR (i.[CohortIdentifier] IS NULL AND d.[CohortIdentifier] IS NOT NULL) OR (i.[CohortIdentifier] IS NOT NULL AND d.[CohortIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)))
-        AND ((r.[Cohort_CohortIdentifier] = d.[CohortIdentifier]) OR (r.[Cohort_CohortIdentifier] IS NULL AND d.[CohortIdentifier] IS NULL)) AND ((r.[Cohort_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[Cohort_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[Cohort_CohortIdentifier] = i.[CohortIdentifier], r.[Cohort_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId]
-        FROM [edfi].[StudentCohortAssociation] r
-        INNER JOIN deleted d ON r.[Cohort_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CohortIdentifier] AS varbinary(max)) <> CAST(d.[CohortIdentifier] AS varbinary(max)) OR (i.[CohortIdentifier] IS NULL AND d.[CohortIdentifier] IS NOT NULL) OR (i.[CohortIdentifier] IS NOT NULL AND d.[CohortIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)))
-        AND ((r.[Cohort_CohortIdentifier] = d.[CohortIdentifier]) OR (r.[Cohort_CohortIdentifier] IS NULL AND d.[CohortIdentifier] IS NULL)) AND ((r.[Cohort_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[Cohort_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[CohortCohort_CohortIdentifier] = i.[CohortIdentifier], r.[CohortCohort_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId]
-        FROM [edfi].[StudentInterventionAssociation] r
-        INNER JOIN deleted d ON r.[CohortCohort_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CohortIdentifier] AS varbinary(max)) <> CAST(d.[CohortIdentifier] AS varbinary(max)) OR (i.[CohortIdentifier] IS NULL AND d.[CohortIdentifier] IS NOT NULL) OR (i.[CohortIdentifier] IS NOT NULL AND d.[CohortIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)))
-        AND ((r.[CohortCohort_CohortIdentifier] = d.[CohortIdentifier]) OR (r.[CohortCohort_CohortIdentifier] IS NULL AND d.[CohortIdentifier] IS NULL)) AND ((r.[CohortCohort_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[CohortCohort_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL));
-
     END
 END;
 GO
@@ -40448,30 +40707,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_CompetencyObjective_PropagateIdentity]
-ON [edfi].[CompetencyObjective]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([EducationOrganization_DocumentId]) OR UPDATE([ObjectiveGradeLevelDescriptor_DescriptorId]) OR UPDATE([CompetencyObjectiveId]) OR UPDATE([Description]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Objective]) OR UPDATE([SuccessCriteria]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] <> d.[ObjectiveGradeLevelDescriptor_DescriptorId] OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL AND d.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL AND d.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[CompetencyObjectiveId] AS varbinary(max)) <> CAST(d.[CompetencyObjectiveId] AS varbinary(max)) OR (i.[CompetencyObjectiveId] IS NULL AND d.[CompetencyObjectiveId] IS NOT NULL) OR (i.[CompetencyObjectiveId] IS NOT NULL AND d.[CompetencyObjectiveId] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(d.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND d.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND d.[Description] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Objective] AS varbinary(max)) <> CAST(d.[Objective] AS varbinary(max)) OR (i.[Objective] IS NULL AND d.[Objective] IS NOT NULL) OR (i.[Objective] IS NOT NULL AND d.[Objective] IS NULL)) OR (CAST(i.[SuccessCriteria] AS varbinary(max)) <> CAST(d.[SuccessCriteria] AS varbinary(max)) OR (i.[SuccessCriteria] IS NULL AND d.[SuccessCriteria] IS NOT NULL) OR (i.[SuccessCriteria] IS NOT NULL AND d.[SuccessCriteria] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[ObjectiveCompetencyObjective_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ObjectiveCompetencyObjective_Objective] = i.[Objective], r.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] = i.[ObjectiveGradeLevelDescriptor_DescriptorId]
-        FROM [edfi].[StudentCompetencyObjective] r
-        INNER JOIN deleted d ON r.[ObjectiveCompetencyObjective_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Objective] AS varbinary(max)) <> CAST(d.[Objective] AS varbinary(max)) OR (i.[Objective] IS NULL AND d.[Objective] IS NOT NULL) OR (i.[Objective] IS NOT NULL AND d.[Objective] IS NULL)) OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] <> d.[ObjectiveGradeLevelDescriptor_DescriptorId] OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL AND d.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL AND d.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ObjectiveCompetencyObjective_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ObjectiveCompetencyObjective_Objective] = d.[Objective]) OR (r.[ObjectiveCompetencyObjective_Objective] IS NULL AND d.[Objective] IS NULL)) AND ((r.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] = d.[ObjectiveGradeLevelDescriptor_DescriptorId]) OR (r.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL AND d.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_CompetencyObjective_ReferentialIdentity]
 ON [edfi].[CompetencyObjective]
 AFTER INSERT, UPDATE
@@ -41078,54 +41313,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_Course_PropagateIdentity]
-ON [edfi].[Course]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([EducationOrganization_DocumentId]) OR UPDATE([CareerPathwayDescriptor_DescriptorId]) OR UPDATE([CourseDefinedByDescriptor_DescriptorId]) OR UPDATE([CourseGPAApplicabilityDescriptor_DescriptorId]) OR UPDATE([MaximumAvailableCreditTypeDescriptor_DescriptorId]) OR UPDATE([MinimumAvailableCreditTypeDescriptor_DescriptorId]) OR UPDATE([CourseCode]) OR UPDATE([CourseDescription]) OR UPDATE([CourseTitle]) OR UPDATE([DateCourseAdopted]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([HighSchoolCourseRequirement]) OR UPDATE([MaxCompletionsForCredit]) OR UPDATE([MaximumAvailableCreditConversion]) OR UPDATE([MaximumAvailableCredits]) OR UPDATE([MinimumAvailableCreditConversion]) OR UPDATE([MinimumAvailableCredits]) OR UPDATE([NumberOfParts]) OR UPDATE([TimeRequiredForCompletion]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (i.[CareerPathwayDescriptor_DescriptorId] <> d.[CareerPathwayDescriptor_DescriptorId] OR (i.[CareerPathwayDescriptor_DescriptorId] IS NULL AND d.[CareerPathwayDescriptor_DescriptorId] IS NOT NULL) OR (i.[CareerPathwayDescriptor_DescriptorId] IS NOT NULL AND d.[CareerPathwayDescriptor_DescriptorId] IS NULL)) OR (i.[CourseDefinedByDescriptor_DescriptorId] <> d.[CourseDefinedByDescriptor_DescriptorId] OR (i.[CourseDefinedByDescriptor_DescriptorId] IS NULL AND d.[CourseDefinedByDescriptor_DescriptorId] IS NOT NULL) OR (i.[CourseDefinedByDescriptor_DescriptorId] IS NOT NULL AND d.[CourseDefinedByDescriptor_DescriptorId] IS NULL)) OR (i.[CourseGPAApplicabilityDescriptor_DescriptorId] <> d.[CourseGPAApplicabilityDescriptor_DescriptorId] OR (i.[CourseGPAApplicabilityDescriptor_DescriptorId] IS NULL AND d.[CourseGPAApplicabilityDescriptor_DescriptorId] IS NOT NULL) OR (i.[CourseGPAApplicabilityDescriptor_DescriptorId] IS NOT NULL AND d.[CourseGPAApplicabilityDescriptor_DescriptorId] IS NULL)) OR (i.[MaximumAvailableCreditTypeDescriptor_DescriptorId] <> d.[MaximumAvailableCreditTypeDescriptor_DescriptorId] OR (i.[MaximumAvailableCreditTypeDescriptor_DescriptorId] IS NULL AND d.[MaximumAvailableCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[MaximumAvailableCreditTypeDescriptor_DescriptorId] IS NOT NULL AND d.[MaximumAvailableCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[MinimumAvailableCreditTypeDescriptor_DescriptorId] <> d.[MinimumAvailableCreditTypeDescriptor_DescriptorId] OR (i.[MinimumAvailableCreditTypeDescriptor_DescriptorId] IS NULL AND d.[MinimumAvailableCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[MinimumAvailableCreditTypeDescriptor_DescriptorId] IS NOT NULL AND d.[MinimumAvailableCreditTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[CourseCode] AS varbinary(max)) <> CAST(d.[CourseCode] AS varbinary(max)) OR (i.[CourseCode] IS NULL AND d.[CourseCode] IS NOT NULL) OR (i.[CourseCode] IS NOT NULL AND d.[CourseCode] IS NULL)) OR (CAST(i.[CourseDescription] AS varbinary(max)) <> CAST(d.[CourseDescription] AS varbinary(max)) OR (i.[CourseDescription] IS NULL AND d.[CourseDescription] IS NOT NULL) OR (i.[CourseDescription] IS NOT NULL AND d.[CourseDescription] IS NULL)) OR (CAST(i.[CourseTitle] AS varbinary(max)) <> CAST(d.[CourseTitle] AS varbinary(max)) OR (i.[CourseTitle] IS NULL AND d.[CourseTitle] IS NOT NULL) OR (i.[CourseTitle] IS NOT NULL AND d.[CourseTitle] IS NULL)) OR (i.[DateCourseAdopted] <> d.[DateCourseAdopted] OR (i.[DateCourseAdopted] IS NULL AND d.[DateCourseAdopted] IS NOT NULL) OR (i.[DateCourseAdopted] IS NOT NULL AND d.[DateCourseAdopted] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[HighSchoolCourseRequirement] <> d.[HighSchoolCourseRequirement] OR (i.[HighSchoolCourseRequirement] IS NULL AND d.[HighSchoolCourseRequirement] IS NOT NULL) OR (i.[HighSchoolCourseRequirement] IS NOT NULL AND d.[HighSchoolCourseRequirement] IS NULL)) OR (i.[MaxCompletionsForCredit] <> d.[MaxCompletionsForCredit] OR (i.[MaxCompletionsForCredit] IS NULL AND d.[MaxCompletionsForCredit] IS NOT NULL) OR (i.[MaxCompletionsForCredit] IS NOT NULL AND d.[MaxCompletionsForCredit] IS NULL)) OR (i.[MaximumAvailableCreditConversion] <> d.[MaximumAvailableCreditConversion] OR (i.[MaximumAvailableCreditConversion] IS NULL AND d.[MaximumAvailableCreditConversion] IS NOT NULL) OR (i.[MaximumAvailableCreditConversion] IS NOT NULL AND d.[MaximumAvailableCreditConversion] IS NULL)) OR (i.[MaximumAvailableCredits] <> d.[MaximumAvailableCredits] OR (i.[MaximumAvailableCredits] IS NULL AND d.[MaximumAvailableCredits] IS NOT NULL) OR (i.[MaximumAvailableCredits] IS NOT NULL AND d.[MaximumAvailableCredits] IS NULL)) OR (i.[MinimumAvailableCreditConversion] <> d.[MinimumAvailableCreditConversion] OR (i.[MinimumAvailableCreditConversion] IS NULL AND d.[MinimumAvailableCreditConversion] IS NOT NULL) OR (i.[MinimumAvailableCreditConversion] IS NOT NULL AND d.[MinimumAvailableCreditConversion] IS NULL)) OR (i.[MinimumAvailableCredits] <> d.[MinimumAvailableCredits] OR (i.[MinimumAvailableCredits] IS NULL AND d.[MinimumAvailableCredits] IS NOT NULL) OR (i.[MinimumAvailableCredits] IS NOT NULL AND d.[MinimumAvailableCredits] IS NULL)) OR (i.[NumberOfParts] <> d.[NumberOfParts] OR (i.[NumberOfParts] IS NULL AND d.[NumberOfParts] IS NOT NULL) OR (i.[NumberOfParts] IS NOT NULL AND d.[NumberOfParts] IS NULL)) OR (i.[TimeRequiredForCompletion] <> d.[TimeRequiredForCompletion] OR (i.[TimeRequiredForCompletion] IS NULL AND d.[TimeRequiredForCompletion] IS NOT NULL) OR (i.[TimeRequiredForCompletion] IS NOT NULL AND d.[TimeRequiredForCompletion] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[Course_CourseCode] = i.[CourseCode], r.[Course_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId]
-        FROM [edfi].[CourseOffering] r
-        INNER JOIN deleted d ON r.[Course_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CourseCode] AS varbinary(max)) <> CAST(d.[CourseCode] AS varbinary(max)) OR (i.[CourseCode] IS NULL AND d.[CourseCode] IS NOT NULL) OR (i.[CourseCode] IS NOT NULL AND d.[CourseCode] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)))
-        AND ((r.[Course_CourseCode] = d.[CourseCode]) OR (r.[Course_CourseCode] IS NULL AND d.[CourseCode] IS NULL)) AND ((r.[Course_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[Course_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[CourseCourse_CourseCode] = i.[CourseCode], r.[CourseCourse_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId]
-        FROM [edfi].[CourseTranscript] r
-        INNER JOIN deleted d ON r.[CourseCourse_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CourseCode] AS varbinary(max)) <> CAST(d.[CourseCode] AS varbinary(max)) OR (i.[CourseCode] IS NULL AND d.[CourseCode] IS NOT NULL) OR (i.[CourseCode] IS NOT NULL AND d.[CourseCode] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)))
-        AND ((r.[CourseCourse_CourseCode] = d.[CourseCode]) OR (r.[CourseCourse_CourseCode] IS NULL AND d.[CourseCode] IS NULL)) AND ((r.[CourseCourse_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[CourseCourse_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[CourseCourse_CourseCode] = i.[CourseCode], r.[CourseCourse_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId]
-        FROM [edfi].[GraduationPlanCreditsByCoursCours] r
-        INNER JOIN deleted d ON r.[CourseCourse_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CourseCode] AS varbinary(max)) <> CAST(d.[CourseCode] AS varbinary(max)) OR (i.[CourseCode] IS NULL AND d.[CourseCode] IS NOT NULL) OR (i.[CourseCode] IS NOT NULL AND d.[CourseCode] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)))
-        AND ((r.[CourseCourse_CourseCode] = d.[CourseCode]) OR (r.[CourseCourse_CourseCode] IS NULL AND d.[CourseCode] IS NULL)) AND ((r.[CourseCourse_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[CourseCourse_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[Course_CourseCode] = i.[CourseCode], r.[Course_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId]
-        FROM [edfi].[SurveyCourseAssociation] r
-        INNER JOIN deleted d ON r.[Course_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CourseCode] AS varbinary(max)) <> CAST(d.[CourseCode] AS varbinary(max)) OR (i.[CourseCode] IS NULL AND d.[CourseCode] IS NOT NULL) OR (i.[CourseCode] IS NOT NULL AND d.[CourseCode] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)))
-        AND ((r.[Course_CourseCode] = d.[CourseCode]) OR (r.[Course_CourseCode] IS NULL AND d.[CourseCode] IS NULL)) AND ((r.[Course_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[Course_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_Course_ReferentialIdentity]
 ON [edfi].[Course]
 AFTER INSERT, UPDATE
@@ -41476,30 +41663,6 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[Course] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_CourseOffering_PropagateIdentity]
-ON [edfi].[CourseOffering]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([Course_DocumentId]) OR UPDATE([School_DocumentId]) OR UPDATE([Session_DocumentId]) OR UPDATE([Course_CourseCode]) OR UPDATE([Course_EducationOrganizationId]) OR UPDATE([InstructionalTimePlanned]) OR UPDATE([LocalCourseCode]) OR UPDATE([LocalCourseTitle]) OR UPDATE([SchoolId_Unified]) OR UPDATE([Session_SchoolYear]) OR UPDATE([Session_SessionName]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[Course_DocumentId] <> d.[Course_DocumentId] OR (i.[Course_DocumentId] IS NULL AND d.[Course_DocumentId] IS NOT NULL) OR (i.[Course_DocumentId] IS NOT NULL AND d.[Course_DocumentId] IS NULL)) OR (i.[School_DocumentId] <> d.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND d.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND d.[School_DocumentId] IS NULL)) OR (i.[Session_DocumentId] <> d.[Session_DocumentId] OR (i.[Session_DocumentId] IS NULL AND d.[Session_DocumentId] IS NOT NULL) OR (i.[Session_DocumentId] IS NOT NULL AND d.[Session_DocumentId] IS NULL)) OR (CAST(i.[Course_CourseCode] AS varbinary(max)) <> CAST(d.[Course_CourseCode] AS varbinary(max)) OR (i.[Course_CourseCode] IS NULL AND d.[Course_CourseCode] IS NOT NULL) OR (i.[Course_CourseCode] IS NOT NULL AND d.[Course_CourseCode] IS NULL)) OR (i.[Course_EducationOrganizationId] <> d.[Course_EducationOrganizationId] OR (i.[Course_EducationOrganizationId] IS NULL AND d.[Course_EducationOrganizationId] IS NOT NULL) OR (i.[Course_EducationOrganizationId] IS NOT NULL AND d.[Course_EducationOrganizationId] IS NULL)) OR (i.[InstructionalTimePlanned] <> d.[InstructionalTimePlanned] OR (i.[InstructionalTimePlanned] IS NULL AND d.[InstructionalTimePlanned] IS NOT NULL) OR (i.[InstructionalTimePlanned] IS NOT NULL AND d.[InstructionalTimePlanned] IS NULL)) OR (CAST(i.[LocalCourseCode] AS varbinary(max)) <> CAST(d.[LocalCourseCode] AS varbinary(max)) OR (i.[LocalCourseCode] IS NULL AND d.[LocalCourseCode] IS NOT NULL) OR (i.[LocalCourseCode] IS NOT NULL AND d.[LocalCourseCode] IS NULL)) OR (CAST(i.[LocalCourseTitle] AS varbinary(max)) <> CAST(d.[LocalCourseTitle] AS varbinary(max)) OR (i.[LocalCourseTitle] IS NULL AND d.[LocalCourseTitle] IS NOT NULL) OR (i.[LocalCourseTitle] IS NOT NULL AND d.[LocalCourseTitle] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[Session_SchoolYear] <> d.[Session_SchoolYear] OR (i.[Session_SchoolYear] IS NULL AND d.[Session_SchoolYear] IS NOT NULL) OR (i.[Session_SchoolYear] IS NOT NULL AND d.[Session_SchoolYear] IS NULL)) OR (CAST(i.[Session_SessionName] AS varbinary(max)) <> CAST(d.[Session_SessionName] AS varbinary(max)) OR (i.[Session_SessionName] IS NULL AND d.[Session_SessionName] IS NOT NULL) OR (i.[Session_SessionName] IS NOT NULL AND d.[Session_SessionName] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[CourseOffering_LocalCourseCode] = i.[LocalCourseCode], r.[SchoolId_Unified] = i.[School_SchoolId], r.[CourseOffering_SchoolYear] = i.[Session_SchoolYear], r.[CourseOffering_SessionName] = i.[Session_SessionName]
-        FROM [edfi].[Section] r
-        INNER JOIN deleted d ON r.[CourseOffering_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[LocalCourseCode] AS varbinary(max)) <> CAST(d.[LocalCourseCode] AS varbinary(max)) OR (i.[LocalCourseCode] IS NULL AND d.[LocalCourseCode] IS NOT NULL) OR (i.[LocalCourseCode] IS NOT NULL AND d.[LocalCourseCode] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)) OR (i.[Session_SchoolYear] <> d.[Session_SchoolYear] OR (i.[Session_SchoolYear] IS NULL AND d.[Session_SchoolYear] IS NOT NULL) OR (i.[Session_SchoolYear] IS NOT NULL AND d.[Session_SchoolYear] IS NULL)) OR (CAST(i.[Session_SessionName] AS varbinary(max)) <> CAST(d.[Session_SessionName] AS varbinary(max)) OR (i.[Session_SessionName] IS NULL AND d.[Session_SessionName] IS NOT NULL) OR (i.[Session_SessionName] IS NOT NULL AND d.[Session_SessionName] IS NULL)))
-        AND ((r.[CourseOffering_LocalCourseCode] = d.[LocalCourseCode]) OR (r.[CourseOffering_LocalCourseCode] IS NULL AND d.[LocalCourseCode] IS NULL)) AND ((r.[SchoolId_Unified] = d.[School_SchoolId]) OR (r.[SchoolId_Unified] IS NULL AND d.[School_SchoolId] IS NULL)) AND ((r.[CourseOffering_SchoolYear] = d.[Session_SchoolYear]) OR (r.[CourseOffering_SchoolYear] IS NULL AND d.[Session_SchoolYear] IS NULL)) AND ((r.[CourseOffering_SessionName] = d.[Session_SessionName]) OR (r.[CourseOffering_SessionName] IS NULL AND d.[Session_SessionName] IS NULL));
-
     END
 END;
 GO
@@ -43631,454 +43794,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_EducationOrganizationIdentity_PropagateIdentity]
-ON [edfi].[EducationOrganizationIdentity]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([EducationOrganizationId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[AccountabilityRating] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[MandatingEducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[Assessment] r
-        INNER JOIN deleted d ON r.[MandatingEducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[MandatingEducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[MandatingEducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[Assessment] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[AssigningEducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[AssessmentAdministration] r
-        INNER JOIN deleted d ON r.[AssigningEducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[AssigningEducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[AssigningEducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[AdministrationPointOfContactEducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[AssessmentAdministrationParticipationAdministrationPointOfContact] r
-        INNER JOIN deleted d ON r.[AdministrationPointOfContactEducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[AdministrationPointOfContactEducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[AdministrationPointOfContactEducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[ParticipatingEducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[AssessmentAdministrationParticipation] r
-        INNER JOIN deleted d ON r.[ParticipatingEducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[ParticipatingEducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[ParticipatingEducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[ChartOfAccount] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[Cohort] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[CompetencyObjective] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[Course] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[ExternalEducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[CourseTranscript] r
-        INNER JOIN deleted d ON r.[ExternalEducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[ExternalEducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[ExternalEducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[EducationOrganizationInterventionPrescriptionAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[MemberEducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[EducationOrganizationNetworkAssociation] r
-        INNER JOIN deleted d ON r.[MemberEducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[MemberEducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[MemberEducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[EducationOrganizationPeerAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[PeerEducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[EducationOrganizationPeerAssociation] r
-        INNER JOIN deleted d ON r.[PeerEducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[PeerEducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[PeerEducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[GraduationPlan] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[Intervention] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[InterventionPrescription] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[InterventionStudy] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[MandatingEducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[LearningStandard] r
-        INNER JOIN deleted d ON r.[MandatingEducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[MandatingEducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[MandatingEducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[LocalAccount] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[OpenStaffPosition] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[ParentEducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[OrganizationDepartment] r
-        INNER JOIN deleted d ON r.[ParentEducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[ParentEducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[ParentEducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[Program] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[ReportCard] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StaffEducationOrganizationAssignmentAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StaffEducationOrganizationContactAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StaffEducationOrganizationEmploymentAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentAcademicRecord] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentAssessmentEducationOrganizationAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[ReportingEducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentAssessmentRegistration] r
-        INNER JOIN deleted d ON r.[ReportingEducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[ReportingEducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[ReportingEducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[TestingEducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentAssessmentRegistration] r
-        INNER JOIN deleted d ON r.[TestingEducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[TestingEducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[TestingEducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentCTEProgramAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentEducationOrganizationAssessmentAccommodation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentEducationOrganizationResponsibilityAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentHealth] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentHomelessProgramAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentLanguageInstructionProgramAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentMigrantEducationProgramAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentProgramAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentProgramAttendanceEvent] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentProgramEvaluation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentSchoolFoodServiceProgramAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentSection504ProgramAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[DualCreditEducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentSectionAssociation] r
-        INNER JOIN deleted d ON r.[DualCreditEducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[DualCreditEducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[DualCreditEducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentSpecialEducationProgramAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentSpecialEducationProgramEligibilityAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentTitleIPartAProgramAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[TransportationEducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[StudentTransportation] r
-        INNER JOIN deleted d ON r.[TransportationEducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[TransportationEducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[TransportationEducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[Survey] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[SurveyResponseEducationOrganizationTargetAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_EducationOrganizationInterventionPrescriptionAssociation_ReferentialIdentity]
 ON [edfi].[EducationOrganizationInterventionPrescriptionAssociation]
 AFTER INSERT, UPDATE
@@ -46148,54 +45863,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_GeneralStudentProgramAssociationIdentity_PropagateIdentity]
-ON [edfi].[GeneralStudentProgramAssociationIdentity]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Program_EducationOrganizationId]) OR UPDATE([Program_ProgramName]) OR UPDATE([Program_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[Program_EducationOrganizationId] <> d.[Program_EducationOrganizationId] OR (i.[Program_EducationOrganizationId] IS NULL AND d.[Program_EducationOrganizationId] IS NOT NULL) OR (i.[Program_EducationOrganizationId] IS NOT NULL AND d.[Program_EducationOrganizationId] IS NULL)) OR (CAST(i.[Program_ProgramName] AS varbinary(max)) <> CAST(d.[Program_ProgramName] AS varbinary(max)) OR (i.[Program_ProgramName] IS NULL AND d.[Program_ProgramName] IS NOT NULL) OR (i.[Program_ProgramName] IS NOT NULL AND d.[Program_ProgramName] IS NULL)) OR (i.[Program_ProgramTypeDescriptor_DescriptorId] <> d.[Program_ProgramTypeDescriptor_DescriptorId] OR (i.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[Program_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[Program_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_BeginDate] = i.[BeginDate], r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramEducationOrganizationId] = i.[Program_EducationOrganizationId], r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramName] = i.[Program_ProgramName], r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramTypeDescriptor_DescriptorId] = i.[Program_ProgramTypeDescriptor_DescriptorId], r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_StudentUniqueId] = i.[Student_StudentUniqueId]
-        FROM [edfi].[StudentCompetencyObjectiveGeneralStudentProgramAssociation] r
-        INNER JOIN deleted d ON r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[Program_EducationOrganizationId] <> d.[Program_EducationOrganizationId] OR (i.[Program_EducationOrganizationId] IS NULL AND d.[Program_EducationOrganizationId] IS NOT NULL) OR (i.[Program_EducationOrganizationId] IS NOT NULL AND d.[Program_EducationOrganizationId] IS NULL)) OR (CAST(i.[Program_ProgramName] AS varbinary(max)) <> CAST(d.[Program_ProgramName] AS varbinary(max)) OR (i.[Program_ProgramName] IS NULL AND d.[Program_ProgramName] IS NOT NULL) OR (i.[Program_ProgramName] IS NOT NULL AND d.[Program_ProgramName] IS NULL)) OR (i.[Program_ProgramTypeDescriptor_DescriptorId] <> d.[Program_ProgramTypeDescriptor_DescriptorId] OR (i.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[Program_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[Program_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL)))
-        AND ((r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_BeginDate] = d.[BeginDate]) OR (r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_BeginDate] IS NULL AND d.[BeginDate] IS NULL)) AND ((r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramEducationOrganizationId] = d.[Program_EducationOrganizationId]) OR (r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramEducationOrganizationId] IS NULL AND d.[Program_EducationOrganizationId] IS NULL)) AND ((r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramName] = d.[Program_ProgramName]) OR (r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramName] IS NULL AND d.[Program_ProgramName] IS NULL)) AND ((r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramTypeDescriptor_DescriptorId] = d.[Program_ProgramTypeDescriptor_DescriptorId]) OR (r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL)) AND ((r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_StudentUniqueId] = d.[Student_StudentUniqueId]) OR (r.[StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NULL));
-
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_Grade_PropagateIdentity]
-ON [edfi].[Grade]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([GradingPeriodGradingPeriod_DocumentId]) OR UPDATE([StudentSectionAssociation_DocumentId]) OR UPDATE([GradeTypeDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([PerformanceBaseConversionDescriptor_DescriptorId]) OR UPDATE([CurrentGradeAsOfDate]) OR UPDATE([CurrentGradeIndicator]) OR UPDATE([DiagnosticStatement]) OR UPDATE([GradeEarnedDescription]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([SchoolId_Unified]) OR UPDATE([SchoolYear_Unified]) OR UPDATE([LetterGradeEarned]) OR UPDATE([NumericGradeEarned]) OR UPDATE([StudentSectionAssociation_BeginDate]) OR UPDATE([StudentSectionAssociation_LocalCourseCode]) OR UPDATE([StudentSectionAssociation_SectionIdentifier]) OR UPDATE([StudentSectionAssociation_SessionName]) OR UPDATE([StudentSectionAssociation_StudentUniqueId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[GradingPeriodGradingPeriod_DocumentId] <> d.[GradingPeriodGradingPeriod_DocumentId] OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NULL AND d.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_DocumentId] IS NULL)) OR (i.[StudentSectionAssociation_DocumentId] <> d.[StudentSectionAssociation_DocumentId] OR (i.[StudentSectionAssociation_DocumentId] IS NULL AND d.[StudentSectionAssociation_DocumentId] IS NOT NULL) OR (i.[StudentSectionAssociation_DocumentId] IS NOT NULL AND d.[StudentSectionAssociation_DocumentId] IS NULL)) OR (i.[GradeTypeDescriptor_DescriptorId] <> d.[GradeTypeDescriptor_DescriptorId] OR (i.[GradeTypeDescriptor_DescriptorId] IS NULL AND d.[GradeTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradeTypeDescriptor_DescriptorId] IS NOT NULL AND d.[GradeTypeDescriptor_DescriptorId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (i.[PerformanceBaseConversionDescriptor_DescriptorId] <> d.[PerformanceBaseConversionDescriptor_DescriptorId] OR (i.[PerformanceBaseConversionDescriptor_DescriptorId] IS NULL AND d.[PerformanceBaseConversionDescriptor_DescriptorId] IS NOT NULL) OR (i.[PerformanceBaseConversionDescriptor_DescriptorId] IS NOT NULL AND d.[PerformanceBaseConversionDescriptor_DescriptorId] IS NULL)) OR (i.[CurrentGradeAsOfDate] <> d.[CurrentGradeAsOfDate] OR (i.[CurrentGradeAsOfDate] IS NULL AND d.[CurrentGradeAsOfDate] IS NOT NULL) OR (i.[CurrentGradeAsOfDate] IS NOT NULL AND d.[CurrentGradeAsOfDate] IS NULL)) OR (i.[CurrentGradeIndicator] <> d.[CurrentGradeIndicator] OR (i.[CurrentGradeIndicator] IS NULL AND d.[CurrentGradeIndicator] IS NOT NULL) OR (i.[CurrentGradeIndicator] IS NOT NULL AND d.[CurrentGradeIndicator] IS NULL)) OR (CAST(i.[DiagnosticStatement] AS varbinary(max)) <> CAST(d.[DiagnosticStatement] AS varbinary(max)) OR (i.[DiagnosticStatement] IS NULL AND d.[DiagnosticStatement] IS NOT NULL) OR (i.[DiagnosticStatement] IS NOT NULL AND d.[DiagnosticStatement] IS NULL)) OR (CAST(i.[GradeEarnedDescription] AS varbinary(max)) <> CAST(d.[GradeEarnedDescription] AS varbinary(max)) OR (i.[GradeEarnedDescription] IS NULL AND d.[GradeEarnedDescription] IS NOT NULL) OR (i.[GradeEarnedDescription] IS NOT NULL AND d.[GradeEarnedDescription] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(d.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> d.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND d.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND d.[SchoolYear_Unified] IS NULL)) OR (CAST(i.[LetterGradeEarned] AS varbinary(max)) <> CAST(d.[LetterGradeEarned] AS varbinary(max)) OR (i.[LetterGradeEarned] IS NULL AND d.[LetterGradeEarned] IS NOT NULL) OR (i.[LetterGradeEarned] IS NOT NULL AND d.[LetterGradeEarned] IS NULL)) OR (i.[NumericGradeEarned] <> d.[NumericGradeEarned] OR (i.[NumericGradeEarned] IS NULL AND d.[NumericGradeEarned] IS NOT NULL) OR (i.[NumericGradeEarned] IS NOT NULL AND d.[NumericGradeEarned] IS NULL)) OR (i.[StudentSectionAssociation_BeginDate] <> d.[StudentSectionAssociation_BeginDate] OR (i.[StudentSectionAssociation_BeginDate] IS NULL AND d.[StudentSectionAssociation_BeginDate] IS NOT NULL) OR (i.[StudentSectionAssociation_BeginDate] IS NOT NULL AND d.[StudentSectionAssociation_BeginDate] IS NULL)) OR (CAST(i.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NULL AND d.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL AND d.[StudentSectionAssociation_LocalCourseCode] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NULL AND d.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL AND d.[StudentSectionAssociation_SectionIdentifier] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SessionName] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_SessionName] AS varbinary(max)) OR (i.[StudentSectionAssociation_SessionName] IS NULL AND d.[StudentSectionAssociation_SessionName] IS NOT NULL) OR (i.[StudentSectionAssociation_SessionName] IS NOT NULL AND d.[StudentSectionAssociation_SessionName] IS NULL)) OR (CAST(i.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NULL AND d.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL AND d.[StudentSectionAssociation_StudentUniqueId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[Grade_GradeTypeDescriptor_DescriptorId] = i.[GradeTypeDescriptor_DescriptorId], r.[Grade_GradingPeriodDescriptor_DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId], r.[Grade_GradingPeriodName] = i.[GradingPeriodGradingPeriod_GradingPeriodName], r.[SchoolId_Unified] = i.[GradingPeriodGradingPeriod_SchoolId], r.[Grade_GradingPeriodSchoolYear] = i.[GradingPeriodGradingPeriod_SchoolYear], r.[Grade_BeginDate] = i.[StudentSectionAssociation_BeginDate], r.[Grade_LocalCourseCode] = i.[StudentSectionAssociation_LocalCourseCode], r.[Grade_SchoolYear] = i.[StudentSectionAssociation_SchoolYear], r.[Grade_SectionIdentifier] = i.[StudentSectionAssociation_SectionIdentifier], r.[Grade_SessionName] = i.[StudentSectionAssociation_SessionName], r.[Grade_StudentUniqueId] = i.[StudentSectionAssociation_StudentUniqueId]
-        FROM [edfi].[ReportCardGrade] r
-        INNER JOIN deleted d ON r.[Grade_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[GradeTypeDescriptor_DescriptorId] <> d.[GradeTypeDescriptor_DescriptorId] OR (i.[GradeTypeDescriptor_DescriptorId] IS NULL AND d.[GradeTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradeTypeDescriptor_DescriptorId] IS NOT NULL AND d.[GradeTypeDescriptor_DescriptorId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(d.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolId] <> d.[GradingPeriodGradingPeriod_SchoolId] OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolYear] <> d.[GradingPeriodGradingPeriod_SchoolYear] OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) OR (i.[StudentSectionAssociation_BeginDate] <> d.[StudentSectionAssociation_BeginDate] OR (i.[StudentSectionAssociation_BeginDate] IS NULL AND d.[StudentSectionAssociation_BeginDate] IS NOT NULL) OR (i.[StudentSectionAssociation_BeginDate] IS NOT NULL AND d.[StudentSectionAssociation_BeginDate] IS NULL)) OR (CAST(i.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NULL AND d.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL AND d.[StudentSectionAssociation_LocalCourseCode] IS NULL)) OR (i.[StudentSectionAssociation_SchoolYear] <> d.[StudentSectionAssociation_SchoolYear] OR (i.[StudentSectionAssociation_SchoolYear] IS NULL AND d.[StudentSectionAssociation_SchoolYear] IS NOT NULL) OR (i.[StudentSectionAssociation_SchoolYear] IS NOT NULL AND d.[StudentSectionAssociation_SchoolYear] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NULL AND d.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL AND d.[StudentSectionAssociation_SectionIdentifier] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SessionName] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_SessionName] AS varbinary(max)) OR (i.[StudentSectionAssociation_SessionName] IS NULL AND d.[StudentSectionAssociation_SessionName] IS NOT NULL) OR (i.[StudentSectionAssociation_SessionName] IS NOT NULL AND d.[StudentSectionAssociation_SessionName] IS NULL)) OR (CAST(i.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NULL AND d.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL AND d.[StudentSectionAssociation_StudentUniqueId] IS NULL)))
-        AND ((r.[Grade_GradeTypeDescriptor_DescriptorId] = d.[GradeTypeDescriptor_DescriptorId]) OR (r.[Grade_GradeTypeDescriptor_DescriptorId] IS NULL AND d.[GradeTypeDescriptor_DescriptorId] IS NULL)) AND ((r.[Grade_GradingPeriodDescriptor_DescriptorId] = d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR (r.[Grade_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) AND ((r.[Grade_GradingPeriodName] = d.[GradingPeriodGradingPeriod_GradingPeriodName]) OR (r.[Grade_GradingPeriodName] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) AND ((r.[SchoolId_Unified] = d.[GradingPeriodGradingPeriod_SchoolId]) OR (r.[SchoolId_Unified] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) AND ((r.[Grade_GradingPeriodSchoolYear] = d.[GradingPeriodGradingPeriod_SchoolYear]) OR (r.[Grade_GradingPeriodSchoolYear] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) AND ((r.[Grade_BeginDate] = d.[StudentSectionAssociation_BeginDate]) OR (r.[Grade_BeginDate] IS NULL AND d.[StudentSectionAssociation_BeginDate] IS NULL)) AND ((r.[Grade_LocalCourseCode] = d.[StudentSectionAssociation_LocalCourseCode]) OR (r.[Grade_LocalCourseCode] IS NULL AND d.[StudentSectionAssociation_LocalCourseCode] IS NULL)) AND ((r.[Grade_SchoolYear] = d.[StudentSectionAssociation_SchoolYear]) OR (r.[Grade_SchoolYear] IS NULL AND d.[StudentSectionAssociation_SchoolYear] IS NULL)) AND ((r.[Grade_SectionIdentifier] = d.[StudentSectionAssociation_SectionIdentifier]) OR (r.[Grade_SectionIdentifier] IS NULL AND d.[StudentSectionAssociation_SectionIdentifier] IS NULL)) AND ((r.[Grade_SessionName] = d.[StudentSectionAssociation_SessionName]) OR (r.[Grade_SessionName] IS NULL AND d.[StudentSectionAssociation_SessionName] IS NULL)) AND ((r.[Grade_StudentUniqueId] = d.[StudentSectionAssociation_StudentUniqueId]) OR (r.[Grade_StudentUniqueId] IS NULL AND d.[StudentSectionAssociation_StudentUniqueId] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_Grade_ReferentialIdentity]
 ON [edfi].[Grade]
 AFTER INSERT, UPDATE
@@ -46429,30 +46096,6 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[Grade] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_GradebookEntry_PropagateIdentity]
-ON [edfi].[GradebookEntry]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([GradingPeriod_DocumentId]) OR UPDATE([Section_DocumentId]) OR UPDATE([GradebookEntryTypeDescriptor_DescriptorId]) OR UPDATE([GradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([DateAssigned]) OR UPDATE([Description]) OR UPDATE([DueDate]) OR UPDATE([DueTime]) OR UPDATE([GradebookEntryIdentifier]) OR UPDATE([GradingPeriod_GradingPeriodName]) OR UPDATE([SchoolId_Unified]) OR UPDATE([SchoolYear_Unified]) OR UPDATE([MaxPoints]) OR UPDATE([Namespace]) OR UPDATE([Section_LocalCourseCode]) OR UPDATE([Section_SectionIdentifier]) OR UPDATE([Section_SessionName]) OR UPDATE([SourceSectionIdentifier]) OR UPDATE([Title]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[GradingPeriod_DocumentId] <> d.[GradingPeriod_DocumentId] OR (i.[GradingPeriod_DocumentId] IS NULL AND d.[GradingPeriod_DocumentId] IS NOT NULL) OR (i.[GradingPeriod_DocumentId] IS NOT NULL AND d.[GradingPeriod_DocumentId] IS NULL)) OR (i.[Section_DocumentId] <> d.[Section_DocumentId] OR (i.[Section_DocumentId] IS NULL AND d.[Section_DocumentId] IS NOT NULL) OR (i.[Section_DocumentId] IS NOT NULL AND d.[Section_DocumentId] IS NULL)) OR (i.[GradebookEntryTypeDescriptor_DescriptorId] <> d.[GradebookEntryTypeDescriptor_DescriptorId] OR (i.[GradebookEntryTypeDescriptor_DescriptorId] IS NULL AND d.[GradebookEntryTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradebookEntryTypeDescriptor_DescriptorId] IS NOT NULL AND d.[GradebookEntryTypeDescriptor_DescriptorId] IS NULL)) OR (i.[GradingPeriod_GradingPeriodDescriptor_DescriptorId] <> d.[GradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[GradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (i.[DateAssigned] <> d.[DateAssigned] OR (i.[DateAssigned] IS NULL AND d.[DateAssigned] IS NOT NULL) OR (i.[DateAssigned] IS NOT NULL AND d.[DateAssigned] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(d.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND d.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND d.[Description] IS NULL)) OR (i.[DueDate] <> d.[DueDate] OR (i.[DueDate] IS NULL AND d.[DueDate] IS NOT NULL) OR (i.[DueDate] IS NOT NULL AND d.[DueDate] IS NULL)) OR (i.[DueTime] <> d.[DueTime] OR (i.[DueTime] IS NULL AND d.[DueTime] IS NOT NULL) OR (i.[DueTime] IS NOT NULL AND d.[DueTime] IS NULL)) OR (CAST(i.[GradebookEntryIdentifier] AS varbinary(max)) <> CAST(d.[GradebookEntryIdentifier] AS varbinary(max)) OR (i.[GradebookEntryIdentifier] IS NULL AND d.[GradebookEntryIdentifier] IS NOT NULL) OR (i.[GradebookEntryIdentifier] IS NOT NULL AND d.[GradebookEntryIdentifier] IS NULL)) OR (CAST(i.[GradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(d.[GradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriod_GradingPeriodName] IS NULL AND d.[GradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriod_GradingPeriodName] IS NOT NULL AND d.[GradingPeriod_GradingPeriodName] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> d.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND d.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND d.[SchoolYear_Unified] IS NULL)) OR (i.[MaxPoints] <> d.[MaxPoints] OR (i.[MaxPoints] IS NULL AND d.[MaxPoints] IS NOT NULL) OR (i.[MaxPoints] IS NOT NULL AND d.[MaxPoints] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(d.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND d.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND d.[Namespace] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(d.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND d.[Section_LocalCourseCode] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(d.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND d.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(d.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND d.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND d.[Section_SessionName] IS NULL)) OR (CAST(i.[SourceSectionIdentifier] AS varbinary(max)) <> CAST(d.[SourceSectionIdentifier] AS varbinary(max)) OR (i.[SourceSectionIdentifier] IS NULL AND d.[SourceSectionIdentifier] IS NOT NULL) OR (i.[SourceSectionIdentifier] IS NOT NULL AND d.[SourceSectionIdentifier] IS NULL)) OR (CAST(i.[Title] AS varbinary(max)) <> CAST(d.[Title] AS varbinary(max)) OR (i.[Title] IS NULL AND d.[Title] IS NOT NULL) OR (i.[Title] IS NOT NULL AND d.[Title] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[GradebookEntry_GradebookEntryIdentifier] = i.[GradebookEntryIdentifier], r.[GradebookEntry_Namespace] = i.[Namespace]
-        FROM [edfi].[StudentGradebookEntry] r
-        INNER JOIN deleted d ON r.[GradebookEntry_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[GradebookEntryIdentifier] AS varbinary(max)) <> CAST(d.[GradebookEntryIdentifier] AS varbinary(max)) OR (i.[GradebookEntryIdentifier] IS NULL AND d.[GradebookEntryIdentifier] IS NOT NULL) OR (i.[GradebookEntryIdentifier] IS NOT NULL AND d.[GradebookEntryIdentifier] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(d.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND d.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND d.[Namespace] IS NULL)))
-        AND ((r.[GradebookEntry_GradebookEntryIdentifier] = d.[GradebookEntryIdentifier]) OR (r.[GradebookEntry_GradebookEntryIdentifier] IS NULL AND d.[GradebookEntryIdentifier] IS NULL)) AND ((r.[GradebookEntry_Namespace] = d.[Namespace]) OR (r.[GradebookEntry_Namespace] IS NULL AND d.[Namespace] IS NULL));
-
     END
 END;
 GO
@@ -46753,38 +46396,6 @@ BEGIN
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GradingPeriodDescriptor_DescriptorId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_GraduationPlan_PropagateIdentity]
-ON [edfi].[GraduationPlan]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([EducationOrganization_DocumentId]) OR UPDATE([GraduationSchoolYear_DocumentId]) OR UPDATE([GraduationPlanTypeDescriptor_DescriptorId]) OR UPDATE([TotalRequiredCreditTypeDescriptor_DescriptorId]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([GraduationSchoolYear_GraduationSchoolYear]) OR UPDATE([IndividualPlan]) OR UPDATE([TotalRequiredCreditConversion]) OR UPDATE([TotalRequiredCredits]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (i.[GraduationSchoolYear_DocumentId] <> d.[GraduationSchoolYear_DocumentId] OR (i.[GraduationSchoolYear_DocumentId] IS NULL AND d.[GraduationSchoolYear_DocumentId] IS NOT NULL) OR (i.[GraduationSchoolYear_DocumentId] IS NOT NULL AND d.[GraduationSchoolYear_DocumentId] IS NULL)) OR (i.[GraduationPlanTypeDescriptor_DescriptorId] <> d.[GraduationPlanTypeDescriptor_DescriptorId] OR (i.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL AND d.[GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL AND d.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL)) OR (i.[TotalRequiredCreditTypeDescriptor_DescriptorId] <> d.[TotalRequiredCreditTypeDescriptor_DescriptorId] OR (i.[TotalRequiredCreditTypeDescriptor_DescriptorId] IS NULL AND d.[TotalRequiredCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[TotalRequiredCreditTypeDescriptor_DescriptorId] IS NOT NULL AND d.[TotalRequiredCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[GraduationSchoolYear_GraduationSchoolYear] <> d.[GraduationSchoolYear_GraduationSchoolYear] OR (i.[GraduationSchoolYear_GraduationSchoolYear] IS NULL AND d.[GraduationSchoolYear_GraduationSchoolYear] IS NOT NULL) OR (i.[GraduationSchoolYear_GraduationSchoolYear] IS NOT NULL AND d.[GraduationSchoolYear_GraduationSchoolYear] IS NULL)) OR (i.[IndividualPlan] <> d.[IndividualPlan] OR (i.[IndividualPlan] IS NULL AND d.[IndividualPlan] IS NOT NULL) OR (i.[IndividualPlan] IS NOT NULL AND d.[IndividualPlan] IS NULL)) OR (i.[TotalRequiredCreditConversion] <> d.[TotalRequiredCreditConversion] OR (i.[TotalRequiredCreditConversion] IS NULL AND d.[TotalRequiredCreditConversion] IS NOT NULL) OR (i.[TotalRequiredCreditConversion] IS NOT NULL AND d.[TotalRequiredCreditConversion] IS NULL)) OR (i.[TotalRequiredCredits] <> d.[TotalRequiredCredits] OR (i.[TotalRequiredCredits] IS NULL AND d.[TotalRequiredCredits] IS NOT NULL) OR (i.[TotalRequiredCredits] IS NOT NULL AND d.[TotalRequiredCredits] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[AlternativeGraduationPlan_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[AlternativeGraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] = i.[GraduationPlanTypeDescriptor_DescriptorId], r.[AlternativeGraduationPlan_GraduationSchoolYear] = i.[GraduationSchoolYear_GraduationSchoolYear]
-        FROM [edfi].[StudentSchoolAssociationAlternativeGraduationPlan] r
-        INNER JOIN deleted d ON r.[AlternativeGraduationPlan_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[GraduationPlanTypeDescriptor_DescriptorId] <> d.[GraduationPlanTypeDescriptor_DescriptorId] OR (i.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL AND d.[GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL AND d.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL)) OR (i.[GraduationSchoolYear_GraduationSchoolYear] <> d.[GraduationSchoolYear_GraduationSchoolYear] OR (i.[GraduationSchoolYear_GraduationSchoolYear] IS NULL AND d.[GraduationSchoolYear_GraduationSchoolYear] IS NOT NULL) OR (i.[GraduationSchoolYear_GraduationSchoolYear] IS NOT NULL AND d.[GraduationSchoolYear_GraduationSchoolYear] IS NULL)))
-        AND ((r.[AlternativeGraduationPlan_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[AlternativeGraduationPlan_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[AlternativeGraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] = d.[GraduationPlanTypeDescriptor_DescriptorId]) OR (r.[AlternativeGraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] IS NULL AND d.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL)) AND ((r.[AlternativeGraduationPlan_GraduationSchoolYear] = d.[GraduationSchoolYear_GraduationSchoolYear]) OR (r.[AlternativeGraduationPlan_GraduationSchoolYear] IS NULL AND d.[GraduationSchoolYear_GraduationSchoolYear] IS NULL));
-
-        UPDATE r
-        SET r.[GraduationPlan_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] = i.[GraduationPlanTypeDescriptor_DescriptorId], r.[GraduationPlan_GraduationSchoolYear] = i.[GraduationSchoolYear_GraduationSchoolYear]
-        FROM [edfi].[StudentSchoolAssociation] r
-        INNER JOIN deleted d ON r.[GraduationPlan_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[GraduationPlanTypeDescriptor_DescriptorId] <> d.[GraduationPlanTypeDescriptor_DescriptorId] OR (i.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL AND d.[GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL AND d.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL)) OR (i.[GraduationSchoolYear_GraduationSchoolYear] <> d.[GraduationSchoolYear_GraduationSchoolYear] OR (i.[GraduationSchoolYear_GraduationSchoolYear] IS NULL AND d.[GraduationSchoolYear_GraduationSchoolYear] IS NOT NULL) OR (i.[GraduationSchoolYear_GraduationSchoolYear] IS NOT NULL AND d.[GraduationSchoolYear_GraduationSchoolYear] IS NULL)))
-        AND ((r.[GraduationPlan_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[GraduationPlan_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] = d.[GraduationPlanTypeDescriptor_DescriptorId]) OR (r.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] IS NULL AND d.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL)) AND ((r.[GraduationPlan_GraduationSchoolYear] = d.[GraduationSchoolYear_GraduationSchoolYear]) OR (r.[GraduationPlan_GraduationSchoolYear] IS NULL AND d.[GraduationSchoolYear_GraduationSchoolYear] IS NULL));
-
     END
 END;
 GO
@@ -47154,38 +46765,6 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[GraduationPlan] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_Intervention_PropagateIdentity]
-ON [edfi].[Intervention]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([EducationOrganization_DocumentId]) OR UPDATE([DeliveryMethodDescriptor_DescriptorId]) OR UPDATE([InterventionClassDescriptor_DescriptorId]) OR UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([EndDate]) OR UPDATE([InterventionIdentificationCode]) OR UPDATE([MaxDosage]) OR UPDATE([MinDosage]) OR UPDATE([Namespace]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (i.[DeliveryMethodDescriptor_DescriptorId] <> d.[DeliveryMethodDescriptor_DescriptorId] OR (i.[DeliveryMethodDescriptor_DescriptorId] IS NULL AND d.[DeliveryMethodDescriptor_DescriptorId] IS NOT NULL) OR (i.[DeliveryMethodDescriptor_DescriptorId] IS NOT NULL AND d.[DeliveryMethodDescriptor_DescriptorId] IS NULL)) OR (i.[InterventionClassDescriptor_DescriptorId] <> d.[InterventionClassDescriptor_DescriptorId] OR (i.[InterventionClassDescriptor_DescriptorId] IS NULL AND d.[InterventionClassDescriptor_DescriptorId] IS NOT NULL) OR (i.[InterventionClassDescriptor_DescriptorId] IS NOT NULL AND d.[InterventionClassDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[EndDate] <> d.[EndDate] OR (i.[EndDate] IS NULL AND d.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND d.[EndDate] IS NULL)) OR (CAST(i.[InterventionIdentificationCode] AS varbinary(max)) <> CAST(d.[InterventionIdentificationCode] AS varbinary(max)) OR (i.[InterventionIdentificationCode] IS NULL AND d.[InterventionIdentificationCode] IS NOT NULL) OR (i.[InterventionIdentificationCode] IS NOT NULL AND d.[InterventionIdentificationCode] IS NULL)) OR (i.[MaxDosage] <> d.[MaxDosage] OR (i.[MaxDosage] IS NULL AND d.[MaxDosage] IS NOT NULL) OR (i.[MaxDosage] IS NOT NULL AND d.[MaxDosage] IS NULL)) OR (i.[MinDosage] <> d.[MinDosage] OR (i.[MinDosage] IS NULL AND d.[MinDosage] IS NOT NULL) OR (i.[MinDosage] IS NOT NULL AND d.[MinDosage] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(d.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND d.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND d.[Namespace] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[Intervention_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[Intervention_InterventionIdentificationCode] = i.[InterventionIdentificationCode]
-        FROM [edfi].[StudentInterventionAssociation] r
-        INNER JOIN deleted d ON r.[Intervention_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionIdentificationCode] AS varbinary(max)) <> CAST(d.[InterventionIdentificationCode] AS varbinary(max)) OR (i.[InterventionIdentificationCode] IS NULL AND d.[InterventionIdentificationCode] IS NOT NULL) OR (i.[InterventionIdentificationCode] IS NOT NULL AND d.[InterventionIdentificationCode] IS NULL)))
-        AND ((r.[Intervention_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[Intervention_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[Intervention_InterventionIdentificationCode] = d.[InterventionIdentificationCode]) OR (r.[Intervention_InterventionIdentificationCode] IS NULL AND d.[InterventionIdentificationCode] IS NULL));
-
-        UPDATE r
-        SET r.[Intervention_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[Intervention_InterventionIdentificationCode] = i.[InterventionIdentificationCode]
-        FROM [edfi].[StudentInterventionAttendanceEvent] r
-        INNER JOIN deleted d ON r.[Intervention_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionIdentificationCode] AS varbinary(max)) <> CAST(d.[InterventionIdentificationCode] AS varbinary(max)) OR (i.[InterventionIdentificationCode] IS NULL AND d.[InterventionIdentificationCode] IS NOT NULL) OR (i.[InterventionIdentificationCode] IS NOT NULL AND d.[InterventionIdentificationCode] IS NULL)))
-        AND ((r.[Intervention_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[Intervention_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[Intervention_InterventionIdentificationCode] = d.[InterventionIdentificationCode]) OR (r.[Intervention_InterventionIdentificationCode] IS NULL AND d.[InterventionIdentificationCode] IS NULL));
-
     END
 END;
 GO
@@ -47618,46 +47197,6 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[Intervention] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_InterventionPrescription_PropagateIdentity]
-ON [edfi].[InterventionPrescription]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([EducationOrganization_DocumentId]) OR UPDATE([DeliveryMethodDescriptor_DescriptorId]) OR UPDATE([InterventionClassDescriptor_DescriptorId]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([InterventionPrescriptionIdentificationCode]) OR UPDATE([MaxDosage]) OR UPDATE([MinDosage]) OR UPDATE([Namespace]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (i.[DeliveryMethodDescriptor_DescriptorId] <> d.[DeliveryMethodDescriptor_DescriptorId] OR (i.[DeliveryMethodDescriptor_DescriptorId] IS NULL AND d.[DeliveryMethodDescriptor_DescriptorId] IS NOT NULL) OR (i.[DeliveryMethodDescriptor_DescriptorId] IS NOT NULL AND d.[DeliveryMethodDescriptor_DescriptorId] IS NULL)) OR (i.[InterventionClassDescriptor_DescriptorId] <> d.[InterventionClassDescriptor_DescriptorId] OR (i.[InterventionClassDescriptor_DescriptorId] IS NULL AND d.[InterventionClassDescriptor_DescriptorId] IS NOT NULL) OR (i.[InterventionClassDescriptor_DescriptorId] IS NOT NULL AND d.[InterventionClassDescriptor_DescriptorId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) <> CAST(d.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) OR (i.[InterventionPrescriptionIdentificationCode] IS NULL AND d.[InterventionPrescriptionIdentificationCode] IS NOT NULL) OR (i.[InterventionPrescriptionIdentificationCode] IS NOT NULL AND d.[InterventionPrescriptionIdentificationCode] IS NULL)) OR (i.[MaxDosage] <> d.[MaxDosage] OR (i.[MaxDosage] IS NULL AND d.[MaxDosage] IS NOT NULL) OR (i.[MaxDosage] IS NOT NULL AND d.[MaxDosage] IS NULL)) OR (i.[MinDosage] <> d.[MinDosage] OR (i.[MinDosage] IS NULL AND d.[MinDosage] IS NOT NULL) OR (i.[MinDosage] IS NOT NULL AND d.[MinDosage] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(d.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND d.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND d.[Namespace] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] = i.[InterventionPrescriptionIdentificationCode]
-        FROM [edfi].[EducationOrganizationInterventionPrescriptionAssociation] r
-        INNER JOIN deleted d ON r.[InterventionPrescriptionInterventionPrescription_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) <> CAST(d.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) OR (i.[InterventionPrescriptionIdentificationCode] IS NULL AND d.[InterventionPrescriptionIdentificationCode] IS NOT NULL) OR (i.[InterventionPrescriptionIdentificationCode] IS NOT NULL AND d.[InterventionPrescriptionIdentificationCode] IS NULL)))
-        AND ((r.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] = d.[InterventionPrescriptionIdentificationCode]) OR (r.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NULL AND d.[InterventionPrescriptionIdentificationCode] IS NULL));
-
-        UPDATE r
-        SET r.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] = i.[InterventionPrescriptionIdentificationCode]
-        FROM [edfi].[InterventionInterventionPrescription] r
-        INNER JOIN deleted d ON r.[InterventionPrescriptionInterventionPrescription_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) <> CAST(d.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) OR (i.[InterventionPrescriptionIdentificationCode] IS NULL AND d.[InterventionPrescriptionIdentificationCode] IS NOT NULL) OR (i.[InterventionPrescriptionIdentificationCode] IS NOT NULL AND d.[InterventionPrescriptionIdentificationCode] IS NULL)))
-        AND ((r.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] = d.[InterventionPrescriptionIdentificationCode]) OR (r.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NULL AND d.[InterventionPrescriptionIdentificationCode] IS NULL));
-
-        UPDATE r
-        SET r.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] = i.[InterventionPrescriptionIdentificationCode]
-        FROM [edfi].[InterventionStudy] r
-        INNER JOIN deleted d ON r.[InterventionPrescriptionInterventionPrescription_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) <> CAST(d.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) OR (i.[InterventionPrescriptionIdentificationCode] IS NULL AND d.[InterventionPrescriptionIdentificationCode] IS NOT NULL) OR (i.[InterventionPrescriptionIdentificationCode] IS NOT NULL AND d.[InterventionPrescriptionIdentificationCode] IS NULL)))
-        AND ((r.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] = d.[InterventionPrescriptionIdentificationCode]) OR (r.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NULL AND d.[InterventionPrescriptionIdentificationCode] IS NULL));
-
     END
 END;
 GO
@@ -48963,62 +48502,6 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[LearningStandard] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_LocalAccount_PropagateIdentity]
-ON [edfi].[LocalAccount]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([ChartOfAccountChartOfAccount_DocumentId]) OR UPDATE([EducationOrganization_DocumentId]) OR UPDATE([AccountIdentifier]) OR UPDATE([AccountName]) OR UPDATE([ChartOfAccountChartOfAccount_AccountIdentifier]) OR UPDATE([ChartOfAccountChartOfAccount_EducationOrganizationId]) OR UPDATE([FiscalYear_Unified]) OR UPDATE([EducationOrganization_EducationOrganizationId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[ChartOfAccountChartOfAccount_DocumentId] <> d.[ChartOfAccountChartOfAccount_DocumentId] OR (i.[ChartOfAccountChartOfAccount_DocumentId] IS NULL AND d.[ChartOfAccountChartOfAccount_DocumentId] IS NOT NULL) OR (i.[ChartOfAccountChartOfAccount_DocumentId] IS NOT NULL AND d.[ChartOfAccountChartOfAccount_DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(d.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND d.[AccountIdentifier] IS NULL)) OR (CAST(i.[AccountName] AS varbinary(max)) <> CAST(d.[AccountName] AS varbinary(max)) OR (i.[AccountName] IS NULL AND d.[AccountName] IS NOT NULL) OR (i.[AccountName] IS NOT NULL AND d.[AccountName] IS NULL)) OR (CAST(i.[ChartOfAccountChartOfAccount_AccountIdentifier] AS varbinary(max)) <> CAST(d.[ChartOfAccountChartOfAccount_AccountIdentifier] AS varbinary(max)) OR (i.[ChartOfAccountChartOfAccount_AccountIdentifier] IS NULL AND d.[ChartOfAccountChartOfAccount_AccountIdentifier] IS NOT NULL) OR (i.[ChartOfAccountChartOfAccount_AccountIdentifier] IS NOT NULL AND d.[ChartOfAccountChartOfAccount_AccountIdentifier] IS NULL)) OR (i.[ChartOfAccountChartOfAccount_EducationOrganizationId] <> d.[ChartOfAccountChartOfAccount_EducationOrganizationId] OR (i.[ChartOfAccountChartOfAccount_EducationOrganizationId] IS NULL AND d.[ChartOfAccountChartOfAccount_EducationOrganizationId] IS NOT NULL) OR (i.[ChartOfAccountChartOfAccount_EducationOrganizationId] IS NOT NULL AND d.[ChartOfAccountChartOfAccount_EducationOrganizationId] IS NULL)) OR (i.[FiscalYear_Unified] <> d.[FiscalYear_Unified] OR (i.[FiscalYear_Unified] IS NULL AND d.[FiscalYear_Unified] IS NOT NULL) OR (i.[FiscalYear_Unified] IS NOT NULL AND d.[FiscalYear_Unified] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[LocalAccount_AccountIdentifier] = i.[AccountIdentifier], r.[LocalAccount_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[LocalAccount_FiscalYear] = i.[FiscalYear]
-        FROM [edfi].[LocalActual] r
-        INNER JOIN deleted d ON r.[LocalAccount_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(d.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND d.[AccountIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL)))
-        AND ((r.[LocalAccount_AccountIdentifier] = d.[AccountIdentifier]) OR (r.[LocalAccount_AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NULL)) AND ((r.[LocalAccount_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[LocalAccount_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[LocalAccount_FiscalYear] = d.[FiscalYear]) OR (r.[LocalAccount_FiscalYear] IS NULL AND d.[FiscalYear] IS NULL));
-
-        UPDATE r
-        SET r.[LocalAccount_AccountIdentifier] = i.[AccountIdentifier], r.[LocalAccount_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[LocalAccount_FiscalYear] = i.[FiscalYear]
-        FROM [edfi].[LocalBudget] r
-        INNER JOIN deleted d ON r.[LocalAccount_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(d.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND d.[AccountIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL)))
-        AND ((r.[LocalAccount_AccountIdentifier] = d.[AccountIdentifier]) OR (r.[LocalAccount_AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NULL)) AND ((r.[LocalAccount_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[LocalAccount_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[LocalAccount_FiscalYear] = d.[FiscalYear]) OR (r.[LocalAccount_FiscalYear] IS NULL AND d.[FiscalYear] IS NULL));
-
-        UPDATE r
-        SET r.[LocalAccount_AccountIdentifier] = i.[AccountIdentifier], r.[LocalAccount_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[LocalAccount_FiscalYear] = i.[FiscalYear]
-        FROM [edfi].[LocalContractedStaff] r
-        INNER JOIN deleted d ON r.[LocalAccount_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(d.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND d.[AccountIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL)))
-        AND ((r.[LocalAccount_AccountIdentifier] = d.[AccountIdentifier]) OR (r.[LocalAccount_AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NULL)) AND ((r.[LocalAccount_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[LocalAccount_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[LocalAccount_FiscalYear] = d.[FiscalYear]) OR (r.[LocalAccount_FiscalYear] IS NULL AND d.[FiscalYear] IS NULL));
-
-        UPDATE r
-        SET r.[LocalAccount_AccountIdentifier] = i.[AccountIdentifier], r.[LocalAccount_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[LocalAccount_FiscalYear] = i.[FiscalYear]
-        FROM [edfi].[LocalEncumbrance] r
-        INNER JOIN deleted d ON r.[LocalAccount_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(d.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND d.[AccountIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL)))
-        AND ((r.[LocalAccount_AccountIdentifier] = d.[AccountIdentifier]) OR (r.[LocalAccount_AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NULL)) AND ((r.[LocalAccount_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[LocalAccount_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[LocalAccount_FiscalYear] = d.[FiscalYear]) OR (r.[LocalAccount_FiscalYear] IS NULL AND d.[FiscalYear] IS NULL));
-
-        UPDATE r
-        SET r.[LocalAccount_AccountIdentifier] = i.[AccountIdentifier], r.[LocalAccount_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[LocalAccount_FiscalYear] = i.[FiscalYear]
-        FROM [edfi].[LocalPayroll] r
-        INNER JOIN deleted d ON r.[LocalAccount_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(d.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND d.[AccountIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL)))
-        AND ((r.[LocalAccount_AccountIdentifier] = d.[AccountIdentifier]) OR (r.[LocalAccount_AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NULL)) AND ((r.[LocalAccount_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[LocalAccount_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[LocalAccount_FiscalYear] = d.[FiscalYear]) OR (r.[LocalAccount_FiscalYear] IS NULL AND d.[FiscalYear] IS NULL));
-
     END
 END;
 GO
@@ -50635,30 +50118,6 @@ BEGIN
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
         INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_Location_PropagateIdentity]
-ON [edfi].[Location]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([School_DocumentId]) OR UPDATE([ClassroomIdentificationCode]) OR UPDATE([MaximumNumberOfSeats]) OR UPDATE([OptimalNumberOfSeats]) OR UPDATE([School_SchoolId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[School_DocumentId] <> d.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND d.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND d.[School_DocumentId] IS NULL)) OR (CAST(i.[ClassroomIdentificationCode] AS varbinary(max)) <> CAST(d.[ClassroomIdentificationCode] AS varbinary(max)) OR (i.[ClassroomIdentificationCode] IS NULL AND d.[ClassroomIdentificationCode] IS NOT NULL) OR (i.[ClassroomIdentificationCode] IS NOT NULL AND d.[ClassroomIdentificationCode] IS NULL)) OR (i.[MaximumNumberOfSeats] <> d.[MaximumNumberOfSeats] OR (i.[MaximumNumberOfSeats] IS NULL AND d.[MaximumNumberOfSeats] IS NOT NULL) OR (i.[MaximumNumberOfSeats] IS NOT NULL AND d.[MaximumNumberOfSeats] IS NULL)) OR (i.[OptimalNumberOfSeats] <> d.[OptimalNumberOfSeats] OR (i.[OptimalNumberOfSeats] IS NULL AND d.[OptimalNumberOfSeats] IS NOT NULL) OR (i.[OptimalNumberOfSeats] IS NOT NULL AND d.[OptimalNumberOfSeats] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[LocationLocation_ClassroomIdentificationCode] = i.[ClassroomIdentificationCode], r.[SchoolId_U35501e03_Unified] = i.[School_SchoolId]
-        FROM [edfi].[Section] r
-        INNER JOIN deleted d ON r.[LocationLocation_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[ClassroomIdentificationCode] AS varbinary(max)) <> CAST(d.[ClassroomIdentificationCode] AS varbinary(max)) OR (i.[ClassroomIdentificationCode] IS NULL AND d.[ClassroomIdentificationCode] IS NOT NULL) OR (i.[ClassroomIdentificationCode] IS NOT NULL AND d.[ClassroomIdentificationCode] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)))
-        AND ((r.[LocationLocation_ClassroomIdentificationCode] = d.[ClassroomIdentificationCode]) OR (r.[LocationLocation_ClassroomIdentificationCode] IS NULL AND d.[ClassroomIdentificationCode] IS NULL)) AND ((r.[SchoolId_U35501e03_Unified] = d.[School_SchoolId]) OR (r.[SchoolId_U35501e03_Unified] IS NULL AND d.[School_SchoolId] IS NULL));
-
     END
 END;
 GO
@@ -52971,190 +52430,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_Program_PropagateIdentity]
-ON [edfi].[Program]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([EducationOrganization_DocumentId]) OR UPDATE([ProgramTypeDescriptor_DescriptorId]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramId]) OR UPDATE([ProgramName]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramId] AS varbinary(max)) <> CAST(d.[ProgramId] AS varbinary(max)) OR (i.[ProgramId] IS NULL AND d.[ProgramId] IS NOT NULL) OR (i.[ProgramId] IS NOT NULL AND d.[ProgramId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[SectionOrProgramChoiceProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[SectionOrProgramChoiceProgram_ProgramName] = i.[ProgramName], r.[SectionOrProgramChoiceProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[AssessmentProgram] r
-        INNER JOIN deleted d ON r.[SectionOrProgramChoiceProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[SectionOrProgramChoiceProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[SectionOrProgramChoiceProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[SectionOrProgramChoiceProgram_ProgramName] = d.[ProgramName]) OR (r.[SectionOrProgramChoiceProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[SectionOrProgramChoiceProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[SectionOrProgramChoiceProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ProgramProgram_ProgramName] = i.[ProgramName], r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[CohortProgram] r
-        INNER JOIN deleted d ON r.[ProgramProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ProgramProgram_ProgramName] = d.[ProgramName]) OR (r.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[CourseProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[CourseProgram_ProgramName] = i.[ProgramName], r.[CourseProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[CourseTranscriptCourseProgram] r
-        INNER JOIN deleted d ON r.[CourseProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[CourseProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[CourseProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[CourseProgram_ProgramName] = d.[ProgramName]) OR (r.[CourseProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[CourseProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[CourseProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ProgramProgram_ProgramName] = i.[ProgramName], r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[ProgramEvaluation] r
-        INNER JOIN deleted d ON r.[ProgramProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ProgramProgram_ProgramName] = d.[ProgramName]) OR (r.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[Program_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[Program_ProgramName] = i.[ProgramName], r.[Program_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[RestraintEventProgram] r
-        INNER JOIN deleted d ON r.[Program_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[Program_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[Program_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[Program_ProgramName] = d.[ProgramName]) OR (r.[Program_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[Program_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[Program_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[Program_ProgramName] = i.[ProgramName], r.[Program_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[SectionProgram] r
-        INNER JOIN deleted d ON r.[Program_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[Program_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[Program_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[Program_ProgramName] = d.[ProgramName]) OR (r.[Program_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[Program_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ProgramProgram_ProgramName] = i.[ProgramName], r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StaffProgramAssociation] r
-        INNER JOIN deleted d ON r.[ProgramProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ProgramProgram_ProgramName] = d.[ProgramName]) OR (r.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ProgramProgram_ProgramName] = i.[ProgramName], r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentCTEProgramAssociation] r
-        INNER JOIN deleted d ON r.[ProgramProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ProgramProgram_ProgramName] = d.[ProgramName]) OR (r.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ProgramProgram_ProgramName] = i.[ProgramName], r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentHomelessProgramAssociation] r
-        INNER JOIN deleted d ON r.[ProgramProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ProgramProgram_ProgramName] = d.[ProgramName]) OR (r.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ProgramProgram_ProgramName] = i.[ProgramName], r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentLanguageInstructionProgramAssociation] r
-        INNER JOIN deleted d ON r.[ProgramProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ProgramProgram_ProgramName] = d.[ProgramName]) OR (r.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ProgramProgram_ProgramName] = i.[ProgramName], r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentMigrantEducationProgramAssociation] r
-        INNER JOIN deleted d ON r.[ProgramProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ProgramProgram_ProgramName] = d.[ProgramName]) OR (r.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ProgramProgram_ProgramName] = i.[ProgramName], r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation] r
-        INNER JOIN deleted d ON r.[ProgramProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ProgramProgram_ProgramName] = d.[ProgramName]) OR (r.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ProgramProgram_ProgramName] = i.[ProgramName], r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentProgramAssociation] r
-        INNER JOIN deleted d ON r.[ProgramProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ProgramProgram_ProgramName] = d.[ProgramName]) OR (r.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ProgramProgram_ProgramName] = i.[ProgramName], r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentProgramAttendanceEvent] r
-        INNER JOIN deleted d ON r.[ProgramProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ProgramProgram_ProgramName] = d.[ProgramName]) OR (r.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ProgramProgram_ProgramName] = i.[ProgramName], r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentSchoolFoodServiceProgramAssociation] r
-        INNER JOIN deleted d ON r.[ProgramProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ProgramProgram_ProgramName] = d.[ProgramName]) OR (r.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ProgramProgram_ProgramName] = i.[ProgramName], r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentSection504ProgramAssociation] r
-        INNER JOIN deleted d ON r.[ProgramProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ProgramProgram_ProgramName] = d.[ProgramName]) OR (r.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[Program_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[Program_ProgramName] = i.[ProgramName], r.[Program_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentSectionAssociationProgram] r
-        INNER JOIN deleted d ON r.[Program_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[Program_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[Program_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[Program_ProgramName] = d.[ProgramName]) OR (r.[Program_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[Program_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ProgramProgram_ProgramName] = i.[ProgramName], r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentSpecialEducationProgramAssociation] r
-        INNER JOIN deleted d ON r.[ProgramProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ProgramProgram_ProgramName] = d.[ProgramName]) OR (r.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ProgramProgram_ProgramName] = i.[ProgramName], r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentSpecialEducationProgramEligibilityAssociation] r
-        INNER JOIN deleted d ON r.[ProgramProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ProgramProgram_ProgramName] = d.[ProgramName]) OR (r.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramProgram_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ProgramProgram_ProgramName] = i.[ProgramName], r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentTitleIPartAProgramAssociation] r
-        INNER JOIN deleted d ON r.[ProgramProgram_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramProgram_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ProgramProgram_ProgramName] = d.[ProgramName]) OR (r.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[Program_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[Program_ProgramName] = i.[ProgramName], r.[Program_ProgramTypeDescriptor_DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[SurveyProgramAssociation] r
-        INNER JOIN deleted d ON r.[Program_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[Program_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[Program_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[Program_ProgramName] = d.[ProgramName]) OR (r.[Program_ProgramName] IS NULL AND d.[ProgramName] IS NULL)) AND ((r.[Program_ProgramTypeDescriptor_DescriptorId] = d.[ProgramTypeDescriptor_DescriptorId]) OR (r.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_Program_ReferentialIdentity]
 ON [edfi].[Program]
 AFTER INSERT, UPDATE
@@ -53488,46 +52763,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_ProgramEvaluation_PropagateIdentity]
-ON [edfi].[ProgramEvaluation]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([ProgramProgram_DocumentId]) OR UPDATE([ProgramEvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([EvaluationMaxNumericRating]) OR UPDATE([EvaluationMinNumericRating]) OR UPDATE([ProgramEvaluationDescription]) OR UPDATE([ProgramEvaluationTitle]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[ProgramProgram_DocumentId] <> d.[ProgramProgram_DocumentId] OR (i.[ProgramProgram_DocumentId] IS NULL AND d.[ProgramProgram_DocumentId] IS NOT NULL) OR (i.[ProgramProgram_DocumentId] IS NOT NULL AND d.[ProgramProgram_DocumentId] IS NULL)) OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[EvaluationMaxNumericRating] <> d.[EvaluationMaxNumericRating] OR (i.[EvaluationMaxNumericRating] IS NULL AND d.[EvaluationMaxNumericRating] IS NOT NULL) OR (i.[EvaluationMaxNumericRating] IS NOT NULL AND d.[EvaluationMaxNumericRating] IS NULL)) OR (i.[EvaluationMinNumericRating] <> d.[EvaluationMinNumericRating] OR (i.[EvaluationMinNumericRating] IS NULL AND d.[EvaluationMinNumericRating] IS NOT NULL) OR (i.[EvaluationMinNumericRating] IS NOT NULL AND d.[EvaluationMinNumericRating] IS NULL)) OR (CAST(i.[ProgramEvaluationDescription] AS varbinary(max)) <> CAST(d.[ProgramEvaluationDescription] AS varbinary(max)) OR (i.[ProgramEvaluationDescription] IS NULL AND d.[ProgramEvaluationDescription] IS NOT NULL) OR (i.[ProgramEvaluationDescription] IS NOT NULL AND d.[ProgramEvaluationDescription] IS NULL)) OR (CAST(i.[ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] = i.[ProgramEvaluationPeriodDescriptor_DescriptorId], r.[ProgramEvaluationTitle_Unified] = i.[ProgramEvaluationTitle], r.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] = i.[ProgramEvaluationTypeDescriptor_DescriptorId], r.[ProgramEducationOrganizationId_Unified] = i.[ProgramProgram_EducationOrganizationId], r.[ProgramName_Unified] = i.[ProgramProgram_ProgramName], r.[ProgramTypeDescriptor_Unified_DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[ProgramEvaluationElement] r
-        INNER JOIN deleted d ON r.[ProgramEvaluation_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] = d.[ProgramEvaluationPeriodDescriptor_DescriptorId]) OR (r.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL AND d.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) AND ((r.[ProgramEvaluationTitle_Unified] = d.[ProgramEvaluationTitle]) OR (r.[ProgramEvaluationTitle_Unified] IS NULL AND d.[ProgramEvaluationTitle] IS NULL)) AND ((r.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] = d.[ProgramEvaluationTypeDescriptor_DescriptorId]) OR (r.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL AND d.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) AND ((r.[ProgramEducationOrganizationId_Unified] = d.[ProgramProgram_EducationOrganizationId]) OR (r.[ProgramEducationOrganizationId_Unified] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) AND ((r.[ProgramName_Unified] = d.[ProgramProgram_ProgramName]) OR (r.[ProgramName_Unified] IS NULL AND d.[ProgramProgram_ProgramName] IS NULL)) AND ((r.[ProgramTypeDescriptor_Unified_DescriptorId] = d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramTypeDescriptor_Unified_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] = i.[ProgramEvaluationPeriodDescriptor_DescriptorId], r.[ProgramEvaluation_ProgramEvaluationTitle] = i.[ProgramEvaluationTitle], r.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] = i.[ProgramEvaluationTypeDescriptor_DescriptorId], r.[ProgramEvaluation_ProgramEducationOrganizationId] = i.[ProgramProgram_EducationOrganizationId], r.[ProgramEvaluation_ProgramName] = i.[ProgramProgram_ProgramName], r.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[ProgramEvaluationObjective] r
-        INNER JOIN deleted d ON r.[ProgramEvaluation_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] = d.[ProgramEvaluationPeriodDescriptor_DescriptorId]) OR (r.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) AND ((r.[ProgramEvaluation_ProgramEvaluationTitle] = d.[ProgramEvaluationTitle]) OR (r.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluationTitle] IS NULL)) AND ((r.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] = d.[ProgramEvaluationTypeDescriptor_DescriptorId]) OR (r.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) AND ((r.[ProgramEvaluation_ProgramEducationOrganizationId] = d.[ProgramProgram_EducationOrganizationId]) OR (r.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) AND ((r.[ProgramEvaluation_ProgramName] = d.[ProgramProgram_ProgramName]) OR (r.[ProgramEvaluation_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NULL)) AND ((r.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] = d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] = i.[ProgramEvaluationPeriodDescriptor_DescriptorId], r.[ProgramEvaluation_ProgramEvaluationTitle] = i.[ProgramEvaluationTitle], r.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] = i.[ProgramEvaluationTypeDescriptor_DescriptorId], r.[ProgramEvaluation_ProgramEducationOrganizationId] = i.[ProgramProgram_EducationOrganizationId], r.[ProgramEvaluation_ProgramName] = i.[ProgramProgram_ProgramName], r.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentProgramEvaluation] r
-        INNER JOIN deleted d ON r.[ProgramEvaluation_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] = d.[ProgramEvaluationPeriodDescriptor_DescriptorId]) OR (r.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) AND ((r.[ProgramEvaluation_ProgramEvaluationTitle] = d.[ProgramEvaluationTitle]) OR (r.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluationTitle] IS NULL)) AND ((r.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] = d.[ProgramEvaluationTypeDescriptor_DescriptorId]) OR (r.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) AND ((r.[ProgramEvaluation_ProgramEducationOrganizationId] = d.[ProgramProgram_EducationOrganizationId]) OR (r.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) AND ((r.[ProgramEvaluation_ProgramName] = d.[ProgramProgram_ProgramName]) OR (r.[ProgramEvaluation_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NULL)) AND ((r.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] = d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_ProgramEvaluation_ReferentialIdentity]
 ON [edfi].[ProgramEvaluation]
 AFTER INSERT, UPDATE
@@ -53695,38 +52930,6 @@ BEGIN
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_ProgramEvaluationElement_PropagateIdentity]
-ON [edfi].[ProgramEvaluationElement]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([ProgramEvaluationObjective_DocumentId]) OR UPDATE([ProgramEvaluation_DocumentId]) OR UPDATE([ProgramEvaluationPeriodDescriptor_Unified_DescriptorId]) OR UPDATE([ProgramEvaluationTypeDescriptor_Unified_DescriptorId]) OR UPDATE([ProgramTypeDescriptor_Unified_DescriptorId]) OR UPDATE([ElementMaxNumericRating]) OR UPDATE([ElementMinNumericRating]) OR UPDATE([ElementSortOrder]) OR UPDATE([ProgramEvaluationElementDescription]) OR UPDATE([ProgramEvaluationElementTitle]) OR UPDATE([ProgramEducationOrganizationId_Unified]) OR UPDATE([ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle]) OR UPDATE([ProgramEvaluationTitle_Unified]) OR UPDATE([ProgramName_Unified]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[ProgramEvaluationObjective_DocumentId] <> d.[ProgramEvaluationObjective_DocumentId] OR (i.[ProgramEvaluationObjective_DocumentId] IS NULL AND d.[ProgramEvaluationObjective_DocumentId] IS NOT NULL) OR (i.[ProgramEvaluationObjective_DocumentId] IS NOT NULL AND d.[ProgramEvaluationObjective_DocumentId] IS NULL)) OR (i.[ProgramEvaluation_DocumentId] <> d.[ProgramEvaluation_DocumentId] OR (i.[ProgramEvaluation_DocumentId] IS NULL AND d.[ProgramEvaluation_DocumentId] IS NOT NULL) OR (i.[ProgramEvaluation_DocumentId] IS NOT NULL AND d.[ProgramEvaluation_DocumentId] IS NULL)) OR (i.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] <> d.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] OR (i.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL AND d.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL)) OR (i.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] <> d.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] OR (i.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL AND d.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL)) OR (i.[ProgramTypeDescriptor_Unified_DescriptorId] <> d.[ProgramTypeDescriptor_Unified_DescriptorId] OR (i.[ProgramTypeDescriptor_Unified_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_Unified_DescriptorId] IS NULL)) OR (i.[ElementMaxNumericRating] <> d.[ElementMaxNumericRating] OR (i.[ElementMaxNumericRating] IS NULL AND d.[ElementMaxNumericRating] IS NOT NULL) OR (i.[ElementMaxNumericRating] IS NOT NULL AND d.[ElementMaxNumericRating] IS NULL)) OR (i.[ElementMinNumericRating] <> d.[ElementMinNumericRating] OR (i.[ElementMinNumericRating] IS NULL AND d.[ElementMinNumericRating] IS NOT NULL) OR (i.[ElementMinNumericRating] IS NOT NULL AND d.[ElementMinNumericRating] IS NULL)) OR (i.[ElementSortOrder] <> d.[ElementSortOrder] OR (i.[ElementSortOrder] IS NULL AND d.[ElementSortOrder] IS NOT NULL) OR (i.[ElementSortOrder] IS NOT NULL AND d.[ElementSortOrder] IS NULL)) OR (CAST(i.[ProgramEvaluationElementDescription] AS varbinary(max)) <> CAST(d.[ProgramEvaluationElementDescription] AS varbinary(max)) OR (i.[ProgramEvaluationElementDescription] IS NULL AND d.[ProgramEvaluationElementDescription] IS NOT NULL) OR (i.[ProgramEvaluationElementDescription] IS NOT NULL AND d.[ProgramEvaluationElementDescription] IS NULL)) OR (CAST(i.[ProgramEvaluationElementTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationElementTitle] AS varbinary(max)) OR (i.[ProgramEvaluationElementTitle] IS NULL AND d.[ProgramEvaluationElementTitle] IS NOT NULL) OR (i.[ProgramEvaluationElementTitle] IS NOT NULL AND d.[ProgramEvaluationElementTitle] IS NULL)) OR (i.[ProgramEducationOrganizationId_Unified] <> d.[ProgramEducationOrganizationId_Unified] OR (i.[ProgramEducationOrganizationId_Unified] IS NULL AND d.[ProgramEducationOrganizationId_Unified] IS NOT NULL) OR (i.[ProgramEducationOrganizationId_Unified] IS NOT NULL AND d.[ProgramEducationOrganizationId_Unified] IS NULL)) OR (CAST(i.[ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] AS varbinary(max)) OR (i.[ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] IS NULL AND d.[ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] IS NOT NULL) OR (i.[ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] IS NOT NULL AND d.[ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] IS NULL)) OR (CAST(i.[ProgramEvaluationTitle_Unified] AS varbinary(max)) <> CAST(d.[ProgramEvaluationTitle_Unified] AS varbinary(max)) OR (i.[ProgramEvaluationTitle_Unified] IS NULL AND d.[ProgramEvaluationTitle_Unified] IS NOT NULL) OR (i.[ProgramEvaluationTitle_Unified] IS NOT NULL AND d.[ProgramEvaluationTitle_Unified] IS NULL)) OR (CAST(i.[ProgramName_Unified] AS varbinary(max)) <> CAST(d.[ProgramName_Unified] AS varbinary(max)) OR (i.[ProgramName_Unified] IS NULL AND d.[ProgramName_Unified] IS NOT NULL) OR (i.[ProgramName_Unified] IS NOT NULL AND d.[ProgramName_Unified] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[ProgramEvaluationElement_ProgramEvaluationElementTitle] = i.[ProgramEvaluationElementTitle], r.[ProgramEvaluationElement_ProgramEducationOrganizationId] = i.[ProgramEvaluation_ProgramEducationOrganizationId], r.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId], r.[ProgramEvaluationElement_ProgramEvaluationTitle] = i.[ProgramEvaluation_ProgramEvaluationTitle], r.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId], r.[ProgramEvaluationElement_ProgramName] = i.[ProgramEvaluation_ProgramName], r.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[EvaluationRubricDimension] r
-        INNER JOIN deleted d ON r.[ProgramEvaluationElement_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[ProgramEvaluationElementTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationElementTitle] AS varbinary(max)) OR (i.[ProgramEvaluationElementTitle] IS NULL AND d.[ProgramEvaluationElementTitle] IS NOT NULL) OR (i.[ProgramEvaluationElementTitle] IS NOT NULL AND d.[ProgramEvaluationElementTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] <> d.[ProgramEvaluation_ProgramEducationOrganizationId] OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramName] IS NULL AND d.[ProgramEvaluation_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramName] IS NOT NULL AND d.[ProgramEvaluation_ProgramName] IS NULL)) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramEvaluationElement_ProgramEvaluationElementTitle] = d.[ProgramEvaluationElementTitle]) OR (r.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NULL AND d.[ProgramEvaluationElementTitle] IS NULL)) AND ((r.[ProgramEvaluationElement_ProgramEducationOrganizationId] = d.[ProgramEvaluation_ProgramEducationOrganizationId]) OR (r.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) AND ((r.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] = d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]) OR (r.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) AND ((r.[ProgramEvaluationElement_ProgramEvaluationTitle] = d.[ProgramEvaluation_ProgramEvaluationTitle]) OR (r.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) AND ((r.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] = d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]) OR (r.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) AND ((r.[ProgramEvaluationElement_ProgramName] = d.[ProgramEvaluation_ProgramName]) OR (r.[ProgramEvaluationElement_ProgramName] IS NULL AND d.[ProgramEvaluation_ProgramName] IS NULL)) AND ((r.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] = d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationElementTitle] = i.[ProgramEvaluationElementTitle], r.[StudentEvaluationElementProgramEvaluationElement_ProgramEducationOrganizationId] = i.[ProgramEvaluation_ProgramEducationOrganizationId], r.[StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId], r.[StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTitle] = i.[ProgramEvaluation_ProgramEvaluationTitle], r.[StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId], r.[StudentEvaluationElementProgramEvaluationElement_ProgramName] = i.[ProgramEvaluation_ProgramName], r.[StudentEvaluationElementProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentProgramEvaluationStudentEvaluationElement] r
-        INNER JOIN deleted d ON r.[StudentEvaluationElementProgramEvaluationElement_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[ProgramEvaluationElementTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationElementTitle] AS varbinary(max)) OR (i.[ProgramEvaluationElementTitle] IS NULL AND d.[ProgramEvaluationElementTitle] IS NOT NULL) OR (i.[ProgramEvaluationElementTitle] IS NOT NULL AND d.[ProgramEvaluationElementTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] <> d.[ProgramEvaluation_ProgramEducationOrganizationId] OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramName] IS NULL AND d.[ProgramEvaluation_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramName] IS NOT NULL AND d.[ProgramEvaluation_ProgramName] IS NULL)) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationElementTitle] = d.[ProgramEvaluationElementTitle]) OR (r.[StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationElementTitle] IS NULL AND d.[ProgramEvaluationElementTitle] IS NULL)) AND ((r.[StudentEvaluationElementProgramEvaluationElement_ProgramEducationOrganizationId] = d.[ProgramEvaluation_ProgramEducationOrganizationId]) OR (r.[StudentEvaluationElementProgramEvaluationElement_ProgramEducationOrganizationId] IS NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) AND ((r.[StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] = d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]) OR (r.[StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) AND ((r.[StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTitle] = d.[ProgramEvaluation_ProgramEvaluationTitle]) OR (r.[StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) AND ((r.[StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] = d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]) OR (r.[StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) AND ((r.[StudentEvaluationElementProgramEvaluationElement_ProgramName] = d.[ProgramEvaluation_ProgramName]) OR (r.[StudentEvaluationElementProgramEvaluationElement_ProgramName] IS NULL AND d.[ProgramEvaluation_ProgramName] IS NULL)) AND ((r.[StudentEvaluationElementProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] = d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]) OR (r.[StudentEvaluationElementProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL));
-
     END
 END;
 GO
@@ -53982,38 +53185,6 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[ProgramEvaluation] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_ProgramEvaluationObjective_PropagateIdentity]
-ON [edfi].[ProgramEvaluationObjective]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([ProgramEvaluation_DocumentId]) OR UPDATE([ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([ObjectiveMaxNumericRating]) OR UPDATE([ObjectiveMinNumericRating]) OR UPDATE([ObjectiveSortOrder]) OR UPDATE([ProgramEvaluationObjectiveDescription]) OR UPDATE([ProgramEvaluationObjectiveTitle]) OR UPDATE([ProgramEvaluation_ProgramEducationOrganizationId]) OR UPDATE([ProgramEvaluation_ProgramEvaluationTitle]) OR UPDATE([ProgramEvaluation_ProgramName]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[ProgramEvaluation_DocumentId] <> d.[ProgramEvaluation_DocumentId] OR (i.[ProgramEvaluation_DocumentId] IS NULL AND d.[ProgramEvaluation_DocumentId] IS NOT NULL) OR (i.[ProgramEvaluation_DocumentId] IS NOT NULL AND d.[ProgramEvaluation_DocumentId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ObjectiveMaxNumericRating] <> d.[ObjectiveMaxNumericRating] OR (i.[ObjectiveMaxNumericRating] IS NULL AND d.[ObjectiveMaxNumericRating] IS NOT NULL) OR (i.[ObjectiveMaxNumericRating] IS NOT NULL AND d.[ObjectiveMaxNumericRating] IS NULL)) OR (i.[ObjectiveMinNumericRating] <> d.[ObjectiveMinNumericRating] OR (i.[ObjectiveMinNumericRating] IS NULL AND d.[ObjectiveMinNumericRating] IS NOT NULL) OR (i.[ObjectiveMinNumericRating] IS NOT NULL AND d.[ObjectiveMinNumericRating] IS NULL)) OR (i.[ObjectiveSortOrder] <> d.[ObjectiveSortOrder] OR (i.[ObjectiveSortOrder] IS NULL AND d.[ObjectiveSortOrder] IS NOT NULL) OR (i.[ObjectiveSortOrder] IS NOT NULL AND d.[ObjectiveSortOrder] IS NULL)) OR (CAST(i.[ProgramEvaluationObjectiveDescription] AS varbinary(max)) <> CAST(d.[ProgramEvaluationObjectiveDescription] AS varbinary(max)) OR (i.[ProgramEvaluationObjectiveDescription] IS NULL AND d.[ProgramEvaluationObjectiveDescription] IS NOT NULL) OR (i.[ProgramEvaluationObjectiveDescription] IS NOT NULL AND d.[ProgramEvaluationObjectiveDescription] IS NULL)) OR (CAST(i.[ProgramEvaluationObjectiveTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationObjectiveTitle] AS varbinary(max)) OR (i.[ProgramEvaluationObjectiveTitle] IS NULL AND d.[ProgramEvaluationObjectiveTitle] IS NOT NULL) OR (i.[ProgramEvaluationObjectiveTitle] IS NOT NULL AND d.[ProgramEvaluationObjectiveTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] <> d.[ProgramEvaluation_ProgramEducationOrganizationId] OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramName] IS NULL AND d.[ProgramEvaluation_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramName] IS NOT NULL AND d.[ProgramEvaluation_ProgramName] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] = i.[ProgramEvaluationObjectiveTitle], r.[ProgramEducationOrganizationId_Unified] = i.[ProgramEvaluation_ProgramEducationOrganizationId], r.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId], r.[ProgramEvaluationTitle_Unified] = i.[ProgramEvaluation_ProgramEvaluationTitle], r.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId], r.[ProgramName_Unified] = i.[ProgramEvaluation_ProgramName], r.[ProgramTypeDescriptor_Unified_DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[ProgramEvaluationElement] r
-        INNER JOIN deleted d ON r.[ProgramEvaluationObjective_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[ProgramEvaluationObjectiveTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationObjectiveTitle] AS varbinary(max)) OR (i.[ProgramEvaluationObjectiveTitle] IS NULL AND d.[ProgramEvaluationObjectiveTitle] IS NOT NULL) OR (i.[ProgramEvaluationObjectiveTitle] IS NOT NULL AND d.[ProgramEvaluationObjectiveTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] <> d.[ProgramEvaluation_ProgramEducationOrganizationId] OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramName] IS NULL AND d.[ProgramEvaluation_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramName] IS NOT NULL AND d.[ProgramEvaluation_ProgramName] IS NULL)) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] = d.[ProgramEvaluationObjectiveTitle]) OR (r.[ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] IS NULL AND d.[ProgramEvaluationObjectiveTitle] IS NULL)) AND ((r.[ProgramEducationOrganizationId_Unified] = d.[ProgramEvaluation_ProgramEducationOrganizationId]) OR (r.[ProgramEducationOrganizationId_Unified] IS NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) AND ((r.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] = d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]) OR (r.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) AND ((r.[ProgramEvaluationTitle_Unified] = d.[ProgramEvaluation_ProgramEvaluationTitle]) OR (r.[ProgramEvaluationTitle_Unified] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) AND ((r.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] = d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]) OR (r.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) AND ((r.[ProgramName_Unified] = d.[ProgramEvaluation_ProgramName]) OR (r.[ProgramName_Unified] IS NULL AND d.[ProgramEvaluation_ProgramName] IS NULL)) AND ((r.[ProgramTypeDescriptor_Unified_DescriptorId] = d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]) OR (r.[ProgramTypeDescriptor_Unified_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL));
-
-        UPDATE r
-        SET r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] = i.[ProgramEvaluationObjectiveTitle], r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEducationOrganizationId] = i.[ProgramEvaluation_ProgramEducationOrganizationId], r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationPeriodDescriptor_DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId], r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTitle] = i.[ProgramEvaluation_ProgramEvaluationTitle], r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTypeDescriptor_DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId], r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramName] = i.[ProgramEvaluation_ProgramName], r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
-        FROM [edfi].[StudentProgramEvaluationStudentEvaluationObjective] r
-        INNER JOIN deleted d ON r.[StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[ProgramEvaluationObjectiveTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationObjectiveTitle] AS varbinary(max)) OR (i.[ProgramEvaluationObjectiveTitle] IS NULL AND d.[ProgramEvaluationObjectiveTitle] IS NOT NULL) OR (i.[ProgramEvaluationObjectiveTitle] IS NOT NULL AND d.[ProgramEvaluationObjectiveTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] <> d.[ProgramEvaluation_ProgramEducationOrganizationId] OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramName] IS NULL AND d.[ProgramEvaluation_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramName] IS NOT NULL AND d.[ProgramEvaluation_ProgramName] IS NULL)) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] = d.[ProgramEvaluationObjectiveTitle]) OR (r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] IS NULL AND d.[ProgramEvaluationObjectiveTitle] IS NULL)) AND ((r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEducationOrganizationId] = d.[ProgramEvaluation_ProgramEducationOrganizationId]) OR (r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEducationOrganizationId] IS NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) AND ((r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationPeriodDescriptor_DescriptorId] = d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]) OR (r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) AND ((r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTitle] = d.[ProgramEvaluation_ProgramEvaluationTitle]) OR (r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) AND ((r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTypeDescriptor_DescriptorId] = d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]) OR (r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) AND ((r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramName] = d.[ProgramEvaluation_ProgramName]) OR (r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramName] IS NULL AND d.[ProgramEvaluation_ProgramName] IS NULL)) AND ((r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId] = d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]) OR (r.[StudentEvaluationObjectiveProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL));
-
     END
 END;
 GO
@@ -54467,30 +53638,6 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[ProjectDimension] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_ReportCard_PropagateIdentity]
-ON [edfi].[ReportCard]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([EducationOrganization_DocumentId]) OR UPDATE([GradingPeriodGradingPeriod_DocumentId]) OR UPDATE([Student_DocumentId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([GradingPeriodGradingPeriod_SchoolId]) OR UPDATE([GradingPeriodGradingPeriod_SchoolYear]) OR UPDATE([NumberOfDaysAbsent]) OR UPDATE([NumberOfDaysInAttendance]) OR UPDATE([NumberOfDaysTardy]) OR UPDATE([Student_StudentUniqueId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_DocumentId] <> d.[GradingPeriodGradingPeriod_DocumentId] OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NULL AND d.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_DocumentId] IS NULL)) OR (i.[Student_DocumentId] <> d.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND d.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND d.[Student_DocumentId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(d.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolId] <> d.[GradingPeriodGradingPeriod_SchoolId] OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolYear] <> d.[GradingPeriodGradingPeriod_SchoolYear] OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) OR (i.[NumberOfDaysAbsent] <> d.[NumberOfDaysAbsent] OR (i.[NumberOfDaysAbsent] IS NULL AND d.[NumberOfDaysAbsent] IS NOT NULL) OR (i.[NumberOfDaysAbsent] IS NOT NULL AND d.[NumberOfDaysAbsent] IS NULL)) OR (i.[NumberOfDaysInAttendance] <> d.[NumberOfDaysInAttendance] OR (i.[NumberOfDaysInAttendance] IS NULL AND d.[NumberOfDaysInAttendance] IS NOT NULL) OR (i.[NumberOfDaysInAttendance] IS NOT NULL AND d.[NumberOfDaysInAttendance] IS NULL)) OR (i.[NumberOfDaysTardy] <> d.[NumberOfDaysTardy] OR (i.[NumberOfDaysTardy] IS NULL AND d.[NumberOfDaysTardy] IS NOT NULL) OR (i.[NumberOfDaysTardy] IS NOT NULL AND d.[NumberOfDaysTardy] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[ReportCard_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ReportCard_GradingPeriodDescriptor_DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId], r.[ReportCard_GradingPeriodName] = i.[GradingPeriodGradingPeriod_GradingPeriodName], r.[ReportCard_GradingPeriodSchoolId] = i.[GradingPeriodGradingPeriod_SchoolId], r.[ReportCard_GradingPeriodSchoolYear] = i.[GradingPeriodGradingPeriod_SchoolYear], r.[ReportCard_StudentUniqueId] = i.[Student_StudentUniqueId]
-        FROM [edfi].[StudentAcademicRecordReportCard] r
-        INNER JOIN deleted d ON r.[ReportCard_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(d.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolId] <> d.[GradingPeriodGradingPeriod_SchoolId] OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolYear] <> d.[GradingPeriodGradingPeriod_SchoolYear] OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL)))
-        AND ((r.[ReportCard_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ReportCard_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ReportCard_GradingPeriodDescriptor_DescriptorId] = d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR (r.[ReportCard_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) AND ((r.[ReportCard_GradingPeriodName] = d.[GradingPeriodGradingPeriod_GradingPeriodName]) OR (r.[ReportCard_GradingPeriodName] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) AND ((r.[ReportCard_GradingPeriodSchoolId] = d.[GradingPeriodGradingPeriod_SchoolId]) OR (r.[ReportCard_GradingPeriodSchoolId] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) AND ((r.[ReportCard_GradingPeriodSchoolYear] = d.[GradingPeriodGradingPeriod_SchoolYear]) OR (r.[ReportCard_GradingPeriodSchoolYear] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) AND ((r.[ReportCard_StudentUniqueId] = d.[Student_StudentUniqueId]) OR (r.[ReportCard_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NULL));
-
     END
 END;
 GO
@@ -55772,94 +54919,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_Section_PropagateIdentity]
-ON [edfi].[Section]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([CourseOffering_DocumentId]) OR UPDATE([LocationLocation_DocumentId]) OR UPDATE([LocationSchool_DocumentId]) OR UPDATE([AvailableCreditTypeDescriptor_DescriptorId]) OR UPDATE([EducationalEnvironmentDescriptor_DescriptorId]) OR UPDATE([InstructionLanguageDescriptor_DescriptorId]) OR UPDATE([MediumOfInstructionDescriptor_DescriptorId]) OR UPDATE([PopulationServedDescriptor_DescriptorId]) OR UPDATE([SectionTypeDescriptor_DescriptorId]) OR UPDATE([AvailableCreditConversion]) OR UPDATE([AvailableCredits]) OR UPDATE([CourseOffering_LocalCourseCode]) OR UPDATE([SchoolId_Unified]) OR UPDATE([CourseOffering_SchoolYear]) OR UPDATE([CourseOffering_SessionName]) OR UPDATE([LocationLocation_ClassroomIdentificationCode]) OR UPDATE([SchoolId_U35501e03_Unified]) OR UPDATE([OfficialAttendancePeriod]) OR UPDATE([SectionIdentifier]) OR UPDATE([SectionName]) OR UPDATE([SequenceOfCourse]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[CourseOffering_DocumentId] <> d.[CourseOffering_DocumentId] OR (i.[CourseOffering_DocumentId] IS NULL AND d.[CourseOffering_DocumentId] IS NOT NULL) OR (i.[CourseOffering_DocumentId] IS NOT NULL AND d.[CourseOffering_DocumentId] IS NULL)) OR (i.[LocationLocation_DocumentId] <> d.[LocationLocation_DocumentId] OR (i.[LocationLocation_DocumentId] IS NULL AND d.[LocationLocation_DocumentId] IS NOT NULL) OR (i.[LocationLocation_DocumentId] IS NOT NULL AND d.[LocationLocation_DocumentId] IS NULL)) OR (i.[LocationSchool_DocumentId] <> d.[LocationSchool_DocumentId] OR (i.[LocationSchool_DocumentId] IS NULL AND d.[LocationSchool_DocumentId] IS NOT NULL) OR (i.[LocationSchool_DocumentId] IS NOT NULL AND d.[LocationSchool_DocumentId] IS NULL)) OR (i.[AvailableCreditTypeDescriptor_DescriptorId] <> d.[AvailableCreditTypeDescriptor_DescriptorId] OR (i.[AvailableCreditTypeDescriptor_DescriptorId] IS NULL AND d.[AvailableCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[AvailableCreditTypeDescriptor_DescriptorId] IS NOT NULL AND d.[AvailableCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[EducationalEnvironmentDescriptor_DescriptorId] <> d.[EducationalEnvironmentDescriptor_DescriptorId] OR (i.[EducationalEnvironmentDescriptor_DescriptorId] IS NULL AND d.[EducationalEnvironmentDescriptor_DescriptorId] IS NOT NULL) OR (i.[EducationalEnvironmentDescriptor_DescriptorId] IS NOT NULL AND d.[EducationalEnvironmentDescriptor_DescriptorId] IS NULL)) OR (i.[InstructionLanguageDescriptor_DescriptorId] <> d.[InstructionLanguageDescriptor_DescriptorId] OR (i.[InstructionLanguageDescriptor_DescriptorId] IS NULL AND d.[InstructionLanguageDescriptor_DescriptorId] IS NOT NULL) OR (i.[InstructionLanguageDescriptor_DescriptorId] IS NOT NULL AND d.[InstructionLanguageDescriptor_DescriptorId] IS NULL)) OR (i.[MediumOfInstructionDescriptor_DescriptorId] <> d.[MediumOfInstructionDescriptor_DescriptorId] OR (i.[MediumOfInstructionDescriptor_DescriptorId] IS NULL AND d.[MediumOfInstructionDescriptor_DescriptorId] IS NOT NULL) OR (i.[MediumOfInstructionDescriptor_DescriptorId] IS NOT NULL AND d.[MediumOfInstructionDescriptor_DescriptorId] IS NULL)) OR (i.[PopulationServedDescriptor_DescriptorId] <> d.[PopulationServedDescriptor_DescriptorId] OR (i.[PopulationServedDescriptor_DescriptorId] IS NULL AND d.[PopulationServedDescriptor_DescriptorId] IS NOT NULL) OR (i.[PopulationServedDescriptor_DescriptorId] IS NOT NULL AND d.[PopulationServedDescriptor_DescriptorId] IS NULL)) OR (i.[SectionTypeDescriptor_DescriptorId] <> d.[SectionTypeDescriptor_DescriptorId] OR (i.[SectionTypeDescriptor_DescriptorId] IS NULL AND d.[SectionTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[SectionTypeDescriptor_DescriptorId] IS NOT NULL AND d.[SectionTypeDescriptor_DescriptorId] IS NULL)) OR (i.[AvailableCreditConversion] <> d.[AvailableCreditConversion] OR (i.[AvailableCreditConversion] IS NULL AND d.[AvailableCreditConversion] IS NOT NULL) OR (i.[AvailableCreditConversion] IS NOT NULL AND d.[AvailableCreditConversion] IS NULL)) OR (i.[AvailableCredits] <> d.[AvailableCredits] OR (i.[AvailableCredits] IS NULL AND d.[AvailableCredits] IS NOT NULL) OR (i.[AvailableCredits] IS NOT NULL AND d.[AvailableCredits] IS NULL)) OR (CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(d.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[CourseOffering_SchoolYear] <> d.[CourseOffering_SchoolYear] OR (i.[CourseOffering_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NOT NULL) OR (i.[CourseOffering_SchoolYear] IS NOT NULL AND d.[CourseOffering_SchoolYear] IS NULL)) OR (CAST(i.[CourseOffering_SessionName] AS varbinary(max)) <> CAST(d.[CourseOffering_SessionName] AS varbinary(max)) OR (i.[CourseOffering_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NOT NULL) OR (i.[CourseOffering_SessionName] IS NOT NULL AND d.[CourseOffering_SessionName] IS NULL)) OR (CAST(i.[LocationLocation_ClassroomIdentificationCode] AS varbinary(max)) <> CAST(d.[LocationLocation_ClassroomIdentificationCode] AS varbinary(max)) OR (i.[LocationLocation_ClassroomIdentificationCode] IS NULL AND d.[LocationLocation_ClassroomIdentificationCode] IS NOT NULL) OR (i.[LocationLocation_ClassroomIdentificationCode] IS NOT NULL AND d.[LocationLocation_ClassroomIdentificationCode] IS NULL)) OR (i.[SchoolId_U35501e03_Unified] <> d.[SchoolId_U35501e03_Unified] OR (i.[SchoolId_U35501e03_Unified] IS NULL AND d.[SchoolId_U35501e03_Unified] IS NOT NULL) OR (i.[SchoolId_U35501e03_Unified] IS NOT NULL AND d.[SchoolId_U35501e03_Unified] IS NULL)) OR (i.[OfficialAttendancePeriod] <> d.[OfficialAttendancePeriod] OR (i.[OfficialAttendancePeriod] IS NULL AND d.[OfficialAttendancePeriod] IS NOT NULL) OR (i.[OfficialAttendancePeriod] IS NOT NULL AND d.[OfficialAttendancePeriod] IS NULL)) OR (CAST(i.[SectionIdentifier] AS varbinary(max)) <> CAST(d.[SectionIdentifier] AS varbinary(max)) OR (i.[SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NOT NULL) OR (i.[SectionIdentifier] IS NOT NULL AND d.[SectionIdentifier] IS NULL)) OR (CAST(i.[SectionName] AS varbinary(max)) <> CAST(d.[SectionName] AS varbinary(max)) OR (i.[SectionName] IS NULL AND d.[SectionName] IS NOT NULL) OR (i.[SectionName] IS NOT NULL AND d.[SectionName] IS NULL)) OR (i.[SequenceOfCourse] <> d.[SequenceOfCourse] OR (i.[SequenceOfCourse] IS NULL AND d.[SequenceOfCourse] IS NOT NULL) OR (i.[SequenceOfCourse] IS NOT NULL AND d.[SequenceOfCourse] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[SectionOrProgramChoiceSection_LocalCourseCode] = i.[CourseOffering_LocalCourseCode], r.[SectionOrProgramChoiceSection_SchoolId] = i.[CourseOffering_SchoolReferenceSchoolId], r.[SectionOrProgramChoiceSection_SchoolYear] = i.[CourseOffering_SchoolYear], r.[SectionOrProgramChoiceSection_SessionName] = i.[CourseOffering_SessionName], r.[SectionOrProgramChoiceSection_SectionIdentifier] = i.[SectionIdentifier]
-        FROM [edfi].[AssessmentSection] r
-        INNER JOIN deleted d ON r.[SectionOrProgramChoiceSection_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(d.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[CourseOffering_SchoolReferenceSchoolId] <> d.[CourseOffering_SchoolReferenceSchoolId] OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL) OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) OR (i.[CourseOffering_SchoolYear] <> d.[CourseOffering_SchoolYear] OR (i.[CourseOffering_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NOT NULL) OR (i.[CourseOffering_SchoolYear] IS NOT NULL AND d.[CourseOffering_SchoolYear] IS NULL)) OR (CAST(i.[CourseOffering_SessionName] AS varbinary(max)) <> CAST(d.[CourseOffering_SessionName] AS varbinary(max)) OR (i.[CourseOffering_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NOT NULL) OR (i.[CourseOffering_SessionName] IS NOT NULL AND d.[CourseOffering_SessionName] IS NULL)) OR (CAST(i.[SectionIdentifier] AS varbinary(max)) <> CAST(d.[SectionIdentifier] AS varbinary(max)) OR (i.[SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NOT NULL) OR (i.[SectionIdentifier] IS NOT NULL AND d.[SectionIdentifier] IS NULL)))
-        AND ((r.[SectionOrProgramChoiceSection_LocalCourseCode] = d.[CourseOffering_LocalCourseCode]) OR (r.[SectionOrProgramChoiceSection_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) AND ((r.[SectionOrProgramChoiceSection_SchoolId] = d.[CourseOffering_SchoolReferenceSchoolId]) OR (r.[SectionOrProgramChoiceSection_SchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) AND ((r.[SectionOrProgramChoiceSection_SchoolYear] = d.[CourseOffering_SchoolYear]) OR (r.[SectionOrProgramChoiceSection_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NULL)) AND ((r.[SectionOrProgramChoiceSection_SessionName] = d.[CourseOffering_SessionName]) OR (r.[SectionOrProgramChoiceSection_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NULL)) AND ((r.[SectionOrProgramChoiceSection_SectionIdentifier] = d.[SectionIdentifier]) OR (r.[SectionOrProgramChoiceSection_SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NULL));
-
-        UPDATE r
-        SET r.[Section_LocalCourseCode] = i.[CourseOffering_LocalCourseCode], r.[Section_SchoolId] = i.[CourseOffering_SchoolReferenceSchoolId], r.[Section_SchoolYear] = i.[CourseOffering_SchoolYear], r.[Section_SessionName] = i.[CourseOffering_SessionName], r.[Section_SectionIdentifier] = i.[SectionIdentifier]
-        FROM [edfi].[CourseTranscriptSection] r
-        INNER JOIN deleted d ON r.[Section_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(d.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[CourseOffering_SchoolReferenceSchoolId] <> d.[CourseOffering_SchoolReferenceSchoolId] OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL) OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) OR (i.[CourseOffering_SchoolYear] <> d.[CourseOffering_SchoolYear] OR (i.[CourseOffering_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NOT NULL) OR (i.[CourseOffering_SchoolYear] IS NOT NULL AND d.[CourseOffering_SchoolYear] IS NULL)) OR (CAST(i.[CourseOffering_SessionName] AS varbinary(max)) <> CAST(d.[CourseOffering_SessionName] AS varbinary(max)) OR (i.[CourseOffering_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NOT NULL) OR (i.[CourseOffering_SessionName] IS NOT NULL AND d.[CourseOffering_SessionName] IS NULL)) OR (CAST(i.[SectionIdentifier] AS varbinary(max)) <> CAST(d.[SectionIdentifier] AS varbinary(max)) OR (i.[SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NOT NULL) OR (i.[SectionIdentifier] IS NOT NULL AND d.[SectionIdentifier] IS NULL)))
-        AND ((r.[Section_LocalCourseCode] = d.[CourseOffering_LocalCourseCode]) OR (r.[Section_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) AND ((r.[Section_SchoolId] = d.[CourseOffering_SchoolReferenceSchoolId]) OR (r.[Section_SchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) AND ((r.[Section_SchoolYear] = d.[CourseOffering_SchoolYear]) OR (r.[Section_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NULL)) AND ((r.[Section_SessionName] = d.[CourseOffering_SessionName]) OR (r.[Section_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NULL)) AND ((r.[Section_SectionIdentifier] = d.[SectionIdentifier]) OR (r.[Section_SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NULL));
-
-        UPDATE r
-        SET r.[Section_LocalCourseCode] = i.[CourseOffering_LocalCourseCode], r.[SchoolId_Unified] = i.[CourseOffering_SchoolReferenceSchoolId], r.[SchoolYear_Unified] = i.[CourseOffering_SchoolYear], r.[Section_SessionName] = i.[CourseOffering_SessionName], r.[Section_SectionIdentifier] = i.[SectionIdentifier]
-        FROM [edfi].[GradebookEntry] r
-        INNER JOIN deleted d ON r.[Section_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(d.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[CourseOffering_SchoolReferenceSchoolId] <> d.[CourseOffering_SchoolReferenceSchoolId] OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL) OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) OR (i.[CourseOffering_SchoolYear] <> d.[CourseOffering_SchoolYear] OR (i.[CourseOffering_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NOT NULL) OR (i.[CourseOffering_SchoolYear] IS NOT NULL AND d.[CourseOffering_SchoolYear] IS NULL)) OR (CAST(i.[CourseOffering_SessionName] AS varbinary(max)) <> CAST(d.[CourseOffering_SessionName] AS varbinary(max)) OR (i.[CourseOffering_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NOT NULL) OR (i.[CourseOffering_SessionName] IS NOT NULL AND d.[CourseOffering_SessionName] IS NULL)) OR (CAST(i.[SectionIdentifier] AS varbinary(max)) <> CAST(d.[SectionIdentifier] AS varbinary(max)) OR (i.[SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NOT NULL) OR (i.[SectionIdentifier] IS NOT NULL AND d.[SectionIdentifier] IS NULL)))
-        AND ((r.[Section_LocalCourseCode] = d.[CourseOffering_LocalCourseCode]) OR (r.[Section_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) AND ((r.[SchoolId_Unified] = d.[CourseOffering_SchoolReferenceSchoolId]) OR (r.[SchoolId_Unified] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) AND ((r.[SchoolYear_Unified] = d.[CourseOffering_SchoolYear]) OR (r.[SchoolYear_Unified] IS NULL AND d.[CourseOffering_SchoolYear] IS NULL)) AND ((r.[Section_SessionName] = d.[CourseOffering_SessionName]) OR (r.[Section_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NULL)) AND ((r.[Section_SectionIdentifier] = d.[SectionIdentifier]) OR (r.[Section_SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NULL));
-
-        UPDATE r
-        SET r.[Section_LocalCourseCode] = i.[CourseOffering_LocalCourseCode], r.[SchoolId_Unified] = i.[CourseOffering_SchoolReferenceSchoolId], r.[SchoolYear_Unified] = i.[CourseOffering_SchoolYear], r.[Section_SessionName] = i.[CourseOffering_SessionName], r.[Section_SectionIdentifier] = i.[SectionIdentifier]
-        FROM [edfi].[SectionAttendanceTakenEvent] r
-        INNER JOIN deleted d ON r.[Section_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(d.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[CourseOffering_SchoolReferenceSchoolId] <> d.[CourseOffering_SchoolReferenceSchoolId] OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL) OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) OR (i.[CourseOffering_SchoolYear] <> d.[CourseOffering_SchoolYear] OR (i.[CourseOffering_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NOT NULL) OR (i.[CourseOffering_SchoolYear] IS NOT NULL AND d.[CourseOffering_SchoolYear] IS NULL)) OR (CAST(i.[CourseOffering_SessionName] AS varbinary(max)) <> CAST(d.[CourseOffering_SessionName] AS varbinary(max)) OR (i.[CourseOffering_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NOT NULL) OR (i.[CourseOffering_SessionName] IS NOT NULL AND d.[CourseOffering_SessionName] IS NULL)) OR (CAST(i.[SectionIdentifier] AS varbinary(max)) <> CAST(d.[SectionIdentifier] AS varbinary(max)) OR (i.[SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NOT NULL) OR (i.[SectionIdentifier] IS NOT NULL AND d.[SectionIdentifier] IS NULL)))
-        AND ((r.[Section_LocalCourseCode] = d.[CourseOffering_LocalCourseCode]) OR (r.[Section_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) AND ((r.[SchoolId_Unified] = d.[CourseOffering_SchoolReferenceSchoolId]) OR (r.[SchoolId_Unified] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) AND ((r.[SchoolYear_Unified] = d.[CourseOffering_SchoolYear]) OR (r.[SchoolYear_Unified] IS NULL AND d.[CourseOffering_SchoolYear] IS NULL)) AND ((r.[Section_SessionName] = d.[CourseOffering_SessionName]) OR (r.[Section_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NULL)) AND ((r.[Section_SectionIdentifier] = d.[SectionIdentifier]) OR (r.[Section_SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NULL));
-
-        UPDATE r
-        SET r.[Section_LocalCourseCode] = i.[CourseOffering_LocalCourseCode], r.[Section_SchoolId] = i.[CourseOffering_SchoolReferenceSchoolId], r.[Section_SchoolYear] = i.[CourseOffering_SchoolYear], r.[Section_SessionName] = i.[CourseOffering_SessionName], r.[Section_SectionIdentifier] = i.[SectionIdentifier]
-        FROM [edfi].[StaffSectionAssociation] r
-        INNER JOIN deleted d ON r.[Section_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(d.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[CourseOffering_SchoolReferenceSchoolId] <> d.[CourseOffering_SchoolReferenceSchoolId] OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL) OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) OR (i.[CourseOffering_SchoolYear] <> d.[CourseOffering_SchoolYear] OR (i.[CourseOffering_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NOT NULL) OR (i.[CourseOffering_SchoolYear] IS NOT NULL AND d.[CourseOffering_SchoolYear] IS NULL)) OR (CAST(i.[CourseOffering_SessionName] AS varbinary(max)) <> CAST(d.[CourseOffering_SessionName] AS varbinary(max)) OR (i.[CourseOffering_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NOT NULL) OR (i.[CourseOffering_SessionName] IS NOT NULL AND d.[CourseOffering_SessionName] IS NULL)) OR (CAST(i.[SectionIdentifier] AS varbinary(max)) <> CAST(d.[SectionIdentifier] AS varbinary(max)) OR (i.[SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NOT NULL) OR (i.[SectionIdentifier] IS NOT NULL AND d.[SectionIdentifier] IS NULL)))
-        AND ((r.[Section_LocalCourseCode] = d.[CourseOffering_LocalCourseCode]) OR (r.[Section_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) AND ((r.[Section_SchoolId] = d.[CourseOffering_SchoolReferenceSchoolId]) OR (r.[Section_SchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) AND ((r.[Section_SchoolYear] = d.[CourseOffering_SchoolYear]) OR (r.[Section_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NULL)) AND ((r.[Section_SessionName] = d.[CourseOffering_SessionName]) OR (r.[Section_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NULL)) AND ((r.[Section_SectionIdentifier] = d.[SectionIdentifier]) OR (r.[Section_SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NULL));
-
-        UPDATE r
-        SET r.[Section_LocalCourseCode] = i.[CourseOffering_LocalCourseCode], r.[Section_SchoolId] = i.[CourseOffering_SchoolReferenceSchoolId], r.[Section_SchoolYear] = i.[CourseOffering_SchoolYear], r.[Section_SessionName] = i.[CourseOffering_SessionName], r.[Section_SectionIdentifier] = i.[SectionIdentifier]
-        FROM [edfi].[StudentCohortAssociationSection] r
-        INNER JOIN deleted d ON r.[Section_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(d.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[CourseOffering_SchoolReferenceSchoolId] <> d.[CourseOffering_SchoolReferenceSchoolId] OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL) OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) OR (i.[CourseOffering_SchoolYear] <> d.[CourseOffering_SchoolYear] OR (i.[CourseOffering_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NOT NULL) OR (i.[CourseOffering_SchoolYear] IS NOT NULL AND d.[CourseOffering_SchoolYear] IS NULL)) OR (CAST(i.[CourseOffering_SessionName] AS varbinary(max)) <> CAST(d.[CourseOffering_SessionName] AS varbinary(max)) OR (i.[CourseOffering_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NOT NULL) OR (i.[CourseOffering_SessionName] IS NOT NULL AND d.[CourseOffering_SessionName] IS NULL)) OR (CAST(i.[SectionIdentifier] AS varbinary(max)) <> CAST(d.[SectionIdentifier] AS varbinary(max)) OR (i.[SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NOT NULL) OR (i.[SectionIdentifier] IS NOT NULL AND d.[SectionIdentifier] IS NULL)))
-        AND ((r.[Section_LocalCourseCode] = d.[CourseOffering_LocalCourseCode]) OR (r.[Section_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) AND ((r.[Section_SchoolId] = d.[CourseOffering_SchoolReferenceSchoolId]) OR (r.[Section_SchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) AND ((r.[Section_SchoolYear] = d.[CourseOffering_SchoolYear]) OR (r.[Section_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NULL)) AND ((r.[Section_SessionName] = d.[CourseOffering_SessionName]) OR (r.[Section_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NULL)) AND ((r.[Section_SectionIdentifier] = d.[SectionIdentifier]) OR (r.[Section_SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NULL));
-
-        UPDATE r
-        SET r.[Section_LocalCourseCode] = i.[CourseOffering_LocalCourseCode], r.[Section_SchoolId] = i.[CourseOffering_SchoolReferenceSchoolId], r.[Section_SchoolYear] = i.[CourseOffering_SchoolYear], r.[Section_SessionName] = i.[CourseOffering_SessionName], r.[Section_SectionIdentifier] = i.[SectionIdentifier]
-        FROM [edfi].[StudentSectionAssociation] r
-        INNER JOIN deleted d ON r.[Section_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(d.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[CourseOffering_SchoolReferenceSchoolId] <> d.[CourseOffering_SchoolReferenceSchoolId] OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL) OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) OR (i.[CourseOffering_SchoolYear] <> d.[CourseOffering_SchoolYear] OR (i.[CourseOffering_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NOT NULL) OR (i.[CourseOffering_SchoolYear] IS NOT NULL AND d.[CourseOffering_SchoolYear] IS NULL)) OR (CAST(i.[CourseOffering_SessionName] AS varbinary(max)) <> CAST(d.[CourseOffering_SessionName] AS varbinary(max)) OR (i.[CourseOffering_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NOT NULL) OR (i.[CourseOffering_SessionName] IS NOT NULL AND d.[CourseOffering_SessionName] IS NULL)) OR (CAST(i.[SectionIdentifier] AS varbinary(max)) <> CAST(d.[SectionIdentifier] AS varbinary(max)) OR (i.[SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NOT NULL) OR (i.[SectionIdentifier] IS NOT NULL AND d.[SectionIdentifier] IS NULL)))
-        AND ((r.[Section_LocalCourseCode] = d.[CourseOffering_LocalCourseCode]) OR (r.[Section_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) AND ((r.[Section_SchoolId] = d.[CourseOffering_SchoolReferenceSchoolId]) OR (r.[Section_SchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) AND ((r.[Section_SchoolYear] = d.[CourseOffering_SchoolYear]) OR (r.[Section_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NULL)) AND ((r.[Section_SessionName] = d.[CourseOffering_SessionName]) OR (r.[Section_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NULL)) AND ((r.[Section_SectionIdentifier] = d.[SectionIdentifier]) OR (r.[Section_SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NULL));
-
-        UPDATE r
-        SET r.[Section_LocalCourseCode] = i.[CourseOffering_LocalCourseCode], r.[Section_SchoolId] = i.[CourseOffering_SchoolReferenceSchoolId], r.[Section_SchoolYear] = i.[CourseOffering_SchoolYear], r.[Section_SessionName] = i.[CourseOffering_SessionName], r.[Section_SectionIdentifier] = i.[SectionIdentifier]
-        FROM [edfi].[StudentSectionAttendanceEvent] r
-        INNER JOIN deleted d ON r.[Section_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(d.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[CourseOffering_SchoolReferenceSchoolId] <> d.[CourseOffering_SchoolReferenceSchoolId] OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL) OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) OR (i.[CourseOffering_SchoolYear] <> d.[CourseOffering_SchoolYear] OR (i.[CourseOffering_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NOT NULL) OR (i.[CourseOffering_SchoolYear] IS NOT NULL AND d.[CourseOffering_SchoolYear] IS NULL)) OR (CAST(i.[CourseOffering_SessionName] AS varbinary(max)) <> CAST(d.[CourseOffering_SessionName] AS varbinary(max)) OR (i.[CourseOffering_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NOT NULL) OR (i.[CourseOffering_SessionName] IS NOT NULL AND d.[CourseOffering_SessionName] IS NULL)) OR (CAST(i.[SectionIdentifier] AS varbinary(max)) <> CAST(d.[SectionIdentifier] AS varbinary(max)) OR (i.[SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NOT NULL) OR (i.[SectionIdentifier] IS NOT NULL AND d.[SectionIdentifier] IS NULL)))
-        AND ((r.[Section_LocalCourseCode] = d.[CourseOffering_LocalCourseCode]) OR (r.[Section_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) AND ((r.[Section_SchoolId] = d.[CourseOffering_SchoolReferenceSchoolId]) OR (r.[Section_SchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) AND ((r.[Section_SchoolYear] = d.[CourseOffering_SchoolYear]) OR (r.[Section_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NULL)) AND ((r.[Section_SessionName] = d.[CourseOffering_SessionName]) OR (r.[Section_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NULL)) AND ((r.[Section_SectionIdentifier] = d.[SectionIdentifier]) OR (r.[Section_SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NULL));
-
-        UPDATE r
-        SET r.[Section_LocalCourseCode] = i.[CourseOffering_LocalCourseCode], r.[Section_SchoolId] = i.[CourseOffering_SchoolReferenceSchoolId], r.[Section_SchoolYear] = i.[CourseOffering_SchoolYear], r.[Section_SessionName] = i.[CourseOffering_SessionName], r.[Section_SectionIdentifier] = i.[SectionIdentifier]
-        FROM [edfi].[SurveySectionAssociation] r
-        INNER JOIN deleted d ON r.[Section_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(d.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[CourseOffering_SchoolReferenceSchoolId] <> d.[CourseOffering_SchoolReferenceSchoolId] OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL) OR (i.[CourseOffering_SchoolReferenceSchoolId] IS NOT NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) OR (i.[CourseOffering_SchoolYear] <> d.[CourseOffering_SchoolYear] OR (i.[CourseOffering_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NOT NULL) OR (i.[CourseOffering_SchoolYear] IS NOT NULL AND d.[CourseOffering_SchoolYear] IS NULL)) OR (CAST(i.[CourseOffering_SessionName] AS varbinary(max)) <> CAST(d.[CourseOffering_SessionName] AS varbinary(max)) OR (i.[CourseOffering_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NOT NULL) OR (i.[CourseOffering_SessionName] IS NOT NULL AND d.[CourseOffering_SessionName] IS NULL)) OR (CAST(i.[SectionIdentifier] AS varbinary(max)) <> CAST(d.[SectionIdentifier] AS varbinary(max)) OR (i.[SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NOT NULL) OR (i.[SectionIdentifier] IS NOT NULL AND d.[SectionIdentifier] IS NULL)))
-        AND ((r.[Section_LocalCourseCode] = d.[CourseOffering_LocalCourseCode]) OR (r.[Section_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) AND ((r.[Section_SchoolId] = d.[CourseOffering_SchoolReferenceSchoolId]) OR (r.[Section_SchoolId] IS NULL AND d.[CourseOffering_SchoolReferenceSchoolId] IS NULL)) AND ((r.[Section_SchoolYear] = d.[CourseOffering_SchoolYear]) OR (r.[Section_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NULL)) AND ((r.[Section_SessionName] = d.[CourseOffering_SessionName]) OR (r.[Section_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NULL)) AND ((r.[Section_SectionIdentifier] = d.[SectionIdentifier]) OR (r.[Section_SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_Section_ReferentialIdentity]
 ON [edfi].[Section]
 AFTER INSERT, UPDATE
@@ -56339,46 +55398,6 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[Section] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_Session_PropagateIdentity]
-ON [edfi].[Session]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([SchoolYear_DocumentId]) OR UPDATE([School_DocumentId]) OR UPDATE([TermDescriptor_DescriptorId]) OR UPDATE([BeginDate]) OR UPDATE([EndDate]) OR UPDATE([SchoolYear_SchoolYear]) OR UPDATE([School_SchoolId]) OR UPDATE([SessionName]) OR UPDATE([TotalInstructionalDays]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[SchoolYear_DocumentId] <> d.[SchoolYear_DocumentId] OR (i.[SchoolYear_DocumentId] IS NULL AND d.[SchoolYear_DocumentId] IS NOT NULL) OR (i.[SchoolYear_DocumentId] IS NOT NULL AND d.[SchoolYear_DocumentId] IS NULL)) OR (i.[School_DocumentId] <> d.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND d.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND d.[School_DocumentId] IS NULL)) OR (i.[TermDescriptor_DescriptorId] <> d.[TermDescriptor_DescriptorId] OR (i.[TermDescriptor_DescriptorId] IS NULL AND d.[TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[TermDescriptor_DescriptorId] IS NOT NULL AND d.[TermDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EndDate] <> d.[EndDate] OR (i.[EndDate] IS NULL AND d.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND d.[EndDate] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)) OR (CAST(i.[SessionName] AS varbinary(max)) <> CAST(d.[SessionName] AS varbinary(max)) OR (i.[SessionName] IS NULL AND d.[SessionName] IS NOT NULL) OR (i.[SessionName] IS NOT NULL AND d.[SessionName] IS NULL)) OR (i.[TotalInstructionalDays] <> d.[TotalInstructionalDays] OR (i.[TotalInstructionalDays] IS NULL AND d.[TotalInstructionalDays] IS NOT NULL) OR (i.[TotalInstructionalDays] IS NOT NULL AND d.[TotalInstructionalDays] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[SchoolId_Unified] = i.[School_SchoolId], r.[Session_SchoolYear] = i.[SchoolYear_SchoolYear], r.[Session_SessionName] = i.[SessionName]
-        FROM [edfi].[CourseOffering] r
-        INNER JOIN deleted d ON r.[Session_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL)) OR (CAST(i.[SessionName] AS varbinary(max)) <> CAST(d.[SessionName] AS varbinary(max)) OR (i.[SessionName] IS NULL AND d.[SessionName] IS NOT NULL) OR (i.[SessionName] IS NOT NULL AND d.[SessionName] IS NULL)))
-        AND ((r.[SchoolId_Unified] = d.[School_SchoolId]) OR (r.[SchoolId_Unified] IS NULL AND d.[School_SchoolId] IS NULL)) AND ((r.[Session_SchoolYear] = d.[SchoolYear_SchoolYear]) OR (r.[Session_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NULL)) AND ((r.[Session_SessionName] = d.[SessionName]) OR (r.[Session_SessionName] IS NULL AND d.[SessionName] IS NULL));
-
-        UPDATE r
-        SET r.[SchoolId_Unified] = i.[School_SchoolId], r.[Session_SchoolYear] = i.[SchoolYear_SchoolYear], r.[Session_SessionName] = i.[SessionName]
-        FROM [edfi].[StudentSchoolAttendanceEvent] r
-        INNER JOIN deleted d ON r.[Session_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL)) OR (CAST(i.[SessionName] AS varbinary(max)) <> CAST(d.[SessionName] AS varbinary(max)) OR (i.[SessionName] IS NULL AND d.[SessionName] IS NOT NULL) OR (i.[SessionName] IS NOT NULL AND d.[SessionName] IS NULL)))
-        AND ((r.[SchoolId_Unified] = d.[School_SchoolId]) OR (r.[SchoolId_Unified] IS NULL AND d.[School_SchoolId] IS NULL)) AND ((r.[Session_SchoolYear] = d.[SchoolYear_SchoolYear]) OR (r.[Session_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NULL)) AND ((r.[Session_SessionName] = d.[SessionName]) OR (r.[Session_SessionName] IS NULL AND d.[SessionName] IS NULL));
-
-        UPDATE r
-        SET r.[Session_SchoolId] = i.[School_SchoolId], r.[SchoolYear_Unified] = i.[SchoolYear_SchoolYear], r.[Session_SessionName] = i.[SessionName]
-        FROM [edfi].[Survey] r
-        INNER JOIN deleted d ON r.[Session_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL)) OR (CAST(i.[SessionName] AS varbinary(max)) <> CAST(d.[SessionName] AS varbinary(max)) OR (i.[SessionName] IS NULL AND d.[SessionName] IS NOT NULL) OR (i.[SessionName] IS NOT NULL AND d.[SessionName] IS NULL)))
-        AND ((r.[Session_SchoolId] = d.[School_SchoolId]) OR (r.[Session_SchoolId] IS NULL AND d.[School_SchoolId] IS NULL)) AND ((r.[SchoolYear_Unified] = d.[SchoolYear_SchoolYear]) OR (r.[SchoolYear_Unified] IS NULL AND d.[SchoolYear_SchoolYear] IS NULL)) AND ((r.[Session_SessionName] = d.[SessionName]) OR (r.[Session_SessionName] IS NULL AND d.[SessionName] IS NULL));
-
     END
 END;
 GO
@@ -57840,30 +56859,6 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[StaffEducationOrganizationContactAssociation] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StaffEducationOrganizationEmploymentAssociation_PropagateIdentity]
-ON [edfi].[StaffEducationOrganizationEmploymentAssociation]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([Credential_DocumentId]) OR UPDATE([EducationOrganization_DocumentId]) OR UPDATE([Staff_DocumentId]) OR UPDATE([Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId]) OR UPDATE([EmploymentStatusDescriptor_DescriptorId]) OR UPDATE([SeparationDescriptor_DescriptorId]) OR UPDATE([SeparationReasonDescriptor_DescriptorId]) OR UPDATE([AnnualWage]) OR UPDATE([Credential_CredentialIdentifier]) OR UPDATE([Department]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([EndDate]) OR UPDATE([FullTimeEquivalency]) OR UPDATE([HireDate]) OR UPDATE([HourlyWage]) OR UPDATE([OfferDate]) OR UPDATE([Staff_StaffUniqueId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[Credential_DocumentId] <> d.[Credential_DocumentId] OR (i.[Credential_DocumentId] IS NULL AND d.[Credential_DocumentId] IS NOT NULL) OR (i.[Credential_DocumentId] IS NOT NULL AND d.[Credential_DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (i.[Staff_DocumentId] <> d.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND d.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND d.[Staff_DocumentId] IS NULL)) OR (i.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] <> d.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] OR (i.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NULL AND d.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NOT NULL) OR (i.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NOT NULL AND d.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NULL)) OR (i.[EmploymentStatusDescriptor_DescriptorId] <> d.[EmploymentStatusDescriptor_DescriptorId] OR (i.[EmploymentStatusDescriptor_DescriptorId] IS NULL AND d.[EmploymentStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[EmploymentStatusDescriptor_DescriptorId] IS NOT NULL AND d.[EmploymentStatusDescriptor_DescriptorId] IS NULL)) OR (i.[SeparationDescriptor_DescriptorId] <> d.[SeparationDescriptor_DescriptorId] OR (i.[SeparationDescriptor_DescriptorId] IS NULL AND d.[SeparationDescriptor_DescriptorId] IS NOT NULL) OR (i.[SeparationDescriptor_DescriptorId] IS NOT NULL AND d.[SeparationDescriptor_DescriptorId] IS NULL)) OR (i.[SeparationReasonDescriptor_DescriptorId] <> d.[SeparationReasonDescriptor_DescriptorId] OR (i.[SeparationReasonDescriptor_DescriptorId] IS NULL AND d.[SeparationReasonDescriptor_DescriptorId] IS NOT NULL) OR (i.[SeparationReasonDescriptor_DescriptorId] IS NOT NULL AND d.[SeparationReasonDescriptor_DescriptorId] IS NULL)) OR (i.[AnnualWage] <> d.[AnnualWage] OR (i.[AnnualWage] IS NULL AND d.[AnnualWage] IS NOT NULL) OR (i.[AnnualWage] IS NOT NULL AND d.[AnnualWage] IS NULL)) OR (CAST(i.[Credential_CredentialIdentifier] AS varbinary(max)) <> CAST(d.[Credential_CredentialIdentifier] AS varbinary(max)) OR (i.[Credential_CredentialIdentifier] IS NULL AND d.[Credential_CredentialIdentifier] IS NOT NULL) OR (i.[Credential_CredentialIdentifier] IS NOT NULL AND d.[Credential_CredentialIdentifier] IS NULL)) OR (CAST(i.[Department] AS varbinary(max)) <> CAST(d.[Department] AS varbinary(max)) OR (i.[Department] IS NULL AND d.[Department] IS NOT NULL) OR (i.[Department] IS NOT NULL AND d.[Department] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[EndDate] <> d.[EndDate] OR (i.[EndDate] IS NULL AND d.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND d.[EndDate] IS NULL)) OR (i.[FullTimeEquivalency] <> d.[FullTimeEquivalency] OR (i.[FullTimeEquivalency] IS NULL AND d.[FullTimeEquivalency] IS NOT NULL) OR (i.[FullTimeEquivalency] IS NOT NULL AND d.[FullTimeEquivalency] IS NULL)) OR (i.[HireDate] <> d.[HireDate] OR (i.[HireDate] IS NULL AND d.[HireDate] IS NOT NULL) OR (i.[HireDate] IS NOT NULL AND d.[HireDate] IS NULL)) OR (i.[HourlyWage] <> d.[HourlyWage] OR (i.[HourlyWage] IS NULL AND d.[HourlyWage] IS NOT NULL) OR (i.[HourlyWage] IS NOT NULL AND d.[HourlyWage] IS NULL)) OR (i.[OfferDate] <> d.[OfferDate] OR (i.[OfferDate] IS NULL AND d.[OfferDate] IS NOT NULL) OR (i.[OfferDate] IS NOT NULL AND d.[OfferDate] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[EmploymentStaffEducationOrganizationEmploymentAssociation_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId] = i.[EmploymentStatusDescriptor_DescriptorId], r.[EmploymentStaffEducationOrganizationEmploymentAssociation_HireDate] = i.[HireDate], r.[StaffUniqueId_Unified] = i.[Staff_StaffUniqueId]
-        FROM [edfi].[StaffEducationOrganizationAssignmentAssociation] r
-        INNER JOIN deleted d ON r.[EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[EmploymentStatusDescriptor_DescriptorId] <> d.[EmploymentStatusDescriptor_DescriptorId] OR (i.[EmploymentStatusDescriptor_DescriptorId] IS NULL AND d.[EmploymentStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[EmploymentStatusDescriptor_DescriptorId] IS NOT NULL AND d.[EmploymentStatusDescriptor_DescriptorId] IS NULL)) OR (i.[HireDate] <> d.[HireDate] OR (i.[HireDate] IS NULL AND d.[HireDate] IS NOT NULL) OR (i.[HireDate] IS NOT NULL AND d.[HireDate] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL)))
-        AND ((r.[EmploymentStaffEducationOrganizationEmploymentAssociation_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[EmploymentStaffEducationOrganizationEmploymentAssociation_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId] = d.[EmploymentStatusDescriptor_DescriptorId]) OR (r.[EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId] IS NULL AND d.[EmploymentStatusDescriptor_DescriptorId] IS NULL)) AND ((r.[EmploymentStaffEducationOrganizationEmploymentAssociation_HireDate] = d.[HireDate]) OR (r.[EmploymentStaffEducationOrganizationEmploymentAssociation_HireDate] IS NULL AND d.[HireDate] IS NULL)) AND ((r.[StaffUniqueId_Unified] = d.[Staff_StaffUniqueId]) OR (r.[StaffUniqueId_Unified] IS NULL AND d.[Staff_StaffUniqueId] IS NULL));
-
     END
 END;
 GO
@@ -59887,30 +58882,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentAcademicRecord_PropagateIdentity]
-ON [edfi].[StudentAcademicRecord]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([EducationOrganization_DocumentId]) OR UPDATE([SchoolYear_DocumentId]) OR UPDATE([Student_DocumentId]) OR UPDATE([CumulativeAttemptedCreditTypeDescriptor_DescriptorId]) OR UPDATE([CumulativeEarnedCreditTypeDescriptor_DescriptorId]) OR UPDATE([SessionAttemptedCreditTypeDescriptor_DescriptorId]) OR UPDATE([SessionEarnedCreditTypeDescriptor_DescriptorId]) OR UPDATE([TermDescriptor_DescriptorId]) OR UPDATE([ClassRankingClassRank]) OR UPDATE([ClassRankingClassRankingDate]) OR UPDATE([ClassRankingPercentageRanking]) OR UPDATE([ClassRankingTotalNumberInClass]) OR UPDATE([CumulativeAttemptedCreditConversion]) OR UPDATE([CumulativeAttemptedCredits]) OR UPDATE([CumulativeEarnedCreditConversion]) OR UPDATE([CumulativeEarnedCredits]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProjectedGraduationDate]) OR UPDATE([SchoolYear_SchoolYear]) OR UPDATE([SessionAttemptedCreditConversion]) OR UPDATE([SessionAttemptedCredits]) OR UPDATE([SessionEarnedCreditConversion]) OR UPDATE([SessionEarnedCredits]) OR UPDATE([Student_StudentUniqueId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (i.[SchoolYear_DocumentId] <> d.[SchoolYear_DocumentId] OR (i.[SchoolYear_DocumentId] IS NULL AND d.[SchoolYear_DocumentId] IS NOT NULL) OR (i.[SchoolYear_DocumentId] IS NOT NULL AND d.[SchoolYear_DocumentId] IS NULL)) OR (i.[Student_DocumentId] <> d.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND d.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND d.[Student_DocumentId] IS NULL)) OR (i.[CumulativeAttemptedCreditTypeDescriptor_DescriptorId] <> d.[CumulativeAttemptedCreditTypeDescriptor_DescriptorId] OR (i.[CumulativeAttemptedCreditTypeDescriptor_DescriptorId] IS NULL AND d.[CumulativeAttemptedCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[CumulativeAttemptedCreditTypeDescriptor_DescriptorId] IS NOT NULL AND d.[CumulativeAttemptedCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[CumulativeEarnedCreditTypeDescriptor_DescriptorId] <> d.[CumulativeEarnedCreditTypeDescriptor_DescriptorId] OR (i.[CumulativeEarnedCreditTypeDescriptor_DescriptorId] IS NULL AND d.[CumulativeEarnedCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[CumulativeEarnedCreditTypeDescriptor_DescriptorId] IS NOT NULL AND d.[CumulativeEarnedCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[SessionAttemptedCreditTypeDescriptor_DescriptorId] <> d.[SessionAttemptedCreditTypeDescriptor_DescriptorId] OR (i.[SessionAttemptedCreditTypeDescriptor_DescriptorId] IS NULL AND d.[SessionAttemptedCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[SessionAttemptedCreditTypeDescriptor_DescriptorId] IS NOT NULL AND d.[SessionAttemptedCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[SessionEarnedCreditTypeDescriptor_DescriptorId] <> d.[SessionEarnedCreditTypeDescriptor_DescriptorId] OR (i.[SessionEarnedCreditTypeDescriptor_DescriptorId] IS NULL AND d.[SessionEarnedCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[SessionEarnedCreditTypeDescriptor_DescriptorId] IS NOT NULL AND d.[SessionEarnedCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[TermDescriptor_DescriptorId] <> d.[TermDescriptor_DescriptorId] OR (i.[TermDescriptor_DescriptorId] IS NULL AND d.[TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[TermDescriptor_DescriptorId] IS NOT NULL AND d.[TermDescriptor_DescriptorId] IS NULL)) OR (i.[ClassRankingClassRank] <> d.[ClassRankingClassRank] OR (i.[ClassRankingClassRank] IS NULL AND d.[ClassRankingClassRank] IS NOT NULL) OR (i.[ClassRankingClassRank] IS NOT NULL AND d.[ClassRankingClassRank] IS NULL)) OR (i.[ClassRankingClassRankingDate] <> d.[ClassRankingClassRankingDate] OR (i.[ClassRankingClassRankingDate] IS NULL AND d.[ClassRankingClassRankingDate] IS NOT NULL) OR (i.[ClassRankingClassRankingDate] IS NOT NULL AND d.[ClassRankingClassRankingDate] IS NULL)) OR (i.[ClassRankingPercentageRanking] <> d.[ClassRankingPercentageRanking] OR (i.[ClassRankingPercentageRanking] IS NULL AND d.[ClassRankingPercentageRanking] IS NOT NULL) OR (i.[ClassRankingPercentageRanking] IS NOT NULL AND d.[ClassRankingPercentageRanking] IS NULL)) OR (i.[ClassRankingTotalNumberInClass] <> d.[ClassRankingTotalNumberInClass] OR (i.[ClassRankingTotalNumberInClass] IS NULL AND d.[ClassRankingTotalNumberInClass] IS NOT NULL) OR (i.[ClassRankingTotalNumberInClass] IS NOT NULL AND d.[ClassRankingTotalNumberInClass] IS NULL)) OR (i.[CumulativeAttemptedCreditConversion] <> d.[CumulativeAttemptedCreditConversion] OR (i.[CumulativeAttemptedCreditConversion] IS NULL AND d.[CumulativeAttemptedCreditConversion] IS NOT NULL) OR (i.[CumulativeAttemptedCreditConversion] IS NOT NULL AND d.[CumulativeAttemptedCreditConversion] IS NULL)) OR (i.[CumulativeAttemptedCredits] <> d.[CumulativeAttemptedCredits] OR (i.[CumulativeAttemptedCredits] IS NULL AND d.[CumulativeAttemptedCredits] IS NOT NULL) OR (i.[CumulativeAttemptedCredits] IS NOT NULL AND d.[CumulativeAttemptedCredits] IS NULL)) OR (i.[CumulativeEarnedCreditConversion] <> d.[CumulativeEarnedCreditConversion] OR (i.[CumulativeEarnedCreditConversion] IS NULL AND d.[CumulativeEarnedCreditConversion] IS NOT NULL) OR (i.[CumulativeEarnedCreditConversion] IS NOT NULL AND d.[CumulativeEarnedCreditConversion] IS NULL)) OR (i.[CumulativeEarnedCredits] <> d.[CumulativeEarnedCredits] OR (i.[CumulativeEarnedCredits] IS NULL AND d.[CumulativeEarnedCredits] IS NOT NULL) OR (i.[CumulativeEarnedCredits] IS NOT NULL AND d.[CumulativeEarnedCredits] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProjectedGraduationDate] <> d.[ProjectedGraduationDate] OR (i.[ProjectedGraduationDate] IS NULL AND d.[ProjectedGraduationDate] IS NOT NULL) OR (i.[ProjectedGraduationDate] IS NOT NULL AND d.[ProjectedGraduationDate] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL)) OR (i.[SessionAttemptedCreditConversion] <> d.[SessionAttemptedCreditConversion] OR (i.[SessionAttemptedCreditConversion] IS NULL AND d.[SessionAttemptedCreditConversion] IS NOT NULL) OR (i.[SessionAttemptedCreditConversion] IS NOT NULL AND d.[SessionAttemptedCreditConversion] IS NULL)) OR (i.[SessionAttemptedCredits] <> d.[SessionAttemptedCredits] OR (i.[SessionAttemptedCredits] IS NULL AND d.[SessionAttemptedCredits] IS NOT NULL) OR (i.[SessionAttemptedCredits] IS NOT NULL AND d.[SessionAttemptedCredits] IS NULL)) OR (i.[SessionEarnedCreditConversion] <> d.[SessionEarnedCreditConversion] OR (i.[SessionEarnedCreditConversion] IS NULL AND d.[SessionEarnedCreditConversion] IS NOT NULL) OR (i.[SessionEarnedCreditConversion] IS NOT NULL AND d.[SessionEarnedCreditConversion] IS NULL)) OR (i.[SessionEarnedCredits] <> d.[SessionEarnedCredits] OR (i.[SessionEarnedCredits] IS NULL AND d.[SessionEarnedCredits] IS NOT NULL) OR (i.[SessionEarnedCredits] IS NOT NULL AND d.[SessionEarnedCredits] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[StudentAcademicRecord_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[StudentAcademicRecord_SchoolYear] = i.[SchoolYear_SchoolYear], r.[StudentAcademicRecord_StudentUniqueId] = i.[Student_StudentUniqueId], r.[StudentAcademicRecord_TermDescriptor_DescriptorId] = i.[TermDescriptor_DescriptorId]
-        FROM [edfi].[CourseTranscript] r
-        INNER JOIN deleted d ON r.[StudentAcademicRecord_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL)) OR (i.[TermDescriptor_DescriptorId] <> d.[TermDescriptor_DescriptorId] OR (i.[TermDescriptor_DescriptorId] IS NULL AND d.[TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[TermDescriptor_DescriptorId] IS NOT NULL AND d.[TermDescriptor_DescriptorId] IS NULL)))
-        AND ((r.[StudentAcademicRecord_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[StudentAcademicRecord_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[StudentAcademicRecord_SchoolYear] = d.[SchoolYear_SchoolYear]) OR (r.[StudentAcademicRecord_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NULL)) AND ((r.[StudentAcademicRecord_StudentUniqueId] = d.[Student_StudentUniqueId]) OR (r.[StudentAcademicRecord_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NULL)) AND ((r.[StudentAcademicRecord_TermDescriptor_DescriptorId] = d.[TermDescriptor_DescriptorId]) OR (r.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NULL AND d.[TermDescriptor_DescriptorId] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentAcademicRecord_ReferentialIdentity]
 ON [edfi].[StudentAcademicRecord]
 AFTER INSERT, UPDATE
@@ -60681,30 +59652,6 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[StudentAssessment] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentAssessmentRegistration_PropagateIdentity]
-ON [edfi].[StudentAssessmentRegistration]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([AssessmentAdministration_DocumentId]) OR UPDATE([ReportingEducationOrganization_DocumentId]) OR UPDATE([ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId]) OR UPDATE([StudentEducationOrganizationAssociation_DocumentId]) OR UPDATE([StudentSchoolAssociation_DocumentId]) OR UPDATE([TestingEducationOrganization_DocumentId]) OR UPDATE([AssessmentGradeLevelDescriptor_DescriptorId]) OR UPDATE([PlatformTypeDescriptor_DescriptorId]) OR UPDATE([AssessmentAdministration_AdministrationIdentifier]) OR UPDATE([AssessmentAdministration_AssessmentIdentifier]) OR UPDATE([AssessmentAdministration_AssigningEducationOrganizationId]) OR UPDATE([AssessmentAdministration_Namespace]) OR UPDATE([ReportingEducationOrganization_EducationOrganizationId]) OR UPDATE([ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId]) OR UPDATE([ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId]) OR UPDATE([StudentEducationOrganizationAssociation_EducationOrganizationId]) OR UPDATE([StudentUniqueId_Unified]) OR UPDATE([StudentSchoolAssociation_EntryDate]) OR UPDATE([StudentSchoolAssociation_SchoolId]) OR UPDATE([TestingEducationOrganization_EducationOrganizationId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[AssessmentAdministration_DocumentId] <> d.[AssessmentAdministration_DocumentId] OR (i.[AssessmentAdministration_DocumentId] IS NULL AND d.[AssessmentAdministration_DocumentId] IS NOT NULL) OR (i.[AssessmentAdministration_DocumentId] IS NOT NULL AND d.[AssessmentAdministration_DocumentId] IS NULL)) OR (i.[ReportingEducationOrganization_DocumentId] <> d.[ReportingEducationOrganization_DocumentId] OR (i.[ReportingEducationOrganization_DocumentId] IS NULL AND d.[ReportingEducationOrganization_DocumentId] IS NOT NULL) OR (i.[ReportingEducationOrganization_DocumentId] IS NOT NULL AND d.[ReportingEducationOrganization_DocumentId] IS NULL)) OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId] <> d.[ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId] OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId] IS NULL AND d.[ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId] IS NOT NULL) OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId] IS NOT NULL AND d.[ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId] IS NULL)) OR (i.[StudentEducationOrganizationAssociation_DocumentId] <> d.[StudentEducationOrganizationAssociation_DocumentId] OR (i.[StudentEducationOrganizationAssociation_DocumentId] IS NULL AND d.[StudentEducationOrganizationAssociation_DocumentId] IS NOT NULL) OR (i.[StudentEducationOrganizationAssociation_DocumentId] IS NOT NULL AND d.[StudentEducationOrganizationAssociation_DocumentId] IS NULL)) OR (i.[StudentSchoolAssociation_DocumentId] <> d.[StudentSchoolAssociation_DocumentId] OR (i.[StudentSchoolAssociation_DocumentId] IS NULL AND d.[StudentSchoolAssociation_DocumentId] IS NOT NULL) OR (i.[StudentSchoolAssociation_DocumentId] IS NOT NULL AND d.[StudentSchoolAssociation_DocumentId] IS NULL)) OR (i.[TestingEducationOrganization_DocumentId] <> d.[TestingEducationOrganization_DocumentId] OR (i.[TestingEducationOrganization_DocumentId] IS NULL AND d.[TestingEducationOrganization_DocumentId] IS NOT NULL) OR (i.[TestingEducationOrganization_DocumentId] IS NOT NULL AND d.[TestingEducationOrganization_DocumentId] IS NULL)) OR (i.[AssessmentGradeLevelDescriptor_DescriptorId] <> d.[AssessmentGradeLevelDescriptor_DescriptorId] OR (i.[AssessmentGradeLevelDescriptor_DescriptorId] IS NULL AND d.[AssessmentGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[AssessmentGradeLevelDescriptor_DescriptorId] IS NOT NULL AND d.[AssessmentGradeLevelDescriptor_DescriptorId] IS NULL)) OR (i.[PlatformTypeDescriptor_DescriptorId] <> d.[PlatformTypeDescriptor_DescriptorId] OR (i.[PlatformTypeDescriptor_DescriptorId] IS NULL AND d.[PlatformTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[PlatformTypeDescriptor_DescriptorId] IS NOT NULL AND d.[PlatformTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NULL AND d.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL AND d.[AssessmentAdministration_AdministrationIdentifier] IS NULL)) OR (CAST(i.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NULL AND d.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL AND d.[AssessmentAdministration_AssessmentIdentifier] IS NULL)) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] <> d.[AssessmentAdministration_AssigningEducationOrganizationId] OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL AND d.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL AND d.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL)) OR (CAST(i.[AssessmentAdministration_Namespace] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_Namespace] AS varbinary(max)) OR (i.[AssessmentAdministration_Namespace] IS NULL AND d.[AssessmentAdministration_Namespace] IS NOT NULL) OR (i.[AssessmentAdministration_Namespace] IS NOT NULL AND d.[AssessmentAdministration_Namespace] IS NULL)) OR (i.[ReportingEducationOrganization_EducationOrganizationId] <> d.[ReportingEducationOrganization_EducationOrganizationId] OR (i.[ReportingEducationOrganization_EducationOrganizationId] IS NULL AND d.[ReportingEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[ReportingEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[ReportingEducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] <> d.[ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] IS NULL AND d.[ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] IS NOT NULL) OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] IS NOT NULL AND d.[ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] IS NULL)) OR (CAST(i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] AS varbinary(max)) <> CAST(d.[ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] AS varbinary(max)) OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] IS NULL AND d.[ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] IS NOT NULL) OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] IS NOT NULL AND d.[ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] IS NULL)) OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] <> d.[StudentEducationOrganizationAssociation_EducationOrganizationId] OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NULL AND d.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NOT NULL) OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NOT NULL AND d.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NULL)) OR (CAST(i.[StudentUniqueId_Unified] AS varbinary(max)) <> CAST(d.[StudentUniqueId_Unified] AS varbinary(max)) OR (i.[StudentUniqueId_Unified] IS NULL AND d.[StudentUniqueId_Unified] IS NOT NULL) OR (i.[StudentUniqueId_Unified] IS NOT NULL AND d.[StudentUniqueId_Unified] IS NULL)) OR (i.[StudentSchoolAssociation_EntryDate] <> d.[StudentSchoolAssociation_EntryDate] OR (i.[StudentSchoolAssociation_EntryDate] IS NULL AND d.[StudentSchoolAssociation_EntryDate] IS NOT NULL) OR (i.[StudentSchoolAssociation_EntryDate] IS NOT NULL AND d.[StudentSchoolAssociation_EntryDate] IS NULL)) OR (i.[StudentSchoolAssociation_SchoolId] <> d.[StudentSchoolAssociation_SchoolId] OR (i.[StudentSchoolAssociation_SchoolId] IS NULL AND d.[StudentSchoolAssociation_SchoolId] IS NOT NULL) OR (i.[StudentSchoolAssociation_SchoolId] IS NOT NULL AND d.[StudentSchoolAssociation_SchoolId] IS NULL)) OR (i.[TestingEducationOrganization_EducationOrganizationId] <> d.[TestingEducationOrganization_EducationOrganizationId] OR (i.[TestingEducationOrganization_EducationOrganizationId] IS NULL AND d.[TestingEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[TestingEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[TestingEducationOrganization_EducationOrganizationId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[StudentAssessmentRegistration_AdministrationIdentifier] = i.[AssessmentAdministration_AdministrationIdentifier], r.[AssessmentIdentifier_Unified] = i.[AssessmentAdministration_AssessmentIdentifier], r.[StudentAssessmentRegistration_AssigningEducationOrganizationId] = i.[AssessmentAdministration_AssigningEducationOrganizationId], r.[Namespace_Unified] = i.[AssessmentAdministration_Namespace], r.[StudentAssessmentRegistration_EducationOrganizationId] = i.[StudentEducationOrganizationAssociation_EducationOrganizationId], r.[StudentAssessmentRegistration_StudentUniqueId] = i.[StudentEducationOrganizationAssociation_StudentUniqueId]
-        FROM [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] r
-        INNER JOIN deleted d ON r.[StudentAssessmentRegistration_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NULL AND d.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL AND d.[AssessmentAdministration_AdministrationIdentifier] IS NULL)) OR (CAST(i.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NULL AND d.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL AND d.[AssessmentAdministration_AssessmentIdentifier] IS NULL)) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] <> d.[AssessmentAdministration_AssigningEducationOrganizationId] OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL AND d.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL AND d.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL)) OR (CAST(i.[AssessmentAdministration_Namespace] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_Namespace] AS varbinary(max)) OR (i.[AssessmentAdministration_Namespace] IS NULL AND d.[AssessmentAdministration_Namespace] IS NOT NULL) OR (i.[AssessmentAdministration_Namespace] IS NOT NULL AND d.[AssessmentAdministration_Namespace] IS NULL)) OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] <> d.[StudentEducationOrganizationAssociation_EducationOrganizationId] OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NULL AND d.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NOT NULL) OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NOT NULL AND d.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NULL)) OR (CAST(i.[StudentEducationOrganizationAssociation_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentEducationOrganizationAssociation_StudentUniqueId] AS varbinary(max)) OR (i.[StudentEducationOrganizationAssociation_StudentUniqueId] IS NULL AND d.[StudentEducationOrganizationAssociation_StudentUniqueId] IS NOT NULL) OR (i.[StudentEducationOrganizationAssociation_StudentUniqueId] IS NOT NULL AND d.[StudentEducationOrganizationAssociation_StudentUniqueId] IS NULL)))
-        AND ((r.[StudentAssessmentRegistration_AdministrationIdentifier] = d.[AssessmentAdministration_AdministrationIdentifier]) OR (r.[StudentAssessmentRegistration_AdministrationIdentifier] IS NULL AND d.[AssessmentAdministration_AdministrationIdentifier] IS NULL)) AND ((r.[AssessmentIdentifier_Unified] = d.[AssessmentAdministration_AssessmentIdentifier]) OR (r.[AssessmentIdentifier_Unified] IS NULL AND d.[AssessmentAdministration_AssessmentIdentifier] IS NULL)) AND ((r.[StudentAssessmentRegistration_AssigningEducationOrganizationId] = d.[AssessmentAdministration_AssigningEducationOrganizationId]) OR (r.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NULL AND d.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL)) AND ((r.[Namespace_Unified] = d.[AssessmentAdministration_Namespace]) OR (r.[Namespace_Unified] IS NULL AND d.[AssessmentAdministration_Namespace] IS NULL)) AND ((r.[StudentAssessmentRegistration_EducationOrganizationId] = d.[StudentEducationOrganizationAssociation_EducationOrganizationId]) OR (r.[StudentAssessmentRegistration_EducationOrganizationId] IS NULL AND d.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NULL)) AND ((r.[StudentAssessmentRegistration_StudentUniqueId] = d.[StudentEducationOrganizationAssociation_StudentUniqueId]) OR (r.[StudentAssessmentRegistration_StudentUniqueId] IS NULL AND d.[StudentEducationOrganizationAssociation_StudentUniqueId] IS NULL));
-
     END
 END;
 GO
@@ -61722,30 +60669,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentCompetencyObjective_PropagateIdentity]
-ON [edfi].[StudentCompetencyObjective]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([GradingPeriodGradingPeriod_DocumentId]) OR UPDATE([ObjectiveCompetencyObjective_DocumentId]) OR UPDATE([Student_DocumentId]) OR UPDATE([CompetencyLevelDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]) OR UPDATE([DiagnosticStatement]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([GradingPeriodGradingPeriod_SchoolId]) OR UPDATE([GradingPeriodGradingPeriod_SchoolYear]) OR UPDATE([ObjectiveCompetencyObjective_EducationOrganizationId]) OR UPDATE([ObjectiveCompetencyObjective_Objective]) OR UPDATE([Student_StudentUniqueId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[GradingPeriodGradingPeriod_DocumentId] <> d.[GradingPeriodGradingPeriod_DocumentId] OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NULL AND d.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_DocumentId] IS NULL)) OR (i.[ObjectiveCompetencyObjective_DocumentId] <> d.[ObjectiveCompetencyObjective_DocumentId] OR (i.[ObjectiveCompetencyObjective_DocumentId] IS NULL AND d.[ObjectiveCompetencyObjective_DocumentId] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_DocumentId] IS NOT NULL AND d.[ObjectiveCompetencyObjective_DocumentId] IS NULL)) OR (i.[Student_DocumentId] <> d.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND d.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND d.[Student_DocumentId] IS NULL)) OR (i.[CompetencyLevelDescriptor_DescriptorId] <> d.[CompetencyLevelDescriptor_DescriptorId] OR (i.[CompetencyLevelDescriptor_DescriptorId] IS NULL AND d.[CompetencyLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[CompetencyLevelDescriptor_DescriptorId] IS NOT NULL AND d.[CompetencyLevelDescriptor_DescriptorId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] <> d.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL AND d.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL AND d.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[DiagnosticStatement] AS varbinary(max)) <> CAST(d.[DiagnosticStatement] AS varbinary(max)) OR (i.[DiagnosticStatement] IS NULL AND d.[DiagnosticStatement] IS NOT NULL) OR (i.[DiagnosticStatement] IS NOT NULL AND d.[DiagnosticStatement] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(d.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolId] <> d.[GradingPeriodGradingPeriod_SchoolId] OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolYear] <> d.[GradingPeriodGradingPeriod_SchoolYear] OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] <> d.[ObjectiveCompetencyObjective_EducationOrganizationId] OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NULL AND d.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NOT NULL AND d.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NULL)) OR (CAST(i.[ObjectiveCompetencyObjective_Objective] AS varbinary(max)) <> CAST(d.[ObjectiveCompetencyObjective_Objective] AS varbinary(max)) OR (i.[ObjectiveCompetencyObjective_Objective] IS NULL AND d.[ObjectiveCompetencyObjective_Objective] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_Objective] IS NOT NULL AND d.[ObjectiveCompetencyObjective_Objective] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId], r.[StudentCompetencyObjective_GradingPeriodName] = i.[GradingPeriodGradingPeriod_GradingPeriodName], r.[StudentCompetencyObjective_GradingPeriodSchoolId] = i.[GradingPeriodGradingPeriod_SchoolId], r.[StudentCompetencyObjective_GradingPeriodSchoolYear] = i.[GradingPeriodGradingPeriod_SchoolYear], r.[StudentCompetencyObjective_ObjectiveEducationOrganizationId] = i.[ObjectiveCompetencyObjective_EducationOrganizationId], r.[StudentCompetencyObjective_Objective] = i.[ObjectiveCompetencyObjective_Objective], r.[StudentCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] = i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId], r.[StudentCompetencyObjective_StudentUniqueId] = i.[Student_StudentUniqueId]
-        FROM [edfi].[ReportCardStudentCompetencyObjective] r
-        INNER JOIN deleted d ON r.[StudentCompetencyObjective_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(d.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolId] <> d.[GradingPeriodGradingPeriod_SchoolId] OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolYear] <> d.[GradingPeriodGradingPeriod_SchoolYear] OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] <> d.[ObjectiveCompetencyObjective_EducationOrganizationId] OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NULL AND d.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NOT NULL AND d.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NULL)) OR (CAST(i.[ObjectiveCompetencyObjective_Objective] AS varbinary(max)) <> CAST(d.[ObjectiveCompetencyObjective_Objective] AS varbinary(max)) OR (i.[ObjectiveCompetencyObjective_Objective] IS NULL AND d.[ObjectiveCompetencyObjective_Objective] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_Objective] IS NOT NULL AND d.[ObjectiveCompetencyObjective_Objective] IS NULL)) OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] <> d.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL AND d.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL AND d.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL)))
-        AND ((r.[StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId] = d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR (r.[StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) AND ((r.[StudentCompetencyObjective_GradingPeriodName] = d.[GradingPeriodGradingPeriod_GradingPeriodName]) OR (r.[StudentCompetencyObjective_GradingPeriodName] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) AND ((r.[StudentCompetencyObjective_GradingPeriodSchoolId] = d.[GradingPeriodGradingPeriod_SchoolId]) OR (r.[StudentCompetencyObjective_GradingPeriodSchoolId] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) AND ((r.[StudentCompetencyObjective_GradingPeriodSchoolYear] = d.[GradingPeriodGradingPeriod_SchoolYear]) OR (r.[StudentCompetencyObjective_GradingPeriodSchoolYear] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) AND ((r.[StudentCompetencyObjective_ObjectiveEducationOrganizationId] = d.[ObjectiveCompetencyObjective_EducationOrganizationId]) OR (r.[StudentCompetencyObjective_ObjectiveEducationOrganizationId] IS NULL AND d.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NULL)) AND ((r.[StudentCompetencyObjective_Objective] = d.[ObjectiveCompetencyObjective_Objective]) OR (r.[StudentCompetencyObjective_Objective] IS NULL AND d.[ObjectiveCompetencyObjective_Objective] IS NULL)) AND ((r.[StudentCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] = d.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]) OR (r.[StudentCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL AND d.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL)) AND ((r.[StudentCompetencyObjective_StudentUniqueId] = d.[Student_StudentUniqueId]) OR (r.[StudentCompetencyObjective_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentCompetencyObjective_ReferentialIdentity]
 ON [edfi].[StudentCompetencyObjective]
 AFTER INSERT, UPDATE
@@ -62547,30 +61470,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentEducationOrganizationAssessmentAccommodation_PropagateIdentity]
-ON [edfi].[StudentEducationOrganizationAssessmentAccommodation]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([EducationOrganization_DocumentId]) OR UPDATE([Student_DocumentId]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Student_StudentUniqueId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (i.[Student_DocumentId] <> d.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND d.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND d.[Student_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] = i.[Student_StudentUniqueId]
-        FROM [edfi].[StudentAssessmentRegistration] r
-        INNER JOIN deleted d ON r.[ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL)))
-        AND ((r.[ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] = d.[Student_StudentUniqueId]) OR (r.[ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentEducationOrganizationAssessmentAccommodation_ReferentialIdentity]
 ON [edfi].[StudentEducationOrganizationAssessmentAccommodation]
 AFTER INSERT, UPDATE
@@ -62735,30 +61634,6 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[StudentEducationOrganizationAssessmentAccommodation] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentEducationOrganizationAssociation_PropagateIdentity]
-ON [edfi].[StudentEducationOrganizationAssociation]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([EducationOrganization_DocumentId]) OR UPDATE([Student_DocumentId]) OR UPDATE([BarrierToInternetAccessInResidenceDescriptor_DescriptorId]) OR UPDATE([InternetAccessTypeInResidenceDescriptor_DescriptorId]) OR UPDATE([InternetPerformanceInResidenceDescriptor_DescriptorId]) OR UPDATE([LimitedEnglishProficiencyDescriptor_DescriptorId]) OR UPDATE([PrimaryLearningDeviceAccessDescriptor_DescriptorId]) OR UPDATE([PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId]) OR UPDATE([PrimaryLearningDeviceProviderDescriptor_DescriptorId]) OR UPDATE([SexDescriptor_DescriptorId]) OR UPDATE([SupporterMilitaryConnectionDescriptor_DescriptorId]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([GenderIdentity]) OR UPDATE([HispanicLatinoEthnicity]) OR UPDATE([InternetAccessInResidence]) OR UPDATE([LoginId]) OR UPDATE([ProfileThumbnail]) OR UPDATE([Student_StudentUniqueId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (i.[Student_DocumentId] <> d.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND d.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND d.[Student_DocumentId] IS NULL)) OR (i.[BarrierToInternetAccessInResidenceDescriptor_DescriptorId] <> d.[BarrierToInternetAccessInResidenceDescriptor_DescriptorId] OR (i.[BarrierToInternetAccessInResidenceDescriptor_DescriptorId] IS NULL AND d.[BarrierToInternetAccessInResidenceDescriptor_DescriptorId] IS NOT NULL) OR (i.[BarrierToInternetAccessInResidenceDescriptor_DescriptorId] IS NOT NULL AND d.[BarrierToInternetAccessInResidenceDescriptor_DescriptorId] IS NULL)) OR (i.[InternetAccessTypeInResidenceDescriptor_DescriptorId] <> d.[InternetAccessTypeInResidenceDescriptor_DescriptorId] OR (i.[InternetAccessTypeInResidenceDescriptor_DescriptorId] IS NULL AND d.[InternetAccessTypeInResidenceDescriptor_DescriptorId] IS NOT NULL) OR (i.[InternetAccessTypeInResidenceDescriptor_DescriptorId] IS NOT NULL AND d.[InternetAccessTypeInResidenceDescriptor_DescriptorId] IS NULL)) OR (i.[InternetPerformanceInResidenceDescriptor_DescriptorId] <> d.[InternetPerformanceInResidenceDescriptor_DescriptorId] OR (i.[InternetPerformanceInResidenceDescriptor_DescriptorId] IS NULL AND d.[InternetPerformanceInResidenceDescriptor_DescriptorId] IS NOT NULL) OR (i.[InternetPerformanceInResidenceDescriptor_DescriptorId] IS NOT NULL AND d.[InternetPerformanceInResidenceDescriptor_DescriptorId] IS NULL)) OR (i.[LimitedEnglishProficiencyDescriptor_DescriptorId] <> d.[LimitedEnglishProficiencyDescriptor_DescriptorId] OR (i.[LimitedEnglishProficiencyDescriptor_DescriptorId] IS NULL AND d.[LimitedEnglishProficiencyDescriptor_DescriptorId] IS NOT NULL) OR (i.[LimitedEnglishProficiencyDescriptor_DescriptorId] IS NOT NULL AND d.[LimitedEnglishProficiencyDescriptor_DescriptorId] IS NULL)) OR (i.[PrimaryLearningDeviceAccessDescriptor_DescriptorId] <> d.[PrimaryLearningDeviceAccessDescriptor_DescriptorId] OR (i.[PrimaryLearningDeviceAccessDescriptor_DescriptorId] IS NULL AND d.[PrimaryLearningDeviceAccessDescriptor_DescriptorId] IS NOT NULL) OR (i.[PrimaryLearningDeviceAccessDescriptor_DescriptorId] IS NOT NULL AND d.[PrimaryLearningDeviceAccessDescriptor_DescriptorId] IS NULL)) OR (i.[PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId] <> d.[PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId] OR (i.[PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId] IS NULL AND d.[PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId] IS NOT NULL) OR (i.[PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId] IS NOT NULL AND d.[PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId] IS NULL)) OR (i.[PrimaryLearningDeviceProviderDescriptor_DescriptorId] <> d.[PrimaryLearningDeviceProviderDescriptor_DescriptorId] OR (i.[PrimaryLearningDeviceProviderDescriptor_DescriptorId] IS NULL AND d.[PrimaryLearningDeviceProviderDescriptor_DescriptorId] IS NOT NULL) OR (i.[PrimaryLearningDeviceProviderDescriptor_DescriptorId] IS NOT NULL AND d.[PrimaryLearningDeviceProviderDescriptor_DescriptorId] IS NULL)) OR (i.[SexDescriptor_DescriptorId] <> d.[SexDescriptor_DescriptorId] OR (i.[SexDescriptor_DescriptorId] IS NULL AND d.[SexDescriptor_DescriptorId] IS NOT NULL) OR (i.[SexDescriptor_DescriptorId] IS NOT NULL AND d.[SexDescriptor_DescriptorId] IS NULL)) OR (i.[SupporterMilitaryConnectionDescriptor_DescriptorId] <> d.[SupporterMilitaryConnectionDescriptor_DescriptorId] OR (i.[SupporterMilitaryConnectionDescriptor_DescriptorId] IS NULL AND d.[SupporterMilitaryConnectionDescriptor_DescriptorId] IS NOT NULL) OR (i.[SupporterMilitaryConnectionDescriptor_DescriptorId] IS NOT NULL AND d.[SupporterMilitaryConnectionDescriptor_DescriptorId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[GenderIdentity] AS varbinary(max)) <> CAST(d.[GenderIdentity] AS varbinary(max)) OR (i.[GenderIdentity] IS NULL AND d.[GenderIdentity] IS NOT NULL) OR (i.[GenderIdentity] IS NOT NULL AND d.[GenderIdentity] IS NULL)) OR (i.[HispanicLatinoEthnicity] <> d.[HispanicLatinoEthnicity] OR (i.[HispanicLatinoEthnicity] IS NULL AND d.[HispanicLatinoEthnicity] IS NOT NULL) OR (i.[HispanicLatinoEthnicity] IS NOT NULL AND d.[HispanicLatinoEthnicity] IS NULL)) OR (i.[InternetAccessInResidence] <> d.[InternetAccessInResidence] OR (i.[InternetAccessInResidence] IS NULL AND d.[InternetAccessInResidence] IS NOT NULL) OR (i.[InternetAccessInResidence] IS NOT NULL AND d.[InternetAccessInResidence] IS NULL)) OR (CAST(i.[LoginId] AS varbinary(max)) <> CAST(d.[LoginId] AS varbinary(max)) OR (i.[LoginId] IS NULL AND d.[LoginId] IS NOT NULL) OR (i.[LoginId] IS NOT NULL AND d.[LoginId] IS NULL)) OR (CAST(i.[ProfileThumbnail] AS varbinary(max)) <> CAST(d.[ProfileThumbnail] AS varbinary(max)) OR (i.[ProfileThumbnail] IS NULL AND d.[ProfileThumbnail] IS NOT NULL) OR (i.[ProfileThumbnail] IS NOT NULL AND d.[ProfileThumbnail] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[StudentEducationOrganizationAssociation_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], r.[StudentUniqueId_Unified] = i.[Student_StudentUniqueId]
-        FROM [edfi].[StudentAssessmentRegistration] r
-        INNER JOIN deleted d ON r.[StudentEducationOrganizationAssociation_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL)))
-        AND ((r.[StudentEducationOrganizationAssociation_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) AND ((r.[StudentUniqueId_Unified] = d.[Student_StudentUniqueId]) OR (r.[StudentUniqueId_Unified] IS NULL AND d.[Student_StudentUniqueId] IS NULL));
-
     END
 END;
 GO
@@ -66370,30 +65245,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolAssociation_PropagateIdentity]
-ON [edfi].[StudentSchoolAssociation]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([Calendar_DocumentId]) OR UPDATE([ClassOfSchoolYear_DocumentId]) OR UPDATE([GraduationPlan_DocumentId]) OR UPDATE([NextYearSchool_DocumentId]) OR UPDATE([SchoolYear_DocumentId]) OR UPDATE([School_DocumentId]) OR UPDATE([Student_DocumentId]) OR UPDATE([EnrollmentTypeDescriptor_DescriptorId]) OR UPDATE([EntryGradeLevelDescriptor_DescriptorId]) OR UPDATE([EntryGradeLevelReasonDescriptor_DescriptorId]) OR UPDATE([EntryTypeDescriptor_DescriptorId]) OR UPDATE([ExitWithdrawTypeDescriptor_DescriptorId]) OR UPDATE([GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId]) OR UPDATE([NextYearGradeLevelDescriptor_DescriptorId]) OR UPDATE([ResidencyStatusDescriptor_DescriptorId]) OR UPDATE([SchoolChoiceBasisDescriptor_DescriptorId]) OR UPDATE([Calendar_CalendarCode]) OR UPDATE([SchoolId_Unified]) OR UPDATE([SchoolYear_Unified]) OR UPDATE([ClassOfSchoolYear_ClassOfSchoolYear]) OR UPDATE([EmployedWhileEnrolled]) OR UPDATE([EntryDate]) OR UPDATE([ExitWithdrawDate]) OR UPDATE([FullTimeEquivalency]) OR UPDATE([GraduationPlan_EducationOrganizationId]) OR UPDATE([GraduationPlan_GraduationSchoolYear]) OR UPDATE([NextYearSchool_SchoolId]) OR UPDATE([PrimarySchool]) OR UPDATE([RepeatGradeIndicator]) OR UPDATE([SchoolChoice]) OR UPDATE([SchoolChoiceTransfer]) OR UPDATE([Student_StudentUniqueId]) OR UPDATE([TermCompletionIndicator]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[Calendar_DocumentId] <> d.[Calendar_DocumentId] OR (i.[Calendar_DocumentId] IS NULL AND d.[Calendar_DocumentId] IS NOT NULL) OR (i.[Calendar_DocumentId] IS NOT NULL AND d.[Calendar_DocumentId] IS NULL)) OR (i.[ClassOfSchoolYear_DocumentId] <> d.[ClassOfSchoolYear_DocumentId] OR (i.[ClassOfSchoolYear_DocumentId] IS NULL AND d.[ClassOfSchoolYear_DocumentId] IS NOT NULL) OR (i.[ClassOfSchoolYear_DocumentId] IS NOT NULL AND d.[ClassOfSchoolYear_DocumentId] IS NULL)) OR (i.[GraduationPlan_DocumentId] <> d.[GraduationPlan_DocumentId] OR (i.[GraduationPlan_DocumentId] IS NULL AND d.[GraduationPlan_DocumentId] IS NOT NULL) OR (i.[GraduationPlan_DocumentId] IS NOT NULL AND d.[GraduationPlan_DocumentId] IS NULL)) OR (i.[NextYearSchool_DocumentId] <> d.[NextYearSchool_DocumentId] OR (i.[NextYearSchool_DocumentId] IS NULL AND d.[NextYearSchool_DocumentId] IS NOT NULL) OR (i.[NextYearSchool_DocumentId] IS NOT NULL AND d.[NextYearSchool_DocumentId] IS NULL)) OR (i.[SchoolYear_DocumentId] <> d.[SchoolYear_DocumentId] OR (i.[SchoolYear_DocumentId] IS NULL AND d.[SchoolYear_DocumentId] IS NOT NULL) OR (i.[SchoolYear_DocumentId] IS NOT NULL AND d.[SchoolYear_DocumentId] IS NULL)) OR (i.[School_DocumentId] <> d.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND d.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND d.[School_DocumentId] IS NULL)) OR (i.[Student_DocumentId] <> d.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND d.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND d.[Student_DocumentId] IS NULL)) OR (i.[EnrollmentTypeDescriptor_DescriptorId] <> d.[EnrollmentTypeDescriptor_DescriptorId] OR (i.[EnrollmentTypeDescriptor_DescriptorId] IS NULL AND d.[EnrollmentTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[EnrollmentTypeDescriptor_DescriptorId] IS NOT NULL AND d.[EnrollmentTypeDescriptor_DescriptorId] IS NULL)) OR (i.[EntryGradeLevelDescriptor_DescriptorId] <> d.[EntryGradeLevelDescriptor_DescriptorId] OR (i.[EntryGradeLevelDescriptor_DescriptorId] IS NULL AND d.[EntryGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[EntryGradeLevelDescriptor_DescriptorId] IS NOT NULL AND d.[EntryGradeLevelDescriptor_DescriptorId] IS NULL)) OR (i.[EntryGradeLevelReasonDescriptor_DescriptorId] <> d.[EntryGradeLevelReasonDescriptor_DescriptorId] OR (i.[EntryGradeLevelReasonDescriptor_DescriptorId] IS NULL AND d.[EntryGradeLevelReasonDescriptor_DescriptorId] IS NOT NULL) OR (i.[EntryGradeLevelReasonDescriptor_DescriptorId] IS NOT NULL AND d.[EntryGradeLevelReasonDescriptor_DescriptorId] IS NULL)) OR (i.[EntryTypeDescriptor_DescriptorId] <> d.[EntryTypeDescriptor_DescriptorId] OR (i.[EntryTypeDescriptor_DescriptorId] IS NULL AND d.[EntryTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[EntryTypeDescriptor_DescriptorId] IS NOT NULL AND d.[EntryTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ExitWithdrawTypeDescriptor_DescriptorId] <> d.[ExitWithdrawTypeDescriptor_DescriptorId] OR (i.[ExitWithdrawTypeDescriptor_DescriptorId] IS NULL AND d.[ExitWithdrawTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ExitWithdrawTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ExitWithdrawTypeDescriptor_DescriptorId] IS NULL)) OR (i.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] <> d.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] OR (i.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] IS NULL AND d.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL AND d.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] IS NULL)) OR (i.[NextYearGradeLevelDescriptor_DescriptorId] <> d.[NextYearGradeLevelDescriptor_DescriptorId] OR (i.[NextYearGradeLevelDescriptor_DescriptorId] IS NULL AND d.[NextYearGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[NextYearGradeLevelDescriptor_DescriptorId] IS NOT NULL AND d.[NextYearGradeLevelDescriptor_DescriptorId] IS NULL)) OR (i.[ResidencyStatusDescriptor_DescriptorId] <> d.[ResidencyStatusDescriptor_DescriptorId] OR (i.[ResidencyStatusDescriptor_DescriptorId] IS NULL AND d.[ResidencyStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[ResidencyStatusDescriptor_DescriptorId] IS NOT NULL AND d.[ResidencyStatusDescriptor_DescriptorId] IS NULL)) OR (i.[SchoolChoiceBasisDescriptor_DescriptorId] <> d.[SchoolChoiceBasisDescriptor_DescriptorId] OR (i.[SchoolChoiceBasisDescriptor_DescriptorId] IS NULL AND d.[SchoolChoiceBasisDescriptor_DescriptorId] IS NOT NULL) OR (i.[SchoolChoiceBasisDescriptor_DescriptorId] IS NOT NULL AND d.[SchoolChoiceBasisDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Calendar_CalendarCode] AS varbinary(max)) <> CAST(d.[Calendar_CalendarCode] AS varbinary(max)) OR (i.[Calendar_CalendarCode] IS NULL AND d.[Calendar_CalendarCode] IS NOT NULL) OR (i.[Calendar_CalendarCode] IS NOT NULL AND d.[Calendar_CalendarCode] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> d.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND d.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND d.[SchoolYear_Unified] IS NULL)) OR (i.[ClassOfSchoolYear_ClassOfSchoolYear] <> d.[ClassOfSchoolYear_ClassOfSchoolYear] OR (i.[ClassOfSchoolYear_ClassOfSchoolYear] IS NULL AND d.[ClassOfSchoolYear_ClassOfSchoolYear] IS NOT NULL) OR (i.[ClassOfSchoolYear_ClassOfSchoolYear] IS NOT NULL AND d.[ClassOfSchoolYear_ClassOfSchoolYear] IS NULL)) OR (i.[EmployedWhileEnrolled] <> d.[EmployedWhileEnrolled] OR (i.[EmployedWhileEnrolled] IS NULL AND d.[EmployedWhileEnrolled] IS NOT NULL) OR (i.[EmployedWhileEnrolled] IS NOT NULL AND d.[EmployedWhileEnrolled] IS NULL)) OR (i.[EntryDate] <> d.[EntryDate] OR (i.[EntryDate] IS NULL AND d.[EntryDate] IS NOT NULL) OR (i.[EntryDate] IS NOT NULL AND d.[EntryDate] IS NULL)) OR (i.[ExitWithdrawDate] <> d.[ExitWithdrawDate] OR (i.[ExitWithdrawDate] IS NULL AND d.[ExitWithdrawDate] IS NOT NULL) OR (i.[ExitWithdrawDate] IS NOT NULL AND d.[ExitWithdrawDate] IS NULL)) OR (i.[FullTimeEquivalency] <> d.[FullTimeEquivalency] OR (i.[FullTimeEquivalency] IS NULL AND d.[FullTimeEquivalency] IS NOT NULL) OR (i.[FullTimeEquivalency] IS NOT NULL AND d.[FullTimeEquivalency] IS NULL)) OR (i.[GraduationPlan_EducationOrganizationId] <> d.[GraduationPlan_EducationOrganizationId] OR (i.[GraduationPlan_EducationOrganizationId] IS NULL AND d.[GraduationPlan_EducationOrganizationId] IS NOT NULL) OR (i.[GraduationPlan_EducationOrganizationId] IS NOT NULL AND d.[GraduationPlan_EducationOrganizationId] IS NULL)) OR (i.[GraduationPlan_GraduationSchoolYear] <> d.[GraduationPlan_GraduationSchoolYear] OR (i.[GraduationPlan_GraduationSchoolYear] IS NULL AND d.[GraduationPlan_GraduationSchoolYear] IS NOT NULL) OR (i.[GraduationPlan_GraduationSchoolYear] IS NOT NULL AND d.[GraduationPlan_GraduationSchoolYear] IS NULL)) OR (i.[NextYearSchool_SchoolId] <> d.[NextYearSchool_SchoolId] OR (i.[NextYearSchool_SchoolId] IS NULL AND d.[NextYearSchool_SchoolId] IS NOT NULL) OR (i.[NextYearSchool_SchoolId] IS NOT NULL AND d.[NextYearSchool_SchoolId] IS NULL)) OR (i.[PrimarySchool] <> d.[PrimarySchool] OR (i.[PrimarySchool] IS NULL AND d.[PrimarySchool] IS NOT NULL) OR (i.[PrimarySchool] IS NOT NULL AND d.[PrimarySchool] IS NULL)) OR (i.[RepeatGradeIndicator] <> d.[RepeatGradeIndicator] OR (i.[RepeatGradeIndicator] IS NULL AND d.[RepeatGradeIndicator] IS NOT NULL) OR (i.[RepeatGradeIndicator] IS NOT NULL AND d.[RepeatGradeIndicator] IS NULL)) OR (i.[SchoolChoice] <> d.[SchoolChoice] OR (i.[SchoolChoice] IS NULL AND d.[SchoolChoice] IS NOT NULL) OR (i.[SchoolChoice] IS NOT NULL AND d.[SchoolChoice] IS NULL)) OR (i.[SchoolChoiceTransfer] <> d.[SchoolChoiceTransfer] OR (i.[SchoolChoiceTransfer] IS NULL AND d.[SchoolChoiceTransfer] IS NOT NULL) OR (i.[SchoolChoiceTransfer] IS NOT NULL AND d.[SchoolChoiceTransfer] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL)) OR (i.[TermCompletionIndicator] <> d.[TermCompletionIndicator] OR (i.[TermCompletionIndicator] IS NULL AND d.[TermCompletionIndicator] IS NOT NULL) OR (i.[TermCompletionIndicator] IS NOT NULL AND d.[TermCompletionIndicator] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[StudentSchoolAssociation_EntryDate] = i.[EntryDate], r.[StudentSchoolAssociation_SchoolId] = i.[School_SchoolId], r.[StudentUniqueId_Unified] = i.[Student_StudentUniqueId]
-        FROM [edfi].[StudentAssessmentRegistration] r
-        INNER JOIN deleted d ON r.[StudentSchoolAssociation_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EntryDate] <> d.[EntryDate] OR (i.[EntryDate] IS NULL AND d.[EntryDate] IS NOT NULL) OR (i.[EntryDate] IS NOT NULL AND d.[EntryDate] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL)))
-        AND ((r.[StudentSchoolAssociation_EntryDate] = d.[EntryDate]) OR (r.[StudentSchoolAssociation_EntryDate] IS NULL AND d.[EntryDate] IS NULL)) AND ((r.[StudentSchoolAssociation_SchoolId] = d.[School_SchoolId]) OR (r.[StudentSchoolAssociation_SchoolId] IS NULL AND d.[School_SchoolId] IS NULL)) AND ((r.[StudentUniqueId_Unified] = d.[Student_StudentUniqueId]) OR (r.[StudentUniqueId_Unified] IS NULL AND d.[Student_StudentUniqueId] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolAssociation_ReferentialIdentity]
 ON [edfi].[StudentSchoolAssociation]
 AFTER INSERT, UPDATE
@@ -67204,38 +66055,6 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[StudentSection504ProgramAssociation] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentSectionAssociation_PropagateIdentity]
-ON [edfi].[StudentSectionAssociation]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([DualCreditEducationOrganization_DocumentId]) OR UPDATE([Section_DocumentId]) OR UPDATE([Student_DocumentId]) OR UPDATE([AttemptStatusDescriptor_DescriptorId]) OR UPDATE([DualCreditInstitutionDescriptor_DescriptorId]) OR UPDATE([DualCreditTypeDescriptor_DescriptorId]) OR UPDATE([RepeatIdentifierDescriptor_DescriptorId]) OR UPDATE([BeginDate]) OR UPDATE([DualCreditEducationOrganization_EducationOrganizationId]) OR UPDATE([DualCreditIndicator]) OR UPDATE([DualHighSchoolCreditIndicator]) OR UPDATE([EndDate]) OR UPDATE([HomeroomIndicator]) OR UPDATE([Section_LocalCourseCode]) OR UPDATE([Section_SchoolId]) OR UPDATE([Section_SchoolYear]) OR UPDATE([Section_SectionIdentifier]) OR UPDATE([Section_SessionName]) OR UPDATE([Student_StudentUniqueId]) OR UPDATE([TeacherStudentDataLinkExclusion]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[DualCreditEducationOrganization_DocumentId] <> d.[DualCreditEducationOrganization_DocumentId] OR (i.[DualCreditEducationOrganization_DocumentId] IS NULL AND d.[DualCreditEducationOrganization_DocumentId] IS NOT NULL) OR (i.[DualCreditEducationOrganization_DocumentId] IS NOT NULL AND d.[DualCreditEducationOrganization_DocumentId] IS NULL)) OR (i.[Section_DocumentId] <> d.[Section_DocumentId] OR (i.[Section_DocumentId] IS NULL AND d.[Section_DocumentId] IS NOT NULL) OR (i.[Section_DocumentId] IS NOT NULL AND d.[Section_DocumentId] IS NULL)) OR (i.[Student_DocumentId] <> d.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND d.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND d.[Student_DocumentId] IS NULL)) OR (i.[AttemptStatusDescriptor_DescriptorId] <> d.[AttemptStatusDescriptor_DescriptorId] OR (i.[AttemptStatusDescriptor_DescriptorId] IS NULL AND d.[AttemptStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttemptStatusDescriptor_DescriptorId] IS NOT NULL AND d.[AttemptStatusDescriptor_DescriptorId] IS NULL)) OR (i.[DualCreditInstitutionDescriptor_DescriptorId] <> d.[DualCreditInstitutionDescriptor_DescriptorId] OR (i.[DualCreditInstitutionDescriptor_DescriptorId] IS NULL AND d.[DualCreditInstitutionDescriptor_DescriptorId] IS NOT NULL) OR (i.[DualCreditInstitutionDescriptor_DescriptorId] IS NOT NULL AND d.[DualCreditInstitutionDescriptor_DescriptorId] IS NULL)) OR (i.[DualCreditTypeDescriptor_DescriptorId] <> d.[DualCreditTypeDescriptor_DescriptorId] OR (i.[DualCreditTypeDescriptor_DescriptorId] IS NULL AND d.[DualCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[DualCreditTypeDescriptor_DescriptorId] IS NOT NULL AND d.[DualCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[RepeatIdentifierDescriptor_DescriptorId] <> d.[RepeatIdentifierDescriptor_DescriptorId] OR (i.[RepeatIdentifierDescriptor_DescriptorId] IS NULL AND d.[RepeatIdentifierDescriptor_DescriptorId] IS NOT NULL) OR (i.[RepeatIdentifierDescriptor_DescriptorId] IS NOT NULL AND d.[RepeatIdentifierDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[DualCreditEducationOrganization_EducationOrganizationId] <> d.[DualCreditEducationOrganization_EducationOrganizationId] OR (i.[DualCreditEducationOrganization_EducationOrganizationId] IS NULL AND d.[DualCreditEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[DualCreditEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[DualCreditEducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[DualCreditIndicator] <> d.[DualCreditIndicator] OR (i.[DualCreditIndicator] IS NULL AND d.[DualCreditIndicator] IS NOT NULL) OR (i.[DualCreditIndicator] IS NOT NULL AND d.[DualCreditIndicator] IS NULL)) OR (i.[DualHighSchoolCreditIndicator] <> d.[DualHighSchoolCreditIndicator] OR (i.[DualHighSchoolCreditIndicator] IS NULL AND d.[DualHighSchoolCreditIndicator] IS NOT NULL) OR (i.[DualHighSchoolCreditIndicator] IS NOT NULL AND d.[DualHighSchoolCreditIndicator] IS NULL)) OR (i.[EndDate] <> d.[EndDate] OR (i.[EndDate] IS NULL AND d.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND d.[EndDate] IS NULL)) OR (i.[HomeroomIndicator] <> d.[HomeroomIndicator] OR (i.[HomeroomIndicator] IS NULL AND d.[HomeroomIndicator] IS NOT NULL) OR (i.[HomeroomIndicator] IS NOT NULL AND d.[HomeroomIndicator] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(d.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND d.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> d.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND d.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND d.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> d.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND d.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND d.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(d.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND d.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(d.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND d.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND d.[Section_SessionName] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL)) OR (i.[TeacherStudentDataLinkExclusion] <> d.[TeacherStudentDataLinkExclusion] OR (i.[TeacherStudentDataLinkExclusion] IS NULL AND d.[TeacherStudentDataLinkExclusion] IS NOT NULL) OR (i.[TeacherStudentDataLinkExclusion] IS NOT NULL AND d.[TeacherStudentDataLinkExclusion] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[StudentSectionAssociation_BeginDate] = i.[BeginDate], r.[StudentSectionAssociation_LocalCourseCode] = i.[Section_LocalCourseCode], r.[SchoolId_Unified] = i.[Section_SchoolId], r.[SchoolYear_Unified] = i.[Section_SchoolYear], r.[StudentSectionAssociation_SectionIdentifier] = i.[Section_SectionIdentifier], r.[StudentSectionAssociation_SessionName] = i.[Section_SessionName], r.[StudentSectionAssociation_StudentUniqueId] = i.[Student_StudentUniqueId]
-        FROM [edfi].[Grade] r
-        INNER JOIN deleted d ON r.[StudentSectionAssociation_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(d.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND d.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> d.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND d.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND d.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> d.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND d.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND d.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(d.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND d.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(d.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND d.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND d.[Section_SessionName] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL)))
-        AND ((r.[StudentSectionAssociation_BeginDate] = d.[BeginDate]) OR (r.[StudentSectionAssociation_BeginDate] IS NULL AND d.[BeginDate] IS NULL)) AND ((r.[StudentSectionAssociation_LocalCourseCode] = d.[Section_LocalCourseCode]) OR (r.[StudentSectionAssociation_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NULL)) AND ((r.[SchoolId_Unified] = d.[Section_SchoolId]) OR (r.[SchoolId_Unified] IS NULL AND d.[Section_SchoolId] IS NULL)) AND ((r.[SchoolYear_Unified] = d.[Section_SchoolYear]) OR (r.[SchoolYear_Unified] IS NULL AND d.[Section_SchoolYear] IS NULL)) AND ((r.[StudentSectionAssociation_SectionIdentifier] = d.[Section_SectionIdentifier]) OR (r.[StudentSectionAssociation_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NULL)) AND ((r.[StudentSectionAssociation_SessionName] = d.[Section_SessionName]) OR (r.[StudentSectionAssociation_SessionName] IS NULL AND d.[Section_SessionName] IS NULL)) AND ((r.[StudentSectionAssociation_StudentUniqueId] = d.[Student_StudentUniqueId]) OR (r.[StudentSectionAssociation_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NULL));
-
-        UPDATE r
-        SET r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_BeginDate] = i.[BeginDate], r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_LocalCourseCode] = i.[Section_LocalCourseCode], r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SchoolId] = i.[Section_SchoolId], r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SchoolYear] = i.[Section_SchoolYear], r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SectionIdentifier] = i.[Section_SectionIdentifier], r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SessionName] = i.[Section_SessionName], r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_StudentUniqueId] = i.[Student_StudentUniqueId]
-        FROM [edfi].[StudentCompetencyObjectiveStudentSectionAssociation] r
-        INNER JOIN deleted d ON r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(d.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND d.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> d.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND d.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND d.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> d.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND d.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND d.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(d.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND d.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(d.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND d.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND d.[Section_SessionName] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL)))
-        AND ((r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_BeginDate] = d.[BeginDate]) OR (r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_BeginDate] IS NULL AND d.[BeginDate] IS NULL)) AND ((r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_LocalCourseCode] = d.[Section_LocalCourseCode]) OR (r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NULL)) AND ((r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SchoolId] = d.[Section_SchoolId]) OR (r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SchoolId] IS NULL AND d.[Section_SchoolId] IS NULL)) AND ((r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SchoolYear] = d.[Section_SchoolYear]) OR (r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SchoolYear] IS NULL AND d.[Section_SchoolYear] IS NULL)) AND ((r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SectionIdentifier] = d.[Section_SectionIdentifier]) OR (r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NULL)) AND ((r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SessionName] = d.[Section_SessionName]) OR (r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SessionName] IS NULL AND d.[Section_SessionName] IS NULL)) AND ((r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_StudentUniqueId] = d.[Student_StudentUniqueId]) OR (r.[StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NULL));
-
     END
 END;
 GO
@@ -70638,8 +69457,18 @@ END;
 GO
 
 -- ==========================================================
--- Phase 7: Seed Data (insert-if-missing + validation)
+-- Phase 10: Seed Data (insert-if-missing + validation)
 -- ==========================================================
+
+-- DataStoreIdentity singleton insert-if-missing
+IF NOT EXISTS (SELECT 1 FROM [dms].[DataStoreIdentity] WHERE [DataStoreIdentitySingletonId] = 1)
+    INSERT INTO [dms].[DataStoreIdentity] ([DataStoreIdentitySingletonId], [SourceIdentity])
+    VALUES (1, NEWID());
+
+-- DocumentCacheState singleton insert-if-missing
+IF NOT EXISTS (SELECT 1 FROM [dms].[DocumentCacheState] WHERE [StateId] = 1)
+    INSERT INTO [dms].[DocumentCacheState] ([StateId], [ProjectionLifecycleState], [CacheAheadRecoveryRequired])
+    VALUES (1, N'Disabled', 0);
 
 -- ResourceKey seed inserts (insert-if-missing)
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 1)
@@ -72443,7 +71272,7 @@ END
 -- EffectiveSchema singleton insert-if-missing
 IF NOT EXISTS (SELECT 1 FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1)
     INSERT INTO [dms].[EffectiveSchema] ([EffectiveSchemaSingletonId], [ApiSchemaFormatVersion], [EffectiveSchemaHash], [ResourceKeyCount], [ResourceKeySeedHash])
-    VALUES (1, N'1.0.0', N'64a32532f39ea0a6c0c660b0b030dfac095326072330e66dd0e26e5da0d855f1', 351, 0xFAE376B7B81722EFE1878226A49200D74AE68FEBAC7D21F5121A0824236E981B);
+    VALUES (1, N'1.0.0', N'6e60cfa6542d6b591e4cb527850c1431eb114de346d9aa3d0ab466fa615bda61', 351, 0xFAE376B7B81722EFE1878226A49200D74AE68FEBAC7D21F5121A0824236E981B);
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
 DECLARE @es_stored_api_schema_format_version nvarchar(255);
@@ -72472,16 +71301,16 @@ BEGIN
 END
 
 -- SchemaComponent seed inserts (insert-if-missing)
-IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'64a32532f39ea0a6c0c660b0b030dfac095326072330e66dd0e26e5da0d855f1' AND [ProjectEndpointName] = N'ed-fi')
+IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'6e60cfa6542d6b591e4cb527850c1431eb114de346d9aa3d0ab466fa615bda61' AND [ProjectEndpointName] = N'ed-fi')
     INSERT INTO [dms].[SchemaComponent] ([EffectiveSchemaHash], [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject])
-    VALUES (N'64a32532f39ea0a6c0c660b0b030dfac095326072330e66dd0e26e5da0d855f1', N'ed-fi', N'Ed-Fi', N'5.2.0', 0);
+    VALUES (N'6e60cfa6542d6b591e4cb527850c1431eb114de346d9aa3d0ab466fa615bda61', N'ed-fi', N'Ed-Fi', N'5.2.0', 0);
 
 -- SchemaComponent exact-match validation (count + content)
 DECLARE @sc_actual_count integer;
 DECLARE @sc_mismatched_count integer;
 DECLARE @sc_mismatched_names nvarchar(max);
 
-SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'64a32532f39ea0a6c0c660b0b030dfac095326072330e66dd0e26e5da0d855f1';
+SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'6e60cfa6542d6b591e4cb527850c1431eb114de346d9aa3d0ab466fa615bda61';
 IF @sc_actual_count <> 1
 BEGIN
     DECLARE @sc_count_msg nvarchar(200) = CONCAT(N'dms.SchemaComponent count mismatch: expected 1, found ', CAST(@sc_actual_count AS nvarchar(10)));
@@ -72490,7 +71319,7 @@ END
 
 SELECT @sc_mismatched_count = COUNT(*)
 FROM [dms].[SchemaComponent] sc
-WHERE sc.[EffectiveSchemaHash] = N'64a32532f39ea0a6c0c660b0b030dfac095326072330e66dd0e26e5da0d855f1'
+WHERE sc.[EffectiveSchemaHash] = N'6e60cfa6542d6b591e4cb527850c1431eb114de346d9aa3d0ab466fa615bda61'
 AND NOT EXISTS (
     SELECT 1 FROM (VALUES
         (N'ed-fi', N'Ed-Fi', N'5.2.0', 0)
@@ -72506,7 +71335,7 @@ BEGIN
     FROM (
         SELECT TOP 10 sc.[ProjectEndpointName]
         FROM [dms].[SchemaComponent] sc
-        WHERE sc.[EffectiveSchemaHash] = N'64a32532f39ea0a6c0c660b0b030dfac095326072330e66dd0e26e5da0d855f1'
+        WHERE sc.[EffectiveSchemaHash] = N'6e60cfa6542d6b591e4cb527850c1431eb114de346d9aa3d0ab466fa615bda61'
         AND NOT EXISTS (
             SELECT 1 FROM (VALUES
                 (N'ed-fi', N'Ed-Fi', N'5.2.0', 0)

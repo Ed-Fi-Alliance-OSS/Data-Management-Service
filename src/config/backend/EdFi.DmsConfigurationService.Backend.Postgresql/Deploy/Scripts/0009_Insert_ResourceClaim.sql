@@ -443,7 +443,7 @@ WHERE NOT EXISTS (
 
 DO $$
 DECLARE
-    next_id bigint;
+    next_id int;
 BEGIN
     SELECT COALESCE(MAX("Id"), 0) + 1 INTO next_id FROM "dmscs"."ResourceClaim";
     EXECUTE format('ALTER TABLE "dmscs"."ResourceClaim" ALTER COLUMN "Id" RESTART WITH %s', next_id);

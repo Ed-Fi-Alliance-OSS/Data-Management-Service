@@ -332,6 +332,42 @@ function Invoke-SchoolYearTypeRestPrecondition {
     Write-Host "SchoolYearType precondition: created=$created  already-existed=$exists  range=$FirstYear-$LastYear"
 }
 
+function Resolve-SeedDataStandardRefTag {
+    <#
+    .SYNOPSIS
+    Derives the Ed-Fi-Data-Standard repo ref tag to use for built-in seed materialization from the
+    effective Data Standard version recorded in the resolved environment file.
+
+    .DESCRIPTION
+    DMS_CONFIG_DATA_STANDARD_VERSION is written by the .env.bootstrap.ds52 / .env.bootstrap.ds61
+    local-bootstrap overlays that bootstrap-wrapper.psm1 composes onto the effective environment
+    file for -DataStandardVersion 5.2 / 6.1 (see New-DataStandardDerivedEnvFile in
+    env-utility.psm1). Falls back to the historical v5.2.0 default when the key is absent or
+    blank, so environments without an explicit Data Standard selection are unaffected. Any other
+    value throws: the supported set is maintained here as well as in the entry-point ValidateSet
+    gates and overlay files, and a version added there but forgotten here must fail at this
+    decision point rather than silently materializing v5.2.0 sample XML and XSDs against a
+    different-version stack.
+
+    .PARAMETER EnvValues
+    Hashtable returned by ReadValuesFromEnvFile.
+    #>
+    param(
+        [hashtable]$EnvValues
+    )
+
+    $dataStandardVersion = (Get-EnvValue -EnvValues $EnvValues -Name "DMS_CONFIG_DATA_STANDARD_VERSION" -DefaultValue "").Trim()
+
+    switch ($dataStandardVersion) {
+        "" { return "v5.2.0" }
+        "5.2" { return "v5.2.0" }
+        "6.1" { return "v6.1.0" }
+        default {
+            throw "Unsupported DMS_CONFIG_DATA_STANDARD_VERSION '$(Format-LogSafeText $dataStandardVersion)'. Supported values: 5.2, 6.1; leave blank for the v5.2.0 default."
+        }
+    }
+}
+
 function Resolve-BootstrapDataStandard {
     <#
     .SYNOPSIS
@@ -1512,14 +1548,14 @@ function Invoke-BulkLoadClient {
     Passes stdout/stderr through directly (no swallowing). Throws on non-zero exit code.
     The $Invoker scriptblock seam allows tests to capture args without running dotnet.
     XSD validation is left enabled because the bootstrap path sources both sample XML and
-    bulk-load XSDs from the same Ed-Fi-Data-Standard tag (currently v5.2.0), so the two
-    are version-consistent by construction.
+    bulk-load XSDs from the same Ed-Fi-Data-Standard tag (v5.2.0 or v6.1.0, resolved by
+    Resolve-SeedDataStandardRefTag), so the two are version-consistent by construction.
 
     Connection/concurrency/retry tuning is required: DMS's Polly circuit breaker
     (FailureRatio=0.01, MinimumThroughput=2, 10s sampling window, 30s break) trips almost
     immediately under the BulkLoadClient's unbounded default concurrency, causing all
     subsequent requests to 500 (BrokenCircuit) and retry-storming the rate limiter
-    (PermitLimit=5000/10s, QueueLimit=0) into a flood of 429s. The reference values used
+    (PermitLimit=20000/10s, QueueLimit=0) into a flood of 429s. The reference values used
     by the CI bulk-load path (eng/bulkLoad/modules/BulkLoad.psm1 -c 100 -l 500 -t 50)
     prove the approach; bootstrap seed delivery uses conservative equivalents for the
     relational backend.
@@ -1537,14 +1573,19 @@ function Invoke-BulkLoadClient {
     )
 
     # Conservative tuning for the relational backend's circuit-breaker sensitivity and
-    # rate-limiter headroom (PermitLimit=5000/10s, QueueLimit=0):
+    # rate-limiter headroom (PermitLimit=20000/10s, QueueLimit=0):
     # -c  max concurrent HTTP connections
     # -l  max simultaneous API requests (same as -c but guards a different internal queue)
     # -t  task buffer capacity
     # -r  per-resource retry count (tolerate transient 500s before a circuit trip)
-    # Low concurrency prevents exhausting the 5000/10s rate-limit window on large files
-    # such as StudentTranscript.xml (~15k CourseTranscript records). Reference CI values
-    # in eng/bulkLoad/modules/BulkLoad.psm1 use -c 100 -l 500 for non-rate-limited paths.
+    # This conservative tuning predates the 20000/10s default: it was sized so that
+    # large files such as StudentTranscript.xml (~15k CourseTranscript records) could
+    # not exhaust the old 5000/10s window. Reference CI values in
+    # eng/bulkLoad/modules/BulkLoad.psm1 use -c 100 -l 500 against the same default
+    # rate limit over the same corpus; the higher concurrency makes that path burstier
+    # per window, and both profiles' measured peak 10-second demand fits under the
+    # shipped default. The low tuning here is retained for the relational backend's
+    # circuit-breaker sensitivity, which the CI path tolerates differently.
     $connectionLimit  = 10
     $maxRequests      = 10
     $taskCapacity     = 5
@@ -1588,6 +1629,13 @@ if ($MyInvocation.InvocationName -eq '.') { return }
 # Resolve environment file through the shared resolver (explicit path, else .env - seeded
 # once from .env.example when absent, so the example itself is never consumed at runtime).
 $EnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile
+
+# Derive the pinned Ed-Fi-Data-Standard ref tag from the resolved environment file now, before
+# any BuiltIn seed-source materialization reads $script:DataStandardRefTag (see
+# Resolve-BootstrapDataStandard below). Overrides the v5.2.0 default declared above when the
+# environment selects Data Standard 6.1.
+$dataStandardEnvValues = ReadValuesFromEnvFile -EnvironmentFile $EnvironmentFile
+$script:DataStandardRefTag = Resolve-SeedDataStandardRefTag -EnvValues $dataStandardEnvValues
 
 # Resolve bootstrap manifest path AND its parent workspace ("bootstrap root").
 # When -BootstrapManifestPath is supplied externally, the manifest's parent directory

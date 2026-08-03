@@ -13,9 +13,12 @@
     a provisioned database already exist.
 
     Direct invocation is supported for diagnostics and partial-phase orchestration
-    (-InfraOnly, -DmsOnly). When invoked directly without a .bootstrap/ manifest the
-    script proceeds but Invoke-BootstrapStartupConfiguration emits a warning: bootstrap
+    (-InfraOnly, -DmsOnly, -DbOnly). When invoked directly without a .bootstrap/ manifest
+    the script proceeds but Invoke-BootstrapStartupConfiguration emits a warning: bootstrap
     schema provisioning will NOT happen here.
+
+    -DbOnly: database container + readiness only; exists for diagnostics and for
+    other tooling to sequence a database-only startup around.
 
     See command-boundaries.md Section 3 for the phase contract and
     01-schema-deployment-safety.md for the DMS-1151 story.
@@ -54,14 +57,6 @@ param (
     [Switch]
     $AddSmokeTestCredentials,
 
-    # Load seed data via the direct-SQL database-template path. Retained pending the implementation
-    # gate in bootstrap-design.md section 6.4 line 1250: removal is gated on the full bootstrap
-    # verification gate closing (XSD-staging verification and BulkLoadClient XML mode validation).
-    # The new API-based seed path, via load-dms-seed-data.ps1 + bootstrap-*-dms.ps1,
-    # is the forward contract; the slice that closes the gate owns this switch's removal.
-    [Switch]
-    $LoadSeedData,
-
     # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
@@ -75,7 +70,8 @@ param (
     [string]
     $SchoolYearRange = "",
 
-    # PostgreSQL database name to use when creating CMS data stores. Defaults to POSTGRES_DB_NAME from the environment file.
+    # Database name to use when creating CMS data stores. Defaults to POSTGRES_DB_NAME for
+    # PostgreSQL or MSSQL_DB_NAME for SQL Server from the effective environment file.
     [string]
     $DataStoreDatabaseName = "",
 
@@ -87,8 +83,17 @@ param (
     [Switch]
     $DmsOnly,
 
+    # Start only the database container and wait for readiness, then stop. Exists for
+    # diagnostics and for other tooling to sequence a database-only startup around.
+    # Mutually exclusive with -InfraOnly and -DmsOnly, and with -NoDataStore,
+    # -SchoolYearRange, and -AddSmokeTestCredentials.
+    [Switch]
+    $DbOnly,
+
     # Remove the .bootstrap workspace during teardown (-d -v). Off by default so a prepared
     # workspace is preserved when the caller (e.g. build-dms.ps1) does not intend to wipe it.
+    # A failed compose teardown throws before removal, so a still-running stack keeps its
+    # bind-mounted schema and claims workspace.
     [Switch]
     $RemoveBootstrap,
 
@@ -104,11 +109,33 @@ param (
     # .env.ds<NN> overlay is composed onto -EnvironmentFile so the stack runs that data standard.
     # Omit for the default (DS 5.2) behavior driven entirely by the base environment file.
     [string]
-    $DataStandardVersion
+    $DataStandardVersion,
+
+    # Database engine for the whole stack. "postgresql" (default) uses postgresql.yml.
+    # "mssql" swaps in mssql.yml: SQL Server hosts the DMS datastore, the Configuration
+    # Service (CMS SQL Server backend), and the self-contained OpenIddict identity stores -
+    # no PostgreSQL container runs. The relational backend has no Debezium CDC (Kafka is
+    # PostgreSQL-only and omitted). The .env.mssql overlay (DMS_DATASTORE=mssql,
+    # DMS_CONFIG_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings)
+    # is composed automatically onto -EnvironmentFile. See mssql.yml and
+    # Resolve-DatabaseEngineEnvironmentFile.
+    [ValidateSet("postgresql", "mssql")]
+    [string]
+    $DatabaseEngine = "postgresql"
 )
 
-Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
-Import-Module (Join-Path $PSScriptRoot "bootstrap-claims-gate.psm1") -Force
+$databaseOnlyStartup = $DbOnly -and -not $d
+if (-not $databaseOnlyStartup) {
+    # Database-only startup must not depend on bootstrap module loading or workspace state.
+    # Teardown keeps the normal full-stack behavior, including bootstrap cleanup support.
+    Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
+    Import-Module (Join-Path $PSScriptRoot "bootstrap-claims-gate.psm1") -Force
+}
+Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+# Shared Compose-equivalent resolver so the readiness probes and the CMS data-store creation below
+# use the same port/password/database values the containers received (an ambient process/shell
+# value wins over the env file), matching start-local-dms.ps1 and the configure/provision phases.
+Import-Module (Join-Path $PSScriptRoot "database-safety.psm1") -Force
 $originalLocation = Get-Location
 if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
     if ($PSBoundParameters.ContainsKey('EnvironmentFile')) {
@@ -121,55 +148,81 @@ if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
         $EnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $EnvironmentFile))
     }
 }
-$bootstrapEnvSnapshot = Get-BootstrapEnvSnapshot
+if (-not $databaseOnlyStartup) {
+    $bootstrapEnvSnapshot = Get-BootstrapEnvSnapshot
+}
 Push-Location $PSScriptRoot
 try {
-$bootstrapMode = Invoke-BootstrapStartupConfiguration -IsTeardown:$d -AddExtensionSecurityMetadata:$AddExtensionSecurityMetadata
-$bootstrapManifestPresent = Test-Path -LiteralPath (Join-Path (Get-BootstrapRoot) "bootstrap-manifest.json") -PathType Leaf
+$bootstrapMode = $false
+$bootstrapManifestPresent = $false
+if (-not $databaseOnlyStartup) {
+    # Database-only startup is deliberately independent of bootstrap state. A stale or
+    # incomplete workspace must not block the diagnostic database + readiness phase, and
+    # no bootstrap environment values or compose mounts may leak into that phase.
+    $bootstrapMode = Invoke-BootstrapStartupConfiguration -IsTeardown:$d -AddExtensionSecurityMetadata:$AddExtensionSecurityMetadata
+    $bootstrapManifestPresent = Test-Path -LiteralPath (Join-Path (Get-BootstrapRoot) "bootstrap-manifest.json") -PathType Leaf
+}
 
-# Identity provider configuration
-Import-Module ./env-utility.psm1 -Force
 # Compose the data-standard overlay onto the base env file when a version is requested; with no
 # -DataStandardVersion this returns the base file unchanged (DS 5.2 default).
 $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $DataStandardVersion -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot
+# Compose the MSSQL engine overlay for -DatabaseEngine mssql; this covers both direct invocation
+# (a custom -EnvironmentFile still gets the overlay layered on top) and the bootstrap wrapper
+# path (Resolve-DatabaseEngineEnvironmentFile detects the overlay is already composed via
+# DMS_DATASTORE=mssql and returns the file unchanged, avoiding a derived-of-derived file).
+# DbOnly and teardown skip the CMS/OpenIddict invariant because neither initializes identity data.
+$EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d)
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
-$identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
-$cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
-$dmsUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
-$env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
-Write-Output "Identity Provider $IdentityProvider"
-if($IdentityProvider -eq "keycloak")
-{
-    $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
-    $env:DMS_JWT_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
-    $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
-    $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+if (-not $databaseOnlyStartup) {
+    # Identity/CMS/DMS settings are application concerns. Keeping them outside DbOnly means an
+    # unrelated malformed identity value cannot block the database + readiness diagnostic slice.
+    $identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
+    $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
+    $dmsUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
+    $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
+    Write-Output "Identity Provider $IdentityProvider"
+    if($IdentityProvider -eq "keycloak")
+    {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
+        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+    }
+    elseif ($IdentityProvider -eq "self-contained") {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
+        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+    }
 }
-elseif ($IdentityProvider -eq "self-contained") {
-    $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
-    $env:DMS_JWT_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
-    $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
-    $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
-}
+Write-Output "Database Engine $DatabaseEngine"
 
 if (-not $d) {
     if ($InfraOnly -and $DmsOnly) {
         throw "Parameters -InfraOnly and -DmsOnly are mutually exclusive."
     }
 
-    if (($InfraOnly -or $DmsOnly) -and $LoadSeedData) {
-        throw "Parameter -LoadSeedData cannot be used with -InfraOnly or -DmsOnly."
+    if ($DbOnly -and ($InfraOnly -or $DmsOnly)) {
+        throw "Parameter -DbOnly is mutually exclusive with -InfraOnly and -DmsOnly."
     }
 
     if ($DmsOnly -and ($NoDataStore -or -not [string]::IsNullOrWhiteSpace($SchoolYearRange) -or $AddSmokeTestCredentials)) {
         throw "Parameters -NoDataStore, -SchoolYearRange, and -AddSmokeTestCredentials cannot be used with -DmsOnly."
     }
 
+    if ($DbOnly -and ($NoDataStore -or -not [string]::IsNullOrWhiteSpace($SchoolYearRange) -or $AddSmokeTestCredentials)) {
+        throw "Parameters -NoDataStore, -SchoolYearRange, and -AddSmokeTestCredentials cannot be used with -DbOnly."
+    }
+
     if ($NoDataStore -and -not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
         throw "Parameters -NoDataStore and -SchoolYearRange are mutually exclusive. Use -NoDataStore for manual data store creation, or use -SchoolYearRange to auto-create data stores."
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange) -and $envValues.DMS_CONFIG_MULTI_TENANCY -eq "true" -and -not $envValues.CONFIG_SERVICE_TENANT) {
+    # Resolved once with Compose precedence and reused by the data-store creation below, so the
+    # tenant/multi-tenancy decision matches what the CMS container received.
+    $multiTenancyEnabled = (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CONFIG_MULTI_TENANCY") -eq "true"
+    $configServiceTenant = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CONFIG_SERVICE_TENANT"
+    if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange) -and $multiTenancyEnabled -and [string]::IsNullOrWhiteSpace($configServiceTenant)) {
         throw "Parameter -SchoolYearRange requires CONFIG_SERVICE_TENANT to be set in the environment file when DMS_CONFIG_MULTI_TENANCY=true (the Configuration Service requires the Tenant header)."
     }
 }
@@ -197,46 +250,60 @@ if ($usePostgresqlTmpfs) {
     Write-Output "Using PostgreSQL tmpfs data directory (POSTGRES_TMPFS_SIZE=$postgresqlTmpfsSize, POSTGRES_CONTAINER_MEMORY=$postgresqlContainerMemory)."
 }
 
+# The database compose file is a swap: both postgresql.yml and mssql.yml define the same
+# "db" service, so exactly one of them joins the compose set. On the mssql path SQL Server
+# hosts everything - the DMS datastore, the Configuration Service (CMS SQL Server backend),
+# and the self-contained OpenIddict identity stores - and no PostgreSQL container runs at all.
+$databaseComposeFile = if ($DatabaseEngine -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
 $files = @(
     "-f",
-    "postgresql.yml"
+    $databaseComposeFile
 )
 
-if ($usePostgresqlTmpfs) {
+if ($usePostgresqlTmpfs -and $DatabaseEngine -eq "postgresql") {
     $files += @("-f", $postgresqlTmpfsComposeFile)
 }
 
-$files += @("-f", "published-dms.yml")
+if (-not $databaseOnlyStartup) {
+    $files += @("-f", "published-dms.yml")
 
-$enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI
-if ($enableKafkaInfrastructure) {
-    $files += @("-f", "kafka.yml")
-}
+    # Kafka (and KafkaUI) back the PostgreSQL Debezium CDC path only and are opt-in via
+    # -EnableKafka / -EnableKafkaUI. The relational MSSQL path serves writes and queries directly
+    # from SQL and registers no connector, so Kafka is omitted.
+    $enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI
+    if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
+        $files += @("-f", "kafka.yml")
+    }
 
-if ($IdentityProvider -eq "keycloak") {
-    # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full environment.
-    $files += @("-f", "keycloak.yml")
-}
+    # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full
+    # environment. Teardown (-d) always includes it: the identity provider is resolved from the
+    # environment file, which need not name the provider the running stack was started with, and a
+    # compose file left out of the down set takes its named volume (dms-keycloak) with it, leaking
+    # <project>_dms-keycloak past `down -v`.
+    if ($d -or $IdentityProvider -eq "keycloak") {
+        $files += @("-f", "keycloak.yml")
+    }
 
-if ($EnableKafkaUI) {
-    $files += @("-f", "kafka-ui.yml")
-}
+    if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
+        $files += @("-f", "kafka-ui.yml")
+    }
 
-# Include Configuration Service when requested, when needed for self-contained identity,
-# or when bootstrap mode activates the staged claims workspace mount.
-if ($EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode) {
-    $files += @("-f", "published-config.yml")
-}
+    # Include Configuration Service when requested, when needed for self-contained identity,
+    # or when bootstrap mode activates the staged claims workspace mount.
+    if ($EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode) {
+        $files += @("-f", "published-config.yml")
+    }
 
-if ($bootstrapMode) {
-    # Include bootstrap-dms.yml in the managed compose set so follow-up up/down calls operate
-    # on the full environment (same pattern as keycloak.yml above). This mounts the staged
-    # .bootstrap/ApiSchema workspace into the DMS container at /app/ApiSchema:ro.
-    $files += @("-f", "bootstrap-dms.yml")
-}
+    if ($bootstrapMode) {
+        # Include bootstrap-dms.yml in the managed compose set so follow-up up/down calls operate
+        # on the full environment (same pattern as keycloak.yml above). This mounts the staged
+        # .bootstrap/ApiSchema workspace into the DMS container at /app/ApiSchema:ro.
+        $files += @("-f", "bootstrap-dms.yml")
+    }
 
-if ($EnableSwaggerUI) {
-    $files += @("-f", "swagger-ui.yml")
+    if ($EnableSwaggerUI) {
+        $files += @("-f", "swagger-ui.yml")
+    }
 }
 
 if ($d) {
@@ -244,13 +311,19 @@ if ($d) {
     if ($v) {
         $downArgs += "-v"
         Write-Output "Shutting down with volume delete"
-        docker compose $files --env-file $EnvironmentFile -p dms-published down $downArgs
-
-        Remove-BootstrapWorkspaceIfRequested -RemoveBootstrap:$RemoveBootstrap
     }
     else {
         Write-Output "Shutting down"
-        docker compose $files --env-file $EnvironmentFile -p dms-published down $downArgs
+    }
+    docker compose $files --env-file $EnvironmentFile -p dms-published down $downArgs
+    # Fail before workspace removal: a failed down can leave services running against the
+    # bind-mounted .bootstrap schema and claims, so removing the workspace would pull it
+    # out from under a live stack.
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to shut down Docker environment. Exit code $LASTEXITCODE"
+    }
+    if ($v) {
+        Remove-BootstrapWorkspaceIfRequested -RemoveBootstrap:$RemoveBootstrap
     }
 }
 else {
@@ -259,10 +332,12 @@ else {
         docker network create dms
     }
 
-    $upArgs = @(
-        "--detach",
-        "--remove-orphans"
-    )
+    $upArgs = @("--detach")
+    if (-not $databaseOnlyStartup) {
+        # The DbOnly compose set intentionally contains only the database definition. Passing
+        # --remove-orphans there would remove already-running DMS/CMS containers from this project.
+        $upArgs += "--remove-orphans"
+    }
 
     function Wait-HttpEndpointHealthy {
         param(
@@ -298,6 +373,76 @@ else {
         }
     }
 
+    function Wait-MssqlReady {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $ContainerName,
+
+            [Parameter(Mandatory)]
+            [string]
+            $Password,
+
+            [int]
+            $TimeoutSeconds = 120
+        )
+
+        # SQL Server can take 30+ seconds to accept connections on a cold start. Poll sqlcmd
+        # the same way the CI start-mssql-test-container action does, so the schema provision
+        # phase that follows always finds a reachable server.
+        $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+        while ([datetime]::UtcNow -lt $deadline) {
+            $remainingSeconds = [math]::Max(1, [math]::Ceiling(($deadline - [datetime]::UtcNow).TotalSeconds))
+            $probeTimeoutSeconds = [math]::Min(10, $remainingSeconds)
+            $probeArguments = @(
+                "exec", "-e", "SQLCMDPASSWORD=$Password", $ContainerName,
+                "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa",
+                "-Q", "SELECT 1", "-C", "-b"
+            )
+            if (Test-NativeCommandWithTimeout -FilePath "docker" -ArgumentList $probeArguments -TimeoutSeconds $probeTimeoutSeconds) {
+                Write-Output "SQL Server is ready."
+                return
+            }
+
+            if ([datetime]::UtcNow -lt $deadline) {
+                Start-Sleep -Seconds ([math]::Min(3, [math]::Max(1, [math]::Floor(($deadline - [datetime]::UtcNow).TotalSeconds))))
+            }
+        }
+
+        throw "SQL Server ($(Format-LogSafeText $ContainerName)) did not become ready within $TimeoutSeconds seconds."
+    }
+
+    function Wait-PostgresqlReady {
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $ContainerName,
+
+            [int]
+            $TimeoutSeconds = 120
+        )
+
+        # PostgreSQL can take a few seconds to accept connections on a cold start. Poll
+        # pg_isready inside the container so the schema provision phase that follows
+        # always finds a reachable server.
+        $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+        while ([datetime]::UtcNow -lt $deadline) {
+            $remainingSeconds = [math]::Max(1, [math]::Ceiling(($deadline - [datetime]::UtcNow).TotalSeconds))
+            $probeArguments = @("exec", $ContainerName, "pg_isready", "-U", "postgres")
+            if (Test-NativeCommandWithTimeout -FilePath "docker" -ArgumentList $probeArguments -TimeoutSeconds ([math]::Min(10, $remainingSeconds))) {
+                Write-Output "PostgreSQL is ready."
+                return
+            }
+
+            if ([datetime]::UtcNow -lt $deadline) {
+                Start-Sleep -Seconds ([math]::Min(3, [math]::Max(1, [math]::Floor(($deadline - [datetime]::UtcNow).TotalSeconds))))
+            }
+        }
+
+        throw "PostgreSQL ($(Format-LogSafeText $ContainerName)) did not become ready within $TimeoutSeconds seconds."
+    }
+
     if ($DmsOnly) {
         Write-Output "Starting published DMS service only..."
         $dmsServices = @("dms")
@@ -313,6 +458,26 @@ else {
         Wait-HttpEndpointHealthy -Url "$($dmsUrl.TrimEnd('/'))/health" -Name "DMS"
         Write-Output "DMS service is healthy."
 
+        return
+    }
+
+    if ($DbOnly) {
+        $databaseDisplayName = if ($DatabaseEngine -eq "mssql") { "SQL Server" } else { "Postgresql" }
+        Write-Output "Starting $databaseDisplayName only..."
+        docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs db
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to start $databaseDisplayName. Exit code $LASTEXITCODE"
+        }
+
+        if ($DatabaseEngine -eq "mssql") {
+            $mssqlSaPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+            Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
+        }
+        else {
+            Wait-PostgresqlReady -ContainerName "dms-postgresql"
+        }
+
+        Write-Output "Database phase complete. Only the database container was started."
         return
     }
 
@@ -336,18 +501,41 @@ else {
         ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
     }
 
-    Write-Output "Starting Postgresql..."
+    $databaseDisplayName = if ($DatabaseEngine -eq "mssql") { "SQL Server" } else { "Postgresql" }
+    Write-Output "Starting $databaseDisplayName..."
     docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs db
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to start Postgresql. Exit code $LASTEXITCODE"
+        throw "Failed to start $databaseDisplayName. Exit code $LASTEXITCODE"
     }
+
+    if ($DatabaseEngine -eq "mssql") {
+        # SQL Server accepts connections noticeably later than its container reports running;
+        # poll before the phase commands need it. Default matches mssql.yml's compose default.
+        $mssqlSaPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+        Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
+    }
+
+    # Engine-aware database parameters for the setup-openiddict.ps1 calls below (mirrors
+    # start-local-config.ps1). On SQL Server the OpenIddict stores live in the shared DMS
+    # datastore database (MSSQL_DB_NAME), which CMS also uses now that the two share one
+    # database; -InitDb creates it (and the dmscs schema) when missing, ahead of the CMS
+    # startup deploy. On PostgreSQL the script defaults apply unchanged (shared
+    # POSTGRES_DB_NAME database).
+    $identityDbParams =
+        if ($DatabaseEngine -eq "mssql") {
+            @{ DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:MSSQL_DB_NAME" }
+        }
+        else {
+            @{}
+        }
+
     Start-Sleep 20
 
     if ($InfraOnly) {
         if($IdentityProvider -eq "self-contained")
         {
             Write-Output "Init db public and private keys for OpenIddict..."
-            ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile
+            ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile @identityDbParams
         }
 
         Write-Output "Starting Configuration Service..."
@@ -362,25 +550,31 @@ else {
         if($IdentityProvider -eq "self-contained")
         {
             Write-Output "Starting self-contained initialization script..."
-            ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
-            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
-            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
+            ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
+            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
+            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile @identityDbParams
         }
 
-        if ($enableKafkaInfrastructure) {
+        if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
             Write-Output "Starting Kafka infrastructure..."
             docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs kafka kafka-postgresql-source
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to start Kafka infrastructure. Exit code $LASTEXITCODE"
             }
         }
+        elseif ($enableKafkaInfrastructure -and $DatabaseEngine -eq "mssql") {
+            Write-Output "Skipping Kafka infrastructure: the MSSQL relational path does not use Debezium CDC (PostgreSQL-only)."
+        }
 
-        if ($EnableKafkaUI) {
+        if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
             Write-Output "Starting Kafka UI..."
             docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs kafka-ui
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to start Kafka UI. Exit code $LASTEXITCODE"
             }
+        }
+        elseif ($EnableKafkaUI -and $DatabaseEngine -eq "mssql") {
+            Write-Output "Skipping Kafka UI: the MSSQL relational path does not use Debezium CDC (PostgreSQL-only)."
         }
 
         # Claims-ready gate: prove CMS has applied the expected claims content before
@@ -417,20 +611,10 @@ else {
 
     Start-Sleep 20
 
-    if($LoadSeedData)
-    {
-        Import-Module ./setup-database-template.psm1 -Force
-        Write-Output "Loading initial data from the database template..."
-        LoadSeedData -EnvironmentFile $EnvironmentFile
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to load initial data, with exit code $LASTEXITCODE."
-        }
-    }
-
     if($IdentityProvider -eq "self-contained")
     {
         Write-Output "Init db public and private keys for OpenIddict..."
-        ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile @identityDbParams
     }
 
     Start-Sleep 10
@@ -439,13 +623,13 @@ else {
     {
         Write-Output "Starting self-contained initialization script..."
         # Create client with default edfi_admin_api/full_access scope
-        ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
 
         # Create client with edfi_admin_api/readonly_access scope
-        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
 
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
-        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile @identityDbParams
     }
 
     if($AddSmokeTestCredentials)
@@ -469,11 +653,12 @@ else {
             # Get configuration service token
             $configToken = Get-CmsToken -CmsUrl $cmsUrl -ClientId "dms-data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
 
-            # Create tenant if multi-tenancy is enabled
-            if ($envValues.DMS_CONFIG_MULTI_TENANCY -eq "true" -and $envValues.CONFIG_SERVICE_TENANT) {
-                Write-Output "Multi-tenancy is enabled. Creating tenant: $($envValues.CONFIG_SERVICE_TENANT)"
+            # Create tenant if multi-tenancy is enabled. Both values were resolved above with
+            # Compose precedence so the tenant registered here matches the CMS container's view.
+            if ($multiTenancyEnabled -and -not [string]::IsNullOrWhiteSpace($configServiceTenant)) {
+                Write-Output "Multi-tenancy is enabled. Creating tenant: $configServiceTenant"
                 try {
-                    $tenantId = Add-Tenant -CmsUrl $cmsUrl -AccessToken $configToken -TenantName $envValues.CONFIG_SERVICE_TENANT
+                    $tenantId = Add-Tenant -CmsUrl $cmsUrl -AccessToken $configToken -TenantName $configServiceTenant
                     Write-Output "Tenant created successfully with ID: $tenantId"
                 }
                 catch {
@@ -481,23 +666,43 @@ else {
                 }
             }
 
-            # Get tenant from environment (for multi-tenant support)
-            $tenant = $envValues.CONFIG_SERVICE_TENANT
+            # Get tenant from the effective environment (for multi-tenant support). Database
+            # values below resolve with the same Compose precedence, and the defaults match the
+            # compose-file ${VAR:-default} fallbacks, so the registered data store targets exactly
+            # the database/credentials the containers received.
+            $tenant = $configServiceTenant
             $postgresDbName =
                 if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
-                    $envValues.POSTGRES_DB_NAME
+                    Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_DB_NAME" -DefaultValue "edfi_datamanagementservice"
                 }
                 else {
                     $DataStoreDatabaseName
                 }
-            $postgresUser =
-                if ([string]::IsNullOrWhiteSpace([string]$envValues.POSTGRES_USER)) {
-                    "postgres"
-                }
-                else {
-                    [string]$envValues.POSTGRES_USER
-                }
-            $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $envValues.POSTGRES_PASSWORD
+            $postgresUser = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+            $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_PASSWORD")
+
+            # Resolve the data-store connection string stored in CMS for the DMS datastore. For
+            # MSSQL this is the SQL Server form pointing at the dms-mssql container; for PostgreSQL
+            # it is left empty so Add-DataStore builds its PostgreSQL connection string from the
+            # Postgres* values.
+            $dataStoreConnectionString = ""
+            if ($DatabaseEngine -eq "mssql") {
+                $mssqlPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+                $mssqlDbName =
+                    if (-not [string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
+                        $DataStoreDatabaseName
+                    }
+                    else {
+                        Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_DB_NAME" -DefaultValue "edfi_datamanagementservice"
+                    }
+                $dataStoreConnectionString = New-DataStoreConnectionString `
+                    -DatabaseEngine "mssql" `
+                    -DbHost "dms-mssql" `
+                    -Port 1433 `
+                    -Username "sa" `
+                    -Password $mssqlPassword `
+                    -DatabaseName $mssqlDbName
+            }
 
             # Handle school year range data stores
             if ($SchoolYearRange) {
@@ -516,6 +721,7 @@ else {
                         -EndYear $endYear `
                         -PostgresCredential $postgresCredential `
                         -PostgresDbName $postgresDbName `
+                        -ConnectionString $dataStoreConnectionString `
                         -Tenant $tenant
 
                     Write-Output "Created $($dataStores.Count) school year data stores successfully"
@@ -529,7 +735,7 @@ else {
                 Write-Output "Creating initial data store..."
 
                 # Create data store using environment variables
-                $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $postgresDbName -Name "Local Development Data Store" -DataStoreType "Development" -Tenant $tenant
+                $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $postgresDbName -ConnectionString $dataStoreConnectionString -Name "Local Development Data Store" -DataStoreType "Development" -Tenant $tenant
 
                 Write-Output "Data store created successfully with ID: $dataStoreId"
             }
@@ -542,6 +748,8 @@ else {
     Start-Sleep 20
 }
 } finally {
-    Restore-BootstrapEnvSnapshot -Snapshot $bootstrapEnvSnapshot
+    if (-not $databaseOnlyStartup) {
+        Restore-BootstrapEnvSnapshot -Snapshot $bootstrapEnvSnapshot
+    }
     Pop-Location
 }

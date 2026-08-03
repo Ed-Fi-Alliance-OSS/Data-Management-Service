@@ -129,30 +129,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_School_Propagation]
-ON [edfi].[School]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([SchoolId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[SchoolId_Unified] = i.[SchoolId]
-        FROM [edfi].[CourseRegistration] r
-        INNER JOIN deleted d ON r.[School_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL)))
-        AND ((r.[SchoolId_Unified] = d.[SchoolId]) OR (r.[SchoolId_Unified] IS NULL AND d.[SchoolId] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE

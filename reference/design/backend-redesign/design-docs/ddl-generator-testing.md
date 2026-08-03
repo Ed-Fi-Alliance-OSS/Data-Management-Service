@@ -281,7 +281,9 @@ A workflow that:
    - sequences 
    - functions
    - SQL Server User-Defined Table Types
-   - rows in `dms.EffectiveSchema`, `dms.SchemaComponent`, `dms.ResourceKey` (as applicable).
+   - rows in `dms.EffectiveSchema`, `dms.SchemaComponent`, `dms.ResourceKey` (as applicable),
+   - `dms.DataStoreIdentity` singleton presence and UUID validity, with the random
+     `SourceIdentity` value normalized to a fixed placeholder in committed manifests.
 5. Compares the manifest to `expected/provisioned-schema.{dialect}.manifest.json` committed alongside the fixture.
 
 ### 5) Runtime compatibility tests (pack selection + DB validation gate)

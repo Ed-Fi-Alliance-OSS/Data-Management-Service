@@ -73,7 +73,7 @@ public class DataStoreDerivativeRepository(
                 TenantId,
             };
 
-            var id = await connection.ExecuteScalarAsync<long?>(sql, parameters);
+            var id = await connection.ExecuteScalarAsync<int?>(sql, parameters);
             if (id == null)
             {
                 return new DataStoreDerivativeInsertResult.FailureForeignKeyViolation();
@@ -112,8 +112,8 @@ public class DataStoreDerivativeRepository(
                 """;
 
             var results = await connection.QueryAsync<(
-                long Id,
-                long DataStoreId,
+                int Id,
+                int DataStoreId,
                 string DerivativeType,
                 byte[]? ConnectionString
             )>(
@@ -145,7 +145,7 @@ public class DataStoreDerivativeRepository(
         }
     }
 
-    public async Task<DataStoreDerivativeGetResult> GetDataStoreDerivative(long id)
+    public async Task<DataStoreDerivativeGetResult> GetDataStoreDerivative(int id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
@@ -158,8 +158,8 @@ public class DataStoreDerivativeRepository(
                 """;
 
             var result = await connection.QuerySingleOrDefaultAsync<(
-                long Id,
-                long DataStoreId,
+                int Id,
+                int DataStoreId,
                 string DerivativeType,
                 byte[]? ConnectionString
             )?>(sql, new { Id = id, TenantId });
@@ -250,7 +250,7 @@ public class DataStoreDerivativeRepository(
         }
     }
 
-    public async Task<DataStoreDerivativeDeleteResult> DeleteDataStoreDerivative(long id)
+    public async Task<DataStoreDerivativeDeleteResult> DeleteDataStoreDerivative(int id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
@@ -279,7 +279,7 @@ public class DataStoreDerivativeRepository(
     }
 
     public async Task<DataStoreDerivativeQueryByDataStoreResult> GetDataStoreDerivativesByDataStore(
-        long dataStoreId
+        int dataStoreId
     )
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -294,8 +294,8 @@ public class DataStoreDerivativeRepository(
                 """;
 
             var results = await connection.QueryAsync<(
-                long Id,
-                long DataStoreId,
+                int Id,
+                int DataStoreId,
                 string DerivativeType,
                 byte[]? ConnectionString
             )>(sql, new { DataStoreId = dataStoreId, TenantId });
@@ -320,7 +320,7 @@ public class DataStoreDerivativeRepository(
     }
 
     public async Task<DataStoreDerivativeQueryByDataStoreIdsResult> GetDataStoreDerivativesByDataStoreIds(
-        List<long> dataStoreIds
+        List<int> dataStoreIds
     )
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -335,8 +335,8 @@ public class DataStoreDerivativeRepository(
                 """;
 
             var results = await connection.QueryAsync<(
-                long Id,
-                long DataStoreId,
+                int Id,
+                int DataStoreId,
                 string DerivativeType,
                 byte[]? ConnectionString
             )>(sql, new { DataStoreIds = dataStoreIds, TenantId });
@@ -360,7 +360,7 @@ public class DataStoreDerivativeRepository(
         }
     }
 
-    private async Task<bool> DerivativeExistsForTenant(NpgsqlConnection connection, long id)
+    private async Task<bool> DerivativeExistsForTenant(NpgsqlConnection connection, int id)
     {
         var sql = $"""
             SELECT COUNT(1) FROM "dmscs"."DataStoreDerivative" dd

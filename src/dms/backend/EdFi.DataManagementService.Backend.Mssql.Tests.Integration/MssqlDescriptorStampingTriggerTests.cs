@@ -103,16 +103,21 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         string codeValue = "Female"
     )
     {
+        var resourceKeyId = await _database.ExecuteScalarAsync<short>(
+            "SELECT MIN(ResourceKeyId) FROM [dms].[ResourceKey];"
+        );
+
         var uriOrDiscriminator = $"uri://ed-fi.org/SexDescriptor#{codeValue}";
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [dms].[Descriptor]
-                ([DocumentId], [Namespace], [CodeValue], [ShortDescription], [Description],
+                ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription], [Description],
                  [EffectiveBeginDate], [EffectiveEndDate], [Discriminator], [Uri])
-            VALUES (@documentId, @namespace, @codeValue, @shortDescription, @description,
+            VALUES (@documentId, @resourceKeyId, @namespace, @codeValue, @shortDescription, @description,
                     NULL, NULL, @discriminator, @uri);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", "uri://ed-fi.org/SexDescriptor"),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
@@ -256,6 +261,114 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
             """
             UPDATE [dms].[Descriptor]
             SET [ShortDescription] = [ShortDescription]
+            WHERE DocumentId = @documentId;
+            """,
+            new SqlParameter("@documentId", seed.DocumentId)
+        );
+
+        var after = await ReadStampPairAsync(seed.DocumentId);
+        after.Document.ContentVersion.Should().Be(seed.ContentVersion);
+        after.Document.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
+        after.Mirror.Should().Be(after.Document);
+    }
+
+    private async Task InsertBenchResourceKeyAsync()
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 32000)
+            INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
+            VALUES (32000, 'Bench', 'BenchDescriptor', '1.0.0');
+            """
+        );
+    }
+
+    [Test]
+    public async Task It_rejects_a_descriptor_update_whose_resource_key_id_diverges_from_the_document()
+    {
+        // List paging trusts dms.Descriptor.ResourceKeyId while GET-by-id trusts
+        // dms.Document.ResourceKeyId, and no FK ties the two copies together. The trigger's
+        // equality guard must reject the divergent write before the no-op diff (which
+        // deliberately excludes ResourceKeyId) can short-circuit past it.
+        var seed = await SeedAsync();
+        await InsertBenchResourceKeyAsync();
+
+        var act = async () =>
+            await _database.ExecuteNonQueryAsync(
+                """
+                UPDATE [dms].[Descriptor]
+                SET [ResourceKeyId] = 32000
+                WHERE DocumentId = @documentId;
+                """,
+                new SqlParameter("@documentId", seed.DocumentId)
+            );
+
+        var exception = (await act.Should().ThrowAsync<SqlException>()).Which;
+        exception.Message.Should().Contain("diverges from the owning dms.Document row");
+
+        var storedResourceKeyId = await _database.ExecuteScalarAsync<short>(
+            "SELECT ResourceKeyId FROM [dms].[Descriptor] WHERE DocumentId = @documentId;",
+            new SqlParameter("@documentId", seed.DocumentId)
+        );
+        var documentResourceKeyId = await _database.ExecuteScalarAsync<short>(
+            "SELECT ResourceKeyId FROM [dms].[Document] WHERE DocumentId = @documentId;",
+            new SqlParameter("@documentId", seed.DocumentId)
+        );
+        storedResourceKeyId.Should().Be(documentResourceKeyId);
+        var after = await ReadStampPairAsync(seed.DocumentId);
+        after.Document.ContentVersion.Should().Be(seed.ContentVersion);
+        after.Mirror.Should().Be(after.Document);
+    }
+
+    [Test]
+    public async Task It_rejects_a_descriptor_insert_whose_resource_key_id_diverges_from_the_document()
+    {
+        var documentId = await InsertDocumentAsync();
+        await InsertBenchResourceKeyAsync();
+
+        var act = async () =>
+            await _database.ExecuteNonQueryAsync(
+                """
+                INSERT INTO [dms].[Descriptor]
+                    ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription], [Description],
+                     [EffectiveBeginDate], [EffectiveEndDate], [Discriminator], [Uri])
+                VALUES (@documentId, 32000, 'uri://ed-fi.org/SexDescriptor', 'Female', 'Female', 'Female',
+                        NULL, NULL, 'uri://ed-fi.org/SexDescriptor#Female', 'uri://ed-fi.org/SexDescriptor#Female');
+                """,
+                new SqlParameter("@documentId", documentId)
+            );
+
+        var exception = (await act.Should().ThrowAsync<SqlException>()).Which;
+        exception.Message.Should().Contain("diverges from the owning dms.Document row");
+
+        var descriptorRowCount = await _database.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM [dms].[Descriptor] WHERE DocumentId = @documentId;",
+            new SqlParameter("@documentId", documentId)
+        );
+        descriptorRowCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_does_not_stamp_document_when_a_resource_key_id_backfill_updates_both_tables()
+    {
+        // ResourceKeyId is immutable in production and deliberately excluded from the trigger's
+        // no-op diff so a migration backfill UPDATE of the column cannot bump stamps. The
+        // equality guard requires such a backfill to update dms.Document before dms.Descriptor.
+        var seed = await SeedAsync();
+        await InsertBenchResourceKeyAsync();
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [dms].[Document]
+            SET [ResourceKeyId] = 32000
+            WHERE DocumentId = @documentId;
+            """,
+            new SqlParameter("@documentId", seed.DocumentId)
+        );
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [dms].[Descriptor]
+            SET [ResourceKeyId] = 32000
             WHERE DocumentId = @documentId;
             """,
             new SqlParameter("@documentId", seed.DocumentId)

@@ -6,6 +6,7 @@
 using System.Linq;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Startup;
@@ -174,6 +175,13 @@ if (invalidConfigurationException is null)
         () => InitializeBackendMappings(app)
     );
     await startupPhaseExecutor.RunFatalAsync(
+        DmsStartupPhases.InitializeDocumentCacheTargets,
+        "Initializing configured DocumentCache target contexts.",
+        "DocumentCache target context initialization completed successfully.",
+        "DocumentCache target context initialization failed. DMS cannot start with failed projection target initialization.",
+        () => InitializeDocumentCacheTargets(app)
+    );
+    await startupPhaseExecutor.RunFatalAsync(
         DmsStartupPhases.InitializeAuthMetadata,
         "Initializing authentication metadata caches (OIDC warm-up and claim sets).",
         "Authentication metadata initialization completed successfully.",
@@ -182,48 +190,64 @@ if (invalidConfigurationException is null)
         exitCode: 1
     );
 
-    if (enableAspNetCompression)
-    {
-        app.UseResponseCompression();
-    }
-
     startupPhaseExecutor.WriteStarting(
         DmsStartupPhases.ConfigureEndpoints,
         "Configuring DMS middleware and endpoints."
     );
 
-    app.UseRouting();
-
-    if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
+    try
     {
-        app.UseRateLimiter();
+        if (enableAspNetCompression)
+        {
+            app.UseResponseCompression();
+        }
+
+        app.UseRouting();
+
+        if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
+        {
+            app.UseRateLimiter();
+        }
+
+        app.UseCors("AllowSwaggerUI");
+
+        app.MapRouteEndpoints();
+
+        app.MapHealthChecks("/health");
+
+        // Catch-all fallback for unmatched routes
+        app.MapFallback(context =>
+        {
+            context.Response.StatusCode = 404;
+            context.Response.ContentType = "application/problem+json";
+
+            var traceId = context.Request.Headers.TryGetValue(
+                app.Configuration.GetValue<string>("AppSettings:CorrelationIdHeader") ?? "correlationid",
+                out var correlationId
+            )
+                ? correlationId.ToString()
+                : context.TraceIdentifier;
+
+            var response = FailureResponse.ForNotFound(
+                "The specified data could not be found.",
+                new TraceId(traceId)
+            );
+            return context.Response.WriteAsJsonAsync(response);
+        });
     }
-
-    app.UseCors("AllowSwaggerUI");
-
-    app.MapRouteEndpoints();
-
-    app.MapHealthChecks("/health");
-
-    // Catch-all fallback for unmatched routes
-    app.MapFallback(context =>
+    catch (Exception ex)
     {
-        context.Response.StatusCode = 404;
-        context.Response.ContentType = "application/problem+json";
-
-        var traceId = context.Request.Headers.TryGetValue(
-            app.Configuration.GetValue<string>("AppSettings:CorrelationIdHeader") ?? "correlationid",
-            out var correlationId
-        )
-            ? correlationId.ToString()
-            : context.TraceIdentifier;
-
-        var response = FailureResponse.ForNotFound(
-            "The specified data could not be found.",
-            new TraceId(traceId)
+        // Endpoint configuration is fatal, and the throw below preserves that. RunFatalAsync is
+        // the wrong tool here: endpoint mapping is synchronous and RunFatalAsync would invoke the
+        // process-exit hook, whereas the rethrow already terminates the process. Without this the
+        // status file would be stranded at Starting, losing ErrorType and ErrorMessage.
+        startupPhaseExecutor.WriteFatalFailure(
+            DmsStartupPhases.ConfigureEndpoints,
+            "Middleware and endpoint configuration failed. DMS cannot serve requests without mapped HTTP endpoints.",
+            ex
         );
-        return context.Response.WriteAsJsonAsync(response);
-    });
+        throw;
+    }
 
     startupPhaseExecutor.WriteReady("DMS startup completed successfully and HTTP endpoints are configured.");
 }
@@ -251,11 +275,38 @@ OptionsValidationException? ReportInvalidConfiguration(WebApplication app)
         _ = app.Services.GetRequiredService<IOptions<ConfigurationServiceSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<MappingSetProviderOptions>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ReverseProxySettings>>().Value;
+        DocumentCacheOptions documentCacheOptions = app
+            .Services.GetRequiredService<IOptions<DocumentCacheOptions>>()
+            .Value;
+        DocumentCacheStartupDiagnostics.Log(app.Logger, documentCacheOptions);
     }
     catch (OptionsValidationException ex)
     {
         app.UseMiddleware<ReportInvalidConfigurationMiddleware>(ex.Failures);
         return ex;
+    }
+    catch (Exception ex)
+    {
+        // Options binding is lazy, so the accesses above are the first eager IOptions<T>.Value in
+        // startup. A value that cannot be converted to its target type - a non-numeric
+        // AppSettings__MaxRequestBodySizeMegabytes, say - surfaces here as InvalidOperationException
+        // rather than OptionsValidationException, and carries no Failures collection for the
+        // short-circuit middleware to report. Recording it matters because this call is the last
+        // statement in the unguarded window between the BuildApplication phase and the first
+        // RunFatalAsync: without this the status file would be left reading Completed/BuildApplication
+        // on a process that is about to die, which is worse than a stranded Starting because
+        // Completed reads as success. The statements ahead of it in that window - resolving
+        // StartupPhaseExecutor, the startup log line, the path-base call, and the middleware
+        // registrations - are unguarded too, deliberately: they fail on a missing DI registration or
+        // a malformed middleware type, which breaks in every environment rather than on one
+        // deployment's configuration. Anything added there that a configuration value can break
+        // needs its own guard; bootstrapStartupStatusSignal is still in scope for that.
+        startupPhaseExecutor.WriteFatalFailure(
+            DmsStartupPhases.ConfigureEndpoints,
+            "Configuration could not be read or bound. DMS cannot start without valid configuration values.",
+            ex
+        );
+        throw;
     }
     return null;
 }
@@ -312,6 +363,21 @@ async Task InitializeDataStores(WebApplication app)
     {
         await InitializeDataStoresForSingleTenancy(app, dataStoreProvider);
     }
+}
+
+async Task InitializeDocumentCacheTargets(WebApplication app)
+{
+    app.Logger.LogInformation("Initializing DocumentCache target registry at startup");
+    IDocumentCacheTargetRegistry targetRegistry =
+        app.Services.GetRequiredService<IDocumentCacheTargetRegistry>();
+    DocumentCacheTargetRegistrySnapshot snapshot = await targetRegistry.RefreshAsync(
+        DocumentCacheTargetRefreshReason.Startup
+    );
+
+    app.Logger.LogInformation(
+        "DocumentCache target registry startup refresh completed for {TargetCount} configured targets",
+        snapshot.Targets.Length
+    );
 }
 
 async Task InitializeDataStoresForMultiTenancy(WebApplication app, IDataStoreProvider dataStoreProvider)

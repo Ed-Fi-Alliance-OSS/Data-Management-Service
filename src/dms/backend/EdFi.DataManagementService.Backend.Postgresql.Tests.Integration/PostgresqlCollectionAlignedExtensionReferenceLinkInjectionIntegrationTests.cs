@@ -155,7 +155,7 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
 
         short sponsorResourceKeyId = _mappingSet.ResourceKeyIdByResource[SponsorResource];
         Dictionary<short, DocumentLinkSlugTriple> slugByResourceKeyId = new()

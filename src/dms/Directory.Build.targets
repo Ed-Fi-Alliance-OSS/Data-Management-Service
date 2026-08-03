@@ -1,4 +1,14 @@
 <Project>
+    <PropertyGroup>
+        <_DmsInlineTaskSystemTextJsonVersion>10.0.1</_DmsInlineTaskSystemTextJsonVersion>
+        <_DmsInlineTaskSystemMemoryVersion>4.6.3</_DmsInlineTaskSystemMemoryVersion>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageDownload Include="System.Text.Json" Version="[$(_DmsInlineTaskSystemTextJsonVersion)]" />
+        <PackageDownload Include="System.Memory" Version="[$(_DmsInlineTaskSystemMemoryVersion)]" />
+    </ItemGroup>
+
     <UsingTask
         TaskName="MaterializeBundledApiSchemaBootstrapManifestTask"
         TaskFactory="RoslynCodeTaskFactory"
@@ -9,14 +19,14 @@
             <ManifestPath ParameterType="System.String" Required="true" />
         </ParameterGroup>
         <Task>
-            <Reference Include="$(MSBuildToolsPath)/Sdks/Microsoft.NET.Sdk/tools/net472/Newtonsoft.Json.dll" />
+            <Reference Include="$(NuGetPackageRoot)/system.text.json/$(_DmsInlineTaskSystemTextJsonVersion)/lib/netstandard2.0/System.Text.Json.dll" />
+            <Reference Include="$(NuGetPackageRoot)/system.memory/$(_DmsInlineTaskSystemMemoryVersion)/lib/netstandard2.0/System.Memory.dll" />
             <Using Namespace="System" />
             <Using Namespace="System.Collections.Generic" />
             <Using Namespace="System.IO" />
             <Using Namespace="System.Linq" />
             <Using Namespace="System.Text" />
-            <Using Namespace="Newtonsoft.Json" />
-            <Using Namespace="Newtonsoft.Json.Linq" />
+            <Using Namespace="System.Text.Json" />
             <Code Type="Fragment" Language="cs">
                 <![CDATA[
 var projects = new List<Dictionary<string, object>>();
@@ -46,7 +56,7 @@ foreach (var package in BundledPackages)
         return false;
     }
 
-    JObject manifest;
+    JsonElement manifest;
     try
     {
         manifest = ReadPackageManifest(packageManifestPath);
@@ -150,21 +160,21 @@ if (!string.IsNullOrEmpty(manifestDirectory))
 }
 File.WriteAllText(ManifestPath, BuildBootstrapManifestJson(projects), new UTF8Encoding(false));
 
-JObject ReadPackageManifest(string manifestPath)
+JsonElement ReadPackageManifest(string manifestPath)
 {
     try
     {
-        var manifest = JObject.Parse(File.ReadAllText(manifestPath));
-        if (manifest is not null)
+        using var document = JsonDocument.Parse(File.ReadAllText(manifestPath));
+        if (document.RootElement.ValueKind == JsonValueKind.Object)
         {
-            return manifest;
+            return document.RootElement.Clone();
         }
 
         throw new InvalidOperationException(
             $"ApiSchema package manifest '{manifestPath}' must contain a JSON object."
         );
     }
-    catch (JsonReaderException exception)
+    catch (JsonException exception)
     {
         throw new InvalidOperationException(
             $"ApiSchema package manifest '{manifestPath}' contains invalid JSON: {exception.Message}",
@@ -173,7 +183,7 @@ JObject ReadPackageManifest(string manifestPath)
     }
 }
 
-bool IsSupportedManifestVersion(JObject manifest, string manifestPath)
+bool IsSupportedManifestVersion(JsonElement manifest, string manifestPath)
 {
     if (!TryGetManifestProperty(manifest, "version", out var versionValue))
     {
@@ -182,13 +192,16 @@ bool IsSupportedManifestVersion(JObject manifest, string manifestPath)
     }
 
     string version = null;
-    if (versionValue.Type == JTokenType.String)
+    if (versionValue.ValueKind == JsonValueKind.String)
     {
-        version = versionValue.ToString();
+        version = versionValue.GetString();
     }
-    else if (versionValue.Type == JTokenType.Integer)
+    else if (
+        versionValue.ValueKind == JsonValueKind.Number
+        && versionValue.TryGetInt32(out var numericVersion)
+    )
     {
-        version = versionValue.ToString();
+        version = numericVersion.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     if (version != "1")
@@ -200,21 +213,24 @@ bool IsSupportedManifestVersion(JObject manifest, string manifestPath)
     return true;
 }
 
-string ReadRequiredString(JObject manifest, string fieldName, string manifestPath)
+string ReadRequiredString(JsonElement manifest, string fieldName, string manifestPath)
 {
-    if (!TryGetManifestProperty(manifest, fieldName, out var value) || value.Type == JTokenType.Null)
+    if (
+        !TryGetManifestProperty(manifest, fieldName, out var value)
+        || value.ValueKind == JsonValueKind.Null
+    )
     {
         Log.LogError($"ApiSchema package manifest '{manifestPath}' must declare non-blank {fieldName}.");
         return null;
     }
 
-    if (value.Type != JTokenType.String)
+    if (value.ValueKind != JsonValueKind.String)
     {
         Log.LogError($"ApiSchema package manifest '{manifestPath}' field {fieldName} must be a string.");
         return null;
     }
 
-    var stringValue = value.ToString();
+    var stringValue = value.GetString();
     if (string.IsNullOrWhiteSpace(stringValue))
     {
         Log.LogError($"ApiSchema package manifest '{manifestPath}' must declare non-blank {fieldName}.");
@@ -224,48 +240,59 @@ string ReadRequiredString(JObject manifest, string fieldName, string manifestPat
     return stringValue;
 }
 
-bool TryReadOptionalString(JObject manifest, string fieldName, string manifestPath, out string stringValue)
+bool TryReadOptionalString(
+    JsonElement manifest,
+    string fieldName,
+    string manifestPath,
+    out string stringValue
+)
 {
     stringValue = null;
 
-    if (!TryGetManifestProperty(manifest, fieldName, out var value) || value.Type == JTokenType.Null)
+    if (
+        !TryGetManifestProperty(manifest, fieldName, out var value)
+        || value.ValueKind == JsonValueKind.Null
+    )
     {
         return true;
     }
 
-    if (value.Type != JTokenType.String)
+    if (value.ValueKind != JsonValueKind.String)
     {
         Log.LogError($"ApiSchema package manifest '{manifestPath}' field {fieldName} must be a string or null.");
         return false;
     }
 
-    stringValue = value.ToString();
+    stringValue = value.GetString();
     return true;
 }
 
-bool? ReadRequiredBoolean(JObject manifest, string fieldName, string manifestPath)
+bool? ReadRequiredBoolean(JsonElement manifest, string fieldName, string manifestPath)
 {
-    if (!TryGetManifestProperty(manifest, fieldName, out var value) || value.Type == JTokenType.Null)
+    if (
+        !TryGetManifestProperty(manifest, fieldName, out var value)
+        || value.ValueKind == JsonValueKind.Null
+    )
     {
         Log.LogError($"ApiSchema package manifest '{manifestPath}' must declare {fieldName} as a boolean.");
         return null;
     }
 
-    if (value.Type == JTokenType.Boolean)
+    if (value.ValueKind is JsonValueKind.True or JsonValueKind.False)
     {
-        return string.Equals(value.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        return value.GetBoolean();
     }
 
     Log.LogError($"ApiSchema package manifest '{manifestPath}' field {fieldName} must be a boolean.");
     return null;
 }
 
-bool TryGetManifestProperty(JObject manifest, string fieldName, out JToken value)
+bool TryGetManifestProperty(JsonElement manifest, string fieldName, out JsonElement value)
 {
-    value = null;
+    value = default;
     var found = false;
 
-    foreach (var property in manifest.Properties())
+    foreach (var property in manifest.EnumerateObject())
     {
         if (string.Equals(property.Name, fieldName, StringComparison.OrdinalIgnoreCase))
         {
@@ -280,7 +307,7 @@ bool TryGetManifestProperty(JObject manifest, string fieldName, out JToken value
 bool TryResolveOptionalPackagePath(
     string packageId,
     string packageRoot,
-    JObject manifest,
+    JsonElement manifest,
     string fieldName,
     bool requiredFile,
     out string manifestRelativePath
@@ -288,18 +315,21 @@ bool TryResolveOptionalPackagePath(
 {
     manifestRelativePath = null;
 
-    if (!TryGetManifestProperty(manifest, fieldName, out var value) || value.Type == JTokenType.Null)
+    if (
+        !TryGetManifestProperty(manifest, fieldName, out var value)
+        || value.ValueKind == JsonValueKind.Null
+    )
     {
         return true;
     }
 
-    if (value.Type != JTokenType.String)
+    if (value.ValueKind != JsonValueKind.String)
     {
         Log.LogError($"ApiSchema package '{packageId}' manifest field {fieldName} must be a string or null.");
         return false;
     }
 
-    var packageRelativePath = value.ToString();
+    var packageRelativePath = value.GetString();
     if (string.IsNullOrWhiteSpace(packageRelativePath))
     {
         Log.LogError($"ApiSchema package '{packageId}' manifest field {fieldName} must be null or a non-blank path.");
@@ -431,9 +461,9 @@ string EnsureTrailingDirectorySeparator(string path)
 
 string BuildBootstrapManifestJson(List<Dictionary<string, object>> projects)
 {
-    return JsonConvert.SerializeObject(
+    return JsonSerializer.Serialize(
         new Dictionary<string, object> { ["version"] = 1, ["projects"] = projects },
-        Formatting.Indented
+        new JsonSerializerOptions { WriteIndented = true }
     );
 }
 ]]>

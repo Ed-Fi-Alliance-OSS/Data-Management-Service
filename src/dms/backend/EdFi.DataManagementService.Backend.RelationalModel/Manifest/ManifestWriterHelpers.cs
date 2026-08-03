@@ -225,6 +225,8 @@ internal static class ManifestWriterHelpers
     {
         writer.WriteStartObject();
         writer.WriteBoolean("is_identity_component", edge.IsIdentityComponent);
+        writer.WriteBoolean("is_required", edge.IsRequired);
+        writer.WriteBoolean("is_role_named", edge.IsRoleNamed);
         writer.WriteString("descriptor_value_path", edge.DescriptorValuePath.Canonical);
         writer.WritePropertyName("table");
         WriteTableReference(writer, edge.Table);

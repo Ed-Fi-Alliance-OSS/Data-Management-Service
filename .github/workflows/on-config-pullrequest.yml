@@ -196,6 +196,15 @@ jobs:
               throw "$($result.FailedCount) OpenIddict crypto test(s) failed."
           }
 
+      # Guards build-config.ps1's test targets against reporting success when the test-assembly glob
+      # matched nothing, which would otherwise exit 0 having executed zero tests.
+      - name: Run Build Script Zero-Test Guard Tests
+        run: |
+          $result = Invoke-Pester -Path "eng/ci/tests/BuildScriptTestGuards.Tests.ps1" -Output Detailed -PassThru
+          if ($result.FailedCount -gt 0) {
+              throw "$($result.FailedCount) build script zero-test guard test(s) failed."
+          }
+
   run-unit-tests:
     name: Run Unit Tests
     needs: detect-fresh-build-changes
@@ -276,7 +285,7 @@ jobs:
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
       mssql:
-        image: mcr.microsoft.com/mssql/server:2022-latest
+        image: mcr.microsoft.com/mssql/server:2025-latest
         env:
           ACCEPT_EULA: "Y"
           MSSQL_SA_PASSWORD: IntegrationTest1!

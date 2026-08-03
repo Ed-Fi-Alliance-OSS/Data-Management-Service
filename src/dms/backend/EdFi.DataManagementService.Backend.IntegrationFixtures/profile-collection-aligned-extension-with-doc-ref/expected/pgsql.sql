@@ -1,8 +1,8 @@
 -- ==========================================================
--- Phase 0: Preflight (fail fast on schema hash mismatch)
+-- Phase 0: Bounded Provisioning Guards
 -- ==========================================================
 
--- Preflight: fail fast if database is provisioned for a different schema hash
+-- Preflight: validate EffectiveSchema hash compatibility
 DO $$
 DECLARE
     _stored_hash text;
@@ -10,9 +10,147 @@ BEGIN
     IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
         SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
         WHERE "EffectiveSchemaSingletonId" = 1;
-        IF _stored_hash IS NOT NULL AND _stored_hash <> '628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46' THEN
-            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46';
+        IF _stored_hash IS NOT NULL AND _stored_hash <> 'f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d' THEN
+            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, 'f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d';
         END IF;
+    END IF;
+END $$;
+
+-- Preflight: protect completed DocumentCache mutable singleton state before mutation
+DO $$
+DECLARE
+    _stored_hash text;
+    _source_identity uuid;
+    _lifecycle_state text;
+    _cache_ahead_recovery_required boolean;
+BEGIN
+    IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
+        SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
+        WHERE "EffectiveSchemaSingletonId" = 1;
+        IF _stored_hash = 'f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d' THEN
+            IF to_regclass('"dms"."DataStoreIdentity"') IS NULL THEN
+                RAISE EXCEPTION 'Completed dms.EffectiveSchema hash matches this DDL, but dms.DataStoreIdentity is missing. Drop and recreate the database before re-provisioning.';
+            END IF;
+
+            SELECT "SourceIdentity" INTO _source_identity FROM "dms"."DataStoreIdentity"
+            WHERE "DataStoreIdentitySingletonId" = 1;
+            IF _source_identity IS NULL THEN
+                RAISE EXCEPTION 'Completed dms.EffectiveSchema hash matches this DDL, but dms.DataStoreIdentity singleton row is missing. Drop and recreate the database before re-provisioning.';
+            END IF;
+            IF _source_identity = '00000000-0000-0000-0000-000000000000'::uuid THEN
+                RAISE EXCEPTION 'dms.DataStoreIdentity.SourceIdentity must not be the zero UUID. Drop and recreate the database before re-provisioning.';
+            END IF;
+
+            IF to_regclass('"dms"."DocumentCacheState"') IS NULL THEN
+                RAISE EXCEPTION 'Completed dms.EffectiveSchema hash matches this DDL, but dms.DocumentCacheState is missing. Drop and recreate the database before re-provisioning.';
+            END IF;
+
+            SELECT "ProjectionLifecycleState", "CacheAheadRecoveryRequired" INTO _lifecycle_state, _cache_ahead_recovery_required
+            FROM "dms"."DocumentCacheState"
+            WHERE "StateId" = 1;
+            IF _lifecycle_state IS NULL THEN
+                RAISE EXCEPTION 'Completed dms.EffectiveSchema hash matches this DDL, but dms.DocumentCacheState singleton row is missing. Drop and recreate the database before re-provisioning.';
+            END IF;
+            IF _lifecycle_state NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking') THEN
+                RAISE EXCEPTION 'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value % during provisioning preflight.', _lifecycle_state;
+            END IF;
+            IF _cache_ahead_recovery_required IS NULL THEN
+                RAISE EXCEPTION 'dms.DocumentCacheState.CacheAheadRecoveryRequired must not be null during provisioning preflight.';
+            END IF;
+        END IF;
+    END IF;
+END $$;
+
+-- Preflight: reject known legacy DocumentCache artifacts before mutation
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'dms'
+        AND table_name = 'DocumentCache'
+        AND column_name = 'Etag'
+    ) THEN
+        RAISE EXCEPTION 'Known legacy artifact dms.DocumentCache.Etag was found. Drop and recreate the database before provisioning E18 DocumentCache schema.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_constraint constraint_info
+        WHERE constraint_info.conname = 'UX_DocumentCache_DocumentUuid'
+        AND constraint_info.conrelid = to_regclass('"dms"."DocumentCache"')
+    ) OR to_regclass('"dms"."UX_DocumentCache_DocumentUuid"') IS NOT NULL THEN
+        RAISE EXCEPTION 'Known legacy artifact UX_DocumentCache_DocumentUuid was found. Drop and recreate the database before provisioning E18 DocumentCache schema.';
+    END IF;
+
+    IF to_regclass('"dms"."IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt"') IS NOT NULL THEN
+        RAISE EXCEPTION 'Known legacy artifact IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt was found. Drop and recreate the database before provisioning E18 DocumentCache schema.';
+    END IF;
+END $$;
+
+-- Preflight: validate PostgreSQL enqueue-owner prerequisites
+DO $$
+DECLARE
+    _owner_role oid := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+    _session_role oid;
+    _session_is_superuser boolean;
+    _session_can_create_role boolean;
+    _has_required_direct_membership boolean;
+BEGIN
+    SELECT oid, rolsuper, rolcreaterole
+    INTO _session_role, _session_is_superuser, _session_can_create_role
+    FROM pg_catalog.pg_roles
+    WHERE rolname = SESSION_USER;
+
+    IF _owner_role IS NULL THEN
+        IF NOT COALESCE(_session_is_superuser OR _session_can_create_role, false) THEN
+            RAISE EXCEPTION 'PostgreSQL provisioning principal must be SUPERUSER or CREATEROLE to create edfi_dms_enqueue_owner before provisioning.';
+        END IF;
+        RETURN;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_roles owner_role
+        WHERE owner_role.oid = _owner_role
+        AND (owner_role.rolcanlogin OR owner_role.rolinherit OR owner_role.rolsuper OR owner_role.rolcreatedb OR owner_role.rolcreaterole OR owner_role.rolreplication OR owner_role.rolbypassrls)
+    ) THEN
+        RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner exists but is not locked down as NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS. Drop or repair the role before provisioning.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_auth_members membership
+        WHERE membership.member = _owner_role
+        AND (membership.admin_option OR membership.inherit_option OR membership.set_option)
+    ) THEN
+        RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner must not hold outgoing privilege-bearing memberships before provisioning.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_auth_members membership
+        WHERE membership.roleid = _owner_role
+        AND membership.member = _session_role
+        AND NOT (membership.admin_option AND NOT membership.inherit_option AND NOT membership.set_option AND COALESCE(_session_can_create_role, false))
+        AND (membership.admin_option OR membership.inherit_option OR NOT membership.set_option)
+    ) THEN
+        RAISE EXCEPTION 'PostgreSQL provisioning principal has an unsafe direct membership in edfi_dms_enqueue_owner; required options are SET TRUE, INHERIT FALSE, ADMIN FALSE.';
+    END IF;
+
+    _has_required_direct_membership := EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_auth_members membership
+        WHERE membership.roleid = _owner_role
+        AND membership.member = _session_role
+        AND NOT membership.admin_option
+        AND NOT membership.inherit_option
+        AND membership.set_option
+    );
+
+    IF NOT COALESCE(_session_is_superuser, false)
+    AND NOT _has_required_direct_membership THEN
+        RAISE EXCEPTION 'PostgreSQL provisioning principal must have direct SET TRUE, INHERIT FALSE, ADMIN FALSE membership in existing edfi_dms_enqueue_owner before provisioning.';
     END IF;
 END $$;
 
@@ -82,9 +220,30 @@ $uuidv5$;
 -- Phase 5: Tables (PK/UNIQUE/CHECK only, no cross-table FKs)
 -- ==========================================================
 
+CREATE TABLE IF NOT EXISTS "dms"."DataStoreIdentity"
+(
+    "DataStoreIdentitySingletonId" smallint NOT NULL,
+    "SourceIdentity" uuid NOT NULL,
+    CONSTRAINT "PK_DataStoreIdentity" PRIMARY KEY ("DataStoreIdentitySingletonId")
+);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'CK_DataStoreIdentity_Singleton'
+        AND conrelid = to_regclass('"dms"."DataStoreIdentity"')
+    )
+    THEN
+        ALTER TABLE "dms"."DataStoreIdentity"
+        ADD CONSTRAINT "CK_DataStoreIdentity_Singleton" CHECK ("DataStoreIdentitySingletonId" = 1);
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
 (
     "DocumentId" bigint NOT NULL,
+    "ResourceKeyId" smallint NOT NULL,
     "Namespace" varchar(255) NOT NULL,
     "CodeValue" varchar(50) NOT NULL,
     "ShortDescription" varchar(75) NOT NULL,
@@ -116,6 +275,7 @@ CREATE TABLE IF NOT EXISTS "dms"."Document"
     "DocumentId" bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
     "DocumentUuid" uuid NOT NULL,
     "ResourceKeyId" smallint NOT NULL,
+    "CreatedByOwnershipTokenId" smallint NULL,
     "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "IdentityVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -144,26 +304,13 @@ CREATE TABLE IF NOT EXISTS "dms"."DocumentCache"
     "ProjectName" varchar(256) NOT NULL,
     "ResourceName" varchar(256) NOT NULL,
     "ResourceVersion" varchar(32) NOT NULL,
-    "Etag" varchar(64) NOT NULL,
     "ContentVersion" bigint NOT NULL,
+    "StreamEtag" varchar(64) NOT NULL,
     "LastModifiedAt" timestamp with time zone NOT NULL,
     "DocumentJson" jsonb NOT NULL,
     "ComputedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_DocumentCache" PRIMARY KEY ("DocumentId")
 );
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'UX_DocumentCache_DocumentUuid'
-        AND conrelid = to_regclass('"dms"."DocumentCache"')
-    )
-    THEN
-        ALTER TABLE "dms"."DocumentCache"
-        ADD CONSTRAINT "UX_DocumentCache_DocumentUuid" UNIQUE ("DocumentUuid");
-    END IF;
-END $$;
 
 DO $$
 BEGIN
@@ -177,6 +324,49 @@ BEGIN
         ADD CONSTRAINT "CK_DocumentCache_JsonObject" CHECK (jsonb_typeof("DocumentJson") = 'object');
     END IF;
 END $$;
+
+CREATE TABLE IF NOT EXISTS "dms"."DocumentCacheState"
+(
+    "StateId" smallint NOT NULL,
+    "ProjectionLifecycleState" varchar(16) NOT NULL,
+    "CacheAheadRecoveryRequired" boolean NOT NULL,
+    CONSTRAINT "PK_DocumentCacheState" PRIMARY KEY ("StateId")
+);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'CK_DocumentCacheState_Singleton'
+        AND conrelid = to_regclass('"dms"."DocumentCacheState"')
+    )
+    THEN
+        ALTER TABLE "dms"."DocumentCacheState"
+        ADD CONSTRAINT "CK_DocumentCacheState_Singleton" CHECK ("StateId" = 1);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'CK_DocumentCacheState_Lifecycle'
+        AND conrelid = to_regclass('"dms"."DocumentCacheState"')
+    )
+    THEN
+        ALTER TABLE "dms"."DocumentCacheState"
+        ADD CONSTRAINT "CK_DocumentCacheState_Lifecycle" CHECK ("ProjectionLifecycleState" IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking'));
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS "dms"."DocumentProjectionWork"
+(
+    "DocumentId" bigint NOT NULL,
+    "RequiredContentVersion" bigint NOT NULL,
+    "FirstEnqueuedAt" timestamp with time zone NOT NULL,
+    "LastEnqueuedAt" timestamp with time zone NOT NULL,
+    CONSTRAINT "PK_DocumentProjectionWork" PRIMARY KEY ("DocumentId")
+);
 
 CREATE TABLE IF NOT EXISTS "dms"."EffectiveSchema"
 (
@@ -307,6 +497,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_Descriptor_ResourceKey'
+        AND conrelid = to_regclass('"dms"."Descriptor"')
+    )
+    THEN
+        ALTER TABLE "dms"."Descriptor"
+        ADD CONSTRAINT "FK_Descriptor_ResourceKey"
+        FOREIGN KEY ("ResourceKeyId")
+        REFERENCES "dms"."ResourceKey" ("ResourceKeyId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_Document_ResourceKey'
         AND conrelid = to_regclass('"dms"."Document"')
     )
@@ -330,6 +537,23 @@ BEGIN
     THEN
         ALTER TABLE "dms"."DocumentCache"
         ADD CONSTRAINT "FK_DocumentCache_Document"
+        FOREIGN KEY ("DocumentId")
+        REFERENCES "dms"."Document" ("DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_DocumentProjectionWork_Document'
+        AND conrelid = to_regclass('"dms"."DocumentProjectionWork"')
+    )
+    THEN
+        ALTER TABLE "dms"."DocumentProjectionWork"
+        ADD CONSTRAINT "FK_DocumentProjectionWork_Document"
         FOREIGN KEY ("DocumentId")
         REFERENCES "dms"."Document" ("DocumentId")
         ON DELETE CASCADE
@@ -392,13 +616,11 @@ END $$;
 -- Phase 7: Indexes
 -- ==========================================================
 
-CREATE INDEX IF NOT EXISTS "IX_Descriptor_Uri_Discriminator" ON "dms"."Descriptor" ("Uri", "Discriminator");
+CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_DocumentId" ON "dms"."Descriptor" ("ResourceKeyId", "DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_Document_ResourceKeyId_DocumentId" ON "dms"."Document" ("ResourceKeyId", "DocumentId");
+CREATE INDEX IF NOT EXISTS "IX_Document_CreatedByOwnershipTokenId" ON "dms"."Document" ("CreatedByOwnershipTokenId");
 
-CREATE INDEX IF NOT EXISTS "IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt" ON "dms"."DocumentCache" ("ProjectName", "ResourceName", "LastModifiedAt", "DocumentId");
-
-CREATE INDEX IF NOT EXISTS "IX_ReferentialIdentity_DocumentId" ON "dms"."ReferentialIdentity" ("DocumentId");
+CREATE INDEX IF NOT EXISTS "IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId" ON "dms"."DocumentProjectionWork" ("FirstEnqueuedAt", "DocumentId");
 
 -- ==========================================================
 -- Phase 8: Triggers
@@ -407,6 +629,16 @@ CREATE INDEX IF NOT EXISTS "IX_ReferentialIdentity_DocumentId" ON "dms"."Referen
 CREATE OR REPLACE FUNCTION "dms"."TF_Descriptor_Stamp_Document"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM "dms"."Document"
+            WHERE "DocumentId" = NEW."DocumentId"
+                AND "ResourceKeyId" = NEW."ResourceKeyId"
+        ) THEN
+            RAISE EXCEPTION 'dms.Descriptor.ResourceKeyId % diverges from the owning dms.Document row for DocumentId %', NEW."ResourceKeyId", NEW."DocumentId";
+        END IF;
+    END IF;
     IF TG_OP = 'UPDATE' THEN
         IF NOT (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."CodeValue" IS DISTINCT FROM NEW."CodeValue" OR OLD."ShortDescription" IS DISTINCT FROM NEW."ShortDescription" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."EffectiveBeginDate" IS DISTINCT FROM NEW."EffectiveBeginDate" OR OLD."EffectiveEndDate" IS DISTINCT FROM NEW."EffectiveEndDate" OR OLD."Discriminator" IS DISTINCT FROM NEW."Discriminator" OR OLD."Uri" IS DISTINCT FROM NEW."Uri") THEN
             RETURN NEW;
@@ -448,6 +680,281 @@ CREATE TRIGGER "TR_Descriptor_Stamp_Document"
     AFTER INSERT OR UPDATE OR DELETE ON "dms"."Descriptor"
     FOR EACH ROW
     EXECUTE FUNCTION "dms"."TF_Descriptor_Stamp_Document"();
+
+DO $$
+DECLARE
+    _owner_role oid := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+    _session_role oid;
+BEGIN
+    SELECT oid INTO _session_role
+    FROM pg_catalog.pg_roles
+    WHERE rolname = SESSION_USER;
+
+    IF _owner_role IS NOT NULL AND EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_auth_members membership
+        WHERE membership.roleid = _owner_role
+        AND membership.member = _session_role
+        AND NOT membership.admin_option
+        AND NOT membership.inherit_option
+        AND membership.set_option
+    ) THEN
+        EXECUTE 'GRANT USAGE ON SCHEMA "dms" TO "edfi_dms_enqueue_owner"';
+        EXECUTE 'GRANT CREATE ON SCHEMA "dms" TO "edfi_dms_enqueue_owner"';
+        EXECUTE 'SET ROLE "edfi_dms_enqueue_owner"';
+    END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $func$
+DECLARE
+    _lifecycle_state text;
+    _enqueued_at timestamp with time zone;
+BEGIN
+    SELECT "ProjectionLifecycleState" INTO _lifecycle_state
+    FROM "dms"."DocumentCacheState"
+    WHERE "StateId" = 1;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.';
+    END IF;
+
+    IF _lifecycle_state NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking') THEN
+        RAISE EXCEPTION 'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value % for projection enqueue.', _lifecycle_state;
+    END IF;
+
+    IF _lifecycle_state = 'Disabled' THEN
+        RETURN NULL;
+    END IF;
+
+    _enqueued_at := statement_timestamp();
+
+    INSERT INTO "dms"."DocumentProjectionWork" AS work (
+        "DocumentId",
+        "RequiredContentVersion",
+        "FirstEnqueuedAt",
+        "LastEnqueuedAt"
+    )
+    SELECT "DocumentId", "ContentVersion", _enqueued_at, _enqueued_at
+    FROM new_rows
+    ON CONFLICT ("DocumentId") DO UPDATE
+    SET "RequiredContentVersion" = EXCLUDED."RequiredContentVersion",
+        "LastEnqueuedAt" = EXCLUDED."LastEnqueuedAt"
+    WHERE work."RequiredContentVersion" < EXCLUDED."RequiredContentVersion";
+
+    RETURN NULL;
+END;
+$func$;
+REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() FROM PUBLIC;
+
+CREATE OR REPLACE FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $func$
+DECLARE
+    _lifecycle_state text;
+    _enqueued_at timestamp with time zone;
+BEGIN
+    SELECT "ProjectionLifecycleState" INTO _lifecycle_state
+    FROM "dms"."DocumentCacheState"
+    WHERE "StateId" = 1;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.';
+    END IF;
+
+    IF _lifecycle_state NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking') THEN
+        RAISE EXCEPTION 'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value % for projection enqueue.', _lifecycle_state;
+    END IF;
+
+    IF _lifecycle_state = 'Disabled' THEN
+        RETURN NULL;
+    END IF;
+
+    _enqueued_at := statement_timestamp();
+
+    INSERT INTO "dms"."DocumentProjectionWork" AS work (
+        "DocumentId",
+        "RequiredContentVersion",
+        "FirstEnqueuedAt",
+        "LastEnqueuedAt"
+    )
+    SELECT n."DocumentId", n."ContentVersion", _enqueued_at, _enqueued_at
+    FROM new_rows n
+    INNER JOIN old_rows o ON o."DocumentId" = n."DocumentId"
+    WHERE n."ContentVersion" <> o."ContentVersion"
+    ON CONFLICT ("DocumentId") DO UPDATE
+    SET "RequiredContentVersion" = EXCLUDED."RequiredContentVersion",
+        "LastEnqueuedAt" = EXCLUDED."LastEnqueuedAt"
+    WHERE work."RequiredContentVersion" < EXCLUDED."RequiredContentVersion";
+
+    RETURN NULL;
+END;
+$func$;
+REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() TO SESSION_USER;
+GRANT EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() TO SESSION_USER;
+RESET ROLE;
+
+DO $$
+BEGIN
+    IF pg_catalog.to_regrole('edfi_dms_enqueue_owner') IS NOT NULL THEN
+        EXECUTE 'REVOKE CREATE ON SCHEMA "dms" FROM "edfi_dms_enqueue_owner"';
+    END IF;
+END $$;
+
+DROP TRIGGER IF EXISTS "TR_Document_EnqueueProjectionInsert" ON "dms"."Document";
+CREATE TRIGGER "TR_Document_EnqueueProjectionInsert"
+    AFTER INSERT ON "dms"."Document"
+    REFERENCING NEW TABLE AS new_rows
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"();
+
+DROP TRIGGER IF EXISTS "TR_Document_EnqueueProjectionUpdate" ON "dms"."Document";
+CREATE TRIGGER "TR_Document_EnqueueProjectionUpdate"
+    AFTER UPDATE ON "dms"."Document"
+    REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"();
+
+CREATE OR REPLACE FUNCTION "dms"."TF_DocumentCache_ValidateDocumentUuid"()
+RETURNS TRIGGER AS $func$
+DECLARE
+    _canonical_document_uuid uuid;
+BEGIN
+    SELECT "DocumentUuid" INTO _canonical_document_uuid
+    FROM "dms"."Document"
+    WHERE "DocumentId" = NEW."DocumentId";
+
+    IF _canonical_document_uuid IS NOT NULL AND NEW."DocumentUuid" <> _canonical_document_uuid THEN
+        RAISE EXCEPTION 'dms.DocumentCache.DocumentUuid diverges from the owning dms.Document row for DocumentId %', NEW."DocumentId";
+    END IF;
+
+    RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql SECURITY INVOKER;
+
+DROP TRIGGER IF EXISTS "TR_DocumentCache_ValidateDocumentUuid" ON "dms"."DocumentCache";
+CREATE TRIGGER "TR_DocumentCache_ValidateDocumentUuid"
+    BEFORE INSERT OR UPDATE ON "dms"."DocumentCache"
+    FOR EACH ROW
+    EXECUTE FUNCTION "dms"."TF_DocumentCache_ValidateDocumentUuid"();
+
+-- ==========================================================
+-- Phase 9: Security and Grants
+-- ==========================================================
+
+DO $$
+DECLARE
+    _owner_role oid := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+    _session_role oid;
+    _session_is_superuser boolean;
+    _session_can_create_role boolean;
+    _created_owner_role boolean := false;
+BEGIN
+    SELECT oid, rolsuper, rolcreaterole
+    INTO _session_role, _session_is_superuser, _session_can_create_role
+    FROM pg_catalog.pg_roles
+    WHERE rolname = SESSION_USER;
+
+    IF _owner_role IS NULL THEN
+        IF NOT COALESCE(_session_is_superuser OR _session_can_create_role, false) THEN
+            RAISE EXCEPTION 'PostgreSQL provisioning principal must be SUPERUSER or CREATEROLE to create edfi_dms_enqueue_owner before provisioning.';
+        END IF;
+        BEGIN
+            CREATE ROLE "edfi_dms_enqueue_owner" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+            _owner_role := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+            _created_owner_role := true;
+        EXCEPTION
+            WHEN duplicate_object OR unique_violation THEN
+                _owner_role := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+                _created_owner_role := true;
+        END;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles owner_role WHERE owner_role.oid = _owner_role
+    AND (owner_role.rolcanlogin OR owner_role.rolinherit OR owner_role.rolsuper OR owner_role.rolcreatedb OR owner_role.rolcreaterole OR owner_role.rolreplication OR owner_role.rolbypassrls)) THEN
+        RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner exists but is not locked down as NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS. Drop or repair the role before provisioning.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_auth_members membership
+        WHERE membership.member = _owner_role
+        AND (membership.admin_option OR membership.inherit_option OR membership.set_option)
+    ) THEN
+        RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner must not hold outgoing privilege-bearing memberships.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_auth_members membership
+        WHERE membership.roleid = _owner_role
+        AND membership.member = _session_role
+        AND NOT (membership.admin_option AND NOT membership.inherit_option AND NOT membership.set_option AND COALESCE(_session_can_create_role, false))
+        AND (membership.admin_option OR membership.inherit_option OR NOT membership.set_option)
+    ) THEN
+        RAISE EXCEPTION 'PostgreSQL provisioning principal has an unsafe direct membership in edfi_dms_enqueue_owner; required options are SET TRUE, INHERIT FALSE, ADMIN FALSE.';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_auth_members membership
+        WHERE membership.roleid = _owner_role
+        AND membership.member = _session_role
+        AND NOT membership.admin_option
+        AND NOT membership.inherit_option
+        AND membership.set_option
+    ) THEN
+        IF NOT COALESCE(_session_is_superuser OR (_created_owner_role AND _session_can_create_role), false) THEN
+            RAISE EXCEPTION 'PostgreSQL provisioning principal must have direct SET TRUE, INHERIT FALSE, ADMIN FALSE membership in existing edfi_dms_enqueue_owner before provisioning.';
+        END IF;
+        GRANT "edfi_dms_enqueue_owner" TO SESSION_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;
+    END IF;
+END $$;
+
+DO $$
+DECLARE
+    _owner_role oid := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+BEGIN
+    IF _owner_role IS NOT NULL AND EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_proc p
+        INNER JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'dms'
+        AND p.proname IN ('TF_Document_EnqueueProjectionInsert', 'TF_Document_EnqueueProjectionUpdate')
+        AND p.proowner <> _owner_role
+    ) THEN
+        EXECUTE 'GRANT CREATE ON SCHEMA "dms" TO "edfi_dms_enqueue_owner"';
+        BEGIN
+            EXECUTE 'ALTER FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() OWNER TO "edfi_dms_enqueue_owner"';
+            EXECUTE 'ALTER FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() OWNER TO "edfi_dms_enqueue_owner"';
+        EXCEPTION WHEN OTHERS THEN
+            EXECUTE 'REVOKE CREATE ON SCHEMA "dms" FROM "edfi_dms_enqueue_owner"';
+            RAISE;
+        END;
+        EXECUTE 'REVOKE CREATE ON SCHEMA "dms" FROM "edfi_dms_enqueue_owner"';
+    END IF;
+END $$;
+
+GRANT USAGE ON SCHEMA "dms" TO "edfi_dms_enqueue_owner";
+SET ROLE "edfi_dms_enqueue_owner";
+REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() FROM SESSION_USER;
+REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() FROM SESSION_USER;
+RESET ROLE;
+REVOKE INSERT, UPDATE, DELETE ON TABLE "dms"."DocumentProjectionWork" FROM PUBLIC;
+
+GRANT SELECT ON TABLE "dms"."DocumentCacheState" TO "edfi_dms_enqueue_owner";
+GRANT SELECT, INSERT, UPDATE ON TABLE "dms"."DocumentProjectionWork" TO "edfi_dms_enqueue_owner";
 
 CREATE SCHEMA IF NOT EXISTS "aligned";
 CREATE SCHEMA IF NOT EXISTS "edfi";
@@ -610,46 +1117,103 @@ CREATE INDEX IF NOT EXISTS "IX_ParentResource_ContentVersion" ON "edfi"."ParentR
 
 CREATE INDEX IF NOT EXISTS "IX_Sponsor_ContentVersion" ON "edfi"."Sponsor" ("ContentVersion");
 
-CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp"()
+CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp_ins"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."ParentResource_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = OLD."ParentResource_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "edfi"."ParentResource" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-        RETURN OLD;
-    END IF;
-    IF TG_OP = 'UPDATE' AND NOT (OLD."BaseCollectionItemId" IS DISTINCT FROM NEW."BaseCollectionItemId" OR OLD."ParentResource_DocumentId" IS DISTINCT FROM NEW."ParentResource_DocumentId" OR OLD."Sponsor_DocumentId" IS DISTINCT FROM NEW."Sponsor_DocumentId" OR OLD."Sponsor_SponsorName" IS DISTINCT FROM NEW."Sponsor_SponsorName") THEN
-        RETURN NEW;
-    END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
+    WITH affected AS (
+        SELECT DISTINCT newtab."ParentResource_DocumentId" AS "DocumentId"
+        FROM newtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."ParentResource_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = NEW."ParentResource_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
     )
     UPDATE "edfi"."ParentResource" r
     SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
-    RETURN NEW;
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp_upd"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT n."ParentResource_DocumentId" AS "DocumentId"
+        FROM newtab n
+        LEFT JOIN oldtab o ON o."BaseCollectionItemId" = n."BaseCollectionItemId"
+        WHERE o."BaseCollectionItemId" IS NULL OR n."BaseCollectionItemId" IS DISTINCT FROM o."BaseCollectionItemId" OR n."ParentResource_DocumentId" IS DISTINCT FROM o."ParentResource_DocumentId" OR n."Sponsor_DocumentId" IS DISTINCT FROM o."Sponsor_DocumentId" OR n."Sponsor_SponsorName" IS DISTINCT FROM o."Sponsor_SponsorName"
+        UNION
+        SELECT o."ParentResource_DocumentId" AS "DocumentId"
+        FROM oldtab o
+        LEFT JOIN newtab n ON n."BaseCollectionItemId" = o."BaseCollectionItemId"
+        WHERE n."BaseCollectionItemId" IS NULL OR n."BaseCollectionItemId" IS DISTINCT FROM o."BaseCollectionItemId" OR n."ParentResource_DocumentId" IS DISTINCT FROM o."ParentResource_DocumentId" OR n."Sponsor_DocumentId" IS DISTINCT FROM o."Sponsor_DocumentId" OR n."Sponsor_SponsorName" IS DISTINCT FROM o."Sponsor_SponsorName"
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."ParentResource" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp_del"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT DISTINCT oldtab."ParentResource_DocumentId" AS "DocumentId"
+        FROM oldtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."ParentResource" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParent_Stamp" ON "aligned"."ParentResourceExtensionParent";
-CREATE TRIGGER "TR_ParentResourceExtensionParent_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "aligned"."ParentResourceExtensionParent"
-FOR EACH ROW
-EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp"();
+DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParent_Stamp_ins" ON "aligned"."ParentResourceExtensionParent";
+CREATE TRIGGER "TR_ParentResourceExtensionParent_Stamp_ins"
+AFTER INSERT ON "aligned"."ParentResourceExtensionParent"
+REFERENCING NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp_ins"();
+
+DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParent_Stamp_upd" ON "aligned"."ParentResourceExtensionParent";
+CREATE TRIGGER "TR_ParentResourceExtensionParent_Stamp_upd"
+AFTER UPDATE ON "aligned"."ParentResourceExtensionParent"
+REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp_upd"();
+
+DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParent_Stamp_del" ON "aligned"."ParentResourceExtensionParent";
+CREATE TRIGGER "TR_ParentResourceExtensionParent_Stamp_del"
+AFTER DELETE ON "aligned"."ParentResourceExtensionParent"
+REFERENCING OLD TABLE AS oldtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp_del"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResource_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
@@ -739,46 +1303,103 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ParentResource"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ParentResource_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp"()
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp_ins"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."ParentResource_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = OLD."ParentResource_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "edfi"."ParentResource" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-        RETURN OLD;
-    END IF;
-    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentResource_DocumentId" IS DISTINCT FROM NEW."ParentResource_DocumentId" OR OLD."ParentCode" IS DISTINCT FROM NEW."ParentCode" OR OLD."ParentName" IS DISTINCT FROM NEW."ParentName") THEN
-        RETURN NEW;
-    END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
+    WITH affected AS (
+        SELECT DISTINCT newtab."ParentResource_DocumentId" AS "DocumentId"
+        FROM newtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."ParentResource_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = NEW."ParentResource_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
     )
     UPDATE "edfi"."ParentResource" r
     SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
-    RETURN NEW;
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp_upd"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT n."ParentResource_DocumentId" AS "DocumentId"
+        FROM newtab n
+        LEFT JOIN oldtab o ON o."CollectionItemId" = n."CollectionItemId"
+        WHERE o."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."ParentResource_DocumentId" IS DISTINCT FROM o."ParentResource_DocumentId" OR n."ParentCode" IS DISTINCT FROM o."ParentCode" OR n."ParentName" IS DISTINCT FROM o."ParentName"
+        UNION
+        SELECT o."ParentResource_DocumentId" AS "DocumentId"
+        FROM oldtab o
+        LEFT JOIN newtab n ON n."CollectionItemId" = o."CollectionItemId"
+        WHERE n."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."ParentResource_DocumentId" IS DISTINCT FROM o."ParentResource_DocumentId" OR n."ParentCode" IS DISTINCT FROM o."ParentCode" OR n."ParentName" IS DISTINCT FROM o."ParentName"
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."ParentResource" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp_del"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT DISTINCT oldtab."ParentResource_DocumentId" AS "DocumentId"
+        FROM oldtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."ParentResource" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ParentResourceParent_Stamp" ON "edfi"."ParentResourceParent";
-CREATE TRIGGER "TR_ParentResourceParent_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ParentResourceParent"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp"();
+DROP TRIGGER IF EXISTS "TR_ParentResourceParent_Stamp_ins" ON "edfi"."ParentResourceParent";
+CREATE TRIGGER "TR_ParentResourceParent_Stamp_ins"
+AFTER INSERT ON "edfi"."ParentResourceParent"
+REFERENCING NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp_ins"();
+
+DROP TRIGGER IF EXISTS "TR_ParentResourceParent_Stamp_upd" ON "edfi"."ParentResourceParent";
+CREATE TRIGGER "TR_ParentResourceParent_Stamp_upd"
+AFTER UPDATE ON "edfi"."ParentResourceParent"
+REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp_upd"();
+
+DROP TRIGGER IF EXISTS "TR_ParentResourceParent_Stamp_del" ON "edfi"."ParentResourceParent";
+CREATE TRIGGER "TR_ParentResourceParent_Stamp_del"
+AFTER DELETE ON "edfi"."ParentResourceParent"
+REFERENCING OLD TABLE AS oldtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp_del"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Sponsor_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
@@ -869,8 +1490,18 @@ FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Sponsor_Stamp"();
 
 -- ==========================================================
--- Phase 7: Seed Data (insert-if-missing + validation)
+-- Phase 10: Seed Data (insert-if-missing + validation)
 -- ==========================================================
+
+-- DataStoreIdentity singleton insert-if-missing
+INSERT INTO "dms"."DataStoreIdentity" ("DataStoreIdentitySingletonId", "SourceIdentity")
+VALUES (1, gen_random_uuid())
+ON CONFLICT ("DataStoreIdentitySingletonId") DO NOTHING;
+
+-- DocumentCacheState singleton insert-if-missing
+INSERT INTO "dms"."DocumentCacheState" ("StateId", "ProjectionLifecycleState", "CacheAheadRecoveryRequired")
+VALUES (1, 'Disabled', false)
+ON CONFLICT ("StateId") DO NOTHING;
 
 -- ResourceKey seed inserts (insert-if-missing)
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
@@ -928,7 +1559,7 @@ END $$;
 
 -- EffectiveSchema singleton insert-if-missing
 INSERT INTO "dms"."EffectiveSchema" ("EffectiveSchemaSingletonId", "ApiSchemaFormatVersion", "EffectiveSchemaHash", "ResourceKeyCount", "ResourceKeySeedHash")
-VALUES (1, '1.0.0', '628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46', 2, '\x5B23660DAD5043287A28FF5C5D048A8BA519B836EB51BDB5A02AEAE548BBDDE6'::bytea)
+VALUES (1, '1.0.0', 'f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d', 2, '\x5B23660DAD5043287A28FF5C5D048A8BA519B836EB51BDB5A02AEAE548BBDDE6'::bytea)
 ON CONFLICT ("EffectiveSchemaSingletonId") DO NOTHING;
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
@@ -956,10 +1587,10 @@ END $$;
 
 -- SchemaComponent seed inserts (insert-if-missing)
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46', 'aligned', 'Aligned', '1.0.0', true)
+VALUES ('f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d', 'aligned', 'Aligned', '1.0.0', true)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46', 'ed-fi', 'Ed-Fi', '1.0.0', false)
+VALUES ('f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d', 'ed-fi', 'Ed-Fi', '1.0.0', false)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 
 -- SchemaComponent exact-match validation (count + content)
@@ -969,14 +1600,14 @@ DECLARE
     _mismatched_count integer;
     _mismatched_names text;
 BEGIN
-    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46';
+    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = 'f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d';
     IF _actual_count <> 2 THEN
         RAISE EXCEPTION 'dms.SchemaComponent count mismatch: expected 2, found %', _actual_count;
     END IF;
 
     SELECT COUNT(*) INTO _mismatched_count
     FROM "dms"."SchemaComponent" sc
-    WHERE sc."EffectiveSchemaHash" = '628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46'
+    WHERE sc."EffectiveSchemaHash" = 'f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d'
     AND NOT EXISTS (
         SELECT 1 FROM (VALUES
             ('aligned', 'Aligned', '1.0.0', true),
@@ -992,7 +1623,7 @@ BEGIN
         FROM (
             SELECT sc."ProjectEndpointName" AS name
             FROM "dms"."SchemaComponent" sc
-            WHERE sc."EffectiveSchemaHash" = '628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46'
+            WHERE sc."EffectiveSchemaHash" = 'f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d'
             AND NOT EXISTS (
                 SELECT 1 FROM (VALUES
                     ('aligned', 'Aligned', '1.0.0', true),

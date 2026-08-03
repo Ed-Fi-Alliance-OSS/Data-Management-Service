@@ -13,7 +13,7 @@ namespace EdFi.DmsConfigurationService.Backend.Repositories;
 public interface IResourceClaimRepository
 {
     Task<ResourceClaimListResult> GetResourceClaims(ResourceClaimQuery query);
-    Task<ResourceClaimGetResult> GetResourceClaim(long id);
+    Task<ResourceClaimGetResult> GetResourceClaim(int id);
     Task<ResourceClaimActionListResult> GetResourceClaimActions(ResourceClaimActionQuery query);
     Task<ResourceClaimActionAuthStrategyListResult> GetResourceClaimActionAuthStrategies(
         ResourceClaimActionAuthStrategyQuery query

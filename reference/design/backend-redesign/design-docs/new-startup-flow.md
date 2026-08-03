@@ -70,7 +70,13 @@ The new lifecycle splits startup into explicit phases:
      - read the database fingerprint (`dms.EffectiveSchema`, `dms.SchemaComponent`),
      - validate `ResourceKeySeedHash/Count` (fast path),
      - fail fast on mismatch.
-5. **Initialize authentication/authorization metadata caches** (startup-time, best-effort warmup):
+5. **Initialize configured projection/CDC contexts** according to
+   [Relational CDC and Document Projection](cdc/cdc-streaming.md). Target keys can be
+   bound after instances load; physical-source, lifecycle, work-schema, enqueue-trigger,
+   and provider-prerequisite checks wait for provisioned databases. Startup never changes
+   `ProjectionLifecycleState`; a `Disabled` target remains projection-unavailable until an
+   explicit deployment-owned activation.
+6. **Initialize authentication/authorization metadata caches** (startup-time, best-effort warmup):
    - warm OIDC discovery/JWKS metadata (if configured),
    - retrieve and cache claim-set/strategy metadata used by request authorization (see `auth.md`),
    - fail fast only when configured as required for the deployment.
@@ -83,14 +89,19 @@ In `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs`,
 becomes:
 
 1. `InitializeDataStores(app)` (already present)
-2. Optional DB deploy (`InitializeDatabase(app)`; already present)
-3. **New**: `InitializeApiSchemas(app)` (Core)
-4. **New**: `InitializeBackendMappings(app)` (backend-specific)
+2. **New**: `InitializeApiSchemas(app)` (Core)
+3. **New**: `InitializeBackendMappings(app)` (backend-specific)
+4. Initialize configured projection/CDC contexts using the authoritative design; resume
+   durable queued work only for lifecycle-eligible targets and perform no startup
+   source/cache full scan or implicit tracking activation
 5. Other warmups (`RetrieveAndCacheClaimSets`, OIDC/JWKS metadata warmup, etc.; see `auth.md`)
 6. Start request routing
 
-ApiSchema loading can occur before or after DB deploy. Mapping initialization must occur after instances are
-loaded and after DBs are provisioned (if provisioning is done on startup).
+There is no database-provisioning step in this ordering. Schema provisioning is owned by the bootstrap
+provisioning phase and never runs inside DMS startup — see
+[`bootstrap/command-boundaries.md`](bootstrap/command-boundaries.md). Mapping initialization must occur
+after data stores are loaded and against databases that are already provisioned; startup validates that
+provisioning rather than performing it.
 
 ## Core Changes (ApiSchema as a Startup Contract)
 
@@ -297,12 +308,17 @@ without re-validating, and a DMS restart is required after reprovisioning the da
 failures (network errors, timeouts) are evicted from the cache so the next request retries
 validation automatically, since these may resolve without operator intervention.
 
-> **Implementation note:** Both startup-known and dynamically-discovered instances follow the
-> same failure model: validation failures result in `503 Service Unavailable` with a
+> **Implementation note:** Both startup-known and dynamically discovered instances follow
+> the same failure model: validation failures result in `503 Service Unavailable` with a
 > remediation-guidance error body (the detailed diff report is logged server-side only,
-> correlated via `TraceId`). Deterministic failures are cached permanently; transient
-> failures are evicted so the next request retries. A DMS restart is required to clear
-> deterministic failure cache entries (e.g., after reprovisioning the database).
+> correlated via `TraceId`). Deterministic failures are cached
+> permanently; transient failures are evicted so the next request retries. A DMS restart is
+> required to clear deterministic failure cache entries (e.g., after reprovisioning the
+> database). DMS derives the current source fingerprint from the singleton
+> `dms.DataStoreIdentity` row and reports it with per-database projection
+> health; deployment automation owns durable Kafka CDC binding comparison and combined
+> readiness. A binding mismatch does not alter request routing or API mutation
+> availability.
 
 ### Container-oriented “fail fast”
 

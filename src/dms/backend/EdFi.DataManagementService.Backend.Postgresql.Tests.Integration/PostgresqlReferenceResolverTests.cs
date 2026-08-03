@@ -538,7 +538,7 @@ public class Given_PostgresqlReferenceResolver
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.AddTestReadableProfileProjector();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -651,6 +651,7 @@ public class Given_PostgresqlReferenceResolver
                 .. seedData.Descriptors,
                 new ReferenceResolverDescriptorSeed(
                     606,
+                    schoolTypeDescriptorResourceKeyId,
                     "uri://ed-fi.org",
                     "Wrong",
                     "Wrong",
@@ -722,6 +723,7 @@ public class Given_PostgresqlReferenceResolver
                 .. seedData.Descriptors,
                 new ReferenceResolverDescriptorSeed(
                     808,
+                    academicSubjectDescriptorResourceKeyId,
                     "uri://ed-fi.org",
                     "Mathematics",
                     "Mathematics",

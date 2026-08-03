@@ -8,6 +8,8 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
@@ -15,8 +17,8 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
-using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 
@@ -85,6 +87,110 @@ public class WebApplicationBuilderExtensionsTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_DocumentCache_Configuration : WebApplicationBuilderExtensionsTests
+    {
+        [Test]
+        public void It_registers_DocumentCacheOptions_with_startup_validation()
+        {
+            IServiceCollection services = CreateServiceCollection("postgresql");
+
+            services
+                .Should()
+                .ContainSingle(descriptor =>
+                    descriptor.ServiceType == typeof(IValidateOptions<DocumentCacheOptions>)
+                    && descriptor.ImplementationType == typeof(DocumentCacheOptionsValidator)
+                );
+            services
+                .Should()
+                .Contain(descriptor =>
+                    descriptor.ServiceType.FullName == "Microsoft.Extensions.Options.IStartupValidator"
+                );
+        }
+
+        [Test]
+        public void It_binds_DocumentCacheOptions_from_DataManagement_DocumentCache()
+        {
+            using ServiceProvider serviceProvider = CreateServices(
+                "postgresql",
+                new Dictionary<string, string?>
+                {
+                    ["DataManagement:DocumentCache:Targets:0:TenantKey"] = "TenantA",
+                    ["DataManagement:DocumentCache:Targets:0:DataStoreId"] = "7",
+                    ["DataManagement:DocumentCache:ReadAcceleration:Enabled"] = "true",
+                    ["DataManagement:DocumentCache:ReadAcceleration:DirectFillTimeout"] = "00:00:00.125",
+                    ["DataManagement:DocumentCache:Projector:PollInterval"] = "00:00:07",
+                    ["DataManagement:DocumentCache:Projector:PageSize"] = "25",
+                    ["DataManagement:DocumentCache:Projector:MaxConcurrentTargets"] = "4",
+                    ["DataManagement:DocumentCache:Projector:FailureBackoff"] = "00:01:15",
+                    ["DataManagement:DocumentCache:Projector:BaselineHighWaterMark"] = "2500",
+                }
+            );
+
+            DocumentCacheOptions options = serviceProvider
+                .GetRequiredService<IOptions<DocumentCacheOptions>>()
+                .Value;
+
+            options.Targets.Should().ContainSingle();
+            options.Targets[0].TenantKey.Should().Be("TenantA");
+            options.Targets[0].DataStoreId.Should().Be(7);
+            options.ReadAcceleration.Enabled.Should().BeTrue();
+            options.ReadAcceleration.DirectFillTimeout.Should().Be(TimeSpan.FromMilliseconds(125));
+            options.Projector.PollInterval.Should().Be(TimeSpan.FromSeconds(7));
+            options.Projector.PageSize.Should().Be(25);
+            options.Projector.MaxConcurrentTargets.Should().Be(4);
+            options
+                .Projector.FailureBackoff.Should()
+                .Be(TimeSpan.FromMinutes(1).Add(TimeSpan.FromSeconds(15)));
+            options.Projector.BaselineHighWaterMark.Should().Be(2500);
+        }
+
+        [Test]
+        public void It_fails_options_validation_for_malformed_DocumentCacheOptions()
+        {
+            using ServiceProvider serviceProvider = CreateServices(
+                "postgresql",
+                new Dictionary<string, string?> { ["DataManagement:DocumentCache:Projector:PageSize"] = "0" }
+            );
+
+            Action act = () => serviceProvider.GetRequiredService<IStartupValidator>().Validate();
+
+            act.Should()
+                .Throw<OptionsValidationException>()
+                .Which.Failures.Should()
+                .Contain("Projector:PageSize must be positive.");
+        }
+
+        [Test]
+        public void It_creates_sanitized_startup_diagnostics()
+        {
+            DocumentCacheOptions options = new()
+            {
+                Targets =
+                [
+                    new DocumentCacheTargetOptions { TenantKey = "TenantName", DataStoreId = 1 },
+                    new DocumentCacheTargetOptions { TenantKey = "", DataStoreId = 2 },
+                ],
+                ReadAcceleration = new DocumentCacheReadAccelerationOptions { Enabled = true },
+            };
+
+            DocumentCacheStartupDiagnosticSnapshot snapshot = DocumentCacheStartupDiagnostics.CreateSnapshot(
+                options
+            );
+
+            snapshot.TargetCount.Should().Be(2);
+            snapshot.ConfiguredTargets.Should().Equal("TenantName:1", "(default):2");
+            snapshot.ReadAccelerationEnabled.Should().BeTrue();
+            snapshot.DirectFillTimeout.Should().Be(TimeSpan.FromMilliseconds(250));
+            snapshot.PollInterval.Should().Be(TimeSpan.FromSeconds(5));
+            snapshot.PageSize.Should().Be(100);
+            snapshot.MaxConcurrentTargets.Should().Be(2);
+            snapshot.FailureBackoff.Should().Be(TimeSpan.FromSeconds(30));
+            snapshot.BaselineHighWaterMark.Should().Be(1000);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Postgresql_Datastore : WebApplicationBuilderExtensionsTests
     {
         [Test]
@@ -95,6 +201,90 @@ public class WebApplicationBuilderExtensionsTests
             var fingerprintReader = serviceProvider.GetRequiredService<IDatabaseFingerprintReader>();
 
             fingerprintReader.Should().BeOfType<PostgresqlDatabaseFingerprintReader>();
+        }
+
+        [Test]
+        public void It_resolves_the_postgresql_document_cache_physical_source_fingerprint_reader()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            var fingerprintReader =
+                serviceProvider.GetRequiredService<IDocumentCachePhysicalSourceFingerprintReader>();
+
+            fingerprintReader.Should().BeOfType<PostgresqlDocumentCachePhysicalSourceFingerprintReader>();
+        }
+
+        [Test]
+        public void It_resolves_the_postgresql_document_cache_provider_prerequisite_validator()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            var validator = serviceProvider.GetRequiredService<IDocumentCacheProviderPrerequisiteValidator>();
+
+            validator.Should().BeOfType<PostgresqlDocumentCacheProviderPrerequisiteValidator>();
+        }
+
+        [Test]
+        [Category("DocumentCacheTargetContext")]
+        public void It_resolves_the_DocumentCacheTargetContext_postgresql_lifecycle_reader()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            var reader = serviceProvider.GetRequiredService<IDocumentCacheLifecycleReader>();
+
+            reader.Should().BeOfType<PostgresqlDocumentCacheLifecycleReader>();
+        }
+
+        [Test]
+        [Category("DocumentCacheTargetContext")]
+        public void It_resolves_the_DocumentCacheTargetContext_builder_with_postgresql_provider()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheTargetContextBuilder>()
+                .Should()
+                .BeOfType<DocumentCacheTargetContextBuilder>();
+            serviceProvider
+                .GetRequiredService<DocumentCacheProcessProviderToken>()
+                .ProviderToken.Should()
+                .Be(RelationalProviderToken.Postgresql);
+        }
+
+        [Test]
+        [Category("DocumentCacheTargetRegistry")]
+        public void It_resolves_the_DocumentCacheTarget_registry_with_postgresql_provider()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheTargetRegistry>()
+                .Should()
+                .BeOfType<DocumentCacheTargetRegistry>();
+        }
+
+        [Test]
+        [Category("DocumentCacheDiagnostics")]
+        public void It_resolves_the_DocumentCache_diagnostic_snapshot_provider_with_postgresql_provider()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheDiagnosticSnapshotProvider>()
+                .Should()
+                .BeOfType<DocumentCacheDiagnosticSnapshotProvider>();
+        }
+
+        [Test]
+        [Category("DownstreamPublicationHistory")]
+        public void It_resolves_the_default_DocumentCache_downstream_publication_history_provider_with_postgresql_provider()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
+                .Should()
+                .BeOfType<DocumentCacheUnknownDownstreamPublicationHistoryProvider>();
         }
 
         [Test]
@@ -248,6 +438,90 @@ public class WebApplicationBuilderExtensionsTests
             var fingerprintReader = serviceProvider.GetRequiredService<IDatabaseFingerprintReader>();
 
             fingerprintReader.Should().BeOfType<MssqlDatabaseFingerprintReader>();
+        }
+
+        [Test]
+        public void It_resolves_the_mssql_document_cache_physical_source_fingerprint_reader()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            var fingerprintReader =
+                serviceProvider.GetRequiredService<IDocumentCachePhysicalSourceFingerprintReader>();
+
+            fingerprintReader.Should().BeOfType<MssqlDocumentCachePhysicalSourceFingerprintReader>();
+        }
+
+        [Test]
+        public void It_resolves_the_mssql_document_cache_provider_prerequisite_validator()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            var validator = serviceProvider.GetRequiredService<IDocumentCacheProviderPrerequisiteValidator>();
+
+            validator.Should().BeOfType<MssqlDocumentCacheProviderPrerequisiteValidator>();
+        }
+
+        [Test]
+        [Category("DocumentCacheTargetContext")]
+        public void It_resolves_the_DocumentCacheTargetContext_mssql_lifecycle_reader()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            var reader = serviceProvider.GetRequiredService<IDocumentCacheLifecycleReader>();
+
+            reader.Should().BeOfType<MssqlDocumentCacheLifecycleReader>();
+        }
+
+        [Test]
+        [Category("DocumentCacheTargetContext")]
+        public void It_resolves_the_DocumentCacheTargetContext_builder_with_sqlserver_provider()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheTargetContextBuilder>()
+                .Should()
+                .BeOfType<DocumentCacheTargetContextBuilder>();
+            serviceProvider
+                .GetRequiredService<DocumentCacheProcessProviderToken>()
+                .ProviderToken.Should()
+                .Be(RelationalProviderToken.SqlServer);
+        }
+
+        [Test]
+        [Category("DocumentCacheTargetRegistry")]
+        public void It_resolves_the_DocumentCacheTarget_registry_with_sqlserver_provider()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheTargetRegistry>()
+                .Should()
+                .BeOfType<DocumentCacheTargetRegistry>();
+        }
+
+        [Test]
+        [Category("DocumentCacheDiagnostics")]
+        public void It_resolves_the_DocumentCache_diagnostic_snapshot_provider_with_sqlserver_provider()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheDiagnosticSnapshotProvider>()
+                .Should()
+                .BeOfType<DocumentCacheDiagnosticSnapshotProvider>();
+        }
+
+        [Test]
+        [Category("DownstreamPublicationHistory")]
+        public void It_resolves_the_default_DocumentCache_downstream_publication_history_provider_with_sqlserver_provider()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
+                .Should()
+                .BeOfType<DocumentCacheUnknownDownstreamPublicationHistoryProvider>();
         }
 
         [Test]

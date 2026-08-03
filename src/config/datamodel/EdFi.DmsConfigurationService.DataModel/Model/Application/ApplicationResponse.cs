@@ -7,12 +7,12 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.Application;
 
 public class ApplicationResponse
 {
-    public long Id { get; set; }
+    public int Id { get; set; }
     public required string ApplicationName { get; set; }
-    public long VendorId { get; set; }
+    public int VendorId { get; set; }
     public required string ClaimSetName { get; set; }
     public List<long> EducationOrganizationIds { get; set; } = [];
-    public List<long> DataStoreIds { get; set; } = [];
-    public List<long> ProfileIds { get; set; } = [];
+    public List<int> DataStoreIds { get; set; } = [];
+    public List<int> ProfileIds { get; set; } = [];
     public bool Enabled { get; set; }
 }

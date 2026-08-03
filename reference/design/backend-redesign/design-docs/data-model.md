@@ -94,9 +94,6 @@ CREATE TABLE dms.Document (
     CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid)
 );
 
-CREATE INDEX IX_Document_ResourceKeyId_DocumentId
-    ON dms.Document (ResourceKeyId, DocumentId);
-
 CREATE INDEX IX_Document_CreatedByOwnershipTokenId
     ON dms.Document (CreatedByOwnershipTokenId);
 ```
@@ -129,9 +126,6 @@ CREATE TABLE dms.Document (
         REFERENCES dms.ResourceKey (ResourceKeyId)
 );
 
-CREATE INDEX IX_Document_ResourceKeyId_DocumentId
-    ON dms.Document (ResourceKeyId, DocumentId);
-
 CREATE INDEX IX_Document_CreatedByOwnershipTokenId
     ON dms.Document (CreatedByOwnershipTokenId);
 ```
@@ -140,12 +134,16 @@ Notes:
 
 - `DocumentUuid` remains stable across identity updates; identity-based upserts map to it via `dms.ReferentialIdentity` for **all** identities (self-contained, reference-bearing, and abstract/superclass aliases), because `dms.ReferentialIdentity` is maintained transactionally (including cascades) on identity changes.
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
+- `dms.Document` deliberately carries no `(ResourceKeyId, DocumentId)` index: descriptor paging — the only query path that filtered documents by resource type — roots on `dms.Descriptor` via its denormalized `ResourceKeyId` (see §3), and every other `ResourceKeyId` filter rides a `DocumentUuid` unique probe. `FK_Document_ResourceKey` needs no referencing-side index either, because `dms.ResourceKey` rows are seeded at provisioning and never deleted or updated at runtime.
+- `dms.Document` has no `(ContentVersion, DocumentId)` projector-discovery index. Durable
+  projection work is paged through `dms.DocumentProjectionWork`; explicit baseline,
+  rebuild, and scrub scans use the `DocumentId` primary-key order.
 - `CreatedByOwnershipTokenId` is stamped from the authenticated client context on create and is used by the ownership-based authorization strategy; it is not client-writable (see [auth.md](auth.md)).
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
   - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
-  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
-- Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
+  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. `_lastModifiedDate` uses the existing DMS whole-second UTC `yyyy-MM-ddTHH:mm:ssZ` formatter, discarding fractional seconds without rounding. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
+- Time semantics: store timestamps as UTC instants at provider precision. In PostgreSQL, use `timestamp with time zone`; in SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`). Public `_lastModifiedDate` formatting is the whole-second UTC representation defined above.
 - Authorization is addressed separately in [auth.md](auth.md).
 
 ##### 1a) `dms.ChangeVersionSequence`
@@ -209,10 +207,8 @@ CREATE TABLE dms.ReferentialIdentity (
     CONSTRAINT PK_ReferentialIdentity PRIMARY KEY (ReferentialId),
     CONSTRAINT FK_ReferentialIdentity_Document FOREIGN KEY (DocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT UX_ReferentialIdentity_DocumentId_ResourceKey UNIQUE (DocumentId, ResourceKeyId)
+    CONSTRAINT UX_ReferentialIdentity_DocumentId_ResourceKeyId UNIQUE (DocumentId, ResourceKeyId)
 );
-
-CREATE INDEX IX_ReferentialIdentity_DocumentId ON dms.ReferentialIdentity (DocumentId);
 ```
 
 **SQL Server**
@@ -227,7 +223,7 @@ CREATE TABLE dms.ReferentialIdentity (
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
     CONSTRAINT FK_ReferentialIdentity_ResourceKey FOREIGN KEY (ResourceKeyId)
         REFERENCES dms.ResourceKey (ResourceKeyId),
-    CONSTRAINT UX_ReferentialIdentity_DocumentId_ResourceKey UNIQUE CLUSTERED (DocumentId, ResourceKeyId)
+    CONSTRAINT UX_ReferentialIdentity_DocumentId_ResourceKeyId UNIQUE CLUSTERED (DocumentId, ResourceKeyId)
 );
 ```
 
@@ -235,6 +231,7 @@ Database Specific Differences:
 
 - The logical shape is identical across engines (UUID `ReferentialId` → `DocumentId` + `ResourceKeyId`).
 - The physical DDL will differ slightly for performance: SQL Server should not cluster on a randomly-distributed UUID.
+- No standalone `DocumentId` index is defined: all `DocumentId`-keyed access (the `FK_ReferentialIdentity_Document` cascade delete and the identity-maintenance trigger delete keyed by `(DocumentId, ResourceKeyId)`) is served by the leading column of `UX_ReferentialIdentity_DocumentId_ResourceKeyId`. Application lookups resolve by `ReferentialId` (the PK).
 
 Operational considerations:
 
@@ -268,6 +265,7 @@ Descriptors are still documents, but we maintain a unified descriptor table keye
 ```sql
 CREATE TABLE dms.Descriptor (
     DocumentId bigint NOT NULL,
+    ResourceKeyId smallint NOT NULL,
     Namespace varchar(255) NOT NULL,
     CodeValue varchar(50) NOT NULL,
     ShortDescription varchar(75) NOT NULL,
@@ -279,11 +277,18 @@ CREATE TABLE dms.Descriptor (
     CONSTRAINT PK_Descriptor PRIMARY KEY (DocumentId),
     CONSTRAINT FK_Descriptor_Document FOREIGN KEY (DocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    CONSTRAINT FK_Descriptor_ResourceKey FOREIGN KEY (ResourceKeyId)
+        REFERENCES dms.ResourceKey (ResourceKeyId),
     CONSTRAINT UX_Descriptor_Uri_Discriminator UNIQUE (Uri, Discriminator)
 );
 
-CREATE INDEX IX_Descriptor_Uri_Discriminator ON dms.Descriptor (Uri, Discriminator);
+CREATE INDEX IX_Descriptor_ResourceKeyId_DocumentId
+    ON dms.Descriptor (ResourceKeyId, DocumentId);
 ```
+
+`(Uri, Discriminator)` lookups are served by the `UX_Descriptor_Uri_Discriminator` unique constraint; no additional plain index on the same columns is defined.
+
+`ResourceKeyId` is denormalized from `dms.Document` at insert time (same transaction, same value) and is immutable thereafter, mirroring the immutability of a document's resource type. It exists so descriptor GET-all/GET-by-query paging and totalCount can root entirely on `dms.Descriptor` through `IX_Descriptor_ResourceKeyId_DocumentId` — an index over only the descriptor rows — instead of maintaining a `(ResourceKeyId, DocumentId)` index across every row of `dms.Document`. The stamping trigger's no-op diff deliberately excludes it, so a migration backfill of the column does not bump change versions.
 
 The effective date columns are part of the descriptor field contract. This matches legacy ODS behavior, where `edfi.Descriptor` includes nullable `EffectiveBeginDate` and `EffectiveEndDate` columns. DMS differs from ODS by using a single shared `dms.Descriptor` keyed by `DocumentId` and by not creating per-descriptor marker tables.
 
@@ -297,12 +302,61 @@ If DB-level enforcement of “descriptor must be of type X” becomes necessary 
 Descriptor update semantics:
 
 - Descriptor identity is immutable after creation: `Namespace`, `CodeValue`, and the derived `Uri` must not change on PUT.
+- `ResourceKeyId` and `Discriminator` are set at insert and never updated (a document's resource type is immutable).
 - Descriptor representation fields can be updated: `ShortDescription`, `Description`, `EffectiveBeginDate`, and `EffectiveEndDate`.
 - Descriptor endpoint query fields map to shared descriptor columns with root-table-only semantics, including `namespace`, `codeValue`, `shortDescription`, `description`, `effectiveBeginDate`, and `effectiveEndDate`.
 - Descriptor references remain stable because other resources reference the descriptor document by resolved descriptor identity/URI, not by copied descriptor metadata.
 - Therefore descriptor metadata updates do not participate in identity-propagation cascades for referring resources.
 
-##### 4) `dms.EffectiveSchema` + `dms.SchemaComponent`
+##### 4) `dms.DataStoreIdentity`
+
+Always-provisioned singleton physical identity for the logical database source.
+Provisioning inserts one random UUID only when the singleton row is absent; ordinary
+provisioning reruns do not update it. CDC binding, replacement, and recovery semantics are
+owned by
+[`cdc-streaming.md`](cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding).
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE dms.DataStoreIdentity (
+    DataStoreIdentitySingletonId smallint NOT NULL PRIMARY KEY,
+    SourceIdentity uuid NOT NULL,
+    CONSTRAINT CK_DataStoreIdentity_Singleton
+        CHECK (DataStoreIdentitySingletonId = 1)
+);
+
+INSERT INTO dms.DataStoreIdentity (DataStoreIdentitySingletonId, SourceIdentity)
+VALUES (1, gen_random_uuid())
+ON CONFLICT (DataStoreIdentitySingletonId) DO NOTHING;
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.DataStoreIdentity (
+    DataStoreIdentitySingletonId smallint NOT NULL
+        CONSTRAINT PK_DataStoreIdentity PRIMARY KEY CLUSTERED,
+    SourceIdentity uniqueidentifier NOT NULL,
+    CONSTRAINT CK_DataStoreIdentity_Singleton
+        CHECK (DataStoreIdentitySingletonId = 1)
+);
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM dms.DataStoreIdentity
+    WHERE DataStoreIdentitySingletonId = 1
+)
+BEGIN
+    INSERT INTO dms.DataStoreIdentity (DataStoreIdentitySingletonId, SourceIdentity)
+    VALUES (1, NEWID());
+END;
+```
+
+The emitted SQL text remains deterministic even though the UUID is generated when the
+script is applied.
+
+##### 5) `dms.EffectiveSchema` + `dms.SchemaComponent`
 
 Tracks which **effective schema** (core `ApiSchema.json` + extension `ApiSchema.json` files) the database schema is provisioned for, and records the **exact project versions** present in that effective schema. On first use of a given database connection string, DMS uses this to validate that it has a matching mapping set for the database’s recorded fingerprint (cached per connection string; see **EffectiveSchemaHash Calculation** below).
 
@@ -403,7 +457,7 @@ Canonical JSON contract (normative for `canonicalizeJson(...)`):
 
 `RelationalMappingVersion` contract:
 
-- `RelationalMappingVersion` is a single DMS-owned string constant (recommended: a short value like `v1`).
+- `RelationalMappingVersion` is a single DMS-owned string constant (recommended: a short value like `v2`).
 - The value used in the `EffectiveSchemaHash` manifest MUST match the value used for mapping pack selection (`relational_mapping_version` in `.mpack`).
 - Changing mapping rules requires bumping `RelationalMappingVersion` (or, if the hash algorithm itself changes, bump the hash header/version).
 
@@ -417,7 +471,7 @@ Algorithm (suggested):
 4. Compute `ProjectHash = SHA-256(canonicalJson(projectSchema))` for each project.
 5. Compute `EffectiveSchemaHash = SHA-256(manifestString)` where `manifestString` is:
    - a constant header (e.g., `dms-effective-schema-hash:v1`)
-   - a constant mapping version (e.g., `relationalMappingVersion=v1`)
+   - a constant mapping version (e.g., `relationalMappingVersion=v2`)
    - `ApiSchemaFormatVersion`
    - one line per project: `ProjectEndpointName|ProjectName|ProjectVersion|IsExtensionProject|ProjectHash`
 
@@ -425,7 +479,7 @@ Pseudocode:
 
 ```text
 const HashVersion = "dms-effective-schema-hash:v1"
-const RelationalMappingVersion = "v1"
+const RelationalMappingVersion = "v2"
 
 projects = []
 apiSchemaFormatVersion = null
@@ -469,35 +523,43 @@ Conformance tests (required):
   - and deterministic inclusion of `RelationalMappingVersion`.
 - Any intentional change to canonicalization or the hashed schema surface must update fixtures in a controlled “bless” workflow (see `ddl-generator-testing.md`).
 
-##### 5) `dms.DocumentCache` (optional, eventually consistent projection)
+##### 6) `dms.DocumentCache` (always-provisioned optional projection)
 
-Optional materialized JSON representation of the document (as returned by GET/query), stored as a convenience **projection**.
-
-This table is intentionally designed to support **CDC streaming** (e.g., Debezium → Kafka) and downstream indexing:
-
-- it is not purely a “cache-aside” optimization
-- when enabled, DMS should materialize documents into this table via a write-driven/background projector
-
-Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
-
-The cached `DocumentJson` is the caller-agnostic pre-profile document emitted by reconstitution,
-with `link` subtrees already present when link injection is compiled into the read plan.
-Readable-profile projection runs after cache retrieval; the `DataManagement:ResourceLinks:Enabled`
-strip pass runs on the projected document immediately before serialization. The served `_etag` is
-then specific to that representation context: `profileCode`, `linkFlag`, and `contentCoding`
-participate in the request's `variantKey` (see
-[link-injection.md](link-injection.md#cache-and-etag)).
-
-Update tracking note: `dms.DocumentCache` stores the `ContentVersion` associated with the cached
-document, not one reusable `_etag`. Cache reads validate freshness against the current
-`dms.Document.ContentVersion`; the server composes `_etag` per request from that version and the
-request's `variantKey`. `LastModifiedAt` remains denormalized for the materialized projection and
-CDC/indexing consumers.
+This section is the sole owner of the table's physical row shape, column types, keys,
+constraints, indexes, and triggers. It does not define projection or streaming behavior.
+The [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract)
+owns cached-document semantics, freshness, reconciliation, and lifecycle. The
+[topic/message ADR](cdc/0002-kafka-topic-and-message-contract.md) owns public stream
+mapping and compatibility. [`cdc-streaming.md`](cdc/cdc-streaming.md) owns configuration,
+deployment, readiness, and operations.
 
 Denormalized resource naming:
 
-- `ProjectName`/`ResourceName` are denormalized copies (from `dms.ResourceKey`) kept for CDC/streaming consumers and ad-hoc diagnostics.
-- `ResourceVersion` is the schema/project version (SemVer) from `ApiSchema.json` (`projectSchema.projectVersion`), stored canonically on `dms.ResourceKey` and denormalized here for CDC/streaming convenience.
+- `ProjectName`/`ResourceName` are denormalized copies from `dms.ResourceKey`.
+- `ResourceVersion` is the schema/project version (SemVer) from `ApiSchema.json`
+  (`projectSchema.projectVersion`), stored canonically on `dms.ResourceKey` and
+  denormalized here.
+
+Denormalized document identity:
+
+- `DocumentId` remains the compact cache primary key and the `ON DELETE CASCADE`
+  foreign key to `dms.Document`. SQL Server keeps it as the clustered key.
+- `DocumentUuid` is a non-indexed denormalized copy. `dms.DocumentCache` has no unique
+  constraint or index on `DocumentUuid`.
+- Provider-specific `DocumentCache` insert/update validation triggers join the incoming
+  `DocumentId` to `dms.Document` through its existing primary key and reject the statement
+  unless the incoming `DocumentUuid` exactly equals the canonical row's `DocumentUuid`.
+  The existing foreign key remains responsible for rejecting a missing parent and fencing
+  deletion.
+- Canonical `dms.Document.DocumentUuid` is immutable after document creation. DMS update
+  plans never assign it; identity changes update referential identities without changing
+  the public document UUID.
+
+This implies one cache row per canonical `DocumentId`, with a UUID matching its canonical
+parent, without adding a composite or UUID index to `dms.Document`. The canonical table's
+existing `UX_Document_DocumentUuid` continues to own public-ID lookup and uniqueness.
+Because every cache UUID is trigger-validated against that unique canonical value, another
+cache UUID index would be redundant.
 
 **PostgreSQL**
 
@@ -510,15 +572,12 @@ CREATE TABLE dms.DocumentCache (
     ResourceName varchar(256) NOT NULL,
     ResourceVersion varchar(32) NOT NULL,
     ContentVersion bigint NOT NULL,
+    StreamEtag varchar(64) NOT NULL,
     LastModifiedAt timestamp with time zone NOT NULL,
     DocumentJson jsonb NOT NULL,
     ComputedAt timestamp with time zone NOT NULL DEFAULT now(),
-    CONSTRAINT CK_DocumentCache_JsonObject CHECK (jsonb_typeof(DocumentJson) = 'object'),
-    CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
+    CONSTRAINT CK_DocumentCache_JsonObject CHECK (jsonb_typeof(DocumentJson) = 'object')
 );
-
-CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
-    ON dms.DocumentCache (ProjectName, ResourceName, LastModifiedAt, DocumentId);
 ```
 
 **SQL Server**
@@ -531,24 +590,240 @@ CREATE TABLE dms.DocumentCache (
     ResourceName nvarchar(256) NOT NULL,
     ResourceVersion nvarchar(32) NOT NULL,
     ContentVersion bigint NOT NULL,
+    StreamEtag varchar(64) NOT NULL,
     LastModifiedAt datetime2(7) NOT NULL,
     DocumentJson nvarchar(max) NOT NULL,
     ComputedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentCache_ComputedAt DEFAULT (sysutcdatetime()),
     CONSTRAINT PK_DocumentCache PRIMARY KEY CLUSTERED (DocumentId),
     CONSTRAINT FK_DocumentCache_Document FOREIGN KEY (DocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson) = 1 AND LEFT(LTRIM(DocumentJson), 1) = '{'),
-    CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
+    CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson) = 1 AND LEFT(LTRIM(DocumentJson), 1) = '{')
 );
-
-CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
-    ON dms.DocumentCache (ProjectName, ResourceName, LastModifiedAt, DocumentId);
 ```
 
-Uses:
+The DDL emitter also creates the provider-equivalent identity validation trigger. The
+stable trigger name is `TR_DocumentCache_ValidateDocumentUuid`; PostgreSQL uses the stable
+function name `TF_DocumentCache_ValidateDocumentUuid`:
 
-- Faster GET/query responses (skip reconstitution)
-- Easier CDC streaming (Debezium) / OpenSearch indexing / external integrations
+- PostgreSQL uses a `BEFORE INSERT OR UPDATE` trigger on `dms.DocumentCache`. It reads the
+  canonical UUID by `NEW.DocumentId`, returns the row when they match, and raises an
+  integrity error when they differ. The subsequent foreign-key check handles a missing
+  canonical row.
+- SQL Server uses one set-based `AFTER INSERT, UPDATE` trigger. It joins `inserted` to
+  `dms.Document` by `DocumentId` and throws when any UUID differs, rolling back the
+  statement. The foreign key is checked independently for a missing canonical row.
+
+The trigger compares only fixed-width identity values and uses the existing canonical
+`DocumentId` primary-key access path. It does not parse `DocumentJson`, add work to normal
+canonical document writes, or require a `DocumentCache.DocumentUuid` index. Projector
+writer behavior is owned by the projector/source ADR; this trigger is only its physical
+database backstop.
+
+##### 6a) `dms.DocumentProjectionWork` (always-provisioned durable projection work)
+
+This table is the coalesced completeness inventory for optional `DocumentCache`
+projection. Runtime enqueue, acknowledgement, fairness, rebuild, and scrub behavior is
+owned by the
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#durable-work-and-lifecycle).
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE dms.DocumentProjectionWork (
+    DocumentId bigint NOT NULL,
+    RequiredContentVersion bigint NOT NULL,
+    FirstEnqueuedAt timestamp with time zone NOT NULL,
+    LastEnqueuedAt timestamp with time zone NOT NULL,
+    CONSTRAINT PK_DocumentProjectionWork PRIMARY KEY (DocumentId),
+    CONSTRAINT FK_DocumentProjectionWork_Document FOREIGN KEY (DocumentId)
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE
+);
+
+CREATE INDEX IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId
+    ON dms.DocumentProjectionWork (FirstEnqueuedAt, DocumentId);
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.DocumentProjectionWork (
+    DocumentId bigint NOT NULL,
+    RequiredContentVersion bigint NOT NULL,
+    FirstEnqueuedAt datetime2(7) NOT NULL,
+    LastEnqueuedAt datetime2(7) NOT NULL,
+    CONSTRAINT PK_DocumentProjectionWork PRIMARY KEY CLUSTERED (DocumentId),
+    CONSTRAINT FK_DocumentProjectionWork_Document FOREIGN KEY (DocumentId)
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE
+);
+
+CREATE INDEX IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId
+    ON dms.DocumentProjectionWork (FirstEnqueuedAt, DocumentId);
+```
+
+V1 deliberately defines no claim, lease, worker-owner, attempt-count, dead-letter, epoch,
+or baseline-cursor columns.
+
+The stable PostgreSQL trigger/function inventory is:
+
+- `TR_Document_EnqueueProjectionInsert` using
+  `TF_Document_EnqueueProjectionInsert`, an `AFTER INSERT` statement trigger with a
+  `NEW TABLE` transition relation; and
+- `TR_Document_EnqueueProjectionUpdate` using
+  `TF_Document_EnqueueProjectionUpdate`, an `AFTER UPDATE` statement trigger with
+  `OLD TABLE` and `NEW TABLE` transition relations that selects only rows whose
+  `ContentVersion` changed.
+
+The stable SQL Server inventory is one set-based
+`TR_Document_EnqueueProjectionWork` `AFTER INSERT, UPDATE` trigger over `inserted` and
+`deleted`. It enqueues every inserted row and, for updates, only rows whose
+`inserted.ContentVersion` differs from `deleted.ContentVersion`; an update that leaves
+`ContentVersion` unchanged performs no work-table DML and does not change either enqueue
+timestamp. A SQL Server projection target requires server-level `nested triggers` with
+`value_in_use = 1` so indirect resource `*_Stamp` trigger updates to `dms.Document` reach
+this trigger.
+
+Each implementation reads exactly the `StateId = 1` lifecycle row once per statement. A
+missing row or unreadable/invalid lifecycle raises an enqueue error rather than being
+treated as `Disabled`. In `Tracking`, `Resetting`, or `Rebuilding`, it upserts every
+changed document, keeps the greater current or incoming `RequiredContentVersion`,
+preserves `FirstEnqueuedAt` while work remains, and advances `LastEnqueuedAt` only when the
+required version advances. In `Disabled`, it performs no work-table DML. Errors are not
+suppressed: any enqueue failure rolls back the complete canonical statement and
+transaction.
+
+Runtime target initialization and activation from `Disabled` validate the SQL Server
+nested-trigger prerequisite. Generated `*_Stamp` triggers do not read
+`sys.configurations`. Runtime validation and the unsupported-change boundary are owned by
+[`cdc-streaming.md`](cdc/cdc-streaming.md#configuration-and-projection-target-selection).
+
+Trigger execution has a narrow encapsulation boundary without creating separate runtime
+DMS database identities:
+
+- PostgreSQL functions are hardened `SECURITY DEFINER` functions owned by a dedicated
+  non-login projection-enqueue owner. They set a fixed safe `search_path` containing only
+  `pg_catalog` and explicitly schema-qualify every DMS object. The owner receives only the
+  state read and work-table DML needed by the trigger. `PUBLIC` receives no function
+  execution or work-table mutation rights. Test-only restricted canonical-writer
+  principals prove that ordinary DML on `dms.Document` can fire the trigger without a
+  direct `INSERT`, `UPDATE`, or `DELETE` grant on `dms.DocumentProjectionWork`.
+- SQL Server uses the same-owner ownership chain with static schema-qualified references
+  and no `EXECUTE AS` principal. Test-only restricted canonical-writer principals prove
+  the equivalent trigger-encapsulation property without direct work-table permission.
+- Production uses one deployment-supplied DMS data-store credential with the union of
+  canonical write, projection, and projection-administration permissions. DDL creates no
+  separate runtime identities, role switching, connection strings, or grant matrix for
+  those application capabilities; narrow application interfaces enforce their use.
+  E19 owns the separate deployment-supplied CDC credential and ensures it receives no
+  `DocumentProjectionWork` capture or DML access.
+
+Provider DB-apply tests and introspection must prove trigger counts/names, set-based
+multi-row behavior, lifecycle gating, complete-transaction rollback, direct-DML denial for
+the test-only restricted writer, missing-singleton failure, and delete cascade. Runtime
+and activation tests own the SQL Server nested-trigger prerequisite.
+
+##### 7) `dms.DocumentCacheState` (singleton projection state)
+
+Always-provisioned singleton physical state for the projection lifecycle and orthogonal
+cache-ahead invariant. Its runtime meaning and legal transitions are owned by the
+projector/source ADR.
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE dms.DocumentCacheState (
+    StateId smallint NOT NULL,
+    ProjectionLifecycleState varchar(16) NOT NULL,
+    CacheAheadRecoveryRequired boolean NOT NULL,
+    CONSTRAINT PK_DocumentCacheState PRIMARY KEY (StateId),
+    CONSTRAINT CK_DocumentCacheState_Singleton CHECK (StateId = 1),
+    CONSTRAINT CK_DocumentCacheState_Lifecycle CHECK (
+        ProjectionLifecycleState IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')
+    )
+);
+
+INSERT INTO dms.DocumentCacheState
+    (StateId, ProjectionLifecycleState, CacheAheadRecoveryRequired)
+VALUES (1, 'Disabled', false)
+ON CONFLICT (StateId) DO NOTHING;
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.DocumentCacheState (
+    StateId smallint NOT NULL,
+    ProjectionLifecycleState varchar(16) COLLATE Latin1_General_100_BIN2 NOT NULL,
+    CacheAheadRecoveryRequired bit NOT NULL,
+    CONSTRAINT PK_DocumentCacheState PRIMARY KEY CLUSTERED (StateId),
+    CONSTRAINT CK_DocumentCacheState_Singleton CHECK (StateId = 1),
+    CONSTRAINT CK_DocumentCacheState_Lifecycle CHECK (
+        (ProjectionLifecycleState = 'Disabled' AND DATALENGTH(ProjectionLifecycleState) = 8)
+        OR (ProjectionLifecycleState = 'Resetting' AND DATALENGTH(ProjectionLifecycleState) = 9)
+        OR (ProjectionLifecycleState = 'Rebuilding' AND DATALENGTH(ProjectionLifecycleState) = 10)
+        OR (ProjectionLifecycleState = 'Tracking' AND DATALENGTH(ProjectionLifecycleState) = 8)
+    )
+);
+
+IF NOT EXISTS (SELECT 1 FROM dms.DocumentCacheState WHERE StateId = 1)
+    INSERT INTO dms.DocumentCacheState
+        (StateId, ProjectionLifecycleState, CacheAheadRecoveryRequired)
+    VALUES (1, 'Disabled', 0);
+```
+
+Provisioning creates exactly the `StateId = 1` row in `Disabled` with the latch clear.
+Ordinary provisioning reruns never change lifecycle, latch, cache, or pending work. The
+binary SQL Server collation plus explicit byte lengths makes the four ASCII lifecycle
+tokens exact even when the database default collation is case-insensitive or a comparison
+would otherwise ignore trailing spaces. Provider constraint tests reject casing variants,
+leading/trailing whitespace, empty strings, and every other unknown value. The check
+constraint validates the stored token; it does not encode the transition graph, and no
+database trigger changes lifecycle state autonomously. Serialized administrative commands
+enforce and test the supported transition edges. The
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#durable-work-and-lifecycle)
+owns the supported transitions, shared/exclusive state-row locking, administrative mutex,
+and recovery behavior.
+
+##### 8) `dms.CdcHeartbeat` (opt-in CDC integration object)
+
+Provider CDC setup provisions this singleton only when CDC is selected. It is not part of
+ordinary relational provisioning.
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE dms.CdcHeartbeat (
+    HeartbeatId smallint PRIMARY KEY,
+    HeartbeatSequence bigint NOT NULL,
+    HeartbeatAt timestamp with time zone NOT NULL,
+    CONSTRAINT CK_CdcHeartbeat_Singleton CHECK (HeartbeatId = 1),
+    CONSTRAINT CK_CdcHeartbeat_Sequence CHECK (HeartbeatSequence >= 0)
+);
+
+INSERT INTO dms.CdcHeartbeat (HeartbeatId, HeartbeatSequence, HeartbeatAt)
+VALUES (1, 0, now())
+ON CONFLICT (HeartbeatId) DO NOTHING;
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.CdcHeartbeat (
+    HeartbeatId smallint NOT NULL,
+    HeartbeatSequence bigint NOT NULL,
+    HeartbeatAt datetime2(7) NOT NULL,
+    CONSTRAINT PK_CdcHeartbeat PRIMARY KEY CLUSTERED (HeartbeatId),
+    CONSTRAINT CK_CdcHeartbeat_Singleton CHECK (HeartbeatId = 1),
+    CONSTRAINT CK_CdcHeartbeat_Sequence CHECK (HeartbeatSequence >= 0)
+);
+
+IF NOT EXISTS (SELECT 1 FROM dms.CdcHeartbeat WHERE HeartbeatId = 1)
+    INSERT INTO dms.CdcHeartbeat (HeartbeatId, HeartbeatSequence, HeartbeatAt)
+    VALUES (1, 0, sysutcdatetime());
+```
+
+The integration design owns the provider action query, capture enablement, source-position
+barrier, and operational use of this physical row; see
+[`cdc-streaming.md`](cdc/cdc-streaming.md#provider-source-position-barrier).
 
 ### Authorization companion objects (schema: `auth`)
 

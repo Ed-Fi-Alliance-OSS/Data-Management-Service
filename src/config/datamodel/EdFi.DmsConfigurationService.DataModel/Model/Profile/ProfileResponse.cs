@@ -7,7 +7,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.Profile;
 
 public class ProfileResponse
 {
-    public long Id { get; set; }
+    public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Definition { get; set; } = string.Empty;
 }

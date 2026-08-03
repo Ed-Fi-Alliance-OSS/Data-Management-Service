@@ -32,6 +32,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         services.AddLogging();
         services.AddSingleton(A.Fake<IReadableProfileProjector>());
         services.AddSingleton<NpgsqlDataSourceCache>();
+        services.AddSingleton(A.Fake<IDataStoreProvider>());
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
@@ -60,6 +61,11 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
         var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
+        var documentCacheMaterializationDataStore =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializationDataStore>();
+        var documentCacheWriter = scope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>();
+        var documentCacheWriterRetryAdapter =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheWriterRetryAdapter>();
         var readTargetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
         var writeExceptionClassifier =
@@ -90,6 +96,11 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         adapter.Should().BeOfType<PostgresqlReferenceResolverAdapter>();
         commandExecutor.Should().BeOfType<PostgresqlRelationalCommandExecutor>();
         readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
+        documentCacheMaterializationDataStore
+            .Should()
+            .BeOfType<PostgresqlDocumentCacheMaterializationDataStore>();
+        documentCacheWriter.Should().BeOfType<PostgresqlDocumentCacheWriter>();
+        documentCacheWriterRetryAdapter.Should().BeOfType<DocumentCacheWriterRetryAdapter>();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         writeExceptionClassifier.Should().BeOfType<PostgresqlRelationalWriteExceptionClassifier>();
         writeConstraintResolver.Should().BeOfType<RelationalWriteConstraintResolver>();
@@ -100,6 +111,47 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         relationshipAuthorizationProviderFailureExtractor
             .Should()
             .BeOfType<PostgresqlRelationshipAuthorizationProviderFailureExtractor>();
+    }
+
+    [Test]
+    public void DocumentCacheWriter_ServiceRegistration_registers_only_the_postgresql_writer_adapter()
+    {
+        var services = new ServiceCollection();
+
+        services.AddLogging();
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
+        services.AddSingleton<NpgsqlDataSourceCache>();
+        services.AddSingleton(A.Fake<IDataStoreProvider>());
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.AddScoped<NpgsqlDataSourceProvider>();
+        services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
+        services.AddPostgresqlReferenceResolver();
+
+        services
+            .Where(descriptor => descriptor.ServiceType == typeof(IDocumentCacheWriter))
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Match<ServiceDescriptor>(descriptor =>
+                descriptor.Lifetime == ServiceLifetime.Scoped
+                && descriptor.ImplementationType == typeof(PostgresqlDocumentCacheWriter)
+            );
+        services
+            .Should()
+            .NotContain(descriptor =>
+                (descriptor.ServiceType.FullName ?? descriptor.ServiceType.Name).Contains(
+                    "DocumentProjectionWork",
+                    StringComparison.Ordinal
+                )
+            );
+
+        using var serviceProvider = BuildServiceProvider(services);
+        using var scope = serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDocumentCacheWriter>()
+            .Should()
+            .BeOfType<PostgresqlDocumentCacheWriter>();
     }
 
     [Test]
@@ -146,6 +198,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
 
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)
     {
+        services.TryAddSingleton(new DeadlockRetrySettings());
         services.TryAddSingleton<IDocumentLinkSlugResolver, NoLinkSlugResolver>();
         services.AddOptions<ResourceLinksOptions>();
 

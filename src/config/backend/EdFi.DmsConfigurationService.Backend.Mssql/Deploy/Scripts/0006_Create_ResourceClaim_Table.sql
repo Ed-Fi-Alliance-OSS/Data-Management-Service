@@ -6,7 +6,7 @@
 IF OBJECT_ID('dmscs.ResourceClaim', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.ResourceClaim (
-        Id BIGINT IDENTITY(1,1) CONSTRAINT PK_ResourceClaim PRIMARY KEY,
+        Id INT IDENTITY(1,1) CONSTRAINT PK_ResourceClaim PRIMARY KEY,
         ResourceName NVARCHAR(255) NOT NULL,
         ClaimName NVARCHAR(255) NOT NULL,
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),

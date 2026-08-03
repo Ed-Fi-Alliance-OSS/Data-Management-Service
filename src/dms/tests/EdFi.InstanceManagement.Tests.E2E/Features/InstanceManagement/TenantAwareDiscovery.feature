@@ -3,28 +3,23 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-@InstanceCleanup @instance-management-ci-shard-1
+@InstanceCleanup @InstanceFixture @instance-management-ci-shard-1
 Feature: Tenant-Aware Discovery API
     Verify that the discovery API validates tenants when multi-tenancy is enabled.
     Invalid tenants should return 404, valid tenants should return discovery information,
-    and root URL should return placeholders.
-
-    Background:
-        Given I am authenticated to the Configuration Service as system admin
-          And tenant "Tenant_Discovery_255901" is set up with a vendor and instances:
-              | Route       |
-              | 255901/2024 |
+    and root URL should return placeholders. Tenant_255901 (instance 255901/2024) is
+    pre-registered by the suite-owned fixture.
 
     # Valid tenant tests
 
     Scenario: Discovery endpoint with valid tenant returns OK with tenant in URLs
-         When a GET request is made to discovery endpoint with route "Tenant_Discovery_255901"
+         When a GET request is made to discovery endpoint with route "Tenant_255901"
          Then it should respond with 200
-          And the response should contain "Tenant_Discovery_255901"
+          And the response should contain "Tenant_255901"
           And the response should contain "dataManagementApi"
 
     Scenario: Discovery endpoint with valid tenant and route qualifiers returns OK
-         When a GET request is made to discovery endpoint with route "Tenant_Discovery_255901/255901/2024"
+         When a GET request is made to discovery endpoint with route "Tenant_255901/255901/2024"
          Then it should respond with 200
           And the response should contain "255901/2024"
 
@@ -48,7 +43,7 @@ Feature: Tenant-Aware Discovery API
     # XSD endpoint tests
 
     Scenario: XSD metadata endpoint with valid tenant returns OK
-         When a GET request is made to XSD metadata endpoint with tenant "Tenant_Discovery_255901"
+         When a GET request is made to XSD metadata endpoint with tenant "Tenant_255901"
          Then it should respond with 200
           And the response should contain "ed-fi"
 
@@ -57,6 +52,6 @@ Feature: Tenant-Aware Discovery API
          Then it should respond with 404
 
     Scenario: XSD metadata file content with valid tenant returns OK
-         When a GET request is made to XSD file "Ed-Fi-Core" in section "ed-fi" with tenant "Tenant_Discovery_255901"
+         When a GET request is made to XSD file "Ed-Fi-Core" in section "ed-fi" with tenant "Tenant_255901"
          Then it should respond with 200
           And the response content type should be "application/xml"

@@ -29,7 +29,7 @@ function Get-DmsSchemaToolCandidateDirectory {
     # Documented publish location (README "Standard mode" / prepare-dms-schema.ps1 help):
     # `dotnet publish ... -o .bootstrap/tools/api-schema-tools` drops the apphost executable directly in this
     # flat directory. Probing it lets the documented wrapper shorthand
-    # (`bootstrap-local-dms.ps1` core-only standard staging) resolve the tool after the documented one-time
+    # (`bootstrap-local-dms.ps1` package-backed standard staging) resolve the tool after the documented one-time
     # publish step, without requiring -SchemaToolPath (which the wrapper does not forward) or DMS_SCHEMA_TOOL_PATH.
     $publishedToolDirectory = Join-Path (Get-BootstrapRoot) "tools/api-schema-tools"
     if (Test-Path -LiteralPath $publishedToolDirectory -PathType Container) {

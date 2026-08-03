@@ -909,12 +909,16 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     [Test]
     public void It_should_mirror_child_write_stamps_from_returning_rows()
     {
-        var functionBody = GetStampFunctionBody("SchoolAddress");
+        var functionBody = GetPerEventStampFunctionBody("SchoolAddress", "ins");
 
-        var cteStart = functionBody.IndexOf("WITH stamped AS (", StringComparison.Ordinal);
+        var affectedStart = functionBody.IndexOf("WITH affected AS (", StringComparison.Ordinal);
+        var stampedStart = functionBody.IndexOf("stamped AS (", StringComparison.Ordinal);
+        var nextvalStart = functionBody.IndexOf(
+            "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()",
+            StringComparison.Ordinal
+        );
         var returningStart = functionBody.IndexOf(
-            "RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"",
-            cteStart,
+            "RETURNING d.\"DocumentId\", d.\"ContentVersion\", d.\"ContentLastModifiedAt\"",
             StringComparison.Ordinal
         );
         var mirrorUpdateStart = functionBody.IndexOf(
@@ -931,10 +935,15 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
             StringComparison.Ordinal
         );
 
-        cteStart
+        affectedStart
             .Should()
-            .BeGreaterOrEqualTo(0, "the child stamp function must capture stamped document rows in a CTE");
-        returningStart.Should().BeGreaterThan(cteStart);
+            .BeGreaterOrEqualTo(
+                0,
+                "the child stamp function must build a deduped affected-document workset before stamping"
+            );
+        stampedStart.Should().BeGreaterThan(affectedStart);
+        nextvalStart.Should().BeGreaterThan(stampedStart);
+        returningStart.Should().BeGreaterThan(nextvalStart);
         mirrorUpdateStart.Should().BeGreaterThan(returningStart);
         mirrorSetStart.Should().BeGreaterThan(mirrorUpdateStart);
         mirrorFromStart.Should().BeGreaterThan(mirrorSetStart);
@@ -944,14 +953,17 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     [Test]
     public void It_should_skip_child_delete_stamping_when_the_root_mirror_row_is_absent()
     {
-        var deleteBranch = ExtractPlpgsqlBlock(
-            GetStampFunctionBody("SchoolAddress"),
-            "IF TG_OP = 'DELETE' THEN"
-        );
+        // The DELETE workset comes from the old-row images, and the root-existence guard keeps a
+        // cascaded child delete (owning root already gone) from advancing the watermark past the
+        // root tombstone.
+        var deleteFunction = GetPerEventStampFunctionBody("SchoolAddress", "del");
 
-        deleteBranch.Should().Contain("AND EXISTS (");
-        deleteBranch.Should().Contain("FROM \"edfi\".\"School\" r");
-        deleteBranch.Should().Contain("WHERE r.\"DocumentId\" = OLD.\"School_DocumentId\"");
+        deleteFunction.Should().Contain("SELECT DISTINCT oldtab.\"School_DocumentId\" AS \"DocumentId\"");
+        deleteFunction
+            .Should()
+            .Contain(
+                "AND EXISTS (SELECT 1 FROM \"edfi\".\"School\" r WHERE r.\"DocumentId\" = a.\"DocumentId\")"
+            );
     }
 
     [Test]
@@ -979,16 +991,20 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     public void It_should_not_capture_stamp_variables_on_paths_that_never_read_them()
     {
         // The stamp locals exist only so root INSERT/UPDATE paths can assign NEW mirror
-        // columns. The root DELETE path and the child CTE path never read them, so they
-        // must not capture into them (and child functions must not declare them at all).
+        // columns. The root DELETE path and the non-root statement-level functions mirror
+        // through a CTE and never read them, so they must not capture into them (and non-root
+        // functions must not declare them at all).
         _ddl.Should().NotContain("_stampedDocumentId");
 
         var rootDeleteBranch = ExtractPlpgsqlBlock(GetRootStampFunctionBody(), "IF TG_OP = 'DELETE' THEN");
         rootDeleteBranch.Should().NotContain("RETURNING");
 
-        var childFunctionBody = GetStampFunctionBody("SchoolAddress");
-        childFunctionBody.Should().NotContain("_stampedContentVersion");
-        childFunctionBody.Should().NotContain("DECLARE");
+        foreach (var suffix in new[] { "ins", "upd", "del" })
+        {
+            var childFunctionBody = GetPerEventStampFunctionBody("SchoolAddress", suffix);
+            childFunctionBody.Should().NotContain("_stampedContentVersion");
+            childFunctionBody.Should().NotContain("DECLARE");
+        }
     }
 
     [Test]
@@ -1014,70 +1030,145 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     [Test]
     public void It_should_stamp_child_writes_using_the_root_document_locator()
     {
-        _ddl.Should()
-            .NotContain(
-                """
-                IF TG_OP = 'UPDATE' THEN
-                    UPDATE "dms"."Document"
-                    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-                    WHERE "DocumentId" = NEW."School_DocumentId";
-                END IF;
-                """
-            );
-        _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"School_DocumentId\"");
+        // The affected-document workset is drawn from the child's owning root locator column, and
+        // dms.Document is stamped by joining that DocumentId — never per-row from a NEW image.
+        GetPerEventStampFunctionBody("SchoolAddress", "ins")
+            .Should()
+            .Contain("SELECT DISTINCT newtab.\"School_DocumentId\" AS \"DocumentId\"");
+        GetPerEventStampFunctionBody("SchoolAddress", "del")
+            .Should()
+            .Contain("SELECT DISTINCT oldtab.\"School_DocumentId\" AS \"DocumentId\"");
+
+        _ddl.Should().Contain("WHERE d.\"DocumentId\" = a.\"DocumentId\"");
+        // The old row-level shape stamped dms.Document directly from the NEW image; it must be gone.
+        _ddl.Should().NotContain("WHERE \"DocumentId\" = NEW.\"School_DocumentId\"");
     }
 
     [Test]
     public void It_should_stamp_root_extension_inserts_without_reusing_root_insert_defaults()
     {
-        var functionStart = _ddl.IndexOf(
-            "CREATE OR REPLACE FUNCTION \"edfi\".\"TF_TR_SchoolExtension_Stamp\"()",
-            StringComparison.Ordinal
-        );
-        var triggerStart =
-            functionStart >= 0
-                ? _ddl.IndexOf(
-                    "CREATE TRIGGER \"TR_SchoolExtension_Stamp\"",
-                    functionStart,
-                    StringComparison.Ordinal
-                )
-                : -1;
+        // A root _ext table is a non-root stamping source despite its name: it renders statement-level
+        // and, on insert against an already-existing document, allocates a fresh ContentVersion rather
+        // than copying dms.Document insert defaults into NEW mirror columns.
+        _ddl.Should().Contain("CREATE TRIGGER \"TR_SchoolExtension_Stamp_ins\"");
+        _ddl.Should().Contain("AFTER INSERT ON \"edfi\".\"SchoolExtension\"");
 
-        functionStart.Should().BeGreaterOrEqualTo(0);
-        triggerStart.Should().BeGreaterThan(functionStart);
+        var insertFunction = GetPerEventStampFunctionBody("SchoolExtension", "ins");
 
-        var functionBody = _ddl.Substring(functionStart, triggerStart - functionStart);
-
-        functionBody
+        insertFunction.Should().Contain("SELECT DISTINCT newtab.\"DocumentId\" AS \"DocumentId\"");
+        insertFunction
             .Should()
             .Contain(
-                "IF TG_OP = 'UPDATE' AND NOT (OLD.\"DocumentId\" IS DISTINCT FROM NEW.\"DocumentId\" OR OLD.\"ExtensionData\" IS DISTINCT FROM NEW.\"ExtensionData\") THEN"
+                "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
             );
-        functionBody.Should().Contain("RETURN NEW;");
-        functionBody.Should().Contain("UPDATE \"dms\".\"Document\"");
-        functionBody
-            .Should()
-            .Contain(
-                "\"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
-            );
-        functionBody.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
-        functionBody.Should().NotContain("IF TG_OP = 'UPDATE' THEN");
+        insertFunction.Should().Contain("UPDATE \"edfi\".\"School\" r");
+        // Non-root stamping never reads/copies existing stamps into NEW mirror columns.
+        insertFunction.Should().NotContain("INTO STRICT");
+        insertFunction.Should().NotContain("NEW.\"ContentVersion\"");
     }
 
     [Test]
     public void It_should_short_circuit_no_op_updates_by_comparing_child_stored_columns()
     {
-        _ddl.Should()
+        // No-op UPDATEs are filtered inside the UPDATE affected-document workset: only rows whose
+        // stored values actually changed (null-safe, correlated by the stable primary key) contribute
+        // a document to stamp.
+        var updateFunction = GetPerEventStampFunctionBody("SchoolAddress", "upd");
+
+        updateFunction
+            .Should()
+            .Contain("LEFT JOIN oldtab o ON o.\"CollectionItemId\" = n.\"CollectionItemId\"");
+        updateFunction
+            .Should()
             .Contain(
-                "IF TG_OP = 'UPDATE' AND NOT (OLD.\"CollectionItemId\" IS DISTINCT FROM NEW.\"CollectionItemId\" OR OLD.\"School_DocumentId\" IS DISTINCT FROM NEW.\"School_DocumentId\" OR OLD.\"StreetNumberName\" IS DISTINCT FROM NEW.\"StreetNumberName\") THEN"
+                "WHERE o.\"CollectionItemId\" IS NULL OR n.\"CollectionItemId\" IS DISTINCT FROM o.\"CollectionItemId\" OR n.\"School_DocumentId\" IS DISTINCT FROM o.\"School_DocumentId\" OR n.\"StreetNumberName\" IS DISTINCT FROM o.\"StreetNumberName\""
             );
     }
 
     [Test]
-    public void It_should_use_row_level_nextval_stamping_shape_for_distinct_multi_row_versions()
+    public void It_should_use_statement_level_triggers_with_transition_tables_for_non_root_stamping()
     {
-        _ddl.Should().Contain("FOR EACH ROW");
-        _ddl.Should().Contain("SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
+        // DMS-1208: non-root child/_ext stamping dedupes by owning root so one multi-row DML allocates
+        // one ContentVersion per affected document. PostgreSQL forbids transition tables on multi-event
+        // triggers, so each non-root trigger splits into three event-specific statement-level triggers,
+        // and the legacy combined row-level trigger is dropped for idempotent replacement.
+        _ddl.Should()
+            .Contain("DROP TRIGGER IF EXISTS \"TR_SchoolAddress_Stamp\" ON \"edfi\".\"SchoolAddress\";");
+
+        _ddl.Should().Contain("CREATE TRIGGER \"TR_SchoolAddress_Stamp_ins\"");
+        _ddl.Should().Contain("AFTER INSERT ON \"edfi\".\"SchoolAddress\"");
+        _ddl.Should().Contain("REFERENCING NEW TABLE AS newtab");
+
+        _ddl.Should().Contain("CREATE TRIGGER \"TR_SchoolAddress_Stamp_upd\"");
+        _ddl.Should().Contain("AFTER UPDATE ON \"edfi\".\"SchoolAddress\"");
+        _ddl.Should().Contain("REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab");
+
+        _ddl.Should().Contain("CREATE TRIGGER \"TR_SchoolAddress_Stamp_del\"");
+        _ddl.Should().Contain("AFTER DELETE ON \"edfi\".\"SchoolAddress\"");
+        _ddl.Should().Contain("REFERENCING OLD TABLE AS oldtab");
+
+        _ddl.Should().Contain("FOR EACH STATEMENT");
+
+        // The dedupe is explicit: DISTINCT for single-image INSERT/DELETE, UNION for UPDATE.
+        GetPerEventStampFunctionBody("SchoolAddress", "ins")
+            .Should()
+            .Contain("SELECT DISTINCT newtab.\"School_DocumentId\" AS \"DocumentId\"");
+        GetPerEventStampFunctionBody("SchoolAddress", "del")
+            .Should()
+            .Contain("SELECT DISTINCT oldtab.\"School_DocumentId\" AS \"DocumentId\"");
+        GetPerEventStampFunctionBody("SchoolAddress", "upd").Should().Contain("UNION");
+    }
+
+    [Test]
+    public void It_should_include_both_old_and_new_owning_roots_in_the_update_workset()
+    {
+        // A locator change (child reparented to another root) must stamp both the old and new owning
+        // documents once each: the UNION's new-image arm contributes the new root, the old-image arm
+        // the old root, correlated by the stable primary key.
+        var updateFunction = GetPerEventStampFunctionBody("SchoolAddress", "upd");
+
+        var newArm = updateFunction.IndexOf(
+            "SELECT n.\"School_DocumentId\" AS \"DocumentId\"",
+            StringComparison.Ordinal
+        );
+        var unionStart = updateFunction.IndexOf("UNION", StringComparison.Ordinal);
+        var oldArm = updateFunction.IndexOf(
+            "SELECT o.\"School_DocumentId\" AS \"DocumentId\"",
+            StringComparison.Ordinal
+        );
+
+        newArm.Should().BeGreaterOrEqualTo(0);
+        unionStart.Should().BeGreaterThan(newArm);
+        oldArm.Should().BeGreaterThan(unionStart);
+    }
+
+    [Test]
+    public void It_should_use_statement_level_stamping_for_nested_child_tables()
+    {
+        // A nested (two-level) collection still stamps the resource ROOT via its root locator, not its
+        // immediate parent collection.
+        _ddl.Should().Contain("CREATE TRIGGER \"TR_SchoolAddressPeriod_Stamp_upd\"");
+        _ddl.Should().Contain("AFTER UPDATE ON \"edfi\".\"SchoolAddressPeriod\"");
+
+        var insertFunction = GetPerEventStampFunctionBody("SchoolAddressPeriod", "ins");
+        insertFunction.Should().Contain("SELECT DISTINCT newtab.\"School_DocumentId\" AS \"DocumentId\"");
+        insertFunction.Should().Contain("UPDATE \"edfi\".\"School\" r");
+    }
+
+    [Test]
+    public void It_should_use_statement_level_stamping_for_collection_aligned_extension_tables()
+    {
+        // A collection-aligned _ext table is a non-root stamping source and stamps the resource ROOT.
+        _ddl.Should().Contain("CREATE TRIGGER \"TR_SchoolExtensionAddress_Stamp_del\"");
+        _ddl.Should().Contain("AFTER DELETE ON \"edfi\".\"SchoolExtensionAddress\"");
+
+        var deleteFunction = GetPerEventStampFunctionBody("SchoolExtensionAddress", "del");
+        deleteFunction.Should().Contain("SELECT DISTINCT oldtab.\"School_DocumentId\" AS \"DocumentId\"");
+        deleteFunction
+            .Should()
+            .Contain(
+                "AND EXISTS (SELECT 1 FROM \"edfi\".\"School\" r WHERE r.\"DocumentId\" = a.\"DocumentId\")"
+            );
     }
 
     [Test]
@@ -1137,23 +1228,26 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
         return _ddl.Substring(functionStart, triggerStart - functionStart);
     }
 
-    private string GetStampFunctionBody(string tableName)
+    private string GetPerEventStampFunctionBody(string tableName, string suffix)
     {
         var functionStart = _ddl.IndexOf(
-            $"CREATE OR REPLACE FUNCTION \"edfi\".\"TF_TR_{tableName}_Stamp\"()",
+            $"CREATE OR REPLACE FUNCTION \"edfi\".\"TF_TR_{tableName}_Stamp_{suffix}\"()",
             StringComparison.Ordinal
         );
-        functionStart.Should().BeGreaterOrEqualTo(0);
+        functionStart
+            .Should()
+            .BeGreaterOrEqualTo(
+                0,
+                "expected a {0} statement-level stamp function for {1}",
+                suffix,
+                tableName
+            );
 
-        var triggerStart = _ddl.IndexOf(
-            $"CREATE TRIGGER \"TR_{tableName}_Stamp\"",
-            functionStart,
-            StringComparison.Ordinal
-        );
+        // Each non-root stamping function is self-contained and terminated by the plpgsql tag.
+        var functionEnd = _ddl.IndexOf("$func$ LANGUAGE plpgsql;", functionStart, StringComparison.Ordinal);
+        functionEnd.Should().BeGreaterThan(functionStart);
 
-        triggerStart.Should().BeGreaterThan(functionStart);
-
-        return _ddl.Substring(functionStart, triggerStart - functionStart);
+        return _ddl.Substring(functionStart, functionEnd - functionStart);
     }
 
     private static string ExtractPlpgsqlBlock(string functionBody, string marker)
@@ -1459,6 +1553,35 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     }
 
     [Test]
+    public void It_should_gate_the_non_root_child_collection_stamp_on_a_null_safe_value_diff_not_update_of_column()
+    {
+        // DMS-1127: pins the "never UPDATE(column)" invariant on the non-root child-collection stamp
+        // path — the path a mutable parent-identity rename actually cascades through into a child
+        // binding. The attached-Resource key-change path is already pinned by
+        // It_should_capture_identity_changed_docs_and_not_gate_on_update_function, and the immutable
+        // ConcreteAbstract identity-stamp path deliberately requires UPDATE(column) in
+        // It_should_emit_tombstone_but_no_key_change; this closes the third path at the unit layer.
+        // SchoolAddress is a child collection of the (immutable) School, so it exercises the
+        // child-collection stamp path structurally: the change is detected by a null-safe stored-value
+        // diff (CAST(...) <> CAST(...) with explicit IS NULL / IS NOT NULL handling), never by an
+        // UPDATE(column) probe. The mutable-cascade behavior itself is proven end-to-end by the
+        // integration tests (ClassPeriod -> BellSchedule); this is the DB-free structural backstop.
+        var childStampTriggerBody = GetStampTriggerBody("SchoolAddress");
+
+        childStampTriggerBody.Should().NotContain("UPDATE(");
+        childStampTriggerBody.Should().Contain("AS varbinary(max)) <> CAST(");
+        childStampTriggerBody.Should().Contain(" IS NULL AND ");
+        childStampTriggerBody.Should().Contain(" IS NOT NULL");
+    }
+
+    [Test]
+    public void It_should_not_read_Mssql_Enqueue_story_server_config_or_use_execute_as_in_stamp_triggers()
+    {
+        _ddl.Should().NotContain("sys.configurations");
+        _ddl.Should().NotContain("EXECUTE AS");
+    }
+
+    [Test]
     public void It_should_filter_no_op_updates_by_comparing_stored_row_values()
     {
         _ddl.Should()
@@ -1561,59 +1684,6 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             mirrorUpdateStart,
             mirrorJoinStart - mirrorUpdateStart + mirrorJoin.Length
         );
-    }
-}
-
-[TestFixture]
-public class Given_RelationalModelDdlEmitter_With_MssqlIdentityPropagationTrigger
-{
-    private string _ddl = default!;
-
-    [SetUp]
-    public void Setup()
-    {
-        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
-        var emitter = new RelationalModelDdlEmitter(dialect);
-        var modelSet = MssqlIdentityPropagationFixture.Build();
-
-        _ddl = emitter.Emit(modelSet);
-    }
-
-    [Test]
-    public void It_should_emit_identity_propagation_as_after_update()
-    {
-        // INSTEAD OF UPDATE was rejected by SQL Server: the trigger body's referrer
-        // UPDATE re-enters the owning table's trigger and SQL Server raises error 570
-        // (INSTEAD OF triggers do not support direct recursion). AFTER UPDATE lets the
-        // base row update apply first; the trigger body only needs to reconcile
-        // referrer stored projected identity columns.
-        _ddl.Should().Contain("CREATE OR ALTER TRIGGER [edfi].[TR_School_PropagateIdentity]");
-        _ddl.Should().Contain("ON [edfi].[School]");
-        _ddl.Should().Contain("AFTER UPDATE");
-        _ddl.Should().NotContain("INSTEAD OF UPDATE");
-    }
-
-    [Test]
-    public void It_should_propagate_referrer_identity_columns_when_identity_changed()
-    {
-        _ddl.Should().Contain("UPDATE r");
-        _ddl.Should().Contain("FROM [edfi].[Enrollment] r");
-        _ddl.Should().Contain("INNER JOIN deleted d ON r.[School_DocumentId] = d.[DocumentId]");
-        _ddl.Should()
-            .Contain(
-                "AND ((r.[School_SchoolId] = d.[SchoolId]) OR (r.[School_SchoolId] IS NULL AND d.[SchoolId] IS NULL));"
-            );
-    }
-
-    [Test]
-    public void It_should_not_emit_a_self_update_block_on_the_trigger_table()
-    {
-        // The trigger is AFTER UPDATE: the base row update is already applied by
-        // SQL Server before the body runs. Emitting `UPDATE <self>` here would
-        // re-fire the trigger and (under INSTEAD OF) caused error 570.
-        _ddl.Should().NotContain("FROM [edfi].[School] t");
-        _ddl.Should()
-            .NotContain("SET t.[SchoolId] = i.[SchoolId], t.[NameOfInstitution] = i.[NameOfInstitution]");
     }
 }
 
@@ -2734,6 +2804,11 @@ internal static class PgsqlDocumentStampingFixture
         var childDocumentIdColumn = new DbColumnName("School_DocumentId");
         var streetNumberNameColumn = new DbColumnName("StreetNumberName");
         var extensionTableName = new DbTableName(schema, "SchoolExtension");
+        var nestedChildTableName = new DbTableName(schema, "SchoolAddressPeriod");
+        var collectionAlignedExtTableName = new DbTableName(schema, "SchoolExtensionAddress");
+        var addressCollectionItemIdColumn = new DbColumnName("SchoolAddress_CollectionItemId");
+        var beginDateColumn = new DbColumnName("BeginDate");
+        var extAddressDataColumn = new DbColumnName("ExtAddressData");
         var resource = new QualifiedResourceName("Ed-Fi", "School");
         var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
 
@@ -2872,12 +2947,115 @@ internal static class PgsqlDocumentStampingFixture
             ),
         };
 
+        // A nested (two-level) collection: its owning root locator is still the resource root
+        // (School_DocumentId), not its immediate parent (SchoolAddress). Proves nested-child stamping
+        // resolves to the resource root.
+        var nestedChildTable = new DbTableModel(
+            nestedChildTableName,
+            new JsonPathExpression("$.addresses[*].periods[*]", []),
+            new TableKey(
+                "PK_SchoolAddressPeriod",
+                [new DbKeyColumn(collectionItemIdColumn, ColumnKind.CollectionKey)]
+            ),
+            [
+                new DbColumnModel(
+                    collectionItemIdColumn,
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    addressCollectionItemIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    childDocumentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    beginDateColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 10),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression("$.addresses[*].periods[*].beginDate", []),
+                    TargetResource: null
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Collection,
+                [collectionItemIdColumn],
+                [childDocumentIdColumn],
+                [addressCollectionItemIdColumn],
+                []
+            ),
+        };
+
+        // A collection-aligned _ext table: a non-root stamping source (despite the _ext name) whose
+        // owning root locator is the resource root (School_DocumentId).
+        var collectionAlignedExtTable = new DbTableModel(
+            collectionAlignedExtTableName,
+            new JsonPathExpression("$.addresses[*]._ext.sample", []),
+            new TableKey(
+                "PK_SchoolExtensionAddress",
+                [new DbKeyColumn(collectionItemIdColumn, ColumnKind.CollectionKey)]
+            ),
+            [
+                new DbColumnModel(
+                    collectionItemIdColumn,
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    childDocumentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    extAddressDataColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 150),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression("$.addresses[*]._ext.sample.extAddressData", []),
+                    TargetResource: null
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.ExtensionCollection,
+                [collectionItemIdColumn],
+                [childDocumentIdColumn],
+                [childDocumentIdColumn],
+                []
+            ),
+        };
+
         var relationalModel = new RelationalResourceModel(
             resource,
             schema,
             ResourceStorageKind.RelationalTables,
             rootTable,
-            [rootTable, childTable, rootExtensionTable],
+            [rootTable, childTable, rootExtensionTable, nestedChildTable, collectionAlignedExtTable],
             [],
             []
         );
@@ -2904,6 +3082,22 @@ internal static class PgsqlDocumentStampingFixture
                 new DbTriggerName("TR_SchoolExtension_Stamp"),
                 extensionTableName,
                 [documentIdColumn],
+                [],
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: tableName
+            ),
+            new(
+                new DbTriggerName("TR_SchoolAddressPeriod_Stamp"),
+                nestedChildTableName,
+                [childDocumentIdColumn],
+                [],
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: tableName
+            ),
+            new(
+                new DbTriggerName("TR_SchoolExtensionAddress_Stamp"),
+                collectionAlignedExtTableName,
+                [childDocumentIdColumn],
                 [],
                 new TriggerKindParameters.DocumentStamping(),
                 MirrorStampTargetTable: tableName
@@ -3371,108 +3565,6 @@ internal static class DescriptorValuedReferentialIdentityFixture
     }
 }
 
-internal static class MssqlIdentityPropagationFixture
-{
-    internal static DerivedRelationalModelSet Build()
-    {
-        var dialect = SqlDialect.Mssql;
-        var schema = new DbSchemaName("edfi");
-        var documentIdColumn = new DbColumnName("DocumentId");
-        var schoolIdColumn = new DbColumnName("SchoolId");
-        var nameOfInstitutionColumn = new DbColumnName("NameOfInstitution");
-        var resource = new QualifiedResourceName("Ed-Fi", "School");
-        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
-
-        var schoolTableName = new DbTableName(schema, "School");
-        var schoolTable = new DbTableModel(
-            schoolTableName,
-            new JsonPathExpression("$", []),
-            new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
-            [
-                new DbColumnModel(
-                    documentIdColumn,
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    schoolIdColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression("$.schoolId", []),
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    nameOfInstitutionColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.String, MaxLength: 150),
-                    IsNullable: true,
-                    SourceJsonPath: new JsonPathExpression("$.nameOfInstitution", []),
-                    TargetResource: null
-                ),
-            ],
-            []
-        );
-
-        IReadOnlyList<DbTriggerInfo> triggers =
-        [
-            new(
-                new DbTriggerName("TR_School_PropagateIdentity"),
-                schoolTableName,
-                [documentIdColumn],
-                [schoolIdColumn],
-                new TriggerKindParameters.MssqlIdentityPropagationTrigger([
-                    new PropagationReferrerTarget(
-                        new DbTableName(schema, "Enrollment"),
-                        new DbColumnName("School_DocumentId"),
-                        [new TriggerColumnMapping(schoolIdColumn, new DbColumnName("School_SchoolId"))]
-                    ),
-                ])
-            ),
-        ];
-
-        var relationalModel = new RelationalResourceModel(
-            resource,
-            schema,
-            ResourceStorageKind.RelationalTables,
-            schoolTable,
-            [schoolTable],
-            [],
-            []
-        );
-
-        return new DerivedRelationalModelSet(
-            new EffectiveSchemaInfo(
-                "1.0.0",
-                "1.0.0",
-                "hash",
-                1,
-                [0x01],
-                [
-                    new SchemaComponentInfo(
-                        "ed-fi",
-                        "Ed-Fi",
-                        "1.0.0",
-                        false,
-                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
-                    ),
-                ],
-                [resourceKey]
-            ),
-            dialect,
-            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
-            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
-            [],
-            [],
-            [],
-            triggers
-        );
-    }
-}
-
 internal static class AbstractIdentityTableFkFixture
 {
     internal static DerivedRelationalModelSet Build(SqlDialect dialect)
@@ -3708,441 +3800,6 @@ public class Given_Uuidv5Namespace_Constant
 // trigger including the child referrer, PG emits composite FK with
 // ON UPDATE CASCADE instead of any propagation trigger.
 // ═══════════════════════════════════════════════════════════════════
-
-[TestFixture]
-public class Given_DdlEmitter_On_Mssql_With_Child_Collection_Referrer
-{
-    private string _mssqlDdl = default!;
-
-    [SetUp]
-    public void Setup()
-    {
-        _mssqlDdl = EmitDdlForFixture(SqlDialect.Mssql);
-    }
-
-    [Test]
-    public void It_should_emit_TR_School_PropagateIdentity()
-    {
-        _mssqlDdl.Should().Contain("TR_School_PropagateIdentity");
-    }
-
-    [Test]
-    public void It_should_update_child_table_in_propagation_body()
-    {
-        _mssqlDdl.Should().Contain("UPDATE r");
-        _mssqlDdl.Should().Contain("FROM [edfi].[BusRouteAddress] r");
-        _mssqlDdl.Should().Contain("INNER JOIN deleted d ON r.[School_DocumentId] = d.[DocumentId]");
-    }
-
-    [Test]
-    public void It_should_set_child_stored_identity_columns_from_inserted()
-    {
-        _mssqlDdl.Should().Contain("r.[School_EducationOrganizationId] = i.[EducationOrganizationId]");
-        _mssqlDdl.Should().Contain("r.[School_SchoolId] = i.[SchoolId]");
-    }
-
-    /// <summary>
-    /// Builds a minimal <see cref="DerivedRelationalModelSet"/> for both dialects that mirrors
-    /// the shape exercised by the trigger-inventory derivation tests: a School root with a
-    /// composite identity (EducationOrganizationId, SchoolId), a BusRoute root referrer, and
-    /// a BusRouteAddress child collection that also stores the propagated School identity
-    /// columns. The MSSQL variant carries the <see cref="TriggerKindParameters.MssqlIdentityPropagationTrigger"/>
-    /// trigger with both referrer updates; the PG variant has no propagation trigger and instead
-    /// uses a composite FK on the child table with <c>ON UPDATE CASCADE</c> against School.
-    /// </summary>
-    internal static string EmitDdlForFixture(SqlDialect dialect)
-    {
-        var sqlDialect = SqlDialectFactory.Create(dialect);
-        var emitter = new RelationalModelDdlEmitter(sqlDialect);
-        var modelSet = ChildCollectionReferrerFixture.Build(dialect);
-        return emitter.Emit(modelSet);
-    }
-}
-
-[TestFixture]
-public class Given_DdlEmitter_On_Pgsql_With_Child_Collection_Referrer
-{
-    private string _pgsqlDdl = default!;
-
-    [SetUp]
-    public void Setup()
-    {
-        _pgsqlDdl = Given_DdlEmitter_On_Mssql_With_Child_Collection_Referrer.EmitDdlForFixture(
-            SqlDialect.Pgsql
-        );
-    }
-
-    [Test]
-    public void It_should_not_emit_PropagateIdentity_trigger_on_Pgsql()
-    {
-        _pgsqlDdl.Should().NotContain("PropagateIdentity");
-    }
-
-    [Test]
-    public void It_should_emit_composite_FK_with_ON_UPDATE_CASCADE_for_child_table()
-    {
-        // The composite FK on BusRouteAddress referencing School(DocumentId, EducationOrganizationId, SchoolId)
-        // must carry ON UPDATE CASCADE on PG — this is the PG path that replaces the trigger fallback.
-        // Anchor the assertion to BusRouteAddress so it cannot be satisfied vacuously by the
-        // root BusRoute → School FK that the fixture also emits.
-        _pgsqlDdl
-            .Should()
-            .Contain(
-                """
-                        ALTER TABLE "edfi"."BusRouteAddress"
-                        ADD CONSTRAINT "FK_BusRouteAddress_School"
-                        FOREIGN KEY ("School_DocumentId", "School_EducationOrganizationId", "School_SchoolId")
-                        REFERENCES "edfi"."School" ("DocumentId", "EducationOrganizationId", "SchoolId")
-                        ON DELETE NO ACTION
-                        ON UPDATE CASCADE;
-                """
-            );
-    }
-}
-
-internal static class ChildCollectionReferrerFixture
-{
-    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
-    {
-        var schema = new DbSchemaName("edfi");
-        var documentIdColumn = new DbColumnName("DocumentId");
-        var educationOrgIdColumn = new DbColumnName("EducationOrganizationId");
-        var schoolIdColumn = new DbColumnName("SchoolId");
-        var nameOfInstitutionColumn = new DbColumnName("NameOfInstitution");
-        var schoolFkColumn = new DbColumnName("School_DocumentId");
-        var schoolEdOrgIdColumn = new DbColumnName("School_EducationOrganizationId");
-        var schoolSchoolIdColumn = new DbColumnName("School_SchoolId");
-        var busRouteNameColumn = new DbColumnName("BusRouteName");
-        var streetColumn = new DbColumnName("StreetNumberName");
-
-        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
-        var busRouteResource = new QualifiedResourceName("Ed-Fi", "BusRoute");
-        var schoolResourceKey = new ResourceKeyEntry(1, schoolResource, "1.0.0", false);
-        var busRouteResourceKey = new ResourceKeyEntry(2, busRouteResource, "1.0.0", false);
-
-        var schoolTableName = new DbTableName(schema, "School");
-        var busRouteTableName = new DbTableName(schema, "BusRoute");
-        var busRouteAddressTableName = new DbTableName(schema, "BusRouteAddress");
-
-        var schoolTable = new DbTableModel(
-            schoolTableName,
-            new JsonPathExpression("$", []),
-            new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
-            [
-                new DbColumnModel(
-                    documentIdColumn,
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    educationOrgIdColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression("$.educationOrganizationId", []),
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    schoolIdColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression("$.schoolId", []),
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    nameOfInstitutionColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.String, MaxLength: 150),
-                    IsNullable: true,
-                    SourceJsonPath: new JsonPathExpression("$.nameOfInstitution", []),
-                    TargetResource: null
-                ),
-            ],
-            []
-        );
-
-        var busRouteTable = new DbTableModel(
-            busRouteTableName,
-            new JsonPathExpression("$", []),
-            new TableKey("PK_BusRoute", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
-            [
-                new DbColumnModel(
-                    documentIdColumn,
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    busRouteNameColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.String, MaxLength: 50),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression("$.busRouteName", []),
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    schoolFkColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression("$.schoolReference", []),
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    schoolEdOrgIdColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    schoolSchoolIdColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-            ],
-            BuildBusRouteConstraints(dialect, schoolTableName)
-        );
-
-        var busRouteAddressTable = new DbTableModel(
-            busRouteAddressTableName,
-            new JsonPathExpression("$.addresses[*]", []),
-            new TableKey(
-                "PK_BusRouteAddress",
-                [
-                    new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart),
-                    new DbKeyColumn(streetColumn, ColumnKind.Scalar),
-                ]
-            ),
-            [
-                new DbColumnModel(
-                    documentIdColumn,
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    streetColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.String, MaxLength: 150),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression("$.addresses[*].streetNumberName", []),
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    schoolFkColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    schoolEdOrgIdColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    schoolSchoolIdColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-            ],
-            BuildBusRouteAddressConstraints(dialect, schoolTableName)
-        );
-
-        var schoolModel = new RelationalResourceModel(
-            schoolResource,
-            schema,
-            ResourceStorageKind.RelationalTables,
-            schoolTable,
-            [schoolTable],
-            [],
-            []
-        );
-
-        var busRouteModel = new RelationalResourceModel(
-            busRouteResource,
-            schema,
-            ResourceStorageKind.RelationalTables,
-            busRouteTable,
-            [busRouteTable, busRouteAddressTable],
-            [],
-            []
-        );
-
-        IReadOnlyList<DbTriggerInfo> triggers =
-            dialect == SqlDialect.Mssql
-                ?
-                [
-                    new DbTriggerInfo(
-                        new DbTriggerName("TR_School_PropagateIdentity"),
-                        schoolTableName,
-                        [documentIdColumn],
-                        [educationOrgIdColumn, schoolIdColumn],
-                        new TriggerKindParameters.MssqlIdentityPropagationTrigger([
-                            new PropagationReferrerTarget(
-                                busRouteTableName,
-                                schoolFkColumn,
-                                [
-                                    new TriggerColumnMapping(educationOrgIdColumn, schoolEdOrgIdColumn),
-                                    new TriggerColumnMapping(schoolIdColumn, schoolSchoolIdColumn),
-                                ]
-                            ),
-                            new PropagationReferrerTarget(
-                                busRouteAddressTableName,
-                                schoolFkColumn,
-                                [
-                                    new TriggerColumnMapping(educationOrgIdColumn, schoolEdOrgIdColumn),
-                                    new TriggerColumnMapping(schoolIdColumn, schoolSchoolIdColumn),
-                                ]
-                            ),
-                        ])
-                    ),
-                ]
-                : [];
-
-        return new DerivedRelationalModelSet(
-            new EffectiveSchemaInfo(
-                "1.0.0",
-                "1.0.0",
-                "hash",
-                2,
-                [0x01],
-                [
-                    new SchemaComponentInfo(
-                        "ed-fi",
-                        "Ed-Fi",
-                        "1.0.0",
-                        false,
-                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
-                    ),
-                ],
-                [schoolResourceKey, busRouteResourceKey]
-            ),
-            dialect,
-            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
-            [
-                new ConcreteResourceModel(
-                    busRouteResourceKey,
-                    ResourceStorageKind.RelationalTables,
-                    busRouteModel
-                ),
-                new ConcreteResourceModel(
-                    schoolResourceKey,
-                    ResourceStorageKind.RelationalTables,
-                    schoolModel
-                ),
-            ],
-            [],
-            [],
-            [],
-            triggers
-        );
-    }
-
-    /// <summary>
-    /// BusRoute's reference to School: on PG this is a composite FK with ON UPDATE CASCADE
-    /// (so cascade-based propagation replaces the trigger fallback); on MSSQL it is a
-    /// single-column FK on the document id, since MSSQL relies on the propagation trigger
-    /// emitted on School to reconcile the stored identity columns.
-    /// </summary>
-    private static IReadOnlyList<TableConstraint> BuildBusRouteConstraints(
-        SqlDialect dialect,
-        DbTableName schoolTableName
-    )
-    {
-        var schoolFkColumn = new DbColumnName("School_DocumentId");
-        var schoolEdOrgIdColumn = new DbColumnName("School_EducationOrganizationId");
-        var schoolSchoolIdColumn = new DbColumnName("School_SchoolId");
-        var documentIdColumn = new DbColumnName("DocumentId");
-        var educationOrgIdColumn = new DbColumnName("EducationOrganizationId");
-        var schoolIdColumn = new DbColumnName("SchoolId");
-
-        return dialect == SqlDialect.Pgsql
-            ?
-            [
-                new TableConstraint.ForeignKey(
-                    "FK_BusRoute_School",
-                    [schoolFkColumn, schoolEdOrgIdColumn, schoolSchoolIdColumn],
-                    schoolTableName,
-                    [documentIdColumn, educationOrgIdColumn, schoolIdColumn],
-                    ReferentialAction.NoAction,
-                    ReferentialAction.Cascade
-                ),
-            ]
-            :
-            [
-                new TableConstraint.ForeignKey(
-                    "FK_BusRoute_School",
-                    [schoolFkColumn],
-                    schoolTableName,
-                    [documentIdColumn],
-                    ReferentialAction.NoAction,
-                    ReferentialAction.NoAction
-                ),
-            ];
-    }
-
-    /// <summary>
-    /// BusRouteAddress's reference to School mirrors the BusRoute case: composite cascade on
-    /// PG, single-column FK on MSSQL (with the trigger doing the propagation work).
-    /// </summary>
-    private static IReadOnlyList<TableConstraint> BuildBusRouteAddressConstraints(
-        SqlDialect dialect,
-        DbTableName schoolTableName
-    )
-    {
-        var schoolFkColumn = new DbColumnName("School_DocumentId");
-        var schoolEdOrgIdColumn = new DbColumnName("School_EducationOrganizationId");
-        var schoolSchoolIdColumn = new DbColumnName("School_SchoolId");
-        var documentIdColumn = new DbColumnName("DocumentId");
-        var educationOrgIdColumn = new DbColumnName("EducationOrganizationId");
-        var schoolIdColumn = new DbColumnName("SchoolId");
-
-        return dialect == SqlDialect.Pgsql
-            ?
-            [
-                new TableConstraint.ForeignKey(
-                    "FK_BusRouteAddress_School",
-                    [schoolFkColumn, schoolEdOrgIdColumn, schoolSchoolIdColumn],
-                    schoolTableName,
-                    [documentIdColumn, educationOrgIdColumn, schoolIdColumn],
-                    ReferentialAction.NoAction,
-                    ReferentialAction.Cascade
-                ),
-            ]
-            :
-            [
-                new TableConstraint.ForeignKey(
-                    "FK_BusRouteAddress_School",
-                    [schoolFkColumn],
-                    schoolTableName,
-                    [documentIdColumn],
-                    ReferentialAction.NoAction,
-                    ReferentialAction.NoAction
-                ),
-            ];
-    }
-}
 
 // ═══════════════════════════════════════════════════════════════════
 // Tracked-Change Rendering Tests (DMS-1179)

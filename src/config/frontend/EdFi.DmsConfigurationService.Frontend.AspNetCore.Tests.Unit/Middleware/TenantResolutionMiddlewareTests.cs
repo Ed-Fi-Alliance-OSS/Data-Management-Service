@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
@@ -119,12 +120,49 @@ internal class TenantResolutionMiddlewareTests
             );
         }
 
+        private static async Task<(string Content, JsonObject Body)> ReadResponseAsync(HttpContext context)
+        {
+            context.Response.Body.Seek(0, SeekOrigin.Begin);
+            string content = await new StreamReader(context.Response.Body).ReadToEndAsync();
+            return (content, JsonNode.Parse(content)!.AsObject());
+        }
+
+        private static void AssertBadRequestBody(
+            JsonObject body,
+            string expectedDetail,
+            string expectedCorrelationId
+        )
+        {
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+            body["title"]!.GetValue<string>().Should().Be("Bad Request");
+            body["detail"]!.GetValue<string>().Should().Be(expectedDetail);
+            body["status"]!.GetValue<int>().Should().Be(400);
+            body["correlationId"]!.GetValue<string>().Should().Be(expectedCorrelationId);
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+            body.ContainsKey("error").Should().BeFalse();
+            body.ContainsKey("message").Should().BeFalse();
+        }
+
+        private static void AssertInternalServerErrorBody(JsonObject body, string expectedCorrelationId)
+        {
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
+            body["title"]!.GetValue<string>().Should().Be("Internal Server Error");
+            body["detail"]!.GetValue<string>().Should().BeEmpty();
+            body["status"]!.GetValue<int>().Should().Be(500);
+            body["correlationId"]!.GetValue<string>().Should().Be(expectedCorrelationId);
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+            body.ContainsKey("error").Should().BeFalse();
+            body.ContainsKey("message").Should().BeFalse();
+        }
+
         [Test]
         public async Task It_returns_400_when_tenant_header_missing()
         {
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
-            var httpContext = new DefaultHttpContext();
+            var httpContext = new DefaultHttpContext { TraceIdentifier = "trace-missing" };
             httpContext.Response.Body = new MemoryStream();
 
             // Act
@@ -138,6 +176,13 @@ internal class TenantResolutionMiddlewareTests
 
             // Assert
             httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+            httpContext.Response.ContentType.Should().Be("application/problem+json");
+            var (_, body) = await ReadResponseAsync(httpContext);
+            AssertBadRequestBody(
+                body,
+                "The 'Tenant' header is required when multi-tenancy is enabled",
+                "trace-missing"
+            );
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
@@ -146,7 +191,7 @@ internal class TenantResolutionMiddlewareTests
         {
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
-            var httpContext = new DefaultHttpContext();
+            var httpContext = new DefaultHttpContext { TraceIdentifier = "trace-empty" };
             httpContext.Request.Headers["Tenant"] = "";
             httpContext.Response.Body = new MemoryStream();
 
@@ -161,6 +206,13 @@ internal class TenantResolutionMiddlewareTests
 
             // Assert
             httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+            httpContext.Response.ContentType.Should().Be("application/problem+json");
+            var (_, body) = await ReadResponseAsync(httpContext);
+            AssertBadRequestBody(
+                body,
+                "The 'Tenant' header is required when multi-tenancy is enabled",
+                "trace-empty"
+            );
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
@@ -169,7 +221,7 @@ internal class TenantResolutionMiddlewareTests
         {
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
-            var httpContext = new DefaultHttpContext();
+            var httpContext = new DefaultHttpContext { TraceIdentifier = "trace-notfound" };
             httpContext.Request.Headers["Tenant"] = "nonexistent-tenant";
             httpContext.Response.Body = new MemoryStream();
 
@@ -187,20 +239,24 @@ internal class TenantResolutionMiddlewareTests
 
             // Assert
             httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+            httpContext.Response.ContentType.Should().Be("application/problem+json");
+            var (_, body) = await ReadResponseAsync(httpContext);
+            AssertBadRequestBody(body, "Invalid tenant: nonexistent-tenant", "trace-notfound");
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
         [Test]
-        public async Task It_returns_400_when_tenant_lookup_fails()
+        public async Task It_returns_500_when_tenant_lookup_fails_without_leaking_the_failure_message()
         {
             // Arrange
+            const string sentinel = "SENTINEL_TENANT_DB_4f2a_must_not_leak";
             var middleware = new TenantResolutionMiddleware(_next);
-            var httpContext = new DefaultHttpContext();
+            var httpContext = new DefaultHttpContext { TraceIdentifier = "trace-unknown" };
             httpContext.Request.Headers["Tenant"] = "test-tenant";
             httpContext.Response.Body = new MemoryStream();
 
             A.CallTo(() => _tenantRepository.GetTenantByName("test-tenant"))
-                .Returns(new TenantGetByNameResult.FailureUnknown("Database error"));
+                .Returns(new TenantGetByNameResult.FailureUnknown(sentinel));
 
             // Act
             await middleware.Invoke(
@@ -213,6 +269,10 @@ internal class TenantResolutionMiddlewareTests
 
             // Assert
             httpContext.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+            httpContext.Response.ContentType.Should().Be("application/problem+json");
+            var (content, body) = await ReadResponseAsync(httpContext);
+            content.Should().NotContain(sentinel);
+            AssertInternalServerErrorBody(body, "trace-unknown");
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
@@ -281,7 +341,7 @@ internal class TenantResolutionMiddlewareTests
         {
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
-            var httpContext = new DefaultHttpContext();
+            var httpContext = new DefaultHttpContext { TraceIdentifier = "trace-xss" };
             httpContext.Request.Headers["Tenant"] = "malicious<script>alert('xss')</script>";
             httpContext.Response.Body = new MemoryStream();
 
@@ -297,9 +357,15 @@ internal class TenantResolutionMiddlewareTests
                 _logger
             );
 
-            // Assert
-            // The middleware should handle this gracefully without throwing
+            // Assert - handled gracefully, and the sanitized tenant name carries no markup into the body
             httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+            httpContext.Response.ContentType.Should().Be("application/problem+json");
+            var (content, body) = await ReadResponseAsync(httpContext);
+            content.Should().NotContainAny("<", ">", "(", ")", "'");
+            string detail = body["detail"]!.GetValue<string>();
+            detail.Should().StartWith("Invalid tenant: ");
+            detail.Should().NotContainAny("<", ">", "(", ")", "'");
+            body["correlationId"]!.GetValue<string>().Should().Be("trace-xss");
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
@@ -308,7 +374,7 @@ internal class TenantResolutionMiddlewareTests
         {
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
-            var httpContext = new DefaultHttpContext();
+            var httpContext = new DefaultHttpContext { TraceIdentifier = "trace-default" };
             httpContext.Request.Headers["Tenant"] = "test-tenant";
             httpContext.Response.Body = new MemoryStream();
 
@@ -325,7 +391,10 @@ internal class TenantResolutionMiddlewareTests
             );
 
             // Assert
-            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+            httpContext.Response.ContentType.Should().Be("application/problem+json");
+            var (_, body) = await ReadResponseAsync(httpContext);
+            AssertInternalServerErrorBody(body, "trace-default");
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
@@ -465,6 +534,128 @@ internal class TenantResolutionMiddlewareTests
             // Assert
             A.CallTo(() => _next(httpContext)).MustHaveHappenedOnceExactly();
             A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture("/health")]
+    [TestFixture("/HEALTH")]
+    [TestFixture("/health/")]
+    public class Given_MultiTenancy_Is_Enabled_And_A_Health_Path(string path)
+    {
+        private RequestDelegate _next = null!;
+        private IOptions<AppSettings> _appSettings = null!;
+        private ITenantContextProvider _tenantContextProvider = null!;
+        private ITenantRepository _tenantRepository = null!;
+        private ILogger<TenantResolutionMiddleware> _logger = null!;
+        private DefaultHttpContext _httpContext = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _next = A.Fake<RequestDelegate>();
+            _tenantContextProvider = new TenantContextProvider();
+            _tenantRepository = A.Fake<ITenantRepository>();
+            _logger = A.Fake<ILogger<TenantResolutionMiddleware>>();
+            _appSettings = Options.Create(
+                new AppSettings
+                {
+                    MultiTenancy = true,
+                    Datastore = "postgresql",
+                    IdentityProvider = "self-contained",
+                    SpecificationVersion = "v3",
+                }
+            );
+
+            var middleware = new TenantResolutionMiddleware(_next);
+            _httpContext = new DefaultHttpContext();
+            _httpContext.Request.Path = path;
+            _httpContext.Response.Body = new MemoryStream();
+            // No Tenant header
+
+            await middleware.Invoke(
+                _httpContext,
+                _appSettings,
+                _tenantContextProvider,
+                _tenantRepository,
+                _logger
+            );
+        }
+
+        [Test]
+        public void It_calls_next()
+        {
+            A.CallTo(() => _next(_httpContext)).MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_does_not_look_up_tenant()
+        {
+            A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_leaves_tenant_context_not_multitenant()
+        {
+            _tenantContextProvider.Context.Should().BeOfType<TenantContext.NotMultitenant>();
+        }
+    }
+
+    [TestFixture("/healthcheck")]
+    [TestFixture("/healthy")]
+    [TestFixture("/health/foo")]
+    [TestFixture("/v3/health")]
+    [TestFixture("/health//")]
+    public class Given_MultiTenancy_Is_Enabled_And_A_Health_Lookalike_Path(string path)
+    {
+        private RequestDelegate _next = null!;
+        private IOptions<AppSettings> _appSettings = null!;
+        private ITenantContextProvider _tenantContextProvider = null!;
+        private ITenantRepository _tenantRepository = null!;
+        private ILogger<TenantResolutionMiddleware> _logger = null!;
+        private DefaultHttpContext _httpContext = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _next = A.Fake<RequestDelegate>();
+            _tenantContextProvider = new TenantContextProvider();
+            _tenantRepository = A.Fake<ITenantRepository>();
+            _logger = A.Fake<ILogger<TenantResolutionMiddleware>>();
+            _appSettings = Options.Create(
+                new AppSettings
+                {
+                    MultiTenancy = true,
+                    Datastore = "postgresql",
+                    IdentityProvider = "self-contained",
+                    SpecificationVersion = "v3",
+                }
+            );
+
+            var middleware = new TenantResolutionMiddleware(_next);
+            _httpContext = new DefaultHttpContext();
+            _httpContext.Request.Path = path;
+            _httpContext.Response.Body = new MemoryStream();
+            // No Tenant header
+
+            await middleware.Invoke(
+                _httpContext,
+                _appSettings,
+                _tenantContextProvider,
+                _tenantRepository,
+                _logger
+            );
+        }
+
+        [Test]
+        public void It_returns_400()
+        {
+            _httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        }
+
+        [Test]
+        public void It_does_not_call_next()
+        {
+            A.CallTo(() => _next(_httpContext)).MustNotHaveHappened();
         }
     }
 }

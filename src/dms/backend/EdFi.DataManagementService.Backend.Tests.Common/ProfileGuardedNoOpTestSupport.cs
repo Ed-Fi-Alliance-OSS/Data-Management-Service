@@ -14,12 +14,14 @@ internal sealed record ProfileGuardedNoOpDocumentRow(
     long ContentVersion,
     DateTime ContentLastModifiedAt,
     long IdentityVersion,
-    DateTime IdentityLastModifiedAt
+    DateTime IdentityLastModifiedAt,
+    DateTime CreatedAt
 );
 
 internal sealed record ProfileGuardedNoOpPersistedState(
     ProfileGuardedNoOpDocumentRow Document,
-    IReadOnlyDictionary<string, object?> RootRow
+    IReadOnlyDictionary<string, object?> RootRow,
+    long MaxChangeVersion
 );
 
 internal static class ProfileGuardedNoOpPersistedStateSupport
@@ -28,19 +30,22 @@ internal static class ProfileGuardedNoOpPersistedStateSupport
         TDatabase database,
         Guid documentUuid,
         Func<TDatabase, Guid, Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> readDocumentRows,
-        Func<TDatabase, long, Task<IReadOnlyDictionary<string, object?>>> readRootRowByDocumentId
+        Func<TDatabase, long, Task<IReadOnlyDictionary<string, object?>>> readRootRowByDocumentId,
+        Func<TDatabase, Task<long>> readMaxChangeVersion
     )
     {
         ArgumentNullException.ThrowIfNull(database);
         ArgumentNullException.ThrowIfNull(readDocumentRows);
         ArgumentNullException.ThrowIfNull(readRootRowByDocumentId);
+        ArgumentNullException.ThrowIfNull(readMaxChangeVersion);
 
         var documentRows = await readDocumentRows(database, documentUuid).ConfigureAwait(false);
         var documentRow = BuildDocumentRow(documentRows, documentUuid);
 
         var rootRow = await readRootRowByDocumentId(database, documentRow.DocumentId).ConfigureAwait(false);
+        var maxChangeVersion = await readMaxChangeVersion(database).ConfigureAwait(false);
 
-        return new ProfileGuardedNoOpPersistedState(documentRow, rootRow);
+        return new ProfileGuardedNoOpPersistedState(documentRow, rootRow, maxChangeVersion);
     }
 
     private static ProfileGuardedNoOpDocumentRow BuildDocumentRow(
@@ -70,7 +75,8 @@ internal static class ProfileGuardedNoOpPersistedStateSupport
             IdentityLastModifiedAt: Convert.ToDateTime(
                 row["IdentityLastModifiedAt"],
                 CultureInfo.InvariantCulture
-            )
+            ),
+            CreatedAt: Convert.ToDateTime(row["CreatedAt"], CultureInfo.InvariantCulture)
         );
     }
 }

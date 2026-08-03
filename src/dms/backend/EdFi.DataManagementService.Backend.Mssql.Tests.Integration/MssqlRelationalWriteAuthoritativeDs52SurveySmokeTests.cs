@@ -38,7 +38,7 @@ file static class MssqlSurveyRuntimeIntegrationTestSupport
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -337,7 +337,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
     }
 
     [Test]
-    public async Task It_should_keep_runtime_written_rows_participating_in_identity_propagation_trigger_fallback()
+    public async Task It_should_keep_runtime_written_rows_participating_in_native_identity_cascades()
     {
         var beforeCascade = await ReadPersistedStateAsync(SurveyDocumentUuid.Value);
         var metadataBeforeCascade = await ReadDocumentMetadataAsync(SurveyDocumentUuid.Value);
@@ -747,6 +747,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -756,6 +757,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -765,6 +767,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),

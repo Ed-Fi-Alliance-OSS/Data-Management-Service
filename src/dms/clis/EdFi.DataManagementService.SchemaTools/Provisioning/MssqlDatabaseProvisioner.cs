@@ -20,13 +20,50 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
 {
     private static readonly DialectSql _dialect = new(
         EffectiveSchemaTableExistsSql: "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME = 'EffectiveSchema'",
-        EffectiveSchemaHashSql: """SELECT [EffectiveSchemaHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1""",
         SeedTableCheckSql: "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME IN ('ResourceKey', 'SchemaComponent')",
         EffectiveSchemaFingerprintSql: EffectiveSchemaTableDefinition.RenderReadFingerprintCommandText(
             SqlDialect.Mssql
         ),
+        DataStoreIdentityTableExistsSql: "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME = 'DataStoreIdentity'",
+        DataStoreIdentitySourceIdentitySql: "SELECT [SourceIdentity] FROM [dms].[DataStoreIdentity] WHERE [DataStoreIdentitySingletonId] = 1",
+        DocumentCacheStateTableExistsSql: "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME = 'DocumentCacheState'",
+        DocumentCacheStateSingletonSql: "SELECT [ProjectionLifecycleState], [CacheAheadRecoveryRequired] FROM [dms].[DocumentCacheState] WHERE [StateId] = 1",
+        KnownLegacyDocumentCacheArtifactSql: """
+        SELECT N'[dms].[DocumentCache].[Etag]'
+        WHERE EXISTS (
+            SELECT 1
+            FROM sys.columns
+            WHERE object_id = OBJECT_ID(N'dms.DocumentCache', N'U')
+            AND name = N'Etag'
+        )
+        UNION ALL
+        SELECT N'UX_DocumentCache_DocumentUuid'
+        WHERE EXISTS (
+            SELECT 1
+            FROM sys.key_constraints
+            WHERE parent_object_id = OBJECT_ID(N'dms.DocumentCache', N'U')
+            AND name = N'UX_DocumentCache_DocumentUuid'
+        )
+        OR EXISTS (
+            SELECT 1
+            FROM sys.indexes
+            WHERE object_id = OBJECT_ID(N'dms.DocumentCache', N'U')
+            AND name = N'UX_DocumentCache_DocumentUuid'
+        )
+        UNION ALL
+        SELECT N'IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt'
+        WHERE EXISTS (
+            SELECT 1
+            FROM sys.indexes
+            WHERE object_id = OBJECT_ID(N'dms.DocumentCache', N'U')
+            AND name = N'IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt'
+        )
+        """,
+        ProviderPrerequisiteSql: "",
         ResourceKeySelectSql: @"SELECT [ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion] FROM [dms].[ResourceKey] ORDER BY [ResourceKeyId]",
         SchemaComponentSelectSql: @"SELECT [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject] FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = @hash ORDER BY [ProjectEndpointName]",
+        MissingTableDataStoreIdentity: "[dms].[DataStoreIdentity]",
+        MissingTableDocumentCacheState: "[dms].[DocumentCacheState]",
         MissingTableResourceKey: "[dms].[ResourceKey]",
         MissingTableSchemaComponent: "[dms].[SchemaComponent]"
     );

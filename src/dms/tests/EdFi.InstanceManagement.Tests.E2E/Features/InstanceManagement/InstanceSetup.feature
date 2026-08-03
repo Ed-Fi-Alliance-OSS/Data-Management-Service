@@ -5,13 +5,16 @@
 
 @InstanceCleanup @instance-management-ci-shard-2
 Feature: Instance Setup for Multi-Instance Testing
-             Set up tenants, vendors, instances with route contexts, and applications for multi-instance testing
+             Exercise Configuration Service management CRUD (tenants, vendors, instances with route
+             contexts, and applications) against dedicated management tenants. Logical database tokens
+             Database1/Database2/Database3 resolve to the engine-correct route-context connection strings
+             published by the setup orchestration.
 
         Background:
             Given I am authenticated to the Configuration Service as system admin
 
         Scenario: Create tenant and vendor for District 255901
-            Given I am working with tenant "Tenant_255901"
+            Given I am working with tenant "Tenant_Setup_255901"
              When I create a vendor with the following details:
                   | Company             | District 255901 Vendor                   |
                   | ContactName         | Test Admin                               |
@@ -21,7 +24,7 @@ Feature: Instance Setup for Multi-Instance Testing
               And the vendor ID should be stored
 
         Scenario: Create tenant and vendor for District 255902
-            Given I am working with tenant "Tenant_255902"
+            Given I am working with tenant "Tenant_Setup_255902"
              When I create a vendor with the following details:
                   | Company             | District 255902 Vendor                   |
                   | ContactName         | Test Admin                               |
@@ -31,38 +34,38 @@ Feature: Instance Setup for Multi-Instance Testing
               And the vendor ID should be stored
 
         Scenario: Create data stores for District 255901
-            Given I am working with tenant "Tenant_255901"
+            Given I am working with tenant "Tenant_Setup_255901"
               And a vendor exists
              When I create an instance with the following details:
-                  | DataStoreType    | District                                                                                                                |
-                  | Name             | District 255901 - School Year 2024                                                                                      |
-                  | ConnectionString | host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2024; |
+                  | DataStoreType    | District                           |
+                  | Name             | District 255901 - School Year 2024 |
+                  | ConnectionString | Database1                          |
               And I add route context "districtId" with value "255901" to the instance
               And I add route context "schoolYear" with value "2024" to the instance
              Then the instance should be created successfully
              When I create an instance with the following details:
-                  | DataStoreType    | District                                                                                                                |
-                  | Name             | District 255901 - School Year 2025                                                                                      |
-                  | ConnectionString | host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2025; |
+                  | DataStoreType    | District                           |
+                  | Name             | District 255901 - School Year 2025 |
+                  | ConnectionString | Database2                          |
               And I add route context "districtId" with value "255901" to the instance
               And I add route context "schoolYear" with value "2025" to the instance
              Then the instance should be created successfully
               And 2 instances should be created
 
         Scenario: Create data store for District 255902
-            Given I am working with tenant "Tenant_255902"
+            Given I am working with tenant "Tenant_Setup_255902"
               And a vendor exists
              When I create an instance with the following details:
-                  | DataStoreType    | District                                                                                                                |
-                  | Name             | District 255902 - School Year 2024                                                                                      |
-                  | ConnectionString | host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255902_sy2024; |
+                  | DataStoreType    | District                           |
+                  | Name             | District 255902 - School Year 2024 |
+                  | ConnectionString | Database3                          |
               And I add route context "districtId" with value "255902" to the instance
               And I add route context "schoolYear" with value "2024" to the instance
              Then the instance should be created successfully
               And 1 instances should be created
 
         Scenario: Create application for District 255901
-            Given tenant "Tenant_255901" is set up with a vendor and instances:
+            Given tenant "Tenant_Setup_255901" is set up with a vendor and instances:
                   | Route       |
                   | 255901/2024 |
                   | 255901/2025 |
@@ -74,7 +77,7 @@ Feature: Instance Setup for Multi-Instance Testing
               And the application credentials should be stored
 
         Scenario: Create application for District 255902
-            Given tenant "Tenant_255902" is set up with a vendor and instances:
+            Given tenant "Tenant_Setup_255902" is set up with a vendor and instances:
                   | Route       |
                   | 255902/2024 |
              When I create an application with the following details:

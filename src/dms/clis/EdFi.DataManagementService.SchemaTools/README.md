@@ -107,20 +107,21 @@ api-schema-tools ddl emit -s core/ApiSchema.json -s extensions/tpdm/ApiSchema.js
 
 | File | Condition | Description |
 |---|---|---|
-| `pgsql.sql` | `--dialect pgsql` or `both` | PostgreSQL DDL script |
-| `mssql.sql` | `--dialect mssql` or `both` | SQL Server DDL script |
-| `relational-model.{dialect}.manifest.json` | Per selected dialect | Derived relational model inventory (tables, columns, constraints, indexes, views, triggers) |
+| `pgsql.sql` | `--dialect pgsql` or `both` | PostgreSQL DDL script, without a built-in transaction wrapper |
+| `mssql.sql` | `--dialect mssql` or `both` | SQL Server DDL script, without a built-in transaction wrapper |
+| `relational-model.{dialect}.manifest.json` | Per selected dialect | Effective-schema-derived relational model inventory; fixed `dms` inventory is emitted in SQL and affects the optional DDL manifest hashes/counts instead |
 | `effective-schema.manifest.json` | Always | Schema fingerprint, components, and resource key seed summary |
 | `ddl.manifest.json` | Only with `--ddl-manifest` | Dialect-independent summary: normalized-SQL SHA-256 and statement count per dialect, for diagnostics |
 
 All output files use Unix line endings (`\n`) for deterministic, byte-for-byte
-stable output across platforms.
+stable output across platforms. `ddl emit` writes standalone SQL; callers who apply the
+script manually own any desired transaction wrapper.
 
 ### `ddl provision` — Generate DDL and execute against a database
 
-Generates dialect-specific DDL and executes it against a target database in a
-single transaction. Provisions one database at a time (`--dialect both` is not
-accepted).
+Generates dialect-specific DDL and executes the generated DDL against a target
+database in a single transaction. Provisions one database at a time
+(`--dialect both` is not accepted).
 
 ```bash
 api-schema-tools ddl provision --schema <paths...> --connection-string <connstr> --dialect <dialect> [--create-database] [--timeout <seconds>]
@@ -152,11 +153,51 @@ api-schema-tools ddl provision -s core/ApiSchema.json -s extensions/tpdm/ApiSche
 **Behavior:**
 
 1. Loads and normalizes schema files, builds the effective schema set
-2. Generates DDL (core tables, relational model, seed DML) for the specified dialect
+2. Generates DDL (core tables, relational model, fixed DocumentCache inventory, seed DML)
+   for the specified dialect
 3. Optionally creates the database if `--create-database` is set
-4. Executes all DDL in a single transaction against the target database
-5. For SQL Server: configures Read Committed Snapshot Isolation (RCSI) on newly
+4. For SQL Server: configures Read Committed Snapshot Isolation (RCSI) on newly
    created databases; warns if RCSI is disabled on existing databases
+5. Runs bounded preflight checks before any generated DDL
+6. Executes all generated DDL in a single target-database transaction
+7. Prints the provisioned database name and effective schema summary
+
+SQL Server RCSI configuration for newly created databases, and RCSI warnings for
+existing databases, run outside and before the generated DDL transaction.
+
+Provisioning always creates the fixed `dms.DataStoreIdentity`, `dms.DocumentCache`,
+`dms.DocumentProjectionWork`, and `dms.DocumentCacheState` objects. Their physical shape
+is owned by
+[`data-model.md`](../../../../reference/design/backend-redesign/design-docs/data-model.md);
+cached-document semantics are owned by the
+[`Cached Document Contract`](../../../../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract);
+transactional-enqueue semantics are owned by
+[`Transactional Enqueue`](../../../../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#transactional-enqueue);
+create-only DDL behavior is owned by
+[`ddl-generation.md`](../../../../reference/design/backend-redesign/design-docs/ddl-generation.md#provision-semantics-create-only-no-migrations);
+schema/query integration is owned by
+[`cdc-streaming.md`](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#schema-and-query-integration);
+and the `CDC-INV-02` / `CDC-INV-03` traceability rows live under
+[`Contract-to-Evidence Traceability`](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-to-evidence-traceability).
+
+This command is create-only. Its phase-zero checks are limited to the effective-schema
+hash, `dms.DataStoreIdentity` and `dms.DocumentCacheState` singleton safety, known legacy
+DocumentCache artifacts (`DocumentCache.Etag`, `UX_DocumentCache_DocumentUuid`, and
+`IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt`), and PostgreSQL
+enqueue-owner prerequisites. It does not migrate old cache shapes, reconcile arbitrary
+drift, or classify every partial database state. A completed same-hash rerun preserves
+`SourceIdentity`, projection lifecycle, `CacheAheadRecoveryRequired`, cache rows, pending
+work, and enqueue timestamps, while compatible existence checks and replaceable
+functions/triggers can finish or refresh generated definitions. Known legacy cache
+artifacts require dropping and recreating the database.
+
+PostgreSQL provisioning requires capability to create or refresh the locked-down
+`NOLOGIN` `edfi_dms_enqueue_owner` role used to own the security-definer enqueue
+functions. That role is not a runtime DMS credential. SQL Server uses same-owner trigger
+execution over the referenced `dms` tables and emits no `EXECUTE AS`, enqueue user, or
+enqueue role. Runtime projection, projection administration, health/readiness,
+cache-backed reads, complete target eligibility validation, CDC capture objects, and CDC
+reader grants are outside this CLI provisioning contract.
 
 ## Determinism guarantee
 
@@ -206,7 +247,7 @@ locally:
 2. Ensure SQL Server is running (e.g., via Docker):
 
    ```bash
-   docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=YourPassword" -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+   docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=YourPassword" -p 1433:1433 -d mcr.microsoft.com/mssql/server:2025-latest
    ```
 
 3. Run the integration tests:

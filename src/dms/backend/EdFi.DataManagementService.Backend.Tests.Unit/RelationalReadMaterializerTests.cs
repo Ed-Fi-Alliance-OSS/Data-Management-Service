@@ -37,7 +37,7 @@ public class Given_RelationalReadMaterializer
                 ),
                 CreateHydratedTableRows(readPlan, (345L, "Lincoln High")),
                 [],
-                RelationalGetRequestReadMode.ExternalResponse
+                RelationalReadMaterializationMode.ExternalResponse
             )
             {
                 MappingSet = BuildMappingSet(),
@@ -69,7 +69,7 @@ public class Given_RelationalReadMaterializer
                 ),
                 CreateHydratedTableRows(readPlan, (345L, "Lincoln High")),
                 [],
-                RelationalGetRequestReadMode.ExternalResponse
+                RelationalReadMaterializationMode.ExternalResponse
             )
             {
                 MappingSet = BuildMappingSet(),
@@ -95,7 +95,7 @@ public class Given_RelationalReadMaterializer
                 ),
                 CreateHydratedTableRows(readPlan, (345L, "Lincoln High")),
                 [],
-                RelationalGetRequestReadMode.ExternalResponse
+                RelationalReadMaterializationMode.ExternalResponse
             )
             {
                 MappingSet = BuildMappingSet(),
@@ -111,7 +111,7 @@ public class Given_RelationalReadMaterializer
                 ),
                 CreateHydratedTableRows(readPlan, (345L, "Lincoln High")),
                 [],
-                RelationalGetRequestReadMode.ExternalResponse
+                RelationalReadMaterializationMode.ExternalResponse
             )
             {
                 MappingSet = BuildMappingSet(),
@@ -148,7 +148,7 @@ public class Given_RelationalReadMaterializer
                 ),
                 CreateHydratedTableRows(readPlan, (345L, "Lincoln High")),
                 [],
-                RelationalGetRequestReadMode.StoredDocument
+                RelationalReadMaterializationMode.StoredDocument
             )
         );
 
@@ -157,6 +157,63 @@ public class Given_RelationalReadMaterializer
         result["id"].Should().BeNull();
         result["_etag"].Should().BeNull();
         result["_lastModifiedDate"].Should().BeNull();
+    }
+
+    [Test]
+    public void It_materializes_CacheProjection_with_id_last_modified_and_no_etag()
+    {
+        var sut = CreateMaterializer();
+        var readPlan = CreateReadPlan();
+
+        var result = sut.Materialize(
+            new RelationalReadMaterializationRequest(
+                readPlan,
+                CreateDocumentMetadataRow(
+                    contentVersion: 91L,
+                    contentLastModifiedAt: new DateTimeOffset(2026, 4, 3, 9, 10, 11, TimeSpan.FromHours(-5))
+                ),
+                CreateHydratedTableRows(readPlan, (345L, "Lincoln High")),
+                [],
+                RelationalReadMaterializationMode.CacheProjection
+            )
+            {
+                MappingSet = BuildMappingSet(),
+                EtagVariant = new EtagVariantInputs(
+                    ProfileName: "Ignored-Readable-Profile",
+                    Format: ResponseFormat.Json,
+                    ContentCoding: ResponseContentCoding.Gzip
+                ),
+            }
+        );
+
+        result.Should().BeOfType<JsonObject>();
+        result["name"]!.GetValue<string>().Should().Be("Lincoln High");
+        result["id"]!.GetValue<string>().Should().Be(_documentUuid.ToString());
+        result["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-04-03T14:10:11Z");
+        result.AsObject().Should().NotContainKey("_etag");
+    }
+
+    [Test]
+    public void It_requires_mapping_set_for_CacheProjection()
+    {
+        var sut = CreateMaterializer();
+        var readPlan = CreateReadPlan();
+
+        Action act = () =>
+            sut.Materialize(
+                new RelationalReadMaterializationRequest(
+                    readPlan,
+                    CreateDocumentMetadataRow(
+                        contentVersion: 91L,
+                        contentLastModifiedAt: new DateTimeOffset(2026, 4, 3, 14, 10, 11, TimeSpan.Zero)
+                    ),
+                    CreateHydratedTableRows(readPlan, (345L, "Lincoln High")),
+                    [],
+                    RelationalReadMaterializationMode.CacheProjection
+                )
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*cache projection*requires MappingSet*");
     }
 
     [Test]
@@ -174,7 +231,7 @@ public class Given_RelationalReadMaterializer
                 ),
                 CreateHydratedDescriptorTableRows(readPlan, (345L, 601L)),
                 CreateHydratedDescriptorRows((601L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade")),
-                RelationalGetRequestReadMode.StoredDocument
+                RelationalReadMaterializationMode.StoredDocument
             )
         );
 
@@ -183,6 +240,38 @@ public class Given_RelationalReadMaterializer
             .GetValue<string>()
             .Should()
             .Be("uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade");
+    }
+
+    [Test]
+    public void It_projects_descriptor_uris_for_CacheProjection()
+    {
+        var sut = CreateMaterializer();
+        var readPlan = CreateReadPlanWithDescriptor();
+
+        var result = sut.Materialize(
+            new RelationalReadMaterializationRequest(
+                readPlan,
+                CreateDocumentMetadataRow(
+                    contentVersion: 91L,
+                    contentLastModifiedAt: new DateTimeOffset(2026, 4, 3, 14, 10, 11, TimeSpan.Zero)
+                ),
+                CreateHydratedDescriptorTableRows(readPlan, (345L, 601L)),
+                CreateHydratedDescriptorRows((601L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade")),
+                RelationalReadMaterializationMode.CacheProjection
+            )
+            {
+                MappingSet = BuildMappingSet(),
+            }
+        );
+
+        result.Should().BeOfType<JsonObject>();
+        result["entryGradeLevelDescriptor"]!
+            .GetValue<string>()
+            .Should()
+            .Be("uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade");
+        result["id"]!.GetValue<string>().Should().Be(_documentUuid.ToString());
+        result["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-04-03T14:10:11Z");
+        result.AsObject().Should().NotContainKey("_etag");
     }
 
     [Test]
@@ -211,7 +300,7 @@ public class Given_RelationalReadMaterializer
                     CreateHydratedTableRows(readPlan, (678L, "Cedar High"), (345L, "Lincoln High")),
                     []
                 ),
-                RelationalGetRequestReadMode.ExternalResponse
+                RelationalReadMaterializationMode.ExternalResponse
             )
             {
                 MappingSet = BuildMappingSet(),
@@ -263,7 +352,7 @@ public class Given_RelationalReadMaterializer
                         (601L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade")
                     )
                 ),
-                RelationalGetRequestReadMode.StoredDocument
+                RelationalReadMaterializationMode.StoredDocument
             )
         );
 
@@ -292,10 +381,9 @@ public class Given_RelationalReadMaterializer
             new ServedEtagComposer()
         );
 
-    // ExternalResponse materialization now requires both EtagVariant and MappingSet to compose the
-    // _etag (see RelationalReadMaterializer.ComposeEtag). The read plans in this fixture have no
-    // DocumentReferenceBindings, so supplying a MappingSet never routes through slug resolution —
-    // NoLinkSlugResolver above is safe to keep as the resolver stand-in.
+    // The read plans in this fixture have no DocumentReferenceBindings, so supplying a MappingSet
+    // never routes through slug resolution — NoLinkSlugResolver above is safe to keep as the resolver
+    // stand-in.
     private static MappingSet BuildMappingSet()
     {
         var effectiveSchema = new EffectiveSchemaInfo(
@@ -639,6 +727,29 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
     }
 
     [Test]
+    public void It_emits_link_bearing_CacheProjection_when_resource_links_are_disabled()
+    {
+        var sut = CreateMaterializer(new ResourceLinksOptions { Enabled = false });
+        var readPlan = BuildReadPlanWithDocumentReferenceBinding();
+
+        var result = MaterializeSingleCacheProjection(sut, readPlan);
+
+        result["id"]!.GetValue<string>().Should().Be(AcademicWeekDocumentUuid.ToString());
+        result["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-12T14:00:00Z");
+        result.AsObject().Should().NotContainKey("_etag");
+
+        var schoolReference = result["schoolReference"] as JsonObject;
+        schoolReference.Should().NotBeNull("reference object must be present in the cache projection");
+        var link = schoolReference!["link"] as JsonObject;
+        link.Should()
+            .NotBeNull(
+                "cache projection uses the fixed link-bearing stream representation, independent of ResourceLinksOptions"
+            );
+        link!["rel"]!.GetValue<string>().Should().Be("School");
+        link["href"]!.GetValue<string>().Should().Be($"/ed-fi/schools/{SchoolDocumentUuid:D}");
+    }
+
+    [Test]
     public void It_strips_link_subtrees_via_StripReferenceLinks_when_links_disabled()
     {
         var sut = CreateMaterializer(new ResourceLinksOptions { Enabled = false });
@@ -801,7 +912,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
                 new RelationalReadPageMaterializationRequest(
                     readPlan,
                     hydratedPage,
-                    RelationalGetRequestReadMode.ExternalResponse
+                    RelationalReadMaterializationMode.ExternalResponse
                 )
             );
 
@@ -817,7 +928,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
 
     /// <summary>
     /// Pins the StoredDocument-mode contract: a read with
-    /// <see cref="RelationalGetRequestReadMode.StoredDocument"/> must route to the no-link
+    /// <see cref="RelationalReadMaterializationMode.StoredDocument"/> must route to the no-link
     /// reconstitution overload even when the caller supplies a <see cref="MappingSet"/> and a
     /// populated <see cref="HydratedDocumentReferenceLookup"/>. StoredDocument is the internal
     /// read-modify-write shape (see <c>RelationalGetRequestContracts.cs:22</c>); a leaking
@@ -862,7 +973,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
                 new RelationalReadPageMaterializationRequest(
                     readPlan,
                     hydratedPage,
-                    RelationalGetRequestReadMode.StoredDocument
+                    RelationalReadMaterializationMode.StoredDocument
                 )
                 {
                     MappingSet = BuildMappingSet(),
@@ -878,7 +989,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             new RelationalReadPageMaterializationRequest(
                 readPlan,
                 hydratedPage,
-                RelationalGetRequestReadMode.StoredDocument
+                RelationalReadMaterializationMode.StoredDocument
             )
             {
                 MappingSet = BuildMappingSet(),
@@ -930,7 +1041,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
                 metadata,
                 [new HydratedTableRows(readPlan.Model.Root, [row])],
                 [],
-                RelationalGetRequestReadMode.ExternalResponse
+                RelationalReadMaterializationMode.ExternalResponse
             )
             {
                 MappingSet = BuildMappingSet(),
@@ -978,7 +1089,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
                 metadata,
                 [new HydratedTableRows(readPlan.Model.Root, [row])],
                 [],
-                RelationalGetRequestReadMode.ExternalResponse
+                RelationalReadMaterializationMode.ExternalResponse
             )
             {
                 MappingSet = BuildMappingSet(),
@@ -1042,11 +1153,53 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             new RelationalReadPageMaterializationRequest(
                 readPlan,
                 hydratedPage,
-                RelationalGetRequestReadMode.ExternalResponse
+                RelationalReadMaterializationMode.ExternalResponse
             )
             {
                 MappingSet = BuildMappingSet(),
                 EtagVariant = new EtagVariantInputs(null, ResponseFormat.Json),
+            }
+        );
+
+        materialized.Should().ContainSingle();
+        return materialized[0].Document;
+    }
+
+    private static JsonNode MaterializeSingleCacheProjection(
+        IRelationalReadMaterializer sut,
+        ResourceReadPlan readPlan
+    )
+    {
+        object?[] row = [1L, (object?)SchoolDocumentId, 255901];
+        var rootTableModel = readPlan.Model.Root;
+        var metadata = new DocumentMetadataRow(
+            DocumentId: 1L,
+            DocumentUuid: AcademicWeekDocumentUuid,
+            ContentVersion: 1L,
+            IdentityVersion: 1L,
+            ContentLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
+        );
+        var hydratedPage = new HydratedPage(
+            TotalCount: null,
+            DocumentMetadata: [metadata],
+            TableRowsInDependencyOrder: [new HydratedTableRows(rootTableModel, [row])],
+            DescriptorRowsInPlanOrder: []
+        )
+        {
+            DocumentReferenceLookup = new HydratedDocumentReferenceLookup([
+                new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId),
+            ]),
+        };
+
+        var materialized = sut.MaterializePage(
+            new RelationalReadPageMaterializationRequest(
+                readPlan,
+                hydratedPage,
+                RelationalReadMaterializationMode.CacheProjection
+            )
+            {
+                MappingSet = BuildMappingSet(),
             }
         );
 
@@ -1084,7 +1237,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             new RelationalReadPageMaterializationRequest(
                 readPlan,
                 hydratedPage,
-                RelationalGetRequestReadMode.ExternalResponse
+                RelationalReadMaterializationMode.ExternalResponse
             )
             {
                 MappingSet = BuildMappingSet(),

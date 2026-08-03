@@ -1,7 +1,7 @@
 {
   "api_schema_format_version": "1.0.0",
-  "relational_mapping_version": "v1",
-  "effective_schema_hash": "aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50",
+  "relational_mapping_version": "v2",
+  "effective_schema_hash": "2621a6197de1865649a847eea39217759c1eab0225f2d152b1f4de7f7279e041",
   "resource_key_count": 3,
   "resource_key_seed_hash": "13390dee0a99e1ff56e7f39cb8f5b43beda834078ea87a4975fe84b5710f6252",
   "schema_components": [

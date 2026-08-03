@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Core.Security;
@@ -64,7 +65,10 @@ public static class WebApplicationBuilderExtensions
             .Configure<ResourceLinksOptions>(
                 webAppBuilder.Configuration.GetSection("DataManagement:ResourceLinks")
             )
-            .AddSingleton<IStartupStatusSignal, FileStartupStatusSignal>()
+            .AddOptions<DocumentCacheOptions>()
+            .Bind(webAppBuilder.Configuration.GetSection(DocumentCacheOptions.SectionName))
+            .ValidateOnStart()
+            .Services.AddSingleton<IStartupStatusSignal, FileStartupStatusSignal>()
             .AddSingleton<IStartupProcessExit, EnvironmentStartupProcessExit>()
             .AddSingleton<StartupPhaseExecutor>()
             .AddSingleton<
@@ -76,6 +80,7 @@ public static class WebApplicationBuilderExtensions
                 ConfigurationServiceSettingsValidator
             >()
             .AddSingleton<IValidateOptions<ReverseProxySettings>, ReverseProxySettingsValidator>()
+            .AddSingleton<IValidateOptions<DocumentCacheOptions>, DocumentCacheOptionsValidator>()
             .AddSingleton<IValidateOptions<MappingSetProviderOptions>, MappingSetProviderOptionsValidator>();
 
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
@@ -182,6 +187,36 @@ public static class WebApplicationBuilderExtensions
         );
         webAppBuilder.Services.AddSingleton<IDataStoreProvider, ConfigurationServiceDataStoreProvider>();
         webAppBuilder.Services.AddSingleton<IConnectionStringProvider, DmsConnectionStringProvider>();
+        webAppBuilder.Services.AddSingleton<DocumentCacheProcessProviderToken>(_ =>
+        {
+            string? datastore = webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value;
+            if (
+                !DocumentCacheProcessProviderToken.TryCreate(
+                    datastore,
+                    out DocumentCacheProcessProviderToken? providerToken
+                )
+            )
+            {
+                throw new InvalidOperationException(
+                    "Unable to normalize AppSettings:Datastore for DocumentCache target resolution."
+                );
+            }
+
+            return providerToken!;
+        });
+        webAppBuilder.Services.AddSingleton<
+            IDocumentCacheTargetContextBuilder,
+            DocumentCacheTargetContextBuilder
+        >();
+        webAppBuilder.Services.AddSingleton<IDocumentCacheTargetRegistry, DocumentCacheTargetRegistry>();
+        webAppBuilder.Services.AddSingleton<
+            IDocumentCacheDiagnosticSnapshotProvider,
+            DocumentCacheDiagnosticSnapshotProvider
+        >();
+        webAppBuilder.Services.AddSingleton<
+            IDocumentCacheDownstreamPublicationHistoryProvider,
+            DocumentCacheUnknownDownstreamPublicationHistoryProvider
+        >();
 
         // Add JWT authentication services from Core
         webAppBuilder.Services.AddJwtAuthentication(webAppBuilder.Configuration);
@@ -209,6 +244,22 @@ public static class WebApplicationBuilderExtensions
                 Backend.Postgresql.PostgresqlDatabaseFingerprintReader
             >();
             webAppBuilder.Services.AddSingleton<
+                IDocumentCachePhysicalSourceFingerprintReader,
+                Backend.Postgresql.PostgresqlDocumentCachePhysicalSourceFingerprintReader
+            >();
+            webAppBuilder.Services.AddSingleton<
+                IDocumentCacheInventoryValidator,
+                Backend.Postgresql.PostgresqlDocumentCacheInventoryValidator
+            >();
+            webAppBuilder.Services.AddSingleton<
+                IDocumentCacheLifecycleReader,
+                Backend.Postgresql.PostgresqlDocumentCacheLifecycleReader
+            >();
+            webAppBuilder.Services.AddSingleton<
+                IDocumentCacheProviderPrerequisiteValidator,
+                Backend.Postgresql.PostgresqlDocumentCacheProviderPrerequisiteValidator
+            >();
+            webAppBuilder.Services.AddSingleton<
                 IResourceKeyRowReader,
                 Backend.Postgresql.PostgresqlResourceKeyRowReader
             >();
@@ -223,6 +274,22 @@ public static class WebApplicationBuilderExtensions
             webAppBuilder.Services.AddSingleton<
                 IDatabaseFingerprintReader,
                 Backend.Mssql.MssqlDatabaseFingerprintReader
+            >();
+            webAppBuilder.Services.AddSingleton<
+                IDocumentCachePhysicalSourceFingerprintReader,
+                Backend.Mssql.MssqlDocumentCachePhysicalSourceFingerprintReader
+            >();
+            webAppBuilder.Services.AddSingleton<
+                IDocumentCacheInventoryValidator,
+                Backend.Mssql.MssqlDocumentCacheInventoryValidator
+            >();
+            webAppBuilder.Services.AddSingleton<
+                IDocumentCacheLifecycleReader,
+                Backend.Mssql.MssqlDocumentCacheLifecycleReader
+            >();
+            webAppBuilder.Services.AddSingleton<
+                IDocumentCacheProviderPrerequisiteValidator,
+                Backend.Mssql.MssqlDocumentCacheProviderPrerequisiteValidator
             >();
             webAppBuilder.Services.AddSingleton<
                 IResourceKeyRowReader,

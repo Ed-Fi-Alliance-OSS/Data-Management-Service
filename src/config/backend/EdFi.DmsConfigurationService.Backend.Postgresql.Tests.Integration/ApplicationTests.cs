@@ -27,12 +27,12 @@ public class ApplicationTests : DatabaseTest
         new TenantContextProvider()
     );
 
-    private long _vendorId;
+    private int _vendorId;
 
     [TestFixture]
     public class InsertTest : ApplicationTests
     {
-        private long _id;
+        private int _id;
         private readonly string _clientId = Guid.NewGuid().ToString();
         private readonly Guid _clientUuid = Guid.NewGuid();
 
@@ -180,7 +180,7 @@ public class ApplicationTests : DatabaseTest
                 new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             insertResult.Should().BeOfType<ApplicationInsertResult.Success>();
-            long appId = ((ApplicationInsertResult.Success)insertResult).Id;
+            int appId = ((ApplicationInsertResult.Success)insertResult).Id;
 
             ApplicationUpdateCommand applicationUpdate = new()
             {
@@ -202,7 +202,7 @@ public class ApplicationTests : DatabaseTest
     [TestFixture]
     public class UpdateTests : ApplicationTests
     {
-        private long _id;
+        private int _id;
 
         [SetUp]
         public async Task SetUp()
@@ -286,8 +286,8 @@ public class ApplicationTests : DatabaseTest
     [TestFixture]
     public class DeleteTests : ApplicationTests
     {
-        private long _application1Id;
-        private long _application2Id;
+        private int _application1Id;
+        private int _application2Id;
 
         [SetUp]
         public async Task SetUp()
@@ -389,7 +389,7 @@ public class ApplicationTests : DatabaseTest
     [TestFixture]
     public class DuplicateApplicationTests : ApplicationTests
     {
-        private long _testVendorId;
+        private int _testVendorId;
 
         [SetUp]
         public async Task Setup()
@@ -688,7 +688,7 @@ public class ApplicationTests : DatabaseTest
     [TestFixture]
     public class Given_ApplicationWithDisabledApiClient : ApplicationTests
     {
-        private long _id;
+        private int _id;
         private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
             Configuration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
@@ -770,8 +770,8 @@ public class ApplicationTests : DatabaseTest
     [TestFixture]
     public class Given_DataStoreApplicationWithDisabledApiClient : ApplicationTests
     {
-        private long _applicationId;
-        private long _dataStoreId;
+        private int _applicationId;
+        private int _dataStoreId;
 
         private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
             Configuration.DatabaseOptions,
@@ -926,9 +926,9 @@ public class ApplicationTests : DatabaseTest
     [TestFixture]
     public class Given_DataStoreApplicationEnabled_CrossInstanceIsolation : ApplicationTests
     {
-        private long _applicationId;
-        private long _dataStore1Id;
-        private long _dataStore2Id;
+        private int _applicationId;
+        private int _dataStore1Id;
+        private int _dataStore2Id;
 
         private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
             Configuration.DatabaseOptions,
@@ -1177,12 +1177,12 @@ public class ApplicationTests : DatabaseTest
     {
         private IApplicationRepository _tenantARepository = null!;
         private IApplicationRepository _tenantBRepository = null!;
-        private long _tenantAVendorId;
-        private long _tenantBVendorId;
-        private long _tenantAApplicationId;
-        private long _tenantBApplicationId;
+        private int _tenantAVendorId;
+        private int _tenantBVendorId;
+        private int _tenantAApplicationId;
+        private int _tenantBApplicationId;
         private string _tenantBClientId = string.Empty;
-        private long _tenantADataStoreId;
+        private int _tenantADataStoreId;
 
         [SetUp]
         public async Task Setup()
@@ -1245,7 +1245,7 @@ public class ApplicationTests : DatabaseTest
                 tenantContextProvider
             );
 
-        private static async Task<long> InsertVendor(
+        private static async Task<int> InsertVendor(
             TenantContextProvider tenantContextProvider,
             string company
         )
@@ -1269,9 +1269,9 @@ public class ApplicationTests : DatabaseTest
             return ((VendorInsertResult.Success)vendorResult).Id;
         }
 
-        private static async Task<(long Id, string ClientId)> InsertApplication(
+        private static async Task<(int Id, string ClientId)> InsertApplication(
             IApplicationRepository applicationRepository,
-            long vendorId,
+            int vendorId,
             string applicationName
         )
         {
@@ -1290,7 +1290,7 @@ public class ApplicationTests : DatabaseTest
             return (((ApplicationInsertResult.Success)result).Id, clientId);
         }
 
-        private static async Task<long> InsertDataStore(
+        private static async Task<int> InsertDataStore(
             TenantContextProvider tenantContextProvider,
             string name
         )
@@ -1471,6 +1471,202 @@ public class ApplicationTests : DatabaseTest
             var singleTenantRepository = CreateApplicationRepository(new TenantContextProvider());
             var result = await singleTenantRepository.GetApplication(_tenantAApplicationId);
             result.Should().BeOfType<ApplicationGetResult.FailureNotFound>();
+        }
+    }
+
+    /// <summary>
+    /// Education organization ids stay 64-bit while every CMS resource identifier narrows to int32,
+    /// which makes the read paths that project them the highest-risk edits in DMS-1337: their Dapper
+    /// type arguments are positional, matched to a splitOn list, so narrowing the wrong one compiles
+    /// cleanly and every other fixture in this suite still passes because all of their ids fit in an
+    /// int. This is the only test that would notice.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_education_organization_id_above_int_MaxValue : ApplicationTests
+    {
+        private const long LargeEducationOrganizationId = 9999999999L;
+
+        private int _applicationId;
+        private int _dataStoreId;
+        private readonly string _clientId = Guid.NewGuid().ToString();
+
+        private readonly IVendorRepository _vendorRepository = new VendorRepository(
+            Configuration.DatabaseOptions,
+            NullLogger<VendorRepository>.Instance,
+            new TestAuditContext(),
+            new TenantContextProvider()
+        );
+
+        private readonly IDataStoreRepository _dataStoreRepository;
+
+        public Given_an_education_organization_id_above_int_MaxValue()
+        {
+            _dataStoreRepository = new DataStoreRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DataStoreRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new DataStoreContextRepository(
+                    Configuration.DatabaseOptions,
+                    NullLogger<DataStoreContextRepository>.Instance,
+                    new TestAuditContext(),
+                    new TenantContextProvider()
+                ),
+                new DataStoreDerivativeRepository(
+                    Configuration.DatabaseOptions,
+                    NullLogger<DataStoreDerivativeRepository>.Instance,
+                    new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                    new TestAuditContext(),
+                    new TenantContextProvider()
+                ),
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var vendorResult = await _vendorRepository.InsertVendor(
+                new VendorInsertCommand
+                {
+                    Company = "Large Education Organization Company",
+                    ContactEmailAddress = "largeedorg@test.com",
+                    ContactName = "Large EdOrg Tester",
+                    NamespacePrefixes = "uri://large-edorg-test.example",
+                }
+            );
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            _vendorId = ((VendorInsertResult.Success)vendorResult).Id;
+
+            var dataStoreResult = await _dataStoreRepository.InsertDataStore(
+                new DataStoreInsertCommand
+                {
+                    DataStoreType = "Test",
+                    Name = "Large EdOrg Data Store",
+                    ConnectionString = "Server=test;Database=TestDb;",
+                }
+            );
+            dataStoreResult.Should().BeOfType<DataStoreInsertResult.Success>();
+            _dataStoreId = ((DataStoreInsertResult.Success)dataStoreResult).Id;
+
+            // The data store link is what makes this application visible to
+            // QueryApplicationByDataStore, one of the five read paths under test.
+            var insertResult = await _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "Large EdOrg Application",
+                    VendorId = _vendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [LargeEducationOrganizationId],
+                    DataStoreIds = [_dataStoreId],
+                },
+                new ApiClientCommand { ClientId = _clientId, ClientUuid = Guid.NewGuid() }
+            );
+            insertResult.Should().BeOfType<ApplicationInsertResult.Success>();
+            _applicationId = ((ApplicationInsertResult.Success)insertResult).Id;
+        }
+
+        [Test]
+        public async Task It_round_trips_an_education_organization_id_above_int_MaxValue()
+        {
+            await AssertEveryReadPathPreservesTheEducationOrganizationId("after the insert");
+
+            var updateResult = await _applicationRepository.UpdateApplication(
+                new ApplicationUpdateCommand
+                {
+                    Id = _applicationId,
+                    ApplicationName = "Large EdOrg Application Updated",
+                    VendorId = _vendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [LargeEducationOrganizationId],
+                    DataStoreIds = [_dataStoreId],
+                },
+                // Reuse the ClientId the insert created: UpdateApplication resolves the ApiClient by
+                // ClientId before rebuilding the data store links, so a fresh one would strand them
+                // and remove this application from QueryApplicationByDataStore.
+                new ApiClientCommand { ClientId = _clientId, ClientUuid = Guid.NewGuid() }
+            );
+            updateResult.Should().BeOfType<ApplicationUpdateResult.Success>();
+
+            // ApplicationUpdateResult.Success carries no payload, so re-reading is the only thing that
+            // can prove the rewritten value survived.
+            await AssertEveryReadPathPreservesTheEducationOrganizationId("after the update");
+        }
+
+        /// <summary>
+        /// Each of the five read paths projects EducationOrganizationId through its own Dapper type
+        /// arguments and splitOn list, so each one has to be asserted separately.
+        /// </summary>
+        private async Task AssertEveryReadPathPreservesTheEducationOrganizationId(string when)
+        {
+            var getResult = await _applicationRepository.GetApplication(_applicationId);
+            getResult.Should().BeOfType<ApplicationGetResult.Success>();
+            AssertPreserved(
+                ((ApplicationGetResult.Success)getResult).ApplicationResponse.EducationOrganizationIds,
+                "GetApplication",
+                when
+            );
+
+            var queryResult = await _applicationRepository.QueryApplication(
+                new ApplicationQuery { Limit = 25, Offset = 0 }
+            );
+            queryResult.Should().BeOfType<ApplicationQueryResult.Success>();
+            AssertPreserved(
+                ((ApplicationQueryResult.Success)queryResult)
+                    .ApplicationResponses.Single(application => application.Id == _applicationId)
+                    .EducationOrganizationIds,
+                "QueryApplication",
+                when
+            );
+
+            var vendorApplicationsResult = await _vendorRepository.GetVendorApplications(_vendorId);
+            vendorApplicationsResult.Should().BeOfType<VendorApplicationsResult.Success>();
+            AssertPreserved(
+                ((VendorApplicationsResult.Success)vendorApplicationsResult)
+                    .ApplicationResponses.Single(application => application.Id == _applicationId)
+                    .EducationOrganizationIds,
+                "GetVendorApplications",
+                when
+            );
+
+            var byDataStoreResult = await _dataStoreRepository.QueryApplicationByDataStore(
+                _dataStoreId,
+                new PagingQuery { Limit = 25, Offset = 0 }
+            );
+            byDataStoreResult.Should().BeOfType<ApplicationByDataStoreQueryResult.Success>();
+            AssertPreserved(
+                ((ApplicationByDataStoreQueryResult.Success)byDataStoreResult)
+                    .ApplicationResponse.Single(application => application.Id == _applicationId)
+                    .EducationOrganizationIds,
+                "QueryApplicationByDataStore",
+                when
+            );
+
+            // The reconciliation read behind PUT /v3/applications/{id}. It projects the ids through a
+            // standalone QueryAsync<long> rather than a multi-map, and ApplicationModule both compares
+            // them against the command and rebuilds the identity provider's educationOrganizationIds
+            // claim from them on the rollback path, so a narrowing here would corrupt an authorization
+            // scope instead of failing visibly.
+            var updateStateResult = await _applicationRepository.GetApplicationUpdateState(
+                _applicationId,
+                _clientId
+            );
+            updateStateResult.Should().BeOfType<ApplicationUpdateStateResult.Success>();
+            AssertPreserved(
+                [.. ((ApplicationUpdateStateResult.Success)updateStateResult).State.EducationOrganizationIds],
+                "GetApplicationUpdateState",
+                when
+            );
+        }
+
+        private static void AssertPreserved(List<long> educationOrganizationIds, string readPath, string when)
+        {
+            educationOrganizationIds
+                .Should()
+                .BeEquivalentTo(
+                    new[] { LargeEducationOrganizationId },
+                    $"{readPath} should preserve an education organization id above int.MaxValue {when}"
+                );
         }
     }
 }

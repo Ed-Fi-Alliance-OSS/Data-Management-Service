@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStoreContext;
@@ -44,8 +45,13 @@ public class DataStoreContextModule : IEndpointModule
                 $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}{httpContext.Request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 new { Id = success.Id }
             ),
-            DataStoreContextInsertResult.FailureDataStoreNotFound => throw new ValidationException(
-                new[] { new ValidationFailure("DataStoreId", "Reference 'DataStoreId' does not exist.") }
+            DataStoreContextInsertResult.FailureDataStoreNotFound => Results.Json(
+                FailureResponse.ForUnresolvedReference(
+                    "Reference 'DataStoreId' does not exist.",
+                    httpContext.TraceIdentifier
+                ),
+                contentType: "application/problem+json",
+                statusCode: (int)HttpStatusCode.Conflict
             ),
             DataStoreContextInsertResult.FailureDuplicateDataStoreContext duplicate =>
                 throw new ValidationException(
@@ -81,7 +87,7 @@ public class DataStoreContextModule : IEndpointModule
     }
 
     private static async Task<IResult> GetById(
-        long id,
+        int id,
         HttpContext httpContext,
         IDataStoreContextRepository dataStoreContextRepository,
         ILogger<DataStoreContextModule> logger
@@ -101,7 +107,7 @@ public class DataStoreContextModule : IEndpointModule
     }
 
     private static async Task<IResult> Update(
-        long id,
+        int id,
         DataStoreContextUpdateCommand.Validator validator,
         DataStoreContextUpdateCommand command,
         HttpContext httpContext,
@@ -128,8 +134,13 @@ public class DataStoreContextModule : IEndpointModule
                 "Data store context not found",
                 httpContext.TraceIdentifier
             ),
-            DataStoreContextUpdateResult.FailureDataStoreNotFound => throw new ValidationException(
-                new[] { new ValidationFailure("DataStoreId", "Reference 'DataStoreId' does not exist.") }
+            DataStoreContextUpdateResult.FailureDataStoreNotFound => Results.Json(
+                FailureResponse.ForUnresolvedReference(
+                    "Reference 'DataStoreId' does not exist.",
+                    httpContext.TraceIdentifier
+                ),
+                contentType: "application/problem+json",
+                statusCode: (int)HttpStatusCode.Conflict
             ),
             DataStoreContextUpdateResult.FailureDuplicateDataStoreContext duplicate =>
                 throw new ValidationException(
@@ -146,7 +157,7 @@ public class DataStoreContextModule : IEndpointModule
     }
 
     private static async Task<IResult> Delete(
-        long id,
+        int id,
         HttpContext httpContext,
         IDataStoreContextRepository dataStoreContextRepository,
         ILogger<DataStoreContextModule> logger

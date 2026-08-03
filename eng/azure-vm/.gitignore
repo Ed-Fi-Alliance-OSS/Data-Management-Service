@@ -1,0 +1,11 @@
+# Secrets and generated TLS material
+compose/.env
+compose/ssl/server.crt
+compose/ssl/server.key
+compose/ssl/*.pem
+
+# OS / editor
+.DS_Store
+*.swp
+.vscode/*
+!.vscode/extensions.json

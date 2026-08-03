@@ -154,7 +154,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
 
         // Register ONLY the concrete School ResourceKeyId. If reconstitution were wrongly
         // resolving through EducationOrganization's ResourceKeyId, the resolver would throw
@@ -448,6 +448,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -457,6 +458,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -466,6 +468,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),

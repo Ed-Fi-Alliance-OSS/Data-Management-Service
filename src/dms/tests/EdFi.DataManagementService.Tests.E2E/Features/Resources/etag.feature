@@ -4,7 +4,7 @@ Feature: ETag validations
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
         @API-260
-        @e2e-ci-shard-1
+        @e2e-ci-shard-1 @MssqlRepresentative
         Scenario: 01 Ensure that clients can retrieve an ETag in the response header
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -29,7 +29,7 @@ Feature: ETag validations
                   }
                   """
               And the ETag is in the response header
-        @e2e-ci-shard-1
+        @e2e-ci-shard-1 @MssqlRepresentative
         Scenario: 02 Ensure that clients can pass an IfMatch in the request header
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -236,7 +236,7 @@ Feature: ETag validations
                       ]
                   }
                   """
-        @e2e-ci-shard-1
+        @e2e-ci-shard-1 @MssqlRepresentative
         Scenario: 11 Ensure that clients receive a 304 Not Modified on a GET when If-None-Match matches the current ETag
              When a POST request is made to "/ed-fi/students" with
                   """

@@ -18,7 +18,29 @@ public sealed partial class MssqlReferenceResolverTestDatabase : IAsyncDisposabl
     private const int MaximumSeedInsertParameters = 2000;
     private static readonly MssqlDialect _dialect = new(new MssqlDialectRules());
     private static readonly string _coreDdl = new CoreDdlEmitter(_dialect).Emit();
-    private static readonly string _resetSql = MssqlDatabaseResetSql.Build();
+    private static readonly (string Schema, string Table)[] _baselineTables =
+    [
+        ("dms", "DataStoreIdentity"),
+        ("dms", "DocumentCacheState"),
+    ];
+    private static readonly string _resetSql = MssqlDatabaseResetSql.Build(_baselineTables);
+    private static readonly string _coreMetadataSeedSql = """
+        IF NOT EXISTS (
+            SELECT 1 FROM [dms].[DataStoreIdentity] WHERE [DataStoreIdentitySingletonId] = 1
+        )
+            INSERT INTO [dms].[DataStoreIdentity] ([DataStoreIdentitySingletonId], [SourceIdentity])
+            VALUES (1, NEWID());
+
+        IF NOT EXISTS (
+            SELECT 1 FROM [dms].[DocumentCacheState] WHERE [StateId] = 1
+        )
+            INSERT INTO [dms].[DocumentCacheState] (
+                [StateId],
+                [ProjectionLifecycleState],
+                [CacheAheadRecoveryRequired]
+            )
+            VALUES (1, 'Disabled', 0);
+        """;
     private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
     private bool _disposed;
 
@@ -143,7 +165,14 @@ public sealed partial class MssqlReferenceResolverTestDatabase : IAsyncDisposabl
             Environment.NewLine,
             GetAdditionalSchemas(mappingSet.Model).Select(_dialect.CreateSchemaIfNotExists)
         );
-        var setupSql = string.Join(Environment.NewLine, _coreDdl, additionalSchemaDdl, relationalDdl);
+        var setupSql = string.Join(
+            Environment.NewLine,
+            _coreDdl,
+            additionalSchemaDdl,
+            relationalDdl,
+            "GO",
+            _coreMetadataSeedSql
+        );
 
         await ExecuteBatchesAsync(connectionString, setupSql);
     }

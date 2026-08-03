@@ -7,7 +7,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 
 public class VendorResponse
 {
-    public long Id { get; set; }
+    public int Id { get; set; }
     public required string Company { get; set; }
     public required string ContactName { get; set; }
     public required string ContactEmailAddress { get; set; }

@@ -4,12 +4,12 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 # Retained pending the implementation gate in reference/design/backend-redesign/design-docs/
-# bootstrap/bootstrap-design.md §6.4 (line 1250). DMS-1153 removed -LoadSeedData from
-# start-local-dms.ps1 (the relocated local call site is build-dms.ps1's Start-DockerEnvironment);
-# start-published-dms.ps1 still owns -LoadSeedData and calls this module directly. Deleting the
-# module is explicitly gated on "verifying the repo-pinned BulkLoadClient XML mode against DMS
-# discovery, dependencies, OAuth, data, and XSD metadata or staged-XSD behavior." That
-# verification requires the full bootstrap verification gate in §6.4 to close. The slice that
+# bootstrap/bootstrap-design.md §6.4. No script invokes this module any longer: DMS-1153 removed
+# -LoadSeedData from start-local-dms.ps1 and DMS-1255 removed it from start-published-dms.ps1
+# (seed delivery on both flows is the wrapper-level, API-based -LoadSeedData opt-in). The manual
+# invocation documented in GETTING_STARTED.md is the only remaining consumer. Deleting the module
+# is explicitly gated on "verifying the repo-pinned BulkLoadClient XML mode against DMS
+# discovery, dependencies, OAuth, data, and XSD metadata or staged-XSD behavior." The slice that
 # closes the gate owns this module's removal.
 
 function LoadSeedData {

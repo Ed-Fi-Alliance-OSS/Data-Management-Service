@@ -50,7 +50,7 @@ public class ResourceClaimModule : IEndpointModule
     }
 
     private static async Task<IResult> GetById(
-        long id,
+        int id,
         IResourceClaimRepository repository,
         HttpContext httpContext
     )

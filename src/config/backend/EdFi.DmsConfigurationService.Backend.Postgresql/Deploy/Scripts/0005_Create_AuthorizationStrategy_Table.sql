@@ -4,7 +4,7 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 CREATE TABLE IF NOT EXISTS "dmscs"."AuthorizationStrategy" (
-    "Id" BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
+    "Id" INT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
     "AuthorizationStrategyName" VARCHAR(255) NOT NULL,
     "DisplayName" VARCHAR(255) NOT NULL,
     "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),

@@ -28,7 +28,7 @@ This document is the transactions/concurrency deep dive for `overview.md`, focus
 - [Write Path (POST Upsert / PUT by id)](#write-path-post-upsert--put-by-id)
 - [Read Path (GET by id / GET query)](#read-path-get-by-id--get-query)
 - [Caching (Low-Complexity Options)](#caching-low-complexity-options)
-- [Optional Database Projection: `dms.DocumentCache`](#optional-database-projection-dmsdocumentcache)
+- [Optional Database Projection Behavior: `dms.DocumentCache`](#optional-database-projection-behavior-dmsdocumentcache)
 - [Delete Path (DELETE by id)](#delete-path-delete-by-id)
 - [Schema Validation (EffectiveSchema)](#schema-validation-effectiveschema)
 - [Operational Considerations](#operational-considerations)
@@ -240,6 +240,16 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
    - Generated triggers maintain `dms.ReferentialIdentity` (row-local recompute on identity-projection value-diff
      changes). `DbTriggerInfo.IdentityProjectionColumns` are null-safe compare inputs, not `UPDATE(column)` gates.
    - The `*_Stamp` triggers stamp `dms.Document.ContentVersion` / `ContentLastModifiedAt` and `IdentityVersion` / `IdentityLastModifiedAt`, mirror `ContentVersion` / `ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) via `MirrorStampTargetTable`, and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable (see [update-tracking.md](update-tracking.md) for stamping rules and [change-queries.md](change-queries.md) for the mirror and tracked-change tables).
+   - The set-based `dms.Document` projection-enqueue trigger observes every insert and
+     every real `ContentVersion` change. In lifecycle `Tracking`, `Resetting`, or
+     `Rebuilding`, it inserts or advances the coalesced
+     `dms.DocumentProjectionWork.RequiredContentVersion` in the same transaction.
+     It requires exactly the `StateId = 1` lifecycle row; an absent or
+     unreadable/invalid lifecycle fails the transaction rather than acting like
+     `Disabled`.
+   - Work recording is fail closed in every enqueue-enabled lifecycle state. Any enqueue
+     error rolls back all canonical and derived changes in the complete transaction; no
+     application path retries enqueueing after canonical commit.
 
 ### Authorization (CRUD checks)
 
@@ -401,18 +411,42 @@ Collection-write note:
 
 ### Deadlock + retry policy
 
-Deadlocks are possible under contention, especially for identity updates with large cascades. The correct response is to roll back and retry the **entire** write transaction.
+Deadlocks are possible under contention, especially for identity updates with large
+cascades and same-document projection acknowledgement. The correct response is to roll
+back and retry the **entire** write transaction. Retrying only a projection trigger or
+work-table upsert after canonical commit is invalid.
 
 Recommended: bounded retry (e.g., 3 attempts) with jittered backoff. Treat these as retryable:
 - PostgreSQL: `40P01` (deadlock detected)
 - SQL Server: `1205` (deadlock victim), and optionally `1222` (lock request timeout, if configured)
 
-### SQL Server isolation defaults (recommended)
+If the provider policy treats a serialization failure or lock timeout as retryable, it
+follows the same complete-transaction rule. Tests force an enqueue-related retry and prove
+one canonical committed outcome with one current coalesced work requirement.
 
-To reduce reader/writer blocking and deadlocks under concurrent write load, strongly recommend enabling MVCC reads:
+### SQL Server isolation defaults
 
-- `READ_COMMITTED_SNAPSHOT ON` (recommended)
+To reduce reader/writer blocking and deadlocks under concurrent write load, strongly
+recommend enabling MVCC reads for ordinary relational DMS operation:
+
+- `READ_COMMITTED_SNAPSHOT ON` (recommended generally; required for any data store
+  selected as a `DocumentCache` projection target)
 - optionally `ALLOW_SNAPSHOT_ISOLATION ON` (if a snapshot isolation level is ever used explicitly)
+
+The scoped projection requirement is a correctness prerequisite for coherent SQL Server
+source/cache comparison and the durable cache-ahead latch; it does not make RCSI a global
+requirement for unlisted relational-only data stores. Runtime DMS validates the option and
+fails only projection/cache use for the affected target rather than executing
+`ALTER DATABASE`. The authoritative details are in
+[`cdc-streaming.md`](cdc/cdc-streaming.md#configuration-and-projection-target-selection).
+The target additionally requires server-level `nested triggers` with
+`sys.configurations.value_in_use = 1`; otherwise indirect `*_Stamp` updates do not invoke
+the `dms.Document` enqueue trigger. DMS validates but never changes either prerequisite
+when initializing a target execution context and before activation from `Disabled`.
+Generated SQL Server `*_Stamp` triggers do not recheck the server setting. Changing either
+prerequisite after successful validation while the target is active is unsupported in v1.
+The linked integration design owns validation and the unsupported-change boundary.
+Ordinary canonical API health/readiness remains independent from projection.
 
 ---
 
@@ -516,45 +550,136 @@ Invalidation approaches:
 
 ---
 
-## Optional Database Projection: `dms.DocumentCache`
+## Optional Database Projection Behavior: `dms.DocumentCache`
 
-`dms.DocumentCache` is an optional **materialized JSON projection** of GET/query results, intended for:
+The `dms.DocumentCache` table is always provisioned. Populating and reading its
+**materialized JSON projection** remain optional behaviors intended for:
 - accelerating GET/query response assembly (skip reconstitution),
 - CDC streaming (e.g., Debezium → Kafka), and
-- downstream indexing (e.g., OpenSearch).
+- downstream indexing and external integrations.
 
-Correctness must not depend on this table:
-- rows may be missing/stale and rebuilt asynchronously,
-- authorization must not use it as a source of truth.
+Its concurrency boundary is intentionally small: correctness and authorization do not
+depend on projection. Completeness uses transactionally recorded
+`dms.DocumentProjectionWork`, not a periodic source/cache scan. The authoritative
+freshness, queue, lifecycle, read-fallback, and recovery behavior is defined in the
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md).
 
-### Freshness contract (recommended)
+### Canonical enqueue and acknowledgement interaction
 
-When serving from `dms.DocumentCache`, treat a row as usable only if it is **fresh**:
-- compare the cached `ContentVersion` to the current `dms.Document.ContentVersion`,
-- if mismatched (or missing), fall back to relational reconstitution and/or enqueue a rebuild.
+The canonical transaction and work requirement commit or roll back together. The
+projector materializes outside its acknowledgement transaction and deliberately takes no
+write-conflicting `dms.Document` lock as a commit-order fence. It then opens one short
+cache-write/acknowledgement transaction that:
 
-### Rebuild/invalidation triggers (eventual consistency)
+1. takes a provider-equivalent shared lock on the singleton `DocumentCacheState` row;
+2. verifies lifecycle `Tracking` or `Rebuilding` and a clear cache-ahead latch;
+3. classifies current source `S`, optional cache `C`, and optional work `W` in one
+   provider-consistent statement snapshot;
+4. conditionally performs the monotonic cache write; and
+5. conditionally deletes matching work as the final DML operation.
 
-Because indirect representation changes are materialized as local updates to referrers through retained native FK
-cascades, referrer `ContentVersion` is bumped by the same `*_Stamp` trigger that handles direct writes.
-`dms.Document.ContentVersion` therefore captures direct content changes and indirect reference-identity changes on
-referrers, without reverse dependency expansion at the projector layer.
+Cache and acknowledgement commit atomically. The transaction does not lock the work row
+before accessing cache or parent document rows required by UUID validation and foreign-key
+enforcement. Materialization, failure backoff, cancellation, and external I/O hold no
+work-row lock.
 
-A minimal projector approach:
+The classification statement selects an action but does not replace predicates on the
+later DML. The cache write repeats the candidate/source/work version predicates, and the
+final work delete repeats the work/source/cache version predicates. A concurrent canonical
+commit therefore cannot be acknowledged from a stale classification.
 
-1. Consume `dms.Document` in `ContentVersion` order.
-2. Rebuild `dms.DocumentCache` for `(DocumentId, ContentVersion)` rows not yet applied.
-3. Keep `dms.DocumentCache` rows tagged with the applied `ContentVersion` to enforce the freshness
-   contract above; `_etag` is composed per request from `ContentVersion` + `variantKey` and is not
-   stored in the cache.
+The durable classification, not a worker-local candidate, controls behavior:
+
+- current `S = C = W` acknowledges redundant work even if the candidate is stale;
+- a stale candidate is never written;
+- current `W = S` with cache missing or behind keeps work pending until a current
+  candidate succeeds;
+- current `C > S` performs no cache/acknowledgement DML and enters the short,
+  exclusively-state-locked incident transaction that reclassifies before setting
+  `CacheAheadRecoveryRequired`; and
+- `W != S`, or missing work for a behind cache, is a work anomaly. Ordinary projection
+  performs no cache write or acknowledgement and does not set the cache-ahead latch.
+
+A standalone scrub is admitted only from lifecycle `Tracking` with a clear cache-ahead
+latch; any other lifecycle or a latch already set rejects before its O(N) relationship
+scan or mutation. Once admitted, it conditionally updates/inserts only current work
+requirements so a concurrent newer canonical requirement wins. It may set the latch for
+current cache-ahead state but never clears it. A `Rebuilding` coordinator uses the same
+conditional work-only repair for mismatched rows in its current bounded source page under
+its already-held administrative mutex without invoking the standalone scrub.
+
+The enqueue/acknowledgement races are safe:
+
+- acknowledgement of N before N+1 commit lets N+1 insert/recreate work;
+- N+1 advancement before N acknowledgement makes N's conditional delete fail; and
+- an uncommitted N+1 racing N acknowledgement serializes into one of those outcomes.
+
+`DocumentProjectionWork` is therefore a short per-document serialization point without
+becoming a source-row commit-order fence. Canonical writers may briefly wait on
+same-document acknowledgement; projectors may briefly wait on same-document enqueue.
+Provider lock-order tests cover update/delete, cache UUID validation, the work foreign
+key, and complete-transaction retries.
+
+### Lifecycle and administrative locking
+
+Every cache-write/acknowledgement transaction holds the shared singleton-state lock
+through commit. A transition into `Resetting` takes it exclusively, waits for prior cache
+transactions, and fences later writes and acknowledgements. The exclusive lock is released
+before bounded cache/work clearing begins.
+
+Lifecycle-changing, baseline, rebuild, recovery, clearing, scrub, and
+representation-restamp workflows also
+use the one shared provider adapter and exact identity defined by the
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#administrative-serialization-and-state-row-fencing).
+PostgreSQL composes the fixed namespace `811646948` and current database OID into the
+documented 64-bit advisory-lock key. SQL Server uses the fixed
+`EdFi.DMS.DocumentProjection.Administration.v1` resource in the current database with
+`@LockOwner = 'Session'` and `@DbPrincipal = 'public'`. Logical target identity,
+connection aliases, database names, and mutable source identity never participate.
+
+The dedicated connection holds the mutex across the complete multi-transaction workflow.
+Every coordinator-issued lifecycle/latch, clear, seed, scrub, or restamp mutation uses that
+same physical database session, with separate short transactions as needed. It does not
+transparently reconnect and continue under presumed ownership.
+Ordinary writers, projectors, reads, and health checks do not take it. Session loss aborts
+the coordinator and rolls back any active transaction on that session; a replacement
+reacquires the mutex and revalidates durable lifecycle before repeating or resuming the
+explicitly requested operation. No dedicated connection returns to a general pool before
+normal explicit release.
+
+Provider implementations use equivalent concrete state-row locks:
+
+- PostgreSQL reads `StateId = 1` with `FOR SHARE` in cache-write/acknowledgement
+  transactions and with `FOR UPDATE` in lifecycle-transition or cache-ahead-latch
+  transactions.
+- SQL Server reads the singleton with an exact-key `HOLDLOCK` shared row lock in
+  cache-write/acknowledgement transactions and an exact-key `XLOCK, HOLDLOCK` in
+  lifecycle-transition or cache-ahead-latch transactions. These hints deliberately
+  override RCSI only for the singleton fence; source/cache/work classification remains
+  one locking-free `READ COMMITTED` statement under RCSI.
+
+Both providers acquire the state-row lock first, classify current source/cache/work in one
+statement, perform conditional cache DML second, and conditionally delete work last.
+Canonical writers retain their existing resource/derived-update, `dms.Document` stamp,
+then work-upsert order. Provider-specific integrity locks from cache UUID validation and
+foreign keys remain permitted. A deadlock or serialization failure rolls back and retries
+the applicable complete canonical or cache/acknowledgement transaction; no implementation
+retries only its final work DML.
+
+Optional direct fill uses the same shared state lock and conditional acknowledgement. It
+remains best effort and never fails an otherwise successful relational response.
 
 ---
 
 ## Delete Path (DELETE by id)
 
 1. Resolve `DocumentUuid` → `DocumentId`.
-2. Delete the concrete resource row, or the `dms.Descriptor` row for descriptor resources. This fires the resource or descriptor `_Stamp` trigger while `dms.Document` is still present, so the tombstone trigger can read `DocumentUuid` and the freshly bumped `ContentVersion`.
-3. Delete the corresponding `dms.Document` row. The remaining `ON DELETE CASCADE` paths to `dms.DocumentCache` and `dms.ReferentialIdentity` finalize lifecycle cleanup.
+2. Delete the concrete resource row, or the `dms.Descriptor` row for descriptor resources. This fires the resource or descriptor `_Stamp` trigger while `dms.Document` is still present, so the Change Queries tombstone trigger can read `DocumentUuid` and the freshly bumped `ContentVersion`.
+3. Delete the corresponding `dms.Document` row. Remaining `ON DELETE CASCADE` paths to
+   `dms.DocumentCache`, `dms.DocumentProjectionWork`, and
+   `dms.ReferentialIdentity` finalize relational cleanup. The CDC lifecycle consequence is
+   defined in the
+   [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle).
 4. Rely on FK constraints from referencing resource tables to prevent deleting referenced records.
 
 Steps 2 and 3 execute in this order within the same transaction. The reverse order (deleting `dms.Document` first and relying on `ON DELETE CASCADE` to remove the resource row) would silently lose `/deletes` tombstones because the resource row’s `AFTER DELETE` stamping trigger would fire after `dms.Document` was already gone, causing its `INNER JOIN dms.Document` to match no rows. See `change-queries.md` §"Cascade-ordering requirement for deletes" and DMS-1180 (`epics/10-update-tracking-change-queries/17-delete-by-id-tombstone-ordering.md`) for the rationale.

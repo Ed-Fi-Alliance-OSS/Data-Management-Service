@@ -10,7 +10,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
 public class ClaimSetCopyCommand
 {
-    public long OriginalId { get; set; }
+    public int OriginalId { get; set; }
 
     [JsonPropertyName("claimSetName")]
     public required string Name { get; set; }

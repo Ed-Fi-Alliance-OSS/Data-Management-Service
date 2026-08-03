@@ -16,7 +16,8 @@ Implement the representation-sensitive update tracking design in:
 Deliverables include:
 - write-side stamping of `ContentVersion/IdentityVersion` (global monotonic stamps),
 - journal emission via triggers,
-- serving `_etag`, `_lastModifiedDate`, and per-item `ChangeVersion` from stored stamps,
+- composing `_etag` from `ContentVersion` plus the active `variantKey`, and serving
+  `_lastModifiedDate` and per-item `ChangeVersion` from stored stamps,
 - ensuring successful no-op updates leave stored stamps and journal rows unchanged,
 - `If-Match` enforcement using stored representation stamps,
 - ChangeQueries feature does not introduce any breaking changes to its API interface
@@ -26,8 +27,8 @@ Deliverables include:
 
 - `DMS-1002` — `00-token-stamping.md` — Allocate stamps and update token columns only for representation changes
 - `DMS-1003` — `01-journaling-contract.md` — _Retired_ (superseded by DMS-1169 + DMS-1179)
-- `DMS-1004` — `02-derived-metadata.md` — Serve `_etag/_lastModifiedDate/ChangeVersion` from stored stamps
-- `DMS-1005` — `03-if-match.md` — Enforce optimistic concurrency using stored `_etag`
+- `DMS-1004` — `02-derived-metadata.md` — Compose `_etag`; serve `_lastModifiedDate/ChangeVersion` from stored stamps
+- `DMS-1005` — `03-if-match.md` — Enforce optimistic concurrency using stored representation stamps
 - `DMS-1006` — `04-change-query-selection.md` — _Retired_ (superseded by DMS-1182 + DMS-1186 + DMS-1187)
 - `DMS-1007` — `05-change-query-api.md` — _Retired_ (superseded by DMS-1184, DMS-1186, DMS-1187, DMS-1188, and the split non-relationship `ReadChanges` strategy story)
 - `DMS-1008` — `06-descriptor-stamping.md` — Ensure descriptor writes stamp/journal correctly (triggers on `dms.Descriptor`)
@@ -57,7 +58,21 @@ Deliverables include:
 
 These spikes investigate features explicitly deferred in `change-queries.md`. Each spike's deliverable is a design proposal plus the implementation tickets it spawns.
 
-- `DMS-1185` — `22-auth-check-indexes-on-tracked-changes.md` — Spike: auth-check indexes on `tracked_changes_*` tables
+- `DMS-1185` — `22-auth-check-indexes-on-tracked-changes.md` — Spike: auth-check indexes on `tracked_changes_*` tables (findings and proposed design: `22-spike-findings.md`)
 - `DMS-1190` — `29-snapshot-support.md` — Spike: snapshot support (`Use-Snapshot` header) for Change Queries
 - `DMS-1191` — `30-disable-change-queries-feature.md` — Spike: runtime feature flag to disable Change Queries
 - `DMS-1193` — `31-custom-view-based-readchanges-authorization.md` — Spike: custom view-based authorization for `ReadChanges`
+
+## Follow-on Stories (spawned by DMS-1185)
+
+Release disposition: none of the follow-ons is must-have for 8.1. Stories 33 and 35 are stretch candidates for 8.1: each ships in 8.1 only if its evidence gates pass before the release cut, and missing the cut moves it to the next release with no API impact, since both are additive index emission only. Stories 34, 36, and 37, and the cross-epic Authorization prerequisite, are post-8.1.
+
+- `DMS-1357` - `33-tracked-change-index-emission.md` - Evaluate each Tier-1 category with pinned candidate overlays on both providers, emit only the finally selected categories, and rerun the gates against exact generated DDL (8.1 stretch)
+- `DMS-1358` - `34-readchanges-subject-cardinality.md` - After Story 33's candidate-evaluation phase, select and implement provider-appropriate `ReadChanges` relationship subject-cardinality shapes; if the PA category remains blocked, its candidate-overlay rerun triggers the dedicated PA re-evaluation ticket recorded in Story 33's closure rule (post-8.1)
+- `DMS-1359` - `35-mssql-descriptor-identity-index.md` - Emit the SQL Server live descriptor identity index selected by DMS-1185 (8.1 stretch)
+- `DMS-1360` - `36-per-resource-edorg-person-index-emission.md` - After Stories 33 and 34, emit per-resource EdOrg/person tracked-change indexes (post-8.1)
+- `DMS-1361` - `37-tracked-namespace-index-emission.md` - After Story 33 and Authorization Story 22, adapt tracked Namespace predicates and emit tracked namespace indexes (post-8.1)
+
+## Cross-Epic Prerequisite
+
+- Authorization epic `DMS-1362` - `../14-authorization/22-namespace-auth-index-prefix-like.md` - Select and implement the live PostgreSQL Namespace predicate/index mechanism before Story 37 adapts tracked Namespace authorization (post-8.1)

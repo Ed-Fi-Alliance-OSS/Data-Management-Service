@@ -408,8 +408,8 @@ Describe "DMS-1156 bootstrap package resolver" {
         It "It_returns_validated_identity_for_valid_extension_package" {
             # Validator-branch coverage (see SCOPE NOTE above): proves Assert-AssetOnlyPackageContract
             # accepts a well-formed extension-shaped manifest (isExtensionProject=true). This validates
-            # the contract checker, not extension package resolution — nothing here resolves or stages an
-            # extension into core-only standard mode.
+            # the contract checker, not extension package resolution — nothing here resolves or stages the
+            # extension through an env-driven standard-mode invocation.
             $pkg = script:New-ExtractedExtensionPackage `
                 -PackageId "EdFi.DataStandard52.Sample.ApiSchema" `
                 -IncludeXsd

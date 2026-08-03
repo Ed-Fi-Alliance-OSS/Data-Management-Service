@@ -2526,7 +2526,7 @@ public sealed class RelationalDocumentStoreRepository(
                     documentMetadata,
                     hydratedPage.TableRowsInDependencyOrder,
                     hydratedPage.DescriptorRowsInPlanOrder,
-                    relationalGetRequest.ReadMode
+                    relationalGetRequest.ReadMode.ToMaterializationMode()
                 )
                 {
                     MappingSet = mappingSet,
@@ -3917,7 +3917,7 @@ public sealed class RelationalDocumentStoreRepository(
             new RelationalReadPageMaterializationRequest(
                 readPlan,
                 hydratedPage,
-                RelationalGetRequestReadMode.ExternalResponse
+                RelationalReadMaterializationMode.ExternalResponse
             )
             {
                 MappingSet = relationalQueryRequest.MappingSet,

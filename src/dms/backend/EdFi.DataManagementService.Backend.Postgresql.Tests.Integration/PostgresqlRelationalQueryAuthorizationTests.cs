@@ -1686,7 +1686,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddSingleton<PostgresqlRelationalQueryExecutionRecorder>();
         services.AddSingleton<PostgresqlRelationalQueryAuthorizationWriteSessionRecorder>();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
         services.Replace(
             ServiceDescriptor.Scoped<
                 IRelationalWriteSessionFactory,
@@ -1901,6 +1901,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -1910,6 +1911,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -1919,6 +1921,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),

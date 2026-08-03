@@ -15,13 +15,67 @@ public interface IApplicationRepository
         ApiClientCommand clientCommand
     );
     Task<ApplicationQueryResult> QueryApplication(ApplicationQuery query);
-    Task<ApplicationGetResult> GetApplication(long id);
+    Task<ApplicationGetResult> GetApplication(int id);
     Task<ApplicationUpdateResult> UpdateApplication(
         ApplicationUpdateCommand command,
         ApiClientCommand clientCommand
     );
-    Task<ApplicationDeleteResult> DeleteApplication(long id);
-    Task<ApplicationApiClientsResult> GetApplicationApiClients(long id);
+    Task<ApplicationDeleteResult> DeleteApplication(int id);
+    Task<ApplicationApiClientsResult> GetApplicationApiClients(int id);
+
+    /// <summary>
+    /// Reads the complete update-relevant state of an Application and one of its clients inside
+    /// a row-locking transaction. Locking the Application row waits out any in-flight update
+    /// transaction, so the returned snapshot reflects that transaction's final outcome; it also
+    /// carries the selected client's exact data store set, which aggregate reads cannot supply.
+    /// </summary>
+    Task<ApplicationUpdateStateResult> GetApplicationUpdateState(int applicationId, string clientId);
+
+    /// <summary>
+    /// Atomically sets the stored identity-provider client UUID, guarded by its expected current
+    /// value, inside one row-locking transaction. When the target row is missing, the result
+    /// distinguishes whether any row still references the new UUID so the caller can decide
+    /// whether deleting the recreated provider client is safe.
+    /// </summary>
+    Task<ApiClientUuidSyncResult> SyncApplicationApiClientUuid(
+        int applicationId,
+        string clientId,
+        Guid expectedClientUuid,
+        Guid newClientUuid
+    );
+}
+
+/// <summary>
+/// The complete state an Application update mutates: the Application scalars, its mapping sets,
+/// and the selected client's identity, approval, and exact data store set.
+/// </summary>
+public record ApplicationUpdateState(
+    string ApplicationName,
+    int VendorId,
+    string ClaimSetName,
+    // Education organization ids stay 64-bit: the Management API v3 draft declares them int64,
+    // deliberately widening relative to Admin API's int. Only CMS resource ids narrow.
+    long[] EducationOrganizationIds,
+    int[] ProfileIds,
+    string ClientId,
+    Guid ClientUuid,
+    bool IsApproved,
+    int[] ClientDataStoreIds
+);
+
+public record ApplicationUpdateStateResult
+{
+    public record Success(ApplicationUpdateState State) : ApplicationUpdateStateResult();
+
+    /// <summary>
+    /// The application or the selected client no longer exists.
+    /// </summary>
+    public record FailureNotExists() : ApplicationUpdateStateResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ApplicationUpdateStateResult();
 }
 
 public record ApplicationInsertResult
@@ -30,7 +84,7 @@ public record ApplicationInsertResult
     /// Successful insert.
     /// </summary>
     /// <param name="Id">The Id of the inserted record.</param>
-    public record Success(long Id) : ApplicationInsertResult();
+    public record Success(int Id) : ApplicationInsertResult();
 
     /// <summary>
     /// Referenced vendor not found exception thrown and caught

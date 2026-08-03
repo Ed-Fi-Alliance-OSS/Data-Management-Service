@@ -43,7 +43,7 @@ file static class MssqlStudentSchoolAssociationIntegrationTestSupport
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -554,8 +554,14 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
     }
 
     [Test]
-    public void It_returns_the_create_etag_from_follow_up_get_by_id() =>
+    public void It_returns_the_create_etag_from_follow_up_get_by_id()
+    {
         RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(_createResult, _getResultAfterCreate);
+        RelationalGetIntegrationTestHelper.AssertComposedEtagServesContentVersion(
+            RelationalGetIntegrationTestHelper.ReadResultEtag(_getResultAfterCreate),
+            _documentMetadata.ContentVersion
+        );
+    }
 
     [Test]
     public async Task It_matches_ResourceLinks_IfMatch_against_the_current_relational_state()
@@ -1275,6 +1281,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -1284,6 +1291,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -1293,6 +1301,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),

@@ -11,6 +11,11 @@ Implement the ownership-based authorization strategy for all CRUD operations per
 
 - `reference/design/backend-redesign/design-docs/auth.md`
 
+`CreatorOwnershipTokenId` and `OwnershipTokenIds` come from the tenant-qualified CMS
+`ApplicationContext`, not JWT claims. DMS resolves and caches this context through
+`GET /v3/apiClients/{clientId}`. CMS limits assignments to 1,999 tokens; DMS retains its defensive
+failure for 2,000 or more.
+
 ## Acceptance Criteria
 
 - POST: When creating a resource, if the API client has a CreatorOwnershipTokenId configured, the CreatedByOwnershipTokenId column in dms.Document is set to that value. If the API client has no CreatorOwnershipTokenId, the column is set to NULL. This stamping happens for all resources, not just those configured with the Ownership-based strategy.

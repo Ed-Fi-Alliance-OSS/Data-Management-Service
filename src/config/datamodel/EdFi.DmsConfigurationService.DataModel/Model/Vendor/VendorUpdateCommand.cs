@@ -9,7 +9,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 
 public class VendorUpdateCommand : VendorInsertCommand
 {
-    public long Id { get; set; }
+    public int Id { get; set; }
 
     public new class Validator : AbstractValidator<VendorUpdateCommand>
     {

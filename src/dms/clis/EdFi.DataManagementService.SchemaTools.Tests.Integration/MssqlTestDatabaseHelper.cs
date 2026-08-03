@@ -31,13 +31,42 @@ public static class MssqlTestDatabaseHelper
 
     public static void CreateDatabase(string databaseName)
     {
+        CreateDatabase(databaseName, collationName: null);
+    }
+
+    public static void CreateDatabaseWithCollation(string databaseName, string collationName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(collationName);
+
+        if (collationName.Any(static character => !char.IsLetterOrDigit(character) && character != '_'))
+        {
+            throw new ArgumentException("Collation name contains invalid characters.", nameof(collationName));
+        }
+
+        CreateDatabase(databaseName, collationName);
+    }
+
+    public static bool CollationExists(string collationName)
+    {
+        using var connection = new SqlConnection(DatabaseConfiguration.MssqlAdminConnectionString!);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM sys.fn_helpcollations() WHERE [name] = @name;";
+        command.Parameters.AddWithValue("name", collationName);
+        return command.ExecuteScalar() is not null;
+    }
+
+    private static void CreateDatabase(string databaseName, string? collationName)
+    {
         using var connection = new SqlConnection(DatabaseConfiguration.MssqlAdminConnectionString!);
         connection.Open();
 
         // Database names are generated internally (GUID-based), safe to interpolate
         using var command = connection.CreateCommand();
         var quotedName = $"[{databaseName.Replace("]", "]]")}]";
-        command.CommandText = $"CREATE DATABASE {quotedName}";
+        var collationClause = collationName is null ? string.Empty : $" COLLATE {collationName}";
+        command.CommandText = $"CREATE DATABASE {quotedName}{collationClause}";
         command.ExecuteNonQuery();
     }
 

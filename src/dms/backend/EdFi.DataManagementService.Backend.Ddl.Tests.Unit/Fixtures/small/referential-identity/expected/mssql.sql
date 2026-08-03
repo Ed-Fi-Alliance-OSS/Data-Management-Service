@@ -1,19 +1,96 @@
 -- ==========================================================
--- Phase 0: Preflight (fail fast on schema hash mismatch)
+-- Phase 0: Bounded Provisioning Guards
 -- ==========================================================
 
--- Preflight: fail fast if database is provisioned for a different schema hash
+-- Preflight: validate EffectiveSchema hash compatibility
 DECLARE @preflight_stored_hash nvarchar(200);
 
 IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
 BEGIN
     SELECT @preflight_stored_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
     WHERE [EffectiveSchemaSingletonId] = 1;
-    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3'
+    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'136957ea965b4c23f513963a407ed08e9203a723da63135a3543a74e48e58136'
     BEGIN
-        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3', N'''');
+        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'136957ea965b4c23f513963a407ed08e9203a723da63135a3543a74e48e58136', N'''');
         THROW 50000, @preflight_msg, 1;
     END
+END
+
+-- Preflight: protect completed DocumentCache mutable singleton state before mutation
+DECLARE @preflight_completed_hash nvarchar(200);
+
+IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
+BEGIN
+    SELECT @preflight_completed_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
+    WHERE [EffectiveSchemaSingletonId] = 1;
+    IF @preflight_completed_hash = N'136957ea965b4c23f513963a407ed08e9203a723da63135a3543a74e48e58136'
+    BEGIN
+        IF OBJECT_ID(N'dms.DataStoreIdentity', N'U') IS NULL
+        BEGIN
+            THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DataStoreIdentity is missing. Drop and recreate the database before re-provisioning.', 1;
+        END
+
+        DECLARE @preflight_source_identity uniqueidentifier;
+        EXEC sys.sp_executesql
+            N'SELECT @source_identity = [SourceIdentity] FROM [dms].[DataStoreIdentity] WHERE [DataStoreIdentitySingletonId] = 1;',
+            N'@source_identity uniqueidentifier OUTPUT',
+            @source_identity = @preflight_source_identity OUTPUT;
+        IF @preflight_source_identity IS NULL
+        BEGIN
+            THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DataStoreIdentity singleton row is missing. Drop and recreate the database before re-provisioning.', 1;
+        END
+        IF @preflight_source_identity = CAST('00000000-0000-0000-0000-000000000000' AS uniqueidentifier)
+        BEGIN
+            THROW 50000, N'dms.DataStoreIdentity.SourceIdentity must not be the zero UUID. Drop and recreate the database before re-provisioning.', 1;
+        END
+
+        IF OBJECT_ID(N'dms.DocumentCacheState', N'U') IS NULL
+        BEGIN
+            THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DocumentCacheState is missing. Drop and recreate the database before re-provisioning.', 1;
+        END
+
+        DECLARE @preflight_lifecycle_state varchar(16);
+        DECLARE @preflight_cache_ahead_recovery_required bit;
+        EXEC sys.sp_executesql
+            N'SELECT @lifecycle_state = [ProjectionLifecycleState], @cache_ahead_recovery_required = [CacheAheadRecoveryRequired] FROM [dms].[DocumentCacheState] WHERE [StateId] = 1;',
+            N'@lifecycle_state varchar(16) OUTPUT, @cache_ahead_recovery_required bit OUTPUT',
+            @lifecycle_state = @preflight_lifecycle_state OUTPUT,
+            @cache_ahead_recovery_required = @preflight_cache_ahead_recovery_required OUTPUT;
+        IF @preflight_lifecycle_state IS NULL
+        BEGIN
+            THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DocumentCacheState singleton row is missing. Drop and recreate the database before re-provisioning.', 1;
+        END
+        IF NOT (
+            (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@preflight_lifecycle_state) = 8)
+            OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Resetting' AND DATALENGTH(@preflight_lifecycle_state) = 9)
+            OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Rebuilding' AND DATALENGTH(@preflight_lifecycle_state) = 10)
+            OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Tracking' AND DATALENGTH(@preflight_lifecycle_state) = 8)
+        )
+        BEGIN
+            THROW 50000, N'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value during provisioning preflight.', 1;
+        END
+        IF @preflight_cache_ahead_recovery_required IS NULL
+        BEGIN
+            THROW 50000, N'dms.DocumentCacheState.CacheAheadRecoveryRequired must not be null during provisioning preflight.', 1;
+        END
+    END
+END
+
+-- Preflight: reject known legacy DocumentCache artifacts before mutation
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'dms.DocumentCache', N'U') AND name = N'Etag')
+BEGIN
+    THROW 50000, N'Known legacy artifact dms.DocumentCache.Etag was found. Drop and recreate the database before provisioning E18 DocumentCache schema.', 1;
+END
+
+IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE parent_object_id = OBJECT_ID(N'dms.DocumentCache', N'U') AND name = N'UX_DocumentCache_DocumentUuid')
+OR EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dms.DocumentCache', N'U') AND name = N'UX_DocumentCache_DocumentUuid')
+BEGIN
+    THROW 50000, N'Known legacy artifact UX_DocumentCache_DocumentUuid was found. Drop and recreate the database before provisioning E18 DocumentCache schema.', 1;
+END
+
+IF EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dms.DocumentCache', N'U') AND name = N'IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt')
+BEGIN
+    THROW 50000, N'Known legacy artifact IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt was found. Drop and recreate the database before provisioning E18 DocumentCache schema.', 1;
 END
 
 -- ==========================================================
@@ -130,10 +207,26 @@ CREATE TYPE [dms].[UniqueIdentifierTable] AS TABLE(
 -- Phase 5: Tables (PK/UNIQUE/CHECK only, no cross-table FKs)
 -- ==========================================================
 
+IF OBJECT_ID(N'dms.DataStoreIdentity', N'U') IS NULL
+CREATE TABLE [dms].[DataStoreIdentity]
+(
+    [DataStoreIdentitySingletonId] smallint NOT NULL,
+    [SourceIdentity] uniqueidentifier NOT NULL,
+    CONSTRAINT [PK_DataStoreIdentity] PRIMARY KEY CLUSTERED ([DataStoreIdentitySingletonId])
+);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_DataStoreIdentity_Singleton' AND parent_object_id = OBJECT_ID(N'dms.DataStoreIdentity')
+)
+ALTER TABLE [dms].[DataStoreIdentity]
+ADD CONSTRAINT [CK_DataStoreIdentity_Singleton] CHECK ([DataStoreIdentitySingletonId] = 1);
+
 IF OBJECT_ID(N'dms.Descriptor', N'U') IS NULL
 CREATE TABLE [dms].[Descriptor]
 (
     [DocumentId] bigint NOT NULL,
+    [ResourceKeyId] smallint NOT NULL,
     [Namespace] nvarchar(255) NOT NULL,
     [CodeValue] nvarchar(50) NOT NULL,
     [ShortDescription] nvarchar(75) NOT NULL,
@@ -160,6 +253,7 @@ CREATE TABLE [dms].[Document]
     [DocumentId] bigint IDENTITY(1,1) NOT NULL,
     [DocumentUuid] uniqueidentifier NOT NULL,
     [ResourceKeyId] smallint NOT NULL,
+    [CreatedByOwnershipTokenId] smallint NULL,
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [IdentityVersion] bigint NOT NULL CONSTRAINT [DF_Document_IdentityVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
@@ -183,8 +277,8 @@ CREATE TABLE [dms].[DocumentCache]
     [ProjectName] nvarchar(256) NOT NULL,
     [ResourceName] nvarchar(256) NOT NULL,
     [ResourceVersion] nvarchar(32) NOT NULL,
-    [Etag] nvarchar(64) NOT NULL,
     [ContentVersion] bigint NOT NULL,
+    [StreamEtag] varchar(64) NOT NULL,
     [LastModifiedAt] datetime2(7) NOT NULL,
     [DocumentJson] nvarchar(max) NOT NULL,
     [ComputedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DocumentCache_ComputedAt] DEFAULT (sysutcdatetime()),
@@ -192,18 +286,44 @@ CREATE TABLE [dms].[DocumentCache]
 );
 
 IF NOT EXISTS (
-    SELECT 1 FROM sys.key_constraints
-    WHERE name = N'UX_DocumentCache_DocumentUuid' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.DocumentCache')
-)
-ALTER TABLE [dms].[DocumentCache]
-ADD CONSTRAINT [UX_DocumentCache_DocumentUuid] UNIQUE ([DocumentUuid]);
-
-IF NOT EXISTS (
     SELECT 1 FROM sys.check_constraints
     WHERE name = N'CK_DocumentCache_IsJsonObject' AND parent_object_id = OBJECT_ID(N'dms.DocumentCache')
 )
 ALTER TABLE [dms].[DocumentCache]
 ADD CONSTRAINT [CK_DocumentCache_IsJsonObject] CHECK (ISJSON([DocumentJson]) = 1 AND LEFT(LTRIM([DocumentJson]), 1) = '{');
+
+IF OBJECT_ID(N'dms.DocumentCacheState', N'U') IS NULL
+CREATE TABLE [dms].[DocumentCacheState]
+(
+    [StateId] smallint NOT NULL,
+    [ProjectionLifecycleState] varchar(16) COLLATE Latin1_General_100_BIN2 NOT NULL,
+    [CacheAheadRecoveryRequired] bit NOT NULL,
+    CONSTRAINT [PK_DocumentCacheState] PRIMARY KEY CLUSTERED ([StateId])
+);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_DocumentCacheState_Singleton' AND parent_object_id = OBJECT_ID(N'dms.DocumentCacheState')
+)
+ALTER TABLE [dms].[DocumentCacheState]
+ADD CONSTRAINT [CK_DocumentCacheState_Singleton] CHECK ([StateId] = 1);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_DocumentCacheState_Lifecycle' AND parent_object_id = OBJECT_ID(N'dms.DocumentCacheState')
+)
+ALTER TABLE [dms].[DocumentCacheState]
+ADD CONSTRAINT [CK_DocumentCacheState_Lifecycle] CHECK (([ProjectionLifecycleState] = 'Disabled' AND DATALENGTH([ProjectionLifecycleState]) = 8) OR ([ProjectionLifecycleState] = 'Resetting' AND DATALENGTH([ProjectionLifecycleState]) = 9) OR ([ProjectionLifecycleState] = 'Rebuilding' AND DATALENGTH([ProjectionLifecycleState]) = 10) OR ([ProjectionLifecycleState] = 'Tracking' AND DATALENGTH([ProjectionLifecycleState]) = 8));
+
+IF OBJECT_ID(N'dms.DocumentProjectionWork', N'U') IS NULL
+CREATE TABLE [dms].[DocumentProjectionWork]
+(
+    [DocumentId] bigint NOT NULL,
+    [RequiredContentVersion] bigint NOT NULL,
+    [FirstEnqueuedAt] datetime2(7) NOT NULL,
+    [LastEnqueuedAt] datetime2(7) NOT NULL,
+    CONSTRAINT [PK_DocumentProjectionWork] PRIMARY KEY CLUSTERED ([DocumentId])
+);
 
 IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NULL
 CREATE TABLE [dms].[EffectiveSchema]
@@ -293,6 +413,17 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_Descriptor_ResourceKey' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
+)
+ALTER TABLE [dms].[Descriptor]
+ADD CONSTRAINT [FK_Descriptor_ResourceKey]
+FOREIGN KEY ([ResourceKeyId])
+REFERENCES [dms].[ResourceKey] ([ResourceKeyId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_Document_ResourceKey' AND parent_object_id = OBJECT_ID(N'dms.Document')
 )
 ALTER TABLE [dms].[Document]
@@ -308,6 +439,17 @@ IF NOT EXISTS (
 )
 ALTER TABLE [dms].[DocumentCache]
 ADD CONSTRAINT [FK_DocumentCache_Document]
+FOREIGN KEY ([DocumentId])
+REFERENCES [dms].[Document] ([DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_DocumentProjectionWork_Document' AND parent_object_id = OBJECT_ID(N'dms.DocumentProjectionWork')
+)
+ALTER TABLE [dms].[DocumentProjectionWork]
+ADD CONSTRAINT [FK_DocumentProjectionWork_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
 ON DELETE CASCADE
@@ -354,33 +496,25 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'IX_Descriptor_Uri_Discriminator'
+    WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'IX_Descriptor_ResourceKeyId_DocumentId'
 )
-CREATE INDEX [IX_Descriptor_Uri_Discriminator] ON [dms].[Descriptor] ([Uri], [Discriminator]);
+CREATE INDEX [IX_Descriptor_ResourceKeyId_DocumentId] ON [dms].[Descriptor] ([ResourceKeyId], [DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'Document' AND i.name = N'IX_Document_ResourceKeyId_DocumentId'
+    WHERE s.name = N'dms' AND t.name = N'Document' AND i.name = N'IX_Document_CreatedByOwnershipTokenId'
 )
-CREATE INDEX [IX_Document_ResourceKeyId_DocumentId] ON [dms].[Document] ([ResourceKeyId], [DocumentId]);
+CREATE INDEX [IX_Document_CreatedByOwnershipTokenId] ON [dms].[Document] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'DocumentCache' AND i.name = N'IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt'
+    WHERE s.name = N'dms' AND t.name = N'DocumentProjectionWork' AND i.name = N'IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId'
 )
-CREATE INDEX [IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt] ON [dms].[DocumentCache] ([ProjectName], [ResourceName], [LastModifiedAt], [DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'ReferentialIdentity' AND i.name = N'IX_ReferentialIdentity_DocumentId'
-)
-CREATE INDEX [IX_ReferentialIdentity_DocumentId] ON [dms].[ReferentialIdentity] ([DocumentId]);
+CREATE INDEX [IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId] ON [dms].[DocumentProjectionWork] ([FirstEnqueuedAt], [DocumentId]);
 
 -- ==========================================================
 -- Phase 8: Triggers
@@ -393,6 +527,15 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]
+        WHERE i.[ResourceKeyId] <> d.[ResourceKeyId]
+    )
+    BEGIN
+        THROW 50000, N'dms.Descriptor.ResourceKeyId diverges from the owning dms.Document row.', 1;
+    END
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
         [ContentVersion] bigint NOT NULL,
@@ -427,6 +570,90 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [dms].[Descriptor] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
+END;
+GO
+
+GO
+CREATE OR ALTER TRIGGER [dms].[TR_Document_EnqueueProjectionWork]
+ON [dms].[Document]
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @lifecycleState varchar(16);
+    SELECT @lifecycleState = [ProjectionLifecycleState]
+    FROM [dms].[DocumentCacheState]
+    WHERE [StateId] = 1;
+
+    IF @lifecycleState IS NULL
+    BEGIN
+        THROW 50000, N'dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.', 1;
+    END
+
+    IF NOT (
+        (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@lifecycleState) = 8)
+        OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Resetting' AND DATALENGTH(@lifecycleState) = 9)
+        OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Rebuilding' AND DATALENGTH(@lifecycleState) = 10)
+        OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Tracking' AND DATALENGTH(@lifecycleState) = 8)
+    )
+    BEGIN
+        THROW 50000, N'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value for projection enqueue.', 1;
+    END
+
+    IF @lifecycleState COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@lifecycleState) = 8
+    BEGIN
+        RETURN;
+    END
+
+    DECLARE @required TABLE (
+        [DocumentId] bigint NOT NULL PRIMARY KEY,
+        [RequiredContentVersion] bigint NOT NULL
+    );
+
+    INSERT INTO @required ([DocumentId], [RequiredContentVersion])
+    SELECT i.[DocumentId], MAX(i.[ContentVersion])
+    FROM inserted i
+    LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+    WHERE del.[DocumentId] IS NULL OR i.[ContentVersion] <> del.[ContentVersion]
+    GROUP BY i.[DocumentId];
+
+    DECLARE @enqueuedAt datetime2(7) = SYSUTCDATETIME();
+
+    UPDATE work
+    SET work.[RequiredContentVersion] = req.[RequiredContentVersion],
+        work.[LastEnqueuedAt] = @enqueuedAt
+    FROM @required req
+    INNER LOOP JOIN [dms].[DocumentProjectionWork] work WITH (UPDLOCK, ROWLOCK) ON work.[DocumentId] = req.[DocumentId]
+    WHERE work.[RequiredContentVersion] < req.[RequiredContentVersion]
+    OPTION (FORCE ORDER);
+
+    INSERT INTO [dms].[DocumentProjectionWork] ([DocumentId], [RequiredContentVersion], [FirstEnqueuedAt], [LastEnqueuedAt])
+    SELECT req.[DocumentId], req.[RequiredContentVersion], @enqueuedAt, @enqueuedAt
+    FROM @required req
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM [dms].[DocumentProjectionWork] work WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+        WHERE work.[DocumentId] = req.[DocumentId]
+    );
+END;
+GO
+
+GO
+CREATE OR ALTER TRIGGER [dms].[TR_DocumentCache_ValidateDocumentUuid]
+ON [dms].[DocumentCache]
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]
+        WHERE i.[DocumentUuid] <> d.[DocumentUuid]
+    )
+    BEGIN
+        THROW 50000, N'dms.DocumentCache.DocumentUuid diverges from the owning dms.Document row.', 1;
     END
 END;
 GO
@@ -813,14 +1040,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EdOrgDependentChildResource_EdOrgDependentResourceReference' AND parent_object_id = OBJECT_ID(N'edfi.EdOrgDependentChildResource')
+    WHERE name = N'FK_EdOrgDependentChildResource_EdOrgDependentResourceReference_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.EdOrgDependentChildResource')
 )
 ALTER TABLE [edfi].[EdOrgDependentChildResource]
-ADD CONSTRAINT [FK_EdOrgDependentChildResource_EdOrgDependentResourceReference]
-FOREIGN KEY ([EdOrgDependentResourceReference_DocumentId])
-REFERENCES [edfi].[EdOrgDependentResource] ([DocumentId])
+ADD CONSTRAINT [FK_EdOrgDependentChildResource_EdOrgDependentResourceReference_RefKey]
+FOREIGN KEY ([EdOrgDependentResourceReference_EdOrgDependentResourceId], [EdOrgDependentResourceReference_EducationOrganizationId], [EdOrgDependentResourceReference_DocumentId])
+REFERENCES [edfi].[EdOrgDependentResource] ([EdOrgDependentResourceId], [EducationOrganization_EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -835,14 +1062,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EdOrgDependentResource_EducationOrganization' AND parent_object_id = OBJECT_ID(N'edfi.EdOrgDependentResource')
+    WHERE name = N'FK_EdOrgDependentResource_EducationOrganization_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.EdOrgDependentResource')
 )
 ALTER TABLE [edfi].[EdOrgDependentResource]
-ADD CONSTRAINT [FK_EdOrgDependentResource_EducationOrganization]
-FOREIGN KEY ([EducationOrganization_DocumentId])
-REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ADD CONSTRAINT [FK_EdOrgDependentResource_EducationOrganization_RefKey]
+FOREIGN KEY ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -857,23 +1084,23 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_KeyUnifiedResource_ResourceAReference' AND parent_object_id = OBJECT_ID(N'edfi.KeyUnifiedResource')
+    WHERE name = N'FK_KeyUnifiedResource_ResourceAReference_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.KeyUnifiedResource')
 )
 ALTER TABLE [edfi].[KeyUnifiedResource]
-ADD CONSTRAINT [FK_KeyUnifiedResource_ResourceAReference]
-FOREIGN KEY ([ResourceAReference_DocumentId])
-REFERENCES [edfi].[ResourceA] ([DocumentId])
+ADD CONSTRAINT [FK_KeyUnifiedResource_ResourceAReference_RefKey]
+FOREIGN KEY ([ResourceAReference_ResourceAId], [StudentUniqueId_Unified], [ResourceAReference_DocumentId])
+REFERENCES [edfi].[ResourceA] ([ResourceAId], [StudentReference_StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_KeyUnifiedResource_ResourceBReference' AND parent_object_id = OBJECT_ID(N'edfi.KeyUnifiedResource')
+    WHERE name = N'FK_KeyUnifiedResource_ResourceBReference_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.KeyUnifiedResource')
 )
 ALTER TABLE [edfi].[KeyUnifiedResource]
-ADD CONSTRAINT [FK_KeyUnifiedResource_ResourceBReference]
-FOREIGN KEY ([ResourceBReference_DocumentId])
-REFERENCES [edfi].[ResourceB] ([DocumentId])
+ADD CONSTRAINT [FK_KeyUnifiedResource_ResourceBReference_RefKey]
+FOREIGN KEY ([ResourceBReference_ResourceBId], [StudentUniqueId_Unified], [ResourceBReference_DocumentId])
+REFERENCES [edfi].[ResourceB] ([ResourceBId], [StudentReference_StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -890,14 +1117,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ResourceA_StudentReference' AND parent_object_id = OBJECT_ID(N'edfi.ResourceA')
+    WHERE name = N'FK_ResourceA_StudentReference_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.ResourceA')
 )
 ALTER TABLE [edfi].[ResourceA]
-ADD CONSTRAINT [FK_ResourceA_StudentReference]
-FOREIGN KEY ([StudentReference_DocumentId])
-REFERENCES [edfi].[Student] ([DocumentId])
+ADD CONSTRAINT [FK_ResourceA_StudentReference_RefKey]
+FOREIGN KEY ([StudentReference_StudentUniqueId], [StudentReference_DocumentId])
+REFERENCES [edfi].[Student] ([StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -912,14 +1139,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ResourceB_StudentReference' AND parent_object_id = OBJECT_ID(N'edfi.ResourceB')
+    WHERE name = N'FK_ResourceB_StudentReference_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.ResourceB')
 )
 ALTER TABLE [edfi].[ResourceB]
-ADD CONSTRAINT [FK_ResourceB_StudentReference]
-FOREIGN KEY ([StudentReference_DocumentId])
-REFERENCES [edfi].[Student] ([DocumentId])
+ADD CONSTRAINT [FK_ResourceB_StudentReference_RefKey]
+FOREIGN KEY ([StudentReference_StudentUniqueId], [StudentReference_DocumentId])
+REFERENCES [edfi].[Student] ([StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -956,14 +1183,14 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentSchoolAssociation_SchoolReference' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAssociation')
+    WHERE name = N'FK_StudentSchoolAssociation_SchoolReference_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAssociation')
 )
 ALTER TABLE [edfi].[StudentSchoolAssociation]
-ADD CONSTRAINT [FK_StudentSchoolAssociation_SchoolReference]
-FOREIGN KEY ([SchoolReference_DocumentId])
-REFERENCES [edfi].[School] ([DocumentId])
+ADD CONSTRAINT [FK_StudentSchoolAssociation_SchoolReference_RefKey]
+FOREIGN KEY ([SchoolReference_SchoolId], [SchoolReference_DocumentId])
+REFERENCES [edfi].[School] ([SchoolId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -1028,9 +1255,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EdOrgDependentChildResource' AND i.name = N'IX_EdOrgDependentChildResource_EdOrgDependentResourceReference_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'EdOrgDependentChildResource' AND i.name = N'IX_EdOrgDependentChildResource_EdOrgDependentResourceReference_EdOrgDependentResourceId_EdOrgDependentResourceReferen_3459d40e7c'
 )
-CREATE INDEX [IX_EdOrgDependentChildResource_EdOrgDependentResourceReference_DocumentId] ON [edfi].[EdOrgDependentChildResource] ([EdOrgDependentResourceReference_DocumentId]);
+CREATE INDEX [IX_EdOrgDependentChildResource_EdOrgDependentResourceReference_EdOrgDependentResourceId_EdOrgDependentResourceReferen_3459d40e7c] ON [edfi].[EdOrgDependentChildResource] ([EdOrgDependentResourceReference_EdOrgDependentResourceId], [EdOrgDependentResourceReference_EducationOrganizationId], [EdOrgDependentResourceReference_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -1044,9 +1271,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EdOrgDependentResource' AND i.name = N'IX_EdOrgDependentResource_EducationOrganization_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'EdOrgDependentResource' AND i.name = N'IX_EdOrgDependentResource_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId'
 )
-CREATE INDEX [IX_EdOrgDependentResource_EducationOrganization_DocumentId] ON [edfi].[EdOrgDependentResource] ([EducationOrganization_DocumentId]);
+CREATE INDEX [IX_EdOrgDependentResource_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId] ON [edfi].[EdOrgDependentResource] ([EducationOrganization_EducationOrganizationId], [EducationOrganization_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -1060,17 +1287,17 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'KeyUnifiedResource' AND i.name = N'IX_KeyUnifiedResource_ResourceAReference_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'KeyUnifiedResource' AND i.name = N'IX_KeyUnifiedResource_ResourceAReference_ResourceAId_StudentUniqueId_Unified_ResourceAReference_DocumentId'
 )
-CREATE INDEX [IX_KeyUnifiedResource_ResourceAReference_DocumentId] ON [edfi].[KeyUnifiedResource] ([ResourceAReference_DocumentId]);
+CREATE INDEX [IX_KeyUnifiedResource_ResourceAReference_ResourceAId_StudentUniqueId_Unified_ResourceAReference_DocumentId] ON [edfi].[KeyUnifiedResource] ([ResourceAReference_ResourceAId], [StudentUniqueId_Unified], [ResourceAReference_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'KeyUnifiedResource' AND i.name = N'IX_KeyUnifiedResource_ResourceBReference_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'KeyUnifiedResource' AND i.name = N'IX_KeyUnifiedResource_ResourceBReference_ResourceBId_StudentUniqueId_Unified_ResourceBReference_DocumentId'
 )
-CREATE INDEX [IX_KeyUnifiedResource_ResourceBReference_DocumentId] ON [edfi].[KeyUnifiedResource] ([ResourceBReference_DocumentId]);
+CREATE INDEX [IX_KeyUnifiedResource_ResourceBReference_ResourceBId_StudentUniqueId_Unified_ResourceBReference_DocumentId] ON [edfi].[KeyUnifiedResource] ([ResourceBReference_ResourceBId], [StudentUniqueId_Unified], [ResourceBReference_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -1084,9 +1311,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ResourceA' AND i.name = N'IX_ResourceA_StudentReference_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'ResourceA' AND i.name = N'IX_ResourceA_StudentReference_StudentUniqueId_StudentReference_DocumentId'
 )
-CREATE INDEX [IX_ResourceA_StudentReference_DocumentId] ON [edfi].[ResourceA] ([StudentReference_DocumentId]);
+CREATE INDEX [IX_ResourceA_StudentReference_StudentUniqueId_StudentReference_DocumentId] ON [edfi].[ResourceA] ([StudentReference_StudentUniqueId], [StudentReference_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -1100,9 +1327,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ResourceB' AND i.name = N'IX_ResourceB_StudentReference_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'ResourceB' AND i.name = N'IX_ResourceB_StudentReference_StudentUniqueId_StudentReference_DocumentId'
 )
-CREATE INDEX [IX_ResourceB_StudentReference_DocumentId] ON [edfi].[ResourceB] ([StudentReference_DocumentId]);
+CREATE INDEX [IX_ResourceB_StudentReference_StudentUniqueId_StudentReference_DocumentId] ON [edfi].[ResourceB] ([StudentReference_StudentUniqueId], [StudentReference_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -1132,9 +1359,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAssociation' AND i.name = N'IX_StudentSchoolAssociation_SchoolReference_DocumentId'
+    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAssociation' AND i.name = N'IX_StudentSchoolAssociation_SchoolReference_SchoolId_SchoolReference_DocumentId'
 )
-CREATE INDEX [IX_StudentSchoolAssociation_SchoolReference_DocumentId] ON [edfi].[StudentSchoolAssociation] ([SchoolReference_DocumentId]);
+CREATE INDEX [IX_StudentSchoolAssociation_SchoolReference_SchoolId_SchoolReference_DocumentId] ON [edfi].[StudentSchoolAssociation] ([SchoolReference_SchoolId], [SchoolReference_DocumentId]);
 
 GO
 CREATE OR ALTER VIEW [edfi].[EducationOrganization_View] AS
@@ -1617,30 +1844,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_EdOrgDependentResource_PropagateIdentity]
-ON [edfi].[EdOrgDependentResource]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([EducationOrganization_DocumentId]) OR UPDATE([EdOrgDependentResourceId]) OR UPDATE([EducationOrganization_EducationOrganizationId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (CAST(i.[EdOrgDependentResourceId] AS varbinary(max)) <> CAST(d.[EdOrgDependentResourceId] AS varbinary(max)) OR (i.[EdOrgDependentResourceId] IS NULL AND d.[EdOrgDependentResourceId] IS NOT NULL) OR (i.[EdOrgDependentResourceId] IS NOT NULL AND d.[EdOrgDependentResourceId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[EdOrgDependentResourceReference_EdOrgDependentResourceId] = i.[EdOrgDependentResourceId], r.[EdOrgDependentResourceReference_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId]
-        FROM [edfi].[EdOrgDependentChildResource] r
-        INNER JOIN deleted d ON r.[EdOrgDependentResourceReference_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[EdOrgDependentResourceId] AS varbinary(max)) <> CAST(d.[EdOrgDependentResourceId] AS varbinary(max)) OR (i.[EdOrgDependentResourceId] IS NULL AND d.[EdOrgDependentResourceId] IS NOT NULL) OR (i.[EdOrgDependentResourceId] IS NOT NULL AND d.[EdOrgDependentResourceId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)))
-        AND ((r.[EdOrgDependentResourceReference_EdOrgDependentResourceId] = d.[EdOrgDependentResourceId]) OR (r.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NULL AND d.[EdOrgDependentResourceId] IS NULL)) AND ((r.[EdOrgDependentResourceReference_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[EdOrgDependentResourceReference_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_EdOrgDependentResource_ReferentialIdentity]
 ON [edfi].[EdOrgDependentResource]
 AFTER INSERT, UPDATE
@@ -1757,30 +1960,6 @@ BEGIN
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_EducationOrganizationIdentity_PropagateIdentity]
-ON [edfi].[EducationOrganizationIdentity]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([EducationOrganizationId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
-        FROM [edfi].[EdOrgDependentResource] r
-        INNER JOIN deleted d ON r.[EducationOrganization_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)))
-        AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
-
     END
 END;
 GO
@@ -1917,30 +2096,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_ResourceA_PropagateIdentity]
-ON [edfi].[ResourceA]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([StudentReference_DocumentId]) OR UPDATE([ResourceAId]) OR UPDATE([StudentReference_StudentUniqueId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[StudentReference_DocumentId] <> d.[StudentReference_DocumentId] OR (i.[StudentReference_DocumentId] IS NULL AND d.[StudentReference_DocumentId] IS NOT NULL) OR (i.[StudentReference_DocumentId] IS NOT NULL AND d.[StudentReference_DocumentId] IS NULL)) OR (CAST(i.[ResourceAId] AS varbinary(max)) <> CAST(d.[ResourceAId] AS varbinary(max)) OR (i.[ResourceAId] IS NULL AND d.[ResourceAId] IS NOT NULL) OR (i.[ResourceAId] IS NOT NULL AND d.[ResourceAId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND d.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND d.[StudentReference_StudentUniqueId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[ResourceAReference_ResourceAId] = i.[ResourceAId], r.[StudentUniqueId_Unified] = i.[StudentReference_StudentUniqueId]
-        FROM [edfi].[KeyUnifiedResource] r
-        INNER JOIN deleted d ON r.[ResourceAReference_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[ResourceAId] AS varbinary(max)) <> CAST(d.[ResourceAId] AS varbinary(max)) OR (i.[ResourceAId] IS NULL AND d.[ResourceAId] IS NOT NULL) OR (i.[ResourceAId] IS NOT NULL AND d.[ResourceAId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND d.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND d.[StudentReference_StudentUniqueId] IS NULL)))
-        AND ((r.[ResourceAReference_ResourceAId] = d.[ResourceAId]) OR (r.[ResourceAReference_ResourceAId] IS NULL AND d.[ResourceAId] IS NULL)) AND ((r.[StudentUniqueId_Unified] = d.[StudentReference_StudentUniqueId]) OR (r.[StudentUniqueId_Unified] IS NULL AND d.[StudentReference_StudentUniqueId] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_ResourceA_ReferentialIdentity]
 ON [edfi].[ResourceA]
 AFTER INSERT, UPDATE
@@ -2057,30 +2212,6 @@ BEGIN
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_ResourceB_PropagateIdentity]
-ON [edfi].[ResourceB]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([StudentReference_DocumentId]) OR UPDATE([ResourceBId]) OR UPDATE([StudentReference_StudentUniqueId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[StudentReference_DocumentId] <> d.[StudentReference_DocumentId] OR (i.[StudentReference_DocumentId] IS NULL AND d.[StudentReference_DocumentId] IS NOT NULL) OR (i.[StudentReference_DocumentId] IS NOT NULL AND d.[StudentReference_DocumentId] IS NULL)) OR (CAST(i.[ResourceBId] AS varbinary(max)) <> CAST(d.[ResourceBId] AS varbinary(max)) OR (i.[ResourceBId] IS NULL AND d.[ResourceBId] IS NOT NULL) OR (i.[ResourceBId] IS NOT NULL AND d.[ResourceBId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND d.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND d.[StudentReference_StudentUniqueId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[ResourceBReference_ResourceBId] = i.[ResourceBId], r.[StudentUniqueId_Unified] = i.[StudentReference_StudentUniqueId]
-        FROM [edfi].[KeyUnifiedResource] r
-        INNER JOIN deleted d ON r.[ResourceBReference_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[ResourceBId] AS varbinary(max)) <> CAST(d.[ResourceBId] AS varbinary(max)) OR (i.[ResourceBId] IS NULL AND d.[ResourceBId] IS NOT NULL) OR (i.[ResourceBId] IS NOT NULL AND d.[ResourceBId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND d.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND d.[StudentReference_StudentUniqueId] IS NULL)))
-        AND ((r.[ResourceBReference_ResourceBId] = d.[ResourceBId]) OR (r.[ResourceBReference_ResourceBId] IS NULL AND d.[ResourceBId] IS NULL)) AND ((r.[StudentUniqueId_Unified] = d.[StudentReference_StudentUniqueId]) OR (r.[StudentUniqueId_Unified] IS NULL AND d.[StudentReference_StudentUniqueId] IS NULL));
-
     END
 END;
 GO
@@ -2269,30 +2400,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_School_PropagateIdentity]
-ON [edfi].[School]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([EducationOrganizationId]) OR UPDATE([NameOfInstitution]) OR UPDATE([SchoolId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)) OR (CAST(i.[NameOfInstitution] AS varbinary(max)) <> CAST(d.[NameOfInstitution] AS varbinary(max)) OR (i.[NameOfInstitution] IS NULL AND d.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND d.[NameOfInstitution] IS NULL)) OR (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[SchoolReference_SchoolId] = i.[SchoolId]
-        FROM [edfi].[StudentSchoolAssociation] r
-        INNER JOIN deleted d ON r.[SchoolReference_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL)))
-        AND ((r.[SchoolReference_SchoolId] = d.[SchoolId]) OR (r.[SchoolReference_SchoolId] IS NULL AND d.[SchoolId] IS NULL));
-
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -2396,38 +2503,6 @@ BEGIN
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL));
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_Student_PropagateIdentity]
-ON [edfi].[Student]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF (UPDATE([FirstName]) OR UPDATE([StudentUniqueId]))
-    AND EXISTS (
-        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
-        WHERE (CAST(i.[FirstName] AS varbinary(max)) <> CAST(d.[FirstName] AS varbinary(max)) OR (i.[FirstName] IS NULL AND d.[FirstName] IS NOT NULL) OR (i.[FirstName] IS NOT NULL AND d.[FirstName] IS NULL)) OR (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL))
-    )
-    BEGIN
-        UPDATE r
-        SET r.[StudentReference_StudentUniqueId] = i.[StudentUniqueId]
-        FROM [edfi].[ResourceA] r
-        INNER JOIN deleted d ON r.[StudentReference_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL)))
-        AND ((r.[StudentReference_StudentUniqueId] = d.[StudentUniqueId]) OR (r.[StudentReference_StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NULL));
-
-        UPDATE r
-        SET r.[StudentReference_StudentUniqueId] = i.[StudentUniqueId]
-        FROM [edfi].[ResourceB] r
-        INNER JOIN deleted d ON r.[StudentReference_DocumentId] = d.[DocumentId]
-        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE ((CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL)))
-        AND ((r.[StudentReference_StudentUniqueId] = d.[StudentUniqueId]) OR (r.[StudentReference_StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NULL));
-
     END
 END;
 GO
@@ -2667,8 +2742,18 @@ END;
 GO
 
 -- ==========================================================
--- Phase 7: Seed Data (insert-if-missing + validation)
+-- Phase 10: Seed Data (insert-if-missing + validation)
 -- ==========================================================
+
+-- DataStoreIdentity singleton insert-if-missing
+IF NOT EXISTS (SELECT 1 FROM [dms].[DataStoreIdentity] WHERE [DataStoreIdentitySingletonId] = 1)
+    INSERT INTO [dms].[DataStoreIdentity] ([DataStoreIdentitySingletonId], [SourceIdentity])
+    VALUES (1, NEWID());
+
+-- DocumentCacheState singleton insert-if-missing
+IF NOT EXISTS (SELECT 1 FROM [dms].[DocumentCacheState] WHERE [StateId] = 1)
+    INSERT INTO [dms].[DocumentCacheState] ([StateId], [ProjectionLifecycleState], [CacheAheadRecoveryRequired])
+    VALUES (1, N'Disabled', 0);
 
 -- ResourceKey seed inserts (insert-if-missing)
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 1)
@@ -2777,7 +2862,7 @@ END
 -- EffectiveSchema singleton insert-if-missing
 IF NOT EXISTS (SELECT 1 FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1)
     INSERT INTO [dms].[EffectiveSchema] ([EffectiveSchemaSingletonId], [ApiSchemaFormatVersion], [EffectiveSchemaHash], [ResourceKeyCount], [ResourceKeySeedHash])
-    VALUES (1, N'1.0.0', N'9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3', 12, 0xCF22BDA16C6555C3F9F4F106F8BA65C2461E58FC300892B4FBB958648BA026D1);
+    VALUES (1, N'1.0.0', N'136957ea965b4c23f513963a407ed08e9203a723da63135a3543a74e48e58136', 12, 0xCF22BDA16C6555C3F9F4F106F8BA65C2461E58FC300892B4FBB958648BA026D1);
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
 DECLARE @es_stored_api_schema_format_version nvarchar(255);
@@ -2806,16 +2891,16 @@ BEGIN
 END
 
 -- SchemaComponent seed inserts (insert-if-missing)
-IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3' AND [ProjectEndpointName] = N'ed-fi')
+IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'136957ea965b4c23f513963a407ed08e9203a723da63135a3543a74e48e58136' AND [ProjectEndpointName] = N'ed-fi')
     INSERT INTO [dms].[SchemaComponent] ([EffectiveSchemaHash], [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject])
-    VALUES (N'9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3', N'ed-fi', N'Ed-Fi', N'5.0.0', 0);
+    VALUES (N'136957ea965b4c23f513963a407ed08e9203a723da63135a3543a74e48e58136', N'ed-fi', N'Ed-Fi', N'5.0.0', 0);
 
 -- SchemaComponent exact-match validation (count + content)
 DECLARE @sc_actual_count integer;
 DECLARE @sc_mismatched_count integer;
 DECLARE @sc_mismatched_names nvarchar(max);
 
-SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3';
+SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'136957ea965b4c23f513963a407ed08e9203a723da63135a3543a74e48e58136';
 IF @sc_actual_count <> 1
 BEGIN
     DECLARE @sc_count_msg nvarchar(200) = CONCAT(N'dms.SchemaComponent count mismatch: expected 1, found ', CAST(@sc_actual_count AS nvarchar(10)));
@@ -2824,7 +2909,7 @@ END
 
 SELECT @sc_mismatched_count = COUNT(*)
 FROM [dms].[SchemaComponent] sc
-WHERE sc.[EffectiveSchemaHash] = N'9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3'
+WHERE sc.[EffectiveSchemaHash] = N'136957ea965b4c23f513963a407ed08e9203a723da63135a3543a74e48e58136'
 AND NOT EXISTS (
     SELECT 1 FROM (VALUES
         (N'ed-fi', N'Ed-Fi', N'5.0.0', 0)
@@ -2840,7 +2925,7 @@ BEGIN
     FROM (
         SELECT TOP 10 sc.[ProjectEndpointName]
         FROM [dms].[SchemaComponent] sc
-        WHERE sc.[EffectiveSchemaHash] = N'9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3'
+        WHERE sc.[EffectiveSchemaHash] = N'136957ea965b4c23f513963a407ed08e9203a723da63135a3543a74e48e58136'
         AND NOT EXISTS (
             SELECT 1 FROM (VALUES
                 (N'ed-fi', N'Ed-Fi', N'5.0.0', 0)

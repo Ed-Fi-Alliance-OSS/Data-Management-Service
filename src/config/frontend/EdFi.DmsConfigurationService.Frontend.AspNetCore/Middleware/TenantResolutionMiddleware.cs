@@ -5,7 +5,9 @@
 
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
@@ -30,11 +32,14 @@ public class TenantResolutionMiddleware(RequestDelegate next)
             return;
         }
 
+        // Allow /health endpoint without tenant header (health probes must be tenant-agnostic).
+        //   Matched exactly (not by segment prefix) so lookalike paths keep requiring a valid tenant.
         // Allow /connect endpoints without tenant header (for system administrator authentication)
         // Allow /v3/tenants endpoints without tenant header (for tenant management before tenants exist)
         // Allow /.well-known endpoints without tenant header (standard OIDC discovery endpoints)
         if (
-            context.Request.Path.StartsWithSegments("/connect", StringComparison.OrdinalIgnoreCase)
+            IsHealthPath(context.Request.Path)
+            || context.Request.Path.StartsWithSegments("/connect", StringComparison.OrdinalIgnoreCase)
             || context.Request.Path.StartsWithSegments("/v3/tenants", StringComparison.OrdinalIgnoreCase)
             || context.Request.Path.StartsWithSegments("/.well-known", StringComparison.OrdinalIgnoreCase)
         )
@@ -50,14 +55,13 @@ public class TenantResolutionMiddleware(RequestDelegate next)
         )
         {
             logger.LogWarning("Tenant header is missing or empty");
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(
-                new
-                {
-                    error = "Bad Request",
-                    message = $"The '{TenantHeaderName}' header is required when multi-tenancy is enabled",
-                }
+            await FailureResponseWriter.WriteAsync(
+                context,
+                FailureResponse.ForBadRequest(
+                    $"The '{TenantHeaderName}' header is required when multi-tenancy is enabled",
+                    context.TraceIdentifier
+                ),
+                context.RequestAborted
             );
             return;
         }
@@ -70,10 +74,13 @@ public class TenantResolutionMiddleware(RequestDelegate next)
         if (tenantResult is TenantGetByNameResult.FailureNotFound)
         {
             logger.LogWarning("Tenant not found: {TenantName}", sanitizedTenantName);
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(
-                new { error = "Bad Request", message = $"Invalid tenant: {sanitizedTenantName}" }
+            await FailureResponseWriter.WriteAsync(
+                context,
+                FailureResponse.ForBadRequest(
+                    $"Invalid tenant: {sanitizedTenantName}",
+                    context.TraceIdentifier
+                ),
+                context.RequestAborted
             );
             return;
         }
@@ -85,10 +92,10 @@ public class TenantResolutionMiddleware(RequestDelegate next)
                 sanitizedTenantName,
                 SanitizeForLog(failure.FailureMessage)
             );
-            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(
-                new { error = "Internal Server Error", message = "Failed to validate tenant" }
+            await FailureResponseWriter.WriteAsync(
+                context,
+                FailureResponse.ForUnknown(context.TraceIdentifier),
+                context.RequestAborted
             );
             return;
         }
@@ -111,14 +118,25 @@ public class TenantResolutionMiddleware(RequestDelegate next)
             return;
         }
 
-        // Handle unexpected result type
+        // An unrecognized repository result is a server-side contract failure, not caller input.
         logger.LogError("Unexpected tenant lookup result type: {ResultType}", tenantResult.GetType().Name);
-        context.Response.StatusCode = StatusCodes.Status400BadRequest;
-        context.Response.ContentType = "application/json";
-        await context.Response.WriteAsJsonAsync(
-            new { error = "Bad Request", message = "Failed to validate tenant" }
+        await FailureResponseWriter.WriteAsync(
+            context,
+            FailureResponse.ForUnknown(context.TraceIdentifier),
+            context.RequestAborted
         );
     }
+
+    /// <summary>
+    /// Determines whether the request targets the health endpoint, which must be reachable without a
+    /// tenant header so health probes remain tenant-agnostic. Matches only "/health" and "/health/"
+    /// (case-insensitive), leaving lookalike paths such as "/health/foo" or "/healthcheck" subject to
+    /// tenant enforcement. Path base is already stripped by UsePathBase, so "/mt-config/health" arrives
+    /// here as "/health".
+    /// </summary>
+    private static bool IsHealthPath(PathString path) =>
+        path.Equals("/health", StringComparison.OrdinalIgnoreCase)
+        || path.Equals("/health/", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Sanitizes a string for safe logging by allowing only safe characters.

@@ -34,6 +34,7 @@ public class DataStoreModuleTests
     private readonly IDataStoreRepository _dataStoreRepository = A.Fake<IDataStoreRepository>();
     private readonly IConnectionStringEncryptionService _encryptionService =
         A.Fake<IConnectionStringEncryptionService>();
+    private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
 
     private static readonly string FakeEncryptedConnection1 = Convert.ToBase64String(
         new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17 }
@@ -46,6 +47,9 @@ public class DataStoreModuleTests
     private static readonly string FakeEncryptedSnapshot1 = Convert.ToBase64String(
         new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 19 }
     );
+
+    [TearDown]
+    public void DisposeWebApplicationFactories() => _factoryTracker.DisposeTrackedFactories();
 
     private HttpClient SetUpClient()
     {
@@ -89,6 +93,7 @@ public class DataStoreModuleTests
                 }
             );
         });
+        _factoryTracker.Track(factory);
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
         return client;
@@ -117,7 +122,7 @@ public class DataStoreModuleTests
                     ])
                 );
 
-            A.CallTo(() => _dataStoreRepository.GetDataStore(A<long>._))
+            A.CallTo(() => _dataStoreRepository.GetDataStore(A<int>._))
                 .Returns(
                     new DataStoreGetResult.Success(
                         new DataStoreResponse
@@ -143,10 +148,10 @@ public class DataStoreModuleTests
             A.CallTo(() => _dataStoreRepository.UpdateDataStore(A<DataStoreUpdateCommand>._))
                 .Returns(new DataStoreUpdateResult.Success());
 
-            A.CallTo(() => _dataStoreRepository.DeleteDataStore(A<long>._))
+            A.CallTo(() => _dataStoreRepository.DeleteDataStore(A<int>._))
                 .Returns(new DataStoreDeleteResult.Success());
 
-            A.CallTo(() => _dataStoreRepository.QueryApplicationByDataStore(A<long>._, A<PagingQuery>._))
+            A.CallTo(() => _dataStoreRepository.QueryApplicationByDataStore(A<int>._, A<PagingQuery>._))
                 .Returns(
                     new ApplicationByDataStoreQueryResult.Success([
                         new ApplicationResponse
@@ -346,16 +351,16 @@ public class DataStoreModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _dataStoreRepository.GetDataStore(A<long>._))
+            A.CallTo(() => _dataStoreRepository.GetDataStore(A<int>._))
                 .Returns(new DataStoreGetResult.FailureNotFound());
 
             A.CallTo(() => _dataStoreRepository.UpdateDataStore(A<DataStoreUpdateCommand>._))
                 .Returns(new DataStoreUpdateResult.FailureNotExists());
 
-            A.CallTo(() => _dataStoreRepository.DeleteDataStore(A<long>._))
+            A.CallTo(() => _dataStoreRepository.DeleteDataStore(A<int>._))
                 .Returns(new DataStoreDeleteResult.FailureNotExists());
 
-            A.CallTo(() => _dataStoreRepository.QueryApplicationByDataStore(A<long>._, A<PagingQuery>._))
+            A.CallTo(() => _dataStoreRepository.QueryApplicationByDataStore(A<int>._, A<PagingQuery>._))
                 .Returns(new ApplicationByDataStoreQueryResult.FailureNotExists());
         }
 

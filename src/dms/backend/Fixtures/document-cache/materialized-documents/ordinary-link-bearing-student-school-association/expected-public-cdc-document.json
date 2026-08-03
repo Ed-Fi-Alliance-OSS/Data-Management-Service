@@ -1,0 +1,14 @@
+{
+  "document": {
+    "id": "aaaaaaaa-bbbb-cccc-dddd-000000000101",
+    "_lastModifiedDate": "2026-07-30T14:15:16Z",
+    "schoolReference": {
+      "schoolId": 255901,
+      "link": {
+        "rel": "School",
+        "href": "/ed-fi/schools/aaaaaaaa-bbbb-cccc-dddd-000000000201"
+      }
+    },
+    "_etag": "222-01234567.j._.l.i"
+  }
+}

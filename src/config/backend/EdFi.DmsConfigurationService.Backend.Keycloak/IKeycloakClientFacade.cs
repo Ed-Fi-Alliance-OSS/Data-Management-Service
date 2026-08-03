@@ -23,6 +23,31 @@ public interface IKeycloakClientFacade
     Task<Credentials> GenerateClientSecretAsync(string realm, string clientUuid);
     Task<IEnumerable<Client>> GetClientsAsync(string realm);
     Task<IEnumerable<ClientScope>> GetClientScopesAsync(string realm);
+
+    /// <summary>
+    /// The default client scopes currently assigned to one client. Keycloak ignores the
+    /// <c>defaultClientScopes</c> member of a client update, so these assignments can only be
+    /// changed through the dedicated operations below.
+    /// </summary>
+    Task<IEnumerable<ClientScope>> GetDefaultClientScopesAsync(string realm, string clientUuid);
+
+    /// <summary>
+    /// The realm-wide default client scopes. They are preserved when a client's claim-set scope
+    /// is replaced, so scope convergence never removes a realm-managed assignment.
+    /// </summary>
+    Task<IEnumerable<ClientScope>> GetRealmDefaultClientScopesAsync(string realm);
+
+    /// <summary>
+    /// Assigns a default client scope to a client. Idempotent: assigning an already-assigned
+    /// scope leaves the client unchanged.
+    /// </summary>
+    Task<bool> UpdateDefaultClientScopeAsync(string realm, string clientUuid, string clientScopeId);
+
+    /// <summary>
+    /// Removes a default client scope from a client. Idempotent in effect: removing an
+    /// unassigned scope leaves the client unchanged.
+    /// </summary>
+    Task<bool> DeleteDefaultClientScopeAsync(string realm, string clientUuid, string clientScopeId);
     Task<User> GetUserForServiceAccountAsync(string realm, string clientUuid);
     Task<bool> AddRealmRoleMappingsToUserAsync(string realm, string userId, IEnumerable<Role> roles);
 }

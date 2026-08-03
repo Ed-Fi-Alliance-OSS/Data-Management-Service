@@ -40,6 +40,9 @@ Describe "DMS-1151 bootstrap schema deployment safety" {
                 "bootstrap-schema-tool.psm1",
                 "bootstrap-schema-workspace.psm1",
                 "env-utility.psm1",
+                # configure-local-data-store.ps1 and provision-dms-schema.ps1 import the shared
+                # Compose-equivalent resolver from this module.
+                "database-safety.psm1",
                 "configure-local-data-store.ps1",
                 "provision-dms-schema.ps1",
                 "provision-e2e-database.ps1",
@@ -250,8 +253,10 @@ exit $ExitCode
             Remove-Item -LiteralPath $script:repo.RepoRoot -Recurse -Force
         }
 
-        [System.Environment]::SetEnvironmentVariable("DMS_SCHEMA_TOOL_PATH", $null)
-        [System.Environment]::SetEnvironmentVariable("DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK", $null)
+        # Remove-Item, not SetEnvironmentVariable with $null: PowerShell coerces $null to "", which
+        # newer pwsh/.NET on Unix stores as a present-but-blank variable instead of removing it.
+        Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue
+        Remove-Item Env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK -ErrorAction SilentlyContinue
     }
 
     Context "public script contracts" {
@@ -290,10 +295,11 @@ exit $ExitCode
             $params | Should -Contain "DatabaseName"
             $params | Should -Contain "Configuration"
             $params | Should -Contain "PostgresContainerName"
+            $params | Should -Contain "DatabaseEngine"
             $params | Should -Not -Contain "SchemaToolPath"
             $params | Should -Not -Contain "DataStoreId"
             $params | Should -Not -Contain "SchoolYear"
-            $params.Count | Should -Be 4
+            $params.Count | Should -Be 5
         }
 
         It "provision-e2e-database.ps1 owns explicit E2E database reset and SchemaTools provisioning" {
@@ -369,11 +375,12 @@ exit $ExitCode
         }
 
         It "start-published-dms.ps1 retains transitional flags pending consumer migration" {
-            # start-published-dms.ps1 keeps -LoadSeedData, -NoDataStore, -SchoolYearRange, and
+            # start-published-dms.ps1 keeps -NoDataStore, -SchoolYearRange, and
             # -AddSmokeTestCredentials until the published-image consumer path is migrated (separate task).
+            # -LoadSeedData (the direct-SQL database-template path) has been removed.
             $params = Get-DeclaredScriptParameters -Path (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1")
 
-            $params | Should -Contain "LoadSeedData"
+            $params | Should -Not -Contain "LoadSeedData"
             $params | Should -Contain "NoDataStore"
             $params | Should -Contain "SchoolYearRange"
             $params | Should -Contain "AddSmokeTestCredentials"
@@ -2010,7 +2017,13 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
     }
 
     Context "EnvironmentFile precedence" {
-        It "configure-local-data-store.ps1 reads only the supplied -EnvironmentFile, not ambient process env" {
+        # Docker Compose interpolation gives a process/shell value precedence over the same key in the
+        # env file, so the running containers receive the ambient value. The configure phase must read
+        # with the same precedence: a file-only read would register CMS data stores (and select the
+        # tenant) from values the running stack never received. The shared resolver in
+        # database-safety.psm1 is the single rule for this across startup, readiness, provisioning,
+        # destructive-reset safety, and CMS configuration.
+        It "configure-local-data-store.ps1 resolves ambient process env over the supplied -EnvironmentFile (Compose precedence)" {
             $isolatedEnvFile = Join-Path $script:repo.DockerComposeRoot "env-with-tenant.env"
             @"
 POSTGRES_PASSWORD=isolated-pass
@@ -2023,9 +2036,6 @@ CONFIG_SERVICE_TENANT=isolated-tenant
 DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
 
-            # Set conflicting values in process env; the script must ignore them and use the file.
-            $env:POSTGRES_PASSWORD = "process-pass"
-            $env:POSTGRES_DB_NAME = "process_db"
             $env:CONFIG_SERVICE_TENANT = "process-tenant"
             try {
                 . $script:repo.ConfigureScript
@@ -2044,16 +2054,93 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
                 $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $isolatedEnvFile -NoDataStore
 
-                $result.Tenant | Should -Be "isolated-tenant"
+                $result.Tenant | Should -Be "process-tenant"
             }
             finally {
-                $env:POSTGRES_PASSWORD = $null
-                $env:POSTGRES_DB_NAME = $null
                 $env:CONFIG_SERVICE_TENANT = $null
             }
         }
 
-        It "provision-dms-schema.ps1 host-side connection uses POSTGRES_PORT from supplied env file, not process env" {
+        It "configure-local-data-store.ps1 uses the supplied -EnvironmentFile values when no ambient override exists" {
+            $isolatedEnvFile = Join-Path $script:repo.DockerComposeRoot "env-with-tenant-no-ambient.env"
+            @"
+POSTGRES_PASSWORD=isolated-pass
+POSTGRES_DB_NAME=isolated_db
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+CONFIG_SERVICE_TENANT=isolated-tenant
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
+
+            Remove-Item Env:CONFIG_SERVICE_TENANT -ErrorAction SilentlyContinue
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        name = "Sole"
+                        dataStoreContexts = @()
+                    }
+                )
+            }
+
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $isolatedEnvFile -NoDataStore
+
+            $result.Tenant | Should -Be "isolated-tenant"
+        }
+
+        It "configure-local-data-store.ps1 registers the MSSQL data store with ambient credential and database-name overrides" {
+            # The running SQL Server container received the ambient MSSQL_SA_PASSWORD /
+            # MSSQL_DB_NAME (Compose interpolation), so the connection string registered in CMS
+            # must carry exactly those values - including a password full of connection-string
+            # metacharacters, which must round-trip through the safe builder unbroken.
+            $isolatedEnvFile = Join-Path $script:repo.DockerComposeRoot "env-mssql-ambient.env"
+            @"
+POSTGRES_PASSWORD=isolated-pass
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
+
+            $ambientPassword = 'Amb;ient "P@ss,word''=1 $x'
+            $env:MSSQL_SA_PASSWORD = $ambientPassword
+            $env:MSSQL_DB_NAME = "ambient_dms_db"
+            try {
+                . $script:repo.ConfigureScript
+
+                function Add-CmsClient { }
+                function Get-CmsToken { return "token" }
+                $script:capturedDataStore = $null
+                function Add-DataStore {
+                    param($CmsUrl, $AccessToken, [System.Management.Automation.PSCredential]$PostgresCredential, $PostgresDbName, $ConnectionString, $Name, $DataStoreType, $Tenant)
+                    $script:capturedDataStore = [pscustomobject]@{
+                        ConnectionString = $ConnectionString
+                        PostgresDbName = $PostgresDbName
+                    }
+                    return [long]42
+                }
+
+                $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $isolatedEnvFile -DatabaseEngine mssql
+
+                $result.SelectedDataStoreIds | Should -Be @([long]42)
+                $parsed = [System.Data.Common.DbConnectionStringBuilder]::new()
+                $parsed.set_ConnectionString($script:capturedDataStore.ConnectionString)
+                $parsed["Password"] | Should -Be $ambientPassword
+                $parsed["Database"] | Should -Be "ambient_dms_db"
+            }
+            finally {
+                Remove-Item Env:MSSQL_SA_PASSWORD -ErrorAction SilentlyContinue
+                Remove-Item Env:MSSQL_DB_NAME -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "provision-dms-schema.ps1 host-side connection resolves POSTGRES_PORT with Compose precedence (ambient wins)" {
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
 
             $isolatedEnvFile = Join-Path $script:repo.DockerComposeRoot "env-port-isolation.env"
@@ -2090,14 +2177,58 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
                 Invoke-ProvisionDmsSchema -EnvironmentFile $isolatedEnvFile -DataStoreId @(1)
 
+                # Compose publishes the host-side port from the ambient-resolved POSTGRES_PORT, so
+                # the SchemaTools host-side translation must use the same value: with an ambient
+                # override in place, the file value names a port nothing is listening on.
                 $captured = @(Get-Content -LiteralPath $capturePath)
                 $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
-                $connectionString | Should -Match "port=9876"
-                $connectionString | Should -Not -Match "port=1111"
+                $connectionString | Should -Match "port=1111"
+                $connectionString | Should -Not -Match "port=9876"
             }
             finally {
                 $env:POSTGRES_PORT = $null
             }
+        }
+
+        It "provision-dms-schema.ps1 host-side connection uses the env-file POSTGRES_PORT when no ambient override exists" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+
+            $isolatedEnvFile = Join-Path $script:repo.DockerComposeRoot "env-port-file-only.env"
+            @"
+POSTGRES_PASSWORD=isolated-pass
+POSTGRES_DB_NAME=isolated_db
+POSTGRES_PORT=9876
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
+
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args-file-only.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            Remove-Item Env:POSTGRES_PORT -ErrorAction SilentlyContinue
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        name = "Sole"
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=isolated_db;'
+                        dataStoreContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $isolatedEnvFile -DataStoreId @(1)
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
+            $connectionString | Should -Match "port=9876"
         }
     }
 
@@ -2746,10 +2877,10 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
             $e2eSetupScript = Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
             $content = Get-Content -LiteralPath $e2eSetupScript -Raw
 
-            $content | Should -Match 'Assert-RelationalSchemaProvisioned -Database \$db'
+            $content | Should -Match 'Assert-RouteContextSchemaProvisioned -Database \$db'
             $content | Should -Match 'dms\."EffectiveSchema"'
-            $content | Should -Match 'edfi\.School'
-            $content | Should -Match 'edfi\.Student'
+            $content | Should -Match '"edfi"\."School"'
+            $content | Should -Match '"edfi"\."Student"'
         }
 
         It "does not pass the removed connector skip flag to start-local-dms.ps1" {
@@ -2758,6 +2889,618 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
 
             $content | Should -Match 'start-local-dms\.ps1'
             $content | Should -Not -Match 'SkipConnectorSetup'
+        }
+    }
+
+    Context "wrapper revalidates the staged workspace against the effective SCHEMA_PACKAGES" {
+        BeforeAll {
+            function script:New-WrapperRevalidationFixture {
+                <#
+                .SYNOPSIS
+                Isolated repo carrying only what Invoke-BootstrapWrapper needs to reach its schema/claims
+                staging phase and then return early: the wrapper module + entry script, env-utility.psm1
+                plus the DS 5.2/6.1 bootstrap overlays (composed unconditionally for start-local-dms.ps1),
+                a base .env.example, and no-op stubs for prepare-dms-schema.ps1, prepare-dms-claims.ps1, and
+                start-local-dms.ps1. configure-local-data-store.ps1 / provision-dms-schema.ps1 are
+                deliberately absent so the wrapper takes its documented "isolated Pester fixture" early
+                return right after the infrastructure phase (mirrors BootstrapSeedDelivery.Tests.ps1's
+                "wrapper opt-in" fixtures).
+                #>
+                param(
+                    [ValidateSet("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")]
+                    [string]$WrapperEntryScript = "bootstrap-local-dms.ps1"
+                )
+
+                $startScriptName = if ($WrapperEntryScript -eq "bootstrap-local-dms.ps1") {
+                    "start-local-dms.ps1"
+                }
+                else {
+                    "start-published-dms.ps1"
+                }
+
+                $repoRoot = script:New-TestDirectory
+                $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
+                New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
+
+                foreach ($fileName in @(
+                    "bootstrap-wrapper.psm1",
+                    $WrapperEntryScript,
+                    "bootstrap-schema-catalog.psm1",
+                    "env-utility.psm1",
+                    ".env.bootstrap.ds52",
+                    ".env.bootstrap.ds61"
+                )) {
+                    Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
+                }
+                Copy-Item `
+                    -LiteralPath (Join-Path $script:sourceRepoRoot "eng/schema-package-utility.psm1") `
+                    -Destination (Join-Path $repoRoot "eng/schema-package-utility.psm1")
+
+                $envFile = Join-Path $dockerComposeRoot ".env.example"
+                @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                # These stubs only record calls. Mismatch tests assert that neither schema
+                # preparation nor infrastructure startup is reached.
+                $prepareSchemaCallLog = Join-Path $repoRoot "prepare-schema-calls.txt"
+                @"
+param(
+    [string] `$EnvironmentFile,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+Add-Content -LiteralPath '$prepareSchemaCallLog' -Value "EnvironmentFile=`$EnvironmentFile"
+"@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot "prepare-dms-schema.ps1") -Encoding utf8
+
+                "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)" |
+                    Set-Content -LiteralPath (Join-Path $dockerComposeRoot "prepare-dms-claims.ps1") -Encoding utf8
+
+                $startCallLog = Join-Path $repoRoot "start-calls.txt"
+                @"
+param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$startCallLog' -Value "start"
+"@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot $startScriptName) -Encoding utf8
+
+                return [pscustomobject]@{
+                    RepoRoot             = $repoRoot
+                    DockerComposeRoot    = $dockerComposeRoot
+                    EnvFile              = $envFile
+                    WrapperScript        = Join-Path $dockerComposeRoot $WrapperEntryScript
+                    PrepareSchemaCallLog = $prepareSchemaCallLog
+                    StartCallLog         = $startCallLog
+                }
+            }
+
+            function script:New-StandardModeManifestFile {
+                <#
+                .SYNOPSIS
+                Writes a Standard-mode (package-backed) .bootstrap/bootstrap-manifest.json carrying the
+                supplied schema.selectedExtensions (and, when supplied, schema.selectedPackages), plus
+                complete claims/seed sections so Test-WrapperManifestClaimsStaged reports claims already
+                staged - isolating the schema-package revalidation as the only variable under test.
+                -Malformed writes unparsable JSON instead, exercising the fail-fast cleanup path.
+                #>
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$DockerComposeRoot,
+
+                    [string[]]$SelectedExtensions = @(),
+
+                    # "<packageId>@<version>" identity strings; omitted from the manifest when not
+                    # supplied, modeling a workspace staged before selectedPackages was recorded.
+                    [string[]]$SelectedPackages = $null,
+
+                    [switch]$Malformed
+                )
+
+                $bootstrapRoot = Join-Path $DockerComposeRoot ".bootstrap"
+                New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+                $manifestPath = Join-Path $bootstrapRoot "bootstrap-manifest.json"
+
+                if ($Malformed) {
+                    "{ not valid json" | Set-Content -LiteralPath $manifestPath -Encoding utf8
+                    return $manifestPath
+                }
+
+                $manifest = [ordered]@{
+                    version = 1
+                    schema  = [ordered]@{
+                        selectionMode         = "Standard"
+                        selectedExtensions    = @($SelectedExtensions)
+                        effectiveSchemaHash   = "abc123"
+                        workspaceFingerprint  = "0000000000000000000000000000000000000000000000000000000000000000"
+                        apiSchemaManifestPath = "ApiSchema/bootstrap-api-schema-manifest.json"
+                    }
+                    claims  = [ordered]@{
+                        mode                       = "Embedded"
+                        directory                  = "claims"
+                        fingerprint                = "def456"
+                        expectedVerificationChecks = @()
+                    }
+                    seed    = [ordered]@{
+                        extensionNamespacePrefixes = @()
+                    }
+                }
+                if ($null -ne $SelectedPackages) {
+                    $manifest["schema"].Insert(2, "selectedPackages", @($SelectedPackages))
+                }
+                $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+                return $manifestPath
+            }
+        }
+
+        It "reuses the staged workspace when the recorded package identities match the effective SCHEMA_PACKAGES exactly" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                # Derive the expected "<packageId>@<version>" set from the same DS 5.2 overlay the
+                # wrapper composes, so this spec keeps passing when the pinned versions bump.
+                $overlayContent = Get-Content -LiteralPath (Join-Path $fixture.DockerComposeRoot ".env.bootstrap.ds52") -Raw
+                $packagesJson = [regex]::Match($overlayContent, "(?ms)^[ \t]*SCHEMA_PACKAGES='(?<value>\[.*?\])'").Groups["value"].Value
+                $overlayPackages = @(($packagesJson | ConvertFrom-Json) | ForEach-Object { "$($_.name)@$($_.version)" })
+                $overlayPackages.Count | Should -BeGreaterThan 0
+
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedExtensions @("tpdm") `
+                    -SelectedPackages $overlayPackages | Out-Null
+
+                & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog |
+                    Should -BeFalse -Because "a manifest recording the exact effective package identities must be reused as-is"
+                Test-Path -LiteralPath $fixture.StartCallLog |
+                    Should -BeTrue -Because "the current workspace may proceed to infrastructure startup"
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "stops legacy Standard manifests without selectedPackages before preparation or Docker" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedExtensions @("tpdm") | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*Automatic replacement*DMS-1271*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "stops when the staged package identities no longer match the effective package set" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedExtensions @() `
+                    -SelectedPackages @("EdFi.DataStandard61.ApiSchema@1.0.333") | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*does not match*DMS-1271*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "stops when package versions drift despite an identical extension set" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedExtensions @("tpdm") `
+                    -SelectedPackages @(
+                        "EdFi.DataStandard52.ApiSchema@0.0.1",
+                        "EdFi.DataStandard52.TPDM.ApiSchema@0.0.1"
+                    ) | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*does not match*DMS-1271*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "stops when the staged bootstrap manifest is malformed" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                script:New-StandardModeManifestFile -DockerComposeRoot $fixture.DockerComposeRoot -Malformed | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*without a complete selectedPackages identity*DMS-1271*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "fails closed when SCHEMA_PACKAGES is present but malformed" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                $overlayPath = Join-Path $fixture.DockerComposeRoot ".env.bootstrap.ds52"
+                $overlayContent = Get-Content -LiteralPath $overlayPath -Raw
+                $overlayContent = $overlayContent -replace '(?m)^SCHEMA_PACKAGES=.*$', "SCHEMA_PACKAGES=not-json"
+                Set-Content -LiteralPath $overlayPath -Value $overlayContent -NoNewline
+
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedPackages @("EdFi.DataStandard52.ApiSchema@1.0.333") | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*Unable to find quoted JSON env value for 'SCHEMA_PACKAGES'*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "uses the catalog-pinned core identity when SCHEMA_PACKAGES is absent" {
+            $fixture = script:New-WrapperRevalidationFixture -WrapperEntryScript "bootstrap-published-dms.ps1"
+            try {
+                Import-Module (Join-Path $fixture.DockerComposeRoot "bootstrap-schema-catalog.psm1") -Force
+                $corePackage = Get-StandardCorePackage
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedPackages @("$($corePackage.Id)@$($corePackage.Version)") | Out-Null
+
+                & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeTrue
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "rejects an obsolete core package when SCHEMA_PACKAGES is absent" {
+            $fixture = script:New-WrapperRevalidationFixture -WrapperEntryScript "bootstrap-published-dms.ps1"
+            try {
+                Import-Module (Join-Path $fixture.DockerComposeRoot "bootstrap-schema-catalog.psm1") -Force
+                $corePackage = Get-StandardCorePackage
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedPackages @("$($corePackage.Id)@0.0.1") | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*$($corePackage.Id)@$($corePackage.Version)*DMS-1271*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    Context "E2E dedicated-database guard (engine-aware)" {
+        BeforeAll {
+            # Dot-source stops at the script's dot-source guard, exposing the guard functions
+            # without provisioning anything.
+            . (Join-Path $script:sourceDockerComposeRoot "provision-e2e-database.ps1")
+        }
+
+        It "rejects a case-variant of the bootstrap database name" {
+            # SQL Server's default collation treats identifiers case-insensitively, so a
+            # case-variant of the protected name is the same physical database there.
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{ POSTGRES_DB_NAME = "edfi_datamanagementservice" } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "EDFI_DataManagementService"
+            } | Should -Throw "*must be dedicated*POSTGRES_DB_NAME*"
+        }
+
+        It "protects MSSQL_DB_NAME as a first-class database-name key" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{ MSSQL_DB_NAME = "edfi_datamanagementservice" } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "Edfi_DataManagementService"
+            } | Should -Throw "*MSSQL_DB_NAME*"
+        }
+
+        It "extracts the database name from an Initial Catalog connection-string segment" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        DATABASE_CONNECTION_STRING_ADMIN = "Server=dms-mssql,1433;Initial Catalog=edfi_datamanagementservice;User ID=sa;Password=p;"
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "edfi_datamanagementservice"
+            } | Should -Throw "*DATABASE_CONNECTION_STRING_ADMIN*"
+        }
+
+        It "rejects a Compose-quoted connection string that targets the E2E database" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        DMS_CONFIG_DATABASE_CONNECTION_STRING = '"Server=dms-mssql,1433;Initial Catalog=shared"'
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*DMS_CONFIG_DATABASE_CONNECTION_STRING*"
+        }
+
+        It "rejects a Compose-quoted database-name key that matches the E2E database" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{ MSSQL_DB_NAME = "'shared' # local database" } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*MSSQL_DB_NAME*"
+        }
+
+        It "resolves a variable-referenced connection-string database before comparing" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        SHARED_DB                           = "shared"
+                        DATABASE_CONNECTION_STRING_ADMIN = 'Server=dms-mssql,1433;Database=${SHARED_DB};User ID=sa;Password=p;'
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*DATABASE_CONNECTION_STRING_ADMIN*"
+        }
+
+        It "fails closed when a protected database reference is undefined" {
+            # An undefined reference resolves to empty the way Docker Compose does, leaving no database
+            # name to compare; the guard refuses rather than proceed.
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        DATABASE_CONNECTION_STRING_ADMIN = 'Server=dms-mssql,1433;Database=${SHARED_DB};User ID=sa;Password=p;'
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*could not determine a database name*DATABASE_CONNECTION_STRING_ADMIN*"
+        }
+
+        It "fails closed when protected database references are cyclic" {
+            # A cyclic reference cannot be expanded; the resolver leaves the '$' marker, which the guard
+            # treats as unresolved and refuses.
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        SHARED_DB                           = '${OTHER_DB}'
+                        OTHER_DB                            = '${SHARED_DB}'
+                        DATABASE_CONNECTION_STRING_ADMIN = 'Server=dms-mssql,1433;Database=${SHARED_DB};User ID=sa;Password=p;'
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*unresolved or cyclic reference*"
+        }
+
+        It "fails closed when a configured protected connection string has no database name" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        DMS_CONFIG_DATABASE_CONNECTION_STRING = "Server=dms-mssql,1433;User ID=sa;Password=p;"
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*could not determine a database name*"
+        }
+
+        It "accepts a dedicated E2E database name" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        POSTGRES_DB_NAME                 = "edfi_datamanagementservice"
+                        MSSQL_DB_NAME                    = "edfi_datamanagementservice"
+                        DATABASE_CONNECTION_STRING_ADMIN = "Server=dms-mssql,1433;Initial Catalog=edfi_datamanagementservice;User ID=sa;Password=p;"
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "edfi_e2e"
+            } | Should -Not -Throw
+        }
+
+        # FR8: Docker Compose gives a process/shell value precedence over the env file. The guard must
+        # resolve protected values with the same precedence, or an ambient override that makes the live
+        # shared database equal the reset target would pass while the guard evaluated a stale file value.
+        It "fails closed when an ambient <Key> override makes the live database the reset target" -ForEach @(
+            @{ Key = "MSSQL_DB_NAME" }
+            @{ Key = "POSTGRES_DB_NAME" }
+        ) {
+            $priorExists = Test-Path "Env:$Key"
+            $priorValue = [System.Environment]::GetEnvironmentVariable($Key)
+            try {
+                [System.Environment]::SetEnvironmentVariable($Key, "shared_e2e")
+                {
+                    Assert-E2EDatabaseIsDedicated `
+                        -EnvironmentValues @{ $Key = "main_db" } `
+                        -EnvironmentFilePath ".env.e2e" `
+                        -E2EDatabaseName "shared_e2e"
+                } | Should -Throw "*must be dedicated*$Key*"
+            }
+            finally {
+                if ($priorExists) { [System.Environment]::SetEnvironmentVariable($Key, $priorValue) }
+                else { Remove-Item "Env:$Key" -ErrorAction SilentlyContinue }
+            }
+        }
+
+        It "fails closed when an ambient override of a referenced protected variable targets the reset database" {
+            $priorExists = Test-Path "Env:DMS1284_SHARED_DBNAME"
+            $priorValue = [System.Environment]::GetEnvironmentVariable("DMS1284_SHARED_DBNAME")
+            try {
+                [System.Environment]::SetEnvironmentVariable("DMS1284_SHARED_DBNAME", "shared_e2e")
+                {
+                    Assert-E2EDatabaseIsDedicated `
+                        -EnvironmentValues @{
+                            MSSQL_DB_NAME         = '${DMS1284_SHARED_DBNAME}'
+                            DMS1284_SHARED_DBNAME = "main_db"
+                        } `
+                        -EnvironmentFilePath ".env.e2e" `
+                        -E2EDatabaseName "shared_e2e"
+                } | Should -Throw "*must be dedicated*MSSQL_DB_NAME*"
+            }
+            finally {
+                if ($priorExists) { [System.Environment]::SetEnvironmentVariable("DMS1284_SHARED_DBNAME", $priorValue) }
+                else { Remove-Item Env:DMS1284_SHARED_DBNAME -ErrorAction SilentlyContinue }
+            }
+        }
+
+        It "fails closed when an ambient override of a connection-string variable targets the reset database" {
+            $priorExists = Test-Path "Env:DMS1284_CONN_DBNAME"
+            $priorValue = [System.Environment]::GetEnvironmentVariable("DMS1284_CONN_DBNAME")
+            try {
+                [System.Environment]::SetEnvironmentVariable("DMS1284_CONN_DBNAME", "shared_e2e")
+                {
+                    Assert-E2EDatabaseIsDedicated `
+                        -EnvironmentValues @{
+                            DATABASE_CONNECTION_STRING_ADMIN = 'Server=dms-mssql,1433;Database=${DMS1284_CONN_DBNAME};User ID=sa;Password=p;'
+                        } `
+                        -EnvironmentFilePath ".env.e2e" `
+                        -E2EDatabaseName "shared_e2e"
+                } | Should -Throw "*must stay separate*DATABASE_CONNECTION_STRING_ADMIN*"
+            }
+            finally {
+                if ($priorExists) { [System.Environment]::SetEnvironmentVariable("DMS1284_CONN_DBNAME", $priorValue) }
+                else { Remove-Item Env:DMS1284_CONN_DBNAME -ErrorAction SilentlyContinue }
+            }
+        }
+
+        It "accepts a dedicated E2E database when an ambient protected override differs from the reset target" {
+            # Ambient precedence must not create false positives: an ambient protected name that differs
+            # from the E2E target is still dedicated and must not throw.
+            $priorExists = Test-Path "Env:MSSQL_DB_NAME"
+            $priorValue = [System.Environment]::GetEnvironmentVariable("MSSQL_DB_NAME")
+            try {
+                [System.Environment]::SetEnvironmentVariable("MSSQL_DB_NAME", "still_the_main_db")
+                {
+                    Assert-E2EDatabaseIsDedicated `
+                        -EnvironmentValues @{ MSSQL_DB_NAME = "main_db" } `
+                        -EnvironmentFilePath ".env.e2e" `
+                        -E2EDatabaseName "shared_e2e"
+                } | Should -Not -Throw
+            }
+            finally {
+                if ($priorExists) { [System.Environment]::SetEnvironmentVariable("MSSQL_DB_NAME", $priorValue) }
+                else { Remove-Item Env:MSSQL_DB_NAME -ErrorAction SilentlyContinue }
+            }
+        }
+
+        # A protected key explicitly present with a blank value is NOT the same as an absent key:
+        # Docker Compose's ${VAR:-default} substitution uses the default when the configured value is
+        # blank, so the running container can be on the compose-file default database (e.g.
+        # edfi_datamanagementservice) while a value-based check sees "" and skips the collision check
+        # entirely. An explicitly present blank protected key therefore counts as configured and the
+        # guard fails closed rather than proving the reset target dedicated against an empty value.
+        It "fails closed when <Key> is explicitly present but blank" -ForEach @(
+            @{ Key = "POSTGRES_DB_NAME" }
+            @{ Key = "MSSQL_DB_NAME" }
+        ) {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{ $Key = "" } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "edfi_datamanagementservice"
+            } | Should -Throw "*could not resolve $Key*"
+        }
+
+        It "fails closed when the protected <Key> connection string is explicitly present but blank" -ForEach @(
+            @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
+            @{ Key = "DMS_CONFIG_DATABASE_CONNECTION_STRING" }
+        ) {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{ $Key = "" } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "edfi_datamanagementservice"
+            } | Should -Throw "*could not resolve $Key*"
+        }
+
+        It "permits a genuinely absent protected key" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{ UNRELATED_KEY = "value" } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "edfi_datamanagementservice_e2e"
+            } | Should -Not -Throw
+        }
+
+        It "fails closed when a direct ambient <Key> override targets the reset database" -ForEach @(
+            @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
+            @{ Key = "DMS_CONFIG_DATABASE_CONNECTION_STRING" }
+        ) {
+            $priorExists = Test-Path "Env:$Key"
+            $priorValue = [System.Environment]::GetEnvironmentVariable($Key)
+            try {
+                [System.Environment]::SetEnvironmentVariable($Key, "Server=dms-mssql,1433;Database=shared_e2e;User ID=sa;Password=p;")
+                {
+                    Assert-E2EDatabaseIsDedicated `
+                        -EnvironmentValues @{ $Key = "Server=dms-mssql,1433;Database=main_db;User ID=sa;Password=p;" } `
+                        -EnvironmentFilePath ".env.e2e" `
+                        -E2EDatabaseName "shared_e2e"
+                } | Should -Throw "*must stay separate*$Key*"
+            }
+            finally {
+                if ($priorExists) { [System.Environment]::SetEnvironmentVariable($Key, $priorValue) }
+                else { Remove-Item "Env:$Key" -ErrorAction SilentlyContinue }
+            }
+        }
+
+        It "rejects a connection string whose provider-synonym database keys include the reset target" {
+            # SqlClient treats Database and Initial Catalog as synonyms where the LAST occurrence
+            # wins, while the generic parser keeps both as distinct keys. A string carrying both can
+            # therefore effectively target the second value, so every candidate must be compared -
+            # returning only the first would let the effective database skip the collision check.
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        DATABASE_CONNECTION_STRING_ADMIN = "Server=dms-mssql,1433;Database=edfi_datamanagementservice;Initial Catalog=edfi_e2e;User ID=sa;Password=p;"
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "edfi_e2e"
+            } | Should -Throw "*must stay separate*DATABASE_CONNECTION_STRING_ADMIN*"
+        }
+
+        It "fails closed when an ambient override of a referenced POSTGRES_DB_NAME variable targets the reset database" {
+            $priorExists = Test-Path "Env:DMS1284_SHARED_PG_DBNAME"
+            $priorValue = [System.Environment]::GetEnvironmentVariable("DMS1284_SHARED_PG_DBNAME")
+            try {
+                [System.Environment]::SetEnvironmentVariable("DMS1284_SHARED_PG_DBNAME", "shared_e2e")
+                {
+                    Assert-E2EDatabaseIsDedicated `
+                        -EnvironmentValues @{
+                            POSTGRES_DB_NAME         = '${DMS1284_SHARED_PG_DBNAME}'
+                            DMS1284_SHARED_PG_DBNAME = "main_db"
+                        } `
+                        -EnvironmentFilePath ".env.e2e" `
+                        -E2EDatabaseName "shared_e2e"
+                } | Should -Throw "*must be dedicated*POSTGRES_DB_NAME*"
+            }
+            finally {
+                if ($priorExists) { [System.Environment]::SetEnvironmentVariable("DMS1284_SHARED_PG_DBNAME", $priorValue) }
+                else { Remove-Item Env:DMS1284_SHARED_PG_DBNAME -ErrorAction SilentlyContinue }
+            }
         }
     }
 }

@@ -15,7 +15,7 @@ public class DataStoreDerivativeInsertCommand
     /// <summary>
     /// The parent data store ID
     /// </summary>
-    public long DataStoreId { get; set; }
+    public int DataStoreId { get; set; }
 
     /// <summary>
     /// The type of derivative: "ReadReplica" or "Snapshot"

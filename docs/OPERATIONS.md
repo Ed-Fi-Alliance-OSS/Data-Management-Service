@@ -47,11 +47,13 @@ the services.
 
 ### Rate Limiting
 
-Rate limiting should be employed to limit both denial of service (DoS) attacks
-and brute-force authentication attempts. While the application gateway is the
-best place to apply rate limiting, the Ed-Fi API and Ed-Fi API
-Configuration Service will both have built-in rate limiting capabilities to fall
-back on.
+The application gateway remains the best place to apply rate limiting and DoS
+controls. Only the Ed-Fi API has a built-in rate limiter as a fallback; the
+Configuration Service has none today. The API's limiter partitions on the raw
+Host header value: clients sharing a hostname share one bucket, while varied
+Host values create separate buckets, so it neither isolates clients nor
+strictly bounds total backend load. It is a coarse backstop only and must not
+be relied on for DoS or brute-force protection.
 
 ### Authentication and Authorization
 

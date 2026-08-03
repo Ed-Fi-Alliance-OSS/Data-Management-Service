@@ -33,6 +33,10 @@ public class ClaimSetModuleTests
         A.Fake<IClaimsHierarchyRepository>();
     private readonly HttpContext _httpContext = A.Fake<HttpContext>();
     private readonly IClaimSetDataProvider _dataProvider = A.Fake<IClaimSetDataProvider>();
+    private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
+
+    [TearDown]
+    public void DisposeWebApplicationFactories() => _factoryTracker.DisposeTrackedFactories();
 
     private HttpClient SetUpClient()
     {
@@ -68,6 +72,7 @@ public class ClaimSetModuleTests
                 }
             );
         });
+        _factoryTracker.Track(factory);
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
         return client;
@@ -89,7 +94,7 @@ public class ClaimSetModuleTests
                     ])
                 );
 
-            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.GetClaimSet(A<int>.Ignored))
                 .Returns(
                     new ClaimSetGetResult.Success(
                         new ClaimSetResponse
@@ -114,13 +119,13 @@ public class ClaimSetModuleTests
             A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
                 .Returns(new ClaimSetUpdateResult.Success());
 
-            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<int>.Ignored))
                 .Returns(new ClaimSetDeleteResult.Success());
 
             A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
                 .Returns(new ClaimSetCopyResult.Success(1));
 
-            A.CallTo(() => _claimSetRepository.Export(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.Export(A<int>.Ignored))
                 .Returns(
                     new ClaimSetExportResult.Success(
                         new ClaimSetExportResponse()
@@ -750,16 +755,16 @@ public class ClaimSetModuleTests
         [SetUp]
         public void Setup()
         {
-            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.GetClaimSet(A<int>.Ignored))
                 .Returns(new ClaimSetGetResult.FailureNotFound());
 
             A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
                 .Returns(new ClaimSetUpdateResult.FailureNotFound());
 
-            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<int>.Ignored))
                 .Returns(new ClaimSetDeleteResult.FailureNotFound());
 
-            A.CallTo(() => _claimSetRepository.Export(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.Export(A<int>.Ignored))
                 .Returns(new ClaimSetExportResult.FailureNotFound());
 
             A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
@@ -801,6 +806,18 @@ public class ClaimSetModuleTests
                 )
             );
             var deleteResponse = await client.DeleteAsync("/v3/claimSets/1");
+            var exportResponse = await client.GetAsync("/v3/claimSets/1/export");
+
+            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            exportResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task It_returns_conflict_when_original_claim_set_not_found_on_copy()
+        {
+            using var client = SetUpClient();
             var copyResponse = await client.PostAsync(
                 "/v3/claimSets/copy",
                 new StringContent(
@@ -814,14 +831,25 @@ public class ClaimSetModuleTests
                     "application/json"
                 )
             );
-            var exportResponse = await client.GetAsync("/v3/claimSets/1/export");
 
-            //Assert
-            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            copyResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            exportResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            copyResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            copyResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string responseContent = await copyResponse.Content.ReadAsStringAsync();
+            JsonNode actualResponse = JsonNode.Parse(responseContent)!;
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "OriginalId 1 not found. It may have been recently deleted.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
     }
 
@@ -837,19 +865,19 @@ public class ClaimSetModuleTests
             A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
                 .Returns(new ClaimSetQueryResult.FailureUnknown(""));
 
-            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.GetClaimSet(A<int>.Ignored))
                 .Returns(new ClaimSetGetResult.FailureUnknown(""));
 
             A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
                 .Returns(new ClaimSetUpdateResult.FailureUnknown(""));
 
-            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<int>.Ignored))
                 .Returns(new ClaimSetDeleteResult.FailureUnknown(""));
 
             A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
                 .Returns(new ClaimSetCopyResult.FailureUnknown(""));
 
-            A.CallTo(() => _claimSetRepository.Export(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.Export(A<int>.Ignored))
                 .Returns(new ClaimSetExportResult.FailureUnknown(""));
 
             A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
@@ -1324,7 +1352,7 @@ public class ClaimSetModuleTests
         public async Task Should_return_conflict_when_multi_user_conflict_occurs_on_claim_set_delete()
         {
             // Arrange
-            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<int>.Ignored))
                 .Returns(new ClaimSetDeleteResult.FailureMultiUserConflict());
 
             // Act

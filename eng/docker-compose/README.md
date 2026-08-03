@@ -32,8 +32,9 @@ needs no manual step. Edit `.env` to customize — `.env.example` itself is
 documentation only and is never consumed at runtime.
 
 Kafka and Kafka UI compose files remain available for local infrastructure
-testing. Relational DMS CDC/Kafka support is pending a separate implementation,
-so this compose setup does not register DMS source connectors.
+testing. The relational DMS CDC/Kafka design uses an explicit CDC opt-in for
+connector registration; until that implementation lands, this compose setup does
+not register DMS source connectors.
 
 Convenience PowerShell scripts have been included in the directory, which start
 the appropriate services.
@@ -62,6 +63,21 @@ also append `-v`. Examples:
 
 # Stop the services and delete volumes
 ./start-local-dms.ps1 -d -v
+```
+
+The turnkey `bootstrap-local-dms.ps1` entry point accepts the same teardown flags, so the
+documented start command also stops the stack. `bootstrap-local-dms.ps1 -d [-v]` delegates to
+`start-local-dms.ps1 -d [-v -RemoveBootstrap]`; `-d -v` additionally removes the staged
+`.bootstrap/` workspace. Pass the same infrastructure flags you started with so teardown targets
+the same compose shape — in particular the same `-DatabaseEngine`, otherwise `-d -v` selects the
+default (PostgreSQL) compose file and will not remove the other engine's named data volume.
+
+```pwsh
+# Stop the turnkey stack, keeping volumes
+./bootstrap-local-dms.ps1 -d
+
+# Stop the turnkey stack, delete volumes, and remove the .bootstrap workspace
+./bootstrap-local-dms.ps1 -d -v
 ```
 
 By default, authentication uses the Self-Contained (OpenIddict) identity provider. The environment and startup scripts are pre-configured for Self-Contained mode, and Keycloak is not required unless explicitly selected.
@@ -138,19 +154,26 @@ image from source code.
 
 ## Running on the MSSQL backend
 
-The local stack can run the DMS datastore on SQL Server instead of PostgreSQL using the
-`-DatabaseEngine mssql` switch. Pass it to either `bootstrap-local-dms.ps1` (turnkey) or
-`start-local-dms.ps1` (infrastructure) — no `-EnvironmentFile` is required:
+The stack can run the DMS datastore on SQL Server instead of PostgreSQL using the
+`-DatabaseEngine mssql` switch, on both the local-build and published-image workflows. Pass it to
+`bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1` (turnkey) or `start-local-dms.ps1` /
+`start-published-dms.ps1` (infrastructure). No `-EnvironmentFile` is required for the wrapper
+entry points or `start-local-dms.ps1` (they seed `.env` from `.env.example` when absent); direct
+`start-published-dms.ps1` invocation expects an existing `.env` (or an explicit
+`-EnvironmentFile`):
 
 ```pwsh
-# Turnkey: stand up SQL Server, provision the relational schema, and (optionally) load seed data
+# Turnkey, local build: stand up SQL Server, provision the relational schema, and (optionally) load seed data
 ./bootstrap-local-dms.ps1 -DatabaseEngine mssql -EnableSwaggerUI -LoadSeedData
 
-# Tear down (delete volumes)
-./start-local-dms.ps1 -DatabaseEngine mssql -d -v
+# Turnkey, published image: same shape, against the published DMS image
+./bootstrap-published-dms.ps1 -DatabaseEngine mssql -EnableSwaggerUI -LoadSeedData
+
+# Tear down the local stack (delete volumes and remove the .bootstrap workspace)
+./bootstrap-local-dms.ps1 -DatabaseEngine mssql -d -v
 ```
 
-`mssql.yml` runs `mcr.microsoft.com/mssql/server:2022-latest` (Developer Edition), the same
+`mssql.yml` runs `mcr.microsoft.com/mssql/server:2025-latest` (Developer Edition), the same
 image used in CI, publishing host port `1435`. `-DatabaseEngine mssql` composes the `.env.mssql`
 overlay (`DMS_DATASTORE=mssql`, `DMS_CONFIG_DATASTORE=mssql`, the `MSSQL_*` keys, and the SQL
 Server connection strings) onto the base environment file automatically — the same composition
@@ -160,14 +183,34 @@ selection. Everything else (`SCHEMA_PACKAGES`, Kafka, Keycloak, identity-provide
 endpoints, etc.) still comes from the base environment file; pass `-EnvironmentFile` only to
 override those base settings, and the overlay still composes on top of it.
 
+> [!WARNING]
+> **SQL Server 2022 volume transition.** `mssql.yml` mounts the major-versioned
+> `dms-mssql-2025` volume so an ordinary `docker compose up` never reuses a legacy
+> `dms-mssql` volume with the SQL Server 2025 image. Microsoft currently supports persisted
+> container upgrades only between release candidates and GA, not from SQL Server 2022 to 2025.
+> Existing 2022 volumes remain intact for backup with the SQL Server 2022 image. The current
+> `-d -v` teardown removes only the 2025 volume; after stopping the old stack and confirming its
+> backups, locate legacy volumes with
+> `docker volume ls --filter label=com.docker.compose.volume=dms-mssql` and remove each intended
+> volume explicitly with `docker volume rm <volume-name>`.
+> See [Microsoft's SQL Server container upgrade guidance](https://learn.microsoft.com/en-us/sql/linux/containers/deploy?view=sql-server-ver17#upgrade-sql-server-in-containers).
+
+> [!NOTE]
+> **Database topology.** Local deployments host the Configuration Service and DMS in one shared
+> physical database on both engines: the CMS `dmscs` schema, and the self-contained (OpenIddict)
+> identity stores, live inside the same database as the DMS datastore (`POSTGRES_DB_NAME` on
+> PostgreSQL, `MSSQL_DB_NAME` on MSSQL) rather than a separate Configuration Service database. An
+> opt-in separate-CMS-database mode is planned (DMS-1270).
+
 A few things are specific to the MSSQL path:
 
 * **It is single-engine.** SQL Server hosts everything: the DMS datastore, the Configuration
   Service (CMS SQL Server backend), and the self-contained (OpenIddict) identity stores.
-  `mssql.yml` swaps in for `postgresql.yml` — both define the same `db` service that
-  `local-config.yml` health-gates on — and no PostgreSQL container runs. The DMS datastore
-  database is created by the provision phase; the CMS database (`edfi_configurationservice`)
-  is created by the identity init / CMS startup deploy.
+  `mssql.yml` swaps in for `postgresql.yml` - both define the same `db` service that
+  `local-config.yml` health-gates on - and no PostgreSQL container runs. In the default
+  self-contained flow, `setup-openiddict.ps1 -InitDb` creates the shared database during the
+  infrastructure phase; CMS then deploys its `dmscs` schema before the provision phase deploys
+  the DMS relational schema into that database (see "Database topology" above).
 * **Relational backend only.** MSSQL is supported through the relational backend
   (`DMS_DATASTORE=mssql`). Schema is provisioned by `provision-dms-schema.ps1`,
   which auto-detects the SQL Server dialect from the data-store connection string and invokes
@@ -176,6 +219,36 @@ A few things are specific to the MSSQL path:
   SQL, so Kafka, OpenSearch, and the Debezium source connector are not started on this path.
 * **Seed data** uses the same API-based `-LoadSeedData` (BulkLoadClient) path as PostgreSQL;
   it is database-engine agnostic.
+* **CI publishes database-template packages for both engines.** `build-minimal-template.yml` and
+  `build-populated-template.yml` are reusable workflows parameterized by `database_engine`
+  (`postgresql` or `mssql`); the `EdFi.Api.Minimal.Template.MsSql.yml` and
+  `EdFi.Api.Populated.Template.MsSql.yml` caller workflows invoke them with
+  `database_engine: mssql` to build and publish `EdFi.Api.Minimal.Template.MsSql.*` and
+  `EdFi.Api.Populated.Template.MsSql.*` NuGet packages alongside the existing PostgreSQL ones.
+  On MSSQL the package's data dump is a native `BACKUP DATABASE` `.bak` file (restored with
+  `RESTORE DATABASE`); that `.bak` is coupled to the
+  `mcr.microsoft.com/mssql/server:2025-latest` image line it was built and verified against
+  (a moving tag tracking the latest SQL Server 2025 build - the coupling is at the SQL Server
+  2025 level, not an exact build), the same way the PostgreSQL `.sql` dump is coupled to the
+  PostgreSQL major version it was built against.
+  This `.bak` coupling is a one-way compatibility boundary.
+  A package built and verified on SQL Server 2025 is not expected to restore onto a SQL Server
+  2022 instance.
+  Packages published previously against SQL Server 2022 do restore forward onto the SQL Server
+  2025 runtime.
+  Compatibility level 170 is the supported-runtime baseline because it is the SQL Server 2025
+  default for newly created databases.
+  The template content gates only verify that level; they never set it.
+  A database restored from a SQL Server 2022-built package keeps the compatibility level it had
+  at backup time; restoring does not upgrade it to 170.
+  Every published package is restore-verified in CI
+  (`eng/DatabaseTemplates/verify-template-restore.ps1`) before publishing. Base environment files'
+  `DATABASE_TEMPLATE_PACKAGE` value (e.g. `EdFi.Api.Populated.Template.PostgreSql.5.2.0`) carries
+  the PostgreSQL package id; composing the `.env.mssql` overlay for `-DatabaseEngine mssql`
+  rewrites only its engine segment to `MsSql` (`Convert-TemplatePackageToken` in
+  `env-utility.psm1`), so the same base `-EnvironmentFile` names the matching package id for
+  either engine. This section documents the CI build/publish/verify pipeline only; no local
+  bootstrap flow currently restores these packages.
 
 After the stack is up, run the smoke tests the same way as for PostgreSQL:
 
@@ -212,9 +285,18 @@ Notes:
   `bootstrap-published-dms.ps1` composes the overlay **only when `-DataStandardVersion` is
   explicitly passed**; otherwise the base env file's own `SCHEMA_PACKAGES` drives the run
   unchanged.
-* **Always tear down (`-d -v -RemoveBootstrap`) before switching Data Standard versions** — the
-  provisioned database and staged workspace are version-specific, and DMS refuses to start
-  against a database whose effective schema hash does not match.
+* **Always tear down before switching Data Standard versions** — the provisioned database and
+  staged workspace are version-specific, and DMS refuses to start against a database whose
+  effective schema hash does not match. For local bootstraps, tear down with
+  `bootstrap-local-dms.ps1 -d -v` **and the same `-DatabaseEngine` you started with**, so the
+  provisioned database volume is actually removed — teardown selects the compose file (and
+  therefore the named volume) by engine, so a mismatched engine leaves that volume behind. For the
+  MSSQL examples above: `bootstrap-local-dms.ps1 -DatabaseEngine mssql -d -v` (it delegates to
+  `start-local-dms.ps1 -d -v -RemoveBootstrap`, removing both the SQL Server volume and the staged
+  `.bootstrap/` workspace). For published bootstraps (`bootstrap-published-dms.ps1`), tear down
+  with `start-published-dms.ps1 -d -v -RemoveBootstrap` instead — the published stack runs as a
+  separate compose project (`dms-published`), which `bootstrap-local-dms.ps1 -d -v` does not
+  touch.
 
 ## Schema Selection
 
@@ -223,9 +305,11 @@ same normalized `.bootstrap/ApiSchema/` workspace that downstream phases consume
 
 ### Standard mode (package-backed)
 
-Standard mode resolves the DS-qualified asset-only core ApiSchema NuGet package from the Ed-Fi
-package feed and stages it into the bootstrap workspace. This is the recommended path for most
-developers. It is package-backed core-only; extension or custom schema sets use Expert mode below.
+Standard mode resolves DS-qualified asset-only ApiSchema NuGet packages from the Ed-Fi package
+feed and stages them into the bootstrap workspace. This is the recommended path for most
+developers. It is driven by the effective env file's `SCHEMA_PACKAGES` value - core plus any
+listed extension packages (the DS 5.2 default stages core + TPDM); custom or unpublished schema
+sets use Expert mode below.
 
 > **Requirement - `api-schema-tools` tool:** `prepare-dms-schema.ps1` needs the in-repo `api-schema-tools`
 > CLI published as a native executable. Build it once before running the prepare command (the
@@ -241,8 +325,9 @@ dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOu
 $schemaToolExe = if ($IsWindows) { "$schemaToolOutput/api-schema-tools.exe" } else { "$schemaToolOutput/api-schema-tools" }
 ```
 
-Standard mode (omit `-ApiSchemaPath`) resolves and stages the core Data Standard ApiSchema package
-only. There is no `-Extensions` parameter.
+Standard mode (omit `-ApiSchemaPath`) stages the packages listed by the env file's
+`SCHEMA_PACKAGES` value; invoked without `-EnvironmentFile` (as below) it falls back to the
+catalog-pinned core-only default. There is no `-Extensions` parameter.
 
 ```pwsh
 ./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
@@ -255,19 +340,20 @@ infrastructure → configure → provision → DMS over the staged workspace), n
 `start-local-dms.ps1` — see the note under Expert mode below for why a bare start leaves
 the stack unconfigured.
 
-To bootstrap an **extension-containing** schema set, use Expert mode (`-ApiSchemaPath`) below; it
-stages core plus any extensions present in the supplied directory. Extension security metadata is
-bootstrap-managed for the built-in extensions: `prepare-dms-claims.ps1` auto-stages the Sample and
-Homograph claim fragments, and recognizes TPDM as already covered by the embedded DS 5.2 claims
-(no fragment is staged for TPDM). Only extensions that are **not** bootstrap-mapped (a custom
-extension you supply) require an additional `-ClaimsDirectoryPath` argument to
-`prepare-dms-claims.ps1`. TPDM is a Data Standard 5.2 extension, so it is bootstrapped through
-Expert `-ApiSchemaPath`, not package-backed standard mode (which is core-only).
+To bootstrap an **extension-containing** schema set, either list the published extension
+ApiSchema packages in `SCHEMA_PACKAGES` (standard mode - the DS 5.2 default already stages TPDM
+this way) or use Expert mode (`-ApiSchemaPath`) below, which stages core plus any extensions
+present in the supplied directory. Extension security metadata is bootstrap-managed for the
+built-in extensions: `prepare-dms-claims.ps1` auto-stages the Sample and Homograph claim
+fragments, and recognizes TPDM as already covered by the embedded DS 5.2 claims (no fragment is
+staged for TPDM). Only extensions that are **not** bootstrap-mapped (a custom extension you
+supply) require an additional `-ClaimsDirectoryPath` argument to `prepare-dms-claims.ps1`.
 
-**Wrapper shorthand:** `bootstrap-local-dms.ps1` stages core-only standard mode in-line (when no
-workspace is staged) and then starts the stack. It auto-discovers the `api-schema-tools` executable
-published to `.bootstrap/tools/api-schema-tools` in step 1 (or set `DMS_SCHEMA_TOOL_PATH` to point
-elsewhere).
+**Wrapper shorthand:** `bootstrap-local-dms.ps1` stages standard mode from the effective
+`SCHEMA_PACKAGES` in-line (when no workspace is staged, or when the staged workspace's recorded
+package identity no longer matches) and then starts the stack. It auto-discovers the
+`api-schema-tools` executable published to `.bootstrap/tools/api-schema-tools` in step 1 (or set
+`DMS_SCHEMA_TOOL_PATH` to point elsewhere).
 
 ```pwsh
 ./bootstrap-local-dms.ps1
@@ -314,9 +400,14 @@ Use the `bootstrap-local-dms.ps1` wrapper as above, or run the phases manually:
 ```
 
 Each of the four commands above accepts `-DatabaseEngine mssql` (default `postgresql`); pass it
-consistently on all four to run this manual flow against the SQL Server datastore — every phase
+consistently on all four to run this manual flow against the SQL Server datastore - every phase
 composes the same `.env.mssql` overlay (see "Running on the MSSQL backend" above), so a
 mismatched flag on any one command leaves that phase reading the wrong engine.
+
+`start-local-dms.ps1` and `start-published-dms.ps1` also accept a narrower `-DbOnly` switch that
+starts only the database container and waits for it to become ready, then stops. It is mutually
+exclusive with `-InfraOnly` and `-DmsOnly` and is not part of this four-command flow; it exists
+for diagnostics and for other tooling to sequence a database-only startup around.
 
 Expert mode (`-ApiSchemaPath`) and standard mode (omit `-ApiSchemaPath`) are the two schema-selection
 paths; there is no `-Extensions` parameter.
@@ -335,8 +426,14 @@ Standard 5.2, where TPDM is a separate extension; Data Standard 6.1 folds TPDM
 into core.
 
 Bootstrap mode provisions the relational DMS schema only. Relational DMS
-CDC/Kafka support is pending a separate implementation, so bootstrap startup
-does not register DMS source connectors.
+CDC/Kafka connector registration is pending a separate implementation and should
+be controlled by an explicit CDC opt-in such as `-EnableKafkaCdc`; bootstrap
+startup does not register DMS source connectors today. The planned opt-in keeps
+immutable deployment-owned binding records under a separate persistent `.cdc-state`
+root (or an explicit `-CdcBindingStatePath`) and never stores them in the bootstrap
+manifest. Runtime DMS receives only explicit `DocumentCache:Targets` and exposes
+per-database projection health; deployment automation owns connector registration and
+combined CDC readiness.
 
 The DMS E2E setup wrappers stay on the non-bootstrap `SCHEMA_PACKAGES` flow.
 Those env files use `USE_API_SCHEMA_PATH=true` to download and materialize
@@ -346,15 +443,34 @@ unintentionally.
 
 If `prepare-dms-schema.ps1` or `prepare-dms-claims.ps1` fail with a
 fingerprint-mismatch teardown-guidance error after a branch switch or input
-change, recover by running `./start-local-dms.ps1 -d -v -RemoveBootstrap`
-(which removes the local `.bootstrap/` workspace) or the matching E2E
-`teardown-local-dms.ps1` script, then rerun the prepare commands.
+change, recover by running `./bootstrap-local-dms.ps1 -d -v` (which removes the
+local `.bootstrap/` workspace by delegating to
+`start-local-dms.ps1 -d -v -RemoveBootstrap`) or the matching E2E
+`teardown-local-dms.ps1` script, then rerun the prepare commands. Add the same
+`-DatabaseEngine` you started with (e.g. `-DatabaseEngine mssql`) so teardown
+also removes that engine's data volume; the workspace removal itself is
+engine-independent. If you started the stack with `start-local-dms.ps1`
+directly, `./start-local-dms.ps1 -d -v -RemoveBootstrap` with the same flags
+you started with remains the equivalent direct recovery — including options
+the bootstrap wrapper does not accept, such as `-EnableKafka`.
 
-> **Note on `-RemoveBootstrap`:** By default, `./start-local-dms.ps1 -d -v`
-> and `./start-published-dms.ps1 -d -v` do **not** delete the `.bootstrap/`
-> workspace on teardown. Pass `-RemoveBootstrap` explicitly when you want the
-> workspace wiped (e.g. after a branch switch). The E2E teardown wrappers
-> always remove it unconditionally.
+These recovery commands target the `dms-local` stack. The prepare commands and
+the `.bootstrap/` workspace are shared with the published-image flow
+(`bootstrap-published-dms.ps1`), so if the running stack is `dms-published`,
+recover with `./start-published-dms.ps1 -d -v -RemoveBootstrap` plus the same
+compose-shaping options you started with (e.g. `-IdentityProvider keycloak`,
+`-EnableKafka`, `-EnableSwaggerUI`); the published wrapper itself has no
+teardown flags. Running the `dms-local` recovery instead would leave the
+published stack up while deleting the workspace its containers bind-mount.
+
+> **Note on `-RemoveBootstrap`:** `./bootstrap-local-dms.ps1 -d -v` removes the
+> `.bootstrap/` workspace for you — it delegates to
+> `start-local-dms.ps1 -d -v -RemoveBootstrap`. Invoking the start scripts
+> directly is different: by default `./start-local-dms.ps1 -d -v` and
+> `./start-published-dms.ps1 -d -v` do **not** delete the `.bootstrap/`
+> workspace. Pass `-RemoveBootstrap` explicitly when you want the workspace
+> wiped (e.g. after a branch switch). The E2E teardown wrappers always remove
+> it unconditionally.
 
 ## IDE Debugging Workflow
 
@@ -603,8 +719,8 @@ When you make requests to:
 **Route qualifiers not being parsed:**
 
 * Check that `ROUTE_QUALIFIER_SEGMENTS` is set correctly in the `.env` file (comma-separated format)
-* Verify the environment variable in the container: `docker exec docker-compose-dms-1 printenv | grep ROUTE`
-* Verify the DMS logs: `docker logs docker-compose-dms-1`
+* Verify the environment variable in the container: `docker exec ed-fi-api printenv | rg ROUTE`
+* Verify the DMS logs: `docker logs ed-fi-api`
 
 **404 - No database data store found or "No candidates found for the request path":**
 
@@ -612,7 +728,7 @@ When you make requests to:
 * Verify DMS loaded all data stores by checking the logs:
 
   ```powershell
-  docker logs docker-compose-dms-1 | grep "Successfully fetched"
+  docker logs ed-fi-api | rg "Successfully fetched"
   # Should show: "Successfully fetched 4 data stores" (or your expected count)
   ```
 
@@ -630,13 +746,13 @@ When you make requests to:
 **Check DMS logs:**
 
 ```powershell
-docker logs docker-compose-dms-1 --follow
+docker logs ed-fi-api --follow
 ```
 
 **Check Config Service logs:**
 
 ```powershell
-docker logs ed-fi-api-config --follow
+docker logs ed-fi-api-config-service --follow
 ```
 
 ### Cleanup
@@ -645,7 +761,7 @@ To tear down the environment:
 
 ```powershell
 cd eng/docker-compose
-pwsh teardown-local-dms.ps1
+pwsh ./start-local-dms.ps1 -d -v
 ```
 
 ## Kafka UI
@@ -656,10 +772,11 @@ pwsh teardown-local-dms.ps1
 
 ## Accessing Swagger UI
 
-Open your browser and go to <http://localhost:8082> Use the dropdown menu to
-select either the Resources or Descriptors spec. Swagger UI is configured to
-consume the DMS endpoints published on the host (localhost and the port defined
-in DMS_HTTP_PORTS).
+Open your browser and go to <http://localhost:8082>. The dropdown reflects the
+API definitions advertised by DMS at `/metadata/specifications`, including Resources
+and Descriptors and, when the selected API schema advertises it, Change-Queries.
+Swagger UI consumes the DMS endpoints published on the host (localhost and the
+port defined in DMS_HTTP_PORTS).
 >[!NOTE]
 > The user that is configured to use swagger must have the Web Origins
 > configuration in Keycloak to allow CORS. To do this you must search for your

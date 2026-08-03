@@ -803,14 +803,167 @@ function New-DataStoreConnectionString {
 
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
+        [string]$DatabaseName,
+
+        # PostgreSQL host-side reset parity: append NoResetOnClose=true. Ignored for mssql.
+        [switch]$NoResetOnClose
+    )
+
+    # Build through DbConnectionStringBuilder rather than string interpolation so credentials or
+    # values containing connection-string metacharacters (';', '"', '''', '=', or surrounding
+    # whitespace) are quoted/escaped per the ADO.NET rules instead of silently corrupting or
+    # truncating the connection string. DbConnectionStringBuilder applies the same ADO.NET quoting
+    # that the Microsoft.Data.SqlClient / Npgsql connection-string parsers accept.
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+
+    if ($DatabaseEngine -eq "mssql") {
+        $builder["Server"] = "$DbHost,$Port"
+        $builder["Database"] = $DatabaseName
+        $builder["User Id"] = $Username
+        $builder["Password"] = $Password
+        $builder["TrustServerCertificate"] = "true"
+        return $builder.ConnectionString
+    }
+
+    $builder["host"] = $DbHost
+    $builder["port"] = "$Port"
+    $builder["username"] = $Username
+    $builder["password"] = $Password
+    $builder["database"] = $DatabaseName
+    if ($NoResetOnClose) {
+        $builder["NoResetOnClose"] = "true"
+    }
+    return $builder.ConnectionString
+}
+
+# The Compose-equivalent env resolver (Resolve-ComposeEnvReference / Resolve-ComposeEnvRawValue /
+# Get-ComposeResolvedEnvValue) now lives in eng/docker-compose/database-safety.psm1 so the
+# destructive-safety guard, the E2E startup/provision phases, and this connection-string factory all
+# share one resolution of ambient/reference/quote Docker Compose precedence. New-E2EDataStoreConnectionStrings
+# imports that module on demand.
+
+<#
+.SYNOPSIS
+    Builds the two distinct engine-aware connection strings the E2E test process consumes.
+
+.DESCRIPTION
+    Produces two opaque connection strings from the resolved environment values for a single
+    engine and E2E database:
+
+    - AdminConnectionString: host-side administrative/reset access, reachable from the test
+      host at localhost/127.0.0.1 on the published database port. The PostgreSQL form appends
+      NoResetOnClose=true to match the reset connection the standard E2E harness uses.
+    - RegistrationConnectionString: the Docker-network connection string registered with the
+      Configuration Service, reachable from inside the compose network at the database
+      container host on its internal port (dms-postgresql:5432 or dms-mssql,1433).
+
+    Custom credentials, ports, and database name from the resolved environment are honored; the
+    documented dev defaults are used only when the environment omits a value. The returned
+    strings contain secrets and must never be logged.
+
+.PARAMETER DatabaseEngine
+    The database engine ("postgresql" default, or "mssql").
+
+.PARAMETER EnvironmentValues
+    The resolved environment values (as returned by ReadValuesFromEnvFile) for the selected
+    engine and data standard.
+
+.PARAMETER DatabaseName
+    The E2E database name (E2E_DATABASE_NAME) both connection strings target.
+
+.OUTPUTS
+    [pscustomobject] with AdminConnectionString and RegistrationConnectionString.
+#>
+function New-E2EDataStoreConnectionStrings {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pure connection-string factory despite the New- verb; it creates no system state, so -WhatIf/-Confirm semantics add no value.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the pair of connection strings the E2E test process consumes; the plural noun names that set.')]
+    param(
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql",
+
+        [Parameter(Mandatory)]
+        [hashtable]$EnvironmentValues,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
         [string]$DatabaseName
     )
 
-    if ($DatabaseEngine -eq "mssql") {
-        return "Server=$DbHost,$Port;Database=$DatabaseName;User Id=$Username;Password=$Password;TrustServerCertificate=true;"
+    # The Compose-equivalent resolver now lives in database-safety.psm1; import it on demand so this
+    # factory resolves ports/credentials with the same ambient/reference/quote precedence as the stack.
+    if (-not (Get-Command Get-ComposeResolvedEnvValue -ErrorAction SilentlyContinue)) {
+        Import-Module -Name (Join-Path $PSScriptRoot "docker-compose/database-safety.psm1") -Force
     }
 
-    return "host=$DbHost;port=$Port;username=$Username;password=$Password;database=$DatabaseName;"
+    if ($DatabaseEngine -eq "mssql") {
+        $username = "sa"
+        $password = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+        $publishedPort = [int](Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name "MSSQL_PORT" -DefaultValue "1435")
+
+        $adminConnectionString = New-DataStoreConnectionString `
+            -DatabaseEngine mssql -DbHost "127.0.0.1" -Port $publishedPort `
+            -Username $username -Password $password -DatabaseName $DatabaseName
+        $registrationConnectionString = New-DataStoreConnectionString `
+            -DatabaseEngine mssql -DbHost "dms-mssql" -Port 1433 `
+            -Username $username -Password $password -DatabaseName $DatabaseName
+    }
+    else {
+        $username = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+        $password = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name "POSTGRES_PASSWORD" -DefaultValue "abcdefgh1!"
+        $publishedPort = [int](Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name "POSTGRES_PORT" -DefaultValue "5435")
+
+        # Host-side reset parity: the standard E2E harness resets over a pooled Npgsql connection with
+        # NoResetOnClose=true (see ContainerSetupBase); build it into the admin/reset string only.
+        $adminConnectionString = New-DataStoreConnectionString `
+            -DatabaseEngine postgresql -DbHost "localhost" -Port $publishedPort `
+            -Username $username -Password $password -DatabaseName $DatabaseName -NoResetOnClose
+        $registrationConnectionString = New-DataStoreConnectionString `
+            -DatabaseEngine postgresql -DbHost "dms-postgresql" -Port 5432 `
+            -Username $username -Password $password -DatabaseName $DatabaseName
+    }
+
+    return [pscustomobject]@{
+        AdminConnectionString        = $adminConnectionString
+        RegistrationConnectionString = $registrationConnectionString
+    }
+}
+
+function Get-E2EStartupPhasePlan {
+    <#
+    .SYNOPSIS
+        Resolves the standard E2E Docker startup phase plan for a database engine and image mode. This
+        is the single decision point the E2E build orchestration consumes, so the phase sequence is
+        selected consistently for both image modes and can be unit tested without Docker.
+    .DESCRIPTION
+        SQL Server requires the generated relational DDL to exist before DMS starts, so for MSSQL (in
+        either image mode) DMS is deferred: infrastructure + Configuration Service start first
+        (-InfraOnly), the data store is configured and the schema is provisioned, then DMS is started
+        (-DmsOnly). PostgreSQL keeps the proven full-stack start followed by a post-provisioning
+        restart. The startup script and DMS container name follow the image mode.
+    .OUTPUTS
+        [pscustomobject] with DatabaseEngine, UsePublishedImage, DeferDmsStart, StartupScript, and
+        DmsContainerName.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [string]$DatabaseEngine = "postgresql",
+        [switch]$UsePublishedImage
+    )
+
+    $engine = if ([string]::IsNullOrWhiteSpace($DatabaseEngine)) { "postgresql" } else { $DatabaseEngine }
+
+    return [pscustomobject]@{
+        DatabaseEngine    = $engine
+        UsePublishedImage = [bool]$UsePublishedImage
+        # SQL Server needs the generated DDL before DMS starts (defer in either image mode); PostgreSQL
+        # keeps the full-stack start followed by a post-provisioning restart.
+        DeferDmsStart     = ($engine -eq "mssql")
+        StartupScript     = if ($UsePublishedImage) { "start-published-dms.ps1" } else { "start-local-dms.ps1" }
+        DmsContainerName  = if ($UsePublishedImage) { "dms-published-dms-1" } else { "ed-fi-api" }
+    }
 }
 
 <#
@@ -1519,8 +1672,10 @@ function New-SeedLoaderCredentials {
         # claims use the RelationshipsWithEdOrgsAndPeople authorization strategy (Section,
         # CourseOffering, StudentSchoolAssociation, etc.) require the vendor to have explicit
         # EdOrg associations; an empty list 403s those resources. The default covers every
-        # top-level EdOrg present in the v5.x Sample Data inventory.
-        [long[]]$EducationOrganizationIds = @([long]255950, [long]255901, [long]255901001, [long]255901044, [long]255901107, [long]19, [long]19255901, [long]6000203),
+        # top-level EdOrg present in the v5.x Sample Data inventory, plus the TPDM 1.1.0
+        # sample EdOrgs (5, 6, 7) so TPDM sample loads can create educatorPreparationProgram
+        # records, whose claim defaults to RelationshipsWithEdOrgsOnly.
+        [long[]]$EducationOrganizationIds = @([long]5, [long]6, [long]7, [long]255950, [long]255901, [long]255901001, [long]255901044, [long]255901107, [long]19, [long]19255901, [long]6000203),
 
         [string]$Tenant = "",
 
@@ -1661,4 +1816,4 @@ function Assert-CmsSeedLoaderClaimSetLoaded {
     }
 }
 
-Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, New-DataStoreConnectionString, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody, ConvertTo-PostgresCredential
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, New-DataStoreConnectionString, New-E2EDataStoreConnectionStrings, Get-E2EStartupPhasePlan, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody, ConvertTo-PostgresCredential

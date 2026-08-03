@@ -148,7 +148,7 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
 
         // The default RelationalReadMaterializer registration needs IDocumentLinkSlugResolver
         // and IOptions<ResourceLinksOptions>. We inject a deterministic resolver keyed by the
@@ -446,6 +446,7 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -455,6 +456,7 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -464,6 +466,7 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),

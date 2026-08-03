@@ -296,6 +296,11 @@ public class Given_ApiSchemaProvider_workspace_path_resolver
         Directory.CreateDirectory(_workspaceRoot);
         Directory.CreateDirectory(_outsideRoot);
         _resolver = new ApiSchemaWorkspacePathResolver(_workspaceRoot);
+
+        // The resolver canonicalizes symbolic links by design. macOS exposes TMPDIR under /var,
+        // itself a symlink to /private/var, so the fixture root has to be canonical too or every
+        // expectation compares a pre-resolution path against a post-resolution one.
+        _workspaceRoot = _resolver.CanonicalWorkspaceRoot;
     }
 
     [TearDown]

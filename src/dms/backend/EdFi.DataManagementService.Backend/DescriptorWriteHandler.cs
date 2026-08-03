@@ -4,9 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Diagnostics;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
@@ -26,7 +28,9 @@ internal sealed class DescriptorWriteHandler(
     ILogger<DescriptorWriteHandler> logger,
     IServedEtagComposer servedEtagComposer,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
-        null
+        null,
+    IDocumentCacheWriterTelemetry? documentCacheWriterTelemetry = null,
+    IDataStoreSelection? dataStoreSelection = null
 ) : IDescriptorWriteHandler
 {
     private readonly IRelationalWriteTargetLookupService _targetLookupService =
@@ -44,6 +48,9 @@ internal sealed class DescriptorWriteHandler(
     private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
         relationshipAuthorizationProviderFailureExtractor
         ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
+    private readonly IDocumentCacheWriterTelemetry _documentCacheWriterTelemetry =
+        documentCacheWriterTelemetry ?? NoOpDocumentCacheWriterTelemetry.Instance;
+    private readonly IDataStoreSelection? _dataStoreSelection = dataStoreSelection;
 
     public async Task<UpsertResult> HandlePostAsync(
         DescriptorWriteRequest request,
@@ -1461,7 +1468,8 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        var persistedContentVersion = await ExecuteWriteReturningContentVersionAsync(
+        var persistedContentVersion = await ExecuteDescriptorWriteReturningContentVersionWithTelemetryAsync(
+                request,
                 commandExecutor,
                 command,
                 cancellationToken
@@ -1518,7 +1526,8 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        var persistedContentVersion = await ExecuteWriteReturningContentVersionAsync(
+        var persistedContentVersion = await ExecuteDescriptorWriteReturningContentVersionWithTelemetryAsync(
+                request,
                 commandExecutor,
                 command,
                 cancellationToken
@@ -1628,7 +1637,8 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        var persistedContentVersion = await ExecuteWriteReturningContentVersionAsync(
+        var persistedContentVersion = await ExecuteDescriptorWriteReturningContentVersionWithTelemetryAsync(
+                request,
                 writeSession.CreateCommandExecutor(),
                 command,
                 cancellationToken
@@ -1979,6 +1989,66 @@ internal sealed class DescriptorWriteHandler(
     }
 
     /// <summary>
+    /// Executes a descriptor write and records canonical writer wait telemetry for the applied or
+    /// failed outcome.
+    /// </summary>
+    private async Task<long> ExecuteDescriptorWriteReturningContentVersionWithTelemetryAsync(
+        DescriptorWriteRequest request,
+        IRelationalCommandExecutor commandExecutor,
+        RelationalCommand command,
+        CancellationToken cancellationToken
+    )
+    {
+        long canonicalPersistStartTimestamp = Stopwatch.GetTimestamp();
+        try
+        {
+            var contentVersion = await ExecuteWriteReturningContentVersionAsync(
+                    commandExecutor,
+                    command,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            RecordDescriptorCanonicalWriterWait(
+                request,
+                DocumentCacheWriterTelemetryLabel.AppliedWrite,
+                canonicalPersistStartTimestamp
+            );
+
+            return contentVersion;
+        }
+        catch
+        {
+            RecordDescriptorCanonicalWriterWait(
+                request,
+                DocumentCacheWriterTelemetryLabel.Failed,
+                canonicalPersistStartTimestamp
+            );
+
+            throw;
+        }
+    }
+
+    private void RecordDescriptorCanonicalWriterWait(
+        DescriptorWriteRequest request,
+        string outcome,
+        long startTimestamp
+    )
+    {
+        _documentCacheWriterTelemetry.RecordSameDocumentWait(
+            DocumentCacheWriterMetricContext.ForCanonicalWriter(
+                request.MappingSet.Key.Dialect,
+                _dataStoreSelection,
+                DocumentCacheWriterTelemetryLabel.CanonicalWrite,
+                outcome
+            ),
+            DocumentCacheWriterContentionParticipant.CanonicalWriter,
+            DocumentCacheWriterContentionPhase.CanonicalPersist,
+            DocumentCacheWriterTelemetry.GetElapsedTime(startTimestamp)
+        );
+    }
+
+    /// <summary>
     /// Executes a descriptor write whose final statement surfaces the owning document's
     /// <c>ContentVersion</c> and returns that value for etag composition. Every descriptor write whose
     /// success result carries an etag (INSERT plus both UPDATE variants) surfaces ContentVersion:
@@ -2036,12 +2106,12 @@ internal sealed class DescriptorWriteHandler(
             )
             , new_descriptor AS (
                 INSERT INTO dms."Descriptor" (
-                    "DocumentId", "Namespace", "CodeValue", "ShortDescription",
+                    "DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription",
                     "Description", "EffectiveBeginDate", "EffectiveEndDate",
                     "Discriminator", "Uri"
                 )
                 SELECT
-                    "DocumentId", @namespace, @codeValue, @shortDescription,
+                    "DocumentId", @resourceKeyId, @namespace, @codeValue, @shortDescription,
                     @description, @effectiveBeginDate::date, @effectiveEndDate::date,
                     @discriminator, @uri
                 FROM new_doc
@@ -2085,12 +2155,12 @@ internal sealed class DescriptorWriteHandler(
             SET @newDocumentId = SCOPE_IDENTITY();
 
             INSERT INTO [dms].[Descriptor] (
-                [DocumentId], [Namespace], [CodeValue], [ShortDescription],
+                [DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription],
                 [Description], [EffectiveBeginDate], [EffectiveEndDate],
                 [Discriminator], [Uri]
             )
             VALUES (
-                @newDocumentId, @namespace, @codeValue, @shortDescription,
+                @newDocumentId, @resourceKeyId, @namespace, @codeValue, @shortDescription,
                 @description, @effectiveBeginDate, @effectiveEndDate,
                 @discriminator, @uri
             );

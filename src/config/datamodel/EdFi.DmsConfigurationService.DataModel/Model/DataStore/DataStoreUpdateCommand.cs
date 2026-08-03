@@ -9,7 +9,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.DataStore;
 
 public class DataStoreUpdateCommand
 {
-    public long Id { get; set; }
+    public int Id { get; set; }
     public string DataStoreType { get; set; } = "";
     public string Name { get; set; } = "";
     public string? ConnectionString { get; set; }

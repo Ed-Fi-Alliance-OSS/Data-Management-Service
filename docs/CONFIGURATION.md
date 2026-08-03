@@ -220,6 +220,35 @@ Basic rate limiting can be applied by supplying a `RateLimit` object in the
 not configured for the application. Rate limiting (when applied) will be set
 globally and apply to all application endpoints.
 
+The shipped default is `PermitLimit: 20000`, `Window: 10`, `QueueLimit: 0`,
+an average of 2,000 requests per second; a fixed window permits the full
+20,000 as a burst at any point within each 10-second window, then rejects
+until the window resets. `RateLimit__*` environment variables
+shadow `appsettings.json`; the Docker Compose stacks set these from
+`DMS_RATE_LIMIT_PERMIT_LIMIT`, `DMS_RATE_LIMIT_QUEUE_LIMIT`, and
+`DMS_RATE_LIMIT_WINDOW` (see `.env.example`).
+
+Omitting the `RateLimit` object disables limiting entirely, but that only
+applies to a deployment configured purely through `appsettings.json`. The
+provided compose stacks always set the `RateLimit__*` variables, and their
+`${VAR:-default}` fallback supplies the shipped default even when the
+variable is set but empty, so in those stacks the limiter is always on - it
+can be raised, but not disabled.
+
+Bulk and seed loads driven by `BulkLoadClient` are bursty, and a
+`PermitLimit` set below the load's peak 10-second demand fails the load
+outright with a storm of `429` responses rather than merely slowing it
+down. Operators running a load larger than the `Populated` seed template
+should raise `DMS_RATE_LIMIT_PERMIT_LIMIT` for the duration of the load.
+
+The limiter partitions on the raw value of the request's `Host` header, so
+every client sending the same hostname shares one bucket. It caps load per
+distinct `Host` value, not per client, and because the default
+`AllowedHosts` is `*`, a client that varies the `Host` header obtains
+additional buckets, so it is not a strict cap on total backend load either.
+Treat it as a coarse backstop; per-client isolation and DoS protection
+belong at the application gateway.
+
 The `RateLimit` object should have the following parameters.
 
 | Parameter   | Description                                                                                                                                                                                                                                                                |

@@ -522,3 +522,21 @@ These notes describe patterns and trade-offs observed in the ODS pipeline. They 
 - **Settings merge complexity** — the multi-layer deep merge (parameters -> config -> defaults -> plugins -> overrides) is powerful but makes it hard to trace which layer supplied a given value
 - **No dry-run mode** — ODS provides no mechanism to preview what the pipeline would do without executing it
 - **NuGet coupling** — tool installation, plugin resolution, and template downloads all go through NuGet; alternative package registries require re-abstraction at each of these points
+
+### Relational DMS projection/CDC difference
+
+The historical ODS workflow is not authority for relational DMS projection activation.
+When explicit CDC bootstrap is selected, the DMS workflow keeps canonical write admission
+closed, provisions the current `DocumentCache`/`DocumentProjectionWork`/lifecycle schema,
+rejects a nonempty database rather than attempting CDC retrofit, atomically creates or
+exact-matches the immutable binding, and then invokes the guarded new-empty
+`Disabled -> Tracking` transition before seed or API writes. It then starts the configured
+projector, waits for durable work drain, completes the provider heartbeat barrier, and
+rechecks projection caught-up status. The binding-first order makes an interrupted
+activation fail-closed and resumable under the retry classification owned by the CDC
+design.
+
+DMS startup never enables tracking. Mutable lifecycle, queue, CDC binding, and readiness
+state is deployment-owned and remains outside the bootstrap manifest. The current contract
+is owned by
+[Relational CDC and Document Projection](../cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence).

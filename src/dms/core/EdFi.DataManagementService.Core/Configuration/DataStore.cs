@@ -31,5 +31,14 @@ public record DataStore(
     /// Route qualifier context for this data store, mapping qualifier names to values
     /// (e.g., "district" -> "255901", "schoolYear" -> "2024")
     /// </summary>
-    Dictionary<RouteQualifierName, RouteQualifierValue> RouteContext
+    Dictionary<RouteQualifierName, RouteQualifierValue> RouteContext,
+    /// <summary>
+    /// Normalized explicit relational provider metadata for this data store when CMS exposes it.
+    /// </summary>
+    RelationalProviderToken? RelationalProviderToken = null,
+    /// <summary>
+    /// Indicates whether explicit relational provider metadata was missing, unknown, or supported.
+    /// </summary>
+    RelationalProviderMetadataStatus RelationalProviderMetadataStatus =
+        RelationalProviderMetadataStatus.Missing
 );

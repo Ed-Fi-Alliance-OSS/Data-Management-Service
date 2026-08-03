@@ -114,7 +114,7 @@ This index links design documents under `reference/design/backend-redesign/epics
 - `DMS-1001` — Update Tracking (`_etag/_lastModifiedDate`) + Change Queries (`ChangeVersion`) — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/EPIC.md`
   - `DMS-1002` — Emit Stamping Triggers for `dms.Document` (Content + Identity Stamps) — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/00-token-stamping.md`
   - `DMS-1003` — Journaling Contract (Triggers Own Journal Writes) — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/01-journaling-contract.md`
-  - `DMS-1004` — Serve `_etag`, `_lastModifiedDate`, and `ChangeVersion` from Stored Stamps — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/02-derived-metadata.md`
+  - `DMS-1004` — Compose `_etag`; Serve `_lastModifiedDate` and `ChangeVersion` from Stored Stamps — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/02-derived-metadata.md`
   - `DMS-1005` — Enforce `If-Match` Using Stored Representation Stamps — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/03-if-match.md`
   - `DMS-1006` — Change Query Candidate Selection (Journal-Driven) — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/04-change-query-selection.md`
   - `DMS-1007` — Change Query API Endpoints (Optional / Future-Facing) — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/05-change-query-api.md`
@@ -184,3 +184,34 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1154` — Replace DMS ApiSchema DLL Resource Loading — `reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md`
   - `DMS-1155` — MetaEd ApiSchema Asset Packaging — `reference/design/backend-redesign/epics/16-bootstrap/05-metaed-apischema-asset-packaging.md`
   - `DMS-1156` — Package-Backed Standard Schema Selection — `reference/design/backend-redesign/epics/16-bootstrap/06-package-backed-standard-schema-selection.md`
+
+- `DMS-1125` — Close MSSQL Implementation and Parity Gaps — `reference/design/backend-redesign/epics/17-mssql-gap-closure/EPIC.md`
+  - `DMS-873` — Inventory MSSQL Implementation and Parity Gaps — `reference/design/backend-redesign/epics/17-mssql-gap-closure/00-gap-analysis-and-follow-up-inventory.md`
+  - `DMS-1270` — Align Local Database Topology Across Engines with an Optional Separate CMS Database — `reference/design/backend-redesign/epics/17-mssql-gap-closure/01-local-database-topology-parity.md`
+  - `DMS-1271` — Add a Database-Template Restore Branch to Bootstrap — `reference/design/backend-redesign/epics/17-mssql-gap-closure/02-database-template-restore-workflow.md`
+  - `DMS-1279` — Adopt SQL Server 2025 and Evaluate Native JSON Document Storage — `reference/design/backend-redesign/epics/17-mssql-gap-closure/03-sql-server-2025-and-native-json.md`
+  - `DMS-1284` — Run the DMS and Instance Management Docker E2E Suites Against MSSQL — `reference/design/backend-redesign/epics/17-mssql-gap-closure/04-mssql-docker-e2e.md`
+  - `DMS-1285` — Close MSSQL Relational Write-Path Correctness and Resilience Coverage Gaps — `reference/design/backend-redesign/epics/17-mssql-gap-closure/05-mssql-write-path-coverage.md`
+  - `DMS-1286` — Add Real-MSSQL Integration Coverage for NamespaceBased CRUD Authorization — `reference/design/backend-redesign/epics/17-mssql-gap-closure/06-mssql-namespace-authorization-coverage.md`
+  - `DMS-1289` — Add MSSQL Coverage to Scheduled Smoke Tests — `reference/design/backend-redesign/epics/17-mssql-gap-closure/07-mssql-scheduled-smoke.md`
+
+- `DMS-1308` — `dms.DocumentCache` Projection — `reference/design/backend-redesign/epics/18-document-cache/EPIC.md`
+  - `DMS-1310` — Finalize DocumentCache schema and provider DDL — `reference/design/backend-redesign/epics/18-document-cache/00-documentcache-schema-and-provider-ddl.md`
+  - `DMS-1311` — Add DocumentCache configuration and target selection — `reference/design/backend-redesign/epics/18-document-cache/01-documentcache-configuration-and-target-selection.md`
+  - `DMS-1312` — Add reusable caller-agnostic document materialization — `reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md`
+  - `DMS-1313` — Implement monotonic cache upsert and post-delete fencing — `reference/design/backend-redesign/epics/18-document-cache/03-monotonic-cache-upsert-and-delete-fencing.md`
+  - `DMS-1314` — Add the asynchronous DocumentCache reconciliation loop — `reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md`
+  - `DMS-1315` — Add fresh-cache reads with relational fallback — `reference/design/backend-redesign/epics/18-document-cache/05-cache-backed-read-path.md`
+  - `DMS-1316` — Add DocumentCache health, readiness, and telemetry — `reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md`
+  - `DMS-1317` — Add DocumentCache integration coverage and runbooks — `reference/design/backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md`
+  - `DMS-1318` — Add an out-of-band representation-restamp utility — `reference/design/backend-redesign/epics/18-document-cache/08-representation-restamp-utility.md`
+
+- `DMS-1309` — Relational CDC/Kafka Streaming — `reference/design/backend-redesign/epics/19-cdc-kafka/EPIC.md`
+  - `DMS-1319` — Add deployment-owned CDC binding and readiness — `reference/design/backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md`
+  - `DMS-1320` — Emit/provision provider CDC key and database support — `reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md`
+  - `DMS-1321` — Generate PostgreSQL and SQL Server connector templates — `reference/design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md`
+  - `DMS-1322` — Add the relational DocumentState Kafka Connect transform — `reference/design/backend-redesign/epics/19-cdc-kafka/03-document-state-transform.md`
+  - `DMS-1323` — Add explicit local/bootstrap connector registration — `reference/design/backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md`
+  - `DMS-1324` — Add Kafka message and source-routing contract tests — `reference/design/backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md`
+  - `DMS-1325` — Replace legacy Kafka E2E expectations — `reference/design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md`
+  - `DMS-1326` — Add CDC setup, monitoring, recovery, and security runbooks — `reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md`

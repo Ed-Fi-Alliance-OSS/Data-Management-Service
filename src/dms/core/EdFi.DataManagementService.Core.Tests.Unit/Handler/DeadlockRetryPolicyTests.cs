@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -416,13 +417,23 @@ public class DeadlockRetryPolicyTests
         int maxRetryAttempts = 3
     )
     {
-        var serviceProvider = A.Fake<IServiceProvider>();
-        A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository))).Returns(repository);
+        var serviceProvider = CreateServiceProvider(repository);
 
         var handler = new GetByIdHandler(logger, BuildHandlerPipeline(maxRetryAttempts));
 
         return (handler, serviceProvider);
     }
+
+    private static IServiceProvider CreateServiceProvider(IDocumentStoreRepository repository)
+    {
+        var serviceProvider = A.Fake<IServiceProvider>();
+        A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository))).Returns(repository);
+
+        return serviceProvider;
+    }
+
+    private static PathComponents WritePath(DocumentUuid documentUuid = default) =>
+        new(new ProjectEndpointName("ed-fi"), new EndpointName("schools"), documentUuid);
 
     [TestFixture]
     [Parallelizable]
@@ -623,6 +634,209 @@ public class DeadlockRetryPolicyTests
         public void It_includes_operation_name()
         {
             _retryLogger.Entries.Should().Contain(e => e.Message.Contains("unknown"));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Canonical_Upsert_Retryable_Enqueue_Conflict_Then_Success : DeadlockRetryPolicyTests
+    {
+        private CapturingLogger _logger = null!;
+        private RequestInfo _requestInfo = null!;
+        private RetryableCanonicalWriteRepository _repository = null!;
+        private DocumentUuid _committedDocumentUuid;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new CapturingLogger();
+            _committedDocumentUuid = new DocumentUuid(Guid.NewGuid());
+            _repository = new RetryableCanonicalWriteRepository
+            {
+                UpsertFailureCountBeforeSuccess = 2,
+                UpsertSuccess = new UpsertResult.InsertSuccess(_committedDocumentUuid, "\"upsert-etag\""),
+            };
+
+            IServiceProvider serviceProvider = CreateServiceProvider(_repository);
+            var handler = new UpsertHandler(_logger, BuildHandlerPipeline(maxRetryAttempts: 3));
+            _requestInfo = RequestInfoWithRelationalMappingSet("canonical-upsert-retry", serviceProvider);
+            _requestInfo.Method = RequestMethod.POST;
+            _requestInfo.PathComponents = WritePath();
+            _requestInfo.ParsedBody = new JsonObject { ["schoolId"] = 1 };
+
+            await handler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_replays_the_complete_upsert_repository_call()
+        {
+            _repository.UpsertRequests.Should().HaveCount(3);
+            _repository
+                .UpsertRequests.Should()
+                .OnlyContain(request => request.MappingSet == _requestInfo.MappingSet);
+            _repository
+                .UpsertRequests.Select(request => request.DocumentUuid)
+                .Should()
+                .OnlyHaveUniqueItems("a full POST retry rebuilds the repository request per attempt");
+        }
+
+        [Test]
+        public void It_returns_the_successful_retry_response()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(201);
+            _requestInfo.FrontendResponse.Headers["etag"].Should().Be("\"upsert-etag\"");
+            _requestInfo
+                .FrontendResponse.LocationHeaderPath.Should()
+                .EndWith(_committedDocumentUuid.Value.ToString());
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Canonical_Update_Retryable_Enqueue_Conflict_Then_Success : DeadlockRetryPolicyTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private RetryableCanonicalWriteRepository _repository = null!;
+        private DocumentUuid _documentUuid;
+        private JsonNode _requestBody = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _documentUuid = new DocumentUuid(Guid.NewGuid());
+            _requestBody = new JsonObject { ["schoolId"] = 2 };
+            _repository = new RetryableCanonicalWriteRepository
+            {
+                UpdateFailureCountBeforeSuccess = 1,
+                UpdateSuccess = new UpdateResult.UpdateSuccess(_documentUuid, "\"update-etag\""),
+            };
+
+            IServiceProvider serviceProvider = CreateServiceProvider(_repository);
+            var handler = new UpdateByIdHandler(
+                new CapturingLogger(),
+                BuildHandlerPipeline(maxRetryAttempts: 3)
+            );
+            _requestInfo = RequestInfoWithRelationalMappingSet("canonical-update-retry", serviceProvider);
+            _requestInfo.Method = RequestMethod.PUT;
+            _requestInfo.PathComponents = WritePath(_documentUuid);
+            _requestInfo.ParsedBody = _requestBody;
+
+            await handler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_replays_the_complete_update_repository_call()
+        {
+            _repository.UpdateRequests.Should().HaveCount(2);
+            _repository
+                .UpdateRequests.Should()
+                .OnlyContain(request =>
+                    request.DocumentUuid == _documentUuid
+                    && request.MappingSet == _requestInfo.MappingSet
+                    && ReferenceEquals(request.EdfiDoc, _requestBody)
+                );
+        }
+
+        [Test]
+        public void It_returns_the_successful_retry_response()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(204);
+            _requestInfo.FrontendResponse.Headers["etag"].Should().Be("\"update-etag\"");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Canonical_Delete_Retryable_Enqueue_Conflict_Then_Success : DeadlockRetryPolicyTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private RetryableCanonicalWriteRepository _repository = null!;
+        private DocumentUuid _documentUuid;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _documentUuid = new DocumentUuid(Guid.NewGuid());
+            _repository = new RetryableCanonicalWriteRepository { DeleteFailureCountBeforeSuccess = 1 };
+
+            IServiceProvider serviceProvider = CreateServiceProvider(_repository);
+            var handler = new DeleteByIdHandler(
+                new CapturingLogger(),
+                BuildHandlerPipeline(maxRetryAttempts: 3)
+            );
+            _requestInfo = RequestInfoWithRelationalMappingSet("canonical-delete-retry", serviceProvider);
+            _requestInfo.Method = RequestMethod.DELETE;
+            _requestInfo.PathComponents = WritePath(_documentUuid);
+
+            await handler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_replays_the_complete_delete_repository_call()
+        {
+            _repository.DeleteRequests.Should().HaveCount(2);
+            _repository
+                .DeleteRequests.Should()
+                .OnlyContain(request =>
+                    request.DocumentUuid == _documentUuid && request.MappingSet == _requestInfo.MappingSet
+                );
+        }
+
+        [Test]
+        public void It_returns_the_successful_retry_response()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(204);
+        }
+    }
+
+    private sealed class RetryableCanonicalWriteRepository : NotImplementedDocumentStoreRepository
+    {
+        public List<IUpsertRequest> UpsertRequests { get; } = [];
+
+        public List<IUpdateRequest> UpdateRequests { get; } = [];
+
+        public List<IDeleteRequest> DeleteRequests { get; } = [];
+
+        public int UpsertFailureCountBeforeSuccess { get; init; }
+
+        public int UpdateFailureCountBeforeSuccess { get; init; }
+
+        public int DeleteFailureCountBeforeSuccess { get; init; }
+
+        public UpsertResult UpsertSuccess { get; init; } =
+            new UpsertResult.InsertSuccess(new DocumentUuid(Guid.NewGuid()), "\"etag\"");
+
+        public UpdateResult UpdateSuccess { get; init; } =
+            new UpdateResult.UpdateSuccess(new DocumentUuid(Guid.NewGuid()), "\"etag\"");
+
+        public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+        {
+            UpsertRequests.Add(upsertRequest);
+            return Task.FromResult(
+                UpsertRequests.Count <= UpsertFailureCountBeforeSuccess
+                    ? new UpsertResult.UpsertFailureWriteConflict()
+                    : UpsertSuccess
+            );
+        }
+
+        public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+        {
+            UpdateRequests.Add(updateRequest);
+            return Task.FromResult(
+                UpdateRequests.Count <= UpdateFailureCountBeforeSuccess
+                    ? new UpdateResult.UpdateFailureWriteConflict()
+                    : UpdateSuccess
+            );
+        }
+
+        public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
+        {
+            DeleteRequests.Add(deleteRequest);
+            return Task.FromResult<DeleteResult>(
+                DeleteRequests.Count <= DeleteFailureCountBeforeSuccess
+                    ? new DeleteResult.DeleteFailureWriteConflict()
+                    : new DeleteResult.DeleteSuccess()
+            );
         }
     }
 }

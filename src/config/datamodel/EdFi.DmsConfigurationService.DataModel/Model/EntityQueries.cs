@@ -7,7 +7,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model;
 
 public class VendorQuery : PagingQuery
 {
-    public long? Id { get; set; }
+    public int? Id { get; set; }
 
     public string? Company { get; set; }
 
@@ -20,7 +20,7 @@ public class VendorQuery : PagingQuery
 
 public class ApplicationQuery : PagingQuery
 {
-    public long? Id { get; set; }
+    public int? Id { get; set; }
 
     public string? ApplicationName { get; set; }
 
@@ -37,12 +37,12 @@ public class ApiClientQuery : PagingQuery
     /// <summary>
     /// Binds from query string key 'applicationid' (case-insensitive).
     /// </summary>
-    public long? ApplicationId { get; set; }
+    public int? ApplicationId { get; set; }
 }
 
 public class DataStoreQuery : PagingQuery
 {
-    public long? Id { get; set; }
+    public int? Id { get; set; }
 
     public string? Name { get; set; }
 
@@ -51,21 +51,21 @@ public class DataStoreQuery : PagingQuery
 
 public class ClaimSetQuery : PagingQuery
 {
-    public long? Id { get; set; }
+    public int? Id { get; set; }
 
     public string? Name { get; set; }
 }
 
 public class ProfileQuery : PagingQuery
 {
-    public long? Id { get; set; }
+    public int? Id { get; set; }
 
     public string? Name { get; set; }
 }
 
 public class ResourceClaimQuery : PagingQuery
 {
-    public long? Id { get; set; }
+    public int? Id { get; set; }
 
     public string? Name { get; set; }
 }

@@ -111,6 +111,82 @@ public class FailureResponseTests
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
     }
 
+    [TestFixture]
+    public class Given_a_dependent_item_exists_failure
+    {
+        private const string Detail = "Profile is assigned to applications and cannot be deleted.";
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForDependentItemExists(Detail, CorrelationId);
+
+        [Test]
+        public void It_returns_a_json_object() => _result.Should().BeOfType<JsonObject>();
+
+        [Test]
+        public void It_has_the_expected_detail() => _result["detail"]?.GetValue<string>().Should().Be(Detail);
+
+        [Test]
+        public void It_has_the_dependent_item_exists_type() =>
+            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:dependent-item-exists");
+
+        [Test]
+        public void It_has_the_dependent_item_exists_title() =>
+            _result["title"]?.GetValue<string>().Should().Be("Dependent Item Exists");
+
+        [Test]
+        public void It_has_a_status_of_409() => _result["status"]?.GetValue<int>().Should().Be(409);
+
+        [Test]
+        public void It_has_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_extension_members()
+        {
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+            _result["errors"]?.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_unresolved_reference_failure
+    {
+        private const string Detail = "The specified DataStore does not exist.";
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForUnresolvedReference(Detail, CorrelationId);
+
+        [Test]
+        public void It_returns_a_json_object() => _result.Should().BeOfType<JsonObject>();
+
+        [Test]
+        public void It_has_the_expected_detail() => _result["detail"]?.GetValue<string>().Should().Be(Detail);
+
+        [Test]
+        public void It_has_the_unresolved_reference_type() =>
+            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:unresolved-reference");
+
+        [Test]
+        public void It_has_the_unresolved_reference_title() =>
+            _result["title"]?.GetValue<string>().Should().Be("Unresolved Reference");
+
+        [Test]
+        public void It_has_a_status_of_409() => _result["status"]?.GetValue<int>().Should().Be(409);
+
+        [Test]
+        public void It_has_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_extension_members()
+        {
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+            _result["errors"]?.AsArray().Count.Should().Be(0);
+        }
+    }
+
     [Test]
     public void ForDataValidation_ShouldReturnCorrectJsonNode()
     {
@@ -159,6 +235,52 @@ public class FailureResponseTests
         result["errors"]?.AsArray().Should().ContainSingle(error => error!.GetValue<string>() == errors[0]);
     }
 
+    [TestFixture]
+    public class Given_a_parameter_validation_failure
+    {
+        private static readonly string[] _errors = ["'limit' must be greater than 0."];
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForParameterValidation(_errors, CorrelationId);
+
+        [Test]
+        public void It_returns_a_json_object() => _result.Should().BeOfType<JsonObject>();
+
+        [Test]
+        public void It_has_the_parameter_validation_detail() =>
+            _result["detail"]
+                ?.GetValue<string>()
+                .Should()
+                .Be("Parameter validation failed. See 'errors' for details.");
+
+        [Test]
+        public void It_has_the_parameter_validation_type() =>
+            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+
+        [Test]
+        public void It_has_the_parameter_validation_title() =>
+            _result["title"]?.GetValue<string>().Should().Be("Parameter Validation Failed");
+
+        [Test]
+        public void It_has_a_status_of_400() => _result["status"]?.GetValue<int>().Should().Be(400);
+
+        [Test]
+        public void It_has_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_validation_errors() =>
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+
+        [Test]
+        public void It_lists_the_single_parameter_error() =>
+            _result["errors"]
+                ?.AsArray()
+                .Should()
+                .ContainSingle(error => error!.GetValue<string>() == _errors[0]);
+    }
+
     [Test]
     public void ForBadGateway_ShouldReturnCorrectJsonNode()
     {
@@ -192,5 +314,123 @@ public class FailureResponseTests
         result["title"]?.GetValue<string>().Should().Be("Internal Server Error");
         result["status"]?.GetValue<int>().Should().Be(500);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+    }
+
+    [TestFixture]
+    public class Given_a_method_not_allowed_failure
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForMethodNotAllowed(CorrelationId);
+
+        [Test]
+        public void It_is_a_json_object() => _result.Should().BeOfType<JsonObject>();
+
+        [Test]
+        public void It_has_the_method_not_allowed_type() =>
+            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:method-not-allowed");
+
+        [Test]
+        public void It_has_the_method_not_allowed_title() =>
+            _result["title"]?.GetValue<string>().Should().Be("Method Not Allowed");
+
+        [Test]
+        public void It_has_a_detail() =>
+            _result["detail"]?.GetValue<string>().Should().Be("The request construction was invalid.");
+
+        [Test]
+        public void It_has_status_405() => _result["status"]?.GetValue<int>().Should().Be(405);
+
+        [Test]
+        public void It_carries_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_extension_members()
+        {
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+            _result["errors"]?.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_unsupported_media_type_failure
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForUnsupportedMediaType(CorrelationId);
+
+        [Test]
+        public void It_is_a_json_object() => _result.Should().BeOfType<JsonObject>();
+
+        [Test]
+        public void It_has_the_unsupported_media_type_type() =>
+            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:unsupported-media-type");
+
+        [Test]
+        public void It_has_the_unsupported_media_type_title() =>
+            _result["title"]?.GetValue<string>().Should().Be("Unsupported Media Type");
+
+        [Test]
+        public void It_has_a_detail() =>
+            _result["detail"]
+                ?.GetValue<string>()
+                .Should()
+                .Be("The value specified in the 'Content-Type' header is not supported by this host.");
+
+        [Test]
+        public void It_has_status_415() => _result["status"]?.GetValue<int>().Should().Be(415);
+
+        [Test]
+        public void It_carries_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_extension_members()
+        {
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+            _result["errors"]?.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_unclassified_status_failure
+    {
+        // 413 Payload Too Large has no documented Ed-Fi taxonomy URI.
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _result = FailureResponse.ForUnclassifiedStatus(413, "Payload Too Large", CorrelationId);
+
+        [Test]
+        public void It_is_a_json_object() => _result.Should().BeOfType<JsonObject>();
+
+        [Test]
+        public void It_uses_the_about_blank_type() =>
+            _result["type"]?.GetValue<string>().Should().Be("about:blank");
+
+        [Test]
+        public void It_uses_the_reason_phrase_as_the_title() =>
+            _result["title"]?.GetValue<string>().Should().Be("Payload Too Large");
+
+        [Test]
+        public void It_has_an_empty_detail() => _result["detail"]?.GetValue<string>().Should().BeEmpty();
+
+        [Test]
+        public void It_carries_the_supplied_status() => _result["status"]?.GetValue<int>().Should().Be(413);
+
+        [Test]
+        public void It_carries_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_extension_members()
+        {
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+            _result["errors"]?.AsArray().Count.Should().Be(0);
+        }
     }
 }

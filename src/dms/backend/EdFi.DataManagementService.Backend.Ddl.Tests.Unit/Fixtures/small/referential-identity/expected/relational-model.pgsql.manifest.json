@@ -1,7 +1,7 @@
 {
   "dialect": "pgsql",
-  "effective_schema_hash": "9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3",
-  "relational_mapping_version": "v1",
+  "effective_schema_hash": "136957ea965b4c23f513963a407ed08e9203a723da63135a3543a74e48e58136",
+  "relational_mapping_version": "v2",
   "projects": [
     {
       "project_endpoint_name": "ed-fi",
@@ -2768,6 +2768,8 @@
       "document_reference_bindings": [
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": true,
           "reference_object_path": "$.decimalKeyReference",
           "table": {
             "schema": "edfi",
@@ -2976,6 +2978,8 @@
       "document_reference_bindings": [
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "reference_object_path": "$.edOrgDependentResourceReference",
           "table": {
             "schema": "edfi",
@@ -3182,6 +3186,8 @@
       "document_reference_bindings": [
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "reference_object_path": "$.educationOrganizationReference",
           "table": {
             "schema": "edfi",
@@ -3496,6 +3502,8 @@
       "document_reference_bindings": [
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "reference_object_path": "$.resourceAReference",
           "table": {
             "schema": "edfi",
@@ -3521,6 +3529,8 @@
         },
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "reference_object_path": "$.resourceBReference",
           "table": {
             "schema": "edfi",
@@ -3728,6 +3738,8 @@
       "document_reference_bindings": [
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "reference_object_path": "$.studentReference",
           "table": {
             "schema": "edfi",
@@ -3930,6 +3942,8 @@
       "document_reference_bindings": [
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "reference_object_path": "$.studentReference",
           "table": {
             "schema": "edfi",
@@ -4415,6 +4429,8 @@
       "document_reference_bindings": [
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "reference_object_path": "$.schoolReference",
           "table": {
             "schema": "edfi",

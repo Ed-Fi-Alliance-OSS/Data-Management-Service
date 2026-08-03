@@ -140,7 +140,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
         );
@@ -331,9 +331,13 @@ internal static class MssqlProfileRootOnlyFixtureSupport
     {
         return await database.ExecuteScalarAsync<long>(
             """
+            DECLARE @Inserted TABLE ([DocumentId] bigint NOT NULL);
+
             INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId]
+            OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
             VALUES (@documentUuid, @resourceKeyId);
+
+            SELECT [DocumentId] FROM @Inserted;
             """,
             new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@resourceKeyId", resourceKeyId)
@@ -398,6 +402,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -407,6 +412,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -416,6 +422,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),

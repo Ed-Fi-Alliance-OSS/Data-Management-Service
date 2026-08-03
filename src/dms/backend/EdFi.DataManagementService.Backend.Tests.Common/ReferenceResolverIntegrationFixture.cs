@@ -172,6 +172,7 @@ public sealed class ReferenceResolverIntegrationFixture
                 [
                     new ReferenceResolverDescriptorSeed(
                         303,
+                        13,
                         "uri://ed-fi.org",
                         "Alternative",
                         "Alternative",
@@ -180,6 +181,7 @@ public sealed class ReferenceResolverIntegrationFixture
                     ),
                     new ReferenceResolverDescriptorSeed(
                         404,
+                        14,
                         "uri://ed-fi.org",
                         "English",
                         "English",
@@ -614,6 +616,7 @@ public sealed record ReferenceResolverSeedData(
                 new DbTableName(new DbSchemaName("dms"), "Descriptor"),
                 [
                     new DbColumnName("DocumentId"),
+                    new DbColumnName("ResourceKeyId"),
                     new DbColumnName("Namespace"),
                     new DbColumnName("CodeValue"),
                     new DbColumnName("ShortDescription"),
@@ -625,6 +628,7 @@ public sealed record ReferenceResolverSeedData(
                         (IReadOnlyList<object?>)
                             [
                                 descriptor.DocumentId,
+                                descriptor.ResourceKeyId,
                                 descriptor.Namespace,
                                 descriptor.CodeValue,
                                 descriptor.ShortDescription,
@@ -665,6 +669,7 @@ public sealed record ReferenceResolverLocalEducationAgencySeed(long DocumentId, 
 
 public sealed record ReferenceResolverDescriptorSeed(
     long DocumentId,
+    short ResourceKeyId,
     string Namespace,
     string CodeValue,
     string ShortDescription,

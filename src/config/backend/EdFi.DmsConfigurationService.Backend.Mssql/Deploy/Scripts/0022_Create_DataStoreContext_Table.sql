@@ -6,8 +6,8 @@
 IF OBJECT_ID('dmscs.DataStoreContext', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.DataStoreContext (
-        Id BIGINT IDENTITY(1,1) CONSTRAINT PK_DataStoreContext PRIMARY KEY,
-        DataStoreId BIGINT NOT NULL,
+        Id INT IDENTITY(1,1) CONSTRAINT PK_DataStoreContext PRIMARY KEY,
+        DataStoreId INT NOT NULL,
         ContextKey NVARCHAR(256) NOT NULL,
         ContextValue NVARCHAR(256) NOT NULL,
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),

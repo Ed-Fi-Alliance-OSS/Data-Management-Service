@@ -19,7 +19,7 @@ Feature: Namespace Authorization
                   }
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-3 @MssqlRepresentative
         Scenario: 01 Ensure client can create a descriptor in the ns2 namespace
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -60,7 +60,7 @@ Feature: Namespace Authorization
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 204
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-3 @MssqlRepresentative
         Scenario: 05 Ensure claimSet with different namespace can not create a descriptor in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with

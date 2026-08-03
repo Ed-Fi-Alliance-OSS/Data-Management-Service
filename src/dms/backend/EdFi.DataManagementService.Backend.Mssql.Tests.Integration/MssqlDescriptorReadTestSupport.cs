@@ -45,7 +45,7 @@ internal static class MssqlDescriptorReadTestSupport
         );
         var documentId = await InsertDocumentAsync(database, seed.DocumentUuid, resourceKeyId);
 
-        await InsertDescriptorRowAsync(database, resource, documentId, seed);
+        await InsertDescriptorRowAsync(database, resource, documentId, resourceKeyId, seed);
 
         return documentId;
     }
@@ -54,6 +54,7 @@ internal static class MssqlDescriptorReadTestSupport
         MssqlGeneratedDdlTestDatabase database,
         QualifiedResourceName resource,
         long documentId,
+        short resourceKeyId,
         DescriptorReadSeed seed
     )
     {
@@ -63,6 +64,7 @@ internal static class MssqlDescriptorReadTestSupport
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -74,6 +76,7 @@ internal static class MssqlDescriptorReadTestSupport
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -85,6 +88,7 @@ internal static class MssqlDescriptorReadTestSupport
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", seed.Namespace),
             new SqlParameter("@codeValue", seed.CodeValue),
             new SqlParameter("@shortDescription", seed.ShortDescription),

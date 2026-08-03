@@ -7,16 +7,16 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ResourceClaims;
 
 public class ResourceClaimResponse
 {
-    public long Id { get; init; }
+    public int Id { get; init; }
     public string Name { get; init; } = string.Empty;
-    public long ParentId { get; init; }
+    public int ParentId { get; init; }
     public string? ParentName { get; init; }
     public List<ResourceClaimResponse> Children { get; init; } = [];
 }
 
 public class ResourceClaimActionResponse
 {
-    public long ResourceClaimId { get; init; }
+    public int ResourceClaimId { get; init; }
     public string ResourceName { get; init; } = string.Empty;
     public string ClaimName { get; init; } = string.Empty;
     public List<ActionNameResponse> Actions { get; init; } = [];
@@ -29,7 +29,7 @@ public class ActionNameResponse
 
 public class ResourceClaimActionAuthStrategyResponse
 {
-    public long ResourceClaimId { get; init; }
+    public int ResourceClaimId { get; init; }
     public string ResourceName { get; init; } = string.Empty;
     public string ClaimName { get; init; } = string.Empty;
     public List<ActionWithAuthorizationStrategyResponse> AuthorizationStrategiesForActions { get; init; } =
@@ -45,6 +45,6 @@ public class ActionWithAuthorizationStrategyResponse
 
 public class AuthorizationStrategyForActionResponse
 {
-    public long AuthStrategyId { get; init; }
+    public int AuthStrategyId { get; init; }
     public string AuthStrategyName { get; init; } = string.Empty;
 }

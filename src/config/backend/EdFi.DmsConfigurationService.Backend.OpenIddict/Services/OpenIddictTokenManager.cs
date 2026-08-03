@@ -210,10 +210,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
 
                 if (applicationInfo == null)
                 {
-                    return new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.InvalidClient(
-                            "Invalid client or Invalid client credentials"
-                        )
+                    return new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
                     );
                 }
                 // Verify the client secret using the hasher
@@ -223,17 +222,17 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 );
                 if (!isValidSecret)
                 {
-                    return new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.Unauthorized("Invalid client or Invalid client credentials")
+                    return new TokenResult.FailureAuthentication(
+                        "unauthorized_client",
+                        "Invalid client or Invalid client credentials"
                     );
                 }
 
                 if (!applicationInfo.IsApproved)
                 {
-                    return new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.InvalidClient(
-                            "Invalid client or Invalid client credentials"
-                        )
+                    return new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
                     );
                 }
 

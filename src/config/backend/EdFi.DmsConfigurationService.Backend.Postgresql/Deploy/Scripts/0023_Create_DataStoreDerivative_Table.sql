@@ -7,8 +7,8 @@
 -- of data stores with encrypted connection strings
 
 CREATE TABLE IF NOT EXISTS "dmscs"."DataStoreDerivative" (
-    "Id" BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
-    "DataStoreId" BIGINT NOT NULL,
+    "Id" INT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
+    "DataStoreId" INT NOT NULL,
     "DerivativeType" VARCHAR(50) NOT NULL,
     "ConnectionString" BYTEA,
     "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),

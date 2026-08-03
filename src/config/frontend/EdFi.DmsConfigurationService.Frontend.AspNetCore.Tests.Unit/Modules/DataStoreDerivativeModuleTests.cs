@@ -4,10 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Text;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
+using EdFi.DmsConfigurationService.DataModel.Model.DataStoreDerivative;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
@@ -24,6 +27,10 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class DataStoreDerivativeModuleTests
 {
     private readonly IDataStoreDerivativeRepository _repository = A.Fake<IDataStoreDerivativeRepository>();
+    private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
+
+    [TearDown]
+    public void DisposeWebApplicationFactories() => _factoryTracker.DisposeTrackedFactories();
 
     private HttpClient SetUpClient()
     {
@@ -56,6 +63,7 @@ public class DataStoreDerivativeModuleTests
                 }
             );
         });
+        _factoryTracker.Track(factory);
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
         return client;
@@ -117,6 +125,118 @@ public class DataStoreDerivativeModuleTests
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/dataStoreDerivatives?limit=xyz");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    [TestFixture]
+    public class Given_insert_returns_a_foreign_key_violation : DataStoreDerivativeModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private JsonNode _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() => _repository.InsertDataStoreDerivative(A<DataStoreDerivativeInsertCommand>.Ignored))
+                .Returns(new DataStoreDerivativeInsertResult.FailureForeignKeyViolation());
+
+            using var client = SetUpClient();
+            using var content = new StringContent(
+                """{"dataStoreId":1,"derivativeType":"ReadReplica"}""",
+                Encoding.UTF8,
+                "application/json"
+            );
+            _response = await client.PostAsync("/v3/dataStoreDerivatives/", content);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+        }
+
+        [Test]
+        public void It_returns_409() => _response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_uses_the_application_json_content_type() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        [Test]
+        public void It_uses_the_unresolved_reference_type() =>
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:unresolved-reference");
+
+        [Test]
+        public void It_has_the_unresolved_reference_title() =>
+            _body["title"]!.GetValue<string>().Should().Be("Unresolved Reference");
+
+        [Test]
+        public void It_has_the_expected_detail() =>
+            _body["detail"]!.GetValue<string>().Should().Be("The specified DataStore does not exist.");
+
+        [Test]
+        public void It_has_a_body_status_of_409() => _body["status"]!.GetValue<int>().Should().Be(409);
+
+        [Test]
+        public void It_includes_a_non_empty_correlation_id() =>
+            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+
+        [Test]
+        public void It_includes_empty_extension_members()
+        {
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_update_returns_a_foreign_key_violation : DataStoreDerivativeModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private JsonNode _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() => _repository.UpdateDataStoreDerivative(A<DataStoreDerivativeUpdateCommand>.Ignored))
+                .Returns(new DataStoreDerivativeUpdateResult.FailureForeignKeyViolation());
+
+            using var client = SetUpClient();
+            using var content = new StringContent(
+                """{"id":1,"dataStoreId":1,"derivativeType":"ReadReplica"}""",
+                Encoding.UTF8,
+                "application/json"
+            );
+            _response = await client.PutAsync("/v3/dataStoreDerivatives/1", content);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+        }
+
+        [Test]
+        public void It_returns_409() => _response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_uses_the_application_json_content_type() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        [Test]
+        public void It_uses_the_unresolved_reference_type() =>
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:unresolved-reference");
+
+        [Test]
+        public void It_has_the_unresolved_reference_title() =>
+            _body["title"]!.GetValue<string>().Should().Be("Unresolved Reference");
+
+        [Test]
+        public void It_has_the_expected_detail() =>
+            _body["detail"]!.GetValue<string>().Should().Be("The specified DataStore does not exist.");
+
+        [Test]
+        public void It_has_a_body_status_of_409() => _body["status"]!.GetValue<int>().Should().Be(409);
+
+        [Test]
+        public void It_includes_a_non_empty_correlation_id() =>
+            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+
+        [Test]
+        public void It_includes_empty_extension_members()
+        {
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!.AsArray().Count.Should().Be(0);
         }
     }
 }

@@ -1,0 +1,34 @@
+{
+  "document": {
+    "id": "aaaaaaaa-bbbb-cccc-dddd-000000001101",
+    "_lastModifiedDate": "2026-07-31T10:11:12Z",
+    "schoolReference": {
+      "schoolId": 255902,
+      "link": {
+        "rel": "School",
+        "href": "/ed-fi/schools/aaaaaaaa-bbbb-cccc-dddd-000000001201"
+      }
+    },
+    "studentReference": {
+      "studentUniqueId": "604822",
+      "link": {
+        "rel": "Student",
+        "href": "/ed-fi/students/aaaaaaaa-bbbb-cccc-dddd-000000001202"
+      }
+    },
+    "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
+    "entryDate": "2025-08-19",
+    "primarySchool": false,
+    "educationPlans": [
+      {
+        "educationPlanDescriptor": "uri://ed-fi.org/EducationPlanDescriptor#IEP"
+      }
+    ],
+    "_ext": {
+      "sample": {
+        "membershipTypeDescriptor": "uri://sample.ed-fi.org/MembershipTypeDescriptor#Member"
+      }
+    },
+    "_etag": "333-53ba4ec6.j._.l.i"
+  }
+}

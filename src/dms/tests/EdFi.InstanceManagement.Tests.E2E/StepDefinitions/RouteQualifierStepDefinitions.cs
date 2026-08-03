@@ -32,11 +32,7 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         context.ClientKey.Should().NotBeNullOrEmpty("Application must be created first");
         context.ClientSecret.Should().NotBeNullOrEmpty("Application must be created first");
 
-        // TODO: Update once Config Service supports route qualifiers in OAuth endpoint
-        // The discovery API returns OAuth URLs with route qualifiers (e.g., /connect/token/{districtId}/{schoolYear})
-        // but the Config Service doesn't yet support this pattern. Once it does, we should get the URL from
-        // discovery API instead of hardcoding it here.
-        var tokenUrl = "http://localhost:8081/connect/token/";
+        var tokenUrl = await ResolveDmsTokenUrlAsync(context.CurrentTenant);
 
         context.DmsToken = await TokenHelper.GetDmsTokenAsync(
             tokenUrl,
@@ -61,7 +57,7 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
 
         var (key, secret) = context.CredentialsByTenant[tenantName];
 
-        var tokenUrl = "http://localhost:8081/connect/token/";
+        var tokenUrl = await ResolveDmsTokenUrlAsync(tenantName);
 
         context.DmsToken = await TokenHelper.GetDmsTokenAsync(tokenUrl, key, secret);
 
@@ -294,6 +290,91 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
 
         // Dispose the wrapper (but shared HttpClient remains)
         discoveryClient.Dispose();
+    }
+
+    [When("the oauth url from the discovery response is used to request a DMS token")]
+    public async Task WhenTheOauthUrlFromTheDiscoveryResponseIsUsedToRequestADmsToken()
+    {
+        context.LastResponse.Should().NotBeNull("Discovery response must be available");
+
+        var responseBody = await context.LastResponse!.Content.ReadAsStringAsync();
+        var responseDoc = JsonDocument.Parse(responseBody);
+        var oauthUrl = responseDoc.RootElement.GetProperty("urls").GetProperty("oauth").GetString();
+
+        oauthUrl.Should().NotBeNullOrWhiteSpace("Discovery must advertise an oauth url");
+        context.ClientKey.Should().NotBeNullOrEmpty("Application must be created first");
+        context.ClientSecret.Should().NotBeNullOrEmpty("Application must be created first");
+
+        context.DmsToken = await TokenHelper.GetDmsTokenAsync(
+            oauthUrl!,
+            context.ClientKey!,
+            context.ClientSecret!
+        );
+    }
+
+    private async Task<string> ResolveDmsTokenUrlAsync(string? tenantName)
+    {
+        var route = tenantName is null
+            ? null
+            : context
+                .RouteQualifierToDataStoreId.Where(route =>
+                    context.DataStoreIdToTenant.TryGetValue(route.Value, out var owner) && owner == tenantName
+                )
+                .Select(route => route.Key)
+                .FirstOrDefault();
+
+        if (route is not null)
+        {
+            using var discoveryClient = new DmsApiClient(TestConfiguration.DmsApiUrl, "");
+            using var discoveryResponse = await discoveryClient.GetDiscoveryWithRouteAsync(
+                $"{tenantName}/{route}"
+            );
+
+            if (discoveryResponse.IsSuccessStatusCode)
+            {
+                var responseBody = await discoveryResponse.Content.ReadAsStringAsync();
+                if (!string.IsNullOrWhiteSpace(responseBody))
+                {
+                    try
+                    {
+                        using var responseDoc = JsonDocument.Parse(responseBody);
+                        var oauthUrl = ExtractOauthUrl(responseDoc.RootElement);
+                        if (!string.IsNullOrWhiteSpace(oauthUrl))
+                        {
+                            return oauthUrl;
+                        }
+                    }
+                    catch (JsonException)
+                    {
+                        // Fall back to the direct token endpoint when discovery is unavailable.
+                    }
+                }
+            }
+        }
+
+        return "http://localhost:8081/connect/token/";
+    }
+
+    internal static string? ExtractOauthUrl(JsonElement discoveryDocument)
+    {
+        if (
+            discoveryDocument.ValueKind is not JsonValueKind.Object
+            || !discoveryDocument.TryGetProperty("urls", out var urls)
+            || urls.ValueKind is not JsonValueKind.Object
+            || !urls.TryGetProperty("oauth", out var oauth)
+            || oauth.ValueKind is not JsonValueKind.String
+        )
+        {
+            return null;
+        }
+
+        return oauth.GetString();
+    }
+
+    [Then("the DMS token should be available")]
+    public void ThenTheDmsTokenShouldBeAvailable()
+    {
+        context.DmsToken.Should().NotBeNullOrWhiteSpace();
     }
 
     [Then("the urls should be")]

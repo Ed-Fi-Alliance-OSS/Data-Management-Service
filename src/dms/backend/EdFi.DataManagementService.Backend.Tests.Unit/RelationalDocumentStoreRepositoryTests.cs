@@ -255,7 +255,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         capturedReadRequest
             .DescriptorRowsInPlanOrder.Should()
             .BeSameAs(hydratedPage.DescriptorRowsInPlanOrder);
-        capturedReadRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);
+        capturedReadRequest.ReadMode.Should().Be(RelationalReadMaterializationMode.ExternalResponse);
         capturedExecutionOptions.Should().NotBeNull();
         capturedExecutionOptions!
             .UseSingleDocumentFastPath.Should()
@@ -503,7 +503,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.GetDocumentById(getRequest);
 
         result.Should().BeOfType<GetResult.GetSuccess>();
-        capturedReadRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.StoredDocument);
+        capturedReadRequest.ReadMode.Should().Be(RelationalReadMaterializationMode.StoredDocument);
     }
 
     [Test]
@@ -2572,7 +2572,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         capturedKeyset.Plan.TotalCountSql.Should().NotBeNull();
         capturedReadRequest.ReadPlan.Should().BeSameAs(readPlan);
         capturedReadRequest.HydratedPage.Should().BeSameAs(hydratedPage);
-        capturedReadRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);
+        capturedReadRequest.ReadMode.Should().Be(RelationalReadMaterializationMode.ExternalResponse);
         A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
             .MustHaveHappenedOnceExactly();
         A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))

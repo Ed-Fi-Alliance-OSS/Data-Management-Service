@@ -190,7 +190,7 @@ internal sealed class RelationalWriteMergeOrchestrator(
                 currentState.DocumentMetadata,
                 currentState.TableRowsInDependencyOrder,
                 currentState.DescriptorRowsInPlanOrder,
-                RelationalGetRequestReadMode.StoredDocument
+                RelationalReadMaterializationMode.StoredDocument
             )
         );
 

@@ -118,7 +118,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   """
 
         @API-129
-        @e2e-ci-shard-4
+        @e2e-ci-shard-4 @MssqlRepresentative
         Scenario: 06 Ensure clients can GET information when querying by string parameter
              When a GET request is made to "/ed-fi/academicWeeks?weekIdentifier=Week+One"
              Then it should respond with 200

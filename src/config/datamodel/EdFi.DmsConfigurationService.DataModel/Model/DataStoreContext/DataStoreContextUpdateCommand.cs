@@ -9,8 +9,8 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.DataStoreContext;
 
 public class DataStoreContextUpdateCommand
 {
-    public long Id { get; set; }
-    public long DataStoreId { get; set; }
+    public int Id { get; set; }
+    public int DataStoreId { get; set; }
     public string ContextKey { get; set; } = "";
     public string ContextValue { get; set; } = "";
 

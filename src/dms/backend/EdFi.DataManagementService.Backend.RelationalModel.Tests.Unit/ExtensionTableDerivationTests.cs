@@ -328,6 +328,11 @@ public class Given_Extension_Table_Derivation
 
         descriptorFk.TargetTable.Schema.Value.Should().Be("dms");
         descriptorFk.TargetTable.Name.Should().Be("Descriptor");
+
+        var descriptorEdge = _schoolModel.DescriptorEdgeSources.Single(edge =>
+            edge.DescriptorValuePath.Canonical == "$._ext.sample.favoriteDescriptor"
+        );
+        descriptorEdge.IsRoleNamed.Should().BeTrue();
     }
 }
 

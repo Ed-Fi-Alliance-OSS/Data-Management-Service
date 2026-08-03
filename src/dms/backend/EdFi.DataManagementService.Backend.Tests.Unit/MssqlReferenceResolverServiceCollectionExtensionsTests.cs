@@ -28,6 +28,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
 
         services.AddLogging();
         services.AddSingleton(A.Fake<IReadableProfileProjector>());
+        services.AddSingleton(A.Fake<IDataStoreProvider>());
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddMssqlReferenceResolver();
 
@@ -56,6 +57,11 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         var parameterConfigurator =
             scope.ServiceProvider.GetRequiredService<IRelationalParameterConfigurator>();
         var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
+        var documentCacheMaterializationDataStore =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializationDataStore>();
+        var documentCacheWriter = scope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>();
+        var documentCacheWriterRetryAdapter =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheWriterRetryAdapter>();
         var readTargetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
         var writeExceptionClassifier =
@@ -87,6 +93,9 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         commandExecutor.Should().BeOfType<MssqlRelationalCommandExecutor>();
         parameterConfigurator.Should().BeOfType<MssqlRelationalParameterConfigurator>();
         readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
+        documentCacheMaterializationDataStore.Should().BeOfType<MssqlDocumentCacheMaterializationDataStore>();
+        documentCacheWriter.Should().BeOfType<MssqlDocumentCacheWriter>();
+        documentCacheWriterRetryAdapter.Should().BeOfType<DocumentCacheWriterRetryAdapter>();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         writeExceptionClassifier.Should().BeOfType<MssqlRelationalWriteExceptionClassifier>();
         writeConstraintResolver.Should().BeOfType<RelationalWriteConstraintResolver>();
@@ -97,6 +106,44 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         relationshipAuthorizationProviderFailureExtractor
             .Should()
             .BeOfType<DefaultRelationshipAuthorizationProviderFailureExtractor>();
+    }
+
+    [Test]
+    public void DocumentCacheWriter_ServiceRegistration_registers_only_the_mssql_writer_adapter()
+    {
+        var services = new ServiceCollection();
+
+        services.AddLogging();
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
+        services.AddSingleton(A.Fake<IDataStoreProvider>());
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.AddMssqlReferenceResolver();
+
+        services
+            .Where(descriptor => descriptor.ServiceType == typeof(IDocumentCacheWriter))
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Match<ServiceDescriptor>(descriptor =>
+                descriptor.Lifetime == ServiceLifetime.Scoped
+                && descriptor.ImplementationType == typeof(MssqlDocumentCacheWriter)
+            );
+        services
+            .Should()
+            .NotContain(descriptor =>
+                (descriptor.ServiceType.FullName ?? descriptor.ServiceType.Name).Contains(
+                    "DocumentProjectionWork",
+                    StringComparison.Ordinal
+                )
+            );
+
+        using var serviceProvider = BuildServiceProvider(services);
+        using var scope = serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDocumentCacheWriter>()
+            .Should()
+            .BeOfType<MssqlDocumentCacheWriter>();
     }
 
     [Test]
@@ -125,6 +172,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
 
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)
     {
+        services.TryAddSingleton(new DeadlockRetrySettings());
         services.TryAddSingleton<IDocumentLinkSlugResolver, NoLinkSlugResolver>();
         services.AddOptions<ResourceLinksOptions>();
 

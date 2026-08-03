@@ -59,7 +59,7 @@ public class DataStoreTests : DatabaseTest
     [TestFixture]
     public class Given_insert_data_store : DataStoreTests
     {
-        private long _id;
+        private int _id;
 
         [SetUp]
         public async Task Setup()
@@ -111,7 +111,7 @@ public class DataStoreTests : DatabaseTest
     [TestFixture]
     public class Given_insert_data_store_without_connection_string : DataStoreTests
     {
-        private long _id;
+        private int _id;
 
         [SetUp]
         public async Task Setup()
@@ -208,8 +208,8 @@ public class DataStoreTests : DatabaseTest
     [TestFixture]
     public class Given_delete_data_store : DataStoreTests
     {
-        private long _instance1Id;
-        private long _instance2Id;
+        private int _instance1Id;
+        private int _instance2Id;
 
         [SetUp]
         public async Task Setup()
@@ -309,7 +309,7 @@ public class DataStoreTests : DatabaseTest
     [TestFixture]
     public class Given_data_store_with_route_contexts : DataStoreTests
     {
-        private long _dataStoreId;
+        private int _dataStoreId;
 
         [SetUp]
         public async Task Setup()
@@ -390,9 +390,9 @@ public class DataStoreTests : DatabaseTest
     [TestFixture]
     public class Given_validate_multiple_data_store_ids : DataStoreTests
     {
-        private long _instance1Id;
-        private long _instance2Id;
-        private long _instance3Id;
+        private int _instance1Id;
+        private int _instance2Id;
+        private int _instance3Id;
 
         [SetUp]
         public async Task Setup()
@@ -431,7 +431,7 @@ public class DataStoreTests : DatabaseTest
         [Test]
         public async Task It_should_return_all_existing_ids()
         {
-            long[] idsToCheck = [_instance1Id, _instance2Id, _instance3Id];
+            int[] idsToCheck = [_instance1Id, _instance2Id, _instance3Id];
             var result = await _repository.GetExistingDataStoreIds(idsToCheck);
 
             result.Should().BeOfType<DataStoreIdsExistResult.Success>();
@@ -445,7 +445,7 @@ public class DataStoreTests : DatabaseTest
         [Test]
         public async Task It_should_return_only_existing_ids_when_some_dont_exist()
         {
-            long[] idsToCheck = [_instance1Id, 99999, _instance2Id, 88888, _instance3Id];
+            int[] idsToCheck = [_instance1Id, 99999, _instance2Id, 88888, _instance3Id];
             var result = await _repository.GetExistingDataStoreIds(idsToCheck);
 
             result.Should().BeOfType<DataStoreIdsExistResult.Success>();
@@ -461,7 +461,7 @@ public class DataStoreTests : DatabaseTest
         [Test]
         public async Task It_should_return_empty_set_when_no_ids_exist()
         {
-            long[] idsToCheck = [99999, 88888, 77777];
+            int[] idsToCheck = [99999, 88888, 77777];
             var result = await _repository.GetExistingDataStoreIds(idsToCheck);
 
             result.Should().BeOfType<DataStoreIdsExistResult.Success>();
@@ -472,7 +472,7 @@ public class DataStoreTests : DatabaseTest
         [Test]
         public async Task It_should_return_empty_set_when_input_is_empty()
         {
-            long[] idsToCheck = [];
+            int[] idsToCheck = [];
             var result = await _repository.GetExistingDataStoreIds(idsToCheck);
 
             result.Should().BeOfType<DataStoreIdsExistResult.Success>();
@@ -484,10 +484,10 @@ public class DataStoreTests : DatabaseTest
     [TestFixture]
     public class Given_data_store_is_assigned_to_applications : DataStoreTests
     {
-        private long _dataStoreId1;
-        private long _dataStoreId2;
-        private long _unassignedDataStoreId;
-        private long _vendorId;
+        private int _dataStoreId1;
+        private int _dataStoreId2;
+        private int _unassignedDataStoreId;
+        private int _vendorId;
 
         [SetUp]
         public async Task Setup()
@@ -696,7 +696,7 @@ public class DataStoreTests : DatabaseTest
     public class Given_query_applications_by_unassigned_data_store_in_multitenant_context : DataStoreTests
     {
         private IDataStoreRepository _multitenantRepository = null!;
-        private long _dataStoreId;
+        private int _dataStoreId;
 
         [SetUp]
         public async Task Setup()

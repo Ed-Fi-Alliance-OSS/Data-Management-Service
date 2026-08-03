@@ -46,6 +46,10 @@ Import-Module "$PSScriptRoot/bootstrap-manifest.psm1" -Force -Global
 Import-Module "$PSScriptRoot/bootstrap-schema-tool.psm1" -Force -Global
 Import-Module "$PSScriptRoot/bootstrap-schema-workspace.psm1" -Force -Global
 Import-Module "$PSScriptRoot/env-utility.psm1" -Force -Global
+# Shared Compose-equivalent resolver: env reads below honour Docker Compose interpolation
+# precedence (an ambient process/shell value wins over the env file), so the SchemaTools host-side
+# translation targets the same published port/credentials the containers received.
+Import-Module "$PSScriptRoot/database-safety.psm1" -Force
 Import-Module "$PSScriptRoot/../Dms-Management.psm1" -Force
 
 if (-not (Get-Command Format-LogSafeText -ErrorAction SilentlyContinue)) {
@@ -112,7 +116,9 @@ function Get-EnvValueOrDefault {
         $DefaultValue = ""
     )
 
-    return Get-EnvValue -EnvValues $EnvValues -Name $Name -DefaultValue $DefaultValue
+    # Compose-equivalent read: the process/shell environment wins over the env file, matching the
+    # values Docker Compose interpolates into the running containers.
+    return Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name $Name -DefaultValue $DefaultValue
 }
 
 function Get-ProvisionProperty {

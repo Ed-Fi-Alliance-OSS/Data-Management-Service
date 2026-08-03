@@ -43,7 +43,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
             SecurityKey signingKey,
             string keyId,
             IConfiguration? configuration = null,
-            long[]? dataStoreIds = null
+            int[]? dataStoreIds = null
         )
         {
             var claims = new List<Claim>

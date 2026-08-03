@@ -62,7 +62,7 @@ file static class MssqlIfMatchCascadeReferentialIdentityTestSupport
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
         services.AddNoOpDocumentLinkSlugResolver();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }

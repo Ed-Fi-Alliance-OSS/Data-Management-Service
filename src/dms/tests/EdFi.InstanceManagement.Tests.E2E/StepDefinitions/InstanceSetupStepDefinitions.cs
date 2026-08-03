@@ -90,6 +90,7 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
 
         var (vendor, _) = await _configClient!.CreateVendorAsync(request);
         context.VendorId = vendor.Id;
+        context.MarkVendorScenarioOwned(context.CurrentTenant ?? "", vendor.Id);
 
         // Track vendor by tenant if working with explicit tenant
         if (!string.IsNullOrEmpty(context.CurrentTenant))
@@ -136,6 +137,7 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
 
         var (vendor, _) = await _configClient!.CreateVendorAsync(request);
         context.VendorId = vendor.Id;
+        context.MarkVendorScenarioOwned(context.CurrentTenant ?? "", vendor.Id);
 
         if (!string.IsNullOrEmpty(context.CurrentTenant))
         {
@@ -151,11 +153,12 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
         var request = new InstanceRequest(
             DataStoreType: data["DataStoreType"],
             Name: data["Name"],
-            ConnectionString: data["ConnectionString"]
+            ConnectionString: ResolveConnectionString(data["ConnectionString"])
         );
 
         _lastCreatedInstance = await _configClient!.CreateInstanceAsync(request);
         context.DataStoreIds.Add(_lastCreatedInstance.Id);
+        context.MarkDataStoreScenarioOwned(context.CurrentTenant ?? "", _lastCreatedInstance.Id);
 
         // Track instance by tenant if working with explicit tenant
         if (!string.IsNullOrEmpty(context.CurrentTenant))
@@ -280,6 +283,7 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
         context.ApplicationId = application.Id;
         context.ClientKey = application.Key;
         context.ClientSecret = application.Secret;
+        context.MarkApplicationScenarioOwned(context.CurrentTenant ?? "", application.Id);
 
         // Track application by tenant if working with explicit tenant
         if (!string.IsNullOrEmpty(context.CurrentTenant))
@@ -304,6 +308,44 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
     [Given("tenant {string} is set up with a vendor and instances:")]
     public async Task GivenTenantIsSetUpWithVendorAndInstances(string tenantName, Table table)
     {
+        var requestedRoutes = table.Rows.Select(row => row["Route"]).ToList();
+
+        // Fixture-aware dual mode: for a canonical pre-registered tenant, validate the requested
+        // tenant/routes against run state and hydrate context with zero CMS creation.
+        if (InstanceFixtureState.IsAvailable && InstanceFixtureState.Current.IsFixtureTenant(tenantName))
+        {
+            HydrateFixtureTenantSetup(InstanceFixtureState.Current, tenantName, requestedRoutes);
+            return;
+        }
+
+        await CreateTenantSetupViaCmsAsync(tenantName, requestedRoutes);
+    }
+
+    internal void HydrateFixtureTenantSetup(
+        InstanceFixtureState fixture,
+        string tenantName,
+        IReadOnlyList<string> requestedRoutes
+    )
+    {
+        foreach (var route in requestedRoutes)
+        {
+            if (
+                !fixture.TryGetRoute(route, out var fixtureRoute)
+                || !string.Equals(fixtureRoute.TenantName, tenantName, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Route '{route}' is not a pre-registered fixture route owned by tenant '{tenantName}'."
+                );
+            }
+        }
+
+        InstanceFixtureHydrator.HydrateAll(context, fixture);
+        context.CurrentTenant = tenantName;
+    }
+
+    private async Task CreateTenantSetupViaCmsAsync(string tenantName, IReadOnlyList<string> requestedRoutes)
+    {
         // Get or create the tenant client
         var tenantClient = await GetOrCreateTenantClientAsync(tenantName);
 
@@ -311,26 +353,29 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
         context.CurrentTenant = tenantName;
         _configClient = tenantClient;
 
+        // Derive a clean vendor identity from the first requested route rather than the (possibly renamed)
+        // tenant name so the generated contact email stays valid.
+        var vendorDistrictId = requestedRoutes.Count > 0 ? requestedRoutes[0].Split('/')[0] : tenantName;
+
         // Create vendor for this tenant if not exists
         if (!context.VendorIdsByTenant.ContainsKey(tenantName))
         {
-            var districtId = tenantName.Replace("Tenant_", "");
             var vendorRequest = new VendorRequest(
-                Company: $"District {districtId} Vendor",
+                Company: $"District {vendorDistrictId} Vendor",
                 ContactName: "Test Admin",
-                ContactEmailAddress: $"admin@district{districtId}.edu",
-                NamespacePrefixes: $"uri://ed-fi.org,uri://district{districtId}.edu"
+                ContactEmailAddress: $"admin@district{vendorDistrictId}.edu",
+                NamespacePrefixes: $"uri://ed-fi.org,uri://district{vendorDistrictId}.edu"
             );
 
             var (vendor, _) = await tenantClient.CreateVendorAsync(vendorRequest);
             context.VendorIdsByTenant[tenantName] = vendor.Id;
             context.VendorId = vendor.Id;
+            context.MarkVendorScenarioOwned(tenantName, vendor.Id);
         }
 
         // Create instances from the table
-        foreach (var row in table.Rows)
+        foreach (var route in requestedRoutes)
         {
-            var route = row["Route"];
             var parts = route.Split('/');
             var districtId = parts[0];
             var schoolYear = parts[1];
@@ -349,6 +394,7 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
             context.DataStoreIds.Add(instance.Id);
             context.DataStoreIdToTenant[instance.Id] = tenantName;
             context.RouteQualifierToDataStoreId[route] = instance.Id;
+            context.MarkDataStoreScenarioOwned(tenantName, instance.Id);
 
             // Add route contexts
             await tenantClient.CreateRouteContextAsync(
@@ -368,10 +414,31 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
         }
     }
 
+    /// <summary>
+    /// Resolves a logical database token (Database1/Database2/Database3) to the engine-correct opaque
+    /// connection string published by the fixture; any other value is returned verbatim.
+    /// </summary>
+    private static string ResolveConnectionString(string connectionStringOrToken) =>
+        connectionStringOrToken switch
+        {
+            "Database1" => TestConstants.GetConnectionString(1),
+            "Database2" => TestConstants.GetConnectionString(2),
+            "Database3" => TestConstants.GetConnectionString(3),
+            _ => connectionStringOrToken,
+        };
+
     [Given("tenant {string} has an application for district {string}")]
     public async Task GivenTenantHasApplicationForDistrict(string tenantName, string districtId)
     {
-        var tenantClient = context.ConfigClientsByTenant[tenantName];
+        // Fixture-aware dual mode: for a canonical pre-registered tenant, validate the district against run
+        // state and hydrate the pre-registered application credentials with zero CMS creation.
+        if (InstanceFixtureState.IsAvailable && InstanceFixtureState.Current.IsFixtureTenant(tenantName))
+        {
+            HydrateFixtureApplication(InstanceFixtureState.Current, tenantName, districtId);
+            return;
+        }
+
+        var tenantClient = await GetOrCreateTenantClientAsync(tenantName);
         var vendorId = context.VendorIdsByTenant[tenantName];
 
         // Get instance IDs for this tenant
@@ -394,6 +461,7 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
 
         context.ApplicationIdsByTenant[tenantName] = application.Id;
         context.CredentialsByTenant[tenantName] = (application.Key, application.Secret);
+        context.MarkApplicationScenarioOwned(tenantName, application.Id);
 
         // Store first application's credentials for DMS authentication (legacy support)
         if (context.ClientKey == null)
@@ -404,6 +472,30 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
         }
     }
 
+    internal void HydrateFixtureApplication(
+        InstanceFixtureState fixture,
+        string tenantName,
+        string districtId
+    )
+    {
+        if (
+            !fixture
+                .RoutesForTenant(tenantName)
+                .Any(r => string.Equals(r.DistrictId, districtId, StringComparison.Ordinal))
+        )
+        {
+            throw new InvalidOperationException(
+                $"Fixture tenant '{tenantName}' owns no route for district '{districtId}'."
+            );
+        }
+
+        InstanceFixtureHydrator.HydrateAll(context, fixture);
+        var fixtureTenant = fixture.GetTenant(tenantName);
+        context.ApplicationId = fixtureTenant.ApplicationId;
+        context.ClientKey = fixtureTenant.ClientKey;
+        context.ClientSecret = fixtureTenant.ClientSecret;
+    }
+
     [Given("tenant {string} has an application for district {string} with claim set {string}")]
     [When("tenant {string} has an application for district {string} with claim set {string}")]
     public async Task GivenTenantHasApplicationForDistrictWithClaimSet(
@@ -412,7 +504,9 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
         string claimSetName
     )
     {
-        var tenantClient = context.ConfigClientsByTenant[tenantName];
+        // This overload always creates a real, scenario-owned application (even under a fixture tenant) so
+        // authorization coverage stays real. Authenticate lazily at this CMS boundary.
+        var tenantClient = await GetOrCreateTenantClientAsync(tenantName);
         var vendorId = context.VendorIdsByTenant[tenantName];
 
         var tenantDataStoreIds = context
@@ -431,6 +525,10 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
                 [.. tenantDataStoreIds]
             )
         );
+
+        // Track the replacement application separately from the immutable fixture application so
+        // per-scenario cleanup deletes only this scenario-owned application, never the fixture app.
+        context.MarkApplicationScenarioOwned(tenantName, application.Id);
 
         // Overwrite this tenant's stored credentials so a subsequent
         // "authenticated to DMS with credentials for tenant" picks up this claim set.

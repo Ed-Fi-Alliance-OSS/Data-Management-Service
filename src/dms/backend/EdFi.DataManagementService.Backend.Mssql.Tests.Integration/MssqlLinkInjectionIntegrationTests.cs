@@ -159,7 +159,7 @@ public class Given_A_Mssql_AcademicWeek_To_School_Reference_With_Link_Injection
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
 
         // The default RelationalReadMaterializer registration needs IDocumentLinkSlugResolver
         // and IOptions<ResourceLinksOptions>. We inject a deterministic resolver keyed by the
@@ -456,6 +456,7 @@ public class Given_A_Mssql_AcademicWeek_To_School_Reference_With_Link_Injection
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -465,6 +466,7 @@ public class Given_A_Mssql_AcademicWeek_To_School_Reference_With_Link_Injection
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -474,6 +476,7 @@ public class Given_A_Mssql_AcademicWeek_To_School_Reference_With_Link_Injection
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),

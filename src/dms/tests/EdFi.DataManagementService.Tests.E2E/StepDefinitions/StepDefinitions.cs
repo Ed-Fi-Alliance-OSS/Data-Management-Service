@@ -121,7 +121,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _scenarioContext["dmsToken"] = _scenarioVariables.GetValueByName(variableName);
         }
 
-        private async Task SetAuthorizationToken(
+        [Given("a DMS client is provisioned with namespacePrefixes {string}")]
+        public async Task GivenADmsClientIsProvisionedWithNamespacePrefixes(string namespacePrefixes)
+        {
+            await ProvisionAuthorizationContext(namespacePrefixes, string.Empty);
+        }
+
+        private async Task ProvisionAuthorizationContext(
             string namespacePrefixes,
             string educationOrganizationIds,
             string claimSetName = "E2E-NoFurtherAuthRequiredClaimSet"
@@ -142,7 +148,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 systemAdministratorToken,
                 claimSetName
             );
+        }
 
+        private async Task SetAuthorizationToken(
+            string namespacePrefixes,
+            string educationOrganizationIds,
+            string claimSetName = "E2E-NoFurtherAuthRequiredClaimSet"
+        )
+        {
+            await ProvisionAuthorizationContext(namespacePrefixes, educationOrganizationIds, claimSetName);
             var bearerToken = await AuthorizationDataProvider.GetToken();
             _scenarioContext["dmsToken"] = $"Bearer {bearerToken}";
         }
@@ -1329,6 +1343,25 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             AreEqual(expectedBodyJson, responseJson)
                 .Should()
                 .BeTrue($"Expected:\n{expectedBodyJson}\n\nActual:\n{responseJson}");
+        }
+
+        [When("the oauth url from the discovery response is used to request a token")]
+        public async Task WhenTheOauthUrlFromTheDiscoveryResponseIsUsedToRequestAToken()
+        {
+            string responseContent = await _apiResponse.TextAsync();
+            JsonNode responseJson = JsonNode.Parse(responseContent)!;
+
+            string? oauthUrl = responseJson["urls"]?["oauth"]?.GetValue<string>();
+            oauthUrl.Should().NotBeNullOrWhiteSpace("Discovery must advertise an oauth url");
+
+            var bearerToken = await AuthorizationDataProvider.GetToken(oauthUrl!);
+            _scenarioContext["dmsToken"] = $"Bearer {bearerToken}";
+        }
+
+        [Then("the DMS token should be available")]
+        public void ThenTheDmsTokenShouldBeAvailable()
+        {
+            GetDmsTokenFromContext().Should().NotBeNullOrWhiteSpace();
         }
 
         private static void NormalizeOAuthUrl(JsonNode? json)

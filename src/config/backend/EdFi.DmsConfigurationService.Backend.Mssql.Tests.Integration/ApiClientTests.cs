@@ -36,7 +36,7 @@ public class ApiClientTests : DatabaseTest
     [TestFixture]
     public class QueryPagingTests : ApiClientTests
     {
-        private long _applicationId;
+        private int _applicationId;
 
         [SetUp]
         public async Task Setup()
@@ -56,7 +56,7 @@ public class ApiClientTests : DatabaseTest
             };
             var vendorResult = await vendorRepository.InsertVendor(vendorCommand);
             vendorResult.Should().BeOfType<VendorInsertResult.Success>();
-            long vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
+            int vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
 
             ApplicationInsertCommand app = new()
             {
@@ -121,7 +121,7 @@ public class ApiClientTests : DatabaseTest
     [TestFixture]
     public class QuerySortTests : ApiClientTests
     {
-        private long _applicationId;
+        private int _applicationId;
 
         [SetUp]
         public async Task Setup()
@@ -141,7 +141,7 @@ public class ApiClientTests : DatabaseTest
             };
             var vendorResult = await vendorRepository.InsertVendor(vendorCommand);
             vendorResult.Should().BeOfType<VendorInsertResult.Success>();
-            long vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
+            int vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
 
             ApplicationInsertCommand app = new()
             {
@@ -267,7 +267,7 @@ public class ApiClientTests : DatabaseTest
             };
             var vendorResult = await vendorRepository.InsertVendor(vendorCommand);
             vendorResult.Should().BeOfType<VendorInsertResult.Success>();
-            long vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
+            int vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
 
             ApplicationInsertCommand app = new()
             {
@@ -281,7 +281,7 @@ public class ApiClientTests : DatabaseTest
                 new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             appResult.Should().BeOfType<ApplicationInsertResult.Success>();
-            long applicationId = (appResult as ApplicationInsertResult.Success)!.Id;
+            int applicationId = (appResult as ApplicationInsertResult.Success)!.Id;
 
             var insertResult = await _apiClientRepository.InsertApiClient(
                 new ApiClientInsertCommand
@@ -294,7 +294,7 @@ public class ApiClientTests : DatabaseTest
                 new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             insertResult.Should().BeOfType<ApiClientInsertResult.Success>();
-            long apiClientId = (insertResult as ApiClientInsertResult.Success)!.Id;
+            int apiClientId = (insertResult as ApiClientInsertResult.Success)!.Id;
 
             _result = await _apiClientRepository.UpdateApiClient(
                 new ApiClientUpdateCommand
@@ -320,12 +320,12 @@ public class ApiClientTests : DatabaseTest
     {
         private IApiClientRepository _tenantAApiClientRepository = null!;
         private IApiClientRepository _tenantBApiClientRepository = null!;
-        private long _tenantAApplicationId;
-        private long _tenantBApplicationId;
-        private long _tenantAApiClientId;
+        private int _tenantAApplicationId;
+        private int _tenantBApplicationId;
+        private int _tenantAApiClientId;
         private string _tenantAClientId = string.Empty;
-        private long _tenantBApiClientId;
-        private long _tenantADataStoreId;
+        private int _tenantBApiClientId;
+        private int _tenantADataStoreId;
 
         [SetUp]
         public async Task Setup()
@@ -388,7 +388,7 @@ public class ApiClientTests : DatabaseTest
                 tenantContextProvider
             );
 
-        private static async Task<long> InsertVendorWithApplication(
+        private static async Task<int> InsertVendorWithApplication(
             TenantContextProvider tenantContextProvider,
             string company
         )
@@ -409,7 +409,7 @@ public class ApiClientTests : DatabaseTest
                 }
             );
             vendorResult.Should().BeOfType<VendorInsertResult.Success>();
-            long vendorId = ((VendorInsertResult.Success)vendorResult).Id;
+            int vendorId = ((VendorInsertResult.Success)vendorResult).Id;
 
             IApplicationRepository applicationRepository = new ApplicationRepository(
                 MssqlTestConfiguration.DatabaseOptions,
@@ -431,9 +431,9 @@ public class ApiClientTests : DatabaseTest
             return ((ApplicationInsertResult.Success)applicationResult).Id;
         }
 
-        private static async Task<(long Id, string ClientId)> InsertApiClient(
+        private static async Task<(int Id, string ClientId)> InsertApiClient(
             IApiClientRepository apiClientRepository,
-            long applicationId,
+            int applicationId,
             string name
         )
         {
@@ -452,7 +452,7 @@ public class ApiClientTests : DatabaseTest
             return (((ApiClientInsertResult.Success)result).Id, clientId);
         }
 
-        private static async Task<long> InsertDataStore(
+        private static async Task<int> InsertDataStore(
             TenantContextProvider tenantContextProvider,
             string name
         )

@@ -7394,6 +7394,273 @@ public class Given_three_level_chain_with_update_allowed_at_levels_1_and_2_creat
 }
 
 /// <summary>
+/// DMS-1023 ThreeLevelChain parity scenario. Contrasts the two halves the acceptance criteria require: under an
+/// existing visible middle-level parent (A.C1 matched-update) a descendant create is allowed (success, the new
+/// grandchild is inserted), while under a newly created, non-creatable visible middle-level parent (A.C2, no
+/// stored match) the descendant create is rejected at the middle (children) scope and the descendant is never
+/// reached. At the synthesizer layer the middle parent's non-creatability is expressed directly as
+/// Creatable=false; the "required member is hidden" derivation that produces that flag is owned by the Core
+/// CreatabilityAnalyzer and exercised by its own tests.
+/// </summary>
+[TestFixture]
+public class Given_three_level_chain_contrasts_descendant_create_under_an_existing_versus_a_newly_created_middle_parent
+{
+    private const long DocumentId = 345L;
+    private const long ParentAItemId = 100L;
+    private const long ExistingChildItemId = 1001L;
+
+    private ProfileMergeOutcome _existingMiddleParentOutcome;
+    private ProfileMergeOutcome _newMiddleParentOutcome;
+    private TableWritePlan _acceptanceGrandchildrenPlan = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        (_existingMiddleParentOutcome, _acceptanceGrandchildrenPlan) = BuildExistingMiddleParentOutcome();
+        _newMiddleParentOutcome = BuildNewMiddleParentOutcome();
+    }
+
+    // Existing visible middle parent A.C1 (matched-update); a new grandchild G1 under it is creatable, so the
+    // descendant create is allowed. Returns the grandchildren plan so the caller can locate that table's rows.
+    private static (
+        ProfileMergeOutcome Outcome,
+        TableWritePlan GrandchildrenPlan
+    ) BuildExistingMiddleParentOutcome()
+    {
+        var (plan, parentsPlan, childrenPlan, grandchildrenPlan) =
+            ThreeLevelTopologyBuilders.BuildThreeLevelPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        var body = new JsonObject
+        {
+            ["parents"] = new JsonArray(
+                new JsonObject
+                {
+                    ["identityField0"] = "A",
+                    ["children"] = new JsonArray(
+                        new JsonObject
+                        {
+                            ["identityField0"] = "C1",
+                            ["grandchildren"] = new JsonArray(new JsonObject { ["identityField0"] = "G1" }),
+                        }
+                    ),
+                }
+            ),
+        };
+
+        var grandchildG1Candidate = ThreeLevelTopologyBuilders.BuildGrandchildCandidate(
+            grandchildrenPlan,
+            "G1",
+            0
+        );
+        var childC1Candidate = ThreeLevelTopologyBuilders.BuildChildCandidate(
+            childrenPlan,
+            "C1",
+            0,
+            nestedGrandchildren: [grandchildG1Candidate]
+        );
+        var candidateA = NestedTopologyBuilders.BuildParentCandidate(
+            parentsPlan,
+            "A",
+            0,
+            nestedChildren: [childC1Candidate]
+        );
+
+        var requestItems = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentRequestItem("A", arrayIndex: 0),
+            NestedTopologyBuilders.BuildChildRequestItem(
+                parentSemanticIdentity: "A",
+                childIdentity: "C1",
+                parentArrayIndex: 0,
+                childArrayIndex: 0
+            ),
+            ThreeLevelTopologyBuilders.BuildGrandchildRequestItem(
+                parentSemanticIdentity: "A",
+                childSemanticIdentity: "C1",
+                grandchildIdentity: "G1",
+                parentArrayIndex: 0,
+                childArrayIndex: 0,
+                grandchildArrayIndex: 0,
+                creatable: true
+            )
+        );
+
+        var request = NestedTopologyBuilders.BuildRequest(body, requestItems);
+        var flattened = NestedTopologyBuilders.BuildFlattenedWriteSet(rootPlan, [candidateA]);
+
+        // Stored visible: parent A and middle child A.C1 both exist, so the middle parent is an existing
+        // matched-update and the new grandchild under it is a permitted create.
+        var storedRows = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentStoredRow("A"),
+            NestedTopologyBuilders.BuildChildStoredRow("A", "C1")
+        );
+
+        var context = NestedTopologyBuilders.BuildContext(request, storedRows);
+        var currentState = ThreeLevelTopologyBuilders.BuildCurrentState(
+            rootPlan,
+            parentsPlan,
+            childrenPlan,
+            grandchildrenPlan,
+            DocumentId,
+            parentRows:
+            [
+                [ParentAItemId, DocumentId, 1, "A"],
+            ],
+            childRows:
+            [
+                [ExistingChildItemId, ParentAItemId, 1, "C1"],
+            ],
+            grandchildRows: []
+        );
+
+        var outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+
+        return (outcome, grandchildrenPlan);
+    }
+
+    // New visible middle parent A.C2 (no stored match) declared non-creatable, so the descendant create is
+    // rejected at the middle (children) scope before the grandchild is reached.
+    private static ProfileMergeOutcome BuildNewMiddleParentOutcome()
+    {
+        var (plan, parentsPlan, childrenPlan, grandchildrenPlan) =
+            ThreeLevelTopologyBuilders.BuildThreeLevelPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        var body = new JsonObject
+        {
+            ["parents"] = new JsonArray(
+                new JsonObject
+                {
+                    ["identityField0"] = "A",
+                    ["children"] = new JsonArray(
+                        new JsonObject
+                        {
+                            ["identityField0"] = "C2",
+                            ["grandchildren"] = new JsonArray(new JsonObject { ["identityField0"] = "G2" }),
+                        }
+                    ),
+                }
+            ),
+        };
+
+        var grandchildG2Candidate = ThreeLevelTopologyBuilders.BuildGrandchildCandidate(
+            grandchildrenPlan,
+            "G2",
+            0
+        );
+        var childC2Candidate = ThreeLevelTopologyBuilders.BuildChildCandidate(
+            childrenPlan,
+            "C2",
+            0,
+            nestedGrandchildren: [grandchildG2Candidate]
+        );
+        var candidateA = NestedTopologyBuilders.BuildParentCandidate(
+            parentsPlan,
+            "A",
+            0,
+            nestedChildren: [childC2Candidate]
+        );
+
+        var requestItems = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentRequestItem("A", arrayIndex: 0),
+            NestedTopologyBuilders.BuildChildRequestItem(
+                parentSemanticIdentity: "A",
+                childIdentity: "C2",
+                parentArrayIndex: 0,
+                childArrayIndex: 0,
+                creatable: false
+            ),
+            ThreeLevelTopologyBuilders.BuildGrandchildRequestItem(
+                parentSemanticIdentity: "A",
+                childSemanticIdentity: "C2",
+                grandchildIdentity: "G2",
+                parentArrayIndex: 0,
+                childArrayIndex: 0,
+                grandchildArrayIndex: 0,
+                creatable: true
+            )
+        );
+
+        var request = NestedTopologyBuilders.BuildRequest(body, requestItems);
+        var flattened = NestedTopologyBuilders.BuildFlattenedWriteSet(rootPlan, [candidateA]);
+
+        // Stored visible: only parent A. The middle child C2 has no stored match, so it is a new create; being
+        // non-creatable, it is rejected at the children scope before the grandchild is reached.
+        var storedRows = ImmutableArray.Create(NestedTopologyBuilders.BuildParentStoredRow("A"));
+
+        var context = NestedTopologyBuilders.BuildContext(request, storedRows);
+        var currentState = ThreeLevelTopologyBuilders.BuildCurrentState(
+            rootPlan,
+            parentsPlan,
+            childrenPlan,
+            grandchildrenPlan,
+            DocumentId,
+            parentRows:
+            [
+                [ParentAItemId, DocumentId, 1, "A"],
+            ],
+            childRows: [],
+            grandchildRows: []
+        );
+
+        return BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_allows_the_descendant_create_under_an_existing_middle_parent() =>
+        _existingMiddleParentOutcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_inserts_the_descendant_row_under_the_existing_middle_parent()
+    {
+        var grandchildrenTable = _existingMiddleParentOutcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _acceptanceGrandchildrenPlan.TableModel.Table
+        );
+        grandchildrenTable.MergedRows.Length.Should().Be(1);
+
+        // The new grandchild must attach to the EXISTING middle parent's collection item id with the
+        // expected contiguous ordinal — wrong-parent attachment or a wrong ordinal must fail, not
+        // just a wrong identity value.
+        var mergedRow = grandchildrenTable.MergedRows[0];
+        ((FlattenedWriteValue.Literal)mergedRow.Values[1]).Value.Should().Be(ExistingChildItemId);
+        ((FlattenedWriteValue.Literal)mergedRow.Values[2]).Value.Should().Be(0);
+        ((FlattenedWriteValue.Literal)mergedRow.Values[3]).Value.Should().Be("G1");
+    }
+
+    [Test]
+    public void It_rejects_the_descendant_create_under_a_newly_created_middle_parent() =>
+        _newMiddleParentOutcome.IsRejection.Should().BeTrue();
+
+    [Test]
+    public void It_identifies_the_new_middle_parent_scope_in_the_rejection() =>
+        _newMiddleParentOutcome
+            .CreatabilityRejection!.ScopeJsonScope.Should()
+            .Be(ThreeLevelTopologyBuilders.ChildrenScope);
+}
+
+/// <summary>
 /// Fixture 6 (Task 13). Top-level parent matched-update; under that parent, three stored
 /// nested children: two visible (both omitted from request → delete-by-absence), one hidden
 /// (preserved). Asserts: nested merged rows = 1 (the hidden); the two visible rows are

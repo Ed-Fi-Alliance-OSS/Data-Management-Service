@@ -19,6 +19,7 @@
         </PackageReference>
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="JsonSchema.Net" />
+        <PackageReference Include="Microsoft.Data.SqlClient" />
         <PackageReference Include="Microsoft.Extensions.Configuration" />
         <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
         <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
@@ -47,6 +48,8 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
+        <!-- Reuse the tested MSSQL database-reset SQL (MssqlDatabaseResetSql) for the engine-aware E2E reset. -->
+        <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Tests.Integration.Common\EdFi.DataManagementService.Backend.Tests.Integration.Common.csproj" />
     </ItemGroup>
     <ItemGroup>
         <Using Include="NUnit.Framework" />

@@ -390,148 +390,65 @@ public class Given_PageDocumentIdSqlCompiler_with_namespace_authorization
     }
 
     [Test]
-    public void It_emits_a_pgsql_descriptor_alias_LIKE_ANY_predicate_when_the_namespace_check_targets_dms_Descriptor()
+    public void It_binds_the_pgsql_namespace_check_to_the_root_alias_without_a_self_join_when_the_query_roots_on_dms_Descriptor()
     {
         var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Pgsql);
 
         var plan = compiler.Compile(
-            CreateDescriptorNamespaceOnlySpec(SqlDialect.Pgsql, ["uri://ed-fi.org/", "uri://gbisd.edu/"])
-        );
-
-        plan.PageDocumentIdSql.Should()
-            .Contain("(d.\"Namespace\" IS NOT NULL AND d.\"Namespace\" LIKE ANY(@namespacePrefixes))");
-        plan.PageDocumentIdSql.Should().NotContain("r.\"Namespace\"");
-    }
-
-    [Test]
-    public void It_emits_a_mssql_descriptor_alias_OR_chain_LIKE_predicate_when_the_namespace_check_targets_dms_Descriptor()
-    {
-        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
-
-        var plan = compiler.Compile(
-            CreateDescriptorNamespaceOnlySpec(SqlDialect.Mssql, ["uri://ed-fi.org/", "uri://gbisd.edu/"])
-        );
-
-        plan.PageDocumentIdSql.Should()
-            .Contain(
-                "(d.[Namespace] IS NOT NULL AND ("
-                    + "d.[Namespace] LIKE @namespacePrefixes_0 ESCAPE '\\' "
-                    + "OR d.[Namespace] LIKE @namespacePrefixes_1 ESCAPE '\\'"
-                    + "))"
-            );
-        plan.PageDocumentIdSql.Should().NotContain("r.[Namespace]");
-    }
-
-    [Test]
-    public void It_triggers_the_descriptor_join_when_only_a_descriptor_namespace_check_is_present()
-    {
-        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Pgsql);
-
-        var plan = compiler.Compile(
-            CreateDescriptorNamespaceOnlySpec(SqlDialect.Pgsql, ["uri://ed-fi.org/"])
-        );
-
-        plan.PageDocumentIdSql.Should()
-            .Contain("INNER JOIN \"dms\".\"Descriptor\" d ON d.\"DocumentId\" = r.\"DocumentId\"");
-    }
-
-    [Test]
-    public void It_triggers_the_descriptor_join_in_total_count_sql_when_only_a_descriptor_namespace_check_is_present()
-    {
-        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Pgsql);
-
-        var plan = compiler.Compile(
-            CreateDescriptorNamespaceOnlySpec(
+            CreateDescriptorRootNamespaceOnlySpec(
                 SqlDialect.Pgsql,
-                ["uri://ed-fi.org/"],
+                ["uri://ed-fi.org/", "uri://gbisd.edu/"],
                 includeTotalCountSql: true
             )
         );
 
+        plan.PageDocumentIdSql.Should().Contain("FROM \"dms\".\"Descriptor\" r");
+        plan.PageDocumentIdSql.Should().NotContain("INNER JOIN");
+        plan.PageDocumentIdSql.Should()
+            .Contain("(r.\"Namespace\" IS NOT NULL AND r.\"Namespace\" LIKE ANY(@namespacePrefixes))");
         plan.TotalCountSql.Should().NotBeNull();
-        plan.TotalCountSql!.Should()
-            .Contain("INNER JOIN \"dms\".\"Descriptor\" d ON d.\"DocumentId\" = r.\"DocumentId\"");
+        plan.TotalCountSql!.Should().NotContain("INNER JOIN");
         plan.TotalCountSql.Should()
-            .Contain("(d.\"Namespace\" IS NOT NULL AND d.\"Namespace\" LIKE ANY(@namespacePrefixes))");
+            .Contain("(r.\"Namespace\" IS NOT NULL AND r.\"Namespace\" LIKE ANY(@namespacePrefixes))");
     }
 
     [Test]
-    public void It_keeps_the_document_alias_for_root_predicates_when_a_descriptor_namespace_check_is_emitted()
+    public void It_binds_the_mssql_namespace_check_to_the_root_alias_without_a_self_join_when_the_query_roots_on_dms_Descriptor()
     {
-        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Pgsql);
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
 
         var plan = compiler.Compile(
-            CreateDescriptorSpecWithResourceKeyAndNamespace(SqlDialect.Pgsql, ["uri://ed-fi.org/"])
+            CreateDescriptorRootNamespaceOnlySpec(SqlDialect.Mssql, ["uri://ed-fi.org/", "uri://gbisd.edu/"])
         );
 
-        plan.PageDocumentIdSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
+        plan.PageDocumentIdSql.Should().Contain("FROM [dms].[Descriptor] r");
+        plan.PageDocumentIdSql.Should().NotContain("INNER JOIN");
         plan.PageDocumentIdSql.Should()
-            .Contain("(d.\"Namespace\" IS NOT NULL AND d.\"Namespace\" LIKE ANY(@namespacePrefixes))");
+            .Contain(
+                "(r.[Namespace] IS NOT NULL AND ("
+                    + "r.[Namespace] LIKE @namespacePrefixes_0 ESCAPE '\\' "
+                    + "OR r.[Namespace] LIKE @namespacePrefixes_1 ESCAPE '\\'"
+                    + "))"
+            );
     }
 
     [Test]
-    public void It_brackets_the_descriptor_namespace_AND_group_alongside_a_descriptor_column_predicate()
+    public void It_throws_when_a_descriptor_namespace_check_is_paired_with_a_document_root()
     {
+        // Descriptor queries root on dms.Descriptor, so a dms.Descriptor namespace check paired
+        // with a dms.Document root has no production planner. The compiler must fail closed
+        // rather than silently binding the check to a table that is not in the query.
         var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Pgsql);
 
-        var plan = compiler.Compile(
-            CreateDescriptorSpecWithCodeValueAndNamespace(SqlDialect.Pgsql, ["uri://ed-fi.org/"])
-        );
+        var act = () =>
+            compiler.Compile(CreateDescriptorNamespaceOnlySpec(SqlDialect.Pgsql, ["uri://ed-fi.org/"]));
 
-        plan.PageDocumentIdSql.Should().Contain("d.\"CodeValue\" = @codeValue");
-        plan.PageDocumentIdSql.Should()
-            .Contain("(d.\"Namespace\" IS NOT NULL AND d.\"Namespace\" LIKE ANY(@namespacePrefixes))");
-        plan.PageDocumentIdSql.Should()
-            .Contain("INNER JOIN \"dms\".\"Descriptor\" d ON d.\"DocumentId\" = r.\"DocumentId\"");
-    }
-
-    [Test]
-    public void It_lists_descriptor_namespace_prefix_parameters_in_the_page_parameter_inventory()
-    {
-        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Pgsql);
-
-        var plan = compiler.Compile(
-            CreateDescriptorNamespaceOnlySpec(SqlDialect.Pgsql, ["uri://ed-fi.org/", "uri://gbisd.edu/"])
-        );
-
-        plan.PageParametersInOrder.Select(static p => p.ParameterName)
-            .Should()
-            .Equal("namespacePrefixes", "offset", "limit");
-        plan.PageParametersInOrder.First(static p => p.ParameterName == "namespacePrefixes")
-            .Binding.Kind.Should()
-            .Be(QuerySqlParameterBindingKind.PgsqlArray);
-    }
-
-    [Test]
-    public void It_still_throws_when_a_namespace_check_targets_a_table_that_is_neither_the_query_root_nor_dms_Descriptor()
-    {
-        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Pgsql);
-        var spec = new PageDocumentIdQuerySpec(
-            RootTable: _documentTable,
-            Predicates: [],
-            UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-            Authorization: new PageDocumentIdAuthorizationSpec(
-                Strategies: [],
-                NamespaceChecks:
-                [
-                    new NamespaceAuthorizationCheckSpec(
-                        0,
-                        NamespaceAuthorizationCheckValueSource.Stored,
-                        new DbTableName(_edfiSchema, "SomeOtherTable"),
-                        _namespaceColumn
-                    ),
-                ],
-                NamespacePrefixParameterization: NamespacePrefixParameterizationFactory.Create(
-                    SqlDialect.Pgsql,
-                    ["uri://ed-fi.org/"],
-                    "namespacePrefixes"
-                )
-            )
-        );
-
-        var act = () => compiler.Compile(spec);
-
-        act.Should().Throw<InvalidOperationException>();
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Namespace authorization check spec table '{_descriptorTable}' does not match query root table '{_documentTable}'. "
+                    + "Namespace authorization SQL emission supports only concrete root-table columns."
+            );
     }
 
     private static PageDocumentIdQuerySpec CreateDescriptorNamespaceOnlySpec(
@@ -563,61 +480,16 @@ public class Given_PageDocumentIdSqlCompiler_with_namespace_authorization
             )
         );
 
-    private static PageDocumentIdQuerySpec CreateDescriptorSpecWithResourceKeyAndNamespace(
+    private static PageDocumentIdQuerySpec CreateDescriptorRootNamespaceOnlySpec(
         SqlDialect dialect,
-        IReadOnlyList<string> namespacePrefixes
+        IReadOnlyList<string> namespacePrefixes,
+        bool includeTotalCountSql = false
     ) =>
         new(
-            RootTable: _documentTable,
-            Predicates:
-            [
-                new QueryValuePredicate(
-                    new DbColumnName("ResourceKeyId"),
-                    QueryComparisonOperator.Equal,
-                    "resourceKeyId"
-                ),
-            ],
+            RootTable: _descriptorTable,
+            Predicates: [],
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-            Authorization: new PageDocumentIdAuthorizationSpec(
-                Strategies: [],
-                NamespaceChecks:
-                [
-                    new NamespaceAuthorizationCheckSpec(
-                        0,
-                        NamespaceAuthorizationCheckValueSource.Stored,
-                        _descriptorTable,
-                        _namespaceColumn
-                    ),
-                ],
-                NamespacePrefixParameterization: NamespacePrefixParameterizationFactory.Create(
-                    dialect,
-                    namespacePrefixes,
-                    "namespacePrefixes"
-                )
-            )
-        );
-
-    private static PageDocumentIdQuerySpec CreateDescriptorSpecWithCodeValueAndNamespace(
-        SqlDialect dialect,
-        IReadOnlyList<string> namespacePrefixes
-    ) =>
-        new(
-            RootTable: _documentTable,
-            Predicates:
-            [
-                new QueryValuePredicate(
-                    new DbColumnName("ResourceKeyId"),
-                    QueryComparisonOperator.Equal,
-                    "resourceKeyId"
-                ),
-                new QueryValuePredicate(
-                    new QueryPredicateTarget.DescriptorColumn(new DbColumnName("CodeValue")),
-                    QueryComparisonOperator.Equal,
-                    "codeValue",
-                    ScalarKind.String
-                ),
-            ],
-            UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
+            IncludeTotalCountSql: includeTotalCountSql,
             Authorization: new PageDocumentIdAuthorizationSpec(
                 Strategies: [],
                 NamespaceChecks:

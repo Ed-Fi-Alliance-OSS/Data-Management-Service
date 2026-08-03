@@ -1,7 +1,7 @@
 Feature: The Change Queries availableChangeVersions endpoint reports the oldest and newest change versions available in the DMS.
 
         @API-261
-        @e2e-ci-shard-4
+        @e2e-ci-shard-4 @MssqlRepresentative
         Scenario: 01 GET availableChangeVersions returns the ODS-compatible contract when authenticated
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org"
              When a GET request is made to "/changeQueries/v1/availableChangeVersions"

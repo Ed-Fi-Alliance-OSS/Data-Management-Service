@@ -30,7 +30,7 @@ public class Given_AuthorizationParameterBudget
             "ClaimEducationOrganizationIds"
         );
 
-        // The 2,100 ceiling is SQL Server-specific. Even with a query parameter count that would blow that
+        // The 2,098 ceiling is SQL Server-specific. Even with a query parameter count that would blow that
         // ceiling, PostgreSQL is never flagged: it allows far more command parameters and binds each list
         // as a single array/table-valued parameter.
         AuthorizationParameterBudget
@@ -74,16 +74,17 @@ public class Given_AuthorizationParameterBudget
     {
         var namespacePrefixParameterization = NamespacePrefixParameterizationFactory.Create(
             SqlDialect.Mssql,
-            CreateNamespacePrefixes(1049),
+            CreateNamespacePrefixes(1048),
             "namespacePrefixes"
         );
         var claimParameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
             SqlDialect.Mssql,
-            CreateClaimEducationOrganizationIds(1049),
+            CreateClaimEducationOrganizationIds(1048),
             "ClaimEducationOrganizationIds"
         );
 
-        // 1,049 + 1,049 + 2 paging == 2,100, exactly the SQL Server per-command ceiling, which is allowed.
+        // 1,048 + 1,048 + 2 paging == 2,098, exactly the usable SQL Server per-command ceiling (the 2,100
+        // RPC limit less the two slots sp_executesql takes for @stmt/@params), which is allowed.
         AuthorizationParameterBudget
             .ExceedsCommandParameterLimit(
                 SqlDialect.Mssql,
@@ -100,16 +101,17 @@ public class Given_AuthorizationParameterBudget
     {
         var namespacePrefixParameterization = NamespacePrefixParameterizationFactory.Create(
             SqlDialect.Mssql,
-            CreateNamespacePrefixes(1050),
+            CreateNamespacePrefixes(1049),
             "namespacePrefixes"
         );
         var claimParameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
             SqlDialect.Mssql,
-            CreateClaimEducationOrganizationIds(1049),
+            CreateClaimEducationOrganizationIds(1048),
             "ClaimEducationOrganizationIds"
         );
 
-        // 1,050 + 1,049 + 2 paging == 2,101, one past the SQL Server per-command ceiling.
+        // 1,049 + 1,048 + 2 paging == 2,099, one past the usable SQL Server per-command ceiling. This is
+        // inside the documented 2,100 RPC limit, so only counting the sp_executesql overhead catches it.
         AuthorizationParameterBudget
             .ExceedsCommandParameterLimit(
                 SqlDialect.Mssql,
@@ -158,7 +160,7 @@ public class Given_AuthorizationParameterBudget
             "namespacePrefixes"
         );
 
-        // 1,999 scalar prefix parameters + 100 query filter parameters + 2 paging == 2,101, one past the
+        // 1,999 scalar prefix parameters + 98 query filter parameters + 2 paging == 2,099, one past the
         // ceiling, even though the prefix list alone is within its own per-list cap and no relationship
         // parameterization is present.
         AuthorizationParameterBudget
@@ -166,7 +168,7 @@ public class Given_AuthorizationParameterBudget
                 SqlDialect.Mssql,
                 namespacePrefixParameterization,
                 claimEducationOrganizationIdParameterization: null,
-                nonAuthorizationParameterCount: 100 + PagingOnly
+                nonAuthorizationParameterCount: 98 + PagingOnly
             )
             .Should()
             .BeTrue();
@@ -181,13 +183,13 @@ public class Given_AuthorizationParameterBudget
             "namespacePrefixes"
         );
 
-        // 1,999 + 99 query filter parameters + 2 paging == 2,100, exactly at the ceiling.
+        // 1,999 + 97 query filter parameters + 2 paging == 2,098, exactly at the ceiling.
         AuthorizationParameterBudget
             .ExceedsCommandParameterLimit(
                 SqlDialect.Mssql,
                 namespacePrefixParameterization,
                 claimEducationOrganizationIdParameterization: null,
-                nonAuthorizationParameterCount: 99 + PagingOnly
+                nonAuthorizationParameterCount: 97 + PagingOnly
             )
             .Should()
             .BeFalse();
@@ -202,14 +204,14 @@ public class Given_AuthorizationParameterBudget
             "ClaimEducationOrganizationIds"
         );
 
-        // 1,999 scalar claim parameters + 100 query filter parameters + 2 paging == 2,101, one past the
+        // 1,999 scalar claim parameters + 98 query filter parameters + 2 paging == 2,099, one past the
         // ceiling, with no namespace parameterization present.
         AuthorizationParameterBudget
             .ExceedsCommandParameterLimit(
                 SqlDialect.Mssql,
                 namespacePrefixParameterization: null,
                 claimParameterization,
-                nonAuthorizationParameterCount: 100 + PagingOnly
+                nonAuthorizationParameterCount: 98 + PagingOnly
             )
             .Should()
             .BeTrue();

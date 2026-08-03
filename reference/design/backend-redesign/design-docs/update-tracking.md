@@ -60,14 +60,15 @@ Those referrer updates naturally trigger the same stamping rules as “direct”
 
 ## Core concepts
 
-### Representation stamps (served metadata)
+### Representation tracking metadata
 
-Each persisted document maintains a **representation stamp** on `dms.Document`:
+Each persisted document maintains representation-tracking metadata on `dms.Document`:
 
-- `ContentVersion` (`bigint`, globally monotonic)
-- `ContentLastModifiedAt` (UTC timestamp)
+- `ContentVersion` (`bigint`, globally monotonic), the representation stamp
+- `ContentLastModifiedAt` (UTC timestamp), whose provider precision is retained in storage
+  and whose whole-second UTC formatting supplies `_lastModifiedDate`
 
-Note: `dms.Document` also carries non-stamp metadata used by other subsystems (e.g., `CreatedByOwnershipTokenId` for ownership-based authorization; see `auth.md`). Stamping rules defined in this document are unchanged by those additional columns.
+Note: `dms.Document` also carries metadata used by other subsystems (e.g., `CreatedByOwnershipTokenId` for ownership-based authorization; see `auth.md`). Update-tracking rules defined in this document are unchanged by those additional columns.
 
 These are the source of truth for:
 
@@ -89,7 +90,7 @@ These are updated only when the document’s own identity/URI projection changes
 
 ### Global sequence
 
-All stamps are allocated from a single global sequence:
+All version stamps are allocated from a single global sequence:
 
 - PostgreSQL: `nextval('dms.ChangeVersionSequence')`
 - SQL Server: `NEXT VALUE FOR dms.ChangeVersionSequence`
@@ -153,11 +154,51 @@ Notes:
   - when a trigger stamps N `dms.Document` rows, it MUST allocate N distinct `ChangeVersionSequence` values (one per affected `DocumentId`).
   - SQL Server: do **not** assign `NEXT VALUE FOR dms.ChangeVersionSequence` to a variable and reuse it; use `NEXT VALUE FOR dms.ChangeVersionSequence` directly in the set-based `UPDATE` that stamps `dms.Document` (and dedupe `DocumentId`s so each document is updated once per trigger execution).
 
+### Projection work follows every committed content stamp
+
+When `dms.DocumentCacheState.ProjectionLifecycleState` is `Tracking`, `Resetting`, or
+`Rebuilding`, the provider `dms.Document` enqueue trigger records the inserted or changed
+`ContentVersion` in `dms.DocumentProjectionWork` in the same transaction. It preserves one
+coalesced current requirement per document. In `Disabled`, it records no projection work.
+The trigger requires exactly the `StateId = 1` lifecycle row. A missing singleton or an
+unreadable/invalid lifecycle fails the canonical transaction and is never interpreted as
+`Disabled`.
+
+This rule applies to every supported path that initializes or changes `ContentVersion`:
+
+- direct root, child, and extension writes;
+- set-based `*_Stamp` trigger updates;
+- propagated reference-identity cascades;
+- descriptor writes;
+- out-of-band representation restamping; and
+- multi-document/bulk stamping.
+
+A no-op write that does not change `ContentVersion` does not enqueue. A canonical delete
+cascades any pending work. In every enqueue-enabled lifecycle state, failure to insert or
+advance the required work rolls back the complete transaction, including the content
+stamp and all associated resource/derived changes. The application never retries only the
+enqueue after commit; retryable provider failures replay the complete canonical
+transaction.
+
+On SQL Server, indirect `*_Stamp` updates depend on the server-level nested-trigger
+setting. DMS validates `sys.configurations.value_in_use = 1` when initializing a target
+execution context and before activation from `Disabled`; generated stamping triggers do
+not recheck it. Changing the setting after successful validation while lifecycle is
+enqueue-enabled is unsupported in v1 and can allow an indirect stamp to commit without its
+required work. Validation and the unsupported-change boundary are owned by
+[`cdc-streaming.md`](cdc/cdc-streaming.md#configuration-and-projection-target-selection).
+
+Projection work is current-state materialization inventory. It is not Change Query
+history, does not change `ChangeVersion` semantics, and is not returned by any Change
+Queries endpoint.
+
 ## Serving API metadata (normative)
 
 For a document `P`:
 
-- `_lastModifiedDate(P) = dms.Document.ContentLastModifiedAt`
+- `_lastModifiedDate(P) = formatUtcWholeSeconds(dms.Document.ContentLastModifiedAt)` using
+  the existing DMS `yyyy-MM-ddTHH:mm:ssZ` representation; fractional seconds are discarded
+  without rounding
 - `ChangeVersion(P) = dms.Document.ContentVersion`
 - `_etag(P)` is composed, not hashed:
 
@@ -180,14 +221,17 @@ For a document `P`:
     hydrate-materialize-hash readback of the document that this design eliminates.
 
 This design does not compute `_etag` from the document body or from dependency scans at read time.
-Representation-state change is tracked by stored `ContentVersion`/`ContentLastModifiedAt`; `_etag`
-additionally reflects the representation selectors via `variantKey`.
+Representation-state change is tracked by stored `ContentVersion`; `ContentLastModifiedAt` supplies
+the representation's `_lastModifiedDate` payload metadata. `_etag` additionally reflects the
+representation selectors via `variantKey`.
 
-Interaction with `dms.DocumentCache` (when enabled): the cache stores the caller-agnostic pre-profile
-document keyed by `(DocumentId, ContentVersion)`. The cache does **not** store a single materialized
-`_etag`, because `_etag` is representation-specific; instead the server composes `_etag` per request
-from the cached `ContentVersion` and the request's `variantKey`. Freshness is judged on
-`ContentVersion` alone.
+When an API read uses `dms.DocumentCache`, it applies the same rule: compose the
+request-specific validator from the cached `ContentVersion` and the active request
+`variantKey`; API reads do not use `StreamEtag`. The fixed CDC representation and
+`StreamEtag` materialization are owned by the
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract),
+and stream compatibility, correction, and consumer behavior are owned by the
+[topic/message ADR](cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes).
 
 ### `variantKey` encoding (normative)
 
@@ -243,10 +287,26 @@ Change Query candidate selection is defined in [change-queries.md](change-querie
 - `/availableChangeVersions` is served by `GetMaxChangeVersion` (`"dms"."GetMaxChangeVersion"()` in PostgreSQL, `[dms].[GetMaxChangeVersion]` in SQL Server).
 
 `update-tracking.md` owns the stamping contract on `dms.Document` and how `_etag` / `_lastModifiedDate` are derived. It does not own the SQL or storage shape of candidate selection.
+The projection enqueue consequence of a stamp is described above; its table, trigger, and
+acknowledgement contracts are owned by
+[`data-model.md`](data-model.md#6a-dmsdocumentprojectionwork-always-provisioned-durable-projection-work)
+and the
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#transactional-enqueue).
 
 ## ETag preconditions (`If-Match` and `If-None-Match`)
 
 With stored representation stamps:
+
+Comparison basis summary:
+
+| Surface | Comparison function | `ContentVersion` | `schemaEpoch` | `format` | `profileCode` | `linkFlag` | `contentCoding` | Failure / match result |
+|---|---|---|---|---|---|---|---|---|
+| Served `_etag` / `ETag` emission | N/A; compose full strong validator | Included | Included | Included | Included | Included | Included | Distinct tag per served byte-representation |
+| Conditional GET `If-None-Match` | RFC weak comparison against full served tag | Significant | Significant | Significant | Significant | Significant | Significant | Any match returns `304` |
+| Write `If-Match` | RFC strong comparison over state-significant projection | Significant | Significant | Ignored | Ignored | Ignored | Ignored | Mismatch returns `412` |
+| Write `If-None-Match` | RFC weak comparison over state-significant projection | Significant | Significant | Ignored | Ignored | Ignored | Ignored | Any match returns `412` |
+| Bare `If-Match: *` | Existence precondition | Not compared | Not compared | Not compared | Not compared | Not compared | Not compared | Missing current representation returns `412` |
+| Bare `If-None-Match: *` | Non-existence precondition | Not compared | Not compared | Not compared | Not compared | Not compared | Not compared | Existing current representation returns `412` |
 
 - GET returns `_etag` as `"{ContentVersion}-{variantKey}"` for the representation actually served
   (see "Serving API metadata"). It is a strong validator under RFC 9110 §8.8.1.

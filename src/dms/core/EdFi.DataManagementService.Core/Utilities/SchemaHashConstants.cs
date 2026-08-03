@@ -21,7 +21,7 @@ public static class SchemaHashConstants
     /// Bump this when mapping rules change to force schema mismatch detection.
     /// This value MUST match the relational_mapping_version used in .mpack files.
     /// </summary>
-    public const string RelationalMappingVersion = "v1";
+    public const string RelationalMappingVersion = "v2";
 
     /// <summary>
     /// Version identifier for the resource key seed hash algorithm format.

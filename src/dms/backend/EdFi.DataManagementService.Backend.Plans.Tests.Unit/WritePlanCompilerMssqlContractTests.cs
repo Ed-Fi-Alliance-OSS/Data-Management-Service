@@ -54,7 +54,7 @@ public class Given_Write_Plan_Compiler_For_Mssql_Contract_Safety_Net : WritePlan
             .UpdateByStableRowIdentitySql.Should()
             .Contain("UPDATE [sample].[SchoolExtensionAddressSponsorReference]");
         tablePlan.BulkInsertBatching.ParametersPerRow.Should().Be(tablePlan.ColumnBindings.Length);
-        tablePlan.BulkInsertBatching.MaxParametersPerCommand.Should().Be(2100);
+        tablePlan.BulkInsertBatching.MaxParametersPerCommand.Should().Be(2098);
         tablePlan
             .BulkInsertBatching.MaxRowsPerBatch.Should()
             .Be(tablePlan.BulkInsertBatching.MaxParametersPerCommand / tablePlan.ColumnBindings.Length);

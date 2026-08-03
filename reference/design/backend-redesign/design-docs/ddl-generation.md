@@ -34,8 +34,15 @@ This redesign therefore requires a separate utility (“DDL generation utility�
 
 The DDL generation utility is responsible for database objects derived from the effective schema:
 
-- Core `dms.*` objects required for correctness and update tracking:
+- Core `dms.*` objects required for correctness, projection support, and update tracking:
   - `dms.ResourceKey`, `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`
+  - always-provisioned `dms.DataStoreIdentity`, `dms.DocumentCache`,
+    `dms.DocumentProjectionWork`, and singleton `dms.DocumentCacheState`; projection
+    starts in durable lifecycle state `Disabled`
+  - provider-equivalent `dms.Document` transactional enqueue triggers/functions,
+    lifecycle constraints, work paging/oldest-work indexes, and trigger-execution
+    ownership/grants defined by the
+    [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#transactional-enqueue)
   - update tracking / Change Queries: `dms.ChangeVersionSequence`, `GetMaxChangeVersion` function (`"dms"."GetMaxChangeVersion"()` in PostgreSQL, `[dms].[GetMaxChangeVersion]` in SQL Server)
   - schema fingerprinting: `dms.EffectiveSchema`, `dms.SchemaComponent`
 - Project-derived DDL for Change Queries and update tracking (see [change-queries.md](change-queries.md) and [update-tracking.md](update-tracking.md)):
@@ -43,8 +50,11 @@ The DDL generation utility is responsible for database objects derived from the 
   - per-resource `ContentVersion` / `ContentLastModifiedAt` mirror columns on every `StorageKind = RelationalTables` root and on `dms.Descriptor`, with supporting indexes (`IX_<Table>_ContentVersion`, `IX_Descriptor_Discriminator_ContentVersion`)
   - `*_Stamp` triggers on resource tables and `dms.Descriptor` (extended with `DocumentStamping.ChangeTracking` where applicable), which stamp `dms.Document`, mirror onto `MirrorStampTargetTable`, and populate `tracked_changes_*`
   - ReadChanges authorization views
-- Optional projection objects (performance / integrations):
-  - `dms.DocumentCache` (materialized JSON projection; see [data-model.md](data-model.md))
+- Optional CDC objects:
+  - the opt-in physical `dms.CdcHeartbeat` object defined by
+    [data-model.md](data-model.md#8-dmscdcheartbeat-opt-in-cdc-integration-object)
+  - provider-specific enablement and validation defined by
+    [Relational CDC and Document Projection](cdc/cdc-streaming.md#schema-and-query-integration)
 - Authorization companion objects required for API authorization (see [auth.md](auth.md)):
   - `auth` schema
   - `auth.EducationOrganizationIdToEducationOrganizationId` (table) and its maintenance triggers/functions
@@ -71,10 +81,16 @@ Explicitly out of scope for this redesign phase:
 
 - A deterministic SQL script (recommended even when provisioning directly)
   - All schemas, tables, views, sequences, triggers
+  - Insert-if-absent initialization for the singleton `dms.DataStoreIdentity`; the SQL
+    text is deterministic and the database generates the random UUID at first apply
+  - Insert-if-absent initialization for singleton `dms.DocumentCacheState` with lifecycle
+    `Disabled` and its cache-ahead recovery latch clear; ordinary reruns never reset an
+    existing lifecycle, latch, cache, or pending-work row
   - Deterministic seed inserts for `dms.ResourceKey` (`ResourceKeyId ↔ (ProjectName, ResourceName, ResourceVersion)`)
   - Deterministic `ResourceKeySeedHash`/smallint-bounded `ResourceKeyCount` recorded alongside `EffectiveSchemaHash` in `dms.EffectiveSchema` (fast runtime validation; `ResourceKeySeedHash` stored as raw SHA-256 bytes, 32 bytes)
   - Insert-if-missing statements for the singleton `dms.EffectiveSchema` row and the corresponding `dms.SchemaComponent` rows (keyed by `EffectiveSchemaHash`). These make the emitted SQL script idempotent for standalone execution (`psql -f` / `sqlcmd -i`). Note: when provisioning via `ddl provision`, a preflight check runs first — if the `dms.EffectiveSchema` table exists but the singleton row is missing, this is treated as a partial/corrupt state and provisioning fails fast with a diagnostic directing the operator to drop and recreate the database.
-  - Indexes explicitly called out in the design docs plus supporting indexes for all foreign keys (no query indexes)
+  - Indexes explicitly called out in the design docs plus supporting indexes for all
+    foreign keys; the generator does not infer additional ad hoc query indexes
 - Optional deterministic **diagnostic/test artifacts** (non-SQL) used by the verification harness:
   - `effective-schema.manifest.json` (schema fingerprint inputs + schema components + resource-key seed summary)
   - `relational-model.{dialect}.manifest.json` (per-dialect derived model inventory used to generate DDL and compile plans)
@@ -148,8 +164,10 @@ This inventory is the explicit “what exists in the database” contract that t
 - `dms.Document`
 - `dms.ReferentialIdentity`
 - `dms.Descriptor`
-- Optional projections:
-  - `dms.DocumentCache`
+- `dms.DataStoreIdentity` (singleton source identity stable during ordinary operation)
+- `dms.DocumentCache` (always present; optionally populated/read)
+- `dms.DocumentProjectionWork` (always-present coalesced durable projection work)
+- `dms.DocumentCacheState` (singleton constrained lifecycle plus durable cache-ahead latch)
 - `dms.EffectiveSchema` (singleton current state)
 - `dms.SchemaComponent` (keyed by `EffectiveSchemaHash`)
 - Update tracking / Change Queries:
@@ -162,12 +180,36 @@ This inventory is the explicit “what exists in the database” contract that t
 
 **Triggers (required)**
 
-- None at the core `dms.*` schema layer. Stamping and change-tracking triggers are emitted at the per-project / per-resource layer (see §3); the shared `dms.Descriptor` table receives a `*_Stamp` trigger as part of that pass.
+- `TR_DocumentCache_ValidateDocumentUuid` on `dms.DocumentCache`; PostgreSQL also emits
+  its stable trigger function `TF_DocumentCache_ValidateDocumentUuid`. The trigger rejects
+  an insert or update whose denormalized `DocumentUuid` differs from the canonical
+  `dms.Document` row for the same `DocumentId`. Both dialects' DDL snapshots MUST include
+  the stable trigger name (and the PostgreSQL function name), and provider DB-apply tests
+  MUST prove matching UUIDs are accepted while mismatched inserts and updates are rejected.
+- PostgreSQL emits `TR_Document_EnqueueProjectionInsert` /
+  `TF_Document_EnqueueProjectionInsert` and
+  `TR_Document_EnqueueProjectionUpdate` /
+  `TF_Document_EnqueueProjectionUpdate`. These are separate statement triggers with
+  transition relations for INSERT and UPDATE.
+- SQL Server emits one set-based `TR_Document_EnqueueProjectionWork`
+  `AFTER INSERT, UPDATE` trigger over `inserted` and `deleted`.
+- Provider snapshots, manifests, introspection, and DB-apply tests MUST prove these stable
+  names/counts, multi-row behavior, unchanged-`ContentVersion` filtering and timestamp
+  preservation, lifecycle gating, missing-singleton failure, and error rollback. Enqueue
+  triggers MUST read exactly the `StateId = 1` lifecycle row and MUST NOT interpret a
+  missing or unreadable/invalid lifecycle as `Disabled`. SQL Server generated `*_Stamp`
+  triggers do not read `sys.configurations`; the nested-trigger prerequisite is validated
+  when a target execution context is initialized and before activation from `Disabled`.
+- Stamping and change-tracking triggers are emitted at the per-project / per-resource layer
+  (see §3); the shared `dms.Descriptor` table receives a `*_Stamp` trigger as part of that
+  pass.
 
 **Indexes**
 
 - All PK/UK indexes implied by constraints
-- Additional explicit indexes called out in the design docs (e.g., `IX_Document_ResourceKeyId_DocumentId`)
+- Additional explicit indexes called out in the design docs (e.g., `IX_Descriptor_ResourceKeyId_DocumentId`)
+- `IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId`; no source content-version
+  projector-discovery index is emitted
 - Supporting indexes for all FKs (see “FK index policy” below)
 
 ### 2b) Authorization objects (`auth` schema)
@@ -292,6 +334,9 @@ The emitted SQL must include deterministic DML that establishes the runtime cont
    - If the singleton row already exists with a **different** `EffectiveSchemaHash`, fail fast (this utility is not a migration tool).
 3. `dms.SchemaComponent` inserts for the current `EffectiveSchemaHash`, using insert-if-missing semantics.
    - Validate that the recorded components match the expected project list (exact match); fail on mismatch.
+4. Insert-if-missing of `dms.DocumentCacheState(StateId = 1)` as `Disabled` with a clear
+   latch. If it already exists, validate its constrained shape but preserve lifecycle,
+   latch, cache, and pending work exactly.
 
 ## FK index policy (v1)
 
@@ -315,8 +360,12 @@ This policy applies to:
 3. Derive the relational model set (`DerivedRelationalModelSet`) and naming (as defined in [flattening-reconstitution.md](flattening-reconstitution.md), [compiled-mapping-set.md](compiled-mapping-set.md), and [data-model.md](data-model.md)).
 4. Generate “desired state” DDL for all required objects (schemas, tables, sequences, FKs, unique constraints, indexes, views, triggers).
    - Derive the `dms.ResourceKey` seed set from the effective schema and emit deterministic `INSERT` statements with explicit `ResourceKeyId` values.
-5. Generate the schema-fingerprint recording statements (`dms.EffectiveSchema` singleton row and `dms.SchemaComponent` keyed by `EffectiveSchemaHash`).
-6. Emit SQL and (optionally) provision it.
+5. Generate insert-if-absent singleton initialization for `dms.DataStoreIdentity` and
+   `dms.DocumentCacheState`. The emitted SQL is deterministic; the database generates the
+   random `SourceIdentity` when it first applies the script. Reruns preserve source
+   identity, lifecycle, `CacheAheadRecoveryRequired`, cache rows, and pending work.
+6. Generate the schema-fingerprint recording statements (`dms.EffectiveSchema` singleton row and `dms.SchemaComponent` keyed by `EffectiveSchemaHash`).
+7. Emit SQL and (optionally) provision it.
 
 ## Provision semantics (create-only, no migrations)
 
@@ -357,6 +406,11 @@ Even though the tool is create-only, the generated SQL uses existence-check patt
   - use `CREATE OR ALTER` forms where available for generated programmable objects (views and triggers).
 
 This is not a migration story; it is a guardrail to avoid brittle provisioning scripts.
+Existence checks do not imply an exhaustive catalog preflight or a supported schema-drift
+reconciler. Feature-specific phase-zero checks remain bounded to safety-critical
+fingerprints, singleton preservation, known incompatible legacy artifacts, and required
+provisioning security prerequisites. Other incompatible existing objects may fail through
+ordinary provider DDL execution inside the provisioning transaction.
 
 ### Seed data semantics
 
@@ -377,8 +431,13 @@ This is not a migration story; it is a guardrail to avoid brittle provisioning s
 
 - Provisioning runs in a **single transaction**:
   - all schemas/tables/views/sequences/triggers,
+  - insert-if-absent `dms.DataStoreIdentity` and `dms.DocumentCacheState` initialization,
   - all deterministic seeds (`dms.ResourceKey`, schema fingerprint rows),
   - all required supporting indexes.
+- Deterministic object dependencies create `dms.Document` and
+  `dms.DocumentCacheState` before `dms.DocumentProjectionWork`, add its parent foreign
+  key after both tables exist, and create enqueue functions/triggers and grants only after
+  their referenced objects exist.
 - Any failure rolls back the transaction and the database is left unprovisioned.
 
 ### Optional database creation
@@ -386,6 +445,9 @@ This is not a migration story; it is a guardrail to avoid brittle provisioning s
 - Provisioning can optionally create the target database if it does not exist.
 - Database creation is treated as a **pre-step** (performed before the main transaction) because PostgreSQL `CREATE DATABASE` cannot run inside a transaction block.
 - After the database exists, the utility connects to the target database and runs the main provisioning transaction as described above.
+- A separate writable database created from a template, clone, or copied backup must
+  replace the copied `dms.DataStoreIdentity.SourceIdentity` with a new UUID before the
+  target becomes available. Provider replication/failover retains the existing UUID.
 
 ### Concurrency
 
@@ -427,8 +489,19 @@ Rules:
   4. Add foreign keys (all `ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY ...`)
   5. Create indexes
   6. Create/alter views
-  7. Create triggers (required for update tracking, when enabled)
-  8. Seed deterministic data (`dms.ResourceKey`, `dms.EffectiveSchema`, `dms.SchemaComponent`, etc.)
+  7. Create programmable functions and triggers in deterministic table/name order,
+     including the two PostgreSQL or one SQL Server projection-enqueue trigger
+  8. Apply deterministic least-privilege ownership and grants. PostgreSQL revokes public
+     function/work-table mutation rights and assigns the hardened security-definer owner;
+     SQL Server applies the same-owner ownership-chain contract without `EXECUTE AS`.
+     These objects protect trigger execution but do not separate DMS application
+     capabilities: one deployment-supplied production DMS credential has the union of
+     canonical, projection, and projection-administration permissions, and no generated
+     runtime grant matrix is emitted. E19 owns the separate CDC credential and ensures it
+     receives no work-table access.
+  9. Initialize provisioning data: insert `dms.DataStoreIdentity` and
+     `dms.DocumentCacheState` only when absent, then seed deterministic data
+     (`dms.ResourceKey`, `dms.EffectiveSchema`, `dms.SchemaComponent`, etc.)
 
 Within each phase:
 
@@ -454,6 +527,8 @@ Within each phase:
 - **Views**: order by view name (ordinal).
   - For abstract union views (`{schema}.{AbstractResource}_View`), order `UNION ALL` arms by concrete `ResourceName` (ordinal), then by `ProjectName` (ordinal) as a tie-breaker, and use a fixed select-list order: `DocumentId`, abstract identity fields in `identityJsonPaths` order, then `Discriminator`.
 - **Triggers**: order by table name, then trigger name (ordinal).
+- **Functions and grants**: order by schema-qualified object name, then principal and
+  permission (ordinal).
 - **Seed data**:
   - `dms.ResourceKey` inserts ordered by `ResourceKeyId` ascending (where ids are assigned from the seed list sorted by `(ProjectName, ResourceName)` ordinal).
   - `dms.SchemaComponent` rows ordered by `ProjectEndpointName` ordinal.
@@ -485,6 +560,12 @@ DMS runtime should remain “validate-only”:
   - `api-schema-tools pack build` (emit `.mpack` keyed by `EffectiveSchemaHash`)
   - `api-schema-tools pack manifest` (emit a stable JSON/text manifest for testing/diagnostics; avoids brittle `.mpack` byte comparisons)
 - A shared “artifact emitter” library used by both CLI and tests to produce normalized SQL + manifests for fixture comparisons (see `ddl-generator-testing.md`).
+- Manifests and introspection include projection-work table/columns/constraints/indexes,
+  lifecycle constraint values, state singleton defaults, and trigger/function names and
+  counts. Focused provider catalog assertions cover PostgreSQL function
+  owner/security/search path/grants and SQL Server's absence of `EXECUTE AS`; the generic
+  structural manifest does not become a principal or permission model. DB-apply reruns
+  prove mutable lifecycle/latch/work state is not reset.
 - A test harness that runs the DDL generation utility against empty PostgreSQL and SQL Server instances and verifies:
   - stable naming,
   - DDL success,

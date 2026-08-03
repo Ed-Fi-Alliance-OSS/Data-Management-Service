@@ -33,7 +33,9 @@
         that are not staged as the package-backed core.
 
     After staging the schema workspace, run prepare-dms-claims.ps1 to stage security metadata,
-    then start-local-dms.ps1 (or bootstrap-local-dms.ps1) to launch the stack.
+    then use bootstrap-local-dms.ps1 for the complete infra -> configure -> provision -> DMS
+    sequence. For manual operation, follow the phase-by-phase sequence documented by
+    start-local-dms.ps1; bare start-local-dms.ps1 performs infrastructure lifecycle only.
 
 .PARAMETER ApiSchemaPath
     Expert mode. Path to a local directory containing one or more ApiSchema*.json files.
@@ -56,8 +58,8 @@
 
 .EXAMPLE
     pwsh ./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
-    Standard mode, core only. Resolves EdFi.DataStandard52.ApiSchema from the Ed-Fi package feed
-    and stages it into the bootstrap workspace.
+    Direct standard mode, catalog core-only fallback. Resolves EdFi.DataStandard52.ApiSchema from
+    the Ed-Fi package feed and stages it into the bootstrap workspace.
 
 .EXAMPLE
     pwsh ./prepare-dms-schema.ps1 -EnvironmentFile ../docker-compose/.env.e2e -SchemaToolPath $schemaToolExe
@@ -354,15 +356,15 @@ if (-not (Get-Command Get-BootstrapRoot -ErrorAction SilentlyContinue)) {
 Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-catalog.psm1") -Force -Global
 
 # --- Schema-selection mode ---
-# Expert mode when -ApiSchemaPath is supplied; otherwise package-backed core-only standard mode.
+# Expert mode when -ApiSchemaPath is supplied; otherwise package-backed standard mode.
 # There is no -Extensions parameter: extension/custom schema sets use expert -ApiSchemaPath.
 #
 # Standard mode is selected by OMITTING -ApiSchemaPath entirely. An explicitly bound but blank value
 # (e.g. -ApiSchemaPath "" or -ApiSchemaPath $null) is invalid caller input for expert mode, not a request
-# for standard mode; fail fast rather than silently routing it to package-backed core-only staging.
+# for standard mode; fail fast rather than silently routing it to package-backed staging.
 $apiSchemaPathBound = $PSBoundParameters.ContainsKey("ApiSchemaPath")
 if ($apiSchemaPathBound -and [string]::IsNullOrWhiteSpace($ApiSchemaPath)) {
-    throw "-ApiSchemaPath was supplied but is blank. Provide a path to an ApiSchema directory for expert mode, or omit -ApiSchemaPath entirely to use package-backed core-only standard mode."
+    throw "-ApiSchemaPath was supplied but is blank. Provide a path to an ApiSchema directory for expert mode, or omit -ApiSchemaPath entirely to use package-backed standard mode."
 }
 $hasApiSchemaPath = $apiSchemaPathBound
 
@@ -617,7 +619,16 @@ function Invoke-SchemaWorkspaceStaging {
         # from the manifest-declared (contract-validated) asset paths instead of sibling
         # rediscovery; expert mode omits it, skipping the assertion and using sibling discovery.
         [hashtable]
-        $ExpectedIdentities
+        $ExpectedIdentities,
+
+        # Optional "<packageId>@<version>" identity list for the staged package set, recorded into
+        # the manifest schema section as selectedPackages. Standard mode supplies it (with the
+        # REQUESTED versions - the same values the env file or catalog declares - so the bootstrap
+        # wrapper can later compare a staged workspace against the effective SCHEMA_PACKAGES value
+        # by full package identity, not just extension tokens, without re-downloading anything).
+        # Expert -ApiSchemaPath mode omits it: a filesystem-staged workspace is not package-driven.
+        [string[]]
+        $SelectedPackages
     )
 
     $schemaProjects = @($SchemaSourceFiles | ForEach-Object { Read-ApiSchemaIdentity -Path $_ })
@@ -788,6 +799,9 @@ function Invoke-SchemaWorkspaceStaging {
             workspaceFingerprint = $workspaceFingerprint
             apiSchemaManifestPath = "ApiSchema/bootstrap-api-schema-manifest.json"
         }
+        if ($null -ne $SelectedPackages) {
+            $schemaSection.Insert(2, "selectedPackages", @($SelectedPackages))
+        }
 
         $rootManifest = Read-BootstrapManifest
         if ($null -eq $rootManifest) {
@@ -894,7 +908,7 @@ function Invoke-StandardModeSchemaStaging {
 
     try {
         # Collect the core ApiSchema.json path plus its validated identity so staging can assert the
-        # schema asset matches the package manifest. Standard mode is core-only.
+        # schema asset matches the package manifest. This direct-invocation fallback is core-only.
         $schemaSourceFiles = [System.Collections.Generic.List[string]]::new()
         $expectedIdentities = @{}
 
@@ -926,7 +940,8 @@ function Invoke-StandardModeSchemaStaging {
         Invoke-SchemaWorkspaceStaging `
             -SchemaSourceFiles $schemaSourceFiles.ToArray() `
             -SelectionMode "Standard" `
-            -ExpectedIdentities $expectedIdentities
+            -ExpectedIdentities $expectedIdentities `
+            -SelectedPackages @("$($corePackage.Id)@$($corePackage.Version)")
     } finally {
         if (Test-Path -LiteralPath $extractionRoot) {
             Remove-Item -LiteralPath $extractionRoot -Recurse -Force
@@ -983,6 +998,7 @@ function Invoke-SchemaPackagesModeSchemaStaging {
     try {
         $schemaSourceFiles = [System.Collections.Generic.List[string]]::new()
         $expectedIdentities = @{}
+        $selectedPackages = [System.Collections.Generic.List[string]]::new()
 
         foreach ($schemaPackage in $schemaPackages) {
             $packageId = [string]$schemaPackage.name
@@ -1018,6 +1034,7 @@ function Invoke-SchemaPackagesModeSchemaStaging {
 
             $schemaSourceFiles.Add($validated.SchemaPath)
             $expectedIdentities[[System.IO.Path]::GetFullPath($validated.SchemaPath)] = $validated
+            $selectedPackages.Add("$packageId@$packageVersion")
         }
 
         # Stage the collected (core + extensions) schema files using the shared staging function.
@@ -1026,7 +1043,8 @@ function Invoke-SchemaPackagesModeSchemaStaging {
         Invoke-SchemaWorkspaceStaging `
             -SchemaSourceFiles $schemaSourceFiles.ToArray() `
             -SelectionMode "Standard" `
-            -ExpectedIdentities $expectedIdentities
+            -ExpectedIdentities $expectedIdentities `
+            -SelectedPackages $selectedPackages.ToArray()
     } finally {
         if (Test-Path -LiteralPath $extractionRoot) {
             Remove-Item -LiteralPath $extractionRoot -Recurse -Force

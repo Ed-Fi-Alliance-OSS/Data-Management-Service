@@ -49,11 +49,11 @@ public class DataStoreDerivativeModule : IEndpointModule
                 }
             ),
             DataStoreDerivativeInsertResult.FailureForeignKeyViolation => Results.Json(
-                FailureResponse.ForBadRequest(
+                FailureResponse.ForUnresolvedReference(
                     "The specified DataStore does not exist.",
                     httpContext.TraceIdentifier
                 ),
-                statusCode: (int)HttpStatusCode.BadRequest
+                statusCode: (int)HttpStatusCode.Conflict
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
@@ -78,7 +78,7 @@ public class DataStoreDerivativeModule : IEndpointModule
     }
 
     private static async Task<IResult> GetById(
-        long id,
+        int id,
         HttpContext httpContext,
         IDataStoreDerivativeRepository repository
     )
@@ -99,7 +99,7 @@ public class DataStoreDerivativeModule : IEndpointModule
     }
 
     private static async Task<IResult> Update(
-        long id,
+        int id,
         DataStoreDerivativeUpdateCommand command,
         DataStoreDerivativeUpdateCommand.Validator validator,
         HttpContext httpContext,
@@ -128,18 +128,18 @@ public class DataStoreDerivativeModule : IEndpointModule
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             DataStoreDerivativeUpdateResult.FailureForeignKeyViolation => Results.Json(
-                FailureResponse.ForBadRequest(
+                FailureResponse.ForUnresolvedReference(
                     "The specified DataStore does not exist.",
                     httpContext.TraceIdentifier
                 ),
-                statusCode: (int)HttpStatusCode.BadRequest
+                statusCode: (int)HttpStatusCode.Conflict
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
 
     private static async Task<IResult> Delete(
-        long id,
+        int id,
         HttpContext httpContext,
         IDataStoreDerivativeRepository repository
     )

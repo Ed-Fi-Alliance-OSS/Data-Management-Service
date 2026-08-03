@@ -215,6 +215,69 @@ public class Given_A_Descriptor_Path
         _edge.Table.Should().Be(new DbTableName(new DbSchemaName("edfi"), "School"));
         _edge.FkColumn.Should().Be(new DbColumnName("SchoolTypeDescriptor_DescriptorId"));
         _edge.DescriptorResource.Should().Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
+        _edge.IsRoleNamed.Should().BeFalse();
+    }
+}
+
+/// <summary>
+/// Test fixture for a role-named descriptor path.
+/// </summary>
+[TestFixture]
+public class Given_A_Role_Named_Descriptor_Path
+{
+    private DescriptorEdgeSource _edge = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["assessedGradeLevelDescriptor"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["maxLength"] = 306,
+                },
+            },
+            ["required"] = new JsonArray("assessedGradeLevelDescriptor"),
+        };
+
+        var descriptorPath = JsonPathExpressionCompiler.Compile("$.assessedGradeLevelDescriptor");
+        var descriptorInfo = new DescriptorPathInfo(
+            descriptorPath,
+            new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
+        );
+
+        var context = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(
+            schema,
+            builderContext =>
+            {
+                builderContext.DescriptorPathsByJsonPath = new Dictionary<string, DescriptorPathInfo>(
+                    StringComparer.Ordinal
+                )
+                {
+                    [descriptorPath.Canonical] = descriptorInfo,
+                };
+            }
+        );
+
+        _edge = context.ResourceModel!.DescriptorEdgeSources.Single();
+    }
+
+    /// <summary>
+    /// It should record role-named metadata.
+    /// </summary>
+    [Test]
+    public void It_should_record_role_named_metadata()
+    {
+        _edge.DescriptorValuePath.Canonical.Should().Be("$.assessedGradeLevelDescriptor");
+        _edge.DescriptorResource.Should().Be(new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor"));
+        _edge.IsRoleNamed.Should().BeTrue();
     }
 }
 

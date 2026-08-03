@@ -76,6 +76,7 @@ grant_type=client_credentials
 ### 1. Get current claims from CMS management endpoint
 # @name currentClaimsBefore
 GET http://localhost:{{configPort}}/config/management/current-claims
+Authorization: bearer {{configToken}}
 
 
 ### 2. View current claimsets in DMS
@@ -94,6 +95,7 @@ GET http://localhost:{{dmsPort}}/management/view-claimsets
 # - Uses NoFurtherAuthorizationRequired for simplicity
 # @name uploadMinimalClaims
 POST http://localhost:{{configPort}}/config/management/upload-claims
+Authorization: bearer {{configToken}}
 Content-Type: application/json
 
 {
@@ -192,6 +194,7 @@ Content-Type: application/json
 ### 1. Get current claims from CMS after upload
 # @name currentClaimsAfterUpload
 GET http://localhost:{{configPort}}/config/management/current-claims
+Authorization: bearer {{configToken}}
 
 
 ### 2. Verify minimal claimset in CMS
@@ -226,6 +229,7 @@ GET http://localhost:{{dmsPort}}/management/view-claimsets
 ### 1. Reload original claims in CMS from file system
 # @name cmsReloadOriginal
 POST http://localhost:{{configPort}}/config/management/reload-claims
+Authorization: bearer {{configToken}}
 
 
 ###
@@ -234,6 +238,7 @@ POST http://localhost:{{configPort}}/config/management/reload-claims
 ### 2. Verify CMS restored to original state
 # @name cmsTestClaimsetRestored
 GET http://localhost:{{configPort}}/config/management/current-claims
+Authorization: bearer {{configToken}}
 
 
 ### 3. Sync DMS with restored CMS state

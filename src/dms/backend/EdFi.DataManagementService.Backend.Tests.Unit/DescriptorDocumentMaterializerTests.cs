@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Etag;
-using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -32,7 +31,7 @@ public class Given_DescriptorDocumentMaterializer
 
         var result = DescriptorDocumentMaterializer.Materialize(
             row,
-            RelationalGetRequestReadMode.ExternalResponse,
+            RelationalReadMaterializationMode.ExternalResponse,
             composedEtag
         );
 
@@ -64,7 +63,7 @@ public class Given_DescriptorDocumentMaterializer
 
         var result = DescriptorDocumentMaterializer.Materialize(
             row,
-            RelationalGetRequestReadMode.StoredDocument,
+            RelationalReadMaterializationMode.StoredDocument,
             composedEtag: null
         );
 
@@ -100,7 +99,7 @@ public class Given_DescriptorDocumentMaterializer
         // the final string through.
         var externalResponse = DescriptorDocumentMaterializer.Materialize(
             row,
-            RelationalGetRequestReadMode.ExternalResponse,
+            RelationalReadMaterializationMode.ExternalResponse,
             "7-deadbeef.j.somecode.n"
         );
 
@@ -122,11 +121,70 @@ public class Given_DescriptorDocumentMaterializer
         var act = () =>
             DescriptorDocumentMaterializer.Materialize(
                 row,
-                RelationalGetRequestReadMode.ExternalResponse,
+                RelationalReadMaterializationMode.ExternalResponse,
                 composedEtag: null
             );
 
         act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Test]
+    public void It_materializes_CacheProjection_documents_with_public_fields_id_last_modified_and_no_etag()
+    {
+        var row = CreateDescriptorRow(
+            documentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-999999999999"),
+            contentLastModifiedAt: new DateTimeOffset(2026, 5, 5, 9, 30, 45, 987, TimeSpan.FromHours(-5)),
+            description: "Alternative school type",
+            effectiveBeginDate: new DateOnly(2025, 1, 15),
+            effectiveEndDate: new DateOnly(2025, 12, 31),
+            discriminator: "SchoolTypeDescriptor"
+        );
+
+        var result = DescriptorDocumentMaterializer.Materialize(
+            row,
+            RelationalReadMaterializationMode.CacheProjection,
+            composedEtag: "ignored-etag"
+        );
+
+        result["namespace"]!.GetValue<string>().Should().Be("uri://ed-fi.org/SchoolTypeDescriptor");
+        result["codeValue"]!.GetValue<string>().Should().Be("Alternative");
+        result["shortDescription"]!.GetValue<string>().Should().Be("Alternative");
+        result["description"]!.GetValue<string>().Should().Be("Alternative school type");
+        result["effectiveBeginDate"]!.GetValue<string>().Should().Be("2025-01-15");
+        result["effectiveEndDate"]!.GetValue<string>().Should().Be("2025-12-31");
+        result["id"]!.GetValue<string>().Should().Be("aaaaaaaa-1111-2222-3333-999999999999");
+        result["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-05T14:30:45Z");
+        result.AsObject().Should().NotContainKey("_etag");
+        result["Uri"].Should().BeNull();
+        result["Discriminator"].Should().BeNull();
+        result["ChangeVersion"].Should().BeNull();
+    }
+
+    [Test]
+    public void It_materializes_CacheProjection_without_requiring_a_composed_etag()
+    {
+        var row = CreateDescriptorRow(
+            documentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-101010101010"),
+            contentLastModifiedAt: new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero),
+            description: null,
+            effectiveBeginDate: null,
+            effectiveEndDate: null,
+            discriminator: null
+        );
+
+        var result = DescriptorDocumentMaterializer.Materialize(
+            row,
+            RelationalReadMaterializationMode.CacheProjection,
+            composedEtag: null
+        );
+
+        result
+            .ToJsonString()
+            .Should()
+            .Be(
+                """{"namespace":"uri://ed-fi.org/SchoolTypeDescriptor","codeValue":"Alternative","shortDescription":"Alternative","id":"aaaaaaaa-1111-2222-3333-101010101010","_lastModifiedDate":"2026-05-05T14:30:45Z"}"""
+            );
+        result.AsObject().Should().NotContainKey("_etag");
     }
 
     private static DescriptorReadRow CreateDescriptorRow(

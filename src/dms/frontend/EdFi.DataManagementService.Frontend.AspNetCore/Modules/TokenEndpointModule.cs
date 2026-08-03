@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -15,12 +16,29 @@ public class TokenEndpointModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
+        var appSettings = endpoints.ServiceProvider.GetRequiredService<IOptions<AppSettings>>();
+        bool multiTenancy = appSettings.Value.MultiTenancy;
+        string routePattern = FixedRoutePattern.Build(
+            appSettings.Value.GetRouteQualifierSegmentsArray(),
+            multiTenancy
+        );
+
+        if (multiTenancy)
+        {
+            MapTokenEndpoints(endpoints, string.Empty);
+        }
+
+        MapTokenEndpoints(endpoints, routePattern);
+    }
+
+    private static void MapTokenEndpoints(IEndpointRouteBuilder endpoints, string routePattern)
+    {
         endpoints
-            .MapPost("/oauth/token", HandleFormData)
+            .MapPost($"{routePattern}/oauth/token", HandleFormData)
             .Accepts<TokenRequest>(contentType: "application/x-www-form-urlencoded")
             .DisableAntiforgery();
         endpoints
-            .MapPost("/oauth/token", HandleJsonData)
+            .MapPost($"{routePattern}/oauth/token", HandleJsonData)
             .Accepts<TokenRequest>(contentType: "application/json")
             .DisableAntiforgery();
     }

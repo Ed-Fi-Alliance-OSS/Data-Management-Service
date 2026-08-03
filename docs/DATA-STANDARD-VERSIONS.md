@@ -106,21 +106,33 @@ Workflows that build per-version artifacts select the version through a per-work
 
 - **Populated template** (`EdFi.Api.Populated.Template.PostgreSQL.yml`) and the
   **scheduled smoke test** (`scheduled-smoke-test.yml`) delegate to the reusable
-  `build-populated-template.yml`. Each matrix leg runs the whole
-  build → SBOM → provenance pipeline as one unit (so per-version outputs stay
-  correlated), and the per-version package name, provenance file, and template env
-  file are read from the matrix `include` entry; **adding a version is adding one
-  `include` entry** (plus the schema artifacts and a template env file for that version).
+  `build-populated-template.yml`.
+  Each matrix leg runs the whole build → SBOM → provenance pipeline as one unit (so
+  per-version outputs stay correlated), and the per-version package name, provenance
+  file, and template env file are read from the matrix leg.
+  For the populated template workflow, that leg is a `standard_version` matrix
+  `include` entry, and **adding a version there is adding one `include` entry**
+  (plus the schema artifacts and a template env file for that version).
   - The **populated template** product workflow (tag/release/`workflow_dispatch`) builds
     both `5.2.0` and `6.1.0`. The `6.1.0` leg is validated by dispatch
     (`publish_package` defaults off) before any release; the reusable workflow's
     `environment_file` allowlist gates which env files may be used.
-  - The **scheduled smoke test** (which also runs on PRs touching its paths) runs both a
-    `5.2.0` and a `6.1.0` leg (the `6.1.0` populated build is validated end-to-end). The
-    ODS-published-SDK sweep stays `5.2.0`-only — it consumes the DS-5.2-specific
-    `EdFi.Suite3.OdsApi.TestSdk.Standard.5.2.0` package — and is gated by a `run_ods_sdk_tests`
-    matrix flag; the `6.1.0` leg's API surface is instead covered by the NonDestructive API tests
-    and the DMS-generated SDK.
+  - The **scheduled smoke test** (which also runs on PRs touching its paths) does not
+    read a static `include` list.
+    A `select-legs` job computes its matrix from the leg table inside
+    `eng/DatabaseTemplates/Select-SmokeTestLegs.ps1`, which is the single place the
+    smoke legs are defined.
+    Each Data Standard version carries two legs there, one per database engine
+    (postgresql and mssql), so the workflow runs four legs total: PostgreSQL/5.2.0,
+    PostgreSQL/6.1.0, MSSQL/5.2.0, and MSSQL/6.1.0 (the `6.1.0` legs' populated builds
+    are validated end-to-end on both engines).
+    Scheduled and `workflow_dispatch` runs always execute the full four-leg matrix;
+    PR runs execute only the legs a changed file can safely affect, falling back to
+    the full matrix when a change is unmapped or the changed-file list is empty.
+    The ODS-published-SDK sweep stays `5.2.0`-only on both engines - it consumes the
+    DS-5.2-specific `EdFi.Suite3.OdsApi.TestSdk.Standard.5.2.0` package - and is gated
+    by a `run_ods_sdk_tests` matrix flag; the `6.1.0` legs' API surface is instead
+    covered by the NonDestructive API tests and the DMS-generated SDK.
 
   > The template surface is intentionally reduced versus the local dev surface
   > (Core + TPDM + Sample + Homograph in `.env.ds<NN>`): DS 5.2 is Core + TPDM
@@ -213,14 +225,19 @@ Adding a version is the same set of small edits regardless of which version:
 4. **Security metadata.** Add `Claims/Standards/ds<NN>/Claims.json` (authored from the
    ODS API SecurityMetadata XML export via the `eng/CmsHierarchy` tool). No csproj
    change is needed — the embedded-resource glob picks it up.
-5. **CI.** Add an `include` entry to the `standard_version` matrix in each per-version lane —
+5. **CI.** Add an `include` entry to the `standard_version` matrix in each per-version lane -
    `EdFi.Api.Populated.Template.PostgreSQL.yml`, `EdFi.Api.Minimal.Template.PostgreSQL.yml`, and
-   the SDK callers `Pkg EdFi.Api.Sdk.yml` / `Pkg EdFi.Api.TestSdk.yml` (and, once validated,
-   `scheduled-smoke-test.yml`). Add the version's standalone template env file (its product schema
-   surface — Core + TPDM for 5.2, Core only for 6.1), referenced by the template entries, and allow
-   that env file in `build-populated-template.yml`'s `environment_file` allowlist. The SDK legs need
-   no template env file — they start DMS via the `.env.ds<NN>` overlay (a non-default version requires
-   a `data_standard_version` value in the leg so the overlay is applied).
+   the SDK callers `Pkg EdFi.Api.Sdk.yml` / `Pkg EdFi.Api.TestSdk.yml`.
+   Add the version's standalone template env file (its product schema surface - Core +
+   TPDM for 5.2, Core only for 6.1), referenced by the template entries, and allow that
+   env file in `build-populated-template.yml`'s `environment_file` allowlist.
+   The SDK legs need no template env file - they start DMS via the `.env.ds<NN>` overlay
+   (a non-default version requires a `data_standard_version` value in the leg so the
+   overlay is applied).
+   Once validated, add the version to the scheduled smoke test too: the leg table inside
+   `eng/DatabaseTemplates/Select-SmokeTestLegs.ps1` is the single place the smoke legs are
+   defined, and each Data Standard version carries two legs there, one for postgresql and
+   one for mssql, so adding a version means adding both engine legs to that table.
 6. **Version-coupled E2E.** Author the version's `@StandardVersion-<NN>` scenario variants for the
    version-coupled features (`XSDMetadata.feature`, `DiscoveryAPI.feature`) — captured from a running
    stack of that version, not hand-written — and add a per-PR lane that runs them with
@@ -234,7 +251,10 @@ ones.
 
 ## Dropping a Data Standard version
 
-Reverse of the above — remove that version's `Claims/Standards/ds<NN>/` folder, its
+Reverse of the above - remove that version's `Claims/Standards/ds<NN>/` folder, its
 `.env.ds<NN>` overlay, its `Directory.Packages.props` entries, its template env file,
-and its matrix `include` entry. Ensure the default version (5.2, unless the default is
-being changed) still exists.
+and its matrix `include` entry in each per-version lane.
+For the scheduled smoke test, remove the version's two legs (postgresql and mssql)
+from the leg table inside `eng/DatabaseTemplates/Select-SmokeTestLegs.ps1` instead of
+an `include` entry.
+Ensure the default version (5.2, unless the default is being changed) still exists.

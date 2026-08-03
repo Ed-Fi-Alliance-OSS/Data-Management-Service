@@ -64,7 +64,7 @@ file static class PostgresqlIfMatchCascadeReferentialIdentityTestSupport
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
         services.AddNoOpDocumentLinkSlugResolver();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }

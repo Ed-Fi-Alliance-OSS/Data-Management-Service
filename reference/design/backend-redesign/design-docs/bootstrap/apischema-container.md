@@ -215,9 +215,9 @@ The package ID for the standard core ApiSchema package is Data-Standard-qualifie
 published asset-only package at version `1.0.329` (see
 `reference/spikes/DMS-1156/asset-only-package-feed-findings.md`).
 
-> **Scope note:** package-backed standard mode is **core-only** and resolves only the core package
-> by ID. There is no `-Extensions` parameter and bootstrap does not construct extension package IDs.
-> Extension-containing schema sets are staged through the expert `-ApiSchemaPath` filesystem path.
+> **Scope note:** package-backed standard mode resolves the effective `SCHEMA_PACKAGES` entries by
+> their declared IDs; direct invocation without `-EnvironmentFile` uses the catalog-pinned core package.
+> There is no `-Extensions` parameter. Unpublished/custom schema sets use expert `-ApiSchemaPath`.
 
 The package should contain no `lib/` or `ref/` entries. It may include docs and license files:
 

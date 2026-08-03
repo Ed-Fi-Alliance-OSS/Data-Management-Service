@@ -141,6 +141,20 @@ public sealed class SqlWriter
     }
 
     /// <summary>
+    /// Writes a standardized non-numbered section-separator comment block followed by a blank line.
+    /// </summary>
+    /// <param name="sectionName">The human-readable section label.</param>
+    /// <returns>This writer for method chaining.</returns>
+    public SqlWriter WriteSectionHeader(string sectionName)
+    {
+        AppendLine("-- ==========================================================");
+        AppendLine($"-- {sectionName}");
+        AppendLine("-- ==========================================================");
+        AppendLine();
+        return this;
+    }
+
+    /// <summary>
     /// Returns the canonical SQL output with Unix line endings and no trailing whitespace.
     /// </summary>
     /// <returns>The canonical SQL string.</returns>

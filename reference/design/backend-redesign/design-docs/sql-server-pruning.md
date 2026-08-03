@@ -26,6 +26,12 @@ multiple-cascade-path convergence.
    carry that move.
 7. Cycles and unsupported cuts fail derivation. DMS does not search arbitrary upstream cuts, optimize a cut set, or retain
    a weaker fallback.
+8. A cut column the retained cascade does not update is a plain full-composite `NO ACTION` reference, not an unsupported
+   cut: the safe-cut test passes it and it derives. The one shape this does not specially guard is a genuinely mutable
+   resource referenced through two disjoint, non-unified roles by one receiver. That shape does not occur in standard
+   Ed-Fi (every disjoint role there resolves to an immutable abstract identity), and it is deliberately left to fail
+   closed at runtime — a clean SQL Server error on a rename, never a corrupt tuple — rather than to fail derivation. This
+   is settled, intended behavior; do not read the surviving `NO ACTION` reference as an unproven or out-of-scope cut.
 
 ## Problem
 
@@ -87,6 +93,9 @@ The selector works on a directed physical multigraph after key unification:
 - An edge is directed from referenced target to referencing receiver, matching `ON UPDATE CASCADE` propagation.
 - A mutable origin is a directly mutable concrete resource root or an abstract identity maintenance update that can change
   a referenced identity key.
+- An abstract identity whose concrete subclasses are all immutable cannot change its identity key. Every abstract
+  identity is still walked so its multiple-cascade-path topology is pruned, but a convergence discovered from such an
+  origin guards a rename that never occurs.
 - A duplicate path exists when one mutable origin reaches a receiver through two retained candidate paths.
 - A convergence is the first receiver at which those paths use distinct incoming edges.
 - A survivor remains `ON UPDATE CASCADE`; competing incoming decision edges become full-composite `ON UPDATE NO ACTION`.
@@ -202,6 +211,12 @@ This is not a general constraint solver: DMS does not infer a decision-dependenc
 enumerate arbitrary graph assignments, or retry transitively related or disjoint decisions. If the directly shared
 physical-FK choices are exhausted, fail as `NoSafeSqlServerForeignKeyPruning`.
 
+One exception precedes that failure. When a convergence has no locally safe survivor and no shared-FK retry, but its
+origin is an abstract identity whose concrete subclasses are all immutable, the cut guards a rename that can never
+happen: retain the first still-available candidate and change the rest to full-composite `ON UPDATE NO ACTION`. Fewer
+retained cascades never create a multiple-cascade-path topology, and no reachable update is left uncovered. A genuinely
+mutable origin in the same shape remains unsupported and fails.
+
 Retry is permitted only to reverse an already-assigned action on the same physical FK. A survivor that merely supplies
 an upstream path or appears in a related convergence is not a retry dependency.
 
@@ -235,9 +250,13 @@ route representation, or new derivation artifact.
 
    A supported cut therefore covers identity renames with stable local anchors; a cut whose validity depends on
    propagating a reference replacement is unsupported.
-3. **Required bindings only.** The cut reference and retained candidate must have non-nullable canonical local reference
-   `DocumentId` columns. DMS does not reason about optional references, synthetic presence gates, or arbitrary Boolean
-   presence implication. A nullable anchor or any case requiring further proof is unsupported and rejected.
+3. **Required carrier binding.** The retained candidate must have a non-nullable canonical local reference `DocumentId`
+   column: an optional carrier leaves rows whose retained reference is absent without native coverage for the shared
+   columns, and DMS does not reason about presence implication. An optional cut, however, is safe under a required
+   carrier that shares canonical storage: populated cut rows are covered through the always-present shared columns the
+   carrier's cascade maintains, and an absent (null) cut row carries no foreign-key obligation. DMS does not reason
+   about synthetic presence gates or arbitrary Boolean presence implication; a nullable carrier anchor or any case
+   requiring further proof is unsupported and rejected.
 4. **Native coverage only.** Coverage is supplied by the retained native `ON UPDATE CASCADE` operation. An `AFTER`
    trigger, later maintenance command, or application write is not a carrier.
 
@@ -245,6 +264,19 @@ A direct DMS write that replaces a receiver reference supplies the complete publ
 validated by the full-composite FK directly. It is not a carrier obligation for an incoming cut. Conversely, if a directly
 mutable intermediate identity change would require a cut tuple to change without a retained carrier, that survivor is
 unsafe. DMS need not model arbitrary value combinations to make this determination.
+
+A cut column that the retained cascade does not update carries no carrier obligation. Safe-cut rule 1 applies only to a
+column the survivor also updates, so a column the survivor does not update leaves the cut a plain full-composite
+`NO ACTION` reference and the test passes it. This is a safe, supported result of the safe-cut test — not an unsupported
+cut, and it does not fail derivation. (This is distinct from the no-safe-survivor case above, where a genuinely mutable
+origin does fail derivation.) When the origin is immutable — the standard-Ed-Fi case, where disjoint role references
+resolve to an immutable abstract identity such as `EducationOrganization` — no rename ever occurs, so the cut is fully
+safe. The one case this skip does not specially guard is a genuinely mutable resource referenced through two disjoint,
+non-unified roles by one receiver. Its surviving `NO ACTION` reference is a complete, enforced full-composite reference,
+not a cascade carrier, so a rename of the origin is rejected at runtime by it — a clean SQL Server error, never a corrupt
+tuple. This is settled, intended behavior: the shape does not occur in standard Ed-Fi, and it is deliberately left to
+fail closed at runtime rather than to fail derivation. Do not read the surviving `NO ACTION` reference as an unproven or
+out-of-scope cut; it is an ordinary full-composite reference, complete and enforced.
 
 ## Outputs and Diagnostics
 

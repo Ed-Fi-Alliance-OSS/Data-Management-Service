@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
+
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 public class ReportInvalidConfigurationMiddleware(RequestDelegate next, List<string> errors)
@@ -16,7 +18,12 @@ public class ReportInvalidConfigurationMiddleware(RequestDelegate next, List<str
             logger.LogCritical(error);
         }
 
-        context.Response.StatusCode = 500;
-        return Task.CompletedTask;
+        // Deliberate short-circuit: do not call Next. Config-failure messages are logged (Critical)
+        // above and must never reach the response body, so the body is the generic Ed-Fi 500.
+        return FailureResponseWriter.WriteAsync(
+            context,
+            FailureResponse.ForUnknown(context.TraceIdentifier),
+            context.RequestAborted
+        );
     }
 }

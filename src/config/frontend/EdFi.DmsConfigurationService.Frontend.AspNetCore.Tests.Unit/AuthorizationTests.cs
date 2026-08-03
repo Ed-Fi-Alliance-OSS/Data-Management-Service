@@ -39,6 +39,10 @@ public class AuthorizationTests
         A.Fake<IClaimsHierarchyRepository>();
     private readonly IAuthorizationMetadataResponseFactory _responseFactory =
         A.Fake<IAuthorizationMetadataResponseFactory>();
+    private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
+
+    [TearDown]
+    public void DisposeWebApplicationFactories() => _factoryTracker.DisposeTrackedFactories();
 
     private static void SetScope(string scopeName, HttpClient httpClient)
     {
@@ -81,6 +85,7 @@ public class AuthorizationTests
                 }
             );
         });
+        _factoryTracker.Track(factory);
         var httpClient = factory.CreateClient();
         SetScope(scopeName, httpClient);
         return httpClient;
@@ -109,7 +114,7 @@ public class AuthorizationTests
                     ])
                 );
 
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(
                     new VendorGetResult.Success(
                         new VendorResponse()
@@ -126,7 +131,7 @@ public class AuthorizationTests
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .Returns(new VendorUpdateResult.Success(new List<Guid>()));
 
-            A.CallTo(() => _vendorRepository.DeleteVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored))
                 .Returns(new VendorDeleteResult.Success());
         }
 
@@ -206,7 +211,7 @@ public class AuthorizationTests
                     ])
                 );
 
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(
                     new VendorGetResult.Success(
                         new VendorResponse()

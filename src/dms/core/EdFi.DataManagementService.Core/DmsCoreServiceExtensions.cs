@@ -46,6 +46,10 @@ public static class DmsCoreServiceExtensions
         bool maskRequestBodyInLogs
     )
     {
+        DeadlockRetrySettings retrySettings = new();
+        deadlockRetryConfiguration.Bind(retrySettings);
+        ValidateDeadlockRetrySettings(retrySettings);
+
         services
             // API Schema services
             .AddSingleton<IApiSchemaValidator, ApiSchemaValidator>()
@@ -91,6 +95,7 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IResourceLoadOrderTransformer, PersonAuthorizationLoadOrderTransformer>()
             .AddSingleton<ResourceLoadOrderCalculator>()
             .AddResiliencePipeline("backendResiliencePipeline", backendResiliencePipeline)
+            .AddSingleton(retrySettings)
             .AddScoped<IDataStoreSelection, DataStoreSelection>()
             .AddScoped<IApplicationContextProvider, CachedApplicationContextProvider>()
             .AddSingleton<IConfigurationServiceApplicationProvider, ConfigurationServiceApplicationProvider>()
@@ -121,10 +126,6 @@ public static class DmsCoreServiceExtensions
         {
             CircuitBreakerSettings breakerSettings = new();
             circuitBreakerConfiguration.Bind(breakerSettings);
-
-            DeadlockRetrySettings retrySettings = new();
-            deadlockRetryConfiguration.Bind(retrySettings);
-            ValidateDeadlockRetrySettings(retrySettings);
 
             var loggerFactory = LoggerFactory.Create(loggingBuilder => loggingBuilder.AddSerilog(logger));
             var cbFailureLogger = loggerFactory.CreateLogger("CircuitBreakerFailureDetection");
@@ -284,14 +285,8 @@ public static class DmsCoreServiceExtensions
 
     internal static void ValidateDeadlockRetrySettings(DeadlockRetrySettings settings)
     {
-        if (settings.MaxRetryAttempts < 0)
-        {
-            throw new InvalidOperationException("DeadlockRetry:MaxRetryAttempts must be >= 0");
-        }
+        ArgumentNullException.ThrowIfNull(settings);
 
-        if (settings.BaseDelayMilliseconds < 1)
-        {
-            throw new InvalidOperationException("DeadlockRetry:BaseDelayMilliseconds must be >= 1");
-        }
+        settings.Validate();
     }
 }

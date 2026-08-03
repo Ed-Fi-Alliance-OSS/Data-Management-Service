@@ -17,7 +17,7 @@ Feature: Update a Descriptor
                   """
 
         @API-033
-        @e2e-ci-shard-2
+        @e2e-ci-shard-2 @MssqlRepresentative
         Scenario: 01 Put an existing descriptor
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with

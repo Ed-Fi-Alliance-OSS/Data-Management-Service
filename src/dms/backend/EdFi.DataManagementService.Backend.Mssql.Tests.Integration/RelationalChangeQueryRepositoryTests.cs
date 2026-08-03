@@ -312,20 +312,15 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             totalCount: true
         );
 
-        result.TotalCount.Should().Be(1L);
-        result.Items.Should().ContainSingle();
-        JsonObject item = result.Items[0]!.AsObject();
-        item["id"]!.GetValue<string>().Should().Be(AcademicWeekDocumentUuid.Value.ToString("D"));
-        item["changeVersion"]!.GetValue<long>().Should().Be(latestChangeVersion);
-        item["changeVersion"]!.GetValue<long>().Should().BeGreaterThan(firstChangeVersion);
-
-        JsonObject oldKeyValues = item["oldKeyValues"]!.AsObject();
-        oldKeyValues["weekIdentifier"]!.GetValue<string>().Should().Be(WeekIdentifierA);
-        oldKeyValues["schoolId"]!.GetValue<long>().Should().Be(SchoolId);
-
-        JsonObject newKeyValues = item["newKeyValues"]!.AsObject();
-        newKeyValues["weekIdentifier"]!.GetValue<string>().Should().Be(WeekIdentifierC);
-        newKeyValues["schoolId"]!.GetValue<long>().Should().Be(SchoolId);
+        ChangeQueryParityScenarios.AssertAcademicWeekKeyChangesCollapsedToLatestStoredChangeVersion(
+            result,
+            AcademicWeekDocumentUuid.Value,
+            firstChangeVersion,
+            latestChangeVersion,
+            SchoolId,
+            WeekIdentifierA,
+            WeekIdentifierC
+        );
     }
 
     [Test]
@@ -444,7 +439,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
 
         short schoolResourceKeyId = _mappingSet.ResourceKeyIdByResource[SchoolResource];
         Dictionary<short, DocumentLinkSlugTriple> slugByResourceKeyId = new()
@@ -983,6 +978,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -992,6 +988,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -1001,6 +998,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),

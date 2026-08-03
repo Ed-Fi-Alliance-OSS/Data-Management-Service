@@ -218,37 +218,18 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 "foreign keys"
             );
 
-            // For MSSQL, when identity propagation is handled by INSTEAD OF triggers
-            // (abstract targets or concrete targets with AllowIdentityUpdates), the FK must
-            // reference only DocumentId. Including identity columns in the FK causes violations
-            // inside the trigger: neither children-first nor parent-first ordering can satisfy
-            // ON UPDATE NO ACTION when both sides of the composite FK change.
-            bool mssqlTriggerHandlesPropagation =
-                context.SetContext.Dialect == SqlDialect.Mssql
-                && (targetInfo.IsAbstract || targetInfo.TransitivelyAllowIdentityUpdates);
-
             // Column order mirrors the target *_RefKey unique constraint: identity storage
             // columns first, DocumentId last. FK pairing is positional, so the local list
-            // reorders to match.
-            var localColumns = new List<DbColumnName>(
-                1 + (mssqlTriggerHandlesPropagation ? 0 : mappedIdentityColumns.LocalColumns.Count)
-            );
-            if (!mssqlTriggerHandlesPropagation)
-            {
-                localColumns.AddRange(mappedIdentityColumns.LocalColumns);
-            }
+            // reorders to match. Both dialects build the same full-composite shape.
+            var localColumns = new List<DbColumnName>(1 + mappedIdentityColumns.LocalColumns.Count);
+            localColumns.AddRange(mappedIdentityColumns.LocalColumns);
             localColumns.Add(localReferenceFkColumn);
 
-            var targetColumns = new List<DbColumnName>(
-                1 + (mssqlTriggerHandlesPropagation ? 0 : mappedIdentityColumns.TargetColumns.Count)
-            );
-            if (!mssqlTriggerHandlesPropagation)
-            {
-                targetColumns.AddRange(mappedIdentityColumns.TargetColumns);
-            }
+            var targetColumns = new List<DbColumnName>(1 + mappedIdentityColumns.TargetColumns.Count);
+            targetColumns.AddRange(mappedIdentityColumns.TargetColumns);
             targetColumns.Add(targetDocumentIdColumn);
 
-            var onUpdate = ResolveOnUpdate(context.SetContext.Dialect, targetInfo);
+            var onUpdate = ResolveOnUpdate(targetInfo);
 
             if (
                 !ContainsForeignKeyConstraint(
@@ -605,12 +586,13 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
         return new ReferenceIdentityColumnSet(localColumns.ToArray(), targetColumns.ToArray());
     }
 
-    private static ReferentialAction ResolveOnUpdate(SqlDialect dialect, TargetIdentityInfo targetInfo)
+    /// <summary>
+    /// Resolves the ON UPDATE action for a reference foreign key: cascade for abstract or transitively
+    /// mutable targets, otherwise no action. For SQL Server this marks initial candidate eligibility;
+    /// the pruning pass assigns the final action (see design-docs/sql-server-pruning.md).
+    /// </summary>
+    private static ReferentialAction ResolveOnUpdate(TargetIdentityInfo targetInfo)
     {
-        if (dialect == SqlDialect.Mssql)
-        {
-            return ReferentialAction.NoAction;
-        }
         if (targetInfo.IsAbstract || targetInfo.TransitivelyAllowIdentityUpdates)
         {
             return ReferentialAction.Cascade;

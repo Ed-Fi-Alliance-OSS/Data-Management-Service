@@ -544,7 +544,7 @@ public class Given_MssqlReferenceResolver
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddTestReadableProfileProjector();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -657,6 +657,7 @@ public class Given_MssqlReferenceResolver
                 .. seedData.Descriptors,
                 new ReferenceResolverDescriptorSeed(
                     606,
+                    schoolTypeDescriptorResourceKeyId,
                     "uri://ed-fi.org",
                     "Wrong",
                     "Wrong",
@@ -728,6 +729,7 @@ public class Given_MssqlReferenceResolver
                 .. seedData.Descriptors,
                 new ReferenceResolverDescriptorSeed(
                     808,
+                    academicSubjectDescriptorResourceKeyId,
                     "uri://ed-fi.org",
                     "Mathematics",
                     "Mathematics",

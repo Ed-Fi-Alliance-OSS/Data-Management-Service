@@ -1512,6 +1512,7 @@ public class Given_Reference_Constraint_Derivation_On_Mssql
         var builder = new DerivedRelationalModelSetBuilder([
             new BaseTraversalAndDescriptorBindingPass(),
             new ReferenceBindingPass(),
+            new TransitiveIdentityMutabilityPass(),
             new RootIdentityConstraintPass(),
             new ReferenceConstraintPass(),
             new ArrayUniquenessConstraintPass(),
@@ -1529,10 +1530,11 @@ public class Given_Reference_Constraint_Derivation_On_Mssql
     }
 
     /// <summary>
-    /// It should use NoAction for all reference FKs on MSSQL.
+    /// It should apply the same allow-identity-updates gating as PostgreSQL: MSSQL mutable candidates
+    /// carry the initial Cascade action (the pruning pass assigns the final action).
     /// </summary>
     [Test]
-    public void It_should_use_NoAction_for_all_reference_FKs_on_Mssql()
+    public void It_should_apply_allow_identity_updates_gating_on_Mssql()
     {
         var schoolFk = _enrollmentTable
             .Constraints.OfType<TableConstraint.ForeignKey>()
@@ -1541,8 +1543,30 @@ public class Given_Reference_Constraint_Derivation_On_Mssql
             .Constraints.OfType<TableConstraint.ForeignKey>()
             .Single(constraint => constraint.Columns.Any(column => column.Value == "Student_DocumentId"));
 
-        schoolFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
+        schoolFk.OnUpdate.Should().Be(ReferentialAction.Cascade);
         studentFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
+    }
+
+    /// <summary>
+    /// It should build the same full-composite reference FK column pairs as PostgreSQL: identity
+    /// storage columns first, DocumentId last.
+    /// </summary>
+    [Test]
+    public void It_should_order_reference_fk_columns_by_target_identity_order_on_Mssql()
+    {
+        var schoolFk = _enrollmentTable
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single(constraint => constraint.Columns.Any(column => column.Value == "School_DocumentId"));
+
+        schoolFk
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("School_EducationOrganizationId", "School_SchoolId", "School_DocumentId");
+
+        schoolFk
+            .TargetColumns.Select(column => column.Value)
+            .Should()
+            .Equal("EducationOrganizationId", "SchoolId", "DocumentId");
     }
 }
 
@@ -1587,10 +1611,12 @@ public class Given_Abstract_Reference_Constraint_Derivation_On_Mssql
     }
 
     /// <summary>
-    /// It should use NoAction for abstract target on MSSQL.
+    /// It should cascade updates for abstract targets on MSSQL, matching PostgreSQL: the initial
+    /// Cascade action marks pruning candidate eligibility, and the FK is full composite rather
+    /// than the retired DocumentId-only shape.
     /// </summary>
     [Test]
-    public void It_should_use_NoAction_for_abstract_target_on_Mssql()
+    public void It_should_cascade_updates_for_abstract_target_on_Mssql()
     {
         var educationOrganizationFk = _enrollmentTable
             .Constraints.OfType<TableConstraint.ForeignKey>()
@@ -1598,8 +1624,18 @@ public class Given_Abstract_Reference_Constraint_Derivation_On_Mssql
                 constraint.Columns.Any(column => column.Value == "EducationOrganization_DocumentId")
             );
 
-        educationOrganizationFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
+        educationOrganizationFk.OnUpdate.Should().Be(ReferentialAction.Cascade);
         educationOrganizationFk.TargetTable.Name.Should().Be("EducationOrganizationIdentity");
+
+        educationOrganizationFk
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
+
+        educationOrganizationFk
+            .TargetColumns.Select(column => column.Value)
+            .Should()
+            .Equal("EducationOrganizationId", "DocumentId");
     }
 }
 

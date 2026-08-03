@@ -38,6 +38,7 @@ public static class MssqlServiceExtensions
             ClaimsDataLoader.ResourceClaimMetadataRepository
         >();
         services.AddTransient<IClaimSetDataProvider, ClaimSetDataProvider>();
+        services.AddTransient<IApplicationLockManager, MssqlApplicationLockManager>();
         return services;
     }
 }

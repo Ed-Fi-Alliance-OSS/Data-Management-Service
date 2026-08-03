@@ -62,7 +62,7 @@ Start SQL Server in a container. The example maps SQL Server to host port
 `14333` to avoid collisions with a developer SQL Server on `1433`:
 
 ```powershell
-docker run --name dms-mssql-integration -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='EdFi_Dms1!' -p 14333:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+docker run --name dms-mssql-integration-2025 -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='EdFi_Dms1!' -p 14333:1433 -d mcr.microsoft.com/mssql/server:2025-latest
 ```
 
 Then set the admin connection string:
@@ -71,7 +71,10 @@ Then set the admin connection string:
 $env:ConnectionStrings__MssqlAdmin = "Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true"
 ```
 
-If the container already exists, use `docker start dms-mssql-integration`.
+If the container already exists, use `docker start dms-mssql-integration-2025`.
+The version-suffixed name keeps SQL Server 2025 separate from any `dms-mssql-integration` container created from the earlier SQL Server 2022 instructions.
+Do not reuse that legacy container: it still runs SQL Server 2022, so the MSSQL tests would run against an unsupported runtime and tests gated on SQL Server 2025 (such as the native-json evaluation fixture) would silently skip.
+Remove it with `docker rm -f dms-mssql-integration` once anything you need from it is saved.
 If `14333` is busy, map another host port and use that port in
 `ConnectionStrings__MssqlAdmin`.
 
@@ -198,6 +201,36 @@ extensions, and the catalog walker matches the lowercase pattern.
    bind to the chosen `FixtureKey`, and exposes one `[Test]` method per
    scenario entry point.
 
+## Cross-engine API parity convention
+
+Required cross-engine API behaviors are tracked in the machine-readable parity
+catalog (`ParityScenarioCatalog.Api.cs` in
+`EdFi.DataManagementService.Backend.Tests.Common`) and enforced by the
+`Given_The_Api_Parity_Catalog_Resolution` reflection meta-test in this project,
+which resolves every Api-layer catalog row's declared PostgreSQL and SQL Server
+locations to real `[Test]` methods without needing a database connection.
+
+When you add an API behavior that must hold on both engines:
+
+1. **Implement the scenario logic once** as a `static` method in `Scenarios/`
+   (see [Adding a new scenario](#adding-a-new-scenario)).
+2. **Add independently named PostgreSQL and SQL Server `[Test]` wrappers** in
+   `Tests/Postgresql/` and `Tests/Mssql/`. The wrapper class names differ by
+   dialect; both expose the **same stable method entry point** (the `[Test]`
+   method name recorded in the catalog).
+3. **Record the exact locations** — file, fixture class, and method — for both
+   engines in the matching `ParityScenarioCatalog.Api.cs` row.
+4. **Run the API parity meta-test**
+   (`dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration --filter "FullyQualifiedName~Parity"`);
+   it fails with an actionable `scenario [engine] File::Fixture::Method` message
+   when a declared covered location does not resolve.
+
+This convention is **catalog-driven**: it enforces only the wrappers the catalog
+declares. It does **not** ban legitimate single-engine regression tests, and it
+does **not** require global PostgreSQL/SQL Server wrapper-name or file-name
+symmetry — only that each catalog-declared covered location resolves to exactly
+one `[Test]` method.
+
 ## Debugging
 
 When a runtime failure produces little useful output in the test console,
@@ -217,6 +250,6 @@ Useful checks:
 ```powershell
 Get-ChildItem Env:ConnectionStrings__MssqlAdmin -ErrorAction SilentlyContinue
 Test-NetConnection -ComputerName localhost -Port 14333
-docker ps --filter name=dms-mssql-integration
-docker logs dms-mssql-integration --tail 80
+docker ps --filter name=dms-mssql-integration-2025
+docker logs dms-mssql-integration-2025 --tail 80
 ```

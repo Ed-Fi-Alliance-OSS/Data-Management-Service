@@ -341,8 +341,6 @@ public static class DerivedModelSetManifestEmitter
                     TriggerKindParameters.DocumentStamping => "DocumentStamping",
                     TriggerKindParameters.ReferentialIdentityMaintenance => "ReferentialIdentityMaintenance",
                     TriggerKindParameters.AbstractIdentityMaintenance => "AbstractIdentityMaintenance",
-                    TriggerKindParameters.MssqlIdentityPropagationTrigger =>
-                        "MssqlIdentityPropagationTrigger",
                     TriggerKindParameters.AuthHierarchyMaintenance => "AuthHierarchyMaintenance",
                     _ => throw new ArgumentOutOfRangeException(
                         nameof(triggers),
@@ -362,21 +360,6 @@ public static class DerivedModelSetManifestEmitter
                     WriteTableReference(writer, abstractId.TargetTable);
                     WriteTargetColumnMappings(writer, abstractId.TargetColumnMappings);
                     writer.WriteString("discriminator_value", abstractId.DiscriminatorValue);
-                    break;
-
-                case TriggerKindParameters.MssqlIdentityPropagationTrigger propagation:
-                    writer.WritePropertyName("referrer_updates");
-                    writer.WriteStartArray();
-                    foreach (var referrer in propagation.ReferrerUpdates)
-                    {
-                        writer.WriteStartObject();
-                        writer.WritePropertyName("referrer_table");
-                        WriteTableReference(writer, referrer.ReferrerTable);
-                        writer.WriteString("referrer_fk_column", referrer.ReferrerFkColumn.Value);
-                        WriteTargetColumnMappings(writer, referrer.ColumnMappings);
-                        writer.WriteEndObject();
-                    }
-                    writer.WriteEndArray();
                     break;
 
                 case TriggerKindParameters.ReferentialIdentityMaintenance refId:
@@ -915,6 +898,8 @@ public static class DerivedModelSetManifestEmitter
     {
         writer.WriteStartObject();
         writer.WriteBoolean("is_identity_component", binding.IsIdentityComponent);
+        writer.WriteBoolean("is_required", binding.IsRequired);
+        writer.WriteBoolean("is_role_named", binding.IsRoleNamed);
         writer.WriteString("reference_object_path", binding.ReferenceObjectPath.Canonical);
         writer.WritePropertyName("table");
         WriteTableReference(writer, binding.Table);

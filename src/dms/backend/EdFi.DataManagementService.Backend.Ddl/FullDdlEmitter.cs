@@ -16,8 +16,9 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 public static class FullDdlEmitter
 {
     /// <summary>
-    /// Emits the complete DDL SQL by combining a Phase 0 preflight check, core schema DDL,
-    /// relational model DDL, and seed DML for the given dialect and derived model set.
+    /// Emits the complete DDL SQL by combining Phase 0 bounded provisioning guards,
+    /// core schema DDL, relational model DDL, and seed DML for the given dialect and
+    /// derived model set.
     /// </summary>
     public static string Emit(ISqlDialect dialect, DerivedRelationalModelSet modelSet)
     {
@@ -30,7 +31,7 @@ public static class FullDdlEmitter
         );
         string coreDdl = new CoreDdlEmitter(dialect, sharedDescriptorTrackedChangeTable).Emit();
         string relationalDdl = new RelationalModelDdlEmitter(dialect).Emit(modelSet);
-        string seedDml = seedEmitter.Emit(modelSet.EffectiveSchema);
+        string seedDml = seedEmitter.EmitForFullDdl(modelSet.EffectiveSchema);
         return JoinSegments(preflightDdl, coreDdl, relationalDdl, seedDml);
     }
 
@@ -38,7 +39,7 @@ public static class FullDdlEmitter
     {
         var sb = new StringBuilder();
         sb.Append("-- ==========================================================\n");
-        sb.Append("-- Phase 0: Preflight (fail fast on schema hash mismatch)\n");
+        sb.Append("-- Phase 0: Bounded Provisioning Guards\n");
         sb.Append("-- ==========================================================\n");
         sb.Append('\n');
         sb.Append(preflightSql);

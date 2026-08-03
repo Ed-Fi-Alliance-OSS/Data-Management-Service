@@ -2939,6 +2939,57 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
+    [TestCase(RelationalWriteOperationKind.Post)]
+    [TestCase(RelationalWriteOperationKind.Put)]
+    public async Task It_maps_transient_canonical_write_db_failures_to_retryable_write_conflicts(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var request = CreateRequest(operationKind);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("canonical enqueue lock timeout");
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        switch (operationKind)
+        {
+            case RelationalWriteOperationKind.Post:
+                result
+                    .Should()
+                    .BeEquivalentTo(
+                        new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.UpsertFailureWriteConflict()
+                        )
+                    );
+                break;
+            case RelationalWriteOperationKind.Put:
+                result
+                    .Should()
+                    .BeEquivalentTo(
+                        new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateFailureWriteConflict()
+                        )
+                    );
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null);
+        }
+
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeExceptionClassifier.IsTransientFailureCallCount.Should().Be(1);
+        _writeExceptionClassifier.TryClassifyCallCount.Should().Be(0);
+        _writeConstraintResolver.ResolveCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
     [Test]
     public async Task It_rethrows_db_exceptions_that_the_classifier_does_not_claim()
     {
@@ -8984,6 +9035,8 @@ public class Given_Default_Relational_Write_Executor
 
     private sealed class RecordingRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
     {
+        public int IsTransientFailureCallCount { get; private set; }
+
         public int TryClassifyCallCount { get; private set; }
 
         public DbException? CapturedException { get; private set; }
@@ -8991,6 +9044,8 @@ public class Given_Default_Relational_Write_Executor
         public Exception? ExceptionToThrow { get; set; }
 
         public RelationalWriteExceptionClassification? ClassificationToReturn { get; set; }
+
+        public bool IsTransientFailureToReturn { get; set; }
 
         public bool TryClassify(
             DbException exception,
@@ -9013,7 +9068,11 @@ public class Given_Default_Relational_Write_Executor
 
         public bool IsUniqueConstraintViolation(DbException exception) => false;
 
-        public bool IsTransientFailure(DbException exception) => false;
+        public bool IsTransientFailure(DbException exception)
+        {
+            IsTransientFailureCallCount++;
+            return IsTransientFailureToReturn;
+        }
     }
 
     private sealed class RecordingRelationalWriteConstraintResolver : IRelationalWriteConstraintResolver

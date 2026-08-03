@@ -385,16 +385,64 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     }
 
     [Test]
-    public void It_should_emit_phase_7_header()
+    public void It_should_emit_standalone_seed_data_header()
     {
-        _ddl.Should().Contain("Phase 7: Seed Data");
+        _ddl.Should().Contain("-- Seed Data (insert-if-missing + validation)");
+        _ddl.Should().NotContain("-- Phase ");
     }
 
     [Test]
     public void It_should_not_emit_preflight_check()
     {
-        _ddl.Should().NotContain("Preflight: fail fast");
+        _ddl.Should().NotContain("Preflight: validate EffectiveSchema");
         _ddl.Should().NotContain("EffectiveSchemaHash mismatch");
+    }
+
+    [Test]
+    public void It_should_emit_data_store_identity_singleton_insert_with_generated_uuid()
+    {
+        _ddl.Should().Contain("-- DataStoreIdentity singleton insert-if-missing");
+        _ddl.Should()
+            .Contain(
+                "INSERT INTO \"dms\".\"DataStoreIdentity\" (\"DataStoreIdentitySingletonId\", \"SourceIdentity\")"
+            );
+        _ddl.Should().Contain("VALUES (1, gen_random_uuid())");
+        _ddl.Should().Contain("ON CONFLICT (\"DataStoreIdentitySingletonId\") DO NOTHING;");
+    }
+
+    [Test]
+    public void It_should_emit_document_cache_state_singleton_insert_as_disabled_with_clear_latch()
+    {
+        _ddl.Should().Contain("-- DocumentCacheState singleton insert-if-missing");
+        _ddl.Should()
+            .Contain(
+                "INSERT INTO \"dms\".\"DocumentCacheState\" (\"StateId\", \"ProjectionLifecycleState\", \"CacheAheadRecoveryRequired\")"
+            );
+        _ddl.Should().Contain("VALUES (1, 'Disabled', false)");
+        _ddl.Should().Contain("ON CONFLICT (\"StateId\") DO NOTHING;");
+    }
+
+    [Test]
+    public void It_should_emit_singleton_initialization_before_schema_fingerprint_rows()
+    {
+        var dataStoreIdentity = _ddl.IndexOf(
+            "INSERT INTO \"dms\".\"DataStoreIdentity\"",
+            StringComparison.Ordinal
+        );
+        var documentCacheState = _ddl.IndexOf(
+            "INSERT INTO \"dms\".\"DocumentCacheState\"",
+            StringComparison.Ordinal
+        );
+        var resourceKey = _ddl.IndexOf("INSERT INTO \"dms\".\"ResourceKey\"", StringComparison.Ordinal);
+        var effectiveSchema = _ddl.IndexOf(
+            "INSERT INTO \"dms\".\"EffectiveSchema\"",
+            StringComparison.Ordinal
+        );
+
+        dataStoreIdentity.Should().BeGreaterOrEqualTo(0);
+        documentCacheState.Should().BeGreaterThan(dataStoreIdentity);
+        resourceKey.Should().BeGreaterThan(documentCacheState);
+        effectiveSchema.Should().BeGreaterThan(resourceKey);
     }
 
     [Test]
@@ -530,16 +578,64 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     }
 
     [Test]
-    public void It_should_emit_phase_7_header()
+    public void It_should_emit_standalone_seed_data_header()
     {
-        _ddl.Should().Contain("Phase 7: Seed Data");
+        _ddl.Should().Contain("-- Seed Data (insert-if-missing + validation)");
+        _ddl.Should().NotContain("-- Phase ");
     }
 
     [Test]
     public void It_should_not_emit_preflight_check()
     {
-        _ddl.Should().NotContain("Preflight: fail fast");
+        _ddl.Should().NotContain("Preflight: validate EffectiveSchema");
         _ddl.Should().NotContain("EffectiveSchemaHash mismatch");
+    }
+
+    [Test]
+    public void It_should_emit_data_store_identity_singleton_insert_with_generated_uuid()
+    {
+        _ddl.Should().Contain("-- DataStoreIdentity singleton insert-if-missing");
+        _ddl.Should()
+            .Contain(
+                "IF NOT EXISTS (SELECT 1 FROM [dms].[DataStoreIdentity] WHERE [DataStoreIdentitySingletonId] = 1)"
+            );
+        _ddl.Should()
+            .Contain(
+                "INSERT INTO [dms].[DataStoreIdentity] ([DataStoreIdentitySingletonId], [SourceIdentity])"
+            );
+        _ddl.Should().Contain("VALUES (1, NEWID());");
+    }
+
+    [Test]
+    public void It_should_emit_document_cache_state_singleton_insert_as_disabled_with_clear_latch()
+    {
+        _ddl.Should().Contain("-- DocumentCacheState singleton insert-if-missing");
+        _ddl.Should().Contain("IF NOT EXISTS (SELECT 1 FROM [dms].[DocumentCacheState] WHERE [StateId] = 1)");
+        _ddl.Should()
+            .Contain(
+                "INSERT INTO [dms].[DocumentCacheState] ([StateId], [ProjectionLifecycleState], [CacheAheadRecoveryRequired])"
+            );
+        _ddl.Should().Contain("VALUES (1, N'Disabled', 0);");
+    }
+
+    [Test]
+    public void It_should_emit_singleton_initialization_before_schema_fingerprint_rows()
+    {
+        var dataStoreIdentity = _ddl.IndexOf(
+            "INSERT INTO [dms].[DataStoreIdentity]",
+            StringComparison.Ordinal
+        );
+        var documentCacheState = _ddl.IndexOf(
+            "INSERT INTO [dms].[DocumentCacheState]",
+            StringComparison.Ordinal
+        );
+        var resourceKey = _ddl.IndexOf("INSERT INTO [dms].[ResourceKey]", StringComparison.Ordinal);
+        var effectiveSchema = _ddl.IndexOf("INSERT INTO [dms].[EffectiveSchema]", StringComparison.Ordinal);
+
+        dataStoreIdentity.Should().BeGreaterOrEqualTo(0);
+        documentCacheState.Should().BeGreaterThan(dataStoreIdentity);
+        resourceKey.Should().BeGreaterThan(documentCacheState);
+        effectiveSchema.Should().BeGreaterThan(resourceKey);
     }
 
     [Test]
@@ -757,15 +853,17 @@ public class Given_SeedDmlEmitter_With_Empty_ResourceKeys
     }
 
     [Test]
-    public void It_should_still_emit_phase_7_header_for_pgsql()
+    public void It_should_still_emit_standalone_seed_data_header_for_pgsql()
     {
-        _pgsqlDdl.Should().Contain("Phase 7: Seed Data");
+        _pgsqlDdl.Should().Contain("-- Seed Data (insert-if-missing + validation)");
+        _pgsqlDdl.Should().NotContain("-- Phase ");
     }
 
     [Test]
-    public void It_should_still_emit_phase_7_header_for_mssql()
+    public void It_should_still_emit_standalone_seed_data_header_for_mssql()
     {
-        _mssqlDdl.Should().Contain("Phase 7: Seed Data");
+        _mssqlDdl.Should().Contain("-- Seed Data (insert-if-missing + validation)");
+        _mssqlDdl.Should().NotContain("-- Phase ");
     }
 
     [Test]
@@ -853,7 +951,7 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_PgsqlDialect
     [Test]
     public void It_should_emit_preflight_comment()
     {
-        _sql.Should().Contain("Preflight: fail fast");
+        _sql.Should().Contain("Preflight: validate EffectiveSchema hash compatibility");
     }
 
     [Test]
@@ -868,9 +966,56 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_not_contain_phase_7_header()
+    public void It_should_emit_completed_schema_singleton_safety_guards()
     {
-        _sql.Should().NotContain("Phase 7");
+        _sql.Should().Contain("Preflight: protect completed DocumentCache mutable singleton state");
+        _sql.Should().Contain("\"dms\".\"DataStoreIdentity\"");
+        _sql.Should().Contain("\"dms\".\"DocumentCacheState\"");
+        _sql.Should().Contain("SourceIdentity");
+        _sql.Should().Contain("00000000-0000-0000-0000-000000000000");
+        _sql.Should().Contain("ProjectionLifecycleState");
+        _sql.Should().Contain("CacheAheadRecoveryRequired");
+        _sql.Should().Contain("Drop and recreate the database before re-provisioning");
+    }
+
+    [Test]
+    public void It_should_emit_known_legacy_cache_artifact_guards()
+    {
+        _sql.Should().Contain("Preflight: reject known legacy DocumentCache artifacts");
+        _sql.Should().Contain("column_name = 'Etag'");
+        _sql.Should().Contain("UX_DocumentCache_DocumentUuid");
+        _sql.Should().Contain("IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt");
+        _sql.Should().Contain("Drop and recreate the database before provisioning E18 DocumentCache schema");
+    }
+
+    [Test]
+    public void It_should_emit_pgsql_enqueue_owner_prerequisite_guards()
+    {
+        _sql.Should().Contain("Preflight: validate PostgreSQL enqueue-owner prerequisites");
+        _sql.Should().Contain("pg_catalog.to_regrole('edfi_dms_enqueue_owner')");
+        _sql.Should().Contain("pg_catalog.pg_auth_members membership");
+        _sql.Should()
+            .Contain("membership.admin_option OR membership.inherit_option OR membership.set_option");
+        _sql.Should().Contain("SET TRUE, INHERIT FALSE, ADMIN FALSE");
+        _sql.Should().Contain("AND NOT membership.admin_option");
+        _sql.Should().Contain("AND NOT membership.inherit_option");
+        _sql.Should().Contain("AND membership.set_option");
+        _sql.Should().Contain("AND NOT _has_required_direct_membership THEN");
+        _sql.Should().NotContain("WITH ADMIN OPTION");
+        _sql.Should().NotContain("pg_catalog.pg_has_role");
+    }
+
+    [Test]
+    public void It_should_not_contain_a_combined_phase_header()
+    {
+        _sql.Should().NotContain("-- Phase ");
+    }
+
+    [Test]
+    public void It_should_not_emit_a_transaction_wrapper()
+    {
+        _sql.Should().NotContain("BEGIN TRANSACTION");
+        _sql.Should().NotContain("COMMIT");
     }
 
     [Test]
@@ -895,7 +1040,7 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_MssqlDialect
     [Test]
     public void It_should_emit_preflight_comment()
     {
-        _sql.Should().Contain("Preflight: fail fast");
+        _sql.Should().Contain("Preflight: validate EffectiveSchema hash compatibility");
     }
 
     [Test]
@@ -909,15 +1054,160 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_not_contain_phase_7_header()
+    public void It_should_emit_completed_schema_singleton_safety_guards()
     {
-        _sql.Should().NotContain("Phase 7");
+        _sql.Should().Contain("Preflight: protect completed DocumentCache mutable singleton state");
+        _sql.Should().Contain("[dms].[DataStoreIdentity]");
+        _sql.Should().Contain("[dms].[DocumentCacheState]");
+        _sql.Should().Contain("sys.sp_executesql");
+        _sql.Should().Contain("SourceIdentity");
+        _sql.Should().Contain("00000000-0000-0000-0000-000000000000");
+        _sql.Should().Contain("ProjectionLifecycleState");
+        _sql.Should().Contain("CacheAheadRecoveryRequired");
+        _sql.Should().Contain("DATALENGTH(@preflight_lifecycle_state)");
+    }
+
+    [Test]
+    public void It_should_emit_known_legacy_cache_artifact_guards()
+    {
+        _sql.Should().Contain("Preflight: reject known legacy DocumentCache artifacts");
+        _sql.Should().Contain("name = N'Etag'");
+        _sql.Should().Contain("UX_DocumentCache_DocumentUuid");
+        _sql.Should().Contain("IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt");
+        _sql.Should().Contain("Drop and recreate the database before provisioning E18 DocumentCache schema");
+    }
+
+    [Test]
+    public void It_should_not_emit_pgsql_enqueue_owner_prerequisites()
+    {
+        _sql.Should().NotContain("edfi_dms_enqueue_owner");
+        _sql.Should().NotContain("pg_catalog");
+    }
+
+    [Test]
+    public void It_should_not_contain_a_combined_phase_header()
+    {
+        _sql.Should().NotContain("-- Phase ");
+    }
+
+    [Test]
+    public void It_should_not_emit_a_transaction_wrapper()
+    {
+        _sql.Should().NotContain("BEGIN TRANSACTION");
+        _sql.Should().NotContain("COMMIT TRANSACTION");
     }
 
     [Test]
     public void It_should_use_unix_line_endings()
     {
         _sql.Should().NotContain("\r\n");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlEnqueueOwnerPrerequisiteSql
+{
+    private string _providerPrerequisiteSql = null!;
+    private string _standalonePreflightSql = null!;
+    private string _securitySql = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pgsqlDialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        _providerPrerequisiteSql = PgsqlEnqueueOwnerPrerequisiteSql.ProviderPrerequisiteSql;
+        _standalonePreflightSql = new SeedDmlEmitter(pgsqlDialect).EmitPreflightOnly(
+            SeedTestData.ValidEffectiveSchemaHash
+        );
+        _securitySql = new CoreDdlEmitter(pgsqlDialect).Emit();
+    }
+
+    [Test]
+    public void It_should_share_enqueue_owner_diagnostics_across_cli_preflight_and_generated_sql()
+    {
+        string[] sharedDiagnostics =
+        [
+            PgsqlEnqueueOwnerPrerequisiteSql.CreateRoleCapabilityDiagnostic,
+            PgsqlEnqueueOwnerPrerequisiteSql.LockedDownRoleDiagnostic,
+            PgsqlEnqueueOwnerPrerequisiteSql.UnsafeDirectMembershipDiagnostic,
+            PgsqlEnqueueOwnerPrerequisiteSql.MissingRequiredDirectMembershipDiagnostic,
+        ];
+
+        foreach (var diagnostic in sharedDiagnostics)
+        {
+            _providerPrerequisiteSql.Should().Contain(diagnostic);
+            _standalonePreflightSql.Should().Contain($"RAISE EXCEPTION '{diagnostic}';");
+            _securitySql.Should().Contain($"RAISE EXCEPTION '{diagnostic}';");
+        }
+
+        _providerPrerequisiteSql
+            .Should()
+            .Contain(PgsqlEnqueueOwnerPrerequisiteSql.OutgoingMembershipPreflightDiagnostic);
+        _standalonePreflightSql
+            .Should()
+            .Contain(
+                $"RAISE EXCEPTION '{PgsqlEnqueueOwnerPrerequisiteSql.OutgoingMembershipPreflightDiagnostic}';"
+            );
+        _securitySql
+            .Should()
+            .Contain(
+                $"RAISE EXCEPTION '{PgsqlEnqueueOwnerPrerequisiteSql.OutgoingMembershipSecurityDiagnostic}';"
+            );
+    }
+
+    [Test]
+    public void It_should_share_enqueue_owner_membership_predicates_across_cli_preflight_and_generated_sql()
+    {
+        _providerPrerequisiteSql
+            .Should()
+            .Contain(PgsqlEnqueueOwnerPrerequisiteSql.UnsafeRoleAttributePredicate("owner_role_attributes"));
+        _standalonePreflightSql
+            .Should()
+            .Contain(PgsqlEnqueueOwnerPrerequisiteSql.UnsafeRoleAttributePredicate("owner_role"));
+        _securitySql
+            .Should()
+            .Contain(PgsqlEnqueueOwnerPrerequisiteSql.UnsafeRoleAttributePredicate("owner_role"));
+
+        string[] sharedMembershipPredicates =
+        [
+            PgsqlEnqueueOwnerPrerequisiteSql.OutgoingPrivilegeBearingMembershipPredicate("membership"),
+            PgsqlEnqueueOwnerPrerequisiteSql.UnsafeDirectMembershipOptionsPredicate("membership"),
+            "AND NOT membership.admin_option",
+            "AND NOT membership.inherit_option",
+            "AND membership.set_option",
+        ];
+
+        foreach (var predicate in sharedMembershipPredicates)
+        {
+            _providerPrerequisiteSql.Should().Contain(predicate);
+            _standalonePreflightSql.Should().Contain(predicate);
+            _securitySql.Should().Contain(predicate);
+        }
+
+        _providerPrerequisiteSql
+            .Should()
+            .Contain(
+                PgsqlEnqueueOwnerPrerequisiteSql.CreateroleAdminOnlyBootstrapMembershipPredicate(
+                    "membership",
+                    "session_role.rolcreaterole"
+                )
+            );
+        _standalonePreflightSql
+            .Should()
+            .Contain(
+                PgsqlEnqueueOwnerPrerequisiteSql.CreateroleAdminOnlyBootstrapMembershipPredicate(
+                    "membership",
+                    "COALESCE(_session_can_create_role, false)"
+                )
+            );
+        _securitySql
+            .Should()
+            .Contain(
+                PgsqlEnqueueOwnerPrerequisiteSql.CreateroleAdminOnlyBootstrapMembershipPredicate(
+                    "membership",
+                    "COALESCE(_session_can_create_role, false)"
+                )
+            );
     }
 }
 

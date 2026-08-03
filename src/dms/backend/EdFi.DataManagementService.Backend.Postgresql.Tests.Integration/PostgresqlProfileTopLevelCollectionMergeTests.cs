@@ -103,7 +103,7 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -431,6 +431,7 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -440,6 +441,7 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @codeValue,
@@ -449,6 +451,7 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", "uri://ed-fi.org/AddressTypeDescriptor"),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("discriminator", "Ed-Fi:AddressTypeDescriptor"),

@@ -83,7 +83,7 @@ public class ClaimSetModule : IEndpointModule
     }
 
     private static async Task<IResult> GetById(
-        long id,
+        int id,
         HttpContext httpContext,
         IClaimSetRepository repository,
         ILogger<ClaimSetModule> logger
@@ -107,7 +107,7 @@ public class ClaimSetModule : IEndpointModule
     }
 
     private static async Task<IResult> Update(
-        long id,
+        int id,
         ClaimSetUpdateCommand command,
         ClaimSetUpdateCommand.Validator validator,
         HttpContext httpContext,
@@ -163,7 +163,7 @@ public class ClaimSetModule : IEndpointModule
     }
 
     private static async Task<IResult> Delete(
-        long id,
+        int id,
         HttpContext httpContext,
         IClaimSetRepository repository,
         ILogger<ClaimSetModule> logger
@@ -205,7 +205,7 @@ public class ClaimSetModule : IEndpointModule
     }
 
     private static async Task<IResult> Export(
-        long id,
+        int id,
         HttpContext httpContext,
         IClaimSetRepository repository,
         ILogger<ClaimSetModule> logger
@@ -248,11 +248,12 @@ public class ClaimSetModule : IEndpointModule
                 null
             ),
             ClaimSetCopyResult.FailureNotFound => Results.Json(
-                FailureResponse.ForNotFound(
+                FailureResponse.ForUnresolvedReference(
                     $"OriginalId {entity.OriginalId} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
-                statusCode: (int)HttpStatusCode.NotFound
+                contentType: "application/problem+json",
+                statusCode: (int)HttpStatusCode.Conflict
             ),
             ClaimSetCopyResult.FailureDuplicateClaimSetName => DuplicateClaimSetName(httpContext),
             ClaimSetCopyResult.FailureMultiUserConflict => Results.Json(

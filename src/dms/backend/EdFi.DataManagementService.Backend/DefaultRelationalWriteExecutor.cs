@@ -4,9 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Diagnostics;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -34,7 +36,9 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
     ILogger<DefaultRelationalWriteExecutor>? logger = null,
-    ILoggerFactory? loggerFactory = null
+    ILoggerFactory? loggerFactory = null,
+    IDocumentCacheWriterTelemetry? documentCacheWriterTelemetry = null,
+    IDataStoreSelection? dataStoreSelection = null
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -49,6 +53,11 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private readonly ResourceLinksOptions _linksOptions =
         linksOptions?.Value ?? throw new ArgumentNullException(nameof(linksOptions));
+
+    private readonly IDocumentCacheWriterTelemetry _documentCacheWriterTelemetry =
+        documentCacheWriterTelemetry ?? NoOpDocumentCacheWriterTelemetry.Instance;
+
+    private readonly IDataStoreSelection? _dataStoreSelection = dataStoreSelection;
 
     private readonly IRelationalWriteFreshnessChecker _writeFreshnessChecker =
         writeFreshnessChecker ?? throw new ArgumentNullException(nameof(writeFreshnessChecker));
@@ -357,9 +366,28 @@ internal sealed class DefaultRelationalWriteExecutor(
                 );
             }
 
-            var persistedTarget = await _persister
-                .PersistAsync(executionRequest, mergeResult, writeSession, cancellationToken)
-                .ConfigureAwait(false);
+            long canonicalPersistStartTimestamp = Stopwatch.GetTimestamp();
+            RelationalWritePersistResult persistedTarget;
+            try
+            {
+                persistedTarget = await _persister
+                    .PersistAsync(executionRequest, mergeResult, writeSession, cancellationToken)
+                    .ConfigureAwait(false);
+                RecordCanonicalWriterWait(
+                    executionRequest,
+                    DocumentCacheWriterTelemetryLabel.AppliedWrite,
+                    canonicalPersistStartTimestamp
+                );
+            }
+            catch
+            {
+                RecordCanonicalWriterWait(
+                    executionRequest,
+                    DocumentCacheWriterTelemetryLabel.Failed,
+                    canonicalPersistStartTimestamp
+                );
+                throw;
+            }
 
             RelationalWritePersistedTargetValidator.Validate(executionRequest.TargetContext, persistedTarget);
 
@@ -475,4 +503,23 @@ internal sealed class DefaultRelationalWriteExecutor(
                 contentVersion
             )
         );
+
+    private void RecordCanonicalWriterWait(
+        RelationalWriteExecutorRequest request,
+        string outcome,
+        long startTimestamp
+    )
+    {
+        _documentCacheWriterTelemetry.RecordSameDocumentWait(
+            DocumentCacheWriterMetricContext.ForCanonicalWriter(
+                request.MappingSet.Key.Dialect,
+                _dataStoreSelection,
+                DocumentCacheWriterTelemetryLabel.CanonicalWrite,
+                outcome
+            ),
+            DocumentCacheWriterContentionParticipant.CanonicalWriter,
+            DocumentCacheWriterContentionPhase.CanonicalPersist,
+            DocumentCacheWriterTelemetry.GetElapsedTime(startTimestamp)
+        );
+    }
 }

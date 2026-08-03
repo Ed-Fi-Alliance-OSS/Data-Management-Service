@@ -7,7 +7,9 @@
         <IsTestProject>true</IsTestProject>
     </PropertyGroup>
     <ItemGroup>
+        <PackageReference Include="FakeItEasy" />
         <PackageReference Include="FluentAssertions" />
+        <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />
         <PackageReference Include="NUnit" />
         <PackageReference Include="NUnit.Analyzers">
@@ -19,6 +21,8 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend.Mssql\EdFi.DmsConfigurationService.Backend.Mssql.csproj" />
+        <ProjectReference Include="..\..\frontend\EdFi.DmsConfigurationService.Frontend.AspNetCore\EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj" />
+        <ProjectReference Include="..\..\frontend\EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit\EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.csproj" />
     </ItemGroup>
     <ItemGroup>
         <Using Include="NUnit.Framework" />

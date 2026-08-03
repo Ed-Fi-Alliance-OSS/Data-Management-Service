@@ -16,11 +16,16 @@
     /app/additional-claims. This is the non-bootstrap compatibility path; bootstrap mode
     activates staged schema and claims automatically when a manifest is present.
 
-    The script runs:
-    ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile <selected env file> -r -AddExtensionSecurityMetadata
-    ./configure-local-data-store.ps1 -EnvironmentFile <selected env file> -DataStoreDatabaseName <E2E_DATABASE_NAME>
-    ./provision-e2e-database.ps1 -EnvironmentFile <selected env file> -DatabaseName <E2E_DATABASE_NAME>
-    ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile <selected env file> -AddExtensionSecurityMetadata
+    The script runs (with -DatabaseEngine forwarded to every engine-aware phase):
+    ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile <selected env file> -DatabaseEngine <engine> -r -AddExtensionSecurityMetadata
+    ./configure-local-data-store.ps1 -EnvironmentFile <selected env file> -DatabaseEngine <engine> -DataStoreDatabaseName <E2E_DATABASE_NAME>
+    ./provision-e2e-database.ps1 -EnvironmentFile <selected env file> -DatabaseEngine <engine> -DatabaseName <E2E_DATABASE_NAME>
+    ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile <selected env file> -DatabaseEngine <engine> -AddExtensionSecurityMetadata
+
+    On completion the script prints a copyable teardown command carrying the same -DatabaseEngine and
+    the resolved -EnvironmentFile, so a custom or MSSQL run is torn down against its own compose
+    definition/environment rather than the teardown wrapper's postgresql/.env.e2e defaults:
+    ./teardown-local-dms.ps1 -DatabaseEngine <engine> -EnvironmentFile '<resolved env file>'.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
@@ -29,8 +34,29 @@ param(
     [string] $EnvironmentFile = "./.env.e2e",
 
     # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1") composed into the effective environment file.
-    [string] $DataStandardVersion
+    [string] $DataStandardVersion,
+
+    # Database engine backing the stack. "postgresql" (default) or "mssql".
+    [ValidateSet("postgresql", "mssql")]
+    [string] $DatabaseEngine = "postgresql"
 )
+
+function Get-DirectSetupTeardownCommand {
+    # Builds a copyable teardown command that carries the same engine and environment file this setup
+    # used, so a custom or MSSQL run is torn down against its own compose definition/environment rather
+    # than the teardown wrapper's postgresql/.env.e2e defaults. The path is single-quoted (with embedded
+    # single quotes doubled) so a path containing spaces or quotes is safe to paste back.
+    param(
+        [Parameter(Mandatory)]
+        [string] $DatabaseEngine,
+
+        [Parameter(Mandatory)]
+        [string] $EnvironmentFile
+    )
+
+    $quotedEnvironmentFile = "'" + ($EnvironmentFile -replace "'", "''") + "'"
+    return "./teardown-local-dms.ps1 -DatabaseEngine $DatabaseEngine -EnvironmentFile $quotedEnvironmentFile"
+}
 
 Write-Host @"
 Ed-Fi DMS Local Environment Setup for E2E Testing
@@ -68,17 +94,27 @@ $dockerComposeDir = Join-Path $PSScriptRoot "../../../../eng/docker-compose"
 try {
     Set-Location $dockerComposeDir
     Import-Module ./env-utility.psm1 -Force
+    # Shared Compose-equivalent resolver so this wrapper selects the same E2E target database the
+    # provision phase resets (an ambient E2E_DATABASE_NAME override wins over the env file).
+    Import-Module ./database-safety.psm1 -Force
 
     $baseEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $dockerComposeDir
+    # Compose the data-standard overlay first, then the database-engine overlay (same order as
+    # start-local-dms.ps1), so every phase below reads the one resolved file. For postgresql the
+    # engine step is a no-op.
     $resolvedEnvironmentFile = Resolve-DataStandardEnvironmentFile `
         -DataStandardVersion $DataStandardVersion `
         -BaseEnvironmentFile $baseEnvironmentFile `
         -DockerComposeRoot $dockerComposeDir
+    $resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile `
+        -DatabaseEngine $DatabaseEngine `
+        -BaseEnvironmentFile $resolvedEnvironmentFile `
+        -DockerComposeRoot $dockerComposeDir
     $envValues = ReadValuesFromEnvFile $resolvedEnvironmentFile
-    $e2eDatabaseName = Get-EnvValue -EnvValues $envValues -Name "E2E_DATABASE_NAME"
+    $e2eDatabaseName = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "E2E_DATABASE_NAME"
 
     if ([string]::IsNullOrWhiteSpace($e2eDatabaseName)) {
-        throw "E2E_DATABASE_NAME must be set in '$resolvedEnvironmentFile' so direct DMS E2E setup creates a CMS data store against the provisioned E2E database."
+        throw "E2E_DATABASE_NAME must be set in '$resolvedEnvironmentFile' or the process environment so direct DMS E2E setup creates a CMS data store against the provisioned E2E database."
     }
 
     $bootstrapDir = Join-Path $dockerComposeDir ".bootstrap"
@@ -97,6 +133,7 @@ try {
     Write-Host "  - Search Engine UI: Enabled" -ForegroundColor Gray
     Write-Host "  - Configuration Service: Enabled" -ForegroundColor Gray
     Write-Host "  - Environment File: $resolvedEnvironmentFile" -ForegroundColor Gray
+    Write-Host "  - Database Engine: $DatabaseEngine" -ForegroundColor Gray
     Write-Host "  - E2E Database: $e2eDatabaseName" -ForegroundColor Gray
     Write-Host "  - Force Rebuild: Yes" -ForegroundColor Gray
     Write-Output "  - Extension Security Metadata: Yes"
@@ -106,7 +143,7 @@ try {
 
     # Start only the infrastructure and Configuration Service first. DMS starts after the
     # E2E data store exists and the relational schema has been provisioned.
-    ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -r -AddExtensionSecurityMetadata
+    ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -r -AddExtensionSecurityMetadata
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start DMS infrastructure. Exit code: $LASTEXITCODE"
@@ -117,7 +154,7 @@ try {
     # creates a data store automatically; instance creation is owned by configure-local-data-store.ps1.
     # Config Service is already healthy at this point because the -InfraOnly phase waits for
     # CMS readiness before returning.
-    ./configure-local-data-store.ps1 -EnvironmentFile $resolvedEnvironmentFile -DataStoreDatabaseName $e2eDatabaseName
+    ./configure-local-data-store.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DataStoreDatabaseName $e2eDatabaseName
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to configure local data store. Exit code: $LASTEXITCODE"
@@ -125,7 +162,7 @@ try {
     }
 
     Write-Host "`nProvisioning E2E database '$e2eDatabaseName'..." -ForegroundColor Cyan
-    ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseName $e2eDatabaseName
+    ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DatabaseName $e2eDatabaseName
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to provision E2E database '$e2eDatabaseName'. Exit code: $LASTEXITCODE"
@@ -133,15 +170,18 @@ try {
     }
 
     Write-Host "`nStarting DMS after E2E database provisioning..." -ForegroundColor Cyan
-    ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -AddExtensionSecurityMetadata
+    ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -AddExtensionSecurityMetadata
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start DMS service after E2E database provisioning. Exit code: $LASTEXITCODE"
         exit $LASTEXITCODE
     }
 
+    # Pass the fully resolved environment file (data-standard then engine overlay) so teardown uses the
+    # same effective environment the setup composed, not the pre-overlay base.
+    $teardownCommand = Get-DirectSetupTeardownCommand -DatabaseEngine $DatabaseEngine -EnvironmentFile $resolvedEnvironmentFile
     Write-Host "`nDMS E2E environment setup complete!" -ForegroundColor Green
-    Write-Host "To tear down this environment, run: ./teardown-local-dms.ps1" -ForegroundColor Cyan
+    Write-Host "To tear down this environment, run: $teardownCommand" -ForegroundColor Cyan
 }
 finally {
     # Return to original location

@@ -26,9 +26,9 @@ public class DataStoreContextTests : DatabaseTest
     [TestFixture]
     public class InsertTests : DataStoreContextTests
     {
-        private long _id;
+        private int _id;
         private DataStoreContextInsertCommand _insertCommand;
-        private long _dataStoreId;
+        private int _dataStoreId;
 
         [SetUp]
         public async Task Setup()
@@ -106,10 +106,10 @@ public class DataStoreContextTests : DatabaseTest
     [TestFixture]
     public class UpdateTests : DataStoreContextTests
     {
-        private long _id;
+        private int _id;
         private DataStoreContextInsertCommand _insertCommand;
         private DataStoreContextUpdateCommand _updateCommand;
-        private long _dataStoreId;
+        private int _dataStoreId;
 
         [SetUp]
         public async Task Setup()
@@ -176,9 +176,9 @@ public class DataStoreContextTests : DatabaseTest
     [TestFixture]
     public class DeleteTests : DataStoreContextTests
     {
-        private long _id;
+        private int _id;
         private DataStoreContextInsertCommand _insertCommand;
-        private long _dataStoreId;
+        private int _dataStoreId;
 
         [SetUp]
         public async Task Setup()
@@ -235,7 +235,7 @@ public class DataStoreContextTests : DatabaseTest
     [TestFixture]
     public class QueryByInstanceTests : DataStoreContextTests
     {
-        private long _dataStoreId;
+        private int _dataStoreId;
 
         [SetUp]
         public async Task Setup()
@@ -303,7 +303,7 @@ public class DataStoreContextTests : DatabaseTest
     [TestFixture]
     public class QueryPagingTests : DataStoreContextTests
     {
-        private long _dataStoreId;
+        private int _dataStoreId;
 
         [SetUp]
         public async Task Setup()
@@ -389,7 +389,7 @@ public class DataStoreContextTests : DatabaseTest
     [TestFixture]
     public class QuerySortTests : DataStoreContextTests
     {
-        private long _dataStoreId;
+        private int _dataStoreId;
 
         [SetUp]
         public async Task Setup()

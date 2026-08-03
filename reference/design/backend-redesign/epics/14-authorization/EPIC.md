@@ -44,3 +44,7 @@ All authorization stories (design, DDL/provisioning, runtime integration, and te
 - `DMS-1096` — `19-auth-verification-harness.md` — Verification harness for emitted auth DB objects
 - `DMS-1099` — `20-configuration-problem-details` — Implement Security Configuration ProblemDetails
 - `DMS-1207` — `21-token-info-edorg-relational-auth-schema.md` — Convert token_info Education Organization Lookup to Relational Auth Schema
+- `DMS-1362` - `22-namespace-auth-index-prefix-like.md` - Make live Namespace authorization indexes serve prefix `LIKE` on PostgreSQL; prerequisite for tracked namespace index emission
+- `DMS-1372` — `23-store-api-client-ownership-tokens-in-cms.md` — Store and Maintain API-client Ownership Tokens in CMS
+- `DMS-1373` — `24-load-and-cache-api-client-ownership-tokens-from-cms.md` — Load and Cache API-client Ownership Tokens from CMS in DMS
+- `DMS-1374` — `25-ownership-token-operational-lifecycle-spike.md` — Define Ownership-token Operational Lifecycle and Administration

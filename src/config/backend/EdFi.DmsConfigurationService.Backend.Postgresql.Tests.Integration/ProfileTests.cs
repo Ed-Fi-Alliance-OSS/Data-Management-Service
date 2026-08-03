@@ -231,7 +231,7 @@ public class ProfileTests : DatabaseTest
     [TestFixture]
     public class QueryFilterTests : ProfileTests
     {
-        private long _profileId;
+        private int _profileId;
 
         [SetUp]
         public async Task Setup()

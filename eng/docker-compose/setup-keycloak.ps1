@@ -71,7 +71,14 @@ param (
 
     # Token life span
     [int]
-    $TokenLifespan = 1800
+    $TokenLifespan = 1800,
+
+    # Skip granting the Keycloak realm-admin role to the new client. Use for clients that only
+    # need the config-service role + scope to call the CMS Admin API and never call the Keycloak
+    # Admin API themselves (e.g. a CMS bootstrap-admin client), so their credential is not also a
+    # realm administrator. Read-only clients never get realm-admin regardless of this switch.
+    [switch]
+    $SkipRealmAdmin
 )
 
 $script:KeycloakServer = $KeycloakServer
@@ -91,6 +98,7 @@ $script:ClientScopeName = $ClientScopeName
 $script:ClaimName = $ClaimName
 $script:ClaimValue = $ClaimValue
 $script:TokenLifespan = $TokenLifespan
+$script:SkipRealmAdmin = [bool]$SkipRealmAdmin
 
 function Test_ClientSecretLength() {
     param([string] $ClientSecret)
@@ -477,8 +485,9 @@ else {
     Create_ClientScope $script:ClientScopeName
     $clientRole = Get_Role $script:ConfigServiceRole
     Assign_RealmRole $clientRole $clientId
-    # Conditionally assign realm-admin role only if NewClientId is not read-only
-    if ($script:NewClientId -ne 'CMSAuthMetadataReadOnlyAccess' -and $script:NewClientId -ne 'CMSReadOnlyAccess') {
+    # Conditionally assign realm-admin role: never to read-only clients, and never when the
+    # caller passed -SkipRealmAdmin (clients that only call the CMS Admin API, not Keycloak's).
+    if (-not $script:SkipRealmAdmin -and $script:NewClientId -ne 'CMSAuthMetadataReadOnlyAccess' -and $script:NewClientId -ne 'CMSReadOnlyAccess') {
         Assign_Realm_Admin_Role $realmAdminRole $clientId
     }
     Add_Role_To_Token $clientId

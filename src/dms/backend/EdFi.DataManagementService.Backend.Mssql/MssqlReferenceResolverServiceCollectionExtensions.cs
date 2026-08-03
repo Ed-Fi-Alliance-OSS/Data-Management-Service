@@ -30,6 +30,13 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
         services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalParameterConfigurator, MssqlRelationalParameterConfigurator>()
         );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IDocumentCacheMaterializationDataStore,
+                MssqlDocumentCacheMaterializationDataStore
+            >()
+        );
+        services.TryAdd(ServiceDescriptor.Scoped<IDocumentCacheWriter, MssqlDocumentCacheWriter>());
 
         return services.AddReferenceResolver<
             MssqlReferenceResolverAdapterFactory,

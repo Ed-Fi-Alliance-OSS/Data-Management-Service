@@ -13,7 +13,11 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 public static class PlanWriteBatchingConventions
 {
-    private const int MssqlMaxParametersPerCommand = 2100;
+    // The usable-per-command ceiling (2098, not the documented 2100 RPC limit, because sp_executesql's
+    // own @stmt/@params arguments consume two slots) is owned by MssqlCommandLimits so every SQL Server
+    // command shape derives its budget from one constant. Do not reintroduce a local copy: the write and
+    // authorization ceilings previously drifted apart.
+    private const int MssqlMaxParametersPerCommand = MssqlCommandLimits.MaxUserParametersPerCommand;
     private const int PgsqlMaxParametersPerCommand = 65535;
     private const int MssqlMaxValuesRowsPerCommand = 1000;
     private const int PgsqlPolicyMaxRowsPerCommand = 1000;

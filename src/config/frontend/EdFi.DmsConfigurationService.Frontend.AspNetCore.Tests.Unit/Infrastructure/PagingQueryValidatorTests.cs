@@ -104,4 +104,27 @@ public class Given_PagingQueryValidators
         var result = scenario.Validate();
         result.IsValid.Should().BeTrue();
     }
+
+    [TestFixture]
+    public class Given_an_invalid_orderBy_value
+    {
+        private const string InjectionSentinel = "<script>SENTINEL_ORDERBY_INJECTION_9f2c</script>";
+        private ValidationResult _result = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _result = new ClaimSetPagingQueryValidator().Validate(
+                new FrontendClaimSetQuery { OrderBy = InjectionSentinel }
+            );
+
+        [Test]
+        public void It_rejects_the_query() => _result.IsValid.Should().BeFalse();
+
+        [Test]
+        public void It_reports_at_least_one_error() => _result.Errors.Should().NotBeEmpty();
+
+        [Test]
+        public void It_does_not_reflect_the_raw_client_supplied_value() =>
+            _result.Errors.Should().OnlyContain(e => !e.ErrorMessage.Contains(InjectionSentinel));
+    }
 }
