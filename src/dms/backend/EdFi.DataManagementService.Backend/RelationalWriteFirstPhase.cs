@@ -152,6 +152,14 @@ internal sealed class RelationalWriteLockedTarget
 /// remains on the same transaction, so SQL Server never depends on a batch-local carrier crossing a
 /// command boundary and the original row lock remains held through the phase.
 /// </para>
+/// <para>
+/// The SQL Server hint set locks a target the capture actually observes; it does not lock a range when
+/// there is none. A create — the bulk-import case, where the referential-id subquery yields no row —
+/// takes no key lock at all, only the statement's intent lock on the table, so nothing is held across
+/// reference resolution and the DML. An update-shaped capture holds exactly one row lock, which is the
+/// reason for taking it: the observation deciding create-versus-update must be the row the write then
+/// mutates. Measured directly against the generated schema rather than inferred from the hint names.
+/// </para>
 /// </remarks>
 internal sealed class CompositeRelationalWriteFirstPhase(
     IReferenceResolverAdapterFactory referenceResolverAdapterFactory,
