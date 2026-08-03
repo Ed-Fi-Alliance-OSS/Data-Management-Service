@@ -5382,6 +5382,128 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
+        It "classifies an Npgsql host VALUE by every endpoint it can reach: <Name>" -ForEach @(
+            @{ Name = "local first in the host list"; HostSegment = 'host=localhost:5544,pg.example.com:5432;port=5432'; ExpectRefused = $true }
+            @{ Name = "local as a failover member"; HostSegment = 'host=pg.example.com:5432,localhost:5544;port=5432'; ExpectRefused = $true }
+            @{ Name = "local member taking the global port"; HostSegment = 'host=pg.example.com:5432,localhost;port=5544'; ExpectRefused = $true }
+            @{ Name = "load-balanced list with a local member"; HostSegment = 'host=pg.example.com:5432,localhost:5544;port=5432;Load Balance Hosts=true'; ExpectRefused = $true }
+            @{ Name = "127.1 short-form loopback"; HostSegment = 'host=127.1;port=5544'; ExpectRefused = $true }
+            @{ Name = "plain localhost (control)"; HostSegment = 'host=localhost;port=5544'; ExpectRefused = $true }
+            @{ Name = "external-only list keeps the reserved name"; HostSegment = 'host=pg.example.com:5432,other.example.com;port=5432'; ExpectRefused = $false }
+            @{ Name = "localhost on another port"; HostSegment = 'host=localhost;port=9999'; ExpectRefused = $false }
+            @{ Name = "127.0.0.2 is a different listener"; HostSegment = 'host=127.0.0.2;port=5544'; ExpectRefused = $false }
+        ) {
+            # Npgsql's Host is not one scalar hostname: it accepts an ordered comma-separated list with
+            # optional per-host "host:port" entries and connects through them by failover or load balancing
+            # (npgsql.org/doc/failover-and-load-balancing.html). So a local member ANYWHERE in the list is
+            # an endpoint the provider can reach, and reading the whole value as one hostname classified
+            # such a target as external - which returned the guard before it ever compared the database
+            # name. Every refusing row here names the reserved database and must be stopped before
+            # SchemaTools is invoked at all.
+            #
+            # The negative rows bound the rule: an external-only list may keep the reserved name, because
+            # that database on another server is another server's; localhost on a different port is a
+            # different instance; and 127.0.0.2 is a different listener, NOT the Compose one - it is in
+            # 127/8 and IPAddress.IsLoopback calls it loopback, which is exactly why classification
+            # compares the canonical address to 127.0.0.1 instead.
+            $capturePath = Initialize-CanonicalMssqlWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Get-CmsToken { return "token" }
+                $script:multiHostConnectionString =
+                    "$HostSegment;username=postgres;password=isolated-pass;database=edfi_configurationservice;"
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 811
+                            name = "MultiHost"
+                            connectionString = $script:multiHostConnectionString
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                $envFile = Join-Path $script:repo.DockerComposeRoot "env-multihost-$([Guid]::NewGuid().ToString('N')).env"
+                @"
+POSTGRES_PASSWORD=isolated-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                $invoke = { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile $envFile `
+                    -DataStoreId @(811) `
+                    -SeparateConfigDatabase }
+
+                if ($ExpectRefused) {
+                    ($invoke | Should -Throw -PassThru).Exception.Message |
+                        Should -BeLike "*edfi_configurationservice*"
+                    Test-Path -LiteralPath $capturePath |
+                        Should -BeFalse -Because "a local candidate anywhere in the list must stop the phase before any DDL"
+                }
+                else {
+                    $invoke | Should -Not -Throw
+                    @(Get-Content -LiteralPath $capturePath) | Should -Contain "pgsql"
+                }
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "provisions a distinct database on a local multi-host target and hands SchemaTools the host list unchanged" {
+            # Classification-only: recognizing a local member decides whether the guard runs, and must not
+            # touch the transport. The host list, its ORDER, and the unrelated Npgsql options have to reach
+            # SchemaTools exactly as stored, or failover behaviour would be silently rewritten.
+            $capturePath = Initialize-CanonicalMssqlWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Get-CmsToken { return "token" }
+                $script:multiHostConnectionString =
+                    'host=localhost:5544,pg.example.com:5432;port=5432;username=postgres;password=isolated-pass;database=edfi_datamanagementservice;Load Balance Hosts=true;'
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 812
+                            name = "MultiHostDistinct"
+                            connectionString = $script:multiHostConnectionString
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                $envFile = Join-Path $script:repo.DockerComposeRoot "env-multihost-ok-$([Guid]::NewGuid().ToString('N')).env"
+                @"
+POSTGRES_PASSWORD=isolated-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile $envFile `
+                    -DataStoreId @(812) `
+                    -SeparateConfigDatabase } |
+                    Should -Not -Throw -Because "a distinct database on a local server is exactly what separate mode allows"
+
+                $keyValue = Get-ConnectionStringKeyValue `
+                    -ConnectionString (Get-CapturedSchemaToolConnectionString -CapturePath $capturePath)
+
+                $keyValue["host"] | Should -Be "localhost:5544,pg.example.com:5432" -Because "the host list and its failover order must reach SchemaTools verbatim"
+                $keyValue["port"] | Should -Be "5432" -Because "the standalone port is the list's global default and is not rewritten"
+                $keyValue["database"] | Should -Be "edfi_datamanagementservice"
+                $keyValue["load balance hosts"] | Should -Be "true" -Because "unrelated Npgsql options pass through"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
         It "treats a padded or signed MSSQL port as the same TCP port and consults the live authority: <Name>" -ForEach @(
             @{ Name = "localhost,015433 against configured 15433"; ServerSegment = 'Server=localhost,015433'; ExpectLocal = $true }
             @{ Name = "localhost,+15433 (leading sign) against configured 15433"; ServerSegment = 'Server=localhost,+15433'; ExpectLocal = $true }

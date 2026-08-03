@@ -1104,6 +1104,124 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
         }
     }
 
+    Context "CMS endpoint agreement follows the providers' endpoint syntax (DMS-1270)" {
+        # Both halves of this Context are about ONE boundary: the pre-start check that the CMS connection
+        # string targets the composed database service. It rejected two spellings the providers themselves
+        # accept - SQL Server's documented "tcp:host,port" form, and a PostgreSQL port with a leading zero
+        # or sign - so a correct environment file failed validation before anything started.
+        BeforeAll {
+            function script:New-EndpointAgreementEnvFile {
+                param(
+                    [Parameter(Mandatory)] [ValidateSet("postgresql", "mssql")] [string]$Engine,
+                    [Parameter(Mandatory)] [string]$ConnectionString,
+                    [switch]$Separate
+                )
+
+                $datastoreName = "edfi_datamanagementservice"
+                $configName = if ($Separate) { "edfi_configurationservice" } else { $datastoreName }
+                $lines = if ($Engine -eq "mssql") {
+                    @(
+                        "MSSQL_DB_NAME=$datastoreName",
+                        'MSSQL_SA_PASSWORD=abcdefgh1!',
+                        "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=$(if ($Separate) { 'true' } else { 'false' })",
+                        "DMS_CONFIG_DATABASE_NAME=$configName",
+                        "DMS_CONFIG_DATABASE_CONNECTION_STRING=$ConnectionString"
+                    )
+                }
+                else {
+                    @(
+                        "POSTGRES_DB_NAME=$datastoreName",
+                        'POSTGRES_PASSWORD=abcdefgh1!',
+                        "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=$(if ($Separate) { 'true' } else { 'false' })",
+                        "DMS_CONFIG_DATABASE_NAME=$configName",
+                        "DMS_CONFIG_DATABASE_CONNECTION_STRING=$ConnectionString"
+                    )
+                }
+
+                $path = Join-Path $script:work ".env.endpoint-$([Guid]::NewGuid().ToString('N'))"
+                Set-Content -LiteralPath $path -Value ($lines -join "`n") -NoNewline
+                return $path
+            }
+        }
+
+        It "accepts the documented SQL Server tcp: prefix on the composed service: <Name>" -ForEach @(
+            @{ Name = "tcp: on the container/hostname alias"; Server = 'tcp:dms-mssql,1433'; Separate = $false }
+            @{ Name = "uppercase TCP: prefix"; Server = 'TCP:dms-mssql,1433'; Separate = $false }
+            @{ Name = "tcp: on the compose service-key alias"; Server = 'tcp:db,1433'; Separate = $false }
+            @{ Name = "tcp: with the port omitted"; Server = 'tcp:dms-mssql'; Separate = $false }
+            @{ Name = "tcp: in separate topology"; Server = 'tcp:dms-mssql,1433'; Separate = $true }
+        ) {
+            # "tcp:host,port" names the same server "host,port" does
+            # (learn.microsoft.com/troubleshoot/sql/connect/use-server-name-parameter-connection-string),
+            # so the endpoint check must see through exactly one such prefix. Both accepted aliases are
+            # covered, because the alias set is derived from the compose file rather than listed.
+            $configName = if ($Separate) { "edfi_configurationservice" } else { "edfi_datamanagementservice" }
+            $envFile = New-EndpointAgreementEnvFile -Engine "mssql" -Separate:$Separate `
+                -ConnectionString "Server=$Server;Database=$configName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $envFile -DatabaseEngine "mssql" } |
+                Should -Not -Throw
+        }
+
+        It "still rejects an endpoint that is wrong for a reason other than the tcp: prefix: <Name>" -ForEach @(
+            @{ Name = "tcp: on a host that is not the composed service"; Server = 'tcp:sql.example.com,1433'; Expected = "*targets host*" }
+            @{ Name = "tcp: on the right host but the wrong port"; Server = 'tcp:dms-mssql,14330'; Expected = "*targets port*" }
+            @{ Name = "np: named-pipe prefix is not stripped"; Server = 'np:dms-mssql,1433'; Expected = "*targets host*" }
+            @{ Name = "lpc: shared-memory prefix is not stripped"; Server = 'lpc:dms-mssql'; Expected = "*targets host*" }
+            @{ Name = "host-side localhost is still refused"; Server = 'tcp:localhost,1433'; Expected = "*targets host*" }
+            @{ Name = "a doubled tcp: prefix leaves a bad host"; Server = 'tcp:tcp:dms-mssql,1433'; Expected = "*targets host*" }
+        ) {
+            # Exactly ONE tcp: prefix is removed, and no other protocol is. This connection string is the
+            # CMS container's, so a host-side name would mask a genuinely wrong endpoint.
+            $envFile = New-EndpointAgreementEnvFile -Engine "mssql" `
+                -ConnectionString "Server=$Server;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
+
+            $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $envFile -DatabaseEngine "mssql" } |
+                Should -Throw -PassThru
+            $thrown.Exception.Message | Should -BeLike $Expected
+            $thrown.Exception.Message | Should -Not -BeLike "*abcdefgh1!*" -Because "diagnostics never render credentials"
+        }
+
+        It "compares the PostgreSQL CMS port numerically, as Npgsql resolves it: <Name>" -ForEach @(
+            @{ Name = "zero-padded 05432"; Port = '05432'; Separate = $false; ShouldPass = $true }
+            @{ Name = "leading-sign +5432"; Port = '+5432'; Separate = $false; ShouldPass = $true }
+            @{ Name = "plain 5432 (control)"; Port = '5432'; Separate = $false; ShouldPass = $true }
+            @{ Name = "zero-padded in separate topology"; Port = '05432'; Separate = $true; ShouldPass = $true }
+            @{ Name = "a genuinely different port"; Port = '5433'; Separate = $false; ShouldPass = $false }
+            @{ Name = "a value that is not a port"; Port = 'abcd'; Separate = $false; ShouldPass = $false }
+        ) {
+            # Npgsql resolves 05432 and +5432 to port 5432 (pinned in the SchemaTools unit project), so an
+            # Ordinal text comparison rejected an environment naming exactly the right service and port.
+            # A different port, and anything that is not a port, still fail.
+            $configName = if ($Separate) { "edfi_configurationservice" } else { "edfi_datamanagementservice" }
+            $envFile = New-EndpointAgreementEnvFile -Engine "postgresql" -Separate:$Separate `
+                -ConnectionString "host=dms-postgresql;port=$Port;username=postgres;password=abcdefgh1!;database=$configName;"
+
+            if ($ShouldPass) {
+                { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $envFile -DatabaseEngine "postgresql" } |
+                    Should -Not -Throw
+            }
+            else {
+                $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $envFile -DatabaseEngine "postgresql" } |
+                    Should -Throw -PassThru
+                $thrown.Exception.Message | Should -BeLike "*targets port*"
+                $thrown.Exception.Message | Should -Not -BeLike "*abcdefgh1!*"
+            }
+        }
+
+        It "reports the tcp:-stripped host from the endpoint extractor without altering the caller's string" {
+            # The normalization is reporting-only: the extractor hands back the bare host, and the
+            # connection string it was given is untouched.
+            $connectionString = 'Server=tcp:dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;'
+            $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString $connectionString -DatabaseEngine "mssql")
+
+            $endpoints.Count | Should -Be 1
+            $endpoints[0].Host | Should -Be "dms-mssql"
+            $endpoints[0].Port | Should -Be "1433"
+            $connectionString | Should -Be 'Server=tcp:dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;' -Because "the extractor must not rewrite its input"
+        }
+    }
+
     Context "repair-failure diagnostics withhold credentials (DMS-1270)" {
         It "names the differing connection-string segments without rendering any value" {
             # A repair-failure message reaches terminals and CI logs, and both engines' connection
