@@ -179,9 +179,35 @@ internal static class DocumentCacheInventoryValidatorSupport
                 [
                     Bigint(DocumentCacheInventoryDefinition.DocumentColumns.DocumentId.Value, dialect),
                     Uuid(DocumentCacheInventoryDefinition.DocumentColumns.DocumentUuid.Value, dialect),
+                    Smallint(DocumentCacheInventoryDefinition.DocumentColumns.ResourceKeyId.Value, dialect),
                     Bigint(DocumentCacheInventoryDefinition.DocumentColumns.ContentVersion.Value, dialect),
                 ],
                 ExactColumnSet: false
+            ),
+            new TableSpec(
+                DocumentCacheInventoryDefinition.ResourceKey,
+                [
+                    Smallint(
+                        DocumentCacheInventoryDefinition.ResourceKeyColumns.ResourceKeyId.Value,
+                        dialect
+                    ),
+                    String(
+                        DocumentCacheInventoryDefinition.ResourceKeyColumns.ProjectName.Value,
+                        dialect,
+                        256
+                    ),
+                    String(
+                        DocumentCacheInventoryDefinition.ResourceKeyColumns.ResourceName.Value,
+                        dialect,
+                        256
+                    ),
+                    String(
+                        DocumentCacheInventoryDefinition.ResourceKeyColumns.ResourceVersion.Value,
+                        dialect,
+                        32
+                    ),
+                ],
+                ExactColumnSet: true
             ),
             new TableSpec(
                 DocumentCacheInventoryDefinition.DocumentCache,
@@ -357,6 +383,31 @@ internal static class DocumentCacheInventoryValidatorSupport
         await RequirePrimaryKeyAsync(
                 connection,
                 dialect,
+                DocumentCacheInventoryDefinition.ResourceKey,
+                DocumentCacheInventoryDefinition.ResourceKeyConstraints.PrimaryKey,
+                [DocumentCacheInventoryDefinition.ResourceKeyColumns.ResourceKeyId.Value],
+                inventoryIssues,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        await RequireForeignKeyAsync(
+                connection,
+                dialect,
+                DocumentCacheInventoryDefinition.Document,
+                DocumentCacheInventoryDefinition.DocumentConstraints.ForeignKeyToResourceKey,
+                [DocumentCacheInventoryDefinition.DocumentColumns.ResourceKeyId.Value],
+                DocumentCacheInventoryDefinition.ResourceKey,
+                [DocumentCacheInventoryDefinition.ResourceKeyColumns.ResourceKeyId.Value],
+                deleteAction: "NO_ACTION",
+                updateAction: "NO_ACTION",
+                inventoryIssues,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        await RequirePrimaryKeyAsync(
+                connection,
+                dialect,
                 DocumentCacheInventoryDefinition.DocumentCache,
                 DocumentCacheInventoryDefinition.DocumentCacheConstraints.PrimaryKey,
                 [DocumentCacheInventoryDefinition.DocumentCacheColumns.DocumentId.Value],
@@ -470,24 +521,70 @@ internal static class DocumentCacheInventoryValidatorSupport
         CancellationToken cancellationToken
     )
     {
-        IndexSnapshot? index = await ReadIndexAsync(
+        await RequireIndexAsync(
                 connection,
                 dialect,
-                DocumentCacheInventoryDefinition.DocumentProjectionWork,
-                DocumentCacheInventoryDefinition.DocumentProjectionWorkIndexes.FirstEnqueuedAtDocumentId,
+                DocumentCacheInventoryDefinition.ResourceKey,
+                DocumentCacheInventoryDefinition.ResourceKeyConstraints.UniqueProjectNameResourceName,
+                [
+                    DocumentCacheInventoryDefinition.ResourceKeyColumns.ProjectName.Value,
+                    DocumentCacheInventoryDefinition.ResourceKeyColumns.ResourceName.Value,
+                ],
+                requireUnique: true,
+                inventoryIssues,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
+        await RequireIndexAsync(
+                connection,
+                dialect,
+                DocumentCacheInventoryDefinition.DocumentProjectionWork,
+                DocumentCacheInventoryDefinition.DocumentProjectionWorkIndexes.FirstEnqueuedAtDocumentId,
+                [
+                    DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.FirstEnqueuedAt.Value,
+                    DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.DocumentId.Value,
+                ],
+                requireUnique: false,
+                inventoryIssues,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private static async Task RequireIndexAsync(
+        DbConnection connection,
+        SqlDialect dialect,
+        DbTableName table,
+        string indexName,
+        IReadOnlyList<string> expectedColumns,
+        bool requireUnique,
+        List<InventoryIssue> inventoryIssues,
+        CancellationToken cancellationToken
+    )
+    {
+        IndexSnapshot? index = await ReadIndexAsync(connection, dialect, table, indexName, cancellationToken)
+            .ConfigureAwait(false);
+        string artifactDescription = requireUnique
+            ? $"{indexName} uniqueness artifact"
+            : $"{indexName} index";
+
         if (index is null)
         {
             inventoryIssues.Add(
-                new InventoryIssue(
-                    DocumentCacheInventoryStatus.Missing,
-                    $"{DocumentCacheInventoryDefinition.DocumentProjectionWorkIndexes.FirstEnqueuedAtDocumentId} index is missing."
-                )
+                new InventoryIssue(DocumentCacheInventoryStatus.Missing, $"{artifactDescription} is missing.")
             );
             return;
+        }
+
+        if (requireUnique && !index.IsUnique)
+        {
+            inventoryIssues.Add(
+                new InventoryIssue(
+                    DocumentCacheInventoryStatus.Invalid,
+                    $"{artifactDescription} is not unique."
+                )
+            );
         }
 
         if (!index.IsUsable)
@@ -495,7 +592,7 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{DocumentCacheInventoryDefinition.DocumentProjectionWorkIndexes.FirstEnqueuedAtDocumentId} index is not usable."
+                    $"{artifactDescription} is not usable."
                 )
             );
         }
@@ -505,7 +602,7 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{DocumentCacheInventoryDefinition.DocumentProjectionWorkIndexes.FirstEnqueuedAtDocumentId} index is filtered or partial."
+                    $"{artifactDescription} is filtered or partial."
                 )
             );
         }
@@ -515,7 +612,7 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{DocumentCacheInventoryDefinition.DocumentProjectionWorkIndexes.FirstEnqueuedAtDocumentId} index has included columns."
+                    $"{artifactDescription} has included columns."
                 )
             );
         }
@@ -525,20 +622,12 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{DocumentCacheInventoryDefinition.DocumentProjectionWorkIndexes.FirstEnqueuedAtDocumentId} index has expression keys."
+                    $"{artifactDescription} has expression keys."
                 )
             );
         }
 
-        ValidateColumnOrder(
-            index.Columns,
-            [
-                DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.FirstEnqueuedAt.Value,
-                DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.DocumentId.Value,
-            ],
-            DocumentCacheInventoryDefinition.DocumentProjectionWorkIndexes.FirstEnqueuedAtDocumentId,
-            inventoryIssues
-        );
+        ValidateColumnOrder(index.Columns, expectedColumns, artifactDescription, inventoryIssues);
     }
 
     private static async Task ValidateDocumentCacheUuidTriggerAsync(
@@ -1632,10 +1721,11 @@ internal static class DocumentCacheInventoryValidatorSupport
             SqlDialect.Pgsql => """
                 SELECT
                     a.attname AS ColumnName,
-                    idx.indisvalid AND idx.indisready AS IsUsable,
+                    idx.indisunique AS IsUnique,
+                    idx.indisvalid AND idx.indisready AND idx.indislive AS IsUsable,
                     idx.indpred IS NOT NULL AS IsFilteredOrPartial,
                     key_columns.attnum = 0 AS IsExpressionKey,
-                    FALSE AS IsIncludedColumn
+                    key_columns.ordinal > idx.indnkeyatts AS IsIncludedColumn
                 FROM pg_catalog.pg_index idx
                 INNER JOIN pg_catalog.pg_class index_rel
                     ON index_rel.oid = idx.indexrelid
@@ -1656,9 +1746,10 @@ internal static class DocumentCacheInventoryValidatorSupport
             SqlDialect.Mssql => """
                 SELECT
                     columns.name AS ColumnName,
-                    CASE WHEN indexes.is_disabled = 0 THEN 1 ELSE 0 END AS IsUsable,
+                    CASE WHEN indexes.is_unique = 1 THEN 1 ELSE 0 END AS IsUnique,
+                    CASE WHEN indexes.is_disabled = 0 AND indexes.is_hypothetical = 0 THEN 1 ELSE 0 END AS IsUsable,
                     indexes.has_filter AS IsFilteredOrPartial,
-                    CAST(0 AS bit) AS IsExpressionKey,
+                    CASE WHEN columns.is_computed = 1 THEN 1 ELSE 0 END AS IsExpressionKey,
                     index_columns.is_included_column AS IsIncludedColumn
                 FROM sys.indexes indexes
                 INNER JOIN sys.tables tables
@@ -1691,6 +1782,7 @@ internal static class DocumentCacheInventoryValidatorSupport
                 ],
                 reader => new IndexRow(
                     ReadNullableString(reader, "ColumnName"),
+                    ReadBooleanLike(reader, "IsUnique"),
                     ReadBooleanLike(reader, "IsUsable"),
                     ReadBooleanLike(reader, "IsFilteredOrPartial"),
                     ReadBooleanLike(reader, "IsExpressionKey"),
@@ -1706,6 +1798,7 @@ internal static class DocumentCacheInventoryValidatorSupport
                 rows.Where(row => !row.IsIncludedColumn && !row.IsExpressionKey && row.Column is not null)
                     .Select(row => row.Column!)
                     .ToArray(),
+                rows.All(row => row.IsUnique),
                 rows.All(row => row.IsUsable),
                 rows.Any(row => row.IsFilteredOrPartial),
                 rows.Any(row => row.IsIncludedColumn),
@@ -2142,8 +2235,11 @@ internal static class DocumentCacheInventoryValidatorSupport
             "UPDATEWORK",
             "SETWORKREQUIREDCONTENTVERSION=REQREQUIREDCONTENTVERSION",
             "WORKREQUIREDCONTENTVERSION<REQREQUIREDCONTENTVERSION",
+            "INNERLOOPJOINDMSDOCUMENTPROJECTIONWORK",
+            "OPTIONFORCEORDER",
             "INSERTINTODMSDOCUMENTPROJECTIONWORK",
-            "LEFTJOINDMSDOCUMENTPROJECTIONWORK"
+            "WHERENOTEXISTS",
+            "WORKWITHUPDLOCKHOLDLOCKROWLOCK"
         );
 
     private static bool HasNormalizedTokens(string? definition, params string[] tokens) =>
@@ -2546,6 +2642,7 @@ internal static class DocumentCacheInventoryValidatorSupport
 
     private sealed record IndexRow(
         string? Column,
+        bool IsUnique,
         bool IsUsable,
         bool IsFilteredOrPartial,
         bool IsExpressionKey,
@@ -2554,6 +2651,7 @@ internal static class DocumentCacheInventoryValidatorSupport
 
     private sealed record IndexSnapshot(
         IReadOnlyList<string> Columns,
+        bool IsUnique,
         bool IsUsable,
         bool IsFilteredOrPartial,
         bool HasIncludedColumns,

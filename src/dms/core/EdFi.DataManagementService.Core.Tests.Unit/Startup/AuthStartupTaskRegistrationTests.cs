@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Startup;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -56,6 +57,50 @@ public class AuthStartupTaskRegistrationTests
                     && descriptor.ImplementationType != null
                     && descriptor.ImplementationType.Name == "CacheClaimSetsTask"
                 );
+        }
+
+        [Test]
+        public void It_registers_deadlock_retry_settings_for_backend_startup_services()
+        {
+            ServiceDescriptor descriptor = _services.Single(descriptor =>
+                descriptor.ServiceType == typeof(DeadlockRetrySettings)
+            );
+
+            descriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
+            descriptor.ImplementationInstance.Should().BeOfType<DeadlockRetrySettings>();
+        }
+
+        [Test]
+        public void It_binds_deadlock_retry_settings_for_backend_startup_services()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["DeadlockRetry:MaxRetryAttempts"] = "7",
+                        ["DeadlockRetry:BaseDelayMilliseconds"] = "25",
+                        ["DeadlockRetry:UseJitter"] = "false",
+                    }
+                )
+                .Build();
+            var services = new ServiceCollection();
+
+            services.AddDmsDefaultConfiguration(
+                new LoggerConfiguration().CreateLogger(),
+                configuration.GetSection("CircuitBreaker"),
+                configuration.GetSection("DeadlockRetry"),
+                false
+            );
+
+            var settings = services
+                .Single(descriptor => descriptor.ServiceType == typeof(DeadlockRetrySettings))
+                .ImplementationInstance.Should()
+                .BeOfType<DeadlockRetrySettings>()
+                .Subject;
+
+            settings.MaxRetryAttempts.Should().Be(7);
+            settings.BaseDelayMilliseconds.Should().Be(25);
+            settings.UseJitter.Should().BeFalse();
         }
     }
 }

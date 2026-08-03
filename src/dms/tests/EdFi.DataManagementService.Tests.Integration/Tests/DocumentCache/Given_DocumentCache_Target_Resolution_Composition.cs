@@ -3,9 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Startup;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -27,6 +31,70 @@ public class Given_DocumentCache_Target_Resolution_Composition
 
     private static readonly DocumentCachePhysicalSourceFingerprint _fingerprint = new(
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    );
+
+    private static readonly byte[] _resourceKeySeedHash =
+    [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+    ];
+
+    private static readonly EffectiveSchemaSet _effectiveSchemaSet = new(
+        new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "5.2.0",
+            RelationalMappingVersion: "relational-v1",
+            EffectiveSchemaHash: "schema-hash",
+            ResourceKeyCount: 1,
+            ResourceKeySeedHash: _resourceKeySeedHash,
+            SchemaComponentsInEndpointOrder: [],
+            ResourceKeysInIdOrder:
+            [
+                new ResourceKeyEntry(
+                    ResourceKeyId: 1,
+                    Resource: new QualifiedResourceName("Ed-Fi", "Student"),
+                    ResourceVersion: "5.2.0",
+                    IsAbstractResource: false
+                ),
+            ]
+        ),
+        ProjectsInEndpointOrder: []
+    );
+
+    private static readonly DatabaseFingerprint _databaseFingerprint = new(
+        ApiSchemaFormatVersion: "5.2.0",
+        EffectiveSchemaHash: "schema-hash",
+        ResourceKeyCount: 1,
+        ResourceKeySeedHash: [.. _resourceKeySeedHash]
     );
 
     private static readonly DocumentCacheLifecycleObservation _disabledLifecycle = new(
@@ -130,6 +198,42 @@ public class Given_DocumentCache_Target_Resolution_Composition
             diagnostics,
             dataStoreId: 6,
             DocumentCacheTargetDiagnosticCategory.InventoryFailure
+        );
+        AssertDiagnosticMessagesDoNotLeakPhysicalDetails(diagnostics);
+    }
+
+    [Test]
+    public async Task It_does_not_expose_execution_contexts_for_targets_with_mismatched_schema_metadata()
+    {
+        using CompositionFixture fixture = CompositionFixture.Create(
+            RelationalProviderToken.Postgresql,
+            CreateOptions([("", 1), ("", 2)])
+        );
+        fixture.ProviderAdapter.SetObservation("eligible-connection");
+        fixture.ProviderAdapter.SetObservation(
+            "schema-mismatch-connection",
+            databaseFingerprint: _databaseFingerprint with
+            {
+                EffectiveSchemaHash = "other-schema-hash",
+            }
+        );
+        fixture.DataStoreProvider.QueueLoadResult(
+            tenant: null,
+            CreateDataStore(1, "eligible-connection", RelationalProviderToken.Postgresql),
+            CreateDataStore(2, "schema-mismatch-connection", RelationalProviderToken.Postgresql)
+        );
+
+        await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+
+        DocumentCacheTargetRuntimeSnapshot runtimeSnapshot = fixture.Registry.CurrentRuntimeSnapshot;
+        DocumentCacheDiagnosticSnapshot diagnostics = fixture.Diagnostics.CurrentSnapshot;
+
+        runtimeSnapshot.ExecutionContexts.Select(context => context.TargetKey.DataStoreId).Should().Equal(1);
+        runtimeSnapshot.GetExecutionContext(DocumentCacheTargetKey.Create("", 2)).Should().BeNull();
+        AssertSingleDiagnosticCategory(
+            diagnostics,
+            dataStoreId: 2,
+            DocumentCacheTargetDiagnosticCategory.EffectiveSchemaCompatibilityFailure
         );
         AssertDiagnosticMessagesDoNotLeakPhysicalDetails(diagnostics);
     }
@@ -487,6 +591,11 @@ public class Given_DocumentCache_Target_Resolution_Composition
             services.AddSingleton<IDocumentCacheLifecycleReader>(ProviderAdapter);
             services.AddSingleton<IDocumentCacheInventoryValidator>(ProviderAdapter);
             services.AddSingleton<IDocumentCacheProviderPrerequisiteValidator>(ProviderAdapter);
+            services.AddSingleton<IEffectiveSchemaSetProvider>(
+                new StaticEffectiveSchemaSetProvider(_effectiveSchemaSet)
+            );
+            services.AddSingleton<IDatabaseFingerprintReader>(ProviderAdapter);
+            services.AddSingleton<IResourceKeyValidator>(ProviderAdapter);
             services.AddSingleton<IDocumentCacheTargetContextBuilder, DocumentCacheTargetContextBuilder>();
             services.AddSingleton<IDocumentCacheTargetRegistry, DocumentCacheTargetRegistry>();
             services.AddSingleton<
@@ -509,6 +618,8 @@ public class Given_DocumentCache_Target_Resolution_Composition
 
     private sealed class ScriptedDocumentCacheProviderAdapter(RelationalProviderToken providerToken)
         : IDocumentCachePhysicalSourceFingerprintReader,
+            IDatabaseFingerprintReader,
+            IResourceKeyValidator,
             IDocumentCacheLifecycleReader,
             IDocumentCacheInventoryValidator,
             IDocumentCacheProviderPrerequisiteValidator
@@ -526,6 +637,8 @@ public class Given_DocumentCache_Target_Resolution_Composition
             string connectionString,
             DocumentCacheLifecycleObservation? lifecycle = null,
             DocumentCacheProviderInventoryValidationResult? inventory = null,
+            DatabaseFingerprint? databaseFingerprint = null,
+            ResourceKeyValidationResult? resourceKeyValidation = null,
             Func<
                 DocumentCacheLifecycleObservation,
                 DocumentCacheProviderPrerequisiteValidationResult
@@ -541,6 +654,8 @@ public class Given_DocumentCache_Target_Resolution_Composition
                         _satisfiedInventory,
                         _satisfiedEnqueueTrigger
                     ),
+                databaseFingerprint ?? _databaseFingerprint,
+                resourceKeyValidation ?? new ResourceKeyValidationResult.ValidationSuccess(),
                 prerequisites
                     ?? (
                         observedLifecycle =>
@@ -564,6 +679,22 @@ public class Given_DocumentCache_Target_Resolution_Composition
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(GetObservation(connectionString).FingerprintResult);
+        }
+
+        public Task<DatabaseFingerprint?> ReadFingerprintAsync(string connectionString) =>
+            Task.FromResult<DatabaseFingerprint?>(GetObservation(connectionString).DatabaseFingerprint);
+
+        public Task<ResourceKeyValidationResult> ValidateAsync(
+            DatabaseFingerprint dbFingerprint,
+            short expectedResourceKeyCount,
+            ImmutableArray<byte> expectedResourceKeySeedHash,
+            IReadOnlyList<ResourceKeyRow> expectedResourceKeysInIdOrder,
+            string connectionString,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(GetObservation(connectionString).ResourceKeyValidation);
         }
 
         public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
@@ -625,11 +756,24 @@ public class Given_DocumentCache_Target_Resolution_Composition
         DocumentCachePhysicalSourceFingerprintReadResult FingerprintResult,
         DocumentCacheLifecycleReadResult LifecycleResult,
         DocumentCacheProviderInventoryValidationResult InventoryResult,
+        DatabaseFingerprint DatabaseFingerprint,
+        ResourceKeyValidationResult ResourceKeyValidation,
         Func<
             DocumentCacheLifecycleObservation,
             DocumentCacheProviderPrerequisiteValidationResult
         > Prerequisites
     );
+
+    private sealed class StaticEffectiveSchemaSetProvider(EffectiveSchemaSet effectiveSchemaSet)
+        : IEffectiveSchemaSetProvider
+    {
+        public EffectiveSchemaSet EffectiveSchemaSet { get; } = effectiveSchemaSet;
+
+        public bool IsInitialized => true;
+
+        public void Initialize(EffectiveSchemaSet effectiveSchemaSet) =>
+            throw new InvalidOperationException("Static test provider is already initialized.");
+    }
 
     private sealed class SequencedDataStoreProvider : IDataStoreProvider
     {

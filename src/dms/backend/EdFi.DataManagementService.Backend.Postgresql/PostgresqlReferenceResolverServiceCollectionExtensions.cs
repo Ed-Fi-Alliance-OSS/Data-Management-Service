@@ -38,6 +38,7 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
                 PostgresqlDocumentCacheMaterializationDataStore
             >()
         );
+        services.TryAdd(ServiceDescriptor.Scoped<IDocumentCacheWriter, PostgresqlDocumentCacheWriter>());
 
         return services.AddReferenceResolver<
             PostgresqlReferenceResolverAdapterFactory,

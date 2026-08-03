@@ -85,6 +85,8 @@ public enum DocumentCacheTargetDiagnosticCategory
     CacheAheadLatchSet,
     NonemptyGuardedActivationState,
     DownstreamPublicationHistoryPresentOrUnknown,
+    EffectiveSchemaCompatibilityFailure,
+    ResourceKeyCompatibilityFailure,
     ExpectedSourceMismatch,
     UnexpectedProviderFailure,
 }

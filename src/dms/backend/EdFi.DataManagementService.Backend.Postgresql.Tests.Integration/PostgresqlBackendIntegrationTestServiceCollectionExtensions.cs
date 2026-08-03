@@ -7,6 +7,7 @@ using System.Data;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -23,6 +24,7 @@ internal static class PostgresqlBackendIntegrationTestServiceCollectionExtension
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.TryAddSingleton(new DeadlockRetrySettings());
         services.AddSelectedDataStoreIntegrationTestProvider();
         services.TryAddSingleton<NpgsqlDataSourceCache>();
         services.TryAddScoped<NpgsqlDataSourceProvider>();

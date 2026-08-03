@@ -153,6 +153,11 @@ public class Given_MssqlRelationalWriteExceptionClassifier
 
     [TestCase(1205)]
     [TestCase(1222)]
+    [TestCase(3960)]
+    [TestCase(41325)]
+    [TestCase(41305)]
+    [TestCase(41302)]
+    [TestCase(41301)]
     public void It_does_not_classify_retryable_deadlock_or_contention_exceptions(int errorNumber)
     {
         var exception = CreateSqlException(errorNumber, "Transaction retry should stay owned by DMS-996.");
@@ -176,7 +181,14 @@ public class Given_MssqlRelationalWriteExceptionClassifier
 
     [TestCase(1205)]
     [TestCase(1222)]
-    public void It_reports_transient_failure_for_deadlock_or_lock_timeout_errors(int errorNumber)
+    [TestCase(3960)]
+    [TestCase(41325)]
+    [TestCase(41305)]
+    [TestCase(41302)]
+    [TestCase(41301)]
+    public void It_reports_transient_failure_for_deadlock_lock_timeout_or_serialization_errors(
+        int errorNumber
+    )
     {
         var exception = CreateSqlException(errorNumber, "Transient SQL Server condition.");
 
@@ -253,6 +265,11 @@ public class Given_MssqlRelationalWriteExceptionClassifier
     [TestCase(2601)]
     [TestCase(1205)]
     [TestCase(1222)]
+    [TestCase(3960)]
+    [TestCase(41325)]
+    [TestCase(41305)]
+    [TestCase(41302)]
+    [TestCase(41301)]
     [TestCase(8152)]
     public void It_does_not_report_foreign_key_violation_for_other_error_numbers(int errorNumber)
     {
@@ -303,6 +320,11 @@ public class Given_MssqlRelationalWriteExceptionClassifier
     [TestCase(547)]
     [TestCase(1205)]
     [TestCase(1222)]
+    [TestCase(3960)]
+    [TestCase(41325)]
+    [TestCase(41305)]
+    [TestCase(41302)]
+    [TestCase(41301)]
     [TestCase(8152)]
     public void It_does_not_report_unique_constraint_violation_for_other_error_numbers(int errorNumber)
     {

@@ -3,7 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.Startup;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -128,6 +132,9 @@ public interface IDocumentCacheTargetContextBuilder
 public sealed class DocumentCacheTargetContextBuilder(
     IOptions<DocumentCacheOptions> options,
     DocumentCacheProcessProviderToken processProviderToken,
+    IEffectiveSchemaSetProvider effectiveSchemaSetProvider,
+    IDatabaseFingerprintReader databaseFingerprintReader,
+    IResourceKeyValidator resourceKeyValidator,
     IDocumentCachePhysicalSourceFingerprintReader fingerprintReader,
     IDocumentCacheLifecycleReader lifecycleReader,
     IDocumentCacheInventoryValidator inventoryValidator,
@@ -259,6 +266,11 @@ public sealed class DocumentCacheTargetContextBuilder(
                 inventoryResult,
                 fingerprintResult.ToInventoryValidationResult()
             );
+        DocumentCacheTargetSchemaValidationResult schemaValidationResult = await ValidateTargetSchemaAsync(
+                connectionValue,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         DocumentCacheProviderPrerequisiteValidationResult? prerequisiteResult = null;
         if (lifecycleResult.Lifecycle is not null)
@@ -278,6 +290,7 @@ public sealed class DocumentCacheTargetContextBuilder(
             fingerprintResult,
             lifecycleResult,
             combinedInventoryResult,
+            schemaValidationResult,
             prerequisiteResult
         );
 
@@ -285,6 +298,7 @@ public sealed class DocumentCacheTargetContextBuilder(
             fingerprintResult.Fingerprint is not null
             && lifecycleResult.Lifecycle is not null
             && combinedInventoryResult.IsSatisfied
+            && schemaValidationResult.IsSatisfied
             && prerequisiteResult?.IsSatisfied == true;
 
         if (!eligible)
@@ -545,6 +559,152 @@ public sealed class DocumentCacheTargetContextBuilder(
         }
     }
 
+    private async Task<DocumentCacheTargetSchemaValidationResult> ValidateTargetSchemaAsync(
+        string connectionValue,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        EffectiveSchemaInfo effectiveSchema;
+        try
+        {
+            effectiveSchema = effectiveSchemaSetProvider.EffectiveSchemaSet.EffectiveSchema;
+        }
+        catch (Exception exception)
+        {
+            LogProviderFailure(
+                DocumentCacheTargetDiagnosticCategory.EffectiveSchemaCompatibilityFailure,
+                "runtime effective schema access",
+                exception
+            );
+            return DocumentCacheTargetSchemaValidationResult.Failure(
+                DocumentCacheTargetDiagnosticCategory.EffectiveSchemaCompatibilityFailure,
+                "Runtime effective schema is unavailable for DocumentCache target compatibility validation."
+            );
+        }
+
+        DatabaseFingerprint? databaseFingerprint;
+        try
+        {
+            databaseFingerprint = await databaseFingerprintReader
+                .ReadFingerprintAsync(connectionValue)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (DatabaseFingerprintValidationException exception)
+        {
+            LogProviderFailure(
+                DocumentCacheTargetDiagnosticCategory.EffectiveSchemaCompatibilityFailure,
+                "target effective schema fingerprint read",
+                exception
+            );
+            return DocumentCacheTargetSchemaValidationResult.Failure(
+                DocumentCacheTargetDiagnosticCategory.EffectiveSchemaCompatibilityFailure,
+                "Target EffectiveSchema fingerprint is invalid."
+            );
+        }
+        catch (Exception exception)
+        {
+            LogProviderFailure(
+                DocumentCacheTargetDiagnosticCategory.EffectiveSchemaCompatibilityFailure,
+                "target effective schema fingerprint read",
+                exception
+            );
+            return DocumentCacheTargetSchemaValidationResult.Failure(
+                DocumentCacheTargetDiagnosticCategory.EffectiveSchemaCompatibilityFailure,
+                "Target EffectiveSchema fingerprint is unreadable."
+            );
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (databaseFingerprint is null)
+        {
+            return DocumentCacheTargetSchemaValidationResult.Failure(
+                DocumentCacheTargetDiagnosticCategory.EffectiveSchemaCompatibilityFailure,
+                "Target EffectiveSchema fingerprint is missing."
+            );
+        }
+
+        if (
+            !string.Equals(
+                databaseFingerprint.EffectiveSchemaHash,
+                effectiveSchema.EffectiveSchemaHash,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return DocumentCacheTargetSchemaValidationResult.Failure(
+                DocumentCacheTargetDiagnosticCategory.EffectiveSchemaCompatibilityFailure,
+                "Target EffectiveSchema fingerprint does not match the selected runtime mapping set."
+            );
+        }
+
+        bool resourceKeySeedFingerprintMatches =
+            databaseFingerprint.ResourceKeyCount == effectiveSchema.ResourceKeyCount
+            && databaseFingerprint
+                .ResourceKeySeedHash.AsSpan()
+                .SequenceEqual(effectiveSchema.ResourceKeySeedHash.AsSpan());
+
+        ResourceKeyValidationResult resourceKeyValidationResult;
+        try
+        {
+            resourceKeyValidationResult = await resourceKeyValidator
+                .ValidateAsync(
+                    databaseFingerprint,
+                    effectiveSchema.ResourceKeyCount,
+                    [.. effectiveSchema.ResourceKeySeedHash],
+                    effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
+                    connectionValue,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            LogProviderFailure(
+                DocumentCacheTargetDiagnosticCategory.ResourceKeyCompatibilityFailure,
+                "target resource key seed validation",
+                exception
+            );
+            return DocumentCacheTargetSchemaValidationResult.Failure(
+                DocumentCacheTargetDiagnosticCategory.ResourceKeyCompatibilityFailure,
+                "Target ResourceKey seed validation is unreadable."
+            );
+        }
+
+        if (!resourceKeySeedFingerprintMatches)
+        {
+            return DocumentCacheTargetSchemaValidationResult.Failure(
+                DocumentCacheTargetDiagnosticCategory.ResourceKeyCompatibilityFailure,
+                "Target ResourceKey seed fingerprint does not match the selected runtime mapping set."
+            );
+        }
+
+        return resourceKeyValidationResult switch
+        {
+            ResourceKeyValidationResult.ValidationSuccess =>
+                DocumentCacheTargetSchemaValidationResult.Success(),
+            ResourceKeyValidationResult.ValidationFailure =>
+                DocumentCacheTargetSchemaValidationResult.Failure(
+                    DocumentCacheTargetDiagnosticCategory.ResourceKeyCompatibilityFailure,
+                    "Target dms.ResourceKey seed does not match the selected runtime mapping set."
+                ),
+            _ => DocumentCacheTargetSchemaValidationResult.Failure(
+                DocumentCacheTargetDiagnosticCategory.ResourceKeyCompatibilityFailure,
+                "Target ResourceKey seed validation returned an unsupported result."
+            ),
+        };
+    }
+
     private void LogProviderFailure(
         DocumentCacheTargetDiagnosticCategory failureCategory,
         string operation,
@@ -566,6 +726,7 @@ public sealed class DocumentCacheTargetContextBuilder(
         DocumentCachePhysicalSourceFingerprintReadResult fingerprintResult,
         DocumentCacheLifecycleReadResult lifecycleResult,
         DocumentCacheProviderInventoryValidationResult inventoryResult,
+        DocumentCacheTargetSchemaValidationResult schemaValidationResult,
         DocumentCacheProviderPrerequisiteValidationResult? prerequisiteResult
     )
     {
@@ -647,6 +808,26 @@ public sealed class DocumentCacheTargetContextBuilder(
                     retryState: null,
                     DocumentCacheTargetDiagnosticCategory.EnqueueTriggerFailure,
                     inventoryResult.EnqueueTrigger.Message
+                )
+            );
+        }
+
+        if (!schemaValidationResult.IsSatisfied)
+        {
+            diagnostics.Add(
+                CreateDiagnostic(
+                    targetKey,
+                    DocumentCacheTargetResolutionState.Resolved,
+                    providerToken,
+                    generation,
+                    fingerprintResult.Fingerprint,
+                    lifecycleResult.Lifecycle,
+                    inventoryResult.Inventory,
+                    inventoryResult.EnqueueTrigger,
+                    prerequisiteResult?.SqlServerPrerequisites,
+                    retryState: null,
+                    schemaValidationResult.FailureCategory!.Value,
+                    schemaValidationResult.Message
                 )
             );
         }
@@ -741,4 +922,44 @@ public sealed class DocumentCacheTargetContextBuilder(
             category,
             message
         );
+}
+
+internal sealed record DocumentCacheTargetSchemaValidationResult
+{
+    private DocumentCacheTargetSchemaValidationResult(
+        bool isSatisfied,
+        DocumentCacheTargetDiagnosticCategory? failureCategory,
+        string message
+    )
+    {
+        if (isSatisfied && failureCategory is not null)
+        {
+            throw new ArgumentException(
+                "Satisfied schema validation results must not carry a failure category."
+            );
+        }
+
+        if (!isSatisfied && failureCategory is null)
+        {
+            throw new ArgumentException("Failed schema validation results require a failure category.");
+        }
+
+        IsSatisfied = isSatisfied;
+        FailureCategory = failureCategory;
+        Message = DocumentCacheDiagnosticText.Sanitize(message);
+    }
+
+    public bool IsSatisfied { get; }
+
+    public DocumentCacheTargetDiagnosticCategory? FailureCategory { get; }
+
+    public string Message { get; }
+
+    public static DocumentCacheTargetSchemaValidationResult Success() =>
+        new(isSatisfied: true, failureCategory: null, "Target schema compatibility validated.");
+
+    public static DocumentCacheTargetSchemaValidationResult Failure(
+        DocumentCacheTargetDiagnosticCategory failureCategory,
+        string message
+    ) => new(isSatisfied: false, failureCategory, message);
 }

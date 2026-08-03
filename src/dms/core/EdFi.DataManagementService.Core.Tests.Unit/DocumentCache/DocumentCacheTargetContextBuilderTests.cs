@@ -3,8 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
@@ -31,6 +34,70 @@ public class DocumentCacheTargetContextBuilderTests
 
     private static readonly DocumentCachePhysicalSourceFingerprint _fingerprint = new(
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    );
+
+    private static readonly byte[] _resourceKeySeedHash =
+    [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+    ];
+
+    private static readonly EffectiveSchemaSet _effectiveSchemaSet = new(
+        new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "5.2.0",
+            RelationalMappingVersion: "relational-v1",
+            EffectiveSchemaHash: "schema-hash",
+            ResourceKeyCount: 1,
+            ResourceKeySeedHash: _resourceKeySeedHash,
+            SchemaComponentsInEndpointOrder: [],
+            ResourceKeysInIdOrder:
+            [
+                new ResourceKeyEntry(
+                    ResourceKeyId: 1,
+                    Resource: new QualifiedResourceName("Ed-Fi", "Student"),
+                    ResourceVersion: "5.2.0",
+                    IsAbstractResource: false
+                ),
+            ]
+        ),
+        ProjectsInEndpointOrder: []
+    );
+
+    private static readonly DatabaseFingerprint _databaseFingerprint = new(
+        ApiSchemaFormatVersion: "5.2.0",
+        EffectiveSchemaHash: "schema-hash",
+        ResourceKeyCount: 1,
+        ResourceKeySeedHash: [.. _resourceKeySeedHash]
     );
 
     private static readonly DocumentCacheLifecycleObservation _trackingLifecycle = new(
@@ -106,6 +173,19 @@ public class DocumentCacheTargetContextBuilderTests
                 .MustHaveHappenedOnceExactly();
             A.CallTo(() =>
                     fixture.InventoryValidator.ValidateInventoryAsync(TargetInput, A<CancellationToken>._)
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => fixture.DatabaseFingerprintReader.ReadFingerprintAsync(TargetInput))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() =>
+                    fixture.ResourceKeyValidator.ValidateAsync(
+                        _databaseFingerprint,
+                        1,
+                        A<System.Collections.Immutable.ImmutableArray<byte>>._,
+                        A<IReadOnlyList<ResourceKeyRow>>._,
+                        TargetInput,
+                        A<CancellationToken>._
+                    )
                 )
                 .MustHaveHappenedOnceExactly();
             A.CallTo(() =>
@@ -391,6 +471,106 @@ public class DocumentCacheTargetContextBuilderTests
                 )
                 .MustNotHaveHappened();
         }
+
+        [Test]
+        public async Task It_marks_effective_schema_mismatches_ineligible_before_resource_key_validation()
+        {
+            BuilderFixture fixture = new(
+                DatabaseFingerprintResult: _databaseFingerprint with
+                {
+                    EffectiveSchemaHash = "different-hash",
+                }
+            );
+
+            DocumentCacheTargetContextBuildResult result = await fixture.Builder.BuildAsync(
+                _targetKey,
+                fixture.ResolvedDataStore,
+                _generation
+            );
+
+            result.HasExecutionContext.Should().BeFalse();
+            result.Observation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Ineligible);
+            result
+                .Observation.Diagnostics.Should()
+                .Contain(diagnostic =>
+                    diagnostic.Category
+                    == DocumentCacheTargetDiagnosticCategory.EffectiveSchemaCompatibilityFailure
+                );
+            A.CallTo(() =>
+                    fixture.ResourceKeyValidator.ValidateAsync(
+                        A<DatabaseFingerprint>._,
+                        A<short>._,
+                        A<System.Collections.Immutable.ImmutableArray<byte>>._,
+                        A<IReadOnlyList<ResourceKeyRow>>._,
+                        A<string>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_marks_resource_key_seed_fingerprint_mismatches_ineligible()
+        {
+            BuilderFixture fixture = new(
+                DatabaseFingerprintResult: _databaseFingerprint with
+                {
+                    ResourceKeyCount = 2,
+                }
+            );
+
+            DocumentCacheTargetContextBuildResult result = await fixture.Builder.BuildAsync(
+                _targetKey,
+                fixture.ResolvedDataStore,
+                _generation
+            );
+
+            result.HasExecutionContext.Should().BeFalse();
+            result
+                .Observation.Diagnostics.Should()
+                .Contain(diagnostic =>
+                    diagnostic.Category
+                    == DocumentCacheTargetDiagnosticCategory.ResourceKeyCompatibilityFailure
+                );
+            A.CallTo(() =>
+                    fixture.ResourceKeyValidator.ValidateAsync(
+                        A<DatabaseFingerprint>._,
+                        A<short>._,
+                        A<System.Collections.Immutable.ImmutableArray<byte>>._,
+                        A<IReadOnlyList<ResourceKeyRow>>._,
+                        A<string>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public async Task It_marks_resource_key_validator_failures_ineligible_with_sanitized_diagnostics()
+        {
+            BuilderFixture fixture = new(
+                ResourceKeyValidation: new ResourceKeyValidationResult.ValidationFailure(
+                    "Seed data mismatch in dms.ResourceKey for Server=hidden;Password=secret;"
+                )
+            );
+
+            DocumentCacheTargetContextBuildResult result = await fixture.Builder.BuildAsync(
+                _targetKey,
+                fixture.ResolvedDataStore,
+                _generation
+            );
+
+            result.HasExecutionContext.Should().BeFalse();
+            DocumentCacheTargetDiagnostic diagnostic = result
+                .Observation.Diagnostics.Should()
+                .Contain(diagnostic =>
+                    diagnostic.Category
+                    == DocumentCacheTargetDiagnosticCategory.ResourceKeyCompatibilityFailure
+                )
+                .Which;
+            diagnostic.Message.Should().Contain("dms.ResourceKey");
+            diagnostic.Message.Should().NotContain("Password=").And.NotContain("secret");
+        }
     }
 
     [TestFixture]
@@ -556,6 +736,19 @@ public class DocumentCacheTargetContextBuilderTests
             .MustNotHaveHappened();
         A.CallTo(() => fixture.InventoryValidator.ValidateInventoryAsync(A<string>._, A<CancellationToken>._))
             .MustNotHaveHappened();
+        A.CallTo(() => fixture.DatabaseFingerprintReader.ReadFingerprintAsync(A<string>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                fixture.ResourceKeyValidator.ValidateAsync(
+                    A<DatabaseFingerprint>._,
+                    A<short>._,
+                    A<System.Collections.Immutable.ImmutableArray<byte>>._,
+                    A<IReadOnlyList<ResourceKeyRow>>._,
+                    A<string>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
         A.CallTo(() =>
                 fixture.PrerequisiteValidator.ValidateInitializationAsync(
                     A<string>._,
@@ -600,6 +793,14 @@ public class DocumentCacheTargetContextBuilderTests
         public IDocumentCacheInventoryValidator InventoryValidator { get; } =
             A.Fake<IDocumentCacheInventoryValidator>();
 
+        public IEffectiveSchemaSetProvider EffectiveSchemaSetProvider { get; } =
+            A.Fake<IEffectiveSchemaSetProvider>();
+
+        public IDatabaseFingerprintReader DatabaseFingerprintReader { get; } =
+            A.Fake<IDatabaseFingerprintReader>();
+
+        public IResourceKeyValidator ResourceKeyValidator { get; } = A.Fake<IResourceKeyValidator>();
+
         public IDocumentCacheProviderPrerequisiteValidator PrerequisiteValidator { get; } =
             A.Fake<IDocumentCacheProviderPrerequisiteValidator>();
 
@@ -611,6 +812,9 @@ public class DocumentCacheTargetContextBuilderTests
             DataStore? DataStore = null,
             RelationalProviderToken? ProcessProviderToken = null,
             RelationalProviderToken? AdapterProviderToken = null,
+            EffectiveSchemaSet? EffectiveSchemaSet = null,
+            DatabaseFingerprint? DatabaseFingerprintResult = null,
+            ResourceKeyValidationResult? ResourceKeyValidation = null,
             DocumentCachePhysicalSourceFingerprintReadResult? FingerprintResult = null,
             DocumentCacheLifecycleReadResult? LifecycleResult = null,
             DocumentCacheProviderInventoryValidationResult? InventoryResult = null,
@@ -640,6 +844,27 @@ public class DocumentCacheTargetContextBuilderTests
                 );
             A.CallTo(() => InventoryValidator.ValidateInventoryAsync(A<string>._, A<CancellationToken>._))
                 .Returns(Task.FromResult(InventoryResult ?? _satisfiedInventory));
+            A.CallTo(() => EffectiveSchemaSetProvider.EffectiveSchemaSet)
+                .Returns(EffectiveSchemaSet ?? _effectiveSchemaSet);
+            A.CallTo(() => DatabaseFingerprintReader.ReadFingerprintAsync(A<string>._))
+                .Returns(
+                    Task.FromResult<DatabaseFingerprint?>(DatabaseFingerprintResult ?? _databaseFingerprint)
+                );
+            A.CallTo(() =>
+                    ResourceKeyValidator.ValidateAsync(
+                        A<DatabaseFingerprint>._,
+                        A<short>._,
+                        A<System.Collections.Immutable.ImmutableArray<byte>>._,
+                        A<IReadOnlyList<ResourceKeyRow>>._,
+                        A<string>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .Returns(
+                    Task.FromResult(
+                        ResourceKeyValidation ?? new ResourceKeyValidationResult.ValidationSuccess()
+                    )
+                );
             A.CallTo(() =>
                     PrerequisiteValidator.ValidateInitializationAsync(
                         A<string>._,
@@ -660,6 +885,9 @@ public class DocumentCacheTargetContextBuilderTests
                 new DocumentCacheProcessProviderToken(
                     ProcessProviderToken ?? RelationalProviderToken.Postgresql
                 ),
+                EffectiveSchemaSetProvider,
+                DatabaseFingerprintReader,
+                ResourceKeyValidator,
                 FingerprintReader,
                 LifecycleReader,
                 InventoryValidator,

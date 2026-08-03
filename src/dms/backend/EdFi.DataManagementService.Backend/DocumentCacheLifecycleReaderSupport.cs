@@ -39,7 +39,7 @@ internal static class DocumentCacheLifecycleReaderSupport
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
         };
 
-    public static async Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
+    internal static async Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
         Func<DbConnection> connectionFactory,
         DocumentCacheLifecycleReaderQuery query,
         ILogger logger,
@@ -95,7 +95,7 @@ internal static class DocumentCacheLifecycleReaderSupport
         );
     }
 
-    private static async Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
+    public static async Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
         DbDataReader reader,
         DocumentCacheLifecycleReaderQuery query,
         CancellationToken cancellationToken

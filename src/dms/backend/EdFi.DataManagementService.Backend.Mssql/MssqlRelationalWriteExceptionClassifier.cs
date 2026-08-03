@@ -18,6 +18,11 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
     private const int ForeignKeyConstraintViolationNumber = 547;
     private const int DeadlockVictimNumber = 1205;
     private const int LockRequestTimeoutNumber = 1222;
+    private const int SnapshotIsolationUpdateConflictNumber = 3960;
+    private const int SerializableValidationFailureNumber = 41325;
+    private const int RepeatableReadValidationFailureNumber = 41305;
+    private const int UpdateConflictNumber = 41302;
+    private const int DependencyFailureNumber = 41301;
 
     public bool TryClassify(
         DbException exception,
@@ -55,7 +60,13 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
                     constraintName
                 )
             ),
-            DeadlockVictimNumber or LockRequestTimeoutNumber => null,
+            DeadlockVictimNumber
+            or LockRequestTimeoutNumber
+            or SnapshotIsolationUpdateConflictNumber
+            or SerializableValidationFailureNumber
+            or RepeatableReadValidationFailureNumber
+            or UpdateConflictNumber
+            or DependencyFailureNumber => null,
             _ => RelationalWriteExceptionClassification.UnrecognizedWriteFailure.Instance,
         };
 
@@ -91,7 +102,14 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
         ArgumentNullException.ThrowIfNull(exception);
 
         return exception is SqlException sqlException
-            && sqlException.Number is DeadlockVictimNumber or LockRequestTimeoutNumber;
+            && sqlException.Number
+                is DeadlockVictimNumber
+                    or LockRequestTimeoutNumber
+                    or SnapshotIsolationUpdateConflictNumber
+                    or SerializableValidationFailureNumber
+                    or RepeatableReadValidationFailureNumber
+                    or UpdateConflictNumber
+                    or DependencyFailureNumber;
     }
 
     private static RelationalWriteExceptionClassification BuildConstraintClassification(

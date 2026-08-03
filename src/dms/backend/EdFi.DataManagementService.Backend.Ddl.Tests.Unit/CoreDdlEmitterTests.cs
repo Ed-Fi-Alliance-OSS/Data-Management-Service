@@ -751,8 +751,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         functionBody
             .Should()
             .Contain(
-                "RAISE EXCEPTION 'dms.DocumentCache.DocumentUuid diverges from the owning "
-                    + "dms.Document row for DocumentId %', NEW.\"DocumentId\";"
+                $"RAISE EXCEPTION '{DocumentCacheInventoryDefinition.DocumentCacheTriggers.PgsqlValidateDocumentUuidFailureMessage}', NEW.\"DocumentId\";"
             );
         functionBody.Should().NotContain("DocumentJson");
     }
@@ -1849,7 +1848,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         triggerBody
             .Should()
             .Contain(
-                "THROW 50000, N'dms.DocumentCache.DocumentUuid diverges from the owning dms.Document row.', 1;"
+                $"THROW 50000, N'{DocumentCacheInventoryDefinition.DocumentCacheTriggers.MssqlValidateDocumentUuidFailureMessage}', 1;"
             );
         triggerBody.Should().NotContain("DocumentJson");
         triggerBody.Should().NotContain("EXECUTE AS");
@@ -2276,7 +2275,14 @@ public class Given_CoreDdlEmitter_With_MssqlDialect_Enqueue
         triggerBody.Should().Contain("DECLARE @enqueuedAt datetime2(7) = SYSUTCDATETIME();");
         triggerBody.Should().Contain("SET work.[RequiredContentVersion] = req.[RequiredContentVersion],");
         triggerBody.Should().Contain("work.[LastEnqueuedAt] = @enqueuedAt");
-        triggerBody.Should().Contain("WHERE work.[RequiredContentVersion] < req.[RequiredContentVersion];");
+        triggerBody.Should().Contain("FROM @required req");
+        triggerBody
+            .Should()
+            .Contain(
+                "INNER LOOP JOIN [dms].[DocumentProjectionWork] work WITH (UPDLOCK, ROWLOCK) ON work.[DocumentId] = req.[DocumentId]"
+            );
+        triggerBody.Should().Contain("WHERE work.[RequiredContentVersion] < req.[RequiredContentVersion]");
+        triggerBody.Should().Contain("OPTION (FORCE ORDER);");
         triggerBody
             .Should()
             .Contain(
@@ -2285,7 +2291,10 @@ public class Given_CoreDdlEmitter_With_MssqlDialect_Enqueue
         triggerBody
             .Should()
             .Contain("SELECT req.[DocumentId], req.[RequiredContentVersion], @enqueuedAt, @enqueuedAt");
-        triggerBody.Should().Contain("WHERE work.[DocumentId] IS NULL;");
+        triggerBody.Should().Contain("WHERE NOT EXISTS (");
+        triggerBody
+            .Should()
+            .Contain("FROM [dms].[DocumentProjectionWork] work WITH (UPDLOCK, HOLDLOCK, ROWLOCK)");
 
         var updateStart = triggerBody.IndexOf("UPDATE work", StringComparison.Ordinal);
         var insertStart = triggerBody.IndexOf(

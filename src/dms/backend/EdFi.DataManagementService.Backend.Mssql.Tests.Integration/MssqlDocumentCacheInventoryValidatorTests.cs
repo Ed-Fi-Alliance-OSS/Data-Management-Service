@@ -63,6 +63,82 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
     }
 
     [Test]
+    public async Task It_rejects_missing_resource_key_inventory()
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            EXEC sp_rename N'dms.ResourceKey', N'ResourceKeyRenamed';
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Missing);
+        result.Inventory.Message.Should().Contain("dms.ResourceKey");
+        result.IsSatisfied.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_rejects_missing_resource_key_project_resource_unique_artifact()
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            ALTER TABLE [dms].[ResourceKey]
+            DROP CONSTRAINT [UX_ResourceKey_ProjectName_ResourceName];
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Missing);
+        result.Inventory.Message.Should().Contain("UX_ResourceKey_ProjectName_ResourceName");
+        result.IsSatisfied.Should().BeFalse();
+    }
+
+    [TestCaseSource(nameof(InvalidMssqlResourceKeyUniqueArtifactMutations))]
+    public async Task It_rejects_invalid_resource_key_project_resource_unique_artifacts(string mutationSql)
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(database, mutationSql);
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+        result.Inventory.Message.Should().Contain("UX_ResourceKey_ProjectName_ResourceName");
+        result.IsSatisfied.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_rejects_a_document_table_without_resource_key_fencing()
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            ALTER TABLE [dms].[Document] DROP CONSTRAINT [FK_Document_ResourceKey];
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Missing);
+        result.Inventory.Message.Should().Contain("FK_Document_ResourceKey");
+        result.IsSatisfied.Should().BeFalse();
+    }
+
+    [Test]
     public async Task It_classifies_missing_required_objects_as_missing_inventory()
     {
         await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
@@ -282,8 +358,11 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
                     UPDATE work
                     SET work.RequiredContentVersion = req.RequiredContentVersion
                     work.RequiredContentVersion < req.RequiredContentVersion
+                    INNER LOOP JOIN dms.DocumentProjectionWork
+                    OPTION (FORCE ORDER)
                     INSERT INTO dms.DocumentProjectionWork
-                    LEFT JOIN dms.DocumentProjectionWork
+                    WHERE NOT EXISTS
+                    work WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
                 */
                 RETURN;
             END;
@@ -329,8 +408,11 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
                     UPDATE work
                     SET work.RequiredContentVersion = req.RequiredContentVersion
                     work.RequiredContentVersion < req.RequiredContentVersion
+                    INNER LOOP JOIN dms.DocumentProjectionWork
+                    OPTION (FORCE ORDER)
                     INSERT INTO dms.DocumentProjectionWork
-                    LEFT JOIN dms.DocumentProjectionWork
+                    WHERE NOT EXISTS
+                    work WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
                 */
                 RETURN;
             END;
@@ -610,6 +692,87 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
             """,
             DocumentCacheInventoryStatus.Missing
         ).SetName("It_rejects_sqlserver_documentcache_computedat_with_renamed_default_constraint");
+    }
+
+    private static IEnumerable<TestCaseData> InvalidMssqlResourceKeyUniqueArtifactMutations()
+    {
+        yield return new TestCaseData(
+            """
+            ALTER TABLE [dms].[ResourceKey]
+            DROP CONSTRAINT [UX_ResourceKey_ProjectName_ResourceName];
+
+            CREATE INDEX [UX_ResourceKey_ProjectName_ResourceName]
+            ON [dms].[ResourceKey] ([ProjectName], [ResourceName]);
+            """
+        ).SetName("It_rejects_sqlserver_resource_key_artifact_that_is_not_unique");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE [dms].[ResourceKey]
+            DROP CONSTRAINT [UX_ResourceKey_ProjectName_ResourceName];
+
+            CREATE UNIQUE INDEX [UX_ResourceKey_ProjectName_ResourceName]
+            ON [dms].[ResourceKey] ([ResourceName], [ProjectName]);
+            """
+        ).SetName("It_rejects_sqlserver_resource_key_artifact_with_wrong_column_order");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE [dms].[ResourceKey]
+            DROP CONSTRAINT [UX_ResourceKey_ProjectName_ResourceName];
+
+            CREATE UNIQUE INDEX [UX_ResourceKey_ProjectName_ResourceName]
+            ON [dms].[ResourceKey] ([ProjectName], [ResourceVersion]);
+            """
+        ).SetName("It_rejects_sqlserver_resource_key_artifact_with_wrong_columns");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE [dms].[ResourceKey]
+            DROP CONSTRAINT [UX_ResourceKey_ProjectName_ResourceName];
+
+            CREATE UNIQUE INDEX [UX_ResourceKey_ProjectName_ResourceName]
+            ON [dms].[ResourceKey] ([ProjectName], [ResourceName])
+            WHERE [ResourceKeyId] > 0;
+            """
+        ).SetName("It_rejects_sqlserver_resource_key_artifact_that_is_filtered");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE [dms].[ResourceKey]
+            DROP CONSTRAINT [UX_ResourceKey_ProjectName_ResourceName];
+
+            ALTER TABLE [dms].[ResourceKey]
+            ADD [ResourceNameComputed] AS LOWER([ResourceName]);
+
+            CREATE UNIQUE INDEX [UX_ResourceKey_ProjectName_ResourceName]
+            ON [dms].[ResourceKey] ([ProjectName], [ResourceNameComputed]);
+            """
+        ).SetName("It_rejects_sqlserver_resource_key_artifact_with_computed_expression_keys");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE [dms].[ResourceKey]
+            DROP CONSTRAINT [UX_ResourceKey_ProjectName_ResourceName];
+
+            CREATE UNIQUE INDEX [UX_ResourceKey_ProjectName_ResourceName]
+            ON [dms].[ResourceKey] ([ProjectName], [ResourceName])
+            INCLUDE ([ResourceVersion]);
+            """
+        ).SetName("It_rejects_sqlserver_resource_key_artifact_with_included_columns");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE [dms].[ResourceKey]
+            DROP CONSTRAINT [UX_ResourceKey_ProjectName_ResourceName];
+
+            CREATE UNIQUE INDEX [UX_ResourceKey_ProjectName_ResourceName]
+            ON [dms].[ResourceKey] ([ProjectName], [ResourceName]);
+
+            ALTER INDEX [UX_ResourceKey_ProjectName_ResourceName]
+            ON [dms].[ResourceKey] DISABLE;
+            """
+        ).SetName("It_rejects_sqlserver_resource_key_artifact_that_is_disabled");
     }
 
     private static IEnumerable<TestCaseData> PermissiveMssqlCriticalCheckConstraintMutations()

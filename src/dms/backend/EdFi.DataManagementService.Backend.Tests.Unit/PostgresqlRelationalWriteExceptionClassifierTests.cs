@@ -76,6 +76,7 @@ public class Given_PostgresqlRelationalWriteExceptionClassifier
 
     [TestCase(PostgresErrorCodes.DeadlockDetected)]
     [TestCase(PostgresErrorCodes.SerializationFailure)]
+    [TestCase(PostgresErrorCodes.LockNotAvailable)]
     public void It_does_not_classify_retryable_transaction_exceptions(string sqlState)
     {
         var exception = CreatePostgresException(sqlState);
@@ -112,7 +113,10 @@ public class Given_PostgresqlRelationalWriteExceptionClassifier
 
     [TestCase(PostgresErrorCodes.DeadlockDetected)]
     [TestCase(PostgresErrorCodes.SerializationFailure)]
-    public void It_reports_transient_failure_for_deadlock_or_serialization_errors(string sqlState)
+    [TestCase(PostgresErrorCodes.LockNotAvailable)]
+    public void It_reports_transient_failure_for_deadlock_serialization_or_lock_timeout_errors(
+        string sqlState
+    )
     {
         var exception = CreatePostgresException(sqlState);
 
@@ -161,6 +165,7 @@ public class Given_PostgresqlRelationalWriteExceptionClassifier
     [TestCase(PostgresErrorCodes.CheckViolation)]
     [TestCase(PostgresErrorCodes.DeadlockDetected)]
     [TestCase(PostgresErrorCodes.SerializationFailure)]
+    [TestCase(PostgresErrorCodes.LockNotAvailable)]
     public void It_does_not_report_foreign_key_violation_for_other_sql_states(string sqlState)
     {
         var exception = CreatePostgresException(sqlState);

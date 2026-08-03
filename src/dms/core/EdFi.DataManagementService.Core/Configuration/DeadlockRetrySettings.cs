@@ -5,7 +5,7 @@
 
 namespace EdFi.DataManagementService.Core.Configuration;
 
-internal class DeadlockRetrySettings
+public sealed class DeadlockRetrySettings
 {
     /// <summary>
     /// Maximum number of retry attempts after the initial attempt.
@@ -22,4 +22,17 @@ internal class DeadlockRetrySettings
     /// Whether to add jitter to the backoff delay to prevent thundering-herd.
     /// </summary>
     public bool UseJitter { get; set; } = true;
+
+    public void Validate()
+    {
+        if (MaxRetryAttempts < 0)
+        {
+            throw new InvalidOperationException("DeadlockRetry:MaxRetryAttempts must be >= 0");
+        }
+
+        if (BaseDelayMilliseconds < 1)
+        {
+            throw new InvalidOperationException("DeadlockRetry:BaseDelayMilliseconds must be >= 1");
+        }
+    }
 }

@@ -75,6 +75,12 @@ public sealed class CoreDdlEmitter
     private const string DocumentCacheUuidValidationTriggerName = DocumentCacheInventoryDefinition
         .DocumentCacheTriggers
         .ValidateDocumentUuid;
+    private const string DocumentCacheUuidValidationPgsqlFailureMessage = DocumentCacheInventoryDefinition
+        .DocumentCacheTriggers
+        .PgsqlValidateDocumentUuidFailureMessage;
+    private const string DocumentCacheUuidValidationMssqlFailureMessage = DocumentCacheInventoryDefinition
+        .DocumentCacheTriggers
+        .MssqlValidateDocumentUuidFailureMessage;
     private const string DocumentEnqueueProjectionInsertFunctionName = DocumentCacheInventoryDefinition
         .DocumentEnqueueArtifacts
         .PgsqlInsertFunction;
@@ -1067,8 +1073,7 @@ public sealed class CoreDdlEmitter
             using (writer.Indent())
             {
                 writer.AppendLine(
-                    "RAISE EXCEPTION 'dms.DocumentCache.DocumentUuid diverges from the owning "
-                        + $"dms.Document row for DocumentId %', NEW.{Quote("DocumentId")};"
+                    $"RAISE EXCEPTION '{DocumentCacheUuidValidationPgsqlFailureMessage}', NEW.{Quote("DocumentId")};"
                 );
             }
             writer.AppendLine("END IF;");
@@ -1131,9 +1136,7 @@ public sealed class CoreDdlEmitter
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
-                writer.AppendLine(
-                    "THROW 50000, N'dms.DocumentCache.DocumentUuid diverges from the owning dms.Document row.', 1;"
-                );
+                writer.AppendLine($"THROW 50000, N'{DocumentCacheUuidValidationMssqlFailureMessage}', 1;");
             }
             writer.AppendLine("END");
         }
@@ -1489,11 +1492,12 @@ public sealed class CoreDdlEmitter
             writer.AppendLine("UPDATE work");
             writer.AppendLine("SET work.[RequiredContentVersion] = req.[RequiredContentVersion],");
             writer.AppendLine("    work.[LastEnqueuedAt] = @enqueuedAt");
-            writer.Append("FROM ");
+            writer.AppendLine("FROM @required req");
+            writer.Append("INNER LOOP JOIN ");
             writer.Append(documentProjectionWorkTable);
-            writer.AppendLine(" work");
-            writer.AppendLine("INNER JOIN @required req ON req.[DocumentId] = work.[DocumentId]");
-            writer.AppendLine("WHERE work.[RequiredContentVersion] < req.[RequiredContentVersion];");
+            writer.AppendLine(" work WITH (UPDLOCK, ROWLOCK) ON work.[DocumentId] = req.[DocumentId]");
+            writer.AppendLine("WHERE work.[RequiredContentVersion] < req.[RequiredContentVersion]");
+            writer.AppendLine("OPTION (FORCE ORDER);");
             writer.AppendLine();
             writer.Append("INSERT INTO ");
             writer.Append(documentProjectionWorkTable);
@@ -1504,10 +1508,16 @@ public sealed class CoreDdlEmitter
                 "SELECT req.[DocumentId], req.[RequiredContentVersion], @enqueuedAt, @enqueuedAt"
             );
             writer.AppendLine("FROM @required req");
-            writer.Append("LEFT JOIN ");
-            writer.Append(documentProjectionWorkTable);
-            writer.AppendLine(" work ON work.[DocumentId] = req.[DocumentId]");
-            writer.AppendLine("WHERE work.[DocumentId] IS NULL;");
+            writer.AppendLine("WHERE NOT EXISTS (");
+            using (writer.Indent())
+            {
+                writer.AppendLine("SELECT 1");
+                writer.Append("FROM ");
+                writer.Append(documentProjectionWorkTable);
+                writer.AppendLine(" work WITH (UPDLOCK, HOLDLOCK, ROWLOCK)");
+                writer.AppendLine("WHERE work.[DocumentId] = req.[DocumentId]");
+            }
+            writer.AppendLine(");");
         }
         writer.AppendLine("END;");
         writer.AppendLine("GO");
