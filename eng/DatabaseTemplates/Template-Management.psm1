@@ -380,10 +380,12 @@ function Get-BulkLoadFailureClassification {
 
 .DESCRIPTION
     PostgreSQL keeps Invoke-BulkLoad's established defaults. MSSQL uses conservative
-    relational-backend settings so a populated load stays below DMS's fixed-window rate limiter
-    without creating enough concurrent writes to deadlock SQL Server dimension inserts. Extra
-    retries cover the remaining transient relational conflicts without cascading failures into
-    unresolved references or authorization errors.
+    relational-backend settings so a populated load stays well below DMS's fixed-window
+    rate limiter (PermitLimit=20000/10s) without creating enough concurrent writes to
+    deadlock SQL Server dimension inserts. This throttle predates the 20000/10s default
+    and is retained for the deadlock protection it provides independent of the rate limit.
+    Extra retries cover the remaining transient relational conflicts without cascading
+    failures into unresolved references or authorization errors.
 #>
 function Get-TemplateBulkLoadTuning {
     param (

@@ -21,7 +21,8 @@ public class EndpointsTests
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            // This environment has an extreme rate limit
+            // The Test environment layers appsettings.Test.json over the base appsettings.json,
+            // so it inherits the default rate limit, which is ample for this test's requests.
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
                 (collection) =>
