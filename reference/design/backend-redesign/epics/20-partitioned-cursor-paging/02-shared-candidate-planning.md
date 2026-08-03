@@ -22,11 +22,13 @@ row-level authorization.
 
 ## Dependencies
 
-- Hard dependency: E20-S00 for typed paging/range and backend contract boundaries.
-- E20-S09 may run in parallel. Its captured baseline is a hard prerequisite of E20-S03 before
-  generated provider SQL changes, not of this contract-extension story.
+- Hard dependency: E20-S00a for typed paging/range and backend contract boundaries.
+- E20-S09 may run in parallel. Its captured baseline is a hard prerequisite of E20-S03 before that
+  story modifies the shared page-selection compiler, not of this contract-extension story.
 - External foundations: E08 regular/descriptor query planning, E10 live change-version filters,
-  and E14 row-level authorization planning.
+  E14 row-level authorization planning, and E15 plan-SQL foundations plus plan-contract and
+  deterministic-binding artifacts. This story extends the E15-owned `PageDocumentIdSqlCompiler`
+  output and plan contract, whose canonicalized/golden output must stay stable for both dialects.
 - Blocks provider compilation and execution in E20-S03 through E20-S06.
 
 ## Implementation Scope

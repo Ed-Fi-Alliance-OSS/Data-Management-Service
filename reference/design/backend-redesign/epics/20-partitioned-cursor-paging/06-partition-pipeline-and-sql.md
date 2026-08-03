@@ -21,13 +21,13 @@ balanced cursor ranges in one identifiers-only database command.
 
 ## Dependencies
 
-- Hard dependencies for boundary-compiler and SQL-golden work: E20-S00, E20-S01, E20-S02, and
-  E20-S03. E20-S04 and E20-S05 remain soft for that work.
+- Hard dependencies for boundary-compiler and SQL-golden work: E20-S00a, E20-S00b, E20-S01,
+  E20-S02, and E20-S03. E20-S04 and E20-S05 remain soft for that work.
 - Route activation additionally has hard dependencies on E20-S04 and E20-S05 so `/partitions`
   cannot hand clients tokens before both regular-resource and descriptor GET-many endpoints can
   consume them.
-- E20-S07 publishes partition paths only when this runtime pipeline lands. E20-S08 and E20-S10
-  consume the completed endpoint.
+- E20-S07 publishes partition paths only when this runtime pipeline lands. E20-S08a, E20-S08b, and
+  E20-S10 consume the completed endpoint.
 
 ## Implementation Scope
 
@@ -35,14 +35,18 @@ balanced cursor ranges in one identifiers-only database command.
   `IPartitionQueryHandler` backend contract.
 - Apply shared resource/change-version validation, resource-action authorization, and row-level
   authorization before partition execution.
-- Integrate E20-S00's approved `number` validation, unsupported-parameter ordering, default count,
-  and five-page minimum sizing into the partition pipeline.
+- Integrate E20-S00b's approved `number` validation and unsupported-parameter ordering together with
+  E20-S00a's default count and five-page minimum sizing into the partition pipeline.
 - Compile the approved PostgreSQL and SQL Server row-number/count/partition-size queries using the
   shared candidate relation and provider-appropriate mathematical ceiling arithmetic; the exact
   equivalent expression is not contractual.
 - Return starting ids only, convert them to typed inclusive ranges, and token-encode them in Core.
 - Support regular resources, extension resources, descriptors, route qualifiers, tenants, and
   profile routing without document hydration or profile projection.
+- Reuse the existing GET-many profile content-type outcome: an explicitly requested profile whose
+  resource exposes no readable content type returns the existing HTTP 405 profile method-usage
+  response, while a request for which no readable profile applies implicitly proceeds unfiltered, so
+  runtime enforcement agrees with E20-S07's OpenAPI omission.
 
 ## Acceptance Evidence and Test Expectations
 
@@ -52,8 +56,13 @@ balanced cursor ranges in one identifiers-only database command.
   sizing semantics without requiring one algebraic spelling of ceiling division.
 - PostgreSQL and real SQL Server integration tests cover counts 1, 10, and 200; sparse/empty sets;
   filters; change versions; descriptors; and fewer-than-requested ranges.
+- Sizing tests prove the returned token count never exceeds the requested `number`, including
+  candidate counts that divide inexactly by `number`, where ODS's integer-division sizing would
+  return one extra token.
 - Stable-fixture tests prove ranges are non-overlapping, final ranges are unbounded, and starts are
   actual accessible candidate ids.
+- Profile tests cover the write-only profile outcome and prove it matches the collection GET
+  behavior for the same resource and profile.
 
 ## Cross-Provider and Authorization Responsibilities
 
@@ -65,7 +74,8 @@ balanced cursor ranges in one identifiers-only database command.
 ## Explicit Exclusions / Not Assigned
 
 - OpenAPI publication belongs to E20-S07.
-- ODS reference infrastructure belongs to E20-S11; broad parity execution and multi-scenario E2E
-  belong to E20-S08, and performance evidence belongs to E20-S10.
+- ODS reference infrastructure belongs to E20-S11, the cross-strategy authorization matrix belongs
+  to E20-S08a, broad parity execution and multi-scenario E2E belong to E20-S08b, and performance
+  evidence belongs to E20-S10.
 - Document hydration, descriptor projection, links, total count, DDL, and new indexes are not part
   of this endpoint story.

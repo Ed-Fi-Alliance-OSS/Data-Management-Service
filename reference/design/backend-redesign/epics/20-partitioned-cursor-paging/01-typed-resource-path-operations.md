@@ -20,7 +20,8 @@ document UUID, while preserving existing invalid-route behavior and repeated-que
 
 ## Dependencies
 
-- Hard dependency: E20-S00 for reserved parameter names and validation-boundary contracts.
+- Hard dependency: E20-S00b for reserved parameter names and validation-boundary contracts, which
+  in turn requires the E20-S00a typed contracts and codec.
 - E20-S06 owns activation of the dedicated partition pipeline and endpoint behavior.
 
 ## Implementation Scope
@@ -55,6 +56,6 @@ document UUID, while preserving existing invalid-route behavior and repeated-que
 
 ## Explicit Exclusions / Not Assigned
 
-- Token parsing and validation rules belong to E20-S00.
+- Token parsing belongs to E20-S00a and cursor/partition validation rules belong to E20-S00b.
 - Candidate queries and provider SQL belong to E20-S02, E20-S03, and E20-S06.
 - Partition response generation belongs to E20-S06.

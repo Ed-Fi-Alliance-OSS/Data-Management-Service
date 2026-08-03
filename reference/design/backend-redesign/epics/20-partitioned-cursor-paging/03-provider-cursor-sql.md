@@ -20,7 +20,11 @@ traditional paging behavior or introducing offset/count work in cursor mode.
 
 ## Dependencies
 
-- Hard dependencies: E20-S00, E20-S02, and the completed E20-S09 baseline story.
+- Hard dependencies: E20-S00a, E20-S02, and the completed E20-S09 baseline story.
+- The E20-S09 baseline is required because this story modifies the shared page-selection compiler.
+  Traditional page-selection output stays behaviorally and textually unchanged, so the baseline is
+  regression insurance over that shared compiler rather than a record of an expected change: it is
+  the evidence that traditional SQL and latency did not move.
 - E20-S10 performs the final performance gate after implementation; it does not create a cycle.
 
 ## Implementation Scope

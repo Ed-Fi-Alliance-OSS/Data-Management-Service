@@ -21,8 +21,8 @@ and emit the correct next-page header without a second candidate query or databa
 
 ## Dependencies
 
-- Hard dependencies: E20-S00, E20-S01, E20-S02, and E20-S03.
-- E20-S08 and E20-S10 consume this story's completed execution path.
+- Hard dependencies: E20-S00a, E20-S00b, E20-S01, E20-S02, and E20-S03.
+- E20-S08a, E20-S08b, and E20-S10 consume this story's completed execution path.
 
 ## Implementation Scope
 
@@ -58,4 +58,5 @@ and emit the correct next-page header without a second candidate query or databa
 - Descriptor execution belongs to E20-S05.
 - Partition endpoints and boundary SQL belong to E20-S06.
 - OpenAPI publication belongs to E20-S07.
-- Broad parity/E2E and performance gates belong to E20-S08 and E20-S10.
+- The authorization matrix belongs to E20-S08a, and broad parity/E2E and performance gates belong to
+  E20-S08b and E20-S10.

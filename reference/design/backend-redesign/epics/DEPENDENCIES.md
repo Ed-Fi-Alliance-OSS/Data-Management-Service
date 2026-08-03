@@ -4,7 +4,7 @@ Status: Draft (planning aid derived from `reference/design/backend-redesign/epic
 
 Scope:
 - Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 21 epic files and
-  237 story/support files).
+  239 story/support files).
 - Captures *implementation* dependencies implied by acceptance criteria and shared design contracts.
 - Does not attempt to define ownership, sequencing within sprints, or exact delivery dates.
 
@@ -89,6 +89,7 @@ graph TD
   E08 --> E20
   E10 --> E20
   E14 --> E20
+  E15 --> E20
 
   E14
   E17
@@ -101,7 +102,10 @@ Notes:
   delivery consumes the E18 projection and status outputs. Behavioral ownership is defined
   only by the design documents linked from the two epics.
 - `E20` reuses E08 page selection/hydration, E10 live change-version filters, and E14 row-level
-  authorization. E12 benchmarks and E13 parity/E2E infrastructure are soft delivery inputs.
+  authorization, and extends the E15 plan-SQL foundations plus the plan-contract and
+  deterministic-binding artifacts that own `PageDocumentIdSqlCompiler` and `PageDocumentIdSql`,
+  whose canonicalized/golden output must stay stable. E12 benchmarks and E13 parity/E2E
+  infrastructure are soft delivery inputs.
 
 ---
 
@@ -129,7 +133,7 @@ Notes:
 | E17 | [Close MSSQL Implementation and Parity Gaps](17-mssql-gap-closure/EPIC.md) | — | SQL Server deployment, runtime-validation, persistence-correctness, and operational-workflow parity |
 | E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Projection schema, runtime, verification, utility, and operator work packages |
 | E19 | [Relational CDC/Kafka Streaming](19-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Provider, connector, bootstrap, verification, E2E, and operator work packages |
-| E20 | [Partitioned Cursor Paging](20-partitioned-cursor-paging/EPIC.md) | E08, E10, E14 | ODS-compatible cursor GET-many paging, authorized partition boundaries, OpenAPI, parity, and performance evidence |
+| E20 | [Partitioned Cursor Paging](20-partitioned-cursor-paging/EPIC.md) | E08, E10, E14, E15 | ODS-compatible cursor GET-many paging, authorized partition boundaries, OpenAPI, parity, and performance evidence |
 
 ---
 
@@ -397,29 +401,35 @@ Epic: `15-plan-compilation/EPIC.md`
 Epic: `20-partitioned-cursor-paging/EPIC.md`
 
 These identifiers and files are provisional planning allocations with `jira: TBD`; they are not
-Jira keys. E20-S09 owns the harness and pre-change traditional baseline and must complete before
-E20-S03 changes generated provider SQL; E20-S02 may proceed in parallel because it extends the
-existing shared plan contract. The E20-S03 dependency makes the baseline precede downstream
-shared-execution changes in E20-S04 and E20-S05. E20-S06 boundary-compiler and SQL-golden work
-requires E20-S00 through E20-S03, while route activation additionally requires E20-S04 and
-E20-S05. E20-S10 is a separate final gate that consumes E20-S02 through E20-S09, E20-S11 owns the
-ODS fixture consumed by E20-S08, and E20-S12 owns independently sequenced production telemetry;
-the graph remains acyclic.
+Jira keys. E20-S00a owns the typed contracts, codec, and configuration that E20-S00b's validators
+consume. E20-S09 owns the harness and pre-change traditional baseline and must complete before
+E20-S03 modifies the shared page-selection compiler; because E20-S03 keeps traditional
+page-selection output behaviorally and textually unchanged, that baseline is regression insurance
+over the shared compiler rather than a record of an expected change. E20-S02 may proceed in parallel
+because it extends the existing shared plan contract. The E20-S03 dependency makes the baseline
+precede downstream shared-execution changes in E20-S04 and E20-S05, the first of which actually
+alters shared traditional runtime execution. E20-S06 boundary-compiler and SQL-golden work requires
+E20-S00a through E20-S03, while route activation additionally requires E20-S04 and E20-S05.
+E20-S10 is a separate final gate that consumes E20-S02 through E20-S09, E20-S11 owns the ODS fixture
+and case definitions whose DMS side executes in E20-S08b, and E20-S12 owns independently sequenced
+production telemetry; the graph remains acyclic.
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E20-S00 | [`00-cursor-contract-foundation.md`](20-partitioned-cursor-paging/00-cursor-contract-foundation.md) | — | E08-S04, E08-S05, E10, E14 | Typed paging/range contracts, token codec, validation, configuration |
-| E20-S01 | [`01-typed-resource-path-operations.md`](20-partitioned-cursor-paging/01-typed-resource-path-operations.md) | E20-S00 | — | Typed path operations, query canonicalization, routing regressions |
-| E20-S02 | [`02-shared-candidate-planning.md`](20-partitioned-cursor-paging/02-shared-candidate-planning.md) | E20-S00 | E08-S04, E08-S05, E10, E14 | Extended shared page-document-id plan, Core filter sharing, and uniqueness assertion |
-| E20-S03 | [`03-provider-cursor-sql.md`](20-partitioned-cursor-paging/03-provider-cursor-sql.md) | E20-S00, E20-S02, E20-S09 | — | PostgreSQL/SQL Server cursor SQL and plan goldens |
-| E20-S04 | [`04-regular-resource-cursor-execution.md`](20-partitioned-cursor-paging/04-regular-resource-cursor-execution.md) | E20-S00–E20-S03 | — | Regular-resource keyset boundary propagation and response header |
-| E20-S05 | [`05-descriptor-cursor-execution.md`](20-partitioned-cursor-paging/05-descriptor-cursor-execution.md) | E20-S00–E20-S03 | — | Descriptor boundary propagation and response header |
-| E20-S06 | [`06-partition-pipeline-and-sql.md`](20-partitioned-cursor-paging/06-partition-pipeline-and-sql.md) | E20-S00–E20-S05 for activation | — | Boundary compiler requires S00–S03; activated dedicated pipeline also requires S04/S05 |
-| E20-S07 | [`07-openapi-and-client-contract.md`](20-partitioned-cursor-paging/07-openapi-and-client-contract.md) | E20-S00, E20-S04–E20-S06 | — | Runtime-gated cursor metadata and resource/extension/descriptor/profile partition OpenAPI augmentation plus client docs |
-| E20-S08 | [`08-authorization-parity-and-e2e.md`](20-partitioned-cursor-paging/08-authorization-parity-and-e2e.md) | E20-S04–E20-S07, E20-S11 | — | Authorization matrix, parity execution, and E2E evidence |
+| E20-S00a | [`00a-cursor-contract-primitives.md`](20-partitioned-cursor-paging/00a-cursor-contract-primitives.md) | — | E08-S04, E08-S05, E10, E14, E15-S01, E15-S02 | Typed paging/range contracts, token codec, result-boundary shapes, configuration |
+| E20-S00b | [`00b-cursor-and-partition-validation.md`](20-partitioned-cursor-paging/00b-cursor-and-partition-validation.md) | E20-S00a | — | Cursor precedence validation, partition validation, ProblemDetails shell, operation-scoped rejection |
+| E20-S01 | [`01-typed-resource-path-operations.md`](20-partitioned-cursor-paging/01-typed-resource-path-operations.md) | E20-S00b | — | Typed path operations, query canonicalization, routing regressions |
+| E20-S02 | [`02-shared-candidate-planning.md`](20-partitioned-cursor-paging/02-shared-candidate-planning.md) | E20-S00a | E08-S04, E08-S05, E10, E14, E15-S01, E15-S02 | Extended shared page-document-id plan, Core filter sharing, and uniqueness assertion |
+| E20-S03 | [`03-provider-cursor-sql.md`](20-partitioned-cursor-paging/03-provider-cursor-sql.md) | E20-S00a, E20-S02, E20-S09 | E15-S01, E15-S02 | PostgreSQL/SQL Server cursor SQL and plan goldens |
+| E20-S04 | [`04-regular-resource-cursor-execution.md`](20-partitioned-cursor-paging/04-regular-resource-cursor-execution.md) | E20-S00a–E20-S03 | — | Regular-resource keyset boundary propagation and response header |
+| E20-S05 | [`05-descriptor-cursor-execution.md`](20-partitioned-cursor-paging/05-descriptor-cursor-execution.md) | E20-S00a–E20-S03 | — | Descriptor boundary propagation and response header |
+| E20-S06 | [`06-partition-pipeline-and-sql.md`](20-partitioned-cursor-paging/06-partition-pipeline-and-sql.md) | E20-S00a–E20-S03 | E20-S04, E20-S05 (hard for route activation) | Boundary compiler requires S00a–S03; activated dedicated pipeline also requires S04/S05 |
+| E20-S07 | [`07-openapi-and-client-contract.md`](20-partitioned-cursor-paging/07-openapi-and-client-contract.md) | E20-S00a, E20-S04–E20-S06 | — | Runtime-gated cursor metadata and resource/extension/descriptor/profile partition OpenAPI augmentation plus a separable client-docs slice |
+| E20-S08a | [`08a-authorization-matrix.md`](20-partitioned-cursor-paging/08a-authorization-matrix.md) | E20-S04–E20-S06 | E14, E15 | Cross-strategy accessible-set agreement and forged-range negative cases |
+| E20-S08b | [`08b-public-contract-parity-and-e2e.md`](20-partitioned-cursor-paging/08b-public-contract-parity-and-e2e.md) | E20-S04–E20-S07, E20-S11 | E20-S08a | Public contract coverage, DMS-side parity execution, and E2E evidence |
 | E20-S09 | [`09-performance-harness-and-baseline.md`](20-partitioned-cursor-paging/09-performance-harness-and-baseline.md) | — | E12, E13 | Cross-provider harness and three-scenario pre-change traditional baseline |
 | E20-S10 | [`10-performance-and-observability-final-gate.md`](20-partitioned-cursor-paging/10-performance-and-observability-final-gate.md) | E20-S02–E20-S09 | E12, E13 | Large fixtures, full matrix, plans, and final thresholds |
-| E20-S11 | [`11-ods-parity-fixture-and-difference-ledger.md`](20-partitioned-cursor-paging/11-ods-parity-fixture-and-difference-ledger.md) | E20-S00 | E13 | Pinned ODS 7.3.2 stack, comparison harness, and approved-difference ledger |
+| E20-S11 | [`11-ods-parity-fixture-and-difference-ledger.md`](20-partitioned-cursor-paging/11-ods-parity-fixture-and-difference-ledger.md) | E20-S00b | E13 | Pinned ODS 7.3.2 stack, case definitions, ODS-side capture, and approved-difference ledger |
 | E20-S12 | [`12-bounded-cursor-and-partition-telemetry.md`](20-partitioned-cursor-paging/12-bounded-cursor-and-partition-telemetry.md) | E20-S04–E20-S06 | E12 | Bounded production paging/partition telemetry and privacy tests |
 
 ---

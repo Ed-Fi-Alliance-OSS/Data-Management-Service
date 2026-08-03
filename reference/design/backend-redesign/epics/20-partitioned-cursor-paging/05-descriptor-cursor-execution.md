@@ -21,9 +21,9 @@ existing `DocumentId` values and the shared candidate and provider plans.
 
 ## Dependencies
 
-- Hard dependencies: E20-S00, E20-S01, E20-S02, and E20-S03.
+- Hard dependencies: E20-S00a, E20-S00b, E20-S01, E20-S02, and E20-S03.
 - Existing E08 descriptor endpoint behavior remains a compatibility input.
-- E20-S08 and E20-S10 consume this story's completed descriptor path.
+- E20-S08a, E20-S08b, and E20-S10 consume this story's completed descriptor path.
 
 ## Implementation Scope
 
@@ -55,4 +55,5 @@ existing `DocumentId` values and the shared candidate and provider plans.
 - Regular-resource hydration belongs to E20-S04.
 - Descriptor partition boundaries belong to E20-S06.
 - Descriptor OpenAPI belongs to E20-S07.
-- Broad parity/E2E and performance gates belong to E20-S08 and E20-S10.
+- The authorization matrix belongs to E20-S08a, and broad parity/E2E and performance gates belong to
+  E20-S08b and E20-S10.

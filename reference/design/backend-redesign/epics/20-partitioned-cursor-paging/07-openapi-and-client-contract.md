@@ -21,12 +21,12 @@ core, extension, descriptor, and profile OpenAPI documents without per-resource 
 
 ## Dependencies
 
-- Hard dependencies: E20-S00 for the approved public parameter, response, and runtime-default
+- Hard dependencies: E20-S00a for the approved public parameter, response, and runtime-default
   contracts; E20-S04 and E20-S05 for regular-resource and descriptor cursor execution; and
   E20-S06 for the active partition pipeline. No cursor parameter, response header, or partition
   path may be published before its runtime behavior is available.
-- E20-S01 route integration is consumed transitively through E20-S06.
-- E20-S08 consumes the published contract for API/E2E parity coverage.
+- E20-S00b and E20-S01 route integration are consumed transitively through E20-S06.
+- E20-S08b consumes the published contract for API/E2E parity coverage.
 
 ## Implementation Scope
 
@@ -41,8 +41,14 @@ core, extension, descriptor, and profile OpenAPI documents without per-resource 
 - Copy only eligible resource/change-version filters, security, tags, and domain metadata.
 - Associate profile partition paths explicitly with readable base resources without rewriting the
   token response to a profile media type.
+
+The client-facing documentation update is a separable delivery slice of this story. It may ship as
+its own increment after the OpenAPI slice, and it must not gate OpenAPI acceptance:
+
 - Update DMS client-facing paging documentation and examples for starting a cursor walk from a
   traditional response, consuming partition tokens, preserving filters, and terminal empty pages.
+- Document that a partition response may contain fewer tokens than requested and never more, and
+  that tokens are opaque and non-portable.
 
 ## Acceptance Evidence and Test Expectations
 
@@ -56,8 +62,9 @@ core, extension, descriptor, and profile OpenAPI documents without per-resource 
   absent before E20-S04/E20-S05 and `/partitions` paths are absent before E20-S06, then are
   published atomically with their active runtime operations.
 - OpenAPI generator integration tests produce the same augmented contract as runtime assembly.
-- Documentation review confirms examples use `pageSize`, repeat filters, and treat tokens as
-  opaque without implying snapshot consistency.
+- For the separable documentation slice, review confirms examples use `pageSize`, repeat filters,
+  and treat tokens as opaque without implying snapshot consistency. This evidence is tracked
+  separately from the OpenAPI evidence above.
 
 ## Cross-Provider and Authorization Responsibilities
 

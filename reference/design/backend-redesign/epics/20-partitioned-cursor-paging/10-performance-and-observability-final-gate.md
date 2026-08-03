@@ -20,7 +20,7 @@ that cursor latency is depth-insensitive without regressing traditional paging.
 
 ## Dependencies
 
-- Hard dependencies: completed E20-S02 through E20-S08 behavior plus E20-S09 harness and baseline
+- Hard dependencies: completed E20-S02 through E20-S08b behavior plus E20-S09 harness and baseline
   artifacts.
 - Existing E12 benchmark planning and E13 parity/E2E infrastructure remain reusable inputs.
 
@@ -51,7 +51,7 @@ that cursor latency is depth-insensitive without regressing traditional paging.
 
 ## Explicit Exclusions / Not Assigned
 
-- Functional implementation belongs to E20-S00 through E20-S08, and harness/baseline ownership
+- Functional implementation belongs to E20-S00a through E20-S08b, and harness/baseline ownership
   belongs to E20-S09.
 - Bounded production telemetry and its privacy tests belong to E20-S12.
 - Production capacity sizing, dashboards, paid APM, and generalized load-test expansion are not
