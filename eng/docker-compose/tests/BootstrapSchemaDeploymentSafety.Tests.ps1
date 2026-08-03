@@ -5382,12 +5382,79 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
+        It "applies ONE loopback rule to both engines, so no spelling is local on one and external on the other: <Name>" -ForEach @(
+            @{ Name = "MSSQL 127.1 short form"; ServerSegment = 'Server=127.1,15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL localhost. absolute DNS"; ServerSegment = 'Server=localhost.,15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL LOCALHOST. mixed case"; ServerSegment = 'Server=LOCALHOST.,15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL 127.0.0.1 (control)"; ServerSegment = 'Server=127.0.0.1,15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL tcp: with the short form"; ServerSegment = 'Server=tcp:127.1,15433'; ExpectLocal = $true }
+            @{ Name = "MSSQL 127.0.0.2 is a different listener"; ServerSegment = 'Server=127.0.0.2,15433'; ExpectLocal = $false }
+            @{ Name = "MSSQL 127.1 on the wrong port"; ServerSegment = 'Server=127.1,19999'; ExpectLocal = $false }
+            @{ Name = "MSSQL localhost. on the wrong port"; ServerSegment = 'Server=localhost.,19999'; ExpectLocal = $false }
+            @{ Name = "MSSQL an ordinary external hostname"; ServerSegment = 'Server=sql.example.com,15433'; ExpectLocal = $false }
+        ) {
+            # The loopback rule was PostgreSQL-only, so 'Server=127.1,<MSSQL_PORT>' reached the local
+            # Compose server while classifying as external - the reserved-database guard was skipped
+            # entirely. One shared rule now decides both engines. 'localhost.' is the absolute DNS
+            # spelling of the same host (measured: it resolves to 127.0.0.1), and 127.0.0.2 stays external
+            # because these services bind specifically to 127.0.0.1 even though all of 127/8 is
+            # "loopback" to IPAddress.IsLoopback.
+            #
+            # On this engine the refusal belongs to the running instance, so the stub stands in for its
+            # verdict and what is pinned is that the authority is reached at all.
+            $capturePath = Initialize-CanonicalMssqlWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:sharedLoopbackAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:sharedLoopbackAuthorityCalled = $true
+                    throw "CMS database topology mismatch: SQL Server reports that the datastore name resolved from '$RegisteredDatastoreDatabaseSourceKey' denotes the SAME physical database as the dedicated 'edfi_configurationservice'."
+                }
+                function Get-CmsToken { return "token" }
+                $script:sharedLoopbackConnectionString =
+                    "$ServerSegment;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true"
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 813
+                            name = "SharedLoopback"
+                            connectionString = $script:sharedLoopbackConnectionString
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                $invoke = { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-CanonicalMssqlEnvFile) `
+                    -DataStoreId @(813) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase }
+
+                if ($ExpectLocal) {
+                    ($invoke | Should -Throw -PassThru).Exception.Message | Should -BeLike "*SAME physical database*"
+                    $script:sharedLoopbackAuthorityCalled | Should -BeTrue -Because "a loopback spelling on the configured port is the local server, whose authority decides"
+                    Test-Path -LiteralPath $capturePath | Should -BeFalse -Because "the refusal must land before any DDL"
+                }
+                else {
+                    $invoke | Should -Not -Throw
+                    $script:sharedLoopbackAuthorityCalled | Should -BeFalse -Because "no local authority speaks for another host or another port"
+                    @(Get-Content -LiteralPath $capturePath) | Should -Contain "mssql"
+                }
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
         It "classifies an Npgsql host VALUE by every endpoint it can reach: <Name>" -ForEach @(
             @{ Name = "local first in the host list"; HostSegment = 'host=localhost:5544,pg.example.com:5432;port=5432'; ExpectRefused = $true }
             @{ Name = "local as a failover member"; HostSegment = 'host=pg.example.com:5432,localhost:5544;port=5432'; ExpectRefused = $true }
             @{ Name = "local member taking the global port"; HostSegment = 'host=pg.example.com:5432,localhost;port=5544'; ExpectRefused = $true }
             @{ Name = "load-balanced list with a local member"; HostSegment = 'host=pg.example.com:5432,localhost:5544;port=5432;Load Balance Hosts=true'; ExpectRefused = $true }
             @{ Name = "127.1 short-form loopback"; HostSegment = 'host=127.1;port=5544'; ExpectRefused = $true }
+            @{ Name = "localhost. absolute DNS spelling"; HostSegment = 'host=localhost.;port=5544'; ExpectRefused = $true }
+            @{ Name = "localhost. inside a host list"; HostSegment = 'host=pg.example.com:5432,localhost.:5544;port=5432'; ExpectRefused = $true }
+            @{ Name = "localhost. on the wrong port"; HostSegment = 'host=localhost.;port=9999'; ExpectRefused = $false }
             @{ Name = "plain localhost (control)"; HostSegment = 'host=localhost;port=5544'; ExpectRefused = $true }
             @{ Name = "external-only list keeps the reserved name"; HostSegment = 'host=pg.example.com:5432,other.example.com;port=5432'; ExpectRefused = $false }
             @{ Name = "localhost on another port"; HostSegment = 'host=localhost;port=9999'; ExpectRefused = $false }

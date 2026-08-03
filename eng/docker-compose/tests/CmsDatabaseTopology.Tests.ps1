@@ -1209,6 +1209,64 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             }
         }
 
+        It "accepts a PostgreSQL multi-host CMS endpoint whose every candidate is the composed service: <Name>" -ForEach @(
+            @{ Name = "both aliases with per-host ports"; HostSegment = 'Host=db:5432,dms-postgresql:5432;Port=5432'; Separate = $false }
+            @{ Name = "reversed candidate order"; HostSegment = 'Host=dms-postgresql:5432,db:5432;Port=5432'; Separate = $false }
+            @{ Name = "a candidate without its own port takes the standalone one"; HostSegment = 'Host=db,dms-postgresql:5432;Port=5432'; Separate = $false }
+            @{ Name = "no per-host ports at all"; HostSegment = 'Host=db,dms-postgresql;Port=5432'; Separate = $false }
+            @{ Name = "zero-padded standalone port"; HostSegment = 'Host=db:5432,dms-postgresql;Port=05432'; Separate = $false }
+            @{ Name = "multi-host in separate topology"; HostSegment = 'Host=db:5432,dms-postgresql:5432;Port=5432'; Separate = $true }
+        ) {
+            # Npgsql's Host is a comma-separated candidate list with optional per-host ports
+            # (npgsql.org/doc/failover-and-load-balancing.html). Both names here are aliases of the SAME
+            # composed PostgreSQL service - derived from the compose file, not listed - so a list naming
+            # only those on the expected port is a valid configuration and must validate.
+            $configName = if ($Separate) { "edfi_configurationservice" } else { "edfi_datamanagementservice" }
+            $envFile = New-EndpointAgreementEnvFile -Engine "postgresql" -Separate:$Separate `
+                -ConnectionString "$HostSegment;username=postgres;password=abcdefgh1!;database=$configName;"
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $envFile -DatabaseEngine "postgresql" } |
+                Should -Not -Throw
+        }
+
+        It "rejects a PostgreSQL multi-host CMS endpoint unless EVERY candidate is the composed service: <Name>" -ForEach @(
+            @{ Name = "internal then external"; HostSegment = 'Host=dms-postgresql:5432,pg.example.com:5432;Port=5432'; Expected = "*targets host*" }
+            @{ Name = "external then internal"; HostSegment = 'Host=pg.example.com:5432,dms-postgresql:5432;Port=5432'; Expected = "*targets host*" }
+            @{ Name = "an unrecognized compose hostname"; HostSegment = 'Host=db:5432,not-a-service:5432;Port=5432'; Expected = "*targets host*" }
+            @{ Name = "one candidate on the wrong port"; HostSegment = 'Host=db:5433,dms-postgresql:5432;Port=5432'; Expected = "*targets port*" }
+            @{ Name = "the standalone port is wrong for a portless candidate"; HostSegment = 'Host=db,dms-postgresql:5432;Port=5433'; Expected = "*targets port*" }
+        ) {
+            # ANY member is enough for Npgsql to connect through, so one external or wrong-port candidate
+            # is a real misconfiguration: it can fail over or load-balance to a database this contract
+            # says nothing about. Validation therefore requires EVERY candidate, in either order - the
+            # opposite quantifier from provisioning's local-target classification, which asks whether ANY
+            # candidate is local so the reserved-database guard runs.
+            $envFile = New-EndpointAgreementEnvFile -Engine "postgresql" `
+                -ConnectionString "$HostSegment;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
+
+            $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $envFile -DatabaseEngine "postgresql" } |
+                Should -Throw -PassThru
+            $thrown.Exception.Message | Should -BeLike $Expected
+            $thrown.Exception.Message | Should -Not -BeLike "*abcdefgh1!*" -Because "diagnostics never render credentials"
+        }
+
+        It "expands a PostgreSQL host list into one endpoint per candidate without altering the caller's string" {
+            # The shared grammar parser, observed through the extractor both callers use. Single-host
+            # values still yield exactly one endpoint, so existing behavior is unchanged.
+            $connectionString = 'Host=db:5432,dms-postgresql;Port=05432;username=postgres;password=abcdefgh1!;database=x;'
+            $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString $connectionString -DatabaseEngine "postgresql")
+
+            $endpoints.Count | Should -Be 2
+            $endpoints[0].Host | Should -Be "db"
+            $endpoints[0].Port | Should -Be "5432" -Because "the candidate's own port wins"
+            $endpoints[1].Host | Should -Be "dms-postgresql"
+            $endpoints[1].Port | Should -Be "05432" -Because "a candidate without its own port takes the standalone one, verbatim"
+            $connectionString | Should -Be 'Host=db:5432,dms-postgresql;Port=05432;username=postgres;password=abcdefgh1!;database=x;' -Because "the extractor must not rewrite its input"
+
+            @(Get-EndpointFromResolvedConnectionString -ConnectionString 'Host=dms-postgresql;Port=5432;database=x;' -DatabaseEngine "postgresql").Count |
+                Should -Be 1 -Because "a single-host value is still exactly one endpoint"
+        }
+
         It "reports the tcp:-stripped host from the endpoint extractor without altering the caller's string" {
             # The normalization is reporting-only: the extractor hands back the bare host, and the
             # connection string it was given is untouched.
@@ -2883,14 +2941,18 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*host*"
         }
 
-        It "rejects a comma-bearing PostgreSQL Host= value as a literal (malformed) host, rather than splitting it and hiding an explicit Port=" {
-            # Round 9 Blocker 2: Npgsql has no Server=host,port compound - a comma in a PostgreSQL
-            # Host= value is not a port separator. Before the fix, splitting it anyway extracted
-            # "dms-postgresql" as Host (matching the expected host) and the comma-compound's second
-            # half as Port, silently hiding the disagreeing explicit standalone Port=9999 key behind a
-            # port that was never really specified that way. After the fix, the comma is not split, so
-            # the whole value "dms-postgresql,5432" is correctly rejected as not matching the expected
-            # host "dms-postgresql" - a comma-bearing value is simply not a valid PostgreSQL host.
+        It "does not let a comma-bearing PostgreSQL Host= hide a disagreeing explicit Port=" {
+            # This replaces an assertion that a comma-bearing PostgreSQL Host is simply malformed. It is
+            # not: Npgsql's comma-separated multi-host syntax is valid and documented, and treating the
+            # whole value as one hostname made a correctly configured multi-host CMS connection string
+            # unvalidatable.
+            #
+            # The concern the old assertion protected is still protected, by the real grammar rather than
+            # by refusing to parse. "Host=dms-postgresql,5432" is TWO candidates - 'dms-postgresql' and
+            # the (nonsensical) host '5432' - neither of which carries its own port, so both take the
+            # standalone Port=9999. So the explicit Port= is not hidden behind a coincidental comma: the
+            # composed service is rejected on the disagreeing port, and '5432' is not an accepted host at
+            # all. Either way this configuration still fails.
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
@@ -2898,7 +2960,12 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'DMS_CONFIG_DATABASE_CONNECTION_STRING=Host=dms-postgresql,5432;Port=9999;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_datamanagementservice;'
             ) -join "`n") -NoNewline
 
-            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*dms-postgresql,5432*"
+            $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
+                Should -Throw -PassThru
+            # The standalone 9999 is what each candidate is judged on - never a port lifted out of the
+            # host list - so the failure names 9999, not 5432.
+            $thrown.Exception.Message | Should -BeLike "*9999*"
+            $thrown.Exception.Message | Should -Not -BeLike "*abcdefgh1!*"
         }
     }
 
@@ -3436,12 +3503,20 @@ Describe "Get-DatabaseNameFromResolvedConnectionString / Get-EndpointFromResolve
         $endpoints[0].Port | Should -BeNullOrEmpty
     }
 
-    It "does not split a comma inside a PostgreSQL Host= value (Npgsql has no host,port compound)" {
-        # Round 9 Blocker 2: splitting the comma hides an explicit standalone Port= key behind
-        # whatever port a coincidental comma in the host value produced.
+    It "expands a comma in a PostgreSQL Host= value as a candidate separator, never as a host,port compound" {
+        # Npgsql's comma is a CANDIDATE separator, not the MSSQL-style host,port compound: this value is
+        # two candidates, 'dms-postgresql' and the (nonsensical) host '5432'. Neither carries its own
+        # port - that would be "host:port" - so both take the standalone Port=9999.
+        #
+        # This corrects an earlier assertion that the whole value was one malformed hostname. The concern
+        # it protected is still protected: an explicit standalone Port= can never be hidden behind a
+        # coincidental comma, because a comma never yields a port here.
         $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString "Host=dms-postgresql,5432;Port=9999;Database=x;" -DatabaseEngine "postgresql")
-        $endpoints[0].Host | Should -Be "dms-postgresql,5432"
+        $endpoints.Count | Should -Be 2
+        $endpoints[0].Host | Should -Be "dms-postgresql"
         $endpoints[0].Port | Should -Be "9999"
+        $endpoints[1].Host | Should -Be "5432"
+        $endpoints[1].Port | Should -Be "9999"
     }
 
     It "does not honor a standalone Port= key for MSSQL (SqlClient does not support that keyword)" {
