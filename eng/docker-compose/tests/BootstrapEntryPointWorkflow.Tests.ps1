@@ -594,6 +594,94 @@ $failureStatement
     # R4 - Wrapper -InfraOnly shape: configure + provision, no -DmsOnly, IDE guidance
     # =========================================================================
     Context "wrapper -InfraOnly pre-DMS terminal shape" {
+        BeforeAll {
+            # The start script's continuation-fragment builder, lifted from the real file so the rows
+            # below exercise production text rather than a copy. Dot-sourcing start-local-dms.ps1 is not
+            # an option - it is a straight-line script that would start Docker - so the single function
+            # is extracted, the same way this suite reaches other in-script helpers.
+            function script:Get-ScriptFunctionText {
+                param(
+                    [Parameter(Mandatory)] [string]$ScriptPath,
+                    [Parameter(Mandatory)] [string]$FunctionName
+                )
+
+                $tokens = $null
+                $parseErrors = $null
+                $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+                if ($parseErrors.Count -gt 0) { throw "Failed to parse $ScriptPath" }
+                $functionAst = $ast.FindAll(
+                    { param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName },
+                    $true) | Select-Object -First 1
+                if ($null -eq $functionAst) { throw "Function '$FunctionName' was not found in '$ScriptPath'." }
+                return $functionAst.Extent.Text
+            }
+
+            . ([scriptblock]::Create((Get-ScriptFunctionText `
+                -ScriptPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") `
+                -FunctionName "Get-ContinuationCommandArgument")))
+            Set-Alias -Name Get-StartScriptContinuationArgument -Value Get-ContinuationCommandArgument -Scope Script
+
+            # A parameter block standing in for the continuation targets, so an emitted fragment is
+            # proven to BIND - one argument per value, original characters intact - instead of merely
+            # appearing in the text. The parameter names and types mirror the real scripts'; a separate
+            # row asserts those scripts actually declare them.
+            function script:New-ContinuationArgumentRecorder {
+                param([Parameter(Mandatory)] [string]$Directory)
+
+                $path = Join-Path $Directory "continuation-argument-recorder.ps1"
+                @'
+param(
+    [ValidateSet("postgresql", "mssql")]
+    [string]$DatabaseEngine = "postgresql",
+    [string]$EnvironmentFile = "",
+    [string]$DataStandardVersion = "",
+    [Switch]$NoDataStore,
+    [Switch]$SeparateConfigDatabase
+)
+
+[pscustomobject]@{
+    DatabaseEngine = $DatabaseEngine
+    EnvironmentFile = $EnvironmentFile
+    DataStandardVersion = $DataStandardVersion
+    NoDataStore = $NoDataStore.IsPresent
+    SeparateConfigDatabase = $SeparateConfigDatabase.IsPresent
+} | ConvertTo-Json -Compress
+'@ | Set-Content -LiteralPath $path -Encoding utf8
+                return $path
+            }
+
+            function script:Invoke-BoundContinuationArgument {
+                param(
+                    [Parameter(Mandatory)] [string]$RecorderPath,
+                    [Parameter(Mandatory)] [string]$ArgumentText
+                )
+
+                # The fragment is parsed and bound by PowerShell itself, which is the whole point: a path
+                # that lost its quoting would bind as two arguments (or fail) here rather than pass.
+                $quotedRecorder = "'" + $RecorderPath.Replace("'", "''") + "'"
+                return & ([scriptblock]::Create("& $quotedRecorder $ArgumentText")) | ConvertFrom-Json
+            }
+
+            function script:Get-PrintedWrapperContinuationArgument {
+                <#
+                .SYNOPSIS
+                Lifts the argument text out of the wrapper's own printed continuation command: everything
+                after the "-DmsBaseUrl <url>" placeholder and before the optional "[-LoadSeedData ...]"
+                decoration, both of which are illustrative rather than bindable.
+                #>
+                param([Parameter(Mandatory)] [string]$Output)
+
+                $line = @($Output -split "`r?`n" | Where-Object { $_ -match 'bootstrap-local-dms\.ps1\s+-InfraOnly\s+-DmsBaseUrl\s+<url>' }) |
+                    Select-Object -First 1
+                if ([string]::IsNullOrWhiteSpace($line)) {
+                    throw "The wrapper printed no fresh-run continuation command."
+                }
+
+                $afterPlaceholder = ($line -split '-DmsBaseUrl\s+<url>\s*', 2)[1]
+                return ($afterPlaceholder -replace '\[\-LoadSeedData[^\]]*\]\s*$', '').Trim()
+            }
+        }
+
         It "runs configure and provision, does not invoke -DmsOnly start, and prints IDE guidance" {
             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
             $callLog = Join-Path $script:repo.RepoRoot "call-log.txt"
@@ -650,7 +738,7 @@ $failureStatement
                 -SeparateConfigDatabase `
                 *>&1 | Out-String
 
-            $output | Should -Match "bootstrap-local-dms\.ps1\s+-InfraOnly\s+-DmsBaseUrl\s+<url>\s+-NoDataStore\s+-SeparateConfigDatabase" -Because "the continuation must reuse the data store AND keep the topology the stack was started with"
+            $output | Should -Match "bootstrap-local-dms\.ps1\s+-InfraOnly\s+-DmsBaseUrl\s+<url>\s+-NoDataStore\b[^\r\n]*\s-SeparateConfigDatabase" -Because "the continuation must reuse the data store AND keep the topology the stack was started with"
         }
 
         It "forwards -DatabaseEngine to the provision phase (DMS-1270 Phase 1b)" {
@@ -790,17 +878,123 @@ $failureStatement
             @(Get-Content -LiteralPath $forwardLog) | Should -Contain "provision separate=False" -Because "shared mode must remain the default all the way through the wrapper"
         }
 
-        It "start-local-dms.ps1 -InfraOnly separate-topology guidance prints the switch on every command it emits" {
-            # The manual continuation is where the declaration cannot be inferred: the marker lives
-            # in the derived file this start wrote. Printing it on only some of the emitted commands
-            # leaves the rest unable to refuse the dedicated Configuration Service database, or -
-            # for the fresh wrapper run, which recomposes the environment from its own switches -
-            # silently continues the stack in shared mode.
+        It "start-local-dms.ps1 -InfraOnly guidance builds every command it emits from a continuation argument fragment" {
+            # The manual continuation is where this run's state cannot be inferred: the topology marker
+            # lives in the derived file this start wrote, and the engine and environment file are pure
+            # invocation state. Printing part of it on some commands and not others leaves the rest
+            # unable to refuse the dedicated Configuration Service database, or continuing on the
+            # PostgreSQL default and the default environment. Each emitted command therefore
+            # interpolates a fragment rather than carrying its own hand-written switch list, which is
+            # what keeps the separate-mode and shared-mode wording from drifting apart; what the
+            # fragment actually resolves to is bound, not matched, in the rows below.
             $startContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
 
-            $startContent | Should -Match 'Write-Output\s+"[^"\n]*configure-local-data-store\.ps1 -SeparateConfigDatabase'
-            $startContent | Should -Match 'Write-Output\s+"[^"\n]*provision-dms-schema\.ps1 -SeparateConfigDatabase'
-            $startContent | Should -Match 'Write-Output\s+"[^"\n]*bootstrap-local-dms\.ps1 -InfraOnly -DmsBaseUrl <url> -SeparateConfigDatabase'
+            $startContent | Should -Match 'Write-Output\s+"[^"\n]*configure-local-data-store\.ps1 \$phaseContinuationArgument'
+            $startContent | Should -Match 'Write-Output\s+"[^"\n]*provision-dms-schema\.ps1 \$phaseContinuationArgument'
+            $startContent | Should -Match 'Write-Output\s+"[^"\n]*bootstrap-local-dms\.ps1 -InfraOnly -DmsBaseUrl <url> \$wrapperContinuationArgument'
+            $startContent | Should -Not -Match 'Write-Output\s+"[^"\n]*(configure-local-data-store|provision-dms-schema|bootstrap-local-dms)\.ps1[^"\n]* -SeparateConfigDatabase' -Because "no emitted command may hand-write the topology switch alongside the fragment that already carries it"
+        }
+
+        It "the emitted continuation fragment BINDS to this run's engine, environment file, and topology: <Name>" -ForEach @(
+            @{ Name = "MSSQL + custom environment + separate topology"; Engine = "mssql"; Separate = $true;  EnvPath = "/tmp/custom/.env.mssql-sep" }
+            @{ Name = "MSSQL + custom environment + shared topology";   Engine = "mssql"; Separate = $false; EnvPath = "/tmp/custom/.env.mssql-shared" }
+            @{ Name = "PostgreSQL + custom environment";                Engine = "postgresql"; Separate = $false; EnvPath = "/tmp/custom/.env.pg" }
+            @{ Name = "environment path containing spaces";             Engine = "mssql"; Separate = $true;  EnvPath = "/tmp/my custom dir/.env file" }
+            @{ Name = "environment path containing an apostrophe";      Engine = "mssql"; Separate = $true;  EnvPath = "/tmp/o'brien's env/.env" }
+        ) {
+            # Substring matching cannot tell a quoted path that survives argument binding from one that
+            # splits into two arguments or terminates its own quote, so the fragment is EXECUTED against a
+            # parameter block and the bound values are what is asserted.
+            $recorder = New-ContinuationArgumentRecorder -Directory $script:repo.RepoRoot
+            $argumentText = Get-StartScriptContinuationArgument `
+                -DatabaseEngine $Engine `
+                -EnvironmentFile $EnvPath `
+                -SeparateConfigDatabase:$Separate
+
+            $bound = Invoke-BoundContinuationArgument -RecorderPath $recorder -ArgumentText $argumentText
+
+            $bound.DatabaseEngine | Should -Be $Engine -Because "the continuation must run on the engine this run used, not the postgresql default"
+            $bound.EnvironmentFile | Should -Be $EnvPath -Because "the path must arrive as ONE argument with its original characters"
+            $bound.SeparateConfigDatabase | Should -Be $Separate -Because "the topology declaration travels only when this run declared it"
+        }
+
+        It "every parameter the start-script continuation fragment emits exists on both phase scripts it is printed for" {
+            # A fragment that binds against a stand-in proves nothing if the real phase scripts do not
+            # accept those parameters. Both phases are checked, since the same fragment is printed for
+            # each.
+            $argumentText = Get-StartScriptContinuationArgument `
+                -DatabaseEngine "mssql" `
+                -EnvironmentFile "/tmp/.env" `
+                -SeparateConfigDatabase
+
+            $emittedParameters = @(
+                [regex]::Matches($argumentText, '(?<=\s|^)-(?<Name>[A-Za-z][A-Za-z0-9]*)') |
+                    ForEach-Object { $_.Groups["Name"].Value }
+            )
+            $emittedParameters | Should -Not -BeNullOrEmpty
+
+            foreach ($scriptName in @("configure-local-data-store.ps1", "provision-dms-schema.ps1")) {
+                $declared = Get-DeclaredScriptParameters -Path (Join-Path $script:sourceDockerComposeRoot $scriptName)
+                foreach ($parameterName in $emittedParameters) {
+                    $declared | Should -Contain $parameterName -Because "$scriptName must be able to bind -$parameterName as printed"
+                }
+            }
+        }
+
+        It "the wrapper continuation hint it actually prints BINDS to the run's engine and base environment file, for <_>" -ForEach @('postgresql', 'mssql') {
+            # The real emitted line, not a reconstruction: the wrapper is run against a custom
+            # environment file and the printed command is lifted out of its own output and bound.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-hint-bind-$_.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $customEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.custom-hint-$_"
+            Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $customEnvFile -Encoding utf8
+
+            $output = & $script:repo.WrapperScript `
+                -EnvironmentFile $customEnvFile `
+                -InfraOnly `
+                -DatabaseEngine $_ `
+                -SeparateConfigDatabase `
+                *>&1 | Out-String
+
+            $recorder = New-ContinuationArgumentRecorder -Directory $script:repo.RepoRoot
+            $bound = Invoke-BoundContinuationArgument `
+                -RecorderPath $recorder `
+                -ArgumentText (Get-PrintedWrapperContinuationArgument -Output $output)
+
+            $bound.DatabaseEngine | Should -Be $_ -Because "following the hint must recompose the engine this run used"
+            $bound.EnvironmentFile | Should -Be $customEnvFile -Because "the fresh run recomposes its overlays from the BASE file this run composed from, not a derived one and not the default"
+            $bound.NoDataStore | Should -BeTrue -Because "the terminal run already created the data store"
+            $bound.SeparateConfigDatabase | Should -BeTrue
+        }
+
+        It "the wrapper continuation hint does not advertise -SeparateConfigDatabase for a shared-mode run, but still binds engine and environment" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-hint-bind-shared.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $customEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.custom-hint-shared"
+            Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $customEnvFile -Encoding utf8
+
+            $output = & $script:repo.WrapperScript `
+                -EnvironmentFile $customEnvFile `
+                -InfraOnly `
+                -DatabaseEngine mssql `
+                *>&1 | Out-String
+
+            $recorder = New-ContinuationArgumentRecorder -Directory $script:repo.RepoRoot
+            $bound = Invoke-BoundContinuationArgument `
+                -RecorderPath $recorder `
+                -ArgumentText (Get-PrintedWrapperContinuationArgument -Output $output)
+
+            $bound.SeparateConfigDatabase | Should -BeFalse -Because "the hint records the topology this run actually used"
+            $bound.DatabaseEngine | Should -Be "mssql" -Because "shared mode carries the engine too"
+            $bound.EnvironmentFile | Should -Be $customEnvFile
         }
 
         It "start-local-dms.ps1 terminal guidance block does not print a second start run as a resume mechanism" {

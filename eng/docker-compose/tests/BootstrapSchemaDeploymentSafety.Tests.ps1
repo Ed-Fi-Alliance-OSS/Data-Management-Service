@@ -4776,6 +4776,374 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
     }
+
+    Context "one canonical MSSQL target: what is validated is what SchemaTools receives" {
+        # SchemaTools reparses the connection string this phase hands it with
+        # Microsoft.Data.SqlClient (MssqlDatabaseProvisioner.GetDatabaseName reads
+        # SqlConnectionStringBuilder.InitialCatalog), where a synonym family resolves to its LAST
+        # occurrence. A first-listed-synonym lookup therefore validated one database while the tool
+        # deployed DMS DDL into another, and a "tcp:"-prefixed loopback server read as an external
+        # host that the topology guard does not cover at all. These rows pin the single boundary that
+        # closes both: the server and database the guard judges are the ones the provider selects, and
+        # the string handed to the tool carries exactly those.
+        BeforeAll {
+            $script:canonicalMssqlPort = "15433"
+
+            function script:New-CanonicalMssqlEnvFile {
+                param([string]$DatastoreName = "edfi_datamanagementservice")
+
+                $path = Join-Path $script:repo.DockerComposeRoot "env-canonical-mssql-$([Guid]::NewGuid().ToString('N')).env"
+                @"
+POSTGRES_PASSWORD=isolated-pass
+MSSQL_PORT=$($script:canonicalMssqlPort)
+MSSQL_SA_PASSWORD=abcdefgh1!
+MSSQL_DB_NAME=$DatastoreName
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+"@ | Set-Content -LiteralPath $path -Encoding utf8
+                return $path
+            }
+
+            # Absence of the capture file is "SchemaTools was never invoked", the same record the
+            # separate-topology guard rows use.
+            function script:Initialize-CanonicalMssqlWorkspace {
+                New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot -Extensions @()
+                $capturePath = Join-Path $script:repo.RepoRoot "canonical-mssql-args-$([Guid]::NewGuid().ToString('N')).txt"
+                $env:DMS_SCHEMA_TOOL_PATH = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+                return $capturePath
+            }
+
+            function script:Get-CapturedSchemaToolConnectionString {
+                param([Parameter(Mandatory)] [string]$CapturePath)
+
+                $captured = @(Get-Content -LiteralPath $CapturePath)
+                $index = [array]::IndexOf($captured, "--connection-string")
+                if ($index -lt 0) { throw "SchemaTools was invoked without a --connection-string argument." }
+                return $captured[$index + 1]
+            }
+
+            # The oracle is a real SqlClient parser, not a reimplementation of its precedence rules.
+            function script:Get-SqlClientEffectiveValue {
+                param([Parameter(Mandatory)] [string]$ConnectionString)
+
+                $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($ConnectionString)
+                return [pscustomobject]@{
+                    InitialCatalog = $builder.InitialCatalog
+                    DataSource = $builder.DataSource
+                }
+            }
+        }
+
+        It "hands SchemaTools a string whose SqlClient database IS the one the topology authority judged: <Name>" -ForEach @(
+            @{ Name = "Database first, Initial Catalog last"; DatabaseSegment = 'Database=ignored_first;Initial Catalog=effective_last'; Effective = "effective_last" }
+            @{ Name = "Initial Catalog first, Database last"; DatabaseSegment = 'Initial Catalog=edfi_configurationservice;Database=cms_safe_store'; Effective = "cms_safe_store" }
+            @{ Name = "Initial Catalog repeated around Database"; DatabaseSegment = 'Initial Catalog=first_ic;Database=middle_db;Initial Catalog=effective_last_ic'; Effective = "effective_last_ic" }
+            @{ Name = "Database repeated around Initial Catalog"; DatabaseSegment = 'Database=first;Initial Catalog=second;Database=last'; Effective = "last" }
+            @{ Name = "only Database"; DatabaseSegment = 'Database=only_database'; Effective = "only_database" }
+            @{ Name = "only Initial Catalog"; DatabaseSegment = 'Initial Catalog=only_initial_catalog'; Effective = "only_initial_catalog" }
+        ) {
+            # The load-bearing assertion is not that the guard was called: it is that the FINAL captured
+            # string, parsed by the real provider, yields the same database the guard was handed - and that
+            # this value is the one SqlClient actually selects, which is what makes the expected value
+            # independent of the implementation.
+            #
+            # Two rows are what discriminate a provider parse from the ordered-alias-list lookup this phase
+            # used to use, and neither is redundant. That lookup returns the 'database' key whenever it is
+            # present, carrying the LAST Database= value - so it coincidentally agrees wherever Database is
+            # the last member of the family, including in the repeated-Database row. It disagrees when the
+            # family's last member is Initial Catalog: 'Database first, Initial Catalog last' and the
+            # repeated-Initial-Catalog row are the rows a return to that lookup fails on. The
+            # repeated-Database row stays because it is what fails an implementation built on
+            # DbConnectionStringBuilder key order, which keeps a repeated key's FIRST position with its
+            # LAST value.
+            $capturePath = Initialize-CanonicalMssqlWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:canonicalAuthorityDatabase = $null
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:canonicalAuthorityDatabase = $RegisteredDatastoreDatabaseName
+                }
+                function Get-CmsToken { return "token" }
+                $script:canonicalStoredConnectionString =
+                    "Server=dms-mssql,1433;$DatabaseSegment;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true"
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 801
+                            name = "Canonical"
+                            connectionString = $script:canonicalStoredConnectionString
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-CanonicalMssqlEnvFile) `
+                    -DataStoreId @(801) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase *>&1 | Out-Null
+
+                $captured = Get-CapturedSchemaToolConnectionString -CapturePath $capturePath
+                $reparsed = Get-SqlClientEffectiveValue -ConnectionString $captured
+
+                $reparsed.InitialCatalog | Should -Be $Effective -Because "the provider resolves the LAST occurrence of the database synonym family"
+                $script:canonicalAuthorityDatabase | Should -Be $Effective -Because "the topology authority must judge that same value"
+                $script:canonicalAuthorityDatabase | Should -Be $reparsed.InitialCatalog -Because "the validated database and the deployed database are one value, not two"
+                $reparsed.DataSource | Should -Be "127.0.0.1,$($script:canonicalMssqlPort)" -Because "the Docker-internal server is translated in the same canonical result"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "refuses when a LATER database synonym names the reserved database and the first-listed one is safe" {
+            # The reviewer's case, and the reason a first-listed lookup is unsafe here: the guard saw
+            # 'cms_safe_store' and let the run through while SchemaTools would have deployed into
+            # edfi_configurationservice.
+            $capturePath = Initialize-CanonicalMssqlWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:canonicalAuthorityDatabase = $null
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:canonicalAuthorityDatabase = $RegisteredDatastoreDatabaseName
+                    if ($RegisteredDatastoreDatabaseName -eq "edfi_configurationservice") {
+                        throw "CMS database topology mismatch: SQL Server reports that the datastore name resolved from '$RegisteredDatastoreDatabaseSourceKey' denotes the SAME physical database as the dedicated 'edfi_configurationservice'."
+                    }
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 802
+                            name = "LaterSynonymWins"
+                            connectionString = 'Server=dms-mssql,1433;Database=cms_safe_store;Initial Catalog=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                $thrown = { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-CanonicalMssqlEnvFile) `
+                    -DataStoreId @(802) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase } |
+                    Should -Throw -PassThru
+
+                $thrown.Exception.Message | Should -BeLike "*SAME physical database*"
+                $script:canonicalAuthorityDatabase | Should -Be "edfi_configurationservice" -Because "the judged value is the one the provider selects"
+                $script:canonicalAuthorityDatabase | Should -Not -Be "cms_safe_store" -Because "the first-listed synonym is not what SchemaTools would have deployed into"
+                Test-Path -LiteralPath $capturePath | Should -BeFalse -Because "the refusal must land before any DDL"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "leaves exactly one member of each synonym family in the string SchemaTools receives" {
+            # Validating the right value but passing the original ambiguous string would let the losing
+            # synonym override it on reparse, so the canonical result must carry no second member of
+            # either family at all.
+            $capturePath = Initialize-CanonicalMssqlWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 803
+                            name = "BothFamilies"
+                            connectionString = 'Server=other.example.com;Data Source=dms-mssql,1433;Initial Catalog=ignored_catalog;Database=chosen_db;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-CanonicalMssqlEnvFile) `
+                    -DataStoreId @(803) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase *>&1 | Out-Null
+
+                $captured = Get-CapturedSchemaToolConnectionString -CapturePath $capturePath
+                $keyBuilder = [System.Data.Common.DbConnectionStringBuilder]::new()
+                $keyBuilder.set_ConnectionString($captured)
+                $keys = @($keyBuilder.PSBase.Keys | ForEach-Object { ([string]$_).ToLowerInvariant() })
+
+                @($keys | Where-Object { $_ -in @("database", "initial catalog") }).Count |
+                    Should -Be 1 -Because "the database family is collapsed onto one key"
+                @($keys | Where-Object { $_ -in @("server", "data source", "addr", "address", "network address") }).Count |
+                    Should -Be 1 -Because "the server family is collapsed onto one key"
+
+                $reparsed = Get-SqlClientEffectiveValue -ConnectionString $captured
+                $reparsed.InitialCatalog | Should -Be "chosen_db"
+                $reparsed.DataSource | Should -Be "127.0.0.1,$($script:canonicalMssqlPort)" -Because "Data Source was the provider-selected server and it names the Docker-internal host"
+
+                # And nothing unrelated was dropped on the way through.
+                $captured | Should -Match "(?i)user id=sa"
+                $captured | Should -Match "(?i)trustservercertificate=true"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "the SqlClient provider this phase parses with agrees with the Microsoft.Data.SqlClient build SchemaTools links" {
+            # The equivalence is asserted, not assumed. Microsoft.Data.SqlClient is not loadable at the
+            # provisioning boundary itself (the copy beside the tool is a platform stub whose constructor
+            # throws, the real implementation sits in a RID-specific runtimes/ subdirectory, and the tool
+            # path is resolved only after the guard has run), so production parses with the in-box
+            # System.Data.SqlClient and this row pins that the two providers select the same values.
+            # Loaded in a child process so no permanent assembly load leaks into the suite's session.
+            $providerAssembly = @(
+                Get-ChildItem `
+                    -Path (Join-Path $script:sourceRepoRoot "src/dms/clis/EdFi.DataManagementService.SchemaTools/bin") `
+                    -Filter "Microsoft.Data.SqlClient.dll" -Recurse -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.DirectoryName -match "[\\/]runtimes[\\/]" } |
+                    Sort-Object FullName
+            ) | Select-Object -First 1
+
+            if ($null -eq $providerAssembly) {
+                Set-ItResult -Skipped -Because "SchemaTools has not been built in this workspace, so its Microsoft.Data.SqlClient assembly is unavailable to compare against"
+                return
+            }
+
+            $cases = @(
+                'Database=safe;Initial Catalog=edfi_configurationservice'
+                'Initial Catalog=edfi_configurationservice;Database=safe'
+                'Database=first;Initial Catalog=second;Database=last'
+                'Initial Catalog=a;Database=b;Initial Catalog=c'
+                'Server=tcp:localhost,15433;Data Source=sql.example.com'
+                'Data Source=sql.example.com;Server=tcp:localhost,15433'
+            )
+
+            $childScript = Join-Path $script:repo.RepoRoot "provider-parity.ps1"
+            @(
+                "Add-Type -Path '$($providerAssembly.FullName)'",
+                "`$rows = foreach (`$case in @($(($cases | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }) -join ", "))) {",
+                "    `$microsoft = [Microsoft.Data.SqlClient.SqlConnectionStringBuilder]::new(`$case)",
+                "    `$system = [System.Data.SqlClient.SqlConnectionStringBuilder]::new(`$case)",
+                "    [pscustomobject]@{",
+                "        Case = `$case",
+                "        Agrees = (`$microsoft.InitialCatalog -ceq `$system.InitialCatalog) -and (`$microsoft.DataSource -ceq `$system.DataSource)",
+                "        MicrosoftInitialCatalog = `$microsoft.InitialCatalog",
+                "        MicrosoftDataSource = `$microsoft.DataSource",
+                "    }",
+                "}",
+                "@(`$rows) | ConvertTo-Json -Compress -AsArray"
+            ) -join "`n" | Set-Content -LiteralPath $childScript -Encoding utf8
+
+            $parity = @((& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json)
+
+            $parity.Count | Should -Be $cases.Count -Because "every case must have been compared in the child process"
+            foreach ($row in $parity) {
+                $row.Agrees | Should -BeTrue -Because "the two providers must select the same server and database for '$($row.Case)'"
+            }
+
+            # Anchored spot-checks so a child that silently reported agreement on empty values fails.
+            ($parity | Where-Object { $_.Case -eq 'Database=first;Initial Catalog=second;Database=last' }).MicrosoftInitialCatalog |
+                Should -Be "last"
+            ($parity | Where-Object { $_.Case -eq 'Data Source=sql.example.com;Server=tcp:localhost,15433' }).MicrosoftDataSource |
+                Should -Be "tcp:localhost,15433"
+        }
+
+        It "classifies the MSSQL endpoint from the protocol-prefixed server: <Name>" -ForEach @(
+            @{ Name = "Server=tcp:localhost,<MSSQL_PORT>"; ServerSegment = 'Server=tcp:localhost,15433'; IsLocal = $true }
+            @{ Name = "Server=TCP:127.0.0.1,<MSSQL_PORT>"; ServerSegment = 'Server=TCP:127.0.0.1,15433'; IsLocal = $true }
+            @{ Name = "Data Source=tcp:localhost,<MSSQL_PORT>"; ServerSegment = 'Data Source=tcp:localhost,15433'; IsLocal = $true }
+            @{ Name = "Server=tcp:dms-mssql,1433 (translation must not be evaded)"; ServerSegment = 'Server=tcp:dms-mssql,1433'; IsLocal = $true }
+            @{ Name = "Server=localhost,<MSSQL_PORT> (unprefixed, unchanged)"; ServerSegment = 'Server=localhost,15433'; IsLocal = $true }
+            @{ Name = "Server=tcp:localhost,<other port>"; ServerSegment = 'Server=tcp:localhost,15999'; IsLocal = $false }
+            @{ Name = "Server=tcp:sql.example.com,<MSSQL_PORT>"; ServerSegment = 'Server=tcp:sql.example.com,15433'; IsLocal = $false }
+        ) {
+            # "tcp:host,port" is documented SqlClient syntax that reaches the same server "host,port"
+            # does, so it must be covered by the topology guard rather than read as an external host.
+            # A loopback address on another port, and any non-loopback name, stay external: a different
+            # instance is a different namespace and no local authority can speak for it.
+            $capturePath = Initialize-CanonicalMssqlWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:canonicalAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:canonicalAuthorityCalled = $true
+                }
+                function Get-CmsToken { return "token" }
+                $script:canonicalStoredConnectionString =
+                    "$ServerSegment;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true"
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 804
+                            name = "Endpoint"
+                            connectionString = $script:canonicalStoredConnectionString
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-CanonicalMssqlEnvFile) `
+                    -DataStoreId @(804) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase *>&1 | Out-Null
+
+                $script:canonicalAuthorityCalled | Should -Be $IsLocal -Because "the live topology authority is consulted for the local Compose database and only for it"
+                @(Get-Content -LiteralPath $capturePath) | Should -Contain "mssql" -Because "either classification still provisions this non-reserved target"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "endpoint classification and the canonical string both follow the provider-selected server: <Name>" -ForEach @(
+            @{ Name = "Data Source listed last wins"; ServerSegment = 'Server=tcp:localhost,15433;Data Source=sql.example.com'; Winner = "sql.example.com"; IsLocal = $false }
+            @{ Name = "Server listed last wins"; ServerSegment = 'Data Source=sql.example.com;Server=tcp:localhost,15433'; Winner = "tcp:localhost,15433"; IsLocal = $true }
+        ) {
+            # Both orders, because a classifier and a renderer that disagree about the winner are the
+            # same defect as the database case: guarded against one server, connected to another.
+            $capturePath = Initialize-CanonicalMssqlWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:canonicalAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:canonicalAuthorityCalled = $true
+                }
+                function Get-CmsToken { return "token" }
+                $script:canonicalStoredConnectionString =
+                    "$ServerSegment;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true"
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 805
+                            name = "ConflictingServer"
+                            connectionString = $script:canonicalStoredConnectionString
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-CanonicalMssqlEnvFile) `
+                    -DataStoreId @(805) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase *>&1 | Out-Null
+
+                $reparsed = Get-SqlClientEffectiveValue `
+                    -ConnectionString (Get-CapturedSchemaToolConnectionString -CapturePath $capturePath)
+                $reparsed.DataSource | Should -Be $Winner -Because "SchemaTools must connect to the server the provider selected"
+                $script:canonicalAuthorityCalled | Should -Be $IsLocal -Because "classification must follow that same winner"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+    }
 }
 
 # Unload exactly the module instances staged under the workspaces THIS run created and
