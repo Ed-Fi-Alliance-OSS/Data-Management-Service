@@ -580,8 +580,10 @@ At this point `dms.Document` is **traffic-free** and `dms.ReferentialIdentity` i
   the affected-rows signal
   ([`OrderedDeleteCommandBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/OrderedDeleteCommandBuilder.cs)),
   and every foreign key into `dms.Document` — from resource roots, from `dms.Descriptor`, and from the
-  abstract identity tables — is **gone**. The table and its own stamping-trigger `UPDATE`s remain
-  emitted until the table is dropped. **No production code path reads it** — and no *dead* production
+  abstract identity tables — is **gone**. The table itself is still emitted until it is dropped, but
+  nothing writes it: no generated trigger body names it any more (Task 4 re-sourced the stamps onto the
+  root rows), and the table carries no trigger of its own, so a freshly provisioned database keeps it
+  **permanently empty**. **No production code path reads it** — and no *dead* production
   reader is left either. The UUIDv5 hash resolver and its
   `dms.ReferentialIdentity` ⋈ `dms.Document` join are **deleted** — every dialect composition now
   registers the natural-key resolver into the `IReferenceResolver` slot
