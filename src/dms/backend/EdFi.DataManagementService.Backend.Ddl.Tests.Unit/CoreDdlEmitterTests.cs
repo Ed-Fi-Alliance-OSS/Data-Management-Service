@@ -275,7 +275,9 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         // PostgreSQL, so the lower-casing is materialized by the engine into its own stored column.
         var block = DescriptorTableColumnExtractor.ExtractPgBlock(_ddl);
 
-        block.Should().Contain("\"UriLowered\" varchar(306) GENERATED ALWAYS AS (lower(\"Uri\")) STORED,");
+        // The generated column is declared at double the stored width: ICU full case mapping can
+        // lengthen lower() output, and an overflow on a generated column errors the write.
+        block.Should().Contain("\"UriLowered\" varchar(612) GENERATED ALWAYS AS (lower(\"Uri\")) STORED,");
         // The original-case column is the stored representation and stays exactly as it was.
         block.Should().Contain("\"Uri\" varchar(306) NOT NULL,");
     }
@@ -407,12 +409,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     // ── UNIQUE constraints ──────────────────────────────────────────
 
     [Test]
-    public void It_should_have_unique_on_descriptor_uri_discriminator()
-    {
-        _ddl.Should().Contain("\"UX_Descriptor_Uri_Discriminator\" UNIQUE");
-    }
-
-    [Test]
     public void It_should_have_unique_on_descriptor_uri_lowered_discriminator()
     {
         // The probe's seek target. Case-insensitive uniqueness is not new behavior: the UUIDv5
@@ -422,6 +418,15 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
             .Contain(
                 "ADD CONSTRAINT \"UX_Descriptor_UriLowered_Discriminator\" UNIQUE (\"UriLowered\", \"Discriminator\");"
             );
+    }
+
+    [Test]
+    public void It_should_not_emit_the_original_case_descriptor_uri_uniqueness()
+    {
+        // UX_Descriptor_UriLowered_Discriminator is the sole uniqueness over the descriptor URI.
+        // Case-insensitive uniqueness strictly implies the original-case constraint that used to sit
+        // beside it, so dropping it leaves the enforced boundary exactly where it was.
+        _ddl.Should().NotContain("\"UX_Descriptor_Uri_Discriminator\"");
     }
 
     [Test]
@@ -522,9 +527,13 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     // ── Indexes ─────────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_index_descriptor_uri_discriminator()
+    public void It_should_emit_the_keyset_index_as_the_only_core_descriptor_index()
     {
-        _ddl.Should().Contain("\"IX_Descriptor_Uri_Discriminator\"");
+        // IX_Descriptor_Uri_Discriminator duplicated the backing index of the URI uniqueness
+        // constraint that sat on the identical column pair, so it was dropped. The descriptor page
+        // keyset is the only core index the descriptor table still needs.
+        _ddl.Should().Contain("\"IX_Descriptor_ResourceKeyId_DocumentId\"");
+        _ddl.Should().NotContain("\"IX_Descriptor_Uri_Discriminator\"");
     }
 
     [Test]
@@ -1077,6 +1086,14 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
+    public void It_should_not_emit_the_original_case_descriptor_uri_uniqueness()
+    {
+        // On SQL Server the default CI collation made the original-case constraint this one's exact
+        // twin, so it was pure duplication rather than a second rule.
+        _ddl.Should().NotContain("[UX_Descriptor_Uri_Discriminator]");
+    }
+
+    [Test]
     public void It_should_have_clustered_pk_for_resource_key()
     {
         _ddl.Should().Contain("CONSTRAINT [PK_ResourceKey] PRIMARY KEY CLUSTERED ([ResourceKeyId])");
@@ -1162,10 +1179,13 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Indexes ─────────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_both_descriptor_indexes()
+    public void It_should_emit_the_keyset_index_as_the_only_core_descriptor_index()
     {
+        // IX_Descriptor_Uri_Discriminator duplicated the backing index of the URI uniqueness
+        // constraint that sat on the identical column pair, so it was dropped. The descriptor page
+        // keyset is the only core index the descriptor table still needs.
         _ddl.Should().Contain("[IX_Descriptor_ResourceKeyId_DocumentId]");
-        _ddl.Should().Contain("[IX_Descriptor_Uri_Discriminator]");
+        _ddl.Should().NotContain("[IX_Descriptor_Uri_Discriminator]");
     }
 
     [Test]
@@ -1843,9 +1863,9 @@ public class Given_CoreDdlEmitter_Descriptor_Stamping_Trigger_Metadata
     {
         // IX_Descriptor_Discriminator_ContentVersion is derived-inventory-owned and rendered once by the
         // relational DDL emitter; the core emitter must not also emit it (which would duplicate it in the
-        // full DDL). The core emitter still owns IX_Descriptor_Uri_Discriminator.
+        // full DDL). The core emitter still owns IX_Descriptor_ResourceKeyId_DocumentId.
         _pgsqlDdl.Should().NotContain("IX_Descriptor_Discriminator_ContentVersion");
-        _pgsqlDdl.Should().Contain("IX_Descriptor_Uri_Discriminator");
+        _pgsqlDdl.Should().Contain("IX_Descriptor_ResourceKeyId_DocumentId");
     }
 
     private static int CountOccurrences(string haystack, string needle)

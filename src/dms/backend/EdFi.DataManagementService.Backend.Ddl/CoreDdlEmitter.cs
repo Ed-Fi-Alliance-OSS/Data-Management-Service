@@ -345,25 +345,23 @@ public sealed class CoreDdlEmitter
         );
         writer.AppendLine();
 
-        writer.AppendLine(
-            _dialect.AddUniqueConstraint(
-                _descriptorTable,
-                "UX_Descriptor_Uri_Discriminator",
-                [Col("Uri"), Col("Discriminator")]
-            )
-        );
-        writer.AppendLine();
-
-        // The seek target for the descriptor reference probe. Two things the DDL cannot state:
+        // The seek target for the descriptor reference probe, and the sole uniqueness rule over the
+        // descriptor URI. Three things the DDL cannot state:
         //
         // 1. This is not a new uniqueness rule. It matches the effective semantics of the UUIDv5
         //    ReferentialId path it replaces: that hash was computed over the LOWER-CASED URI, so
         //    case-variant spellings of the same descriptor URI always resolved to a single document
-        //    and could never coexist. UX_Descriptor_Uri_Discriminator (original case) is retained
-        //    unchanged and is strictly weaker on PostgreSQL — this constraint subsumes it there.
-        // 2. On SQL Server the default CI collation already made the original-case constraint
-        //    case-blind, so this one is redundant there. It is emitted on both dialects anyway so
-        //    the compiled probe binds one column name and one index for every backend.
+        //    and could never coexist.
+        // 2. Nor was collapsing onto it a widening. An original-case UNIQUE constraint
+        //    (UX_Descriptor_Uri_Discriminator) and a plain index over the identical column pair used
+        //    to be emitted alongside it; both were strictly implied by this one — on PostgreSQL
+        //    because case-insensitive uniqueness subsumes the case-sensitive one, and on SQL Server
+        //    because the default CI collation already made the original-case constraint this
+        //    constraint's exact twin. This was the enforced boundary either way; the other two only
+        //    cost every descriptor write two extra index maintenances.
+        // 3. It is emitted on both dialects even though SQL Server's CI collation makes the explicit
+        //    lower-casing redundant there, so the compiled probe binds one column name and one index
+        //    for every backend.
         writer.AppendLine(
             _dialect.AddUniqueConstraint(
                 _descriptorTable,
@@ -394,10 +392,14 @@ public sealed class CoreDdlEmitter
         var column = Quote(DescriptorProbeColumns.UriLowered.Value);
         var source = Quote("Uri");
 
-        // PostgreSQL infers no type for a generated column, so the width is restated; SQL Server infers
-        // nvarchar(306) from LOWER([Uri]) and rejects an explicit type on a computed column.
+        // PostgreSQL infers no type for a generated column, so the width is restated — at double the
+        // stored Uri width, not equal to it. ICU full case mapping can make lower() output longer
+        // than its input (a handful of code points lower to two), and a generated column that
+        // overflows its declared width errors the write rather than truncating. SQL Server infers
+        // nvarchar(306) from LOWER([Uri]) and rejects an explicit type on a computed column, so its
+        // arm carries no width to widen.
         return _dialect.Rules.Dialect == SqlDialect.Pgsql
-            ? $"{column} {StringType(306)} GENERATED ALWAYS AS (lower({source})) STORED"
+            ? $"{column} {StringType(612)} GENERATED ALWAYS AS (lower({source})) STORED"
             : $"{column} AS (LOWER({source})) PERSISTED";
     }
 
@@ -596,15 +598,6 @@ public sealed class CoreDdlEmitter
                 _descriptorTable,
                 "IX_Descriptor_ResourceKeyId_DocumentId",
                 [Col("ResourceKeyId"), Col("DocumentId")]
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.CreateIndexIfNotExists(
-                _descriptorTable,
-                "IX_Descriptor_Uri_Discriminator",
-                [Col("Uri"), Col("Discriminator")]
             )
         );
         writer.AppendLine();

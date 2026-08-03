@@ -72839,19 +72839,6 @@
     },
     {
       "schema_name": "dms",
-      "table_name": "Descriptor",
-      "constraint_name": "UX_Descriptor_Uri_Discriminator",
-      "constraint_type": "UNIQUE",
-      "columns": [
-        "Uri",
-        "Discriminator"
-      ],
-      "referenced_schema": null,
-      "referenced_table": null,
-      "referenced_columns": null
-    },
-    {
-      "schema_name": "dms",
       "table_name": "EffectiveSchema",
       "constraint_name": "CK_EffectiveSchema_ApiSchemaFormatVersion_NotBlank",
       "constraint_type": "CHECK",
@@ -118646,16 +118633,6 @@
       "columns": [
         "ResourceKeyId",
         "DocumentId"
-      ]
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "Descriptor",
-      "index_name": "IX_Descriptor_Uri_Discriminator",
-      "is_unique": false,
-      "columns": [
-        "Uri",
-        "Discriminator"
       ]
     },
     {

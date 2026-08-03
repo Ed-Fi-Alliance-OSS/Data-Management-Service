@@ -114,13 +114,6 @@ ADD CONSTRAINT [UX_Descriptor_DocumentUuid] UNIQUE ([DocumentUuid]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.key_constraints
-    WHERE name = N'UX_Descriptor_Uri_Discriminator' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
-)
-ALTER TABLE [dms].[Descriptor]
-ADD CONSTRAINT [UX_Descriptor_Uri_Discriminator] UNIQUE ([Uri], [Discriminator]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.key_constraints
     WHERE name = N'UX_Descriptor_UriLowered_Discriminator' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
 )
 ALTER TABLE [dms].[Descriptor]
@@ -213,14 +206,6 @@ IF NOT EXISTS (
     WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'IX_Descriptor_ResourceKeyId_DocumentId'
 )
 CREATE INDEX [IX_Descriptor_ResourceKeyId_DocumentId] ON [dms].[Descriptor] ([ResourceKeyId], [DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'IX_Descriptor_Uri_Discriminator'
-)
-CREATE INDEX [IX_Descriptor_Uri_Discriminator] ON [dms].[Descriptor] ([Uri], [Discriminator]);
 
 -- ==========================================================
 -- Phase 8: Triggers

@@ -473,7 +473,12 @@ almost always why.
   of every `INSERT` column list and out of the stamping trigger. The probe binds that persisted column
   rather than wrapping the predicate in `lower(…)`, which would be non-sargable on PostgreSQL
   ([`CoreDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs),
-  `RenderDescriptorUriLoweredColumn`).
+  `RenderDescriptorUriLoweredColumn`). On PostgreSQL the generated column is declared `varchar(612)` —
+  double the stored `Uri` width — because ICU full case mapping can make `lower()` output *longer* than
+  its input, and a generated column that overflows its declared width errors the write instead of
+  truncating. SQL Server infers the computed column's type from `[Uri]` and rejects an explicit one, so
+  that arm has no width to widen; the stored `Uri` stays 306 (namespace 255 + `#` + code value 50) on
+  both dialects, as does the SQL Server probe parameter sizing.
 
   The bound *value* is lower-cased by **three** suppliers, and knowing which one applies to the request
   you are debugging matters: Core lower-cases descriptor **references** before the backend sees them
@@ -483,12 +488,16 @@ almost always why.
   two overlap deliberately for now — the Phase-4 cleanup that removes the referential-id machinery has
   to keep exactly one of them, and dropping both would silently break case-insensitive descriptor
   matching.
-- `UX_Descriptor_UriLowered_Discriminator` is a **genuinely new uniqueness rule on PostgreSQL**:
-  case-variant spellings of one descriptor URI can no longer coexist. That is not a new *semantic* — the
-  UUIDv5 it replaces was computed over the lower-cased URI, so those spellings always collapsed to a
-  single document anyway. On SQL Server the default case-insensitive collation already made the
-  original-case `UX_Descriptor_Uri_Discriminator` case-blind, so the new constraint is redundant there;
-  it is emitted on both dialects so the compiled probe binds one column name everywhere.
+- `UX_Descriptor_UriLowered_Discriminator` is the **sole uniqueness rule over the descriptor URI**, and on
+  PostgreSQL it is a genuinely new one: case-variant spellings of one descriptor URI can no longer coexist.
+  That is not a new *semantic* — the UUIDv5 it replaces was computed over the lower-cased URI, so those
+  spellings always collapsed to a single document anyway. An original-case `UX_Descriptor_Uri_Discriminator`
+  constraint and a plain `IX_Descriptor_Uri_Discriminator` index over the identical column pair used to be
+  emitted beside it; both were strictly implied by it — on PostgreSQL because case-insensitive uniqueness
+  subsumes the case-sensitive one, on SQL Server because the default case-insensitive collation made the
+  original-case constraint its exact twin — so dropping them moved no enforced boundary and saved two index
+  maintenances on every descriptor write. The surviving constraint is emitted on both dialects so the
+  compiled probe binds one column name everywhere.
 - **On SQL Server, string identity comparison is case-insensitive, on both lookups.** The generated DDL
   pins no collation on identity columns, so they inherit the database default — case-insensitive on a
   stock SQL Server install, whereas PostgreSQL's default (deterministic) collations compare text
