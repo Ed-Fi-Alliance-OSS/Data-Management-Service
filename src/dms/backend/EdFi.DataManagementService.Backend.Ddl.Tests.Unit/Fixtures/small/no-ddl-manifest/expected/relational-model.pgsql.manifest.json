@@ -89,29 +89,6 @@
       }
     },
     {
-      "name": "TR_Person_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "Person"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "PersonId"
-      ],
-      "resource_key_id": 1,
-      "project_name": "Ed-Fi",
-      "resource_name": "Person",
-      "identity_elements": [
-        {
-          "column": "PersonId",
-          "identity_json_path": "$.personId"
-        }
-      ]
-    },
-    {
       "name": "TR_Person_Stamp",
       "table": {
         "schema": "edfi",

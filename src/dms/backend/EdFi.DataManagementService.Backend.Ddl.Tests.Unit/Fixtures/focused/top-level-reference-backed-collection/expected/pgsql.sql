@@ -617,25 +617,6 @@ CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("Conte
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolProgram_ProgramReference_ProgramId_ProgramR_b374fb5c0b" ON "edfi"."SchoolProgram" ("ProgramReference_ProgramId", "ProgramReference_ProgramName", "ProgramReference_DocumentId");
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Program_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."ProgramId" IS DISTINCT FROM NEW."ProgramId" OR OLD."ProgramName" IS DISTINCT FROM NEW."ProgramName") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgram' || '$.programId=' || NEW."ProgramId"::text || '#' || '$.programName=' || NEW."ProgramName"::text), NEW."DocumentId", 1);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Program_ReferentialIdentity" ON "edfi"."Program";
-CREATE TRIGGER "TR_Program_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Program"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Program_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Program_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -699,25 +680,6 @@ CREATE TRIGGER "TR_Program_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."Program"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Program_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 2;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$.schoolId=' || NEW."SchoolId"::text), NEW."DocumentId", 2);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_School_ReferentialIdentity" ON "edfi"."School";
-CREATE TRIGGER "TR_School_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."School"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
 RETURNS TRIGGER AS $func$

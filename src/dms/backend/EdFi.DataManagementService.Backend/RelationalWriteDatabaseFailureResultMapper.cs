@@ -252,7 +252,7 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
     /// probe's natural-key columns, because reference-sourced identity parts collapse onto a single
     /// <c>..._DocumentId</c> column in the constraint while the response must still attribute every
     /// individual identity value. It used to come from the <c>ReferentialIdentity</c> trigger's
-    /// identity-element block, which carried the same ordering and is being removed.
+    /// identity-element block, which carried the same ordering and has been removed.
     /// </remarks>
     private static KeyValuePair<string, string>[] BuildDuplicateIdentityValues(
         RelationalWriteExecutorRequest request

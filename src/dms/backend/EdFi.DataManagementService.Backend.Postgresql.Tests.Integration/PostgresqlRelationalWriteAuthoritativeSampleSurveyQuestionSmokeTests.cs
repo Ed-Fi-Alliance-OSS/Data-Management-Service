@@ -371,7 +371,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
         _resourceSchema = resourceSchema;
         _seedData = await SeedReferenceDataAsync();
-        await DisableSurveyQuestionReferentialIdentityTriggerAsync();
 
         _createResult = await ExecuteCreateAsync();
         if (_createResult is UpsertResult.UpsertFailureReference createReferenceFailure)
@@ -769,16 +768,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             SurveyDocumentId: surveyDocumentId,
             SurveySectionDocumentId: surveySectionDocumentId,
             QuestionFormDescriptorId: questionFormDescriptorId
-        );
-    }
-
-    private async Task DisableSurveyQuestionReferentialIdentityTriggerAsync()
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            ALTER TABLE "edfi"."SurveyQuestion"
-            DISABLE TRIGGER "TR_SurveyQuestion_ReferentialIdentity";
-            """
         );
     }
 

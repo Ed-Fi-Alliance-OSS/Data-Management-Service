@@ -10,11 +10,10 @@ using EdFi.DataManagementService.Tests.Integration.Scenarios;
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 
 /// <summary>
-/// SQL Server API regression: the relational ReferentialIdentity trigger must store the same
-/// referential id Core computes when a resource identity contains a key-unified reference path
-/// (Section's <c>$.courseOfferingReference.schoolId</c>), so resources referencing the Section
-/// resolve without a reference-validation conflict. The hash construction in the trigger SQL is
-/// dialect-specific, so this proof runs against each dialect's emitted trigger.
+/// SQL Server API regression: a resource identity containing a key-unified reference path
+/// (Section's <c>$.courseOfferingReference.schoolId</c>) must still let resources referencing the
+/// Section resolve without a reference-validation conflict. The emitted probe SQL is
+/// dialect-specific, so this proof runs on each dialect.
 /// </summary>
 public sealed class Given_Mssql_SectionReferentialIdentity : MssqlApiIntegrationTestBase
 {

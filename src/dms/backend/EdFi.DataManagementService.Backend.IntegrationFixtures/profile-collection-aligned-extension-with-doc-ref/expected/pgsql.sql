@@ -666,25 +666,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "aligned"."ParentResourceExtensionParent"
 FOR EACH ROW
 EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResource_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."ParentResourceId" IS DISTINCT FROM NEW."ParentResourceId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiParentResource' || '$.parentResourceId=' || NEW."ParentResourceId"::text), NEW."DocumentId", 1);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_ParentResource_ReferentialIdentity" ON "edfi"."ParentResource";
-CREATE TRIGGER "TR_ParentResource_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."ParentResource"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_ParentResource_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResource_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -767,25 +748,6 @@ CREATE TRIGGER "TR_ParentResourceParent_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ParentResourceParent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Sponsor_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."SponsorName" IS DISTINCT FROM NEW."SponsorName") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 2;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSponsor' || '$.sponsorName=' || NEW."SponsorName"::text), NEW."DocumentId", 2);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Sponsor_ReferentialIdentity" ON "edfi"."Sponsor";
-CREATE TRIGGER "TR_Sponsor_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Sponsor"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Sponsor_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Sponsor_Stamp"()
 RETURNS TRIGGER AS $func$

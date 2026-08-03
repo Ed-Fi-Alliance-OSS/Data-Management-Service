@@ -46,36 +46,6 @@ ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 GO
-CREATE OR ALTER TRIGGER [edfi].[TR_CourseRegistration_ReferentialIdentity]
-ON [edfi].[CourseRegistration]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 2;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseRegistration' AS nvarchar(max)) + N'$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SchoolId] AS nvarchar(max)) + N'#' + N'$.courseOfferingReference.localCourseCode=' + i.[CourseOffering_LocalCourseCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.registrationDate=' + CONVERT(nvarchar(10), i.[RegistrationDate], 23)), i.[DocumentId], 2
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([SchoolId_Unified]) OR UPDATE([CourseOffering_LocalCourseCode]) OR UPDATE([RegistrationDate]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(d.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[RegistrationDate] <> d.[RegistrationDate] OR (i.[RegistrationDate] IS NULL AND d.[RegistrationDate] IS NOT NULL) OR (i.[RegistrationDate] IS NOT NULL AND d.[RegistrationDate] IS NULL));
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 2;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseRegistration' AS nvarchar(max)) + N'$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SchoolId] AS nvarchar(max)) + N'#' + N'$.courseOfferingReference.localCourseCode=' + i.[CourseOffering_LocalCourseCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.registrationDate=' + CONVERT(nvarchar(10), i.[RegistrationDate], 23)), i.[DocumentId], 2
-        FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_CourseRegistration_Stamp]
 ON [edfi].[CourseRegistration]
 AFTER INSERT, UPDATE, DELETE
@@ -149,36 +119,6 @@ BEGIN
         WHERE ((i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL)))
         AND ((r.[SchoolId_Unified] = d.[SchoolId]) OR (r.[SchoolId_Unified] IS NULL AND d.[SchoolId] IS NULL));
 
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]
-ON [edfi].[School]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 1;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 1
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([SchoolId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL));
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 1;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 1
-        FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
 GO

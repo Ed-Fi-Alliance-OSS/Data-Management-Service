@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// <remarks>
 /// <para>
 /// <b>MSSQL trigger ordering:</b> Multiple AFTER triggers may be emitted for the same table
-/// (e.g., DocumentStamping, AbstractIdentityMaintenance, ReferentialIdentityMaintenance). SQL Server
+/// (e.g., DocumentStamping, AbstractIdentityMaintenance). SQL Server
 /// does not guarantee a deterministic firing order for multiple AFTER triggers unless
 /// <c>sp_settriggerorder</c> is used. The current triggers are designed to be order-independent:
 /// each writes to a different target table and has no dependency on another trigger's side effects.
@@ -29,7 +29,6 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 {
     private const string StampToken = "Stamp";
-    private const string ReferentialIdentityToken = "ReferentialIdentity";
     private const string AbstractIdentityToken = "AbstractIdentity";
     private const string PropagationTriggerPrefix = "PropagateIdentity";
 
@@ -44,9 +43,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
     /// <summary>
     /// Populates <see cref="RelationalModelSetBuilderContext.TriggerInventory"/> with
-    /// <c>DocumentStamping</c>, <c>ReferentialIdentityMaintenance</c>,
-    /// <c>AbstractIdentityMaintenance</c>, and (MSSQL only) <c>MssqlIdentityPropagationTrigger</c>
-    /// triggers.
+    /// <c>DocumentStamping</c>, <c>AbstractIdentityMaintenance</c>, and (MSSQL only)
+    /// <c>MssqlIdentityPropagationTrigger</c> triggers.
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
@@ -88,8 +86,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             var rootTable = resourceModel.Root;
             var builderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
 
-            // Build identity element mappings once — shared by both identity projection columns
-            // and the referential identity trigger below.
+            // Build identity element mappings once — they resolve the root table's identity
+            // projection columns below.
             var identityElements = BuildIdentityElementMappings(resourceModel, builderContext, resource);
 
             // Resolve identity projection columns for the root table.
@@ -130,19 +128,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 );
             }
 
-            // Every concrete resource must have at least one identity element for referential identity computation.
-            // Empty identity elements would produce a degenerate UUIDv5 hash with no identity data.
-            if (identityElements.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    $"Resource '{FormatResource(resource)}' requires at least one identity element "
-                        + "for referential identity computation, but none were derived."
-                );
-            }
-
-            // Resolve the resource key entry for referential identity metadata.
-            var resourceKeyEntry = context.GetResourceKeyEntry(resource);
-
             // AbstractIdentityMaintenance triggers — one per abstract identity table this
             // resource contributes to (discovered via subclass metadata).
             var isSubclass = ApiSchemaNodeRequirements.TryGetOptionalBoolean(
@@ -150,8 +135,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 "isSubclass",
                 defaultValue: false
             );
-
-            SuperclassAliasInfo? superclassAlias = null;
 
             if (isSubclass)
             {
@@ -168,52 +151,24 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     superclassResourceName
                 );
 
-                var superclassResourceKeyEntry = context.GetResourceKeyEntry(superclassResource);
-
-                // Build superclass identity element mappings, handling superclassIdentityJsonPath remapping.
                 var superclassIdentityJsonPath = TryGetOptionalString(
                     resourceContext.ResourceSchema,
                     "superclassIdentityJsonPath"
                 );
 
-                IReadOnlyList<IdentityElementMapping> superclassIdentityElements;
-                if (superclassIdentityJsonPath is not null)
+                // When superclassIdentityJsonPath is set, the subclass has exactly one identity path
+                // that maps to the superclass's single identity path — BuildAbstractIdentityColumnMappings
+                // resolves the abstract identity column from IdentityJsonPaths[0] on that basis.
+                // This invariant is validated here at trigger derivation time rather than during schema
+                // loading because superclassIdentityJsonPath is resolved from the ApiSchema JSON and the
+                // identity element count is derived from the relational model building process.
+                if (superclassIdentityJsonPath is not null && identityElements.Count != 1)
                 {
-                    // When superclassIdentityJsonPath is set, the subclass has exactly one identity path
-                    // that maps to the superclass's single identity path.
-                    // This invariant is validated here at trigger derivation time rather than during schema
-                    // loading because superclassIdentityJsonPath is resolved from the ApiSchema JSON and the
-                    // identity element count is derived from the relational model building process.
-                    if (identityElements.Count != 1)
-                    {
-                        throw new InvalidOperationException(
-                            $"Subclass resource '{FormatResource(resource)}' with superclassIdentityJsonPath "
-                                + $"must have exactly one identity element, but found {identityElements.Count}."
-                        );
-                    }
-
-                    superclassIdentityElements =
-                    [
-                        new IdentityElementMapping(
-                            identityElements[0].Column,
-                            superclassIdentityJsonPath,
-                            identityElements[0].ScalarType,
-                            identityElements[0].IsDescriptorReference
-                        ),
-                    ];
+                    throw new InvalidOperationException(
+                        $"Subclass resource '{FormatResource(resource)}' with superclassIdentityJsonPath "
+                            + $"must have exactly one identity element, but found {identityElements.Count}."
+                    );
                 }
-                else
-                {
-                    // Same identity paths — reuse the concrete identity elements.
-                    superclassIdentityElements = identityElements;
-                }
-
-                superclassAlias = new SuperclassAliasInfo(
-                    superclassResourceKeyEntry.ResourceKeyId,
-                    superclassProjectName,
-                    superclassResourceName,
-                    superclassIdentityElements
-                );
 
                 if (abstractTablesByResource.TryGetValue(superclassResource, out var abstractTable))
                 {
@@ -240,23 +195,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     );
                 }
             }
-
-            // ReferentialIdentityMaintenance trigger on the root table.
-            context.TriggerInventory.Add(
-                new DbTriggerInfo(
-                    new DbTriggerName(BuildTriggerName(rootTable.Table, ReferentialIdentityToken)),
-                    rootTable.Table,
-                    [RelationalNameConventions.DocumentIdColumnName],
-                    identityProjectionColumns,
-                    new TriggerKindParameters.ReferentialIdentityMaintenance(
-                        resourceKeyEntry.ResourceKeyId,
-                        resource.ProjectName,
-                        resource.ResourceName,
-                        identityElements,
-                        superclassAlias
-                    )
-                )
-            );
         }
 
         // Shared dms.Descriptor stamping trigger. Descriptor resources are skipped above (they get no

@@ -42022,25 +42022,6 @@ FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
 INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."OldSchoolId_Unified"
 ;
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AcademicWeek_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."WeekIdentifier" IS DISTINCT FROM NEW."WeekIdentifier") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 4;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAcademicWeek' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.weekIdentifier=' || NEW."WeekIdentifier"::text), NEW."DocumentId", 4);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_AcademicWeek_ReferentialIdentity" ON "edfi"."AcademicWeek";
-CREATE TRIGGER "TR_AcademicWeek_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."AcademicWeek"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_AcademicWeek_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AcademicWeek_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -42104,25 +42085,6 @@ CREATE TRIGGER "TR_AcademicWeek_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."AcademicWeek"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AcademicWeek_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AccountabilityRating_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."RatingTitle" IS DISTINCT FROM NEW."RatingTitle" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 7;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAccountabilityRating' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.ratingTitle=' || NEW."RatingTitle"::text || '#' || '$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text), NEW."DocumentId", 7);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_AccountabilityRating_ReferentialIdentity" ON "edfi"."AccountabilityRating";
-CREATE TRIGGER "TR_AccountabilityRating_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."AccountabilityRating"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_AccountabilityRating_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AccountabilityRating_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -42193,25 +42155,6 @@ CREATE TRIGGER "TR_AccountabilityRating_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."AccountabilityRating"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AccountabilityRating_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Assessment_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AssessmentIdentifier" IS DISTINCT FROM NEW."AssessmentIdentifier" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 14;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessment' || '$.assessmentIdentifier=' || NEW."AssessmentIdentifier"::text || '#' || '$.namespace=' || NEW."Namespace"::text), NEW."DocumentId", 14);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Assessment_ReferentialIdentity" ON "edfi"."Assessment";
-CREATE TRIGGER "TR_Assessment_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Assessment"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Assessment_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Assessment_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -42301,25 +42244,6 @@ CREATE TRIGGER "TR_AssessmentAcademicSubject_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."AssessmentAcademicSubject"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAcademicSubject_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentAdministration_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AdministrationIdentifier" IS DISTINCT FROM NEW."AdministrationIdentifier" OR OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace" OR OLD."AssigningEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."AssigningEducationOrganization_EducationOrganizationId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 15;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessmentAdministration' || '$.administrationIdentifier=' || NEW."AdministrationIdentifier"::text || '#' || '$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text || '#' || '$.assigningEducationOrganizationReference.educationOrganizationId=' || NEW."AssigningEducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 15);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_AssessmentAdministration_ReferentialIdentity" ON "edfi"."AssessmentAdministration";
-CREATE TRIGGER "TR_AssessmentAdministration_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."AssessmentAdministration"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAdministration_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentAdministration_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -42421,25 +42345,6 @@ CREATE TRIGGER "TR_AssessmentAdministrationAssessmentBatteryPart_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."AssessmentAdministrationAssessmentBatteryPart"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAdministrationAssessmentBatteryPart_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentAdministrationParticipation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AssessmentAdministration_AdministrationIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AdministrationIdentifier" OR OLD."AssessmentAdministration_AssessmentIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AssessmentIdentifier" OR OLD."AssessmentAdministration_AssigningEducationOrganizationId" IS DISTINCT FROM NEW."AssessmentAdministration_AssigningEducationOrganizationId" OR OLD."AssessmentAdministration_Namespace" IS DISTINCT FROM NEW."AssessmentAdministration_Namespace" OR OLD."ParticipatingEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."ParticipatingEducationOrganization_EducationOrganizationId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 16;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessmentAdministrationParticipation' || '$.assessmentAdministrationReference.administrationIdentifier=' || NEW."AssessmentAdministration_AdministrationIdentifier"::text || '#' || '$.assessmentAdministrationReference.assessmentIdentifier=' || NEW."AssessmentAdministration_AssessmentIdentifier"::text || '#' || '$.assessmentAdministrationReference.assigningEducationOrganizationId=' || NEW."AssessmentAdministration_AssigningEducationOrganizationId"::text || '#' || '$.assessmentAdministrationReference.namespace=' || NEW."AssessmentAdministration_Namespace"::text || '#' || '$.participatingEducationOrganizationReference.educationOrganizationId=' || NEW."ParticipatingEducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 16);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_AssessmentAdministrationParticipation_ReferentialIdentity" ON "edfi"."AssessmentAdministrationParticipation";
-CREATE TRIGGER "TR_AssessmentAdministrationParticipation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."AssessmentAdministrationParticipation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAdministrationParticipation_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentAdministrationParticipation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -42623,25 +42528,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."AssessmentAuthor"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAuthor_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentBatteryPart_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AssessmentBatteryPartName" IS DISTINCT FROM NEW."AssessmentBatteryPartName" OR OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 17;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessmentBatteryPart' || '$.assessmentBatteryPartName=' || NEW."AssessmentBatteryPartName"::text || '#' || '$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text), NEW."DocumentId", 17);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_AssessmentBatteryPart_ReferentialIdentity" ON "edfi"."AssessmentBatteryPart";
-CREATE TRIGGER "TR_AssessmentBatteryPart_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."AssessmentBatteryPart"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_AssessmentBatteryPart_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentBatteryPart_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -42761,25 +42647,6 @@ CREATE TRIGGER "TR_AssessmentIdentificationCode_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."AssessmentIdentificationCode"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentIdentificationCode_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentItem_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 20;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessmentItem' || '$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text || '#' || '$.identificationCode=' || NEW."IdentificationCode"::text), NEW."DocumentId", 20);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_AssessmentItem_ReferentialIdentity" ON "edfi"."AssessmentItem";
-CREATE TRIGGER "TR_AssessmentItem_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."AssessmentItem"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_AssessmentItem_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentItem_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -43051,25 +42918,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."AssessmentScore"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentScore_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentScoreRangeLearningStandard_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AssessmentIdentifier_Unified" IS DISTINCT FROM NEW."AssessmentIdentifier_Unified" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."ScoreRangeId" IS DISTINCT FROM NEW."ScoreRangeId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 25;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessmentScoreRangeLearningStandard' || '$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text || '#' || '$.scoreRangeId=' || NEW."ScoreRangeId"::text), NEW."DocumentId", 25);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_AssessmentScoreRangeLearningStandard_ReferentialIdentity" ON "edfi"."AssessmentScoreRangeLearningStandard";
-CREATE TRIGGER "TR_AssessmentScoreRangeLearningStandard_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."AssessmentScoreRangeLearningStandard"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_AssessmentScoreRangeLearningStandard_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentScoreRangeLearningStandard_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -43190,25 +43038,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."AssessmentSection"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentSection_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_BalanceSheetDimension_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 29;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiBalanceSheetDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 29);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_BalanceSheetDimension_ReferentialIdentity" ON "edfi"."BalanceSheetDimension";
-CREATE TRIGGER "TR_BalanceSheetDimension_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."BalanceSheetDimension"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_BalanceSheetDimension_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_BalanceSheetDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -43297,25 +43126,6 @@ CREATE TRIGGER "TR_BalanceSheetDimensionReportingTag_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."BalanceSheetDimensionReportingTag"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_BalanceSheetDimensionReportingTag_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_BellSchedule_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BellScheduleName" IS DISTINCT FROM NEW."BellScheduleName" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 32;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiBellSchedule' || '$.bellScheduleName=' || NEW."BellScheduleName"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text), NEW."DocumentId", 32);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_BellSchedule_ReferentialIdentity" ON "edfi"."BellSchedule";
-CREATE TRIGGER "TR_BellSchedule_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."BellSchedule"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_BellSchedule_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_BellSchedule_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -43456,25 +43266,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."BellScheduleGradeLevel"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_BellScheduleGradeLevel_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Calendar_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."CalendarCode" IS DISTINCT FROM NEW."CalendarCode" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 35;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCalendar' || '$.calendarCode=' || NEW."CalendarCode"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text), NEW."DocumentId", 35);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Calendar_ReferentialIdentity" ON "edfi"."Calendar";
-CREATE TRIGGER "TR_Calendar_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Calendar"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Calendar_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Calendar_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -43544,25 +43335,6 @@ CREATE TRIGGER "TR_Calendar_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."Calendar"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Calendar_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CalendarDate_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Calendar_CalendarCode" IS DISTINCT FROM NEW."Calendar_CalendarCode" OR OLD."Calendar_SchoolId" IS DISTINCT FROM NEW."Calendar_SchoolId" OR OLD."Calendar_SchoolYear" IS DISTINCT FROM NEW."Calendar_SchoolYear" OR OLD."Date" IS DISTINCT FROM NEW."Date") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 36;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCalendarDate' || '$.calendarReference.calendarCode=' || NEW."Calendar_CalendarCode"::text || '#' || '$.calendarReference.schoolId=' || NEW."Calendar_SchoolId"::text || '#' || '$.calendarReference.schoolYear=' || NEW."Calendar_SchoolYear"::text || '#' || '$.date=' || NEW."Date"::text), NEW."DocumentId", 36);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_CalendarDate_ReferentialIdentity" ON "edfi"."CalendarDate";
-CREATE TRIGGER "TR_CalendarDate_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."CalendarDate"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_CalendarDate_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CalendarDate_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -43690,25 +43462,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."CalendarGradeLevel"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CalendarGradeLevel_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ChartOfAccount_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AccountIdentifier" IS DISTINCT FROM NEW."AccountIdentifier" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."FiscalYear_Unified" IS DISTINCT FROM NEW."FiscalYear_Unified") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 40;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiChartOfAccount' || '$.accountIdentifier=' || NEW."AccountIdentifier"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 40);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_ChartOfAccount_ReferentialIdentity" ON "edfi"."ChartOfAccount";
-CREATE TRIGGER "TR_ChartOfAccount_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."ChartOfAccount"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_ChartOfAccount_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ChartOfAccount_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -43804,25 +43557,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ChartOfAccountReportingTag"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ChartOfAccountReportingTag_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ClassPeriod_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."ClassPeriodName" IS DISTINCT FROM NEW."ClassPeriodName" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 44;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiClassPeriod' || '$.classPeriodName=' || NEW."ClassPeriodName"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text), NEW."DocumentId", 44);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_ClassPeriod_ReferentialIdentity" ON "edfi"."ClassPeriod";
-CREATE TRIGGER "TR_ClassPeriod_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."ClassPeriod"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_ClassPeriod_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ClassPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -43911,25 +43645,6 @@ CREATE TRIGGER "TR_ClassPeriodMeetingTime_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ClassPeriodMeetingTime"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ClassPeriodMeetingTime_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Cohort_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."CohortIdentifier" IS DISTINCT FROM NEW."CohortIdentifier" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 46;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCohort' || '$.cohortIdentifier=' || NEW."CohortIdentifier"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 46);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Cohort_ReferentialIdentity" ON "edfi"."Cohort";
-CREATE TRIGGER "TR_Cohort_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Cohort"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Cohort_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Cohort_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -44068,29 +43783,6 @@ CREATE TRIGGER "TR_CommunityOrganization_AuthHierarchy_Insert"
     AFTER INSERT ON "edfi"."CommunityOrganization"
     FOR EACH ROW
     EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganization_AuthHierarchy_Insert"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganization_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."CommunityOrganizationId" IS DISTINCT FROM NEW."CommunityOrganizationId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 50;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCommunityOrganization' || '$.communityOrganizationId=' || NEW."CommunityOrganizationId"::text), NEW."DocumentId", 50);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."CommunityOrganizationId"::text), NEW."DocumentId", 95);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_CommunityOrganization_ReferentialIdentity" ON "edfi"."CommunityOrganization";
-CREATE TRIGGER "TR_CommunityOrganization_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."CommunityOrganization"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganization_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganization_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -44472,29 +44164,6 @@ CREATE TRIGGER "TR_CommunityProvider_AuthHierarchy_Update"
     FOR EACH ROW
     EXECUTE FUNCTION "edfi"."TF_TR_CommunityProvider_AuthHierarchy_Update"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProvider_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."CommunityProviderId" IS DISTINCT FROM NEW."CommunityProviderId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 51;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCommunityProvider' || '$.communityProviderId=' || NEW."CommunityProviderId"::text), NEW."DocumentId", 51);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."CommunityProviderId"::text), NEW."DocumentId", 95);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_CommunityProvider_ReferentialIdentity" ON "edfi"."CommunityProvider";
-CREATE TRIGGER "TR_CommunityProvider_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."CommunityProvider"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_CommunityProvider_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProvider_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -44742,25 +44411,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."CommunityProviderInternationalAddre
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CommunityProviderInternationalAddress_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProviderLicense_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."CommunityProvider_CommunityProviderId" IS DISTINCT FROM NEW."CommunityProvider_CommunityProviderId" OR OLD."LicenseIdentifier" IS DISTINCT FROM NEW."LicenseIdentifier" OR OLD."LicensingOrganization" IS DISTINCT FROM NEW."LicensingOrganization") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 52;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCommunityProviderLicense' || '$.communityProviderReference.communityProviderId=' || NEW."CommunityProvider_CommunityProviderId"::text || '#' || '$.licenseIdentifier=' || NEW."LicenseIdentifier"::text || '#' || '$.licensingOrganization=' || NEW."LicensingOrganization"::text), NEW."DocumentId", 52);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_CommunityProviderLicense_ReferentialIdentity" ON "edfi"."CommunityProviderLicense";
-CREATE TRIGGER "TR_CommunityProviderLicense_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."CommunityProviderLicense"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_CommunityProviderLicense_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProviderLicense_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -44830,25 +44480,6 @@ CREATE TRIGGER "TR_CommunityProviderLicense_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."CommunityProviderLicense"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CommunityProviderLicense_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CompetencyObjective_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Objective" IS DISTINCT FROM NEW."Objective" OR OLD."ObjectiveGradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."ObjectiveGradeLevelDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 54;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCompetencyObjective' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.objective=' || NEW."Objective"::text || '#' || '$.objectiveGradeLevelDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ObjectiveGradeLevelDescriptor_DescriptorId"))), NEW."DocumentId", 54);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_CompetencyObjective_ReferentialIdentity" ON "edfi"."CompetencyObjective";
-CREATE TRIGGER "TR_CompetencyObjective_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."CompetencyObjective"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_CompetencyObjective_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CompetencyObjective_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -44930,25 +44561,6 @@ CREATE TRIGGER "TR_CompetencyObjective_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."CompetencyObjective"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CompetencyObjective_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Contact_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."ContactUniqueId" IS DISTINCT FROM NEW."ContactUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 55;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiContact' || '$.contactUniqueId=' || NEW."ContactUniqueId"::text), NEW."DocumentId", 55);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Contact_ReferentialIdentity" ON "edfi"."Contact";
-CREATE TRIGGER "TR_Contact_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Contact"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Contact_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Contact_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -45239,25 +44851,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ContactTelephone"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ContactTelephone_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Course_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."CourseCode" IS DISTINCT FROM NEW."CourseCode" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 61;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCourse' || '$.courseCode=' || NEW."CourseCode"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 61);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Course_ReferentialIdentity" ON "edfi"."Course";
-CREATE TRIGGER "TR_Course_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Course"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Course_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Course_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -45472,25 +45065,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."CourseOfferedGradeLevel"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CourseOfferedGradeLevel_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseOffering_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."LocalCourseCode" IS DISTINCT FROM NEW."LocalCourseCode" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."Session_SchoolYear" IS DISTINCT FROM NEW."Session_SchoolYear" OR OLD."Session_SessionName" IS DISTINCT FROM NEW."Session_SessionName") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 67;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCourseOffering' || '$.localCourseCode=' || NEW."LocalCourseCode"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.sessionReference.schoolId=' || NEW."Session_SchoolId"::text || '#' || '$.sessionReference.schoolYear=' || NEW."Session_SchoolYear"::text || '#' || '$.sessionReference.sessionName=' || NEW."Session_SessionName"::text), NEW."DocumentId", 67);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_CourseOffering_ReferentialIdentity" ON "edfi"."CourseOffering";
-CREATE TRIGGER "TR_CourseOffering_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."CourseOffering"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_CourseOffering_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseOffering_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -45641,25 +45215,6 @@ CREATE TRIGGER "TR_CourseOfferingOfferedGradeLevel_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."CourseOfferingOfferedGradeLevel"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CourseOfferingOfferedGradeLevel_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseTranscript_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."CourseAttemptResultDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseAttemptResultDescriptor_DescriptorId" OR OLD."CourseCourse_CourseCode" IS DISTINCT FROM NEW."CourseCourse_CourseCode" OR OLD."CourseCourse_EducationOrganizationId" IS DISTINCT FROM NEW."CourseCourse_EducationOrganizationId" OR OLD."StudentAcademicRecord_EducationOrganizationId" IS DISTINCT FROM NEW."StudentAcademicRecord_EducationOrganizationId" OR OLD."StudentAcademicRecord_SchoolYear" IS DISTINCT FROM NEW."StudentAcademicRecord_SchoolYear" OR OLD."StudentAcademicRecord_StudentUniqueId" IS DISTINCT FROM NEW."StudentAcademicRecord_StudentUniqueId" OR OLD."StudentAcademicRecord_TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."StudentAcademicRecord_TermDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 69;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCourseTranscript' || '$.courseAttemptResultDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."CourseAttemptResultDescriptor_DescriptorId")) || '#' || '$.courseReference.courseCode=' || NEW."CourseCourse_CourseCode"::text || '#' || '$.courseReference.educationOrganizationId=' || NEW."CourseCourse_EducationOrganizationId"::text || '#' || '$.studentAcademicRecordReference.educationOrganizationId=' || NEW."StudentAcademicRecord_EducationOrganizationId"::text || '#' || '$.studentAcademicRecordReference.schoolYear=' || NEW."StudentAcademicRecord_SchoolYear"::text || '#' || '$.studentAcademicRecordReference.studentUniqueId=' || NEW."StudentAcademicRecord_StudentUniqueId"::text || '#' || '$.studentAcademicRecordReference.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."StudentAcademicRecord_TermDescriptor_DescriptorId"))), NEW."DocumentId", 69);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_CourseTranscript_ReferentialIdentity" ON "edfi"."CourseTranscript";
-CREATE TRIGGER "TR_CourseTranscript_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."CourseTranscript"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_CourseTranscript_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseTranscript_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -45962,25 +45517,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."CourseTranscriptSection"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CourseTranscriptSection_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Credential_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."CredentialIdentifier" IS DISTINCT FROM NEW."CredentialIdentifier" OR OLD."StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateOfIssueStateAbbreviationDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 70;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCredential' || '$.credentialIdentifier=' || NEW."CredentialIdentifier"::text || '#' || '$.stateOfIssueStateAbbreviationDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."StateOfIssueStateAbbreviationDescriptor_DescriptorId"))), NEW."DocumentId", 70);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Credential_ReferentialIdentity" ON "edfi"."Credential";
-CREATE TRIGGER "TR_Credential_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Credential"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Credential_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Credential_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -46137,25 +45673,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."CredentialGradeLevel"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CredentialGradeLevel_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CrisisEvent_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."CrisisEventName" IS DISTINCT FROM NEW."CrisisEventName") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 75;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCrisisEvent' || '$.crisisEventName=' || NEW."CrisisEventName"::text), NEW."DocumentId", 75);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_CrisisEvent_ReferentialIdentity" ON "edfi"."CrisisEvent";
-CREATE TRIGGER "TR_CrisisEvent_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."CrisisEvent"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_CrisisEvent_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CrisisEvent_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -46213,25 +45730,6 @@ CREATE TRIGGER "TR_CrisisEvent_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."CrisisEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CrisisEvent_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DescriptorMapping_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."MappedNamespace" IS DISTINCT FROM NEW."MappedNamespace" OR OLD."MappedValue" IS DISTINCT FROM NEW."MappedValue" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."Value" IS DISTINCT FROM NEW."Value") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 79;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiDescriptorMapping' || '$.mappedNamespace=' || NEW."MappedNamespace"::text || '#' || '$.mappedValue=' || NEW."MappedValue"::text || '#' || '$.namespace=' || NEW."Namespace"::text || '#' || '$.value=' || NEW."Value"::text), NEW."DocumentId", 79);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_DescriptorMapping_ReferentialIdentity" ON "edfi"."DescriptorMapping";
-CREATE TRIGGER "TR_DescriptorMapping_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."DescriptorMapping"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_DescriptorMapping_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DescriptorMapping_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -46333,25 +45831,6 @@ CREATE TRIGGER "TR_DescriptorMappingModelEntity_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."DescriptorMappingModelEntity"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_DescriptorMappingModelEntity_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DisciplineAction_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."DisciplineActionIdentifier" IS DISTINCT FROM NEW."DisciplineActionIdentifier" OR OLD."DisciplineDate" IS DISTINCT FROM NEW."DisciplineDate" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 86;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiDisciplineAction' || '$.disciplineActionIdentifier=' || NEW."DisciplineActionIdentifier"::text || '#' || '$.disciplineDate=' || NEW."DisciplineDate"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 86);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_DisciplineAction_ReferentialIdentity" ON "edfi"."DisciplineAction";
-CREATE TRIGGER "TR_DisciplineAction_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."DisciplineAction"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_DisciplineAction_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DisciplineAction_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -46515,25 +45994,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."DisciplineActionStudentDisciplineIn
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_DisciplineActionStudentDisciplineIncidentBehav_84e0415737"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DisciplineIncident_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."IncidentIdentifier" IS DISTINCT FROM NEW."IncidentIdentifier" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 89;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiDisciplineIncident' || '$.incidentIdentifier=' || NEW."IncidentIdentifier"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text), NEW."DocumentId", 89);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_DisciplineIncident_ReferentialIdentity" ON "edfi"."DisciplineIncident";
-CREATE TRIGGER "TR_DisciplineIncident_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."DisciplineIncident"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_DisciplineIncident_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DisciplineIncident_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -46672,25 +46132,6 @@ CREATE TRIGGER "TR_DisciplineIncidentWeapon_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."DisciplineIncidentWeapon"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_DisciplineIncidentWeapon_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationContent_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."ContentIdentifier" IS DISTINCT FROM NEW."ContentIdentifier") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 94;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationContent' || '$.contentIdentifier=' || NEW."ContentIdentifier"::text), NEW."DocumentId", 94);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_EducationContent_ReferentialIdentity" ON "edfi"."EducationContent";
-CREATE TRIGGER "TR_EducationContent_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."EducationContent"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_EducationContent_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationContent_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -47001,25 +46442,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."EducationOrganizationInterventionPr
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationInterventionPrescriptionA_eb0c0460f3"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationInterventionPrescriptionA_8c531548a2"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."InterventionPrescriptionInterventionPrescription_Edu_532babb247" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_Edu_532babb247" OR OLD."InterventionPrescriptionInterventionPrescription_Int_409fc39d28" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_Int_409fc39d28") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 99;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganizationInterventionPrescriptionAssociation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.interventionPrescriptionReference.educationOrganizationId=' || NEW."InterventionPrescriptionInterventionPrescription_Edu_532babb247"::text || '#' || '$.interventionPrescriptionReference.interventionPrescriptionIdentificationCode=' || NEW."InterventionPrescriptionInterventionPrescription_Int_409fc39d28"::text), NEW."DocumentId", 99);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_EducationOrganizationInterventionPrescriptionAsso_9a89859fb8" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation";
-CREATE TRIGGER "TR_EducationOrganizationInterventionPrescriptionAsso_9a89859fb8"
-AFTER INSERT OR UPDATE ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationInterventionPrescriptionA_8c531548a2"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
@@ -47068,29 +46490,6 @@ CREATE TRIGGER "TR_EducationOrganizationNetwork_AuthHierarchy_Insert"
     AFTER INSERT ON "edfi"."EducationOrganizationNetwork"
     FOR EACH ROW
     EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_AuthHierarchy_Insert"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationNetworkId" IS DISTINCT FROM NEW."EducationOrganizationNetworkId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 100;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganizationNetwork' || '$.educationOrganizationNetworkId=' || NEW."EducationOrganizationNetworkId"::text), NEW."DocumentId", 100);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."EducationOrganizationNetworkId"::text), NEW."DocumentId", 95);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_EducationOrganizationNetwork_ReferentialIdentity" ON "edfi"."EducationOrganizationNetwork";
-CREATE TRIGGER "TR_EducationOrganizationNetwork_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."EducationOrganizationNetwork"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -47188,25 +46587,6 @@ CREATE TRIGGER "TR_EducationOrganizationNetworkAddressPeriod_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."EducationOrganizationNetworkAddressPeriod"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkAddressPeriod_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkAssociation_Refere_7f5a8e95ea"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationNetwork_EducationOrganizationNetworkId" IS DISTINCT FROM NEW."EducationOrganizationNetwork_EducationOrganizationNetworkId" OR OLD."MemberEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."MemberEducationOrganization_EducationOrganizationId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 101;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganizationNetworkAssociation' || '$.educationOrganizationNetworkReference.educationOrganizationNetworkId=' || NEW."EducationOrganizationNetwork_EducationOrganizationNetworkId"::text || '#' || '$.memberEducationOrganizationReference.educationOrganizationId=' || NEW."MemberEducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 101);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_EducationOrganizationNetworkAssociation_ReferentialIdentity" ON "edfi"."EducationOrganizationNetworkAssociation";
-CREATE TRIGGER "TR_EducationOrganizationNetworkAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."EducationOrganizationNetworkAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkAssociation_Refere_7f5a8e95ea"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -47422,25 +46802,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."EducationOrganizationNetworkInterna
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkInternationalAddress_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationPeerAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."PeerEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."PeerEducationOrganization_EducationOrganizationId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 102;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganizationPeerAssociation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.peerEducationOrganizationReference.educationOrganizationId=' || NEW."PeerEducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 102);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_EducationOrganizationPeerAssociation_ReferentialIdentity" ON "edfi"."EducationOrganizationPeerAssociation";
-CREATE TRIGGER "TR_EducationOrganizationPeerAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."EducationOrganizationPeerAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationPeerAssociation_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationPeerAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -47637,29 +46998,6 @@ CREATE TRIGGER "TR_EducationServiceCenter_AuthHierarchy_Update"
     AFTER UPDATE ON "edfi"."EducationServiceCenter"
     FOR EACH ROW
     EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenter_AuthHierarchy_Update"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenter_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationServiceCenterId" IS DISTINCT FROM NEW."EducationServiceCenterId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 104;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationServiceCenter' || '$.educationServiceCenterId=' || NEW."EducationServiceCenterId"::text), NEW."DocumentId", 104);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."EducationServiceCenterId"::text), NEW."DocumentId", 95);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_EducationServiceCenter_ReferentialIdentity" ON "edfi"."EducationServiceCenter";
-CREATE TRIGGER "TR_EducationServiceCenter_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."EducationServiceCenter"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenter_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenter_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -47908,25 +47246,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."EducationServiceCenterInternational
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenterInternationalAddress_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EvaluationRubricDimension_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EvaluationRubricRating" IS DISTINCT FROM NEW."EvaluationRubricRating" OR OLD."ProgramEvaluationElement_ProgramEducationOrganizationId" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEducationOrganizationId" OR OLD."ProgramEvaluationElement_ProgramEvaluationElementTitle" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationElementTitle" OR OLD."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706" OR OLD."ProgramEvaluationElement_ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationTitle" OR OLD."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71" OR OLD."ProgramEvaluationElement_ProgramName" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramName" OR OLD."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 114;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEvaluationRubricDimension' || '$.evaluationRubricRating=' || NEW."EvaluationRubricRating"::text || '#' || '$.programEvaluationElementReference.programEducationOrganizationId=' || NEW."ProgramEvaluationElement_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationElementReference.programEvaluationElementTitle=' || NEW."ProgramEvaluationElement_ProgramEvaluationElementTitle"::text || '#' || '$.programEvaluationElementReference.programEvaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706")) || '#' || '$.programEvaluationElementReference.programEvaluationTitle=' || NEW."ProgramEvaluationElement_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationElementReference.programEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71")) || '#' || '$.programEvaluationElementReference.programName=' || NEW."ProgramEvaluationElement_ProgramName"::text || '#' || '$.programEvaluationElementReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 114);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_EvaluationRubricDimension_ReferentialIdentity" ON "edfi"."EvaluationRubricDimension";
-CREATE TRIGGER "TR_EvaluationRubricDimension_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."EvaluationRubricDimension"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_EvaluationRubricDimension_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EvaluationRubricDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -48056,25 +47375,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."EvaluationRubricDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EvaluationRubricDimension_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_FeederSchoolAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."FeederSchool_SchoolId" IS DISTINCT FROM NEW."FeederSchool_SchoolId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 117;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiFeederSchoolAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.feederSchoolReference.schoolId=' || NEW."FeederSchool_SchoolId"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text), NEW."DocumentId", 117);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_FeederSchoolAssociation_ReferentialIdentity" ON "edfi"."FeederSchoolAssociation";
-CREATE TRIGGER "TR_FeederSchoolAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."FeederSchoolAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_FeederSchoolAssociation_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_FeederSchoolAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -48144,25 +47444,6 @@ CREATE TRIGGER "TR_FeederSchoolAssociation_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."FeederSchoolAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_FeederSchoolAssociation_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_FunctionDimension_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 119;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiFunctionDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 119);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_FunctionDimension_ReferentialIdentity" ON "edfi"."FunctionDimension";
-CREATE TRIGGER "TR_FunctionDimension_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."FunctionDimension"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_FunctionDimension_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_FunctionDimension_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -48253,25 +47534,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."FunctionDimensionReportingTag"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_FunctionDimensionReportingTag_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_FundDimension_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 120;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiFundDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 120);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_FundDimension_ReferentialIdentity" ON "edfi"."FundDimension";
-CREATE TRIGGER "TR_FundDimension_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."FundDimension"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_FundDimension_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_FundDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -48360,25 +47622,6 @@ CREATE TRIGGER "TR_FundDimensionReportingTag_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."FundDimensionReportingTag"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_FundDimensionReportingTag_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Grade_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."GradeTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeTypeDescriptor_DescriptorId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodName" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."StudentSectionAssociation_BeginDate" IS DISTINCT FROM NEW."StudentSectionAssociation_BeginDate" OR OLD."StudentSectionAssociation_LocalCourseCode" IS DISTINCT FROM NEW."StudentSectionAssociation_LocalCourseCode" OR OLD."StudentSectionAssociation_SectionIdentifier" IS DISTINCT FROM NEW."StudentSectionAssociation_SectionIdentifier" OR OLD."StudentSectionAssociation_SessionName" IS DISTINCT FROM NEW."StudentSectionAssociation_SessionName" OR OLD."StudentSectionAssociation_StudentUniqueId" IS DISTINCT FROM NEW."StudentSectionAssociation_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 122;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGrade' || '$.gradeTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."GradeTypeDescriptor_DescriptorId")) || '#' || '$.gradingPeriodReference.gradingPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId")) || '#' || '$.gradingPeriodReference.gradingPeriodName=' || NEW."GradingPeriodGradingPeriod_GradingPeriodName"::text || '#' || '$.gradingPeriodReference.schoolId=' || NEW."GradingPeriodGradingPeriod_SchoolId"::text || '#' || '$.gradingPeriodReference.schoolYear=' || NEW."GradingPeriodGradingPeriod_SchoolYear"::text || '#' || '$.studentSectionAssociationReference.beginDate=' || NEW."StudentSectionAssociation_BeginDate"::text || '#' || '$.studentSectionAssociationReference.localCourseCode=' || NEW."StudentSectionAssociation_LocalCourseCode"::text || '#' || '$.studentSectionAssociationReference.schoolId=' || NEW."StudentSectionAssociation_SchoolId"::text || '#' || '$.studentSectionAssociationReference.schoolYear=' || NEW."StudentSectionAssociation_SchoolYear"::text || '#' || '$.studentSectionAssociationReference.sectionIdentifier=' || NEW."StudentSectionAssociation_SectionIdentifier"::text || '#' || '$.studentSectionAssociationReference.sessionName=' || NEW."StudentSectionAssociation_SessionName"::text || '#' || '$.studentSectionAssociationReference.studentUniqueId=' || NEW."StudentSectionAssociation_StudentUniqueId"::text), NEW."DocumentId", 122);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Grade_ReferentialIdentity" ON "edfi"."Grade";
-CREATE TRIGGER "TR_Grade_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Grade"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Grade_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Grade_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -48549,25 +47792,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."GradeLearningStandardGrade"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_GradeLearningStandardGrade_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GradebookEntry_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."GradebookEntryIdentifier" IS DISTINCT FROM NEW."GradebookEntryIdentifier" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 126;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGradebookEntry' || '$.gradebookEntryIdentifier=' || NEW."GradebookEntryIdentifier"::text || '#' || '$.namespace=' || NEW."Namespace"::text), NEW."DocumentId", 126);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_GradebookEntry_ReferentialIdentity" ON "edfi"."GradebookEntry";
-CREATE TRIGGER "TR_GradebookEntry_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."GradebookEntry"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_GradebookEntry_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GradebookEntry_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -48657,25 +47881,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."GradebookEntryLearningStandard"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_GradebookEntryLearningStandard_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GradingPeriod_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodName" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 128;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGradingPeriod' || '$.gradingPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."GradingPeriodDescriptor_DescriptorId")) || '#' || '$.gradingPeriodName=' || NEW."GradingPeriodName"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text), NEW."DocumentId", 128);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_GradingPeriod_ReferentialIdentity" ON "edfi"."GradingPeriod";
-CREATE TRIGGER "TR_GradingPeriod_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."GradingPeriod"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_GradingPeriod_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GradingPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -48762,25 +47967,6 @@ CREATE TRIGGER "TR_GradingPeriod_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."GradingPeriod"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_GradingPeriod_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GraduationPlan_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."GraduationPlanTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."GraduationPlanTypeDescriptor_DescriptorId" OR OLD."GraduationSchoolYear_GraduationSchoolYear" IS DISTINCT FROM NEW."GraduationSchoolYear_GraduationSchoolYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 130;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGraduationPlan' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.graduationPlanTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."GraduationPlanTypeDescriptor_DescriptorId")) || '#' || '$.graduationSchoolYearTypeReference.schoolYear=' || NEW."GraduationSchoolYear_GraduationSchoolYear"::text), NEW."DocumentId", 130);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_GraduationPlan_ReferentialIdentity" ON "edfi"."GraduationPlan";
-CREATE TRIGGER "TR_GraduationPlan_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."GraduationPlan"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_GraduationPlan_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GraduationPlan_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -49012,25 +48198,6 @@ CREATE TRIGGER "TR_GraduationPlanRequiredAssessmentScore_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."GraduationPlanRequiredAssessmentScore"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_GraduationPlanRequiredAssessmentScore_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Intervention_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."InterventionIdentificationCode" IS DISTINCT FROM NEW."InterventionIdentificationCode") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 147;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiIntervention' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.interventionIdentificationCode=' || NEW."InterventionIdentificationCode"::text), NEW."DocumentId", 147);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Intervention_ReferentialIdentity" ON "edfi"."Intervention";
-CREATE TRIGGER "TR_Intervention_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Intervention"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Intervention_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Intervention_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -49296,25 +48463,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."InterventionPopulationServed"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_InterventionPopulationServed_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionPrescription_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."InterventionPrescriptionIdentificationCode" IS DISTINCT FROM NEW."InterventionPrescriptionIdentificationCode") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 150;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiInterventionPrescription' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.interventionPrescriptionIdentificationCode=' || NEW."InterventionPrescriptionIdentificationCode"::text), NEW."DocumentId", 150);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_InterventionPrescription_ReferentialIdentity" ON "edfi"."InterventionPrescription";
-CREATE TRIGGER "TR_InterventionPrescription_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."InterventionPrescription"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_InterventionPrescription_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionPrescription_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -49578,25 +48726,6 @@ CREATE TRIGGER "TR_InterventionStaff_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."InterventionStaff"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_InterventionStaff_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionStudy_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."InterventionStudyIdentificationCode" IS DISTINCT FROM NEW."InterventionStudyIdentificationCode") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 151;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiInterventionStudy' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.interventionStudyIdentificationCode=' || NEW."InterventionStudyIdentificationCode"::text), NEW."DocumentId", 151);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_InterventionStudy_ReferentialIdentity" ON "edfi"."InterventionStudy";
-CREATE TRIGGER "TR_InterventionStudy_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."InterventionStudy"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_InterventionStudy_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionStudy_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -49887,25 +49016,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."InterventionUri"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_InterventionUri_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LearningStandard_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."LearningStandardId" IS DISTINCT FROM NEW."LearningStandardId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 155;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLearningStandard' || '$.learningStandardId=' || NEW."LearningStandardId"::text), NEW."DocumentId", 155);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_LearningStandard_ReferentialIdentity" ON "edfi"."LearningStandard";
-CREATE TRIGGER "TR_LearningStandard_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."LearningStandard"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_LearningStandard_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LearningStandard_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -50019,25 +49129,6 @@ CREATE TRIGGER "TR_LearningStandardAuthor_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."LearningStandardAuthor"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LearningStandardAuthor_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LearningStandardEquivalenceAssociation_Referen_56e0b938ed"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."SourceLearningStandard_LearningStandardId" IS DISTINCT FROM NEW."SourceLearningStandard_LearningStandardId" OR OLD."TargetLearningStandard_LearningStandardId" IS DISTINCT FROM NEW."TargetLearningStandard_LearningStandardId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 157;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLearningStandardEquivalenceAssociation' || '$.namespace=' || NEW."Namespace"::text || '#' || '$.sourceLearningStandardReference.learningStandardId=' || NEW."SourceLearningStandard_LearningStandardId"::text || '#' || '$.targetLearningStandardReference.learningStandardId=' || NEW."TargetLearningStandard_LearningStandardId"::text), NEW."DocumentId", 157);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_LearningStandardEquivalenceAssociation_ReferentialIdentity" ON "edfi"."LearningStandardEquivalenceAssociation";
-CREATE TRIGGER "TR_LearningStandardEquivalenceAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."LearningStandardEquivalenceAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_LearningStandardEquivalenceAssociation_Referen_56e0b938ed"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LearningStandardEquivalenceAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -50159,25 +49250,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."LearningStandardIdentificationCode"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LearningStandardIdentificationCode_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalAccount_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AccountIdentifier" IS DISTINCT FROM NEW."AccountIdentifier" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."FiscalYear_Unified" IS DISTINCT FROM NEW."FiscalYear_Unified") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 164;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalAccount' || '$.accountIdentifier=' || NEW."AccountIdentifier"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 164);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_LocalAccount_ReferentialIdentity" ON "edfi"."LocalAccount";
-CREATE TRIGGER "TR_LocalAccount_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."LocalAccount"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_LocalAccount_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalAccount_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -50273,25 +49345,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."LocalAccountReportingTag"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalAccountReportingTag_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalActual_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 165;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalActual' || '$.asOfDate=' || NEW."AsOfDate"::text || '#' || '$.localAccountReference.accountIdentifier=' || NEW."LocalAccount_AccountIdentifier"::text || '#' || '$.localAccountReference.educationOrganizationId=' || NEW."LocalAccount_EducationOrganizationId"::text || '#' || '$.localAccountReference.fiscalYear=' || NEW."LocalAccount_FiscalYear"::text), NEW."DocumentId", 165);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_LocalActual_ReferentialIdentity" ON "edfi"."LocalActual";
-CREATE TRIGGER "TR_LocalActual_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."LocalActual"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_LocalActual_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalActual_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -50368,25 +49421,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."LocalActual"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalActual_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalBudget_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 166;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalBudget' || '$.asOfDate=' || NEW."AsOfDate"::text || '#' || '$.localAccountReference.accountIdentifier=' || NEW."LocalAccount_AccountIdentifier"::text || '#' || '$.localAccountReference.educationOrganizationId=' || NEW."LocalAccount_EducationOrganizationId"::text || '#' || '$.localAccountReference.fiscalYear=' || NEW."LocalAccount_FiscalYear"::text), NEW."DocumentId", 166);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_LocalBudget_ReferentialIdentity" ON "edfi"."LocalBudget";
-CREATE TRIGGER "TR_LocalBudget_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."LocalBudget"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_LocalBudget_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalBudget_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -50462,25 +49496,6 @@ CREATE TRIGGER "TR_LocalBudget_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."LocalBudget"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalBudget_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalContractedStaff_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 167;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalContractedStaff' || '$.asOfDate=' || NEW."AsOfDate"::text || '#' || '$.localAccountReference.accountIdentifier=' || NEW."LocalAccount_AccountIdentifier"::text || '#' || '$.localAccountReference.educationOrganizationId=' || NEW."LocalAccount_EducationOrganizationId"::text || '#' || '$.localAccountReference.fiscalYear=' || NEW."LocalAccount_FiscalYear"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 167);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_LocalContractedStaff_ReferentialIdentity" ON "edfi"."LocalContractedStaff";
-CREATE TRIGGER "TR_LocalContractedStaff_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."LocalContractedStaff"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_LocalContractedStaff_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalContractedStaff_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -50777,29 +49792,6 @@ CREATE TRIGGER "TR_LocalEducationAgency_AuthHierarchy_Update"
     AFTER UPDATE ON "edfi"."LocalEducationAgency"
     FOR EACH ROW
     EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AuthHierarchy_Update"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."LocalEducationAgencyId" IS DISTINCT FROM NEW."LocalEducationAgencyId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 168;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalEducationAgency' || '$.localEducationAgencyId=' || NEW."LocalEducationAgencyId"::text), NEW."DocumentId", 168);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."LocalEducationAgencyId"::text), NEW."DocumentId", 95);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_ReferentialIdentity" ON "edfi"."LocalEducationAgency";
-CREATE TRIGGER "TR_LocalEducationAgency_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -51098,25 +50090,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."LocalEducationAgencyInternationalAd
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgencyInternationalAddress_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEncumbrance_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 170;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalEncumbrance' || '$.asOfDate=' || NEW."AsOfDate"::text || '#' || '$.localAccountReference.accountIdentifier=' || NEW."LocalAccount_AccountIdentifier"::text || '#' || '$.localAccountReference.educationOrganizationId=' || NEW."LocalAccount_EducationOrganizationId"::text || '#' || '$.localAccountReference.fiscalYear=' || NEW."LocalAccount_FiscalYear"::text), NEW."DocumentId", 170);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_LocalEncumbrance_ReferentialIdentity" ON "edfi"."LocalEncumbrance";
-CREATE TRIGGER "TR_LocalEncumbrance_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."LocalEncumbrance"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_LocalEncumbrance_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEncumbrance_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -51192,25 +50165,6 @@ CREATE TRIGGER "TR_LocalEncumbrance_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."LocalEncumbrance"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEncumbrance_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalPayroll_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 171;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalPayroll' || '$.asOfDate=' || NEW."AsOfDate"::text || '#' || '$.localAccountReference.accountIdentifier=' || NEW."LocalAccount_AccountIdentifier"::text || '#' || '$.localAccountReference.educationOrganizationId=' || NEW."LocalAccount_EducationOrganizationId"::text || '#' || '$.localAccountReference.fiscalYear=' || NEW."LocalAccount_FiscalYear"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 171);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_LocalPayroll_ReferentialIdentity" ON "edfi"."LocalPayroll";
-CREATE TRIGGER "TR_LocalPayroll_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."LocalPayroll"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_LocalPayroll_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalPayroll_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -51305,25 +50259,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."LocalPayroll"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalPayroll_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Location_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."ClassroomIdentificationCode" IS DISTINCT FROM NEW."ClassroomIdentificationCode" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 173;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocation' || '$.classroomIdentificationCode=' || NEW."ClassroomIdentificationCode"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text), NEW."DocumentId", 173);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Location_ReferentialIdentity" ON "edfi"."Location";
-CREATE TRIGGER "TR_Location_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Location"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Location_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Location_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -51387,25 +50322,6 @@ CREATE TRIGGER "TR_Location_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."Location"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Location_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ObjectDimension_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 184;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiObjectDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 184);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_ObjectDimension_ReferentialIdentity" ON "edfi"."ObjectDimension";
-CREATE TRIGGER "TR_ObjectDimension_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."ObjectDimension"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_ObjectDimension_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ObjectDimension_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -51495,25 +50411,6 @@ CREATE TRIGGER "TR_ObjectDimensionReportingTag_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ObjectDimensionReportingTag"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ObjectDimensionReportingTag_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ObjectiveAssessment_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AssessmentIdentifier_Unified" IS DISTINCT FROM NEW."AssessmentIdentifier_Unified" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 185;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiObjectiveAssessment' || '$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text || '#' || '$.identificationCode=' || NEW."IdentificationCode"::text), NEW."DocumentId", 185);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_ObjectiveAssessment_ReferentialIdentity" ON "edfi"."ObjectiveAssessment";
-CREATE TRIGGER "TR_ObjectiveAssessment_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."ObjectiveAssessment"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_ObjectiveAssessment_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ObjectiveAssessment_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -51685,25 +50582,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ObjectiveAssessmentScore"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ObjectiveAssessmentScore_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OpenStaffPosition_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."RequisitionNumber" IS DISTINCT FROM NEW."RequisitionNumber") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 186;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiOpenStaffPosition' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.requisitionNumber=' || NEW."RequisitionNumber"::text), NEW."DocumentId", 186);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_OpenStaffPosition_ReferentialIdentity" ON "edfi"."OpenStaffPosition";
-CREATE TRIGGER "TR_OpenStaffPosition_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."OpenStaffPosition"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_OpenStaffPosition_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OpenStaffPosition_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -51817,25 +50695,6 @@ CREATE TRIGGER "TR_OpenStaffPositionInstructionalGradeLevel_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."OpenStaffPositionInstructionalGradeLevel"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_OpenStaffPositionInstructionalGradeLevel_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OperationalUnitDimension_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 188;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiOperationalUnitDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 188);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_OperationalUnitDimension_ReferentialIdentity" ON "edfi"."OperationalUnitDimension";
-CREATE TRIGGER "TR_OperationalUnitDimension_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."OperationalUnitDimension"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_OperationalUnitDimension_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OperationalUnitDimension_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -52058,29 +50917,6 @@ CREATE TRIGGER "TR_OrganizationDepartment_AuthHierarchy_Update"
     AFTER UPDATE ON "edfi"."OrganizationDepartment"
     FOR EACH ROW
     EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartment_AuthHierarchy_Update"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartment_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."OrganizationDepartmentId" IS DISTINCT FROM NEW."OrganizationDepartmentId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 189;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiOrganizationDepartment' || '$.organizationDepartmentId=' || NEW."OrganizationDepartmentId"::text), NEW."DocumentId", 189);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."OrganizationDepartmentId"::text), NEW."DocumentId", 95);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_OrganizationDepartment_ReferentialIdentity" ON "edfi"."OrganizationDepartment";
-CREATE TRIGGER "TR_OrganizationDepartment_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."OrganizationDepartment"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartment_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartment_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -52331,25 +51167,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."OrganizationDepartmentInternational
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartmentInternationalAddress_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Person_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."PersonId" IS DISTINCT FROM NEW."PersonId" OR OLD."SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."SourceSystemDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 195;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPerson' || '$.personId=' || NEW."PersonId"::text || '#' || '$.sourceSystemDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."SourceSystemDescriptor_DescriptorId"))), NEW."DocumentId", 195);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Person_ReferentialIdentity" ON "edfi"."Person";
-CREATE TRIGGER "TR_Person_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Person"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Person_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Person_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -52424,25 +51241,6 @@ CREATE TRIGGER "TR_Person_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."Person"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Person_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryEvent_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."PostSecondaryEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."PostSecondaryEventCategoryDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 199;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPostSecondaryEvent' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.postSecondaryEventCategoryDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."PostSecondaryEventCategoryDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 199);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_PostSecondaryEvent_ReferentialIdentity" ON "edfi"."PostSecondaryEvent";
-CREATE TRIGGER "TR_PostSecondaryEvent_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."PostSecondaryEvent"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryEvent_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryEvent_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -52582,29 +51380,6 @@ CREATE TRIGGER "TR_PostSecondaryInstitution_AuthHierarchy_Insert"
     AFTER INSERT ON "edfi"."PostSecondaryInstitution"
     FOR EACH ROW
     EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_AuthHierarchy_Insert"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."PostSecondaryInstitutionId" IS DISTINCT FROM NEW."PostSecondaryInstitutionId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 201;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPostSecondaryInstitution' || '$.postSecondaryInstitutionId=' || NEW."PostSecondaryInstitutionId"::text), NEW."DocumentId", 201);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."PostSecondaryInstitutionId"::text), NEW."DocumentId", 95);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_PostSecondaryInstitution_ReferentialIdentity" ON "edfi"."PostSecondaryInstitution";
-CREATE TRIGGER "TR_PostSecondaryInstitution_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."PostSecondaryInstitution"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -52878,25 +51653,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."PostSecondaryInstitutionMediumOfIns
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionMediumOfInstruction_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Program_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramName" IS DISTINCT FROM NEW."ProgramName" OR OLD."ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramTypeDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 208;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgram' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programName=' || NEW."ProgramName"::text || '#' || '$.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 208);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Program_ReferentialIdentity" ON "edfi"."Program";
-CREATE TRIGGER "TR_Program_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Program"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Program_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Program_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -53003,25 +51759,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ProgramCharacteristic"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProgramCharacteristic_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramDimension_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 211;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 211);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_ProgramDimension_ReferentialIdentity" ON "edfi"."ProgramDimension";
-CREATE TRIGGER "TR_ProgramDimension_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."ProgramDimension"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_ProgramDimension_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -53110,25 +51847,6 @@ CREATE TRIGGER "TR_ProgramDimensionReportingTag_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ProgramDimensionReportingTag"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProgramDimensionReportingTag_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramEvaluation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."ProgramEvaluationPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationPeriodDescriptor_DescriptorId" OR OLD."ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluationTitle" OR OLD."ProgramEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationTypeDescriptor_DescriptorId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 212;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramEvaluation' || '$.programEvaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluationPeriodDescriptor_DescriptorId")) || '#' || '$.programEvaluationTitle=' || NEW."ProgramEvaluationTitle"::text || '#' || '$.programEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluationTypeDescriptor_DescriptorId")) || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 212);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_ProgramEvaluation_ReferentialIdentity" ON "edfi"."ProgramEvaluation";
-CREATE TRIGGER "TR_ProgramEvaluation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."ProgramEvaluation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluation_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramEvaluation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -53246,25 +51964,6 @@ CREATE TRIGGER "TR_ProgramEvaluation_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ProgramEvaluation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluation_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramEvaluationElement_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."ProgramEvaluationElementTitle" IS DISTINCT FROM NEW."ProgramEvaluationElementTitle" OR OLD."ProgramEducationOrganizationId_Unified" IS DISTINCT FROM NEW."ProgramEducationOrganizationId_Unified" OR OLD."ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" OR OLD."ProgramEvaluationTitle_Unified" IS DISTINCT FROM NEW."ProgramEvaluationTitle_Unified" OR OLD."ProgramEvaluationTypeDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationTypeDescriptor_Unified_DescriptorId" OR OLD."ProgramName_Unified" IS DISTINCT FROM NEW."ProgramName_Unified" OR OLD."ProgramTypeDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."ProgramTypeDescriptor_Unified_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 213;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramEvaluationElement' || '$.programEvaluationElementTitle=' || NEW."ProgramEvaluationElementTitle"::text || '#' || '$.programEvaluationReference.programEducationOrganizationId=' || NEW."ProgramEvaluation_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationReference.programEvaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e")) || '#' || '$.programEvaluationReference.programEvaluationTitle=' || NEW."ProgramEvaluation_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationReference.programEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId")) || '#' || '$.programEvaluationReference.programName=' || NEW."ProgramEvaluation_ProgramName"::text || '#' || '$.programEvaluationReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 213);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_ProgramEvaluationElement_ReferentialIdentity" ON "edfi"."ProgramEvaluationElement";
-CREATE TRIGGER "TR_ProgramEvaluationElement_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."ProgramEvaluationElement"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluationElement_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramEvaluationElement_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -53438,25 +52137,6 @@ CREATE TRIGGER "TR_ProgramEvaluationLevel_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ProgramEvaluationLevel"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluationLevel_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramEvaluationObjective_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."ProgramEvaluationObjectiveTitle" IS DISTINCT FROM NEW."ProgramEvaluationObjectiveTitle" OR OLD."ProgramEvaluation_ProgramEducationOrganizationId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEducationOrganizationId" OR OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" OR OLD."ProgramEvaluation_ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTitle" OR OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" OR OLD."ProgramEvaluation_ProgramName" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramName" OR OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 214;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramEvaluationObjective' || '$.programEvaluationObjectiveTitle=' || NEW."ProgramEvaluationObjectiveTitle"::text || '#' || '$.programEvaluationReference.programEducationOrganizationId=' || NEW."ProgramEvaluation_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationReference.programEvaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e")) || '#' || '$.programEvaluationReference.programEvaluationTitle=' || NEW."ProgramEvaluation_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationReference.programEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId")) || '#' || '$.programEvaluationReference.programName=' || NEW."ProgramEvaluation_ProgramName"::text || '#' || '$.programEvaluationReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 214);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_ProgramEvaluationObjective_ReferentialIdentity" ON "edfi"."ProgramEvaluationObjective";
-CREATE TRIGGER "TR_ProgramEvaluationObjective_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."ProgramEvaluationObjective"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluationObjective_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramEvaluationObjective_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -53656,25 +52336,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ProgramSponsor"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProgramSponsor_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProjectDimension_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 221;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProjectDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 221);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_ProjectDimension_ReferentialIdentity" ON "edfi"."ProjectDimension";
-CREATE TRIGGER "TR_ProjectDimension_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."ProjectDimension"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_ProjectDimension_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProjectDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -53763,25 +52424,6 @@ CREATE TRIGGER "TR_ProjectDimensionReportingTag_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ProjectDimensionReportingTag"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProjectDimensionReportingTag_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ReportCard_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodName" OR OLD."GradingPeriodGradingPeriod_SchoolId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolId" OR OLD."GradingPeriodGradingPeriod_SchoolYear" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolYear" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 234;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiReportCard' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.gradingPeriodReference.gradingPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId")) || '#' || '$.gradingPeriodReference.gradingPeriodName=' || NEW."GradingPeriodGradingPeriod_GradingPeriodName"::text || '#' || '$.gradingPeriodReference.schoolId=' || NEW."GradingPeriodGradingPeriod_SchoolId"::text || '#' || '$.gradingPeriodReference.schoolYear=' || NEW."GradingPeriodGradingPeriod_SchoolYear"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 234);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_ReportCard_ReferentialIdentity" ON "edfi"."ReportCard";
-CREATE TRIGGER "TR_ReportCard_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."ReportCard"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_ReportCard_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ReportCard_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -53965,25 +52607,6 @@ CREATE TRIGGER "TR_ReportCardStudentCompetencyObjective_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ReportCardStudentCompetencyObjective"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ReportCardStudentCompetencyObjective_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_RestraintEvent_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."RestraintEventIdentifier" IS DISTINCT FROM NEW."RestraintEventIdentifier" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 240;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiRestraintEvent' || '$.restraintEventIdentifier=' || NEW."RestraintEventIdentifier"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 240);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_RestraintEvent_ReferentialIdentity" ON "edfi"."RestraintEvent";
-CREATE TRIGGER "TR_RestraintEvent_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."RestraintEvent"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_RestraintEvent_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_RestraintEvent_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -54248,29 +52871,6 @@ CREATE TRIGGER "TR_School_AuthHierarchy_Update"
     AFTER UPDATE ON "edfi"."School"
     FOR EACH ROW
     EXECUTE FUNCTION "edfi"."TF_TR_School_AuthHierarchy_Update"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 244;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$.schoolId=' || NEW."SchoolId"::text), NEW."DocumentId", 244);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."SchoolId"::text), NEW."DocumentId", 95);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_School_ReferentialIdentity" ON "edfi"."School";
-CREATE TRIGGER "TR_School_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."School"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -54569,25 +53169,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SchoolInternationalAddress"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SchoolInternationalAddress_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolYearType_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."SchoolYear" IS DISTINCT FROM NEW."SchoolYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 250;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchoolYearType' || '$.schoolYear=' || NEW."SchoolYear"::text), NEW."DocumentId", 250);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SchoolYearType_ReferentialIdentity" ON "edfi"."SchoolYearType";
-CREATE TRIGGER "TR_SchoolYearType_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."SchoolYearType"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SchoolYearType_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolYearType_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -54645,25 +53226,6 @@ CREATE TRIGGER "TR_SchoolYearType_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SchoolYearType"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SchoolYearType_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Section_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."CourseOffering_LocalCourseCode" IS DISTINCT FROM NEW."CourseOffering_LocalCourseCode" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."CourseOffering_SchoolYear" IS DISTINCT FROM NEW."CourseOffering_SchoolYear" OR OLD."CourseOffering_SessionName" IS DISTINCT FROM NEW."CourseOffering_SessionName" OR OLD."SectionIdentifier" IS DISTINCT FROM NEW."SectionIdentifier") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 251;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSection' || '$.courseOfferingReference.localCourseCode=' || NEW."CourseOffering_LocalCourseCode"::text || '#' || '$.courseOfferingReference.schoolId=' || NEW."CourseOffering_SchoolReferenceSchoolId"::text || '#' || '$.courseOfferingReference.schoolYear=' || NEW."CourseOffering_SchoolYear"::text || '#' || '$.courseOfferingReference.sessionName=' || NEW."CourseOffering_SessionName"::text || '#' || '$.sectionIdentifier=' || NEW."SectionIdentifier"::text), NEW."DocumentId", 251);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Section_ReferentialIdentity" ON "edfi"."Section";
-CREATE TRIGGER "TR_Section_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Section"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Section_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Section_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -54746,25 +53308,6 @@ CREATE TRIGGER "TR_Section_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."Section"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Section_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SectionAttendanceTakenEvent_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."CalendarDate_CalendarCode" IS DISTINCT FROM NEW."CalendarDate_CalendarCode" OR OLD."CalendarDate_Date" IS DISTINCT FROM NEW."CalendarDate_Date" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 253;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSectionAttendanceTakenEvent' || '$.calendarDateReference.calendarCode=' || NEW."CalendarDate_CalendarCode"::text || '#' || '$.calendarDateReference.date=' || NEW."CalendarDate_Date"::text || '#' || '$.calendarDateReference.schoolId=' || NEW."CalendarDate_SchoolId"::text || '#' || '$.calendarDateReference.schoolYear=' || NEW."CalendarDate_SchoolYear"::text || '#' || '$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$.sectionReference.sessionName=' || NEW."Section_SessionName"::text), NEW."DocumentId", 253);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SectionAttendanceTakenEvent_ReferentialIdentity" ON "edfi"."SectionAttendanceTakenEvent";
-CREATE TRIGGER "TR_SectionAttendanceTakenEvent_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."SectionAttendanceTakenEvent"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SectionAttendanceTakenEvent_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SectionAttendanceTakenEvent_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -54985,25 +53528,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SectionProgram"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SectionProgram_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Session_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."SessionName" IS DISTINCT FROM NEW."SessionName") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 259;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSession' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text || '#' || '$.sessionName=' || NEW."SessionName"::text), NEW."DocumentId", 259);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Session_ReferentialIdentity" ON "edfi"."Session";
-CREATE TRIGGER "TR_Session_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Session"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Session_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Session_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -55124,25 +53648,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SessionGradingPeriod"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SessionGradingPeriod_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SourceDimension_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 261;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSourceDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 261);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SourceDimension_ReferentialIdentity" ON "edfi"."SourceDimension";
-CREATE TRIGGER "TR_SourceDimension_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."SourceDimension"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SourceDimension_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SourceDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -55232,25 +53737,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SourceDimensionReportingTag"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SourceDimensionReportingTag_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Staff_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."StaffUniqueId" IS DISTINCT FROM NEW."StaffUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 266;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaff' || '$.staffUniqueId=' || NEW."StaffUniqueId"::text), NEW."DocumentId", 266);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Staff_ReferentialIdentity" ON "edfi"."Staff";
-CREATE TRIGGER "TR_Staff_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Staff"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Staff_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Staff_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -55314,25 +53800,6 @@ CREATE TRIGGER "TR_Staff_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."Staff"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Staff_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffAbsenceEvent_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AbsenceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AbsenceEventCategoryDescriptor_DescriptorId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 267;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffAbsenceEvent' || '$.absenceEventCategoryDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."AbsenceEventCategoryDescriptor_DescriptorId")) || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 267);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StaffAbsenceEvent_ReferentialIdentity" ON "edfi"."StaffAbsenceEvent";
-CREATE TRIGGER "TR_StaffAbsenceEvent_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StaffAbsenceEvent"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StaffAbsenceEvent_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffAbsenceEvent_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -55499,25 +53966,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StaffAncestryEthnicOrigin"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffAncestryEthnicOrigin_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffCohortAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."Cohort_CohortIdentifier" IS DISTINCT FROM NEW."Cohort_CohortIdentifier" OR OLD."Cohort_EducationOrganizationId" IS DISTINCT FROM NEW."Cohort_EducationOrganizationId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 269;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffCohortAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.cohortReference.cohortIdentifier=' || NEW."Cohort_CohortIdentifier"::text || '#' || '$.cohortReference.educationOrganizationId=' || NEW."Cohort_EducationOrganizationId"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 269);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StaffCohortAssociation_ReferentialIdentity" ON "edfi"."StaffCohortAssociation";
-CREATE TRIGGER "TR_StaffCohortAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StaffCohortAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StaffCohortAssociation_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffCohortAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -55630,25 +54078,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StaffCredential"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffCredential_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffDisciplineIncidentAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."DisciplineIncident_IncidentIdentifier" IS DISTINCT FROM NEW."DisciplineIncident_IncidentIdentifier" OR OLD."DisciplineIncident_SchoolId" IS DISTINCT FROM NEW."DisciplineIncident_SchoolId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 270;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffDisciplineIncidentAssociation' || '$.disciplineIncidentReference.incidentIdentifier=' || NEW."DisciplineIncident_IncidentIdentifier"::text || '#' || '$.disciplineIncidentReference.schoolId=' || NEW."DisciplineIncident_SchoolId"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 270);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StaffDisciplineIncidentAssociation_ReferentialIdentity" ON "edfi"."StaffDisciplineIncidentAssociation";
-CREATE TRIGGER "TR_StaffDisciplineIncidentAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StaffDisciplineIncidentAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StaffDisciplineIncidentAssociation_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffDisciplineIncidentAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -55755,25 +54184,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StaffDisciplineIncidentAssociationD
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffDisciplineIncidentAssociationDisciplineIn_078c18e75f"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationAssignmentAssociatio_81498b323e"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."StaffClassificationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StaffClassificationDescriptor_DescriptorId" OR OLD."StaffUniqueId_Unified" IS DISTINCT FROM NEW."StaffUniqueId_Unified") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 271;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffEducationOrganizationAssignmentAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.staffClassificationDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."StaffClassificationDescriptor_DescriptorId")) || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 271);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StaffEducationOrganizationAssignmentAssociation_R_fd7f29aaf8" ON "edfi"."StaffEducationOrganizationAssignmentAssociation";
-CREATE TRIGGER "TR_StaffEducationOrganizationAssignmentAssociation_R_fd7f29aaf8"
-AFTER INSERT OR UPDATE ON "edfi"."StaffEducationOrganizationAssignmentAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationAssignmentAssociatio_81498b323e"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationAssignmentAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -55869,25 +54279,6 @@ CREATE TRIGGER "TR_StaffEducationOrganizationAssignmentAssociation_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StaffEducationOrganizationAssignmentAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationAssignmentAssociation_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationContactAssociation_R_9d575d4552"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."ContactTitle" IS DISTINCT FROM NEW."ContactTitle" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 272;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffEducationOrganizationContactAssociation' || '$.contactTitle=' || NEW."ContactTitle"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 272);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StaffEducationOrganizationContactAssociation_Refe_a37b09c433" ON "edfi"."StaffEducationOrganizationContactAssociation";
-CREATE TRIGGER "TR_StaffEducationOrganizationContactAssociation_Refe_a37b09c433"
-AFTER INSERT OR UPDATE ON "edfi"."StaffEducationOrganizationContactAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationContactAssociation_R_9d575d4552"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationContactAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -56019,25 +54410,6 @@ CREATE TRIGGER "TR_StaffEducationOrganizationContactAssociationTelephone_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StaffEducationOrganizationContactAssociationTelephone"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationContactAssociationTe_b9e27b971d"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationEmploymentAssociatio_051c566a5d"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."EmploymentStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."EmploymentStatusDescriptor_DescriptorId" OR OLD."HireDate" IS DISTINCT FROM NEW."HireDate" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 273;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffEducationOrganizationEmploymentAssociation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.employmentStatusDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EmploymentStatusDescriptor_DescriptorId")) || '#' || '$.hireDate=' || NEW."HireDate"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 273);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StaffEducationOrganizationEmploymentAssociation_R_e30fca76bc" ON "edfi"."StaffEducationOrganizationEmploymentAssociation";
-CREATE TRIGGER "TR_StaffEducationOrganizationEmploymentAssociation_R_e30fca76bc"
-AFTER INSERT OR UPDATE ON "edfi"."StaffEducationOrganizationEmploymentAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationEmploymentAssociatio_051c566a5d"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationEmploymentAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -56285,25 +54657,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StaffLanguageUs"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffLanguageUs_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffLeave_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."StaffLeaveEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."StaffLeaveEventCategoryDescriptor_DescriptorId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 275;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffLeave' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.staffLeaveEventCategoryDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."StaffLeaveEventCategoryDescriptor_DescriptorId")) || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 275);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StaffLeave_ReferentialIdentity" ON "edfi"."StaffLeave";
-CREATE TRIGGER "TR_StaffLeave_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StaffLeave"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StaffLeave_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffLeave_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -56443,25 +54796,6 @@ CREATE TRIGGER "TR_StaffPersonalIdentificationDocument_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StaffPersonalIdentificationDocument"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffPersonalIdentificationDocument_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffProgramAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 277;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 277);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StaffProgramAssociation_ReferentialIdentity" ON "edfi"."StaffProgramAssociation";
-CREATE TRIGGER "TR_StaffProgramAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StaffProgramAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StaffProgramAssociation_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -56615,25 +54949,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StaffRecognition"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffRecognition_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffSchoolAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."ProgramAssignmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramAssignmentDescriptor_DescriptorId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 278;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffSchoolAssociation' || '$.programAssignmentDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramAssignmentDescriptor_DescriptorId")) || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 278);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StaffSchoolAssociation_ReferentialIdentity" ON "edfi"."StaffSchoolAssociation";
-CREATE TRIGGER "TR_StaffSchoolAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StaffSchoolAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StaffSchoolAssociation_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffSchoolAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -56773,25 +55088,6 @@ CREATE TRIGGER "TR_StaffSchoolAssociationGradeLevel_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StaffSchoolAssociationGradeLevel"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffSchoolAssociationGradeLevel_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffSectionAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 279;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffSectionAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$.sectionReference.sessionName=' || NEW."Section_SessionName"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 279);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StaffSectionAssociation_ReferentialIdentity" ON "edfi"."StaffSectionAssociation";
-CREATE TRIGGER "TR_StaffSectionAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StaffSectionAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StaffSectionAssociation_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffSectionAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -57021,29 +55317,6 @@ CREATE TRIGGER "TR_StateEducationAgency_AuthHierarchy_Insert"
     AFTER INSERT ON "edfi"."StateEducationAgency"
     FOR EACH ROW
     EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgency_AuthHierarchy_Insert"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgency_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."StateEducationAgencyId" IS DISTINCT FROM NEW."StateEducationAgencyId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 281;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStateEducationAgency' || '$.stateEducationAgencyId=' || NEW."StateEducationAgencyId"::text), NEW."DocumentId", 281);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."StateEducationAgencyId"::text), NEW."DocumentId", 95);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StateEducationAgency_ReferentialIdentity" ON "edfi"."StateEducationAgency";
-CREATE TRIGGER "TR_StateEducationAgency_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StateEducationAgency"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgency_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgency_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -57342,25 +55615,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StateEducationAgencyInternationalAd
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgencyInternationalAddress_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Student_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 282;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudent' || '$.studentUniqueId=' || NEW."StudentUniqueId"::text), NEW."DocumentId", 282);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Student_ReferentialIdentity" ON "edfi"."Student";
-CREATE TRIGGER "TR_Student_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Student"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Student_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Student_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -57424,25 +55678,6 @@ CREATE TRIGGER "TR_Student_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."Student"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Student_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAcademicRecord_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."TermDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 283;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAcademicRecord' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text || '#' || '$.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."TermDescriptor_DescriptorId"))), NEW."DocumentId", 283);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentAcademicRecord_ReferentialIdentity" ON "edfi"."StudentAcademicRecord";
-CREATE TRIGGER "TR_StudentAcademicRecord_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentAcademicRecord"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentAcademicRecord_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAcademicRecord_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -57665,25 +55900,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentAcademicRecordReportCard"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentAcademicRecordReportCard_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessment_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace" OR OLD."StudentAssessmentIdentifier" IS DISTINCT FROM NEW."StudentAssessmentIdentifier" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 284;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAssessment' || '$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text || '#' || '$.studentAssessmentIdentifier=' || NEW."StudentAssessmentIdentifier"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 284);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentAssessment_ReferentialIdentity" ON "edfi"."StudentAssessment";
-CREATE TRIGGER "TR_StudentAssessment_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentAssessment"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessment_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessment_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -57801,25 +56017,6 @@ CREATE TRIGGER "TR_StudentAssessmentAccommodation_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentAssessmentAccommodation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentAccommodation_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentEducationOrganizationAssociat_01d00e85ae"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationAssociationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationOrganizationAssociationTypeDescriptor_DescriptorId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."StudentAssessment_AssessmentIdentifier" IS DISTINCT FROM NEW."StudentAssessment_AssessmentIdentifier" OR OLD."StudentAssessment_Namespace" IS DISTINCT FROM NEW."StudentAssessment_Namespace" OR OLD."StudentAssessment_StudentAssessmentIdentifier" IS DISTINCT FROM NEW."StudentAssessment_StudentAssessmentIdentifier" OR OLD."StudentAssessment_StudentUniqueId" IS DISTINCT FROM NEW."StudentAssessment_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 285;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAssessmentEducationOrganizationAssociation' || '$.educationOrganizationAssociationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EducationOrganizationAssociationTypeDescriptor_DescriptorId")) || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.studentAssessmentReference.assessmentIdentifier=' || NEW."StudentAssessment_AssessmentIdentifier"::text || '#' || '$.studentAssessmentReference.namespace=' || NEW."StudentAssessment_Namespace"::text || '#' || '$.studentAssessmentReference.studentAssessmentIdentifier=' || NEW."StudentAssessment_StudentAssessmentIdentifier"::text || '#' || '$.studentAssessmentReference.studentUniqueId=' || NEW."StudentAssessment_StudentUniqueId"::text), NEW."DocumentId", 285);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentAssessmentEducationOrganizationAssociation_502c206e08" ON "edfi"."StudentAssessmentEducationOrganizationAssociation";
-CREATE TRIGGER "TR_StudentAssessmentEducationOrganizationAssociation_502c206e08"
-AFTER INSERT OR UPDATE ON "edfi"."StudentAssessmentEducationOrganizationAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentEducationOrganizationAssociat_01d00e85ae"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentEducationOrganizationAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -57982,25 +56179,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentAssessmentPerformanceLevel"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentPerformanceLevel_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistration_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AssessmentAdministration_AdministrationIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AdministrationIdentifier" OR OLD."AssessmentAdministration_AssessmentIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AssessmentIdentifier" OR OLD."AssessmentAdministration_AssigningEducationOrganizationId" IS DISTINCT FROM NEW."AssessmentAdministration_AssigningEducationOrganizationId" OR OLD."AssessmentAdministration_Namespace" IS DISTINCT FROM NEW."AssessmentAdministration_Namespace" OR OLD."StudentEducationOrganizationAssociation_EducationOrganizationId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_EducationOrganizationId" OR OLD."StudentUniqueId_Unified" IS DISTINCT FROM NEW."StudentUniqueId_Unified") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 286;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAssessmentRegistration' || '$.assessmentAdministrationReference.administrationIdentifier=' || NEW."AssessmentAdministration_AdministrationIdentifier"::text || '#' || '$.assessmentAdministrationReference.assessmentIdentifier=' || NEW."AssessmentAdministration_AssessmentIdentifier"::text || '#' || '$.assessmentAdministrationReference.assigningEducationOrganizationId=' || NEW."AssessmentAdministration_AssigningEducationOrganizationId"::text || '#' || '$.assessmentAdministrationReference.namespace=' || NEW."AssessmentAdministration_Namespace"::text || '#' || '$.studentEducationOrganizationAssociationReference.educationOrganizationId=' || NEW."StudentEducationOrganizationAssociation_EducationOrganizationId"::text || '#' || '$.studentEducationOrganizationAssociationReference.studentUniqueId=' || NEW."StudentEducationOrganizationAssociation_StudentUniqueId"::text), NEW."DocumentId", 286);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentAssessmentRegistration_ReferentialIdentity" ON "edfi"."StudentAssessmentRegistration";
-CREATE TRIGGER "TR_StudentAssessmentRegistration_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentAssessmentRegistration"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistration_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistration_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -58152,25 +56330,6 @@ CREATE TRIGGER "TR_StudentAssessmentRegistrationAssessmentCustomization_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentAssessmentRegistrationAssessmentCustomization"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistrationAssessmentCustomi_551bae4273"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistrationBatteryPartAssoci_e43562976f"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AssessmentBatteryPart_AssessmentBatteryPartName" IS DISTINCT FROM NEW."AssessmentBatteryPart_AssessmentBatteryPartName" OR OLD."AssessmentIdentifier_Unified" IS DISTINCT FROM NEW."AssessmentIdentifier_Unified" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."StudentAssessmentRegistration_AdministrationIdentifier" IS DISTINCT FROM NEW."StudentAssessmentRegistration_AdministrationIdentifier" OR OLD."StudentAssessmentRegistration_AssigningEducationOrganizationId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_AssigningEducationOrganizationId" OR OLD."StudentAssessmentRegistration_EducationOrganizationId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_EducationOrganizationId" OR OLD."StudentAssessmentRegistration_StudentUniqueId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 287;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAssessmentRegistrationBatteryPartAssociation' || '$.assessmentBatteryPartReference.assessmentBatteryPartName=' || NEW."AssessmentBatteryPart_AssessmentBatteryPartName"::text || '#' || '$.assessmentBatteryPartReference.assessmentIdentifier=' || NEW."AssessmentBatteryPart_AssessmentIdentifier"::text || '#' || '$.assessmentBatteryPartReference.namespace=' || NEW."AssessmentBatteryPart_Namespace"::text || '#' || '$.studentAssessmentRegistrationReference.administrationIdentifier=' || NEW."StudentAssessmentRegistration_AdministrationIdentifier"::text || '#' || '$.studentAssessmentRegistrationReference.assessmentIdentifier=' || NEW."StudentAssessmentRegistration_AssessmentIdentifier"::text || '#' || '$.studentAssessmentRegistrationReference.assigningEducationOrganizationId=' || NEW."StudentAssessmentRegistration_AssigningEducationOrganizationId"::text || '#' || '$.studentAssessmentRegistrationReference.educationOrganizationId=' || NEW."StudentAssessmentRegistration_EducationOrganizationId"::text || '#' || '$.studentAssessmentRegistrationReference.namespace=' || NEW."StudentAssessmentRegistration_Namespace"::text || '#' || '$.studentAssessmentRegistrationReference.studentUniqueId=' || NEW."StudentAssessmentRegistration_StudentUniqueId"::text), NEW."DocumentId", 287);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentAssessmentRegistrationBatteryPartAssociati_8a2cfdb614" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation";
-CREATE TRIGGER "TR_StudentAssessmentRegistrationBatteryPartAssociati_8a2cfdb614"
-AFTER INSERT OR UPDATE ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistrationBatteryPartAssoci_e43562976f"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistrationBatteryPartAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -58427,29 +56586,6 @@ BEFORE INSERT OR UPDATE ON "edfi"."StudentCTEProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociation_AbstractIdentity"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 288;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentCTEProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 288);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentCTEProgramAssociation_ReferentialIdentity" ON "edfi"."StudentCTEProgramAssociation";
-CREATE TRIGGER "TR_StudentCTEProgramAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentCTEProgramAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociation_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -58564,25 +56700,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentCTEProgramAssociationProgram
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociationProgramParticipati_3ab70529b3"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCohortAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."Cohort_CohortIdentifier" IS DISTINCT FROM NEW."Cohort_CohortIdentifier" OR OLD."Cohort_EducationOrganizationId" IS DISTINCT FROM NEW."Cohort_EducationOrganizationId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 290;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentCohortAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.cohortReference.cohortIdentifier=' || NEW."Cohort_CohortIdentifier"::text || '#' || '$.cohortReference.educationOrganizationId=' || NEW."Cohort_EducationOrganizationId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 290);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentCohortAssociation_ReferentialIdentity" ON "edfi"."StudentCohortAssociation";
-CREATE TRIGGER "TR_StudentCohortAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentCohortAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentCohortAssociation_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCohortAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -58694,25 +56811,6 @@ CREATE TRIGGER "TR_StudentCohortAssociationSection_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentCohortAssociationSection"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentCohortAssociationSection_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCompetencyObjective_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodName" OR OLD."GradingPeriodGradingPeriod_SchoolId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolId" OR OLD."GradingPeriodGradingPeriod_SchoolYear" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolYear" OR OLD."ObjectiveCompetencyObjective_EducationOrganizationId" IS DISTINCT FROM NEW."ObjectiveCompetencyObjective_EducationOrganizationId" OR OLD."ObjectiveCompetencyObjective_Objective" IS DISTINCT FROM NEW."ObjectiveCompetencyObjective_Objective" OR OLD."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e" IS DISTINCT FROM NEW."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 291;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentCompetencyObjective' || '$.gradingPeriodReference.gradingPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId")) || '#' || '$.gradingPeriodReference.gradingPeriodName=' || NEW."GradingPeriodGradingPeriod_GradingPeriodName"::text || '#' || '$.gradingPeriodReference.schoolId=' || NEW."GradingPeriodGradingPeriod_SchoolId"::text || '#' || '$.gradingPeriodReference.schoolYear=' || NEW."GradingPeriodGradingPeriod_SchoolYear"::text || '#' || '$.objectiveCompetencyObjectiveReference.educationOrganizationId=' || NEW."ObjectiveCompetencyObjective_EducationOrganizationId"::text || '#' || '$.objectiveCompetencyObjectiveReference.objective=' || NEW."ObjectiveCompetencyObjective_Objective"::text || '#' || '$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 291);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentCompetencyObjective_ReferentialIdentity" ON "edfi"."StudentCompetencyObjective";
-CREATE TRIGGER "TR_StudentCompetencyObjective_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentCompetencyObjective"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentCompetencyObjective_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCompetencyObjective_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -58893,25 +56991,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentCompetencyObjectiveStudentSe
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentCompetencyObjectiveStudentSectionAssociation_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentContactAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Contact_ContactUniqueId" IS DISTINCT FROM NEW."Contact_ContactUniqueId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 292;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentContactAssociation' || '$.contactReference.contactUniqueId=' || NEW."Contact_ContactUniqueId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 292);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentContactAssociation_ReferentialIdentity" ON "edfi"."StudentContactAssociation";
-CREATE TRIGGER "TR_StudentContactAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentContactAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentContactAssociation_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentContactAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -58995,25 +57074,6 @@ CREATE TRIGGER "TR_StudentContactAssociation_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentContactAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentContactAssociation_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentBehaviorAssociation_R_062e47dda0"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BehaviorDescriptor_DescriptorId" IS DISTINCT FROM NEW."BehaviorDescriptor_DescriptorId" OR OLD."DisciplineIncident_IncidentIdentifier" IS DISTINCT FROM NEW."DisciplineIncident_IncidentIdentifier" OR OLD."DisciplineIncident_SchoolId" IS DISTINCT FROM NEW."DisciplineIncident_SchoolId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 293;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentDisciplineIncidentBehaviorAssociation' || '$.behaviorDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."BehaviorDescriptor_DescriptorId")) || '#' || '$.disciplineIncidentReference.incidentIdentifier=' || NEW."DisciplineIncident_IncidentIdentifier"::text || '#' || '$.disciplineIncidentReference.schoolId=' || NEW."DisciplineIncident_SchoolId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 293);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentDisciplineIncidentBehaviorAssociation_Refe_1c447e3190" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation";
-CREATE TRIGGER "TR_StudentDisciplineIncidentBehaviorAssociation_Refe_1c447e3190"
-AFTER INSERT OR UPDATE ON "edfi"."StudentDisciplineIncidentBehaviorAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentBehaviorAssociation_R_062e47dda0"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentBehaviorAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -59161,25 +57221,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentDisciplineIncidentBehaviorAs
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentBehaviorAssociationWeapon_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentNonOffenderAssociatio_6adebbb91b"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."DisciplineIncident_IncidentIdentifier" IS DISTINCT FROM NEW."DisciplineIncident_IncidentIdentifier" OR OLD."DisciplineIncident_SchoolId" IS DISTINCT FROM NEW."DisciplineIncident_SchoolId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 294;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentDisciplineIncidentNonOffenderAssociation' || '$.disciplineIncidentReference.incidentIdentifier=' || NEW."DisciplineIncident_IncidentIdentifier"::text || '#' || '$.disciplineIncidentReference.schoolId=' || NEW."DisciplineIncident_SchoolId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 294);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentDisciplineIncidentNonOffenderAssociation_R_d76c2c802e" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation";
-CREATE TRIGGER "TR_StudentDisciplineIncidentNonOffenderAssociation_R_d76c2c802e"
-AFTER INSERT OR UPDATE ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentNonOffenderAssociatio_6adebbb91b"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentNonOffenderAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -59286,25 +57327,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentDisciplineIncidentNonOffende
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentNonOffenderAssociatio_f684a3b574"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssessmentAccommod_de70fa5c7a"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 295;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentEducationOrganizationAssessmentAccommodation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 295);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentEducationOrganizationAssessmentAccommodati_761f828fb2" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation";
-CREATE TRIGGER "TR_StudentEducationOrganizationAssessmentAccommodati_761f828fb2"
-AFTER INSERT OR UPDATE ON "edfi"."StudentEducationOrganizationAssessmentAccommodation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssessmentAccommod_de70fa5c7a"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssessmentAccommodation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -59404,25 +57426,6 @@ CREATE TRIGGER "TR_StudentEducationOrganizationAssessmentAccommodati_4799a2e607"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentEducationOrganizationAssessmentAccommodationG_d1d10af462"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssessmentAccommod_e78486e8f5"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociation_Refere_354f494b67"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 296;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentEducationOrganizationAssociation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 296);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentEducationOrganizationAssociation_ReferentialIdentity" ON "edfi"."StudentEducationOrganizationAssociation";
-CREATE TRIGGER "TR_StudentEducationOrganizationAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentEducationOrganizationAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociation_Refere_354f494b67"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -59974,25 +57977,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentEducationOrganizationAssocia
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationTribalA_12cb8c874a"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationResponsibilityAsso_0181c8be0e"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ResponsibilityDescriptor_DescriptorId" IS DISTINCT FROM NEW."ResponsibilityDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 297;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentEducationOrganizationResponsibilityAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.responsibilityDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ResponsibilityDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 297);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentEducationOrganizationResponsibilityAssocia_4c079ed73b" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation";
-CREATE TRIGGER "TR_StudentEducationOrganizationResponsibilityAssocia_4c079ed73b"
-AFTER INSERT OR UPDATE ON "edfi"."StudentEducationOrganizationResponsibilityAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationResponsibilityAsso_0181c8be0e"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationResponsibilityAsso_a1b8c7881b"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -60089,25 +58073,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentEducationOrganizationRespons
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationResponsibilityAsso_a1b8c7881b"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentGradebookEntry_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."GradebookEntry_GradebookEntryIdentifier" IS DISTINCT FROM NEW."GradebookEntry_GradebookEntryIdentifier" OR OLD."GradebookEntry_Namespace" IS DISTINCT FROM NEW."GradebookEntry_Namespace" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 298;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentGradebookEntry' || '$.gradebookEntryReference.gradebookEntryIdentifier=' || NEW."GradebookEntry_GradebookEntryIdentifier"::text || '#' || '$.gradebookEntryReference.namespace=' || NEW."GradebookEntry_Namespace"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 298);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentGradebookEntry_ReferentialIdentity" ON "edfi"."StudentGradebookEntry";
-CREATE TRIGGER "TR_StudentGradebookEntry_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentGradebookEntry"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentGradebookEntry_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentGradebookEntry_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -60188,25 +58153,6 @@ CREATE TRIGGER "TR_StudentGradebookEntry_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentGradebookEntry"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentGradebookEntry_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentHealth_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 299;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentHealth' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 299);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentHealth_ReferentialIdentity" ON "edfi"."StudentHealth";
-CREATE TRIGGER "TR_StudentHealth_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentHealth"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentHealth_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentHealth_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -60402,29 +58348,6 @@ BEFORE INSERT OR UPDATE ON "edfi"."StudentHomelessProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociation_AbstractIdentity"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 300;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentHomelessProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 300);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentHomelessProgramAssociation_ReferentialIdentity" ON "edfi"."StudentHomelessProgramAssociation";
-CREATE TRIGGER "TR_StudentHomelessProgramAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentHomelessProgramAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociation_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -60564,25 +58487,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentIdentificationDocument"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentIdentificationDocument_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentInterventionAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Intervention_EducationOrganizationId" IS DISTINCT FROM NEW."Intervention_EducationOrganizationId" OR OLD."Intervention_InterventionIdentificationCode" IS DISTINCT FROM NEW."Intervention_InterventionIdentificationCode" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 302;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentInterventionAssociation' || '$.interventionReference.educationOrganizationId=' || NEW."Intervention_EducationOrganizationId"::text || '#' || '$.interventionReference.interventionIdentificationCode=' || NEW."Intervention_InterventionIdentificationCode"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 302);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentInterventionAssociation_ReferentialIdentity" ON "edfi"."StudentInterventionAssociation";
-CREATE TRIGGER "TR_StudentInterventionAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentInterventionAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentInterventionAssociation_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentInterventionAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -60688,25 +58592,6 @@ CREATE TRIGGER "TR_StudentInterventionAssociationInterventionEffecti_9e23365cb3"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentInterventionAssociationInterventionEffectiveness"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentInterventionAssociationInterventionEffe_4927dea138"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentInterventionAttendanceEvent_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."Intervention_EducationOrganizationId" IS DISTINCT FROM NEW."Intervention_EducationOrganizationId" OR OLD."Intervention_InterventionIdentificationCode" IS DISTINCT FROM NEW."Intervention_InterventionIdentificationCode" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 303;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentInterventionAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId")) || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.interventionReference.educationOrganizationId=' || NEW."Intervention_EducationOrganizationId"::text || '#' || '$.interventionReference.interventionIdentificationCode=' || NEW."Intervention_InterventionIdentificationCode"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 303);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentInterventionAttendanceEvent_ReferentialIdentity" ON "edfi"."StudentInterventionAttendanceEvent";
-CREATE TRIGGER "TR_StudentInterventionAttendanceEvent_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentInterventionAttendanceEvent"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentInterventionAttendanceEvent_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentInterventionAttendanceEvent_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -60828,29 +58713,6 @@ CREATE TRIGGER "TR_StudentLanguageInstructionProgramAssociation_Abst_57ea525497"
 BEFORE INSERT OR UPDATE ON "edfi"."StudentLanguageInstructionProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociation_A_a427138fb0"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociation_R_df835db007"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 304;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentLanguageInstructionProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 304);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentLanguageInstructionProgramAssociation_Refe_8658d721a3" ON "edfi"."StudentLanguageInstructionProgramAssociation";
-CREATE TRIGGER "TR_StudentLanguageInstructionProgramAssociation_Refe_8658d721a3"
-AFTER INSERT OR UPDATE ON "edfi"."StudentLanguageInstructionProgramAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociation_R_df835db007"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -61010,29 +58872,6 @@ BEFORE INSERT OR UPDATE ON "edfi"."StudentMigrantEducationProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociation_Abst_bd3ba064b4"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociation_Refe_6d2fba1afc"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 305;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentMigrantEducationProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 305);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentMigrantEducationProgramAssociation_Referen_654de036cb" ON "edfi"."StudentMigrantEducationProgramAssociation";
-CREATE TRIGGER "TR_StudentMigrantEducationProgramAssociation_Referen_654de036cb"
-AFTER INSERT OR UPDATE ON "edfi"."StudentMigrantEducationProgramAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociation_Refe_6d2fba1afc"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -61165,29 +59004,6 @@ CREATE TRIGGER "TR_StudentNeglectedOrDelinquentProgramAssociation_Ab_87c6f879b8"
 BEFORE INSERT OR UPDATE ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAssociation_d42448777f"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAssociation_d45f1f5f4d"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 306;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentNeglectedOrDelinquentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 306);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentNeglectedOrDelinquentProgramAssociation_Re_699dcdd09c" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation";
-CREATE TRIGGER "TR_StudentNeglectedOrDelinquentProgramAssociation_Re_699dcdd09c"
-AFTER INSERT OR UPDATE ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAssociation_d45f1f5f4d"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -61372,29 +59188,6 @@ BEFORE INSERT OR UPDATE ON "edfi"."StudentProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramAssociation_AbstractIdentity"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 307;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 307);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentProgramAssociation_ReferentialIdentity" ON "edfi"."StudentProgramAssociation";
-CREATE TRIGGER "TR_StudentProgramAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentProgramAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramAssociation_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -61508,25 +59301,6 @@ CREATE TRIGGER "TR_StudentProgramAssociationService_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentProgramAssociationService"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramAssociationService_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramAttendanceEvent_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 308;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentProgramAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId")) || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 308);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentProgramAttendanceEvent_ReferentialIdentity" ON "edfi"."StudentProgramAttendanceEvent";
-CREATE TRIGGER "TR_StudentProgramAttendanceEvent_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentProgramAttendanceEvent"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramAttendanceEvent_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramAttendanceEvent_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -61650,25 +59424,6 @@ CREATE TRIGGER "TR_StudentProgramAttendanceEvent_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentProgramAttendanceEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramAttendanceEvent_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramEvaluation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EvaluationDate" IS DISTINCT FROM NEW."EvaluationDate" OR OLD."ProgramEvaluation_ProgramEducationOrganizationId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEducationOrganizationId" OR OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" OR OLD."ProgramEvaluation_ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTitle" OR OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" OR OLD."ProgramEvaluation_ProgramName" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramName" OR OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 309;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentProgramEvaluation' || '$.evaluationDate=' || NEW."EvaluationDate"::text || '#' || '$.programEvaluationReference.programEducationOrganizationId=' || NEW."ProgramEvaluation_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationReference.programEvaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e")) || '#' || '$.programEvaluationReference.programEvaluationTitle=' || NEW."ProgramEvaluation_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationReference.programEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId")) || '#' || '$.programEvaluationReference.programName=' || NEW."ProgramEvaluation_ProgramName"::text || '#' || '$.programEvaluationReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 309);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentProgramEvaluation_ReferentialIdentity" ON "edfi"."StudentProgramEvaluation";
-CREATE TRIGGER "TR_StudentProgramEvaluation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentProgramEvaluation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramEvaluation_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramEvaluation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -61883,25 +59638,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentProgramEvaluationStudentEval
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramEvaluationStudentEvaluationObjective_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EntryDate" IS DISTINCT FROM NEW."EntryDate" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 310;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolAssociation' || '$.entryDate=' || NEW."EntryDate"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 310);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentSchoolAssociation_ReferentialIdentity" ON "edfi"."StudentSchoolAssociation";
-CREATE TRIGGER "TR_StudentSchoolAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentSchoolAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -62033,25 +59769,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentSchoolAssociationEducationPl
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAssociationEducationPlan_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolAttendanceEvent_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."Session_SchoolYear" IS DISTINCT FROM NEW."Session_SchoolYear" OR OLD."Session_SessionName" IS DISTINCT FROM NEW."Session_SessionName" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 311;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId")) || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.sessionReference.schoolId=' || NEW."Session_SchoolId"::text || '#' || '$.sessionReference.schoolYear=' || NEW."Session_SchoolYear"::text || '#' || '$.sessionReference.sessionName=' || NEW."Session_SessionName"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 311);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentSchoolAttendanceEvent_ReferentialIdentity" ON "edfi"."StudentSchoolAttendanceEvent";
-CREATE TRIGGER "TR_StudentSchoolAttendanceEvent_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentSchoolAttendanceEvent"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAttendanceEvent_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolAttendanceEvent_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -62178,29 +59895,6 @@ CREATE TRIGGER "TR_StudentSchoolFoodServiceProgramAssociation_AbstractIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."StudentSchoolFoodServiceProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociation_Abs_a18cc7d62d"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociation_Ref_6bb8851122"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 312;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolFoodServiceProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 312);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentSchoolFoodServiceProgramAssociation_Refere_e2f2b09b1b" ON "edfi"."StudentSchoolFoodServiceProgramAssociation";
-CREATE TRIGGER "TR_StudentSchoolFoodServiceProgramAssociation_Refere_e2f2b09b1b"
-AFTER INSERT OR UPDATE ON "edfi"."StudentSchoolFoodServiceProgramAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociation_Ref_6bb8851122"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -62335,29 +60029,6 @@ BEFORE INSERT OR UPDATE ON "edfi"."StudentSection504ProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSection504ProgramAssociation_AbstractIdentity"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSection504ProgramAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 313;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSection504ProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 313);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentSection504ProgramAssociation_ReferentialIdentity" ON "edfi"."StudentSection504ProgramAssociation";
-CREATE TRIGGER "TR_StudentSection504ProgramAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentSection504ProgramAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentSection504ProgramAssociation_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSection504ProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -62446,25 +60117,6 @@ CREATE TRIGGER "TR_StudentSection504ProgramAssociationProgramPartici_21b5949a2d"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentSection504ProgramAssociationProgramParticipationStatus"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSection504ProgramAssociationProgramPart_9f8f0843de"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSectionAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 314;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSectionAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$.sectionReference.sessionName=' || NEW."Section_SessionName"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 314);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentSectionAssociation_ReferentialIdentity" ON "edfi"."StudentSectionAssociation";
-CREATE TRIGGER "TR_StudentSectionAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentSectionAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentSectionAssociation_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSectionAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -62595,25 +60247,6 @@ CREATE TRIGGER "TR_StudentSectionAssociationProgram_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentSectionAssociationProgram"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSectionAssociationProgram_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSectionAttendanceEvent_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 315;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSectionAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId")) || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$.sectionReference.sessionName=' || NEW."Section_SessionName"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 315);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentSectionAttendanceEvent_ReferentialIdentity" ON "edfi"."StudentSectionAttendanceEvent";
-CREATE TRIGGER "TR_StudentSectionAttendanceEvent_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentSectionAttendanceEvent"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentSectionAttendanceEvent_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSectionAttendanceEvent_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -62778,29 +60411,6 @@ CREATE TRIGGER "TR_StudentSpecialEducationProgramAssociation_AbstractIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."StudentSpecialEducationProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociation_Abst_1454967766"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociation_Refe_db329b6f45"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 316;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSpecialEducationProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 316);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentSpecialEducationProgramAssociation_Referen_e816d5e0e9" ON "edfi"."StudentSpecialEducationProgramAssociation";
-CREATE TRIGGER "TR_StudentSpecialEducationProgramAssociation_Referen_e816d5e0e9"
-AFTER INSERT OR UPDATE ON "edfi"."StudentSpecialEducationProgramAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociation_Refe_db329b6f45"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -63016,25 +60626,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentSpecialEducationProgramAssoc
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociationSpeci_647edcb86d"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramEligibilityAssoc_89bc083174"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."ConsentToEvaluationReceivedDate" IS DISTINCT FROM NEW."ConsentToEvaluationReceivedDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 317;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSpecialEducationProgramEligibilityAssociation' || '$.consentToEvaluationReceivedDate=' || NEW."ConsentToEvaluationReceivedDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 317);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentSpecialEducationProgramEligibilityAssociat_ec4993374f" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation";
-CREATE TRIGGER "TR_StudentSpecialEducationProgramEligibilityAssociat_ec4993374f"
-AFTER INSERT OR UPDATE ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramEligibilityAssoc_89bc083174"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramEligibilityAssoc_866b819ed0"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -63162,29 +60753,6 @@ BEFORE INSERT OR UPDATE ON "edfi"."StudentTitleIPartAProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociation_AbstractIdentity"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 318;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentTitleIPartAProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 318);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentTitleIPartAProgramAssociation_ReferentialIdentity" ON "edfi"."StudentTitleIPartAProgramAssociation";
-CREATE TRIGGER "TR_StudentTitleIPartAProgramAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentTitleIPartAProgramAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociation_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -63298,25 +60866,6 @@ CREATE TRIGGER "TR_StudentTitleIPartAProgramAssociationTitleIPartAPr_38e49d62d5"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentTitleIPartAProgramAssociationTitleIPartAProgramService"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociationTitleIPart_2d2eaf08ab"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentTransportation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."TransportationEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."TransportationEducationOrganization_EducationOrganizationId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 319;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentTransportation' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text || '#' || '$.transportationEducationOrganizationReference.educationOrganizationId=' || NEW."TransportationEducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 319);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_StudentTransportation_ReferentialIdentity" ON "edfi"."StudentTransportation";
-CREATE TRIGGER "TR_StudentTransportation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."StudentTransportation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_StudentTransportation_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentTransportation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -63468,25 +61017,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentVisa"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentVisa_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Survey_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."SurveyIdentifier" IS DISTINCT FROM NEW."SurveyIdentifier") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 322;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurvey' || '$.namespace=' || NEW."Namespace"::text || '#' || '$.surveyIdentifier=' || NEW."SurveyIdentifier"::text), NEW."DocumentId", 322);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Survey_ReferentialIdentity" ON "edfi"."Survey";
-CREATE TRIGGER "TR_Survey_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Survey"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Survey_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Survey_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -63550,25 +61080,6 @@ CREATE TRIGGER "TR_Survey_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."Survey"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Survey_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyCourseAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Course_CourseCode" IS DISTINCT FROM NEW."Course_CourseCode" OR OLD."Course_EducationOrganizationId" IS DISTINCT FROM NEW."Course_EducationOrganizationId" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 324;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyCourseAssociation' || '$.courseReference.courseCode=' || NEW."Course_CourseCode"::text || '#' || '$.courseReference.educationOrganizationId=' || NEW."Course_EducationOrganizationId"::text || '#' || '$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text), NEW."DocumentId", 324);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SurveyCourseAssociation_ReferentialIdentity" ON "edfi"."SurveyCourseAssociation";
-CREATE TRIGGER "TR_SurveyCourseAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."SurveyCourseAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SurveyCourseAssociation_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyCourseAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -63645,25 +61156,6 @@ CREATE TRIGGER "TR_SurveyCourseAssociation_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SurveyCourseAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyCourseAssociation_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyProgramAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Program_EducationOrganizationId" IS DISTINCT FROM NEW."Program_EducationOrganizationId" OR OLD."Program_ProgramName" IS DISTINCT FROM NEW."Program_ProgramName" OR OLD."Program_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."Program_ProgramTypeDescriptor_DescriptorId" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 326;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyProgramAssociation' || '$.programReference.educationOrganizationId=' || NEW."Program_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."Program_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."Program_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text), NEW."DocumentId", 326);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SurveyProgramAssociation_ReferentialIdentity" ON "edfi"."SurveyProgramAssociation";
-CREATE TRIGGER "TR_SurveyProgramAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."SurveyProgramAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SurveyProgramAssociation_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -63757,25 +61249,6 @@ CREATE TRIGGER "TR_SurveyProgramAssociation_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SurveyProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyProgramAssociation_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyQuestion_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."QuestionCode" IS DISTINCT FROM NEW."QuestionCode" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 327;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyQuestion' || '$.questionCode=' || NEW."QuestionCode"::text || '#' || '$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text), NEW."DocumentId", 327);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SurveyQuestion_ReferentialIdentity" ON "edfi"."SurveyQuestion";
-CREATE TRIGGER "TR_SurveyQuestion_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."SurveyQuestion"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SurveyQuestion_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyQuestion_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -63871,25 +61344,6 @@ CREATE TRIGGER "TR_SurveyQuestionMatrice_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SurveyQuestionMatrice"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyQuestionMatrice_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyQuestionResponse_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyQuestion_QuestionCode" IS DISTINCT FROM NEW."SurveyQuestion_QuestionCode" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 328;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyQuestionResponse' || '$.surveyQuestionReference.namespace=' || NEW."SurveyQuestion_Namespace"::text || '#' || '$.surveyQuestionReference.questionCode=' || NEW."SurveyQuestion_QuestionCode"::text || '#' || '$.surveyQuestionReference.surveyIdentifier=' || NEW."SurveyQuestion_SurveyIdentifier"::text || '#' || '$.surveyResponseReference.namespace=' || NEW."SurveyResponse_Namespace"::text || '#' || '$.surveyResponseReference.surveyIdentifier=' || NEW."SurveyResponse_SurveyIdentifier"::text || '#' || '$.surveyResponseReference.surveyResponseIdentifier=' || NEW."SurveyResponse_SurveyResponseIdentifier"::text), NEW."DocumentId", 328);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SurveyQuestionResponse_ReferentialIdentity" ON "edfi"."SurveyQuestionResponse";
-CREATE TRIGGER "TR_SurveyQuestionResponse_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."SurveyQuestionResponse"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SurveyQuestionResponse_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyQuestionResponse_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -64042,25 +61496,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SurveyQuestionResponseValue"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyQuestionResponseValue_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyResponse_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier" OR OLD."SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponseIdentifier") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 329;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyResponse' || '$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text || '#' || '$.surveyResponseIdentifier=' || NEW."SurveyResponseIdentifier"::text), NEW."DocumentId", 329);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SurveyResponse_ReferentialIdentity" ON "edfi"."SurveyResponse";
-CREATE TRIGGER "TR_SurveyResponse_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."SurveyResponse"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponse_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyResponse_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -64130,25 +61565,6 @@ CREATE TRIGGER "TR_SurveyResponse_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SurveyResponse"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponse_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyResponseEducationOrganizationTargetAssoc_c261f075c0"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SurveyResponse_Namespace" IS DISTINCT FROM NEW."SurveyResponse_Namespace" OR OLD."SurveyResponse_SurveyIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyIdentifier" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 330;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyResponseEducationOrganizationTargetAssociation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.surveyResponseReference.namespace=' || NEW."SurveyResponse_Namespace"::text || '#' || '$.surveyResponseReference.surveyIdentifier=' || NEW."SurveyResponse_SurveyIdentifier"::text || '#' || '$.surveyResponseReference.surveyResponseIdentifier=' || NEW."SurveyResponse_SurveyResponseIdentifier"::text), NEW."DocumentId", 330);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SurveyResponseEducationOrganizationTargetAssociat_9770bdcff3" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation";
-CREATE TRIGGER "TR_SurveyResponseEducationOrganizationTargetAssociat_9770bdcff3"
-AFTER INSERT OR UPDATE ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponseEducationOrganizationTargetAssoc_c261f075c0"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyResponseEducationOrganizationTargetAssoc_b5eabc71b9"()
 RETURNS TRIGGER AS $func$
@@ -64225,25 +61641,6 @@ CREATE TRIGGER "TR_SurveyResponseEducationOrganizationTargetAssociation_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponseEducationOrganizationTargetAssoc_b5eabc71b9"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyResponseStaffTargetAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."SurveyResponse_Namespace" IS DISTINCT FROM NEW."SurveyResponse_Namespace" OR OLD."SurveyResponse_SurveyIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyIdentifier" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 331;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyResponseStaffTargetAssociation' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text || '#' || '$.surveyResponseReference.namespace=' || NEW."SurveyResponse_Namespace"::text || '#' || '$.surveyResponseReference.surveyIdentifier=' || NEW."SurveyResponse_SurveyIdentifier"::text || '#' || '$.surveyResponseReference.surveyResponseIdentifier=' || NEW."SurveyResponse_SurveyResponseIdentifier"::text), NEW."DocumentId", 331);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SurveyResponseStaffTargetAssociation_ReferentialIdentity" ON "edfi"."SurveyResponseStaffTargetAssociation";
-CREATE TRIGGER "TR_SurveyResponseStaffTargetAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."SurveyResponseStaffTargetAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponseStaffTargetAssociation_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyResponseStaffTargetAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -64357,25 +61754,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SurveyResponseSurveyLevel"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponseSurveyLevel_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveySection_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier" OR OLD."SurveySectionTitle" IS DISTINCT FROM NEW."SurveySectionTitle") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 332;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveySection' || '$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text || '#' || '$.surveySectionTitle=' || NEW."SurveySectionTitle"::text), NEW."DocumentId", 332);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SurveySection_ReferentialIdentity" ON "edfi"."SurveySection";
-CREATE TRIGGER "TR_SurveySection_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."SurveySection"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SurveySection_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveySection_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -64445,25 +61823,6 @@ CREATE TRIGGER "TR_SurveySection_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SurveySection"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveySection_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveySectionAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 333;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveySectionAssociation' || '$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$.sectionReference.sessionName=' || NEW."Section_SessionName"::text || '#' || '$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text), NEW."DocumentId", 333);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SurveySectionAssociation_ReferentialIdentity" ON "edfi"."SurveySectionAssociation";
-CREATE TRIGGER "TR_SurveySectionAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."SurveySectionAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionAssociation_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveySectionAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -64558,25 +61917,6 @@ CREATE TRIGGER "TR_SurveySectionAssociation_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SurveySectionAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionAssociation_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveySectionResponse_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier" OR OLD."SurveySection_SurveySectionTitle" IS DISTINCT FROM NEW."SurveySection_SurveySectionTitle") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 334;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveySectionResponse' || '$.surveyResponseReference.namespace=' || NEW."SurveyResponse_Namespace"::text || '#' || '$.surveyResponseReference.surveyIdentifier=' || NEW."SurveyResponse_SurveyIdentifier"::text || '#' || '$.surveyResponseReference.surveyResponseIdentifier=' || NEW."SurveyResponse_SurveyResponseIdentifier"::text || '#' || '$.surveySectionReference.namespace=' || NEW."SurveySection_Namespace"::text || '#' || '$.surveySectionReference.surveyIdentifier=' || NEW."SurveySection_SurveyIdentifier"::text || '#' || '$.surveySectionReference.surveySectionTitle=' || NEW."SurveySection_SurveySectionTitle"::text), NEW."DocumentId", 334);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SurveySectionResponse_ReferentialIdentity" ON "edfi"."SurveySectionResponse";
-CREATE TRIGGER "TR_SurveySectionResponse_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."SurveySectionResponse"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionResponse_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveySectionResponse_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -64736,44 +62076,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SurveySectionResponseEducationOrgan
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionResponseEducationOrganizationTarg_e4563c7667"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveySectionResponseEducationOrganizationTarg_7609793e43"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."SurveySectionResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveySectionResponse_SurveyResponseIdentifier" OR OLD."SurveySectionResponse_SurveySectionTitle" IS DISTINCT FROM NEW."SurveySectionResponse_SurveySectionTitle") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 335;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveySectionResponseEducationOrganizationTargetAssociation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.surveySectionResponseReference.namespace=' || NEW."SurveySectionResponse_SurveyResponseReferenceNamespace"::text || '#' || '$.surveySectionResponseReference.surveyIdentifier=' || NEW."SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier"::text || '#' || '$.surveySectionResponseReference.surveyResponseIdentifier=' || NEW."SurveySectionResponse_SurveyResponseIdentifier"::text || '#' || '$.surveySectionResponseReference.surveySectionTitle=' || NEW."SurveySectionResponse_SurveySectionTitle"::text), NEW."DocumentId", 335);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SurveySectionResponseEducationOrganizationTargetA_f6512e6500" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation";
-CREATE TRIGGER "TR_SurveySectionResponseEducationOrganizationTargetA_f6512e6500"
-AFTER INSERT OR UPDATE ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionResponseEducationOrganizationTarg_7609793e43"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveySectionResponseStaffTargetAssociation_Re_a36b366b65"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."SurveySectionResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveySectionResponse_SurveyResponseIdentifier" OR OLD."SurveySectionResponse_SurveySectionTitle" IS DISTINCT FROM NEW."SurveySectionResponse_SurveySectionTitle") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 336;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveySectionResponseStaffTargetAssociation' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text || '#' || '$.surveySectionResponseReference.namespace=' || NEW."SurveySectionResponse_SurveyResponseReferenceNamespace"::text || '#' || '$.surveySectionResponseReference.surveyIdentifier=' || NEW."SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier"::text || '#' || '$.surveySectionResponseReference.surveyResponseIdentifier=' || NEW."SurveySectionResponse_SurveyResponseIdentifier"::text || '#' || '$.surveySectionResponseReference.surveySectionTitle=' || NEW."SurveySectionResponse_SurveySectionTitle"::text), NEW."DocumentId", 336);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SurveySectionResponseStaffTargetAssociation_Refer_8493fcda69" ON "edfi"."SurveySectionResponseStaffTargetAssociation";
-CREATE TRIGGER "TR_SurveySectionResponseStaffTargetAssociation_Refer_8493fcda69"
-AFTER INSERT OR UPDATE ON "edfi"."SurveySectionResponseStaffTargetAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionResponseStaffTargetAssociation_Re_a36b366b65"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveySectionResponseStaffTargetAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -64866,25 +62168,6 @@ CREATE TRIGGER "TR_SurveySectionResponseStaffTargetAssociation_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SurveySectionResponseStaffTargetAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionResponseStaffTargetAssociation_Stamp"();
-
-CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_Candidate_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."CandidateIdentifier" IS DISTINCT FROM NEW."CandidateIdentifier") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 354;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'TPDMCandidate' || '$.candidateIdentifier=' || NEW."CandidateIdentifier"::text), NEW."DocumentId", 354);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Candidate_ReferentialIdentity" ON "tpdm"."Candidate";
-CREATE TRIGGER "TR_Candidate_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "tpdm"."Candidate"
-FOR EACH ROW
-EXECUTE FUNCTION "tpdm"."TF_TR_Candidate_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_Candidate_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -65043,25 +62326,6 @@ CREATE TRIGGER "TR_CandidateDisabilityDesignation_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "tpdm"."CandidateDisabilityDesignation"
 FOR EACH ROW
 EXECUTE FUNCTION "tpdm"."TF_TR_CandidateDisabilityDesignation_Stamp"();
-
-CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_CandidateEducatorPreparationProgramAssociation_fa63d7ad98"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."Candidate_CandidateIdentifier" IS DISTINCT FROM NEW."Candidate_CandidateIdentifier" OR OLD."EducatorPreparationProgram_EducationOrganizationId" IS DISTINCT FROM NEW."EducatorPreparationProgram_EducationOrganizationId" OR OLD."EducatorPreparationProgram_ProgramName" IS DISTINCT FROM NEW."EducatorPreparationProgram_ProgramName" OR OLD."EducatorPreparationProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducatorPreparationProgram_ProgramTypeDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 355;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'TPDMCandidateEducatorPreparationProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.candidateReference.candidateIdentifier=' || NEW."Candidate_CandidateIdentifier"::text || '#' || '$.educatorPreparationProgramReference.educationOrganizationId=' || NEW."EducatorPreparationProgram_EducationOrganizationId"::text || '#' || '$.educatorPreparationProgramReference.programName=' || NEW."EducatorPreparationProgram_ProgramName"::text || '#' || '$.educatorPreparationProgramReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EducatorPreparationProgram_ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 355);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_CandidateEducatorPreparationProgramAssociation_Re_5578d3bcc0" ON "tpdm"."CandidateEducatorPreparationProgramAssociation";
-CREATE TRIGGER "TR_CandidateEducatorPreparationProgramAssociation_Re_5578d3bcc0"
-AFTER INSERT OR UPDATE ON "tpdm"."CandidateEducatorPreparationProgramAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "tpdm"."TF_TR_CandidateEducatorPreparationProgramAssociation_fa63d7ad98"();
 
 CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_CandidateEducatorPreparationProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -65431,25 +62695,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "tpdm"."CredentialExtensionStudentAcademicR
 FOR EACH ROW
 EXECUTE FUNCTION "tpdm"."TF_TR_CredentialExtensionStudentAcademicRecord_Stamp"();
 
-CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_EducatorPreparationProgram_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramName" IS DISTINCT FROM NEW."ProgramName" OR OLD."ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramTypeDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 360;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'TPDMEducatorPreparationProgram' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programName=' || NEW."ProgramName"::text || '#' || '$.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 360);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_EducatorPreparationProgram_ReferentialIdentity" ON "tpdm"."EducatorPreparationProgram";
-CREATE TRIGGER "TR_EducatorPreparationProgram_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "tpdm"."EducatorPreparationProgram"
-FOR EACH ROW
-EXECUTE FUNCTION "tpdm"."TF_TR_EducatorPreparationProgram_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_EducatorPreparationProgram_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -65555,25 +62800,6 @@ CREATE TRIGGER "TR_EducatorPreparationProgramGradeLevel_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "tpdm"."EducatorPreparationProgramGradeLevel"
 FOR EACH ROW
 EXECUTE FUNCTION "tpdm"."TF_TR_EducatorPreparationProgramGradeLevel_Stamp"();
-
-CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_Evaluation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EvaluationTitle" IS DISTINCT FROM NEW."EvaluationTitle" OR OLD."PerformanceEvaluation_EducationOrganizationId" IS DISTINCT FROM NEW."PerformanceEvaluation_EducationOrganizationId" OR OLD."PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId" OR OLD."PerformanceEvaluation_PerformanceEvaluationTitle" IS DISTINCT FROM NEW."PerformanceEvaluation_PerformanceEvaluationTitle" OR OLD."PerformanceEvaluation_PerformanceEvaluationTypeDescr_3b4178ed80" IS DISTINCT FROM NEW."PerformanceEvaluation_PerformanceEvaluationTypeDescr_3b4178ed80" OR OLD."PerformanceEvaluation_SchoolYear" IS DISTINCT FROM NEW."PerformanceEvaluation_SchoolYear" OR OLD."PerformanceEvaluation_TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."PerformanceEvaluation_TermDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 363;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'TPDMEvaluation' || '$.evaluationTitle=' || NEW."EvaluationTitle"::text || '#' || '$.performanceEvaluationReference.educationOrganizationId=' || NEW."PerformanceEvaluation_EducationOrganizationId"::text || '#' || '$.performanceEvaluationReference.evaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId")) || '#' || '$.performanceEvaluationReference.performanceEvaluationTitle=' || NEW."PerformanceEvaluation_PerformanceEvaluationTitle"::text || '#' || '$.performanceEvaluationReference.performanceEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."PerformanceEvaluation_PerformanceEvaluationTypeDescr_3b4178ed80")) || '#' || '$.performanceEvaluationReference.schoolYear=' || NEW."PerformanceEvaluation_SchoolYear"::text || '#' || '$.performanceEvaluationReference.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."PerformanceEvaluation_TermDescriptor_DescriptorId"))), NEW."DocumentId", 363);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Evaluation_ReferentialIdentity" ON "tpdm"."Evaluation";
-CREATE TRIGGER "TR_Evaluation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "tpdm"."Evaluation"
-FOR EACH ROW
-EXECUTE FUNCTION "tpdm"."TF_TR_Evaluation_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_Evaluation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -65697,25 +62923,6 @@ CREATE TRIGGER "TR_Evaluation_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "tpdm"."Evaluation"
 FOR EACH ROW
 EXECUTE FUNCTION "tpdm"."TF_TR_Evaluation_Stamp"();
-
-CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_EvaluationElement_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EvaluationElementTitle" IS DISTINCT FROM NEW."EvaluationElementTitle" OR OLD."EvaluationObjective_EducationOrganizationId" IS DISTINCT FROM NEW."EvaluationObjective_EducationOrganizationId" OR OLD."EvaluationObjective_EvaluationObjectiveTitle" IS DISTINCT FROM NEW."EvaluationObjective_EvaluationObjectiveTitle" OR OLD."EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId" OR OLD."EvaluationObjective_EvaluationTitle" IS DISTINCT FROM NEW."EvaluationObjective_EvaluationTitle" OR OLD."EvaluationObjective_PerformanceEvaluationTitle" IS DISTINCT FROM NEW."EvaluationObjective_PerformanceEvaluationTitle" OR OLD."EvaluationObjective_PerformanceEvaluationTypeDescrip_25c9414056" IS DISTINCT FROM NEW."EvaluationObjective_PerformanceEvaluationTypeDescrip_25c9414056" OR OLD."EvaluationObjective_SchoolYear" IS DISTINCT FROM NEW."EvaluationObjective_SchoolYear" OR OLD."EvaluationObjective_TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."EvaluationObjective_TermDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 364;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'TPDMEvaluationElement' || '$.evaluationElementTitle=' || NEW."EvaluationElementTitle"::text || '#' || '$.evaluationObjectiveReference.educationOrganizationId=' || NEW."EvaluationObjective_EducationOrganizationId"::text || '#' || '$.evaluationObjectiveReference.evaluationObjectiveTitle=' || NEW."EvaluationObjective_EvaluationObjectiveTitle"::text || '#' || '$.evaluationObjectiveReference.evaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId")) || '#' || '$.evaluationObjectiveReference.evaluationTitle=' || NEW."EvaluationObjective_EvaluationTitle"::text || '#' || '$.evaluationObjectiveReference.performanceEvaluationTitle=' || NEW."EvaluationObjective_PerformanceEvaluationTitle"::text || '#' || '$.evaluationObjectiveReference.performanceEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationObjective_PerformanceEvaluationTypeDescrip_25c9414056")) || '#' || '$.evaluationObjectiveReference.schoolYear=' || NEW."EvaluationObjective_SchoolYear"::text || '#' || '$.evaluationObjectiveReference.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationObjective_TermDescriptor_DescriptorId"))), NEW."DocumentId", 364);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_EvaluationElement_ReferentialIdentity" ON "tpdm"."EvaluationElement";
-CREATE TRIGGER "TR_EvaluationElement_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "tpdm"."EvaluationElement"
-FOR EACH ROW
-EXECUTE FUNCTION "tpdm"."TF_TR_EvaluationElement_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_EvaluationElement_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -65851,25 +63058,6 @@ CREATE TRIGGER "TR_EvaluationElement_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "tpdm"."EvaluationElement"
 FOR EACH ROW
 EXECUTE FUNCTION "tpdm"."TF_TR_EvaluationElement_Stamp"();
-
-CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_EvaluationElementRating_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationId_Unified" IS DISTINCT FROM NEW."EducationOrganizationId_Unified" OR OLD."EvaluationElement_EvaluationElementTitle" IS DISTINCT FROM NEW."EvaluationElement_EvaluationElementTitle" OR OLD."EvaluationObjectiveTitle_Unified" IS DISTINCT FROM NEW."EvaluationObjectiveTitle_Unified" OR OLD."EvaluationPeriodDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."EvaluationPeriodDescriptor_Unified_DescriptorId" OR OLD."EvaluationTitle_Unified" IS DISTINCT FROM NEW."EvaluationTitle_Unified" OR OLD."PerformanceEvaluationTitle_Unified" IS DISTINCT FROM NEW."PerformanceEvaluationTitle_Unified" OR OLD."PerformanceEvaluationTypeDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."PerformanceEvaluationTypeDescriptor_Unified_DescriptorId" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."TermDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."TermDescriptor_Unified_DescriptorId" OR OLD."EvaluationObjectiveRating_EvaluationDate" IS DISTINCT FROM NEW."EvaluationObjectiveRating_EvaluationDate" OR OLD."EvaluationObjectiveRating_PersonId" IS DISTINCT FROM NEW."EvaluationObjectiveRating_PersonId" OR OLD."EvaluationObjectiveRating_SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."EvaluationObjectiveRating_SourceSystemDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 365;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'TPDMEvaluationElementRating' || '$.evaluationElementReference.educationOrganizationId=' || NEW."EvaluationElement_EducationOrganizationId"::text || '#' || '$.evaluationElementReference.evaluationElementTitle=' || NEW."EvaluationElement_EvaluationElementTitle"::text || '#' || '$.evaluationElementReference.evaluationObjectiveTitle=' || NEW."EvaluationElement_EvaluationObjectiveTitle"::text || '#' || '$.evaluationElementReference.evaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationElement_EvaluationPeriodDescriptor_DescriptorId")) || '#' || '$.evaluationElementReference.evaluationTitle=' || NEW."EvaluationElement_EvaluationTitle"::text || '#' || '$.evaluationElementReference.performanceEvaluationTitle=' || NEW."EvaluationElement_PerformanceEvaluationTitle"::text || '#' || '$.evaluationElementReference.performanceEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationElement_PerformanceEvaluationTypeDescripto_8a1fe07903")) || '#' || '$.evaluationElementReference.schoolYear=' || NEW."EvaluationElement_SchoolYear"::text || '#' || '$.evaluationElementReference.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationElement_TermDescriptor_DescriptorId")) || '#' || '$.evaluationObjectiveRatingReference.educationOrganizationId=' || NEW."EvaluationObjectiveRating_EvaluationObjectiveReferen_c88163be03"::text || '#' || '$.evaluationObjectiveRatingReference.evaluationDate=' || to_char(NEW."EvaluationObjectiveRating_EvaluationDate" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') || '#' || '$.evaluationObjectiveRatingReference.evaluationObjectiveTitle=' || NEW."EvaluationObjectiveRating_EvaluationObjectiveTitle"::text || '#' || '$.evaluationObjectiveRatingReference.evaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationObjectiveRating_EvaluationObjectiveReferen_9867a46102")) || '#' || '$.evaluationObjectiveRatingReference.evaluationTitle=' || NEW."EvaluationObjectiveRating_EvaluationObjectiveReferen_72593ba139"::text || '#' || '$.evaluationObjectiveRatingReference.performanceEvaluationTitle=' || NEW."EvaluationObjectiveRating_EvaluationObjectiveReferen_d6527fd5eb"::text || '#' || '$.evaluationObjectiveRatingReference.performanceEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationObjectiveRating_EvaluationObjectiveReferen_8835cf7d8b")) || '#' || '$.evaluationObjectiveRatingReference.personId=' || NEW."EvaluationObjectiveRating_PersonId"::text || '#' || '$.evaluationObjectiveRatingReference.schoolYear=' || NEW."EvaluationObjectiveRating_EvaluationObjectiveReferen_53938a26d6"::text || '#' || '$.evaluationObjectiveRatingReference.sourceSystemDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationObjectiveRating_SourceSystemDescriptor_DescriptorId")) || '#' || '$.evaluationObjectiveRatingReference.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationObjectiveRating_EvaluationObjectiveReferen_5e4befc414"))), NEW."DocumentId", 365);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_EvaluationElementRating_ReferentialIdentity" ON "tpdm"."EvaluationElementRating";
-CREATE TRIGGER "TR_EvaluationElementRating_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "tpdm"."EvaluationElementRating"
-FOR EACH ROW
-EXECUTE FUNCTION "tpdm"."TF_TR_EvaluationElementRating_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_EvaluationElementRating_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -66128,25 +63316,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "tpdm"."EvaluationElementRatingLevel"
 FOR EACH ROW
 EXECUTE FUNCTION "tpdm"."TF_TR_EvaluationElementRatingLevel_Stamp"();
 
-CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_EvaluationObjective_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EvaluationObjectiveTitle" IS DISTINCT FROM NEW."EvaluationObjectiveTitle" OR OLD."Evaluation_EducationOrganizationId" IS DISTINCT FROM NEW."Evaluation_EducationOrganizationId" OR OLD."Evaluation_EvaluationPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."Evaluation_EvaluationPeriodDescriptor_DescriptorId" OR OLD."Evaluation_EvaluationTitle" IS DISTINCT FROM NEW."Evaluation_EvaluationTitle" OR OLD."Evaluation_PerformanceEvaluationTitle" IS DISTINCT FROM NEW."Evaluation_PerformanceEvaluationTitle" OR OLD."Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId" OR OLD."Evaluation_SchoolYear" IS DISTINCT FROM NEW."Evaluation_SchoolYear" OR OLD."Evaluation_TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."Evaluation_TermDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 367;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'TPDMEvaluationObjective' || '$.evaluationObjectiveTitle=' || NEW."EvaluationObjectiveTitle"::text || '#' || '$.evaluationReference.educationOrganizationId=' || NEW."Evaluation_EducationOrganizationId"::text || '#' || '$.evaluationReference.evaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."Evaluation_EvaluationPeriodDescriptor_DescriptorId")) || '#' || '$.evaluationReference.evaluationTitle=' || NEW."Evaluation_EvaluationTitle"::text || '#' || '$.evaluationReference.performanceEvaluationTitle=' || NEW."Evaluation_PerformanceEvaluationTitle"::text || '#' || '$.evaluationReference.performanceEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId")) || '#' || '$.evaluationReference.schoolYear=' || NEW."Evaluation_SchoolYear"::text || '#' || '$.evaluationReference.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."Evaluation_TermDescriptor_DescriptorId"))), NEW."DocumentId", 367);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_EvaluationObjective_ReferentialIdentity" ON "tpdm"."EvaluationObjective";
-CREATE TRIGGER "TR_EvaluationObjective_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "tpdm"."EvaluationObjective"
-FOR EACH ROW
-EXECUTE FUNCTION "tpdm"."TF_TR_EvaluationObjective_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_EvaluationObjective_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -66275,25 +63444,6 @@ CREATE TRIGGER "TR_EvaluationObjective_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "tpdm"."EvaluationObjective"
 FOR EACH ROW
 EXECUTE FUNCTION "tpdm"."TF_TR_EvaluationObjective_Stamp"();
-
-CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_EvaluationObjectiveRating_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationId_Unified" IS DISTINCT FROM NEW."EducationOrganizationId_Unified" OR OLD."EvaluationObjective_EvaluationObjectiveTitle" IS DISTINCT FROM NEW."EvaluationObjective_EvaluationObjectiveTitle" OR OLD."EvaluationPeriodDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."EvaluationPeriodDescriptor_Unified_DescriptorId" OR OLD."EvaluationTitle_Unified" IS DISTINCT FROM NEW."EvaluationTitle_Unified" OR OLD."PerformanceEvaluationTitle_Unified" IS DISTINCT FROM NEW."PerformanceEvaluationTitle_Unified" OR OLD."PerformanceEvaluationTypeDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."PerformanceEvaluationTypeDescriptor_Unified_DescriptorId" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."TermDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."TermDescriptor_Unified_DescriptorId" OR OLD."EvaluationRating_EvaluationDate" IS DISTINCT FROM NEW."EvaluationRating_EvaluationDate" OR OLD."EvaluationRating_PersonId" IS DISTINCT FROM NEW."EvaluationRating_PersonId" OR OLD."EvaluationRating_SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."EvaluationRating_SourceSystemDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 368;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'TPDMEvaluationObjectiveRating' || '$.evaluationObjectiveReference.educationOrganizationId=' || NEW."EvaluationObjective_EducationOrganizationId"::text || '#' || '$.evaluationObjectiveReference.evaluationObjectiveTitle=' || NEW."EvaluationObjective_EvaluationObjectiveTitle"::text || '#' || '$.evaluationObjectiveReference.evaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId")) || '#' || '$.evaluationObjectiveReference.evaluationTitle=' || NEW."EvaluationObjective_EvaluationTitle"::text || '#' || '$.evaluationObjectiveReference.performanceEvaluationTitle=' || NEW."EvaluationObjective_PerformanceEvaluationTitle"::text || '#' || '$.evaluationObjectiveReference.performanceEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationObjective_PerformanceEvaluationTypeDescrip_25c9414056")) || '#' || '$.evaluationObjectiveReference.schoolYear=' || NEW."EvaluationObjective_SchoolYear"::text || '#' || '$.evaluationObjectiveReference.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationObjective_TermDescriptor_DescriptorId")) || '#' || '$.evaluationRatingReference.educationOrganizationId=' || NEW."EvaluationRating_EvaluationReferenceEducationOrganizationId"::text || '#' || '$.evaluationRatingReference.evaluationDate=' || to_char(NEW."EvaluationRating_EvaluationDate" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') || '#' || '$.evaluationRatingReference.evaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationRating_EvaluationReferenceEvaluationPeriod_613d8cf79a")) || '#' || '$.evaluationRatingReference.evaluationTitle=' || NEW."EvaluationRating_EvaluationTitle"::text || '#' || '$.evaluationRatingReference.performanceEvaluationTitle=' || NEW."EvaluationRating_EvaluationReferencePerformanceEvaluationTitle"::text || '#' || '$.evaluationRatingReference.performanceEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationRating_EvaluationReferencePerformanceEvalu_b220a5eaa5")) || '#' || '$.evaluationRatingReference.personId=' || NEW."EvaluationRating_PersonId"::text || '#' || '$.evaluationRatingReference.schoolYear=' || NEW."EvaluationRating_EvaluationReferenceSchoolYear"::text || '#' || '$.evaluationRatingReference.sourceSystemDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationRating_SourceSystemDescriptor_DescriptorId")) || '#' || '$.evaluationRatingReference.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationRating_EvaluationReferenceTermDescriptor_DescriptorId"))), NEW."DocumentId", 368);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_EvaluationObjectiveRating_ReferentialIdentity" ON "tpdm"."EvaluationObjectiveRating";
-CREATE TRIGGER "TR_EvaluationObjectiveRating_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "tpdm"."EvaluationObjectiveRating"
-FOR EACH ROW
-EXECUTE FUNCTION "tpdm"."TF_TR_EvaluationObjectiveRating_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_EvaluationObjectiveRating_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -66545,25 +63695,6 @@ CREATE TRIGGER "TR_EvaluationObjectiveRatingObjectiveRatingResult_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "tpdm"."EvaluationObjectiveRatingObjectiveRatingResult"
 FOR EACH ROW
 EXECUTE FUNCTION "tpdm"."TF_TR_EvaluationObjectiveRatingObjectiveRatingResult_Stamp"();
-
-CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_EvaluationRating_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EvaluationDate" IS DISTINCT FROM NEW."EvaluationDate" OR OLD."EducationOrganizationId_Unified" IS DISTINCT FROM NEW."EducationOrganizationId_Unified" OR OLD."EvaluationPeriodDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."EvaluationPeriodDescriptor_Unified_DescriptorId" OR OLD."Evaluation_EvaluationTitle" IS DISTINCT FROM NEW."Evaluation_EvaluationTitle" OR OLD."PerformanceEvaluationTitle_Unified" IS DISTINCT FROM NEW."PerformanceEvaluationTitle_Unified" OR OLD."PerformanceEvaluationTypeDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."PerformanceEvaluationTypeDescriptor_Unified_DescriptorId" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."TermDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."TermDescriptor_Unified_DescriptorId" OR OLD."PerformanceEvaluationRating_PersonId" IS DISTINCT FROM NEW."PerformanceEvaluationRating_PersonId" OR OLD."PerformanceEvaluationRating_SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."PerformanceEvaluationRating_SourceSystemDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 370;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'TPDMEvaluationRating' || '$.evaluationDate=' || to_char(NEW."EvaluationDate" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') || '#' || '$.evaluationReference.educationOrganizationId=' || NEW."Evaluation_EducationOrganizationId"::text || '#' || '$.evaluationReference.evaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."Evaluation_EvaluationPeriodDescriptor_DescriptorId")) || '#' || '$.evaluationReference.evaluationTitle=' || NEW."Evaluation_EvaluationTitle"::text || '#' || '$.evaluationReference.performanceEvaluationTitle=' || NEW."Evaluation_PerformanceEvaluationTitle"::text || '#' || '$.evaluationReference.performanceEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId")) || '#' || '$.evaluationReference.schoolYear=' || NEW."Evaluation_SchoolYear"::text || '#' || '$.evaluationReference.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."Evaluation_TermDescriptor_DescriptorId")) || '#' || '$.performanceEvaluationRatingReference.educationOrganizationId=' || NEW."PerformanceEvaluationRating_EducationOrganizationId"::text || '#' || '$.performanceEvaluationRatingReference.evaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."PerformanceEvaluationRating_EvaluationPeriodDescript_f02f71b806")) || '#' || '$.performanceEvaluationRatingReference.performanceEvaluationTitle=' || NEW."PerformanceEvaluationRating_PerformanceEvaluationTitle"::text || '#' || '$.performanceEvaluationRatingReference.performanceEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."PerformanceEvaluationRating_PerformanceEvaluationTyp_5c065a16ae")) || '#' || '$.performanceEvaluationRatingReference.personId=' || NEW."PerformanceEvaluationRating_PersonId"::text || '#' || '$.performanceEvaluationRatingReference.schoolYear=' || NEW."PerformanceEvaluationRating_SchoolYear"::text || '#' || '$.performanceEvaluationRatingReference.sourceSystemDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."PerformanceEvaluationRating_SourceSystemDescriptor_DescriptorId")) || '#' || '$.performanceEvaluationRatingReference.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."PerformanceEvaluationRating_TermDescriptor_DescriptorId"))), NEW."DocumentId", 370);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_EvaluationRating_ReferentialIdentity" ON "tpdm"."EvaluationRating";
-CREATE TRIGGER "TR_EvaluationRating_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "tpdm"."EvaluationRating"
-FOR EACH ROW
-EXECUTE FUNCTION "tpdm"."TF_TR_EvaluationRating_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_EvaluationRating_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -66835,25 +63966,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "tpdm"."EvaluationRatingReviewer"
 FOR EACH ROW
 EXECUTE FUNCTION "tpdm"."TF_TR_EvaluationRatingReviewer_Stamp"();
 
-CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_FinancialAid_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."AidTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AidTypeDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 374;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'TPDMFinancialAid' || '$.aidTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."AidTypeDescriptor_DescriptorId")) || '#' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 374);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_FinancialAid_ReferentialIdentity" ON "tpdm"."FinancialAid";
-CREATE TRIGGER "TR_FinancialAid_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "tpdm"."FinancialAid"
-FOR EACH ROW
-EXECUTE FUNCTION "tpdm"."TF_TR_FinancialAid_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_FinancialAid_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -66943,25 +64055,6 @@ CREATE TRIGGER "TR_FinancialAid_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "tpdm"."FinancialAid"
 FOR EACH ROW
 EXECUTE FUNCTION "tpdm"."TF_TR_FinancialAid_Stamp"();
-
-CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_PerformanceEvaluation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."EvaluationPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."EvaluationPeriodDescriptor_DescriptorId" OR OLD."PerformanceEvaluationTitle" IS DISTINCT FROM NEW."PerformanceEvaluationTitle" OR OLD."PerformanceEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."PerformanceEvaluationTypeDescriptor_DescriptorId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."TermDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 377;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'TPDMPerformanceEvaluation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.evaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationPeriodDescriptor_DescriptorId")) || '#' || '$.performanceEvaluationTitle=' || NEW."PerformanceEvaluationTitle"::text || '#' || '$.performanceEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."PerformanceEvaluationTypeDescriptor_DescriptorId")) || '#' || '$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text || '#' || '$.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."TermDescriptor_DescriptorId"))), NEW."DocumentId", 377);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_PerformanceEvaluation_ReferentialIdentity" ON "tpdm"."PerformanceEvaluation";
-CREATE TRIGGER "TR_PerformanceEvaluation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "tpdm"."PerformanceEvaluation"
-FOR EACH ROW
-EXECUTE FUNCTION "tpdm"."TF_TR_PerformanceEvaluation_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_PerformanceEvaluation_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -67104,25 +64197,6 @@ CREATE TRIGGER "TR_PerformanceEvaluationGradeLevel_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "tpdm"."PerformanceEvaluationGradeLevel"
 FOR EACH ROW
 EXECUTE FUNCTION "tpdm"."TF_TR_PerformanceEvaluationGradeLevel_Stamp"();
-
-CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_PerformanceEvaluationRating_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."PerformanceEvaluation_EducationOrganizationId" IS DISTINCT FROM NEW."PerformanceEvaluation_EducationOrganizationId" OR OLD."PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId" OR OLD."PerformanceEvaluation_PerformanceEvaluationTitle" IS DISTINCT FROM NEW."PerformanceEvaluation_PerformanceEvaluationTitle" OR OLD."PerformanceEvaluation_PerformanceEvaluationTypeDescr_3b4178ed80" IS DISTINCT FROM NEW."PerformanceEvaluation_PerformanceEvaluationTypeDescr_3b4178ed80" OR OLD."PerformanceEvaluation_SchoolYear" IS DISTINCT FROM NEW."PerformanceEvaluation_SchoolYear" OR OLD."PerformanceEvaluation_TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."PerformanceEvaluation_TermDescriptor_DescriptorId" OR OLD."Person_PersonId" IS DISTINCT FROM NEW."Person_PersonId" OR OLD."Person_SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."Person_SourceSystemDescriptor_DescriptorId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 378;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'TPDMPerformanceEvaluationRating' || '$.performanceEvaluationReference.educationOrganizationId=' || NEW."PerformanceEvaluation_EducationOrganizationId"::text || '#' || '$.performanceEvaluationReference.evaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId")) || '#' || '$.performanceEvaluationReference.performanceEvaluationTitle=' || NEW."PerformanceEvaluation_PerformanceEvaluationTitle"::text || '#' || '$.performanceEvaluationReference.performanceEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."PerformanceEvaluation_PerformanceEvaluationTypeDescr_3b4178ed80")) || '#' || '$.performanceEvaluationReference.schoolYear=' || NEW."PerformanceEvaluation_SchoolYear"::text || '#' || '$.performanceEvaluationReference.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."PerformanceEvaluation_TermDescriptor_DescriptorId")) || '#' || '$.personReference.personId=' || NEW."Person_PersonId"::text || '#' || '$.personReference.sourceSystemDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."Person_SourceSystemDescriptor_DescriptorId"))), NEW."DocumentId", 378);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_PerformanceEvaluationRating_ReferentialIdentity" ON "tpdm"."PerformanceEvaluationRating";
-CREATE TRIGGER "TR_PerformanceEvaluationRating_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "tpdm"."PerformanceEvaluationRating"
-FOR EACH ROW
-EXECUTE FUNCTION "tpdm"."TF_TR_PerformanceEvaluationRating_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_PerformanceEvaluationRating_Stamp"()
 RETURNS TRIGGER AS $func$
@@ -67337,25 +64411,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "tpdm"."PerformanceEvaluationRatingReviewer
 FOR EACH ROW
 EXECUTE FUNCTION "tpdm"."TF_TR_PerformanceEvaluationRatingReviewer_Stamp"();
 
-CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_RubricDimension_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."EvaluationElement_EducationOrganizationId" IS DISTINCT FROM NEW."EvaluationElement_EducationOrganizationId" OR OLD."EvaluationElement_EvaluationElementTitle" IS DISTINCT FROM NEW."EvaluationElement_EvaluationElementTitle" OR OLD."EvaluationElement_EvaluationObjectiveTitle" IS DISTINCT FROM NEW."EvaluationElement_EvaluationObjectiveTitle" OR OLD."EvaluationElement_EvaluationPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."EvaluationElement_EvaluationPeriodDescriptor_DescriptorId" OR OLD."EvaluationElement_EvaluationTitle" IS DISTINCT FROM NEW."EvaluationElement_EvaluationTitle" OR OLD."EvaluationElement_PerformanceEvaluationTitle" IS DISTINCT FROM NEW."EvaluationElement_PerformanceEvaluationTitle" OR OLD."EvaluationElement_PerformanceEvaluationTypeDescripto_8a1fe07903" IS DISTINCT FROM NEW."EvaluationElement_PerformanceEvaluationTypeDescripto_8a1fe07903" OR OLD."EvaluationElement_SchoolYear" IS DISTINCT FROM NEW."EvaluationElement_SchoolYear" OR OLD."EvaluationElement_TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."EvaluationElement_TermDescriptor_DescriptorId" OR OLD."RubricRating" IS DISTINCT FROM NEW."RubricRating") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 381;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'TPDMRubricDimension' || '$.evaluationElementReference.educationOrganizationId=' || NEW."EvaluationElement_EducationOrganizationId"::text || '#' || '$.evaluationElementReference.evaluationElementTitle=' || NEW."EvaluationElement_EvaluationElementTitle"::text || '#' || '$.evaluationElementReference.evaluationObjectiveTitle=' || NEW."EvaluationElement_EvaluationObjectiveTitle"::text || '#' || '$.evaluationElementReference.evaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationElement_EvaluationPeriodDescriptor_DescriptorId")) || '#' || '$.evaluationElementReference.evaluationTitle=' || NEW."EvaluationElement_EvaluationTitle"::text || '#' || '$.evaluationElementReference.performanceEvaluationTitle=' || NEW."EvaluationElement_PerformanceEvaluationTitle"::text || '#' || '$.evaluationElementReference.performanceEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationElement_PerformanceEvaluationTypeDescripto_8a1fe07903")) || '#' || '$.evaluationElementReference.schoolYear=' || NEW."EvaluationElement_SchoolYear"::text || '#' || '$.evaluationElementReference.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EvaluationElement_TermDescriptor_DescriptorId")) || '#' || '$.rubricRating=' || NEW."RubricRating"::text), NEW."DocumentId", 381);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_RubricDimension_ReferentialIdentity" ON "tpdm"."RubricDimension";
-CREATE TRIGGER "TR_RubricDimension_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "tpdm"."RubricDimension"
-FOR EACH ROW
-EXECUTE FUNCTION "tpdm"."TF_TR_RubricDimension_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_RubricDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -67547,25 +64602,6 @@ BEFORE INSERT OR UPDATE OR DELETE ON "tpdm"."SurveyResponseExtension"
 FOR EACH ROW
 EXECUTE FUNCTION "tpdm"."TF_TR_SurveyResponseExtension_Stamp"();
 
-CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_SurveyResponsePersonTargetAssociation_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Person_PersonId" IS DISTINCT FROM NEW."Person_PersonId" OR OLD."Person_SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."Person_SourceSystemDescriptor_DescriptorId" OR OLD."SurveyResponse_Namespace" IS DISTINCT FROM NEW."SurveyResponse_Namespace" OR OLD."SurveyResponse_SurveyIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyIdentifier" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 383;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'TPDMSurveyResponsePersonTargetAssociation' || '$.personReference.personId=' || NEW."Person_PersonId"::text || '#' || '$.personReference.sourceSystemDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."Person_SourceSystemDescriptor_DescriptorId")) || '#' || '$.surveyResponseReference.namespace=' || NEW."SurveyResponse_Namespace"::text || '#' || '$.surveyResponseReference.surveyIdentifier=' || NEW."SurveyResponse_SurveyIdentifier"::text || '#' || '$.surveyResponseReference.surveyResponseIdentifier=' || NEW."SurveyResponse_SurveyResponseIdentifier"::text), NEW."DocumentId", 383);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SurveyResponsePersonTargetAssociation_ReferentialIdentity" ON "tpdm"."SurveyResponsePersonTargetAssociation";
-CREATE TRIGGER "TR_SurveyResponsePersonTargetAssociation_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "tpdm"."SurveyResponsePersonTargetAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "tpdm"."TF_TR_SurveyResponsePersonTargetAssociation_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_SurveyResponsePersonTargetAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -67658,25 +64694,6 @@ CREATE TRIGGER "TR_SurveyResponsePersonTargetAssociation_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "tpdm"."SurveyResponsePersonTargetAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "tpdm"."TF_TR_SurveyResponsePersonTargetAssociation_Stamp"();
-
-CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_SurveySectionResponsePersonTargetAssociation_R_9d338426ea"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."Person_PersonId" IS DISTINCT FROM NEW."Person_PersonId" OR OLD."Person_SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."Person_SourceSystemDescriptor_DescriptorId" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."SurveySectionResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveySectionResponse_SurveyResponseIdentifier" OR OLD."SurveySectionResponse_SurveySectionTitle" IS DISTINCT FROM NEW."SurveySectionResponse_SurveySectionTitle") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 384;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'TPDMSurveySectionResponsePersonTargetAssociation' || '$.personReference.personId=' || NEW."Person_PersonId"::text || '#' || '$.personReference.sourceSystemDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."Person_SourceSystemDescriptor_DescriptorId")) || '#' || '$.surveySectionResponseReference.namespace=' || NEW."SurveySectionResponse_SurveyResponseReferenceNamespace"::text || '#' || '$.surveySectionResponseReference.surveyIdentifier=' || NEW."SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier"::text || '#' || '$.surveySectionResponseReference.surveyResponseIdentifier=' || NEW."SurveySectionResponse_SurveyResponseIdentifier"::text || '#' || '$.surveySectionResponseReference.surveySectionTitle=' || NEW."SurveySectionResponse_SurveySectionTitle"::text), NEW."DocumentId", 384);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_SurveySectionResponsePersonTargetAssociation_Refe_db49ddec3e" ON "tpdm"."SurveySectionResponsePersonTargetAssociation";
-CREATE TRIGGER "TR_SurveySectionResponsePersonTargetAssociation_Refe_db49ddec3e"
-AFTER INSERT OR UPDATE ON "tpdm"."SurveySectionResponsePersonTargetAssociation"
-FOR EACH ROW
-EXECUTE FUNCTION "tpdm"."TF_TR_SurveySectionResponsePersonTargetAssociation_R_9d338426ea"();
 
 CREATE OR REPLACE FUNCTION "tpdm"."TF_TR_SurveySectionResponsePersonTargetAssociation_Stamp"()
 RETURNS TRIGGER AS $func$

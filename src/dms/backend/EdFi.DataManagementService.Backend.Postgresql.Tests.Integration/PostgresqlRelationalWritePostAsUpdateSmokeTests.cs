@@ -2268,14 +2268,9 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
         _extensionAddressesBeforePostAsUpdate = await ReadSchoolExtensionAddressesAsync(
             _documentBeforePostAsUpdate.DocumentId
         );
-        _persistedSchoolReferentialId = new ReferentialId(
-            (
-                await ReadReferentialIdentityRowAsync(
-                    _documentBeforePostAsUpdate.DocumentId,
-                    _mappingSet.ResourceKeyIdByResource[SchoolResource]
-                )
-            ).ReferentialId
-        );
+        // The referential id the created document carries. Computed from the same identity the
+        // create request declared, which is what the POST-as-update request must present.
+        _persistedSchoolReferentialId = CreateSchoolDocumentInfo().ReferentialId;
 
         _postAsUpdateResult = await ExecuteUpsertAsync(
             PostAsUpdateRequestBodyJson,
@@ -2463,33 +2458,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
             : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
     }
 
-    private async Task<ReferentialIdentityRow> ReadReferentialIdentityRowAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "DocumentId" = @documentId
-                AND "ResourceKeyId" = @resourceKeyId;
-            """,
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-
-        return rows.Count == 1
-            ? new ReferentialIdentityRow(
-                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId")
-            )
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
-            );
-    }
-
     private async Task<long> ReadDocumentCountAsync(Guid documentUuid)
     {
         var rows = await _database.QueryRowsAsync(
@@ -2664,7 +2632,6 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
         );
 
         (await ReadDocumentCountAsync(CreateWinnerDocumentUuid.Value)).Should().Be(1);
-        (await ReadReferentialIdentityCountAsync(_sharedSchoolReferentialId.Value)).Should().Be(1);
 
         _raceCoordinator.ReleaseFirstResolverCall();
 
@@ -2837,22 +2804,6 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
             : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
     }
 
-    private async Task<long> ReadReferentialIdentityCountAsync(Guid referentialId)
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT COUNT(*) AS "Count"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "ReferentialId" = @referentialId;
-            """,
-            new NpgsqlParameter("referentialId", referentialId)
-        );
-
-        return rows.Count == 1
-            ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
-            : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
-    }
-
     private async Task<Guid> ComputeSchoolReferentialIdAsync()
     {
         var rows = await _database.QueryRowsAsync(
@@ -3002,14 +2953,9 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
         _documentBeforePostAsUpdate = await ReadDocumentAsync(ExistingSchoolYearTypeDocumentUuid.Value);
-        _persistedSchoolYearTypeReferentialId = new ReferentialId(
-            (
-                await ReadReferentialIdentityRowAsync(
-                    _documentBeforePostAsUpdate.DocumentId,
-                    _mappingSet.ResourceKeyIdByResource[SchoolYearTypeResource]
-                )
-            ).ReferentialId
-        );
+        // The referential id the created document carries. Computed from the same identity the
+        // create request declared, which is what the POST-as-update request must present.
+        _persistedSchoolYearTypeReferentialId = CreateSchoolYearTypeDocumentInfo().ReferentialId;
 
         _postAsUpdateResult = await ExecuteUpsertAsync(
             PostAsUpdateRequestBodyJson,
@@ -3208,33 +3154,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one SchoolYearType row for document id '{documentId}', but found {rows.Count}."
-            );
-    }
-
-    private async Task<ReferentialIdentityRow> ReadReferentialIdentityRowAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "DocumentId" = @documentId
-                AND "ResourceKeyId" = @resourceKeyId;
-            """,
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-
-        return rows.Count == 1
-            ? new ReferentialIdentityRow(
-                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId")
-            )
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
             );
     }
 }
@@ -3544,14 +3463,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
 
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         _stateAfterCreate = await ReadPersistedStateAsync(ExistingStudentAcademicRecordDocumentUuid.Value);
-        _persistedStudentAcademicRecordReferentialId = new ReferentialId(
-            (
-                await ReadReferentialIdentityRowAsync(
-                    _stateAfterCreate.Document.DocumentId,
-                    _mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]
-                )
-            ).ReferentialId
-        );
+        // The referential id the created document carries. Computed from the same identity the
+        // create request declared, which is what the POST-as-update request must present.
+        _persistedStudentAcademicRecordReferentialId = CreateDocumentInfo(
+            JsonNode.Parse(CreateRequestBodyJson)!
+        ).ReferentialId;
 
         _postAsUpdateResult = await ExecuteUpsertAsync(
             PostAsUpdateRequestBodyJson,
@@ -4488,33 +4404,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetString(row, "IssuerName")
             ))
             .ToArray();
-    }
-
-    private async Task<ReferentialIdentityRow> ReadReferentialIdentityRowAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "DocumentId" = @documentId
-              AND "ResourceKeyId" = @resourceKeyId;
-            """,
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-
-        return rows.Count == 1
-            ? new ReferentialIdentityRow(
-                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId")
-            )
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
-            );
     }
 
     private async Task<long> ReadDocumentCountAsync(short resourceKeyId)

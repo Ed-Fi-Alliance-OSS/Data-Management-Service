@@ -617,7 +617,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
         _baseResourceSchema = baseResourceSchema;
         _seedData = await SeedReferenceDataAsync();
-        await DisableStudentSchoolAssociationReferentialIdentityTriggerAsync();
 
         _createResult = await ExecuteCreateAsync(
             CreateRequestBodyJson,
@@ -1619,16 +1618,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    private async Task DisableStudentSchoolAssociationReferentialIdentityTriggerAsync()
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            ALTER TABLE "edfi"."StudentSchoolAssociation"
-            DISABLE TRIGGER "TR_StudentSchoolAssociation_ReferentialIdentity";
-            """
-        );
-    }
-
     private async Task<short> GetResourceKeyIdAsync(string projectName, string resourceName)
     {
         return await _database.ExecuteScalarAsync<short>(
@@ -2262,7 +2251,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
         );
         _baseResourceSchema = baseResourceSchema;
         _seedData = await SeedReferenceDataAsync();
-        await DisableStudentSchoolAssociationReferentialIdentityTriggerAsync();
 
         _createResult = await ExecuteCreateAsync(
             CreateRequestBodyJson,
@@ -2642,16 +2630,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             graduationPlanTypeDescriptorId,
             foundationGraduationPlanDocumentId,
             endorsementGraduationPlanDocumentId
-        );
-    }
-
-    private async Task DisableStudentSchoolAssociationReferentialIdentityTriggerAsync()
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            ALTER TABLE "edfi"."StudentSchoolAssociation"
-            DISABLE TRIGGER "TR_StudentSchoolAssociation_ReferentialIdentity";
-            """
         );
     }
 
@@ -3228,7 +3206,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
         );
         _baseResourceSchema = baseResourceSchema;
         _seedData = await SeedReferenceDataAsync();
-        await DisableStudentSchoolAssociationReferentialIdentityTriggerAsync();
 
         _snapshotBefore = await ReadRejectedWriteSnapshotAsync();
         _result = await ExecuteCreateAsync(
@@ -3562,16 +3539,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             foundationGraduationPlanDocumentId,
             endorsementGraduationPlanDocumentId,
             stemGraduationPlanDocumentId
-        );
-    }
-
-    private async Task DisableStudentSchoolAssociationReferentialIdentityTriggerAsync()
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            ALTER TABLE "edfi"."StudentSchoolAssociation"
-            DISABLE TRIGGER "TR_StudentSchoolAssociation_ReferentialIdentity";
-            """
         );
     }
 

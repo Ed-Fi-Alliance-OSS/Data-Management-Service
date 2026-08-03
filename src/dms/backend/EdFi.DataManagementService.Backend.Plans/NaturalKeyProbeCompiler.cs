@@ -34,10 +34,7 @@ internal sealed record NaturalKeyProbeCompilation(
 /// <see cref="DocumentReferenceBinding"/> inventory.
 /// </para>
 /// <para>
-/// Two things are deliberately NOT done here. The probes are not derived from
-/// <c>TriggerKindParameters.ReferentialIdentityMaintenance.IdentityElements</c>, even though that block
-/// already carries an ordered, typed, descriptor-flagged identity element list: it belongs to the
-/// <c>ReferentialIdentity</c> trigger that is being removed. And constraints are never located by NAME —
+/// Constraints are deliberately never located by NAME —
 /// <c>ApplyDialectIdentifierShorteningPass</c> hash-truncates long identifiers, so the <c>_RefKey</c> /
 /// <c>_NK</c> tokens are not reliably present in the emitted names.
 /// </para>
@@ -539,8 +536,8 @@ internal static class NaturalKeyProbeCompiler
     /// </summary>
     /// <remarks>
     /// This is the emit-time successor to the zero-identity check
-    /// <c>DeriveTriggerInventoryPass</c> performed for referential identity computation; that check dies
-    /// with the <c>ReferentialIdentity</c> trigger it guarded. Descriptor resources never reach here —
+    /// <c>DeriveTriggerInventoryPass</c> performed for referential identity computation; that check was
+    /// deleted with the <c>ReferentialIdentity</c> trigger it guarded. Descriptor resources never reach here —
     /// <see cref="Compile"/> skips <see cref="ResourceStorageKind.SharedDescriptorTable"/> before either
     /// builder runs.
     /// </remarks>

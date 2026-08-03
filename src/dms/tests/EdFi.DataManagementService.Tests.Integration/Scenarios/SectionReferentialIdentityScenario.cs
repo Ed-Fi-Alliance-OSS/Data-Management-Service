@@ -11,12 +11,11 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
 /// <summary>
-/// Public HTTP regression proving the relational ReferentialIdentity trigger stores the same
-/// referential id Core computes for a resource whose identity contains a key-unified reference
-/// path. Section's <c>$.courseOfferingReference.schoolId</c> resolves to two unified storage
-/// aliases on the Section root; the trigger must hash that identity path exactly once (one hash
-/// element per identity JSON path) or the stored referential id diverges from Core's and every
-/// Section-referencing POST fails reference validation with a 409.
+/// Public HTTP regression over a resource whose identity contains a key-unified reference path.
+/// Section's <c>$.courseOfferingReference.schoolId</c> resolves to two unified storage aliases on
+/// the Section root; the derivations that key off identity JSON paths must count that path exactly
+/// once (one element per identity JSON path) or a Section-referencing POST fails reference
+/// validation with a 409.
 ///
 /// Concrete shape: the full Section dependency chain is created through the public API
 /// (descriptors, School, SchoolYearType, Course, Session, CourseOffering, Section), then a
@@ -189,9 +188,9 @@ internal static class SectionReferentialIdentityScenario
         };
         await PostExpectingCreatedAsync(harness, StudentsEndpoint, studentPayload);
 
-        // The proof: resolving sectionReference requires the Section's trigger-stored referential
-        // id to equal Core's computed referential id (one hash element per identity JSON path).
-        // A duplicated key-unified element makes this POST fail reference validation with 409.
+        // The proof: resolving sectionReference requires the Section's natural-key probe to bind
+        // exactly one column per identity JSON path. A duplicated key-unified element makes this
+        // POST fail reference validation with 409.
         var studentSectionAssociationPayload = new JsonObject
         {
             ["beginDate"] = "2024-08-01",

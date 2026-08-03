@@ -1209,22 +1209,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         return rowCount;
     }
 
-    public async Task<long> CountReferentialIdentityRowsForAuthorizationRootChildAsync(
-        AuthorizationRootChildSeed seed
-    )
-    {
-        var referentialId = CreateAuthorizationRootChildDocumentInfo(seed).ReferentialId;
-
-        return await Database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT_BIG(*)
-            FROM [dms].[ReferentialIdentity]
-            WHERE [ReferentialId] = @referentialId;
-            """,
-            new SqlParameter("@referentialId", referentialId.Value)
-        );
-    }
-
     public async Task<AuthorizationWriteSideEffectState> ReadAuthorizationRootChildSideEffectStateAsync(
         DocumentUuid documentUuid
     )
@@ -1238,10 +1222,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 "authz",
                 "AuthorizationRootChildResource",
                 document.DocumentId
-            ),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
             )
         );
     }
@@ -1259,10 +1239,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 "authz",
                 "AuthorizationNullableResource",
                 document.DocumentId
-            ),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
             )
         );
     }
@@ -1280,10 +1256,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 "authz",
                 "AuthorizationStudentAcademicRecordResource",
                 document.DocumentId
-            ),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
             )
         );
     }
@@ -1301,10 +1273,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 "authz",
                 "AuthorizationStudentSchoolResource",
                 document.DocumentId
-            ),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
             )
         );
     }
@@ -1670,45 +1638,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         }
 
         return states;
-    }
-
-    private async Task<IReadOnlyList<ReferentialIdentityRow>> ReadReferentialIdentityRowsForDocumentAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await Database.QueryRowsAsync(
-            """
-            SELECT [ReferentialId], [DocumentId], [ResourceKeyId]
-            FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] = @documentId
-              AND [ResourceKeyId] = @resourceKeyId
-            ORDER BY [ResourceKeyId], [ReferentialId];
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-
-        return
-        [
-            .. rows.Select(row => new ReferentialIdentityRow(
-                GetRequiredGuid(row, "ReferentialId"),
-                GetRequiredInt64(row, "DocumentId"),
-                GetRequiredInt16(row, "ResourceKeyId")
-            )),
-        ];
-    }
-
-    private DocumentInfo CreateAuthorizationRootChildDocumentInfo(AuthorizationRootChildSeed seed)
-    {
-        var resourceHandle = GetResourceHandle("authz", "AuthorizationRootChildResource");
-
-        return RelationalDocumentInfoTestHelper.CreateDocumentInfo(
-            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
-            resourceHandle.ResourceInfo,
-            resourceHandle.ResourceSchema,
-            MappingSet
-        );
     }
 
     private ResourceWritePlan GetWritePlan(string projectEndpointName, string resourceName)

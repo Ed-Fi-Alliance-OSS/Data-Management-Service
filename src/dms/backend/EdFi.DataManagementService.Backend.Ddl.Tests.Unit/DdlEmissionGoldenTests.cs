@@ -1488,25 +1488,6 @@ internal static class NestedCollectionsFixture
                 new TriggerKindParameters.DocumentStamping(),
                 MirrorStampTargetTable: schoolTableName
             ),
-            // ReferentialIdentityMaintenance on root table
-            new(
-                new DbTriggerName("TR_School_ReferentialIdentity"),
-                schoolTableName,
-                [documentIdColumn],
-                [schoolIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    1,
-                    "Ed-Fi",
-                    "School",
-                    [
-                        new IdentityElementMapping(
-                            schoolIdColumn,
-                            "$.schoolId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ]
-                )
-            ),
         ];
 
         return new DerivedRelationalModelSet(
@@ -1754,19 +1735,6 @@ internal static class PolymorphicAbstractFixture
         );
 
         // Triggers
-        var superclassAlias = new SuperclassAliasInfo(
-            1,
-            "Ed-Fi",
-            "EducationOrganization",
-            [
-                new IdentityElementMapping(
-                    organizationIdColumn,
-                    "$.educationOrganizationId",
-                    new RelationalScalarType(ScalarKind.Int32)
-                ),
-            ]
-        );
-
         List<DbTriggerInfo> triggers =
         [
             // DocumentStamping on LEA root (with identity projection)
@@ -1790,26 +1758,6 @@ internal static class PolymorphicAbstractFixture
                     "Ed-Fi:LocalEducationAgency"
                 )
             ),
-            // ReferentialIdentityMaintenance on LEA
-            new(
-                new DbTriggerName("TR_LocalEducationAgency_ReferentialIdentity"),
-                leaTableName,
-                [documentIdColumn],
-                [organizationIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    3,
-                    "Ed-Fi",
-                    "LocalEducationAgency",
-                    [
-                        new IdentityElementMapping(
-                            organizationIdColumn,
-                            "$.educationOrganizationId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ],
-                    superclassAlias
-                )
-            ),
             // DocumentStamping on School root (with identity projection)
             new(
                 new DbTriggerName("TR_School_Stamp"),
@@ -1829,26 +1777,6 @@ internal static class PolymorphicAbstractFixture
                     identityTableName,
                     [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
                     "Ed-Fi:School"
-                )
-            ),
-            // ReferentialIdentityMaintenance on School
-            new(
-                new DbTriggerName("TR_School_ReferentialIdentity"),
-                schoolTableName,
-                [documentIdColumn],
-                [organizationIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    2,
-                    "Ed-Fi",
-                    "School",
-                    [
-                        new IdentityElementMapping(
-                            organizationIdColumn,
-                            "$.educationOrganizationId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ],
-                    superclassAlias
                 )
             ),
         ];
@@ -2122,25 +2050,6 @@ internal static class ExtensionMappingFixture
                 new TriggerKindParameters.DocumentStamping(),
                 MirrorStampTargetTable: schoolTableName
             ),
-            // ReferentialIdentityMaintenance on root table
-            new(
-                new DbTriggerName("TR_School_ReferentialIdentity"),
-                schoolTableName,
-                [documentIdColumn],
-                [schoolIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    1,
-                    "Ed-Fi",
-                    "School",
-                    [
-                        new IdentityElementMapping(
-                            schoolIdColumn,
-                            "$.schoolId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ]
-                )
-            ),
         ];
 
         return new DerivedRelationalModelSet(
@@ -2183,7 +2092,7 @@ internal static class ExtensionMappingFixture
 /// StudentSchoolAssociation references School via SchoolId FK.
 /// On MSSQL, an MssqlIdentityPropagationTrigger trigger on StudentSchoolAssociation
 /// propagates SchoolId changes to the School root table (replacing ON UPDATE CASCADE).
-/// On PostgreSQL, only DocumentStamping and ReferentialIdentityMaintenance are emitted.
+/// On PostgreSQL, only DocumentStamping is emitted.
 /// </summary>
 internal static class IdentityPropagationFixture
 {
@@ -2342,25 +2251,6 @@ internal static class IdentityPropagationFixture
                 new TriggerKindParameters.DocumentStamping(),
                 MirrorStampTargetTable: schoolTableName
             ),
-            // ReferentialIdentityMaintenance on School
-            new(
-                new DbTriggerName("TR_School_ReferentialIdentity"),
-                schoolTableName,
-                [documentIdColumn],
-                [schoolIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    1,
-                    "Ed-Fi",
-                    "School",
-                    [
-                        new IdentityElementMapping(
-                            schoolIdColumn,
-                            "$.schoolId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ]
-                )
-            ),
             // DocumentStamping on StudentSchoolAssociation root
             new(
                 new DbTriggerName("TR_StudentSchoolAssociation_Stamp"),
@@ -2369,45 +2259,6 @@ internal static class IdentityPropagationFixture
                 [schoolIdColumn, studentIdColumn, entryDateColumn, entryTimestampColumn, isActiveColumn],
                 new TriggerKindParameters.DocumentStamping(),
                 MirrorStampTargetTable: assocTableName
-            ),
-            // ReferentialIdentityMaintenance on StudentSchoolAssociation
-            new(
-                new DbTriggerName("TR_StudentSchoolAssociation_ReferentialIdentity"),
-                assocTableName,
-                [documentIdColumn],
-                [schoolIdColumn, studentIdColumn, entryDateColumn, entryTimestampColumn, isActiveColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    2,
-                    "Ed-Fi",
-                    "StudentSchoolAssociation",
-                    [
-                        new IdentityElementMapping(
-                            schoolIdColumn,
-                            "$.schoolReference.schoolId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                        new IdentityElementMapping(
-                            studentIdColumn,
-                            "$.studentReference.studentUniqueId",
-                            new RelationalScalarType(ScalarKind.String)
-                        ),
-                        new IdentityElementMapping(
-                            entryDateColumn,
-                            "$.entryDate",
-                            new RelationalScalarType(ScalarKind.Date)
-                        ),
-                        new IdentityElementMapping(
-                            entryTimestampColumn,
-                            "$.entryTimestamp",
-                            new RelationalScalarType(ScalarKind.DateTime)
-                        ),
-                        new IdentityElementMapping(
-                            isActiveColumn,
-                            "$.isActive",
-                            new RelationalScalarType(ScalarKind.Boolean)
-                        ),
-                    ]
-                )
             ),
         ];
 
@@ -2657,7 +2508,6 @@ internal static class FkSupportIndexFixture
 /// - Computed column definitions (PERSISTED for MSSQL, GENERATED ALWAYS AS ... STORED for PostgreSQL)
 /// - UPDATE() guards in MSSQL triggers reference the canonical stored column, not aliases
 /// - Propagation trigger SET targets reference canonical stored columns, not aliases
-/// - Identity hash expressions in ReferentialIdentity triggers read alias columns from inserted/NEW
 /// - FK constraints use the DocumentId FK columns (not identity alias columns)
 /// </summary>
 internal static class KeyUnificationFixture
@@ -2869,25 +2719,6 @@ internal static class KeyUnificationFixture
                 new TriggerKindParameters.DocumentStamping(),
                 MirrorStampTargetTable: schoolTableName
             ),
-            // ReferentialIdentityMaintenance on School
-            new(
-                new DbTriggerName("TR_School_ReferentialIdentity"),
-                schoolTableName,
-                [documentIdColumn],
-                [schoolIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    1,
-                    "Ed-Fi",
-                    "School",
-                    [
-                        new IdentityElementMapping(
-                            schoolIdColumn,
-                            "$.schoolId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ]
-                )
-            ),
             // ── CourseRegistration triggers ──
             // DocumentStamping on CourseRegistration root (identity projection = canonical columns)
             new(
@@ -2897,42 +2728,6 @@ internal static class KeyUnificationFixture
                 regIdentityProjectionColumns,
                 new TriggerKindParameters.DocumentStamping(),
                 MirrorStampTargetTable: regTableName
-            ),
-            // ReferentialIdentityMaintenance on CourseRegistration
-            // IdentityElements use alias columns (readable from inserted/NEW for hash computation).
-            // IdentityProjectionColumns use canonical stored columns (for UPDATE guards).
-            new(
-                new DbTriggerName("TR_CourseRegistration_ReferentialIdentity"),
-                regTableName,
-                [documentIdColumn],
-                regIdentityProjectionColumns,
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    2,
-                    "Ed-Fi",
-                    "CourseRegistration",
-                    [
-                        new IdentityElementMapping(
-                            courseOfferingSchoolIdColumn,
-                            "$.courseOfferingReference.schoolId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                        new IdentityElementMapping(
-                            localCourseCodeColumn,
-                            "$.courseOfferingReference.localCourseCode",
-                            new RelationalScalarType(ScalarKind.String)
-                        ),
-                        new IdentityElementMapping(
-                            schoolSchoolIdColumn,
-                            "$.schoolReference.schoolId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                        new IdentityElementMapping(
-                            registrationDateColumn,
-                            "$.registrationDate",
-                            new RelationalScalarType(ScalarKind.Date)
-                        ),
-                    ]
-                )
             ),
         ];
 
@@ -3238,19 +3033,6 @@ internal static class AuthEdOrgHierarchyFixture
         var authHierarchy = new AuthEdOrgHierarchy([leaEntity, seaEntity]);
 
         // Standard triggers
-        var superclassAlias = new SuperclassAliasInfo(
-            1,
-            "Ed-Fi",
-            "EducationOrganization",
-            [
-                new IdentityElementMapping(
-                    organizationIdColumn,
-                    "$.educationOrganizationId",
-                    new RelationalScalarType(ScalarKind.Int32)
-                ),
-            ]
-        );
-
         List<DbTriggerInfo> triggers =
         [
             // DocumentStamping on LEA
@@ -3272,26 +3054,6 @@ internal static class AuthEdOrgHierarchyFixture
                     identityTableName,
                     [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
                     "Ed-Fi:LocalEducationAgency"
-                )
-            ),
-            // ReferentialIdentityMaintenance on LEA
-            new(
-                new DbTriggerName("TR_LocalEducationAgency_ReferentialIdentity"),
-                leaTableName,
-                [documentIdColumn],
-                [organizationIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    2,
-                    "Ed-Fi",
-                    "LocalEducationAgency",
-                    [
-                        new IdentityElementMapping(
-                            organizationIdColumn,
-                            "$.educationOrganizationId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ],
-                    superclassAlias
                 )
             ),
             // Auth hierarchy triggers for LEA (hierarchical: INSERT + UPDATE + DELETE)
@@ -3344,26 +3106,6 @@ internal static class AuthEdOrgHierarchyFixture
                     identityTableName,
                     [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
                     "Ed-Fi:StateEducationAgency"
-                )
-            ),
-            // ReferentialIdentityMaintenance on SEA
-            new(
-                new DbTriggerName("TR_StateEducationAgency_ReferentialIdentity"),
-                seaTableName,
-                [documentIdColumn],
-                [organizationIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    3,
-                    "Ed-Fi",
-                    "StateEducationAgency",
-                    [
-                        new IdentityElementMapping(
-                            organizationIdColumn,
-                            "$.educationOrganizationId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ],
-                    superclassAlias
                 )
             ),
             // Auth hierarchy triggers for SEA (leaf: INSERT + DELETE)

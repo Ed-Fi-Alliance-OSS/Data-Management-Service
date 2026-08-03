@@ -268,29 +268,6 @@
       }
     },
     {
-      "name": "TR_ParentResource_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "ParentResource"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "ParentResourceId"
-      ],
-      "resource_key_id": 1,
-      "project_name": "Ed-Fi",
-      "resource_name": "ParentResource",
-      "identity_elements": [
-        {
-          "column": "ParentResourceId",
-          "identity_json_path": "$.parentResourceId"
-        }
-      ]
-    },
-    {
       "name": "TR_ParentResource_Stamp",
       "table": {
         "schema": "edfi",
@@ -329,29 +306,6 @@
         "schema": "edfi",
         "name": "ParentResource"
       }
-    },
-    {
-      "name": "TR_Sponsor_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "Sponsor"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "SponsorName"
-      ],
-      "resource_key_id": 2,
-      "project_name": "Ed-Fi",
-      "resource_name": "Sponsor",
-      "identity_elements": [
-        {
-          "column": "SponsorName",
-          "identity_json_path": "$.sponsorName"
-        }
-      ]
     },
     {
       "name": "TR_Sponsor_Stamp",

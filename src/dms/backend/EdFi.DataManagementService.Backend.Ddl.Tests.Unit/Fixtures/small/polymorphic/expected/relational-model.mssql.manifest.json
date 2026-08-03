@@ -444,40 +444,6 @@
       "parent_fks": []
     },
     {
-      "name": "TR_LocalEducationAgency_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "LocalEducationAgency"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "LocalEducationAgencyId"
-      ],
-      "resource_key_id": 2,
-      "project_name": "Ed-Fi",
-      "resource_name": "LocalEducationAgency",
-      "identity_elements": [
-        {
-          "column": "LocalEducationAgencyId",
-          "identity_json_path": "$.localEducationAgencyId"
-        }
-      ],
-      "superclass_alias": {
-        "resource_key_id": 1,
-        "project_name": "Ed-Fi",
-        "resource_name": "EducationOrganization",
-        "identity_elements": [
-          {
-            "column": "LocalEducationAgencyId",
-            "identity_json_path": "$.educationOrganizationId"
-          }
-        ]
-      }
-    },
-    {
       "name": "TR_LocalEducationAgency_Stamp",
       "table": {
         "schema": "edfi",
@@ -553,40 +519,6 @@
       "trigger_event": "Insert",
       "identity_column": "SchoolId",
       "parent_fks": []
-    },
-    {
-      "name": "TR_School_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "School"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "SchoolId"
-      ],
-      "resource_key_id": 3,
-      "project_name": "Ed-Fi",
-      "resource_name": "School",
-      "identity_elements": [
-        {
-          "column": "SchoolId",
-          "identity_json_path": "$.schoolId"
-        }
-      ],
-      "superclass_alias": {
-        "resource_key_id": 1,
-        "project_name": "Ed-Fi",
-        "resource_name": "EducationOrganization",
-        "identity_elements": [
-          {
-            "column": "SchoolId",
-            "identity_json_path": "$.educationOrganizationId"
-          }
-        ]
-      }
     },
     {
       "name": "TR_School_Stamp",

@@ -345,12 +345,6 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
     //  ProfileRootOnlyMergeItem root row can carry FK + key-unification values
     //  into the profiled PUT. Helpers are kept local (per DMS-1124 supplement
     //  scope) and duplicated in the mssql sibling with dialect-specific SQL.
-    //
-    //  - Student inserts trigger TR_Student_ReferentialIdentity, which creates
-    //    the dms.ReferentialIdentity row for ResourceKeyId=3 automatically.
-    //  - Descriptors have no trigger, so we insert dms.ReferentialIdentity
-    //    explicitly for ResourceKeyId=2 using the ReferentialId computed from
-    //    the lowercase URI (identity path $.descriptor).
     // ─────────────────────────────────────────────────────────────────────────
 
     public static async Task<short> GetResourceKeyIdAsync(

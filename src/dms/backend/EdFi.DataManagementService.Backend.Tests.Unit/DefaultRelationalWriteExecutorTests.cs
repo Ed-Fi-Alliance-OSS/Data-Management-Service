@@ -7843,30 +7843,6 @@ public class Given_Default_Relational_Write_Executor
                         identityColumns.Select(columnModel => columnModel.ColumnName).ToArray(),
                         new TriggerKindParameters.DocumentStamping()
                     ),
-                    new DbTriggerInfo(
-                        new DbTriggerName("TR_School_ReferentialIdentity"),
-                        resourceModel.Root.Table,
-                        [new DbColumnName("DocumentId")],
-                        identityColumns.Select(columnModel => columnModel.ColumnName).ToArray(),
-                        new TriggerKindParameters.ReferentialIdentityMaintenance(
-                            resourceKey.ResourceKeyId,
-                            resource.ProjectName,
-                            resource.ResourceName,
-                            identityColumns
-                                .Select(columnModel => new IdentityElementMapping(
-                                    columnModel.ColumnName,
-                                    columnModel.SourceJsonPath?.Canonical
-                                        ?? throw new InvalidOperationException(
-                                            "Expected a root identity source path."
-                                        ),
-                                    columnModel.ScalarType
-                                        ?? throw new InvalidOperationException(
-                                            "Expected a root identity scalar type."
-                                        )
-                                ))
-                                .ToArray()
-                        )
-                    ),
                 ]
             ),
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
@@ -7924,9 +7900,9 @@ public class Given_Default_Relational_Write_Executor
                     [descriptorResource] = descriptorResource.ResourceName,
                 }
             ),
-            // Compiled own-identity probe metadata, derived from the same identity columns the fixture
-            // feeds the referential-identity trigger. MappingSetCompiler builds this for every
-            // relational-table resource; hand-built mapping sets must declare it explicitly.
+            // Compiled own-identity probe metadata, derived from the resource's root identity columns.
+            // MappingSetCompiler builds this for every relational-table resource; hand-built mapping sets
+            // must declare it explicitly.
             OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>
             {
                 [resource] = new OwnNaturalKeyProbe(

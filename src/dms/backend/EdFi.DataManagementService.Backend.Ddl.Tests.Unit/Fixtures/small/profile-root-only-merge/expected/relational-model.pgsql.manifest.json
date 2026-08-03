@@ -206,29 +206,6 @@
       }
     },
     {
-      "name": "TR_ProfileRootOnlyMergeItem_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "ProfileRootOnlyMergeItem"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "ProfileRootOnlyMergeItemId"
-      ],
-      "resource_key_id": 1,
-      "project_name": "Ed-Fi",
-      "resource_name": "ProfileRootOnlyMergeItem",
-      "identity_elements": [
-        {
-          "column": "ProfileRootOnlyMergeItemId",
-          "identity_json_path": "$.profileRootOnlyMergeItemId"
-        }
-      ]
-    },
-    {
       "name": "TR_ProfileRootOnlyMergeItem_Stamp",
       "table": {
         "schema": "edfi",
@@ -251,29 +228,6 @@
           "name": "ProfileRootOnlyMergeItem"
         }
       }
-    },
-    {
-      "name": "TR_Student_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "Student"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "StudentUniqueId"
-      ],
-      "resource_key_id": 3,
-      "project_name": "Ed-Fi",
-      "resource_name": "Student",
-      "identity_elements": [
-        {
-          "column": "StudentUniqueId",
-          "identity_json_path": "$.studentUniqueId"
-        }
-      ]
     },
     {
       "name": "TR_Student_Stamp",

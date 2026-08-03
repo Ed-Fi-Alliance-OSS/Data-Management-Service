@@ -172,26 +172,6 @@ public class Given_Trigger_Set_Composition
     }
 
     /// <summary>
-    /// It should create ReferentialIdentityMaintenance trigger on root table.
-    /// </summary>
-    [Test]
-    public void It_should_create_ReferentialIdentityMaintenance_trigger_on_root_table()
-    {
-        var refIdentity = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "School" && t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
-        );
-
-        refIdentity.Should().NotBeNull();
-        refIdentity!.Name.Value.Should().Be("TR_School_ReferentialIdentity");
-        refIdentity.KeyColumns.Select(c => c.Value).Should().Equal("DocumentId");
-        refIdentity.IdentityProjectionColumns.Should().NotBeEmpty();
-        var refIdParams = refIdentity.Parameters as TriggerKindParameters.ReferentialIdentityMaintenance;
-        refIdParams.Should().NotBeNull();
-        refIdParams!.IdentityElements.Should().NotBeEmpty();
-        refIdParams.IdentityElements.Select(e => e.Column.Value).Should().Contain("EducationOrganizationId");
-    }
-
-    /// <summary>
     /// It should create AbstractIdentityMaintenance trigger for subclass resource.
     /// </summary>
     [Test]
@@ -951,7 +931,6 @@ public class Given_Deterministic_Trigger_Ordering
             p switch
             {
                 TriggerKindParameters.DocumentStamping => "DocumentStamping",
-                TriggerKindParameters.ReferentialIdentityMaintenance => "ReferentialIdentityMaintenance",
                 TriggerKindParameters.AbstractIdentityMaintenance => "AbstractIdentityMaintenance",
                 TriggerKindParameters.MssqlIdentityPropagationTrigger => "MssqlIdentityPropagationTrigger",
                 _ => throw new ArgumentOutOfRangeException(
@@ -974,10 +953,10 @@ public class Given_Deterministic_Trigger_Ordering
 /// <summary>
 /// Test fixture proving that reference-bearing identity elements resolve to identity-part
 /// columns (e.g. School_SchoolId) rather than FK DocumentId columns (e.g. School_DocumentId)
-/// in ReferentialIdentityMaintenance triggers.
+/// in a root table's identity projection columns.
 /// </summary>
 [TestFixture]
-public class Given_Reference_Bearing_Identity_For_ReferentialIdentity_Trigger
+public class Given_Reference_Bearing_Identity_For_Identity_Projection_Columns
 {
     private IReadOnlyList<DbTriggerInfo> _triggers = default!;
 
@@ -999,56 +978,11 @@ public class Given_Reference_Bearing_Identity_For_ReferentialIdentity_Trigger
     }
 
     [Test]
-    public void It_should_use_identity_part_columns_not_FK_DocumentId_in_ReferentialIdentity_trigger()
-    {
-        var refIdentity = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "Enrollment"
-            && t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
-        );
-
-        refIdentity.Should().NotBeNull("Enrollment should have a ReferentialIdentityMaintenance trigger");
-        var refIdParams = (TriggerKindParameters.ReferentialIdentityMaintenance)refIdentity!.Parameters;
-
-        var columnNames = refIdParams.IdentityElements.Select(e => e.Column.Value).ToList();
-
-        // Must resolve to identity-part columns, not FK DocumentId columns
-        columnNames.Should().Contain("School_SchoolId");
-        columnNames.Should().Contain("School_EducationOrganizationId");
-        columnNames.Should().Contain("Student_StudentUniqueId");
-        columnNames.Should().NotContain("School_DocumentId");
-        columnNames.Should().NotContain("Student_DocumentId");
-    }
-
-    [Test]
-    public void It_should_pair_identity_part_columns_with_correct_json_paths()
-    {
-        var refIdentity = _triggers.Single(t =>
-            t.Table.Name == "Enrollment"
-            && t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
-        );
-
-        var refIdParams = (TriggerKindParameters.ReferentialIdentityMaintenance)refIdentity.Parameters;
-
-        var mappings = refIdParams
-            .IdentityElements.Select(e => (e.Column.Value, e.IdentityJsonPath))
-            .ToList();
-
-        mappings
-            .Should()
-            .Contain(("School_SchoolId", "$.schoolReference.schoolId"))
-            .And.Contain(("School_EducationOrganizationId", "$.schoolReference.educationOrganizationId"))
-            .And.Contain(("Student_StudentUniqueId", "$.studentReference.studentUniqueId"));
-    }
-
-    [Test]
     public void It_should_use_identity_part_columns_in_identity_projection_columns()
     {
-        var refIdentity = _triggers.Single(t =>
-            t.Table.Name == "Enrollment"
-            && t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
-        );
+        var rootStamp = _triggers.Single(t => t.Name.Value == "TR_Enrollment_Stamp");
 
-        var projectionColumnNames = refIdentity.IdentityProjectionColumns.Select(c => c.Value).ToList();
+        var projectionColumnNames = rootStamp.IdentityProjectionColumns.Select(c => c.Value).ToList();
 
         projectionColumnNames.Should().Contain("School_SchoolId");
         projectionColumnNames.Should().Contain("School_EducationOrganizationId");
@@ -1059,78 +993,15 @@ public class Given_Reference_Bearing_Identity_For_ReferentialIdentity_Trigger
 }
 
 /// <summary>
-/// Test fixture proving descriptor-valued identity elements carry descriptor metadata into
-/// ReferentialIdentityMaintenance triggers.
+/// Test fixture proving a root table's identity projection columns stay deduplicated onto canonical
+/// stored columns when key unification fans one reference-site logical field out to multiple physical
+/// binding columns (one identity path, two unified alias columns).
 /// </summary>
 [TestFixture]
-public class Given_Descriptor_Valued_Identity_For_ReferentialIdentity_Trigger
-{
-    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
-
-    [SetUp]
-    public void Setup()
-    {
-        var coreProjectSchema = AbstractIdentityTableTestSchemaBuilder.BuildDescriptorIdentityProjectSchema();
-        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
-            coreProjectSchema,
-            isExtensionProject: false
-        );
-        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
-        var builder = new DerivedRelationalModelSetBuilder(
-            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
-        );
-
-        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
-        _triggers = result.TriggersInCreateOrder;
-    }
-
-    [Test]
-    public void It_should_mark_descriptor_identity_elements_as_descriptor_references()
-    {
-        var refIdentity = _triggers.Single(t =>
-            t.Table.Name == "ProgramOffering"
-            && t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
-        );
-
-        var refIdParams = (TriggerKindParameters.ReferentialIdentityMaintenance)refIdentity.Parameters;
-        var element = refIdParams.IdentityElements.Should().ContainSingle().Subject;
-
-        element.Column.Value.Should().Be("ProgramTypeDescriptor_DescriptorId");
-        element.IdentityJsonPath.Should().Be("$.programTypeDescriptor");
-        element.IsDescriptorReference.Should().BeTrue();
-    }
-
-    [Test]
-    public void It_should_preserve_descriptor_metadata_on_superclass_alias_identity_elements()
-    {
-        var refIdentity = _triggers.Single(t =>
-            t.Table.Name == "ProgramOffering"
-            && t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
-        );
-
-        var refIdParams = (TriggerKindParameters.ReferentialIdentityMaintenance)refIdentity.Parameters;
-        refIdParams.SuperclassAlias.Should().NotBeNull();
-        var aliasElement = refIdParams.SuperclassAlias!.IdentityElements.Should().ContainSingle().Subject;
-
-        aliasElement.Column.Value.Should().Be("ProgramTypeDescriptor_DescriptorId");
-        aliasElement.IdentityJsonPath.Should().Be("$.programTypeDescriptor");
-        aliasElement.IsDescriptorReference.Should().BeTrue();
-    }
-}
-
-/// <summary>
-/// Test fixture proving ReferentialIdentityMaintenance identity elements stay aligned with the
-/// resource's identity JSON paths when key unification fans one reference-site logical field out to
-/// multiple physical binding columns (one identity path, two unified alias columns), while distinct
-/// identity paths that merely share canonical storage each keep their own hash element.
-/// </summary>
-[TestFixture]
-public class Given_Key_Unified_Reference_Identity_For_ReferentialIdentity_Trigger
+public class Given_Key_Unified_Reference_Identity_For_Identity_Projection_Columns
 {
     private DerivedRelationalModelSet _result = default!;
     private DbTriggerInfo _registrationTrigger = default!;
-    private TriggerKindParameters.ReferentialIdentityMaintenance _registrationRefId = default!;
-    private TriggerKindParameters.ReferentialIdentityMaintenance _offeringRefId = default!;
 
     [SetUp]
     public void Setup()
@@ -1147,67 +1018,8 @@ public class Given_Key_Unified_Reference_Identity_For_ReferentialIdentity_Trigge
         _result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
 
         _registrationTrigger = _result.TriggersInCreateOrder.Single(t =>
-            t.Table.Name == "Registration"
-            && t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
+            t.Name.Value == "TR_Registration_Stamp"
         );
-        _registrationRefId = (TriggerKindParameters.ReferentialIdentityMaintenance)
-            _registrationTrigger.Parameters;
-
-        _offeringRefId = (TriggerKindParameters.ReferentialIdentityMaintenance)
-            _result
-                .TriggersInCreateOrder.Single(t =>
-                    t.Table.Name == "Offering"
-                    && t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
-                )
-                .Parameters;
-    }
-
-    [Test]
-    public void It_should_emit_one_identity_element_per_identity_path_on_the_referencing_resource()
-    {
-        _registrationRefId
-            .IdentityElements.Select(e => e.IdentityJsonPath)
-            .Should()
-            .Equal("$.offeringReference.offeringName", "$.offeringReference.schoolId", "$.registrationId");
-    }
-
-    [Test]
-    public void It_should_retain_the_first_member_column_of_the_key_unified_logical_field_group()
-    {
-        var registrationModel = _result
-            .ConcreteResourcesInNameOrder.Single(m => m.ResourceKey.Resource.ResourceName == "Registration")
-            .RelationalModel;
-        var offeringBinding = registrationModel.DocumentReferenceBindings.Single(b =>
-            b.ReferenceObjectPath.Canonical == "$.offeringReference"
-        );
-        var schoolIdGroup = offeringBinding
-            .GetLogicalFieldGroups()
-            .Single(g => g.ReferenceJsonPath.Canonical == "$.offeringReference.schoolId");
-
-        schoolIdGroup
-            .MemberColumns.Should()
-            .HaveCountGreaterThan(
-                1,
-                "the fixture must fan one logical reference field out to multiple unified columns"
-            );
-
-        var element = _registrationRefId.IdentityElements.Single(e =>
-            e.IdentityJsonPath == "$.offeringReference.schoolId"
-        );
-        element.Column.Should().Be(schoolIdGroup.MemberColumns[0]);
-    }
-
-    [Test]
-    public void It_should_retain_distinct_identity_paths_that_share_canonical_storage()
-    {
-        _offeringRefId
-            .IdentityElements.Select(e => e.IdentityJsonPath)
-            .Should()
-            .Equal(
-                "$.offeringName",
-                "$.primarySchoolReference.schoolId",
-                "$.secondarySchoolReference.schoolId"
-            );
     }
 
     [Test]

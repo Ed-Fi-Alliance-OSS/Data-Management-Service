@@ -645,25 +645,6 @@ CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_StudentReference_Student
 
 CREATE INDEX IF NOT EXISTS "IX_Student_ContentVersion" ON "edfi"."Student" ("ContentVersion");
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProfileRootOnlyMergeItem_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."ProfileRootOnlyMergeItemId" IS DISTINCT FROM NEW."ProfileRootOnlyMergeItemId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProfileRootOnlyMergeItem' || '$.profileRootOnlyMergeItemId=' || NEW."ProfileRootOnlyMergeItemId"::text), NEW."DocumentId", 1);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_ProfileRootOnlyMergeItem_ReferentialIdentity" ON "edfi"."ProfileRootOnlyMergeItem";
-CREATE TRIGGER "TR_ProfileRootOnlyMergeItem_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."ProfileRootOnlyMergeItem"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_ProfileRootOnlyMergeItem_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProfileRootOnlyMergeItem_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
@@ -721,25 +702,6 @@ CREATE TRIGGER "TR_ProfileRootOnlyMergeItem_Stamp"
 BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ProfileRootOnlyMergeItem"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProfileRootOnlyMergeItem_Stamp"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Student_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 3;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudent' || '$.studentUniqueId=' || NEW."StudentUniqueId"::text), NEW."DocumentId", 3);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Student_ReferentialIdentity" ON "edfi"."Student";
-CREATE TRIGGER "TR_Student_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Student"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Student_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Student_Stamp"()
 RETURNS TRIGGER AS $func$

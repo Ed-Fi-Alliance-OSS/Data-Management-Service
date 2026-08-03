@@ -339,7 +339,6 @@ public static class DerivedModelSetManifestEmitter
                 trigger.Parameters switch
                 {
                     TriggerKindParameters.DocumentStamping => "DocumentStamping",
-                    TriggerKindParameters.ReferentialIdentityMaintenance => "ReferentialIdentityMaintenance",
                     TriggerKindParameters.AbstractIdentityMaintenance => "AbstractIdentityMaintenance",
                     TriggerKindParameters.MssqlIdentityPropagationTrigger =>
                         "MssqlIdentityPropagationTrigger",
@@ -377,50 +376,6 @@ public static class DerivedModelSetManifestEmitter
                         writer.WriteEndObject();
                     }
                     writer.WriteEndArray();
-                    break;
-
-                case TriggerKindParameters.ReferentialIdentityMaintenance refId:
-                    writer.WriteNumber("resource_key_id", refId.ResourceKeyId);
-                    writer.WriteString("project_name", refId.ProjectName);
-                    writer.WriteString("resource_name", refId.ResourceName);
-                    writer.WritePropertyName("identity_elements");
-                    writer.WriteStartArray();
-                    foreach (var element in refId.IdentityElements)
-                    {
-                        writer.WriteStartObject();
-                        writer.WriteString("column", element.Column.Value);
-                        writer.WriteString("identity_json_path", element.IdentityJsonPath);
-                        if (element.IsDescriptorReference)
-                        {
-                            writer.WriteBoolean("is_descriptor_reference", true);
-                        }
-                        writer.WriteEndObject();
-                    }
-                    writer.WriteEndArray();
-
-                    if (refId.SuperclassAlias is { } alias)
-                    {
-                        writer.WritePropertyName("superclass_alias");
-                        writer.WriteStartObject();
-                        writer.WriteNumber("resource_key_id", alias.ResourceKeyId);
-                        writer.WriteString("project_name", alias.ProjectName);
-                        writer.WriteString("resource_name", alias.ResourceName);
-                        writer.WritePropertyName("identity_elements");
-                        writer.WriteStartArray();
-                        foreach (var element in alias.IdentityElements)
-                        {
-                            writer.WriteStartObject();
-                            writer.WriteString("column", element.Column.Value);
-                            writer.WriteString("identity_json_path", element.IdentityJsonPath);
-                            if (element.IsDescriptorReference)
-                            {
-                                writer.WriteBoolean("is_descriptor_reference", true);
-                            }
-                            writer.WriteEndObject();
-                        }
-                        writer.WriteEndArray();
-                        writer.WriteEndObject();
-                    }
                     break;
 
                 case TriggerKindParameters.DocumentStamping stamping:

@@ -125,8 +125,8 @@ public sealed record ConcreteResourceModel(
     /// and that order cannot be recovered from the emitted constraint inventory afterwards:
     /// <c>TableConstraint.Unique</c> carries no semantic role and constraint names are hash-truncated by
     /// the dialect identifier-shortening pass. Promoting the paths here is what lets natural-key probe
-    /// compilation reproduce those derivations without reading the <c>ReferentialIdentity</c> trigger
-    /// parameter block.
+    /// compilation reproduce those derivations now that the <c>ReferentialIdentity</c> trigger parameter
+    /// block that used to carry them is gone.
     ///
     /// Not serialized: the manifest emitters are hand-written allow-lists, so this member (like
     /// <see cref="SecurableElements"/>, <see cref="QueryFieldMappingsByQueryField"/>, and
@@ -303,24 +303,6 @@ public abstract record TriggerKindParameters
         : TriggerKindParameters;
 
     /// <summary>
-    /// Parameters for triggers that maintain referential identity for concrete resources.
-    /// </summary>
-    /// <param name="ResourceKeyId">The resource key ID for UUIDv5 computation.</param>
-    /// <param name="ProjectName">The project name for UUIDv5 computation.</param>
-    /// <param name="ResourceName">The resource name for UUIDv5 computation.</param>
-    /// <param name="IdentityElements">Identity element mappings for UUIDv5 computation.</param>
-    /// <param name="SuperclassAlias">
-    /// Superclass alias information for subclass resources. <c>null</c> for non-subclass resources.
-    /// </param>
-    public sealed record ReferentialIdentityMaintenance(
-        short ResourceKeyId,
-        string ProjectName,
-        string ResourceName,
-        IReadOnlyList<IdentityElementMapping> IdentityElements,
-        SuperclassAliasInfo? SuperclassAlias = null
-    ) : TriggerKindParameters;
-
-    /// <summary>
     /// Parameters for triggers that maintain abstract identity tables from concrete roots.
     /// </summary>
     /// <param name="TargetTable">The abstract identity table being maintained.</param>
@@ -373,35 +355,21 @@ public sealed record PropagationReferrerTarget(
 public readonly record struct DbTriggerName(string Value);
 
 /// <summary>
-/// Maps a root table column to its identity JSON path for UUIDv5 computation.
+/// Maps a root table column to the identity JSON path it stores, in the resource's declared
+/// identity order.
 /// </summary>
 /// <param name="Column">The physical column on the root table.</param>
-/// <param name="IdentityJsonPath">The canonical JSON path label used in the UUIDv5 hash string.</param>
-/// <param name="ScalarType">The scalar type metadata for type-aware string formatting in hash expressions.</param>
+/// <param name="IdentityJsonPath">The canonical JSON path this column stores.</param>
+/// <param name="ScalarType">The scalar type metadata for type-aware string formatting.</param>
 /// <param name="IsDescriptorReference">
-/// Indicates that <paramref name="Column"/> stores a descriptor document ID that must be converted back
-/// to the descriptor URI before UUIDv5 hash computation.
+/// Indicates that <paramref name="Column"/> stores a descriptor document ID rather than the
+/// descriptor URI itself.
 /// </param>
 public sealed record IdentityElementMapping(
     DbColumnName Column,
     string IdentityJsonPath,
     RelationalScalarType ScalarType,
     bool IsDescriptorReference = false
-);
-
-/// <summary>
-/// Superclass alias information for subclass resources that must also maintain referential identity
-/// under their superclass resource key.
-/// </summary>
-/// <param name="ResourceKeyId">The superclass resource key ID.</param>
-/// <param name="ProjectName">The superclass project name.</param>
-/// <param name="ResourceName">The superclass resource name.</param>
-/// <param name="IdentityElements">Identity element mappings for the superclass identity.</param>
-public sealed record SuperclassAliasInfo(
-    short ResourceKeyId,
-    string ProjectName,
-    string ResourceName,
-    IReadOnlyList<IdentityElementMapping> IdentityElements
 );
 
 /// <summary>
@@ -421,7 +389,6 @@ public sealed record TriggerColumnMapping(DbColumnName SourceColumn, DbColumnNam
 /// Columns whose change affects the resource identity projection. For
 /// <see cref="TriggerKindParameters.DocumentStamping"/> triggers on root tables, these are the columns
 /// that should additionally bump <c>IdentityVersion</c>. For
-/// <see cref="TriggerKindParameters.ReferentialIdentityMaintenance"/> and
 /// <see cref="TriggerKindParameters.AbstractIdentityMaintenance"/> triggers, these are the columns that
 /// trigger recomputation. Empty for child/extension table stamping triggers.
 /// </param>

@@ -299,10 +299,8 @@ internal static class MssqlProfileRootOnlyFixtureSupport
     // ─────────────────────────────────────────────────────────────────────────
     //  Prerequisite-seed helpers (MSSQL dialect). Mirror of the pgsql sibling
     //  file; dialect differences: bracket identifiers, SqlParameter, bit (0/1)
-    //  for boolean, OUTPUT INSERTED for scalar return. See pgsql file header
-    //  comment for rationale + trigger behavior; triggers on edfi.Student and
-    //  edfi.ProfileRootOnlyMergeItem manage dms.ReferentialIdentity for their
-    //  own rows, but descriptors need manual insertion.
+    //  for boolean, OUTPUT INSERTED for scalar return. See the pgsql file header
+    //  comment for rationale.
     // ─────────────────────────────────────────────────────────────────────────
 
     public static async Task<short> GetResourceKeyIdAsync(

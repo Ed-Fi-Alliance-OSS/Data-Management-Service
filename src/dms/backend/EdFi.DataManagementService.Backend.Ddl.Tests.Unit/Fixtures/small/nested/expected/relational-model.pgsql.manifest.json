@@ -190,29 +190,6 @@
       }
     },
     {
-      "name": "TR_School_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "School"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "SchoolId"
-      ],
-      "resource_key_id": 2,
-      "project_name": "Ed-Fi",
-      "resource_name": "School",
-      "identity_elements": [
-        {
-          "column": "SchoolId",
-          "identity_json_path": "$.schoolId"
-        }
-      ]
-    },
-    {
       "name": "TR_School_Stamp",
       "table": {
         "schema": "edfi",

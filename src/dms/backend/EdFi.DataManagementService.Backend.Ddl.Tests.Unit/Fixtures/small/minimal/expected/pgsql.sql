@@ -516,25 +516,6 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_Person_ContentVersion" ON "edfi"."Person" ("ContentVersion");
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Person_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."PersonId" IS DISTINCT FROM NEW."PersonId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPerson' || '$.personId=' || NEW."PersonId"::text), NEW."DocumentId", 1);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Person_ReferentialIdentity" ON "edfi"."Person";
-CREATE TRIGGER "TR_Person_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."Person"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_Person_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Person_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE

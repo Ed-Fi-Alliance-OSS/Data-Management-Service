@@ -1481,27 +1481,6 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     {
         switch (parameters)
         {
-            case TriggerKindParameters.ReferentialIdentityMaintenance refId:
-            {
-                var updatedElements = ShortenIdentityElementMappings(
-                    refId.IdentityElements,
-                    dialectRules,
-                    out var elementsChanged
-                );
-                var updatedAlias = ShortenSuperclassAlias(
-                    refId.SuperclassAlias,
-                    dialectRules,
-                    out var aliasChanged
-                );
-                changed = elementsChanged || aliasChanged;
-                return changed
-                    ? refId with
-                    {
-                        IdentityElements = updatedElements,
-                        SuperclassAlias = updatedAlias,
-                    }
-                    : parameters;
-            }
             case TriggerKindParameters.AbstractIdentityMaintenance abstractId:
             {
                 var updatedTargetTable = ShortenTable(abstractId.TargetTable, dialectRules);
@@ -1633,58 +1612,6 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         }
 
         return changed ? updated : referrers;
-    }
-
-    /// <summary>
-    /// Shortens column names in identity element mappings using dialect rules.
-    /// </summary>
-    private static IReadOnlyList<IdentityElementMapping> ShortenIdentityElementMappings(
-        IReadOnlyList<IdentityElementMapping> elements,
-        ISqlDialectRules dialectRules,
-        out bool changed
-    )
-    {
-        changed = false;
-        var updated = new IdentityElementMapping[elements.Count];
-
-        for (var i = 0; i < elements.Count; i++)
-        {
-            var element = elements[i];
-            var updatedColumn = ShortenColumn(element.Column, dialectRules);
-
-            if (!updatedColumn.Equals(element.Column))
-            {
-                changed = true;
-            }
-
-            updated[i] = element with { Column = updatedColumn };
-        }
-
-        return changed ? updated : elements;
-    }
-
-    /// <summary>
-    /// Shortens column names in a superclass alias's identity elements using dialect rules.
-    /// </summary>
-    private static SuperclassAliasInfo? ShortenSuperclassAlias(
-        SuperclassAliasInfo? alias,
-        ISqlDialectRules dialectRules,
-        out bool changed
-    )
-    {
-        if (alias is null)
-        {
-            changed = false;
-            return null;
-        }
-
-        var updatedElements = ShortenIdentityElementMappings(
-            alias.IdentityElements,
-            dialectRules,
-            out changed
-        );
-
-        return changed ? alias with { IdentityElements = updatedElements } : alias;
     }
 
     /// <summary>

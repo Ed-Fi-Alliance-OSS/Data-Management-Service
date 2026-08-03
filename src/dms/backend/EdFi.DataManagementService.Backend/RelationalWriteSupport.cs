@@ -12,8 +12,8 @@ internal static class RelationalWriteSupport
 {
     /// <summary>
     /// Resolves the compiled own-identity (<c>UX_&lt;R&gt;_NK</c>) probe for a relational-table resource.
-    /// This is the 409 identity-conflict machinery's metadata source; it deliberately does NOT read the
-    /// <c>ReferentialIdentity</c> trigger parameter block, which is being removed.
+    /// This is the 409 identity-conflict machinery's metadata source; it replaced the
+    /// <c>ReferentialIdentity</c> trigger parameter block, which has been removed.
     /// </summary>
     public static OwnNaturalKeyProbe GetOwnNaturalKeyProbeOrThrow(
         MappingSet mappingSet,

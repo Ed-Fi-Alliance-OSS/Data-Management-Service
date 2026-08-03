@@ -356,12 +356,6 @@ internal sealed record GuardedNoOpPersistedState(
     long DocumentCount
 );
 
-internal sealed record GuardedNoOpReferentialIdentityRow(
-    Guid ReferentialId,
-    long DocumentId,
-    short ResourceKeyId
-);
-
 file static class GuardedNoOpIntegrationTestSupport
 {
     public const string FixtureRelativePath =
@@ -577,34 +571,6 @@ file static class GuardedNoOpIntegrationTestSupport
         return new GuardedNoOpPersistedState(document, school, addresses, extensionAddresses, documentCount);
     }
 
-    public static async Task<GuardedNoOpReferentialIdentityRow> ReadReferentialIdentityRowAsync(
-        PostgresqlGeneratedDdlTestDatabase database,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "DocumentId" = @documentId
-                AND "ResourceKeyId" = @resourceKeyId;
-            """,
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-
-        return rows.Count == 1
-            ? new GuardedNoOpReferentialIdentityRow(
-                GetGuid(rows[0], "ReferentialId"),
-                GetInt64(rows[0], "DocumentId"),
-                GetInt16(rows[0], "ResourceKeyId")
-            )
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
-            );
-    }
-
     public static async Task<long> ReadDocumentCountAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         Guid documentUuid
@@ -648,6 +614,12 @@ file static class GuardedNoOpIntegrationTestSupport
             : throw new InvalidOperationException(
                 $"Expected persisted row to contain column '{columnName}'."
             );
+
+    /// <summary>
+    /// The referential id every fixture's created School document carries, computed from the same
+    /// identity the create request declares — which is exactly what a POST-as-update must present.
+    /// </summary>
+    public static ReferentialId SchoolReferentialId => CreateSchoolDocumentInfo().ReferentialId;
 
     private static DocumentInfo CreateSchoolDocumentInfo(ReferentialId? referentialId = null)
     {
@@ -976,15 +948,8 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A
             ExistingSchoolDocumentUuid.Value
         );
 
-        var persistedReferentialIdentity =
-            await GuardedNoOpIntegrationTestSupport.ReadReferentialIdentityRowAsync(
-                _database,
-                _stateBeforePostAsUpdate.Document.DocumentId,
-                _mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]
-            );
-
         _postAsUpdateResult = await ExecutePostAsUpdateAsync(
-            new ReferentialId(persistedReferentialIdentity.ReferentialId)
+            GuardedNoOpIntegrationTestSupport.SchoolReferentialId
         );
 
         _stateAfterPostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
@@ -1225,15 +1190,8 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_When_C
             ExistingSchoolDocumentUuid.Value
         );
 
-        var persistedReferentialIdentity =
-            await GuardedNoOpIntegrationTestSupport.ReadReferentialIdentityRowAsync(
-                _database,
-                _stateBeforePostAsUpdate.Document.DocumentId,
-                _mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]
-            );
-
         _postAsUpdateResult = await ExecutePostAsUpdateAsync(
-            new ReferentialId(persistedReferentialIdentity.ReferentialId)
+            GuardedNoOpIntegrationTestSupport.SchoolReferentialId
         );
 
         _stateAfterPostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
@@ -1503,15 +1461,8 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_After_
             ExistingSchoolDocumentUuid.Value
         );
 
-        var persistedReferentialIdentity =
-            await GuardedNoOpIntegrationTestSupport.ReadReferentialIdentityRowAsync(
-                _database,
-                _stateBeforePostAsUpdate.Document.DocumentId,
-                _mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]
-            );
-
         _postAsUpdateResult = await ExecutePostAsUpdateAsync(
-            new ReferentialId(persistedReferentialIdentity.ReferentialId)
+            GuardedNoOpIntegrationTestSupport.SchoolReferentialId
         );
 
         _stateAfterPostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
@@ -1774,15 +1725,8 @@ internal class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Post_As_Update_
             ExistingSchoolDocumentUuid.Value
         );
 
-        var persistedReferentialIdentity =
-            await GuardedNoOpIntegrationTestSupport.ReadReferentialIdentityRowAsync(
-                _database,
-                _stateBeforePostAsUpdate.Document.DocumentId,
-                _mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]
-            );
-
         _postAsUpdateResult = await ExecutePostAsUpdateAsync(
-            new ReferentialId(persistedReferentialIdentity.ReferentialId)
+            GuardedNoOpIntegrationTestSupport.SchoolReferentialId
         );
 
         _stateAfterPostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
@@ -2045,16 +1989,9 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A
             ExistingSchoolDocumentUuid.Value
         );
 
-        var persistedReferentialIdentity =
-            await GuardedNoOpIntegrationTestSupport.ReadReferentialIdentityRowAsync(
-                _database,
-                _stateBeforePostAsUpdate.Document.DocumentId,
-                _mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]
-            );
-
         _postAsUpdateResult = await ExecutePostAsUpdateAsync(
             _stateBeforePostAsUpdate.Document.DocumentId,
-            new ReferentialId(persistedReferentialIdentity.ReferentialId)
+            GuardedNoOpIntegrationTestSupport.SchoolReferentialId
         );
 
         _stateAfterPostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(

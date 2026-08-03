@@ -149,8 +149,8 @@ internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstr
     /// </summary>
     /// <remarks>
     /// Reads the compiled <see cref="OwnNaturalKeyProbe"/>. It used to re-derive this list at runtime from
-    /// the <c>ReferentialIdentity</c> trigger's identity-element block — metadata that disappears when the
-    /// trigger is removed, which would have silently broken 409 classification and If-None-Match handling.
+    /// the <c>ReferentialIdentity</c> trigger's identity-element block — metadata that disappeared with the
+    /// trigger, which would have silently broken 409 classification and If-None-Match handling.
     /// The compile-time probe reproduces <c>RootIdentityConstraintPass.BuildRootIdentityColumns</c>
     /// directly from the model, so this comparison stays exact.
     /// </remarks>

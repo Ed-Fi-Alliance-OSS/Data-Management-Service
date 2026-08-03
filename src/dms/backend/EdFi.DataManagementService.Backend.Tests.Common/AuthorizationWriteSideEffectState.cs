@@ -23,6 +23,5 @@ internal sealed record AuthorizationResourceTableState(
 
 internal sealed record AuthorizationWriteSideEffectState(
     AuthorizationDocumentState Document,
-    IReadOnlyList<AuthorizationResourceTableState> ResourceTables,
-    IReadOnlyList<ReferentialIdentityRow> ReferentialIdentities
+    IReadOnlyList<AuthorizationResourceTableState> ResourceTables
 );

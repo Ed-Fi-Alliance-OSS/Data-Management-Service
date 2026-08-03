@@ -126,7 +126,6 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         (await CountSchoolRootRowsAsync(documentId!.Value)).Should().Be(1);
         (await CountSchoolAddressRowsAsync(documentId.Value)).Should().BeGreaterThan(0);
         (await CountSchoolAddressPeriodRowsAsync(documentId.Value)).Should().BeGreaterThan(0);
-        (await CountReferentialIdentityRowsAsync(documentId.Value)).Should().Be(1);
 
         var delete = await InvokeAsync(repository =>
             repository.DeleteDocumentById(CreateDeleteRequest(_schoolResourceInfo, documentUuid))
@@ -143,9 +142,6 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         (await CountSchoolAddressPeriodRowsAsync(documentId.Value))
             .Should()
             .Be(0, "SchoolAddressPeriod child rows must cascade when the Document row is removed");
-        (await CountReferentialIdentityRowsAsync(documentId.Value))
-            .Should()
-            .Be(0, "dms.ReferentialIdentity rows must cascade when the Document row is removed");
         _recordingLogger.Records.Should().NotContain(r => r.Message.Contains("FK constraint '"));
     }
 
@@ -369,18 +365,6 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
             SELECT COUNT(*) AS "Count"
             FROM "edfi"."SchoolAddressPeriod"
             WHERE "School_DocumentId" = @documentId;
-            """,
-            documentId
-        );
-    }
-
-    private async Task<long> CountReferentialIdentityRowsAsync(long documentId)
-    {
-        return await CountByDocumentIdAsync(
-            """
-            SELECT COUNT(*) AS "Count"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "DocumentId" = @documentId;
             """,
             documentId
         );

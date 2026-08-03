@@ -402,7 +402,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
     {
         // A non-School EducationOrganization subclass colliding on the shared abstract identity table must
         // report its own identity element (localEducationAgencyId), proving the duplicate values are taken from
-        // the concrete resource's referential-identity metadata rather than a hard-coded School identity.
+        // the concrete resource's own natural-key probe rather than a hard-coded School identity.
         var classifier = new RecordingRelationalWriteExceptionClassifier
         {
             ClassificationToReturn = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
@@ -571,30 +571,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
                 AbstractIdentityTablesInNameOrder: [],
                 AbstractUnionViewsInNameOrder: [],
                 IndexesInCreateOrder: [],
-                TriggersInCreateOrder:
-                [
-                    new DbTriggerInfo(
-                        new DbTriggerName("TR_School_ReferentialIdentity"),
-                        resourceModel.Root.Table,
-                        [new DbColumnName("DocumentId")],
-                        [identityColumn.ColumnName],
-                        new TriggerKindParameters.ReferentialIdentityMaintenance(
-                            resourceKey.ResourceKeyId,
-                            resource.ProjectName,
-                            resource.ResourceName,
-                            [
-                                new IdentityElementMapping(
-                                    identityColumn.ColumnName,
-                                    identityJsonPath,
-                                    identityColumn.ScalarType
-                                        ?? throw new InvalidOperationException(
-                                            "Expected the School identity column to have a scalar type."
-                                        )
-                                ),
-                            ]
-                        )
-                    ),
-                ]
+                TriggersInCreateOrder: []
             ),
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
             {

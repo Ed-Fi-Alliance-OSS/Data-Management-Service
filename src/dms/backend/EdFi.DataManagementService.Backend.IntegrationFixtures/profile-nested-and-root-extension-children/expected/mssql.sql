@@ -615,36 +615,6 @@ IF NOT EXISTS (
 CREATE INDEX [IX_ParentResourceParentChildren_ParentCollectionItemId_ParentResource_DocumentId] ON [edfi].[ParentResourceParentChildren] ([ParentCollectionItemId], [ParentResource_DocumentId]);
 
 GO
-CREATE OR ALTER TRIGGER [edfi].[TR_ParentResource_ReferentialIdentity]
-ON [edfi].[ParentResource]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 1;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiParentResource' AS nvarchar(max)) + N'$.parentResourceId=' + CAST(i.[ParentResourceId] AS nvarchar(max))), i.[DocumentId], 1
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([ParentResourceId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[ParentResourceId] <> d.[ParentResourceId] OR (i.[ParentResourceId] IS NULL AND d.[ParentResourceId] IS NOT NULL) OR (i.[ParentResourceId] IS NOT NULL AND d.[ParentResourceId] IS NULL));
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 1;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiParentResource' AS nvarchar(max)) + N'$.parentResourceId=' + CAST(i.[ParentResourceId] AS nvarchar(max))), i.[DocumentId], 1
-        FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_ParentResource_Stamp]
 ON [edfi].[ParentResource]
 AFTER INSERT, UPDATE, DELETE

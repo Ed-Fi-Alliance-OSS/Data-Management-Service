@@ -10,10 +10,9 @@ using EdFi.DataManagementService.Tests.Integration.Scenarios;
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql;
 
 /// <summary>
-/// PostgreSQL API regression: the relational ReferentialIdentity trigger must store the same
-/// referential id Core computes when a resource identity contains a key-unified reference path
-/// (Section's <c>$.courseOfferingReference.schoolId</c>), so resources referencing the Section
-/// resolve without a reference-validation conflict.
+/// PostgreSQL API regression: a resource identity containing a key-unified reference path
+/// (Section's <c>$.courseOfferingReference.schoolId</c>) must still let resources referencing the
+/// Section resolve without a reference-validation conflict.
 /// </summary>
 public sealed class Given_Postgresql_SectionReferentialIdentity : PostgresqlApiIntegrationTestBase
 {

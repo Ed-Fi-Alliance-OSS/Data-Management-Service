@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 
@@ -25,10 +24,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private static readonly DbColumnName IdentityVersionColumn = new("IdentityVersion");
     private static readonly DbColumnName IdentityLastModifiedAtColumn = new("IdentityLastModifiedAt");
     private static readonly DbColumnName CreatedAtColumn = RelationalNameConventions.CreatedAtColumnName;
-    private static readonly DbColumnName ReferentialIdColumn = new("ReferentialId");
-    private static readonly DbColumnName ResourceKeyIdColumn = new("ResourceKeyId");
     private static readonly DbColumnName DiscriminatorColumn = new("Discriminator");
-    private static readonly DbColumnName DescriptorUriColumn = new("Uri");
 
     /// <summary>
     /// Builds a SQL script that creates all schemas, tables, indexes, views, and triggers in the model set.
@@ -680,8 +676,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
             // Dispatch by dialect enum rather than pattern abstraction for trigger generation.
             // Adding a new dialect requires updating this site and: EmitDocumentStampingBody,
-            // EmitReferentialIdentityBody, EmitAbstractIdentityBody, FormatNullOrTrueCheck,
-            // EmitStringLiteralWithCast.
+            // EmitAbstractIdentityBody, FormatNullOrTrueCheck, EmitStringLiteralWithCast.
             if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
             {
                 EmitPgsqlTrigger(writer, trigger, tableModelsByTableName, trackedChangeTablesByName);
@@ -825,10 +820,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var pgsqlTriggerEvent = trigger.Parameters switch
         {
             TriggerKindParameters.DocumentStamping => "BEFORE INSERT OR UPDATE OR DELETE ON ",
-            // Referential identity triggers must be AFTER so that GENERATED ALWAYS STORED
-            // columns (e.g. key-unified alias columns) are already recomputed when the
-            // trigger body reads them.
-            TriggerKindParameters.ReferentialIdentityMaintenance => "AFTER INSERT OR UPDATE ON ",
             _ => "BEFORE INSERT OR UPDATE ON ",
         };
         writer.Append(pgsqlTriggerEvent);
@@ -1007,16 +998,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     trackedChangeTablesByName,
                     pgsqlTrackedChangePlan
                 );
-                break;
-            case TriggerKindParameters.ReferentialIdentityMaintenance refId:
-                if (!tableModelsByTableName.TryGetValue(trigger.Table, out var refIdTableModel))
-                {
-                    throw new InvalidOperationException(
-                        $"ReferentialIdentityMaintenance trigger '{trigger.Name.Value}' requires a table model for "
-                            + $"'{trigger.Table.Schema.Value}.{trigger.Table.Name}', but none was found."
-                    );
-                }
-                EmitReferentialIdentityBody(writer, trigger, refIdTableModel, refId);
                 break;
             case TriggerKindParameters.AbstractIdentityMaintenance abstractId:
                 if (!tableModelsByTableName.TryGetValue(trigger.Table, out var abstractIdTableModel))
@@ -1787,356 +1768,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             );
         }
         writer.AppendLine(";");
-    }
-
-    /// <summary>
-    /// Emits referential identity maintenance trigger body that maintains
-    /// <c>dms.ReferentialIdentity</c> rows via UUIDv5 computation.
-    /// </summary>
-    private void EmitReferentialIdentityBody(
-        SqlWriter writer,
-        DbTriggerInfo trigger,
-        DbTableModel tableModel,
-        TriggerKindParameters.ReferentialIdentityMaintenance refId
-    )
-    {
-        // Consolidated guard: both dialect paths require at least one identity element.
-        if (refId.IdentityElements.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"ReferentialIdentityMaintenance trigger requires at least one identity element "
-                    + $"for resource '{refId.ResourceName}'. This indicates a bug in the model derivation phase."
-            );
-        }
-
-        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
-        {
-            EmitPgsqlReferentialIdentityBody(writer, trigger.IdentityProjectionColumns, refId);
-        }
-        else
-        {
-            EmitMssqlReferentialIdentityBody(writer, trigger.IdentityProjectionColumns, tableModel, refId);
-        }
-    }
-
-    private void EmitPgsqlReferentialIdentityBody(
-        SqlWriter writer,
-        IReadOnlyList<DbColumnName> identityProjectionColumns,
-        TriggerKindParameters.ReferentialIdentityMaintenance refId
-    )
-    {
-        // Guard: skip recomputation on no-op UPDATEs where identity columns didn't change
-        writer.Append("IF TG_OP = 'INSERT' OR (");
-        EmitPgsqlValueDiffDisjunction(writer, identityProjectionColumns);
-        writer.AppendLine(") THEN");
-
-        using (writer.Indent())
-        {
-            var refIdTable = Quote(DmsTableNames.ReferentialIdentity);
-
-            // Primary referential identity
-            EmitPgsqlReferentialIdentityBlock(
-                writer,
-                refIdTable,
-                refId.ResourceKeyId,
-                refId.ProjectName,
-                refId.ResourceName,
-                refId.IdentityElements
-            );
-
-            // Superclass alias
-            if (refId.SuperclassAlias is { } alias)
-            {
-                EmitPgsqlReferentialIdentityBlock(
-                    writer,
-                    refIdTable,
-                    alias.ResourceKeyId,
-                    alias.ProjectName,
-                    alias.ResourceName,
-                    alias.IdentityElements
-                );
-            }
-        }
-
-        writer.AppendLine("END IF;");
-    }
-
-    private void EmitPgsqlReferentialIdentityBlock(
-        SqlWriter writer,
-        string refIdTable,
-        short resourceKeyId,
-        string projectName,
-        string resourceName,
-        IReadOnlyList<IdentityElementMapping> identityElements
-    )
-    {
-        var uuidv5Func = FormatUuidv5FunctionName();
-
-        // DELETE existing row
-        writer.Append("DELETE FROM ");
-        writer.AppendLine(refIdTable);
-        writer.Append("WHERE ");
-        writer.Append(Quote(DocumentIdColumn));
-        writer.Append(" = NEW.");
-        writer.Append(Quote(DocumentIdColumn));
-        writer.Append(" AND ");
-        writer.Append(Quote(ResourceKeyIdColumn));
-        writer.Append(" = ");
-        writer.Append(resourceKeyId.ToString(CultureInfo.InvariantCulture));
-        writer.AppendLine(";");
-
-        // INSERT new row with UUIDv5
-        writer.Append("INSERT INTO ");
-        writer.Append(refIdTable);
-        writer.Append(" (");
-        writer.Append(Quote(ReferentialIdColumn));
-        writer.Append(", ");
-        writer.Append(Quote(DocumentIdColumn));
-        writer.Append(", ");
-        writer.Append(Quote(ResourceKeyIdColumn));
-        writer.AppendLine(")");
-        writer.Append("VALUES (");
-        writer.Append(uuidv5Func);
-        writer.Append("('");
-        writer.Append(Uuidv5Namespace);
-        // Format intentionally matches ReferentialIdCalculator.ResourceInfoString: {ProjectName}{ResourceName}
-        // with no separator — do not add one without updating the calculator.
-        writer.Append("'::uuid, '");
-        writer.Append(SqlDialectBase.EscapeSingleQuote(projectName));
-        writer.Append(SqlDialectBase.EscapeSingleQuote(resourceName));
-        writer.Append("' || ");
-        EmitPgsqlIdentityHashExpression(writer, identityElements);
-        writer.Append("), NEW.");
-        writer.Append(Quote(DocumentIdColumn));
-        writer.Append(", ");
-        writer.Append(resourceKeyId.ToString(CultureInfo.InvariantCulture));
-        writer.AppendLine(");");
-    }
-
-    /// <summary>
-    /// Emits the PostgreSQL identity hash expression for UUIDv5 computation.
-    /// </summary>
-    /// <remarks>
-    /// Identity columns are guaranteed NOT NULL because they are resource key parts
-    /// (the identity of the resource). The column model derivation ensures these columns
-    /// are created with <c>NOT NULL</c> constraints, so COALESCE is not needed here.
-    /// </remarks>
-    private void EmitPgsqlIdentityHashExpression(
-        SqlWriter writer,
-        IReadOnlyList<IdentityElementMapping> elements
-    )
-    {
-        for (int i = 0; i < elements.Count; i++)
-        {
-            if (i > 0)
-            {
-                writer.Append(" || '#' || ");
-            }
-            writer.Append("'");
-            writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
-            writer.Append("=' || ");
-            EmitPgsqlIdentityElementToText(writer, elements[i]);
-        }
-    }
-
-    /// <summary>
-    /// Emits a canonical text conversion for an identity column value in PostgreSQL.
-    /// Delegates to <see cref="DialectIdentityTextFormatter.PgsqlColumnToText"/> so the
-    /// trigger and the runtime reference-lookup verification SQL share one source of truth.
-    /// </summary>
-    private void EmitPgsqlIdentityElementToText(SqlWriter writer, IdentityElementMapping element)
-    {
-        var columnExpression = $"NEW.{Quote(element.Column)}";
-
-        if (element.IsDescriptorReference)
-        {
-            writer.Append("lower((SELECT descriptor.");
-            writer.Append(Quote(DescriptorUriColumn));
-            writer.Append(" FROM ");
-            writer.Append(Quote(DmsTableNames.Descriptor));
-            writer.Append(" descriptor WHERE descriptor.");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.Append(" = ");
-            writer.Append(columnExpression);
-            writer.Append("))");
-            return;
-        }
-
-        writer.Append(DialectIdentityTextFormatter.PgsqlColumnToText(columnExpression, element.ScalarType));
-    }
-
-    private void EmitMssqlReferentialIdentityBody(
-        SqlWriter writer,
-        IReadOnlyList<DbColumnName> identityProjectionColumns,
-        DbTableModel tableModel,
-        TriggerKindParameters.ReferentialIdentityMaintenance refId
-    )
-    {
-        var refIdTable = Quote(DmsTableNames.ReferentialIdentity);
-
-        EmitMssqlInsertUpdateDispatch(
-            writer,
-            identityProjectionColumns,
-            tableModel,
-            isInsert => EmitMssqlReferentialIdentityBlock(writer, refIdTable, refId, isInsert)
-        );
-    }
-
-    /// <summary>
-    /// Emits the DELETE + INSERT block for one referential identity resource key.
-    /// When <paramref name="isInsert"/> is true, scopes to all <c>inserted</c> rows;
-    /// otherwise scopes to the <c>@changedDocs</c> value-diff workset.
-    /// </summary>
-    private void EmitMssqlReferentialIdentityBlock(
-        SqlWriter writer,
-        string refIdTable,
-        TriggerKindParameters.ReferentialIdentityMaintenance refId,
-        bool isInsert
-    )
-    {
-        // Primary referential identity
-        EmitMssqlReferentialIdentityUpsert(
-            writer,
-            refIdTable,
-            refId.ResourceKeyId,
-            refId.ProjectName,
-            refId.ResourceName,
-            refId.IdentityElements,
-            isInsert
-        );
-
-        // Superclass alias
-        if (refId.SuperclassAlias is { } alias)
-        {
-            EmitMssqlReferentialIdentityUpsert(
-                writer,
-                refIdTable,
-                alias.ResourceKeyId,
-                alias.ProjectName,
-                alias.ResourceName,
-                alias.IdentityElements,
-                isInsert
-            );
-        }
-    }
-
-    /// <summary>
-    /// Emits a DELETE + INSERT pair for a single resource key's referential identity rows.
-    /// When <paramref name="isInsert"/> is true, scopes to all <c>inserted</c> rows;
-    /// otherwise scopes to the <c>@changedDocs</c> value-diff workset.
-    /// </summary>
-    private void EmitMssqlReferentialIdentityUpsert(
-        SqlWriter writer,
-        string refIdTable,
-        short resourceKeyId,
-        string projectName,
-        string resourceName,
-        IReadOnlyList<IdentityElementMapping> identityElements,
-        bool isInsert
-    )
-    {
-        var sourceAlias = isInsert ? "inserted" : "@changedDocs";
-        var uuidv5Func = FormatUuidv5FunctionName();
-        var documentIdCol = Quote(DocumentIdColumn);
-
-        // DELETE existing rows scoped to the source (all inserted or only changed)
-        writer.Append("DELETE FROM ");
-        writer.AppendLine(refIdTable);
-        writer.Append("WHERE ");
-        writer.Append(documentIdCol);
-        writer.Append(" IN (SELECT ");
-        writer.Append(documentIdCol);
-        writer.Append(" FROM ");
-        writer.Append(sourceAlias);
-        writer.Append(") AND ");
-        writer.Append(Quote(ResourceKeyIdColumn));
-        writer.Append(" = ");
-        writer.Append(resourceKeyId.ToString(CultureInfo.InvariantCulture));
-        writer.AppendLine(";");
-
-        // INSERT new rows with UUIDv5 — always join back to 'inserted' for column values
-        // (changedDocs only carries DocumentId; inserted has the full row).
-        writer.Append("INSERT INTO ");
-        writer.Append(refIdTable);
-        writer.Append(" (");
-        writer.Append(Quote(ReferentialIdColumn));
-        writer.Append(", ");
-        writer.Append(documentIdCol);
-        writer.Append(", ");
-        writer.Append(Quote(ResourceKeyIdColumn));
-        writer.AppendLine(")");
-        writer.Append("SELECT ");
-        writer.Append(uuidv5Func);
-        writer.Append("('");
-        writer.Append(Uuidv5Namespace);
-        // Format intentionally matches ReferentialIdCalculator.ResourceInfoString: {ProjectName}{ResourceName}
-        // with no separator — do not add one without updating the calculator.
-        writer.Append("', CAST(N'");
-        writer.Append(SqlDialectBase.EscapeSingleQuote(projectName));
-        writer.Append(SqlDialectBase.EscapeSingleQuote(resourceName));
-        writer.Append("' AS nvarchar(max)) + ");
-        EmitMssqlIdentityHashExpression(writer, identityElements);
-        writer.Append("), i.");
-        writer.Append(documentIdCol);
-        writer.Append(", ");
-        writer.AppendLine(resourceKeyId.ToString(CultureInfo.InvariantCulture));
-        writer.Append("FROM inserted i");
-        if (!isInsert)
-        {
-            writer.Append(" INNER JOIN ");
-            writer.Append(sourceAlias);
-            writer.Append(" cd ON cd.");
-            writer.Append(documentIdCol);
-            writer.Append(" = i.");
-            writer.Append(documentIdCol);
-        }
-        writer.AppendLine(";");
-    }
-
-    private void EmitMssqlIdentityHashExpression(
-        SqlWriter writer,
-        IReadOnlyList<IdentityElementMapping> elements
-    )
-    {
-        for (int i = 0; i < elements.Count; i++)
-        {
-            if (i > 0)
-            {
-                writer.Append(" + N'#' + ");
-            }
-            writer.Append("N'");
-            writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
-            writer.Append("=' + ");
-            EmitMssqlIdentityElementToNvarchar(writer, elements[i]);
-        }
-    }
-
-    /// <summary>
-    /// Emits a canonical nvarchar conversion for an identity column value in MSSQL.
-    /// Delegates to <see cref="DialectIdentityTextFormatter.MssqlColumnToNvarchar"/> so the
-    /// trigger and the runtime reference-lookup verification SQL share one source of truth.
-    /// </summary>
-    private void EmitMssqlIdentityElementToNvarchar(SqlWriter writer, IdentityElementMapping element)
-    {
-        var columnExpression = $"i.{Quote(element.Column)}";
-
-        if (element.IsDescriptorReference)
-        {
-            writer.Append("LOWER((SELECT descriptor.");
-            writer.Append(Quote(DescriptorUriColumn));
-            writer.Append(" FROM ");
-            writer.Append(Quote(DmsTableNames.Descriptor));
-            writer.Append(" descriptor WHERE descriptor.");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.Append(" = ");
-            writer.Append(columnExpression);
-            writer.Append("))");
-            return;
-        }
-
-        writer.Append(
-            DialectIdentityTextFormatter.MssqlColumnToNvarchar(columnExpression, element.ScalarType)
-        );
     }
 
     /// <summary>
@@ -3360,26 +2991,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private string Quote(DbTriggerName trigger) => _dialect.QuoteIdentifier(trigger.Value);
 
     /// <summary>
-    /// The UUIDv5 namespace used for referential identity computation.
-    /// Must match <c>ReferentialIdCalculator.EdFiUuidv5Namespace</c> in
-    /// <c>EdFi.DataManagementService.Core</c>. A guard test in the unit test project
-    /// asserts this value to prevent silent divergence.
-    /// </summary>
-    internal const string Uuidv5Namespace = "edf1edf1-3df1-3df1-3df1-3df1edf1edf1";
-
-    /// <summary>
     /// Formats the qualified <c>dms.ChangeVersionSequence</c> name for the current dialect.
     /// </summary>
     private string FormatSequenceName()
     {
         return $"{Quote(DmsTableNames.Document.Schema)}.{Quote(DmsTableNames.ChangeVersionSequence)}";
-    }
-
-    /// <summary>
-    /// Formats the qualified <c>dms.uuidv5</c> function name for the current dialect.
-    /// </summary>
-    private string FormatUuidv5FunctionName()
-    {
-        return $"{Quote(DmsTableNames.Document.Schema)}.{Quote("uuidv5")}";
     }
 }

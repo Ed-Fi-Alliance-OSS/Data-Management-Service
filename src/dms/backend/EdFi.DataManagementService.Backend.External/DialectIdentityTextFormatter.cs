@@ -7,10 +7,9 @@ namespace EdFi.DataManagementService.Backend.External;
 
 /// <summary>
 /// Single source of truth for converting an identity column value to its canonical
-/// text form inside generated SQL. Used by both ReferentialIdentity trigger emission
-/// (Backend.Ddl) and reference-lookup verification (Backend.Postgresql / Backend.Mssql)
-/// so the trigger-stored ReferentialId text and the runtime-computed verification key
-/// cannot drift.
+/// text form inside generated SQL. Used by reference-lookup verification
+/// (Backend.Postgresql / Backend.Mssql) so every runtime-computed verification key
+/// is canonicalized one way.
 ///
 /// Output must match Core's <c>IdentityValueCanonicalizer</c>: fixed-point decimals
 /// with no trailing fractional zeros, no trailing decimal point, ISO 8601 'Z'-suffixed

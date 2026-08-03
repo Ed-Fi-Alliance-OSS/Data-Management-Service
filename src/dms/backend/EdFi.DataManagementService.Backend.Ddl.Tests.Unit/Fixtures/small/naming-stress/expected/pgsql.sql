@@ -521,25 +521,6 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_NamingStressItem_ContentVersion" ON "edfi"."NamingStressItem" ("ContentVersion");
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_NamingStressItem_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."NamingStressItemId" IS DISTINCT FROM NEW."NamingStressItemId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiNamingStressItem' || '$.namingStressItemId=' || NEW."NamingStressItemId"::text), NEW."DocumentId", 1);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_NamingStressItem_ReferentialIdentity" ON "edfi"."NamingStressItem";
-CREATE TRIGGER "TR_NamingStressItem_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."NamingStressItem"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_NamingStressItem_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_NamingStressItem_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE

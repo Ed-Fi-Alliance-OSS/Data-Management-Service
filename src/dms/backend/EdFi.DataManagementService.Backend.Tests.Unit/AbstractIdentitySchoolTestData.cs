@@ -378,28 +378,6 @@ internal static class AbstractIdentitySchoolTestData
         var concreteKey = new ResourceKeyEntry(1, concreteResource, "1.0.0", false);
         var abstractResourceKey = new ResourceKeyEntry(2, abstractResource, "1.0.0", true);
 
-        // Subclass identifiers carry an Int32 scalar type in these fixtures; the failure mapper reads only the
-        // identity JSONPath from this element (walking it against the request body), not its scalar type, so a
-        // reference-backed nested path resolves the same way.
-        var referentialIdentityTrigger = new DbTriggerInfo(
-            new DbTriggerName($"TR_{concreteResource.ResourceName}_ReferentialIdentity"),
-            concreteRootTable.Table,
-            [new DbColumnName("DocumentId")],
-            [identityColumnName],
-            new TriggerKindParameters.ReferentialIdentityMaintenance(
-                concreteKey.ResourceKeyId,
-                concreteResource.ProjectName,
-                concreteResource.ResourceName,
-                [
-                    new IdentityElementMapping(
-                        identityColumnName,
-                        identityJsonPath,
-                        new RelationalScalarType(ScalarKind.Int32)
-                    ),
-                ]
-            )
-        );
-
         var mappingSet = new MappingSet(
             new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
             new DerivedRelationalModelSet(
@@ -418,7 +396,7 @@ internal static class AbstractIdentitySchoolTestData
                 [new AbstractIdentityTableInfo(abstractResourceKey, abstractIdentityTable)],
                 [],
                 [],
-                [referentialIdentityTrigger]
+                []
             ),
             new Dictionary<QualifiedResourceName, ResourceWritePlan> { [concreteResource] = writePlan },
             new Dictionary<QualifiedResourceName, ResourceReadPlan>(),

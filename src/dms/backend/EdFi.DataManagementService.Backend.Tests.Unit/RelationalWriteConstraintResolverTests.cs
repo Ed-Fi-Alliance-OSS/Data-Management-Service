@@ -675,31 +675,7 @@ public class Given_Relational_Write_Constraint_Resolver
                 [],
                 [],
                 [],
-                [
-                    new DbTriggerInfo(
-                        new DbTriggerName("TR_Section_ReferentialIdentity"),
-                        sectionRootTable.Table,
-                        [new DbColumnName("DocumentId")],
-                        [new DbColumnName("SchoolReference_SchoolId"), new DbColumnName("SectionIdentifier")],
-                        new TriggerKindParameters.ReferentialIdentityMaintenance(
-                            sectionKey.ResourceKeyId,
-                            SectionResource.ProjectName,
-                            SectionResource.ResourceName,
-                            [
-                                new IdentityElementMapping(
-                                    new DbColumnName("SchoolReference_SchoolId"),
-                                    "$.schoolReference.schoolId",
-                                    new RelationalScalarType(ScalarKind.Int32)
-                                ),
-                                new IdentityElementMapping(
-                                    new DbColumnName("SectionIdentifier"),
-                                    "$.sectionIdentifier",
-                                    new RelationalScalarType(ScalarKind.String, 50)
-                                ),
-                            ]
-                        )
-                    ),
-                ]
+                []
             ),
             new Dictionary<QualifiedResourceName, ResourceWritePlan> { [SectionResource] = writePlan },
             new Dictionary<QualifiedResourceName, ResourceReadPlan>(),

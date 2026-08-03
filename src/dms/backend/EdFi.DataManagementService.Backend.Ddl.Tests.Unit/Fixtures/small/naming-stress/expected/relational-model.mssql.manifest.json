@@ -89,29 +89,6 @@
       }
     },
     {
-      "name": "TR_NamingStressItem_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "NamingStressItem"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "NamingStressItemId"
-      ],
-      "resource_key_id": 1,
-      "project_name": "Ed-Fi",
-      "resource_name": "NamingStressItem",
-      "identity_elements": [
-        {
-          "column": "NamingStressItemId",
-          "identity_json_path": "$.namingStressItemId"
-        }
-      ]
-    },
-    {
       "name": "TR_NamingStressItem_Stamp",
       "table": {
         "schema": "edfi",
