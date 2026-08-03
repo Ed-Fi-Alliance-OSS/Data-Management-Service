@@ -1,7 +1,7 @@
 {
   "dialect": "pgsql",
-  "effective_schema_hash": "4a28a3d0642632e319d9bf420d51e31bdfe7ac340462e26bf12d629827907735",
-  "relational_mapping_version": "v1",
+  "effective_schema_hash": "32446b6cba114eba4b9ee52124023a795db9ac777e6621fde9599a0310f1759d",
+  "relational_mapping_version": "v2",
   "projects": [
     {
       "project_endpoint_name": "aligned",

@@ -1,7 +1,7 @@
 {
   "dialect": "mssql",
-  "effective_schema_hash": "60037ca0d1357cab3f3c898dba14e939e3b12f2d01fcc7cb62364733958827ea",
-  "relational_mapping_version": "v1",
+  "effective_schema_hash": "ca87198cee723cd5080f5f5676c6b647f4948f45cba08d73c9bf7172f438aa4b",
+  "relational_mapping_version": "v2",
   "projects": [
     {
       "project_endpoint_name": "ed-fi",

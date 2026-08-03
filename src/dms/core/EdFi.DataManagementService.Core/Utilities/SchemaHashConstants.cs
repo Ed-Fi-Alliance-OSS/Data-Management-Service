@@ -21,7 +21,13 @@ public static class SchemaHashConstants
     /// Bump this when mapping rules change to force schema mismatch detection.
     /// This value MUST match the relational_mapping_version used in .mpack files.
     /// </summary>
-    public const string RelationalMappingVersion = "v1";
+    /// <remarks>
+    /// v1 → v2: the removal of <c>dms.Document</c>, <c>dms.ReferentialIdentity</c> and
+    /// <c>dms.DocumentCache</c>. That is the first destructively schema-incompatible mapping change —
+    /// a v1 database cannot serve the v2 mapping and cannot be migrated in place — so the bump is what
+    /// makes the fingerprint reject it instead of letting a stale database look provisioned.
+    /// </remarks>
+    public const string RelationalMappingVersion = "v2";
 
     /// <summary>
     /// Version identifier for the resource key seed hash algorithm format.

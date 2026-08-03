@@ -142539,20 +142539,20 @@
     "effective_schema": {
       "effective_schema_singleton_id": 1,
       "api_schema_format_version": "1.0.0",
-      "effective_schema_hash": "fdb21d0c393eb9e97a344a9cdc63c135ffe4a1d53826592d296891e5d7b40a7c",
+      "effective_schema_hash": "53ba4ec6718cfdeb81c2c7e1c37932eaada4b858586fe504e2bb00a99e2f5f61",
       "resource_key_count": 358,
       "resource_key_seed_hash": "b2bc1f88c9075a93585e3abfdc25c5c6018c09f18fae7221816b1826eb4190c4"
     },
     "schema_components": [
       {
-        "effective_schema_hash": "fdb21d0c393eb9e97a344a9cdc63c135ffe4a1d53826592d296891e5d7b40a7c",
+        "effective_schema_hash": "53ba4ec6718cfdeb81c2c7e1c37932eaada4b858586fe504e2bb00a99e2f5f61",
         "project_endpoint_name": "ed-fi",
         "project_name": "Ed-Fi",
         "project_version": "5.2.0",
         "is_extension_project": false
       },
       {
-        "effective_schema_hash": "fdb21d0c393eb9e97a344a9cdc63c135ffe4a1d53826592d296891e5d7b40a7c",
+        "effective_schema_hash": "53ba4ec6718cfdeb81c2c7e1c37932eaada4b858586fe504e2bb00a99e2f5f61",
         "project_endpoint_name": "sample",
         "project_name": "Sample",
         "project_version": "1.0.0",
