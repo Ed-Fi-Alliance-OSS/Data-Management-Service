@@ -78,8 +78,12 @@ app.UseMiddleware<TenantResolutionMiddleware>();
 // Deliberately validated outside ReportInvalidConfiguration: that gate installs reporting middleware
 // and lets the host keep running, whereas a rejected connection-string encryption key must stop
 // startup before any schema deployment. Resolving it here also means a rejected key stops startup
-// even when another configuration section is invalid as well. The unhandled OptionsValidationException
-// exits non-zero and carries the validator's failure text.
+// even when another configuration section is invalid as well, and it runs every DatabaseSettings
+// rule, so a blank DatabaseConnection stops startup too. The unhandled OptionsValidationException
+// exits non-zero and carries the validator's failure text. It is left unhandled rather than following
+// the LogCritical + Environment.Exit(-1) pattern used further down this file because
+// DatabaseOptionsStartupTests asserts on that exception, and terminating the process instead would
+// make the behavior untestable under WebApplicationFactory.
 _ = app.Services.GetRequiredService<IOptions<DatabaseOptions>>().Value;
 
 if (!ReportInvalidConfiguration(app))

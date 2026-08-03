@@ -149,11 +149,11 @@ These settings configure how the DMS API connects to the Configuration Service t
 > `provision-dms-schema.ps1` decrypts with it too), so all three must be configured
 > with an identical value.
 >
-> **Valid values.** The Configuration Service validates its
-> `DatabaseSettings:EncryptionKey` at startup and refuses to start when the value
-> is blank, shorter than 32 characters, contains a non-ASCII character within the
-> first 32 characters, or derives the same key as the former shipped
-> `appsettings.json` default — that is, its first 32 characters match the
+> **Valid values.** The Configuration Service validates its `DatabaseSettings` at
+> startup and refuses to start when `DatabaseConnection` is blank, or when
+> `EncryptionKey` is blank, shorter than 32 characters, contains a non-ASCII
+> character within the first 32 characters, or derives the same key as the former
+> shipped `appsettings.json` default — that is, its first 32 characters match the
 > default's first 32 characters, whatever follows them. DMS enforces only that
 > its `ConfigurationServiceSettings:EncryptionKey` is non-empty, so it must be
 > given the same value the Configuration Service accepted.

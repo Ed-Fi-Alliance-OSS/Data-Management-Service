@@ -95,6 +95,50 @@ public class ConnectionStringEncryptionServiceTests
         }
     }
 
+    /// <summary>
+    /// Only the first 32 characters of the configured text reach the AES key, so two values sharing a
+    /// 32-character prefix are the same key spelled differently. DatabaseOptionsValidator rejects the
+    /// former shipped default by comparing that prefix rather than the whole string, which is only sound
+    /// while this holds, so it is pinned here next to the derivation that owns it.
+    /// </summary>
+    [TestFixture]
+    public class Given_two_encryption_keys_sharing_a_32_character_prefix
+    {
+        private const string SignificantPrefix = "Fk3pQ8sT2vW9xZ4bC6dE1gH5jL7mN0rY";
+
+        private const string TestConnectionString = "Server=localhost;Database=TestDb;";
+
+        private static ConnectionStringEncryptionService ServiceWithKey(string encryptionKey) =>
+            new(
+                Options.Create(
+                    new DatabaseOptions { DatabaseConnection = "Server=test;", EncryptionKey = encryptionKey }
+                )
+            );
+
+        [Test]
+        public void It_is_a_32_character_prefix() => SignificantPrefix.Length.Should().Be(32);
+
+        [Test]
+        public void It_decrypts_cipher_text_written_under_the_bare_prefix()
+        {
+            var encrypted = ServiceWithKey(SignificantPrefix).Encrypt(TestConnectionString);
+
+            ServiceWithKey(SignificantPrefix + "_ignored_suffix")
+                .Decrypt(encrypted)
+                .Should()
+                .Be(TestConnectionString);
+        }
+
+        [Test]
+        public void It_decrypts_cipher_text_written_under_the_suffixed_key()
+        {
+            var encrypted = ServiceWithKey(SignificantPrefix + "_a_different_suffix")
+                .Encrypt(TestConnectionString);
+
+            ServiceWithKey(SignificantPrefix).Decrypt(encrypted).Should().Be(TestConnectionString);
+        }
+    }
+
     [TestFixture]
     public class Given_round_trip_encryption : ConnectionStringEncryptionServiceTests
     {
