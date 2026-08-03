@@ -6,9 +6,11 @@
 > serving stamps from `dms.Document`. That index no longer exists, so those risk classes are retired
 > rather than mitigated. The `dms.Document (~100M rows)` scale section goes with it — there is no shared
 > hot table to keep narrow indexes on, and the write-amplification concern that "every representation
-> change writes `dms.Document`" is void because the stamp is written to the row being changed. The
-> `*_Stamp` triggers accordingly do two things per affected document, not three: stamp the row and
-> populate `tracked_changes_*`; there is nothing to mirror. Random-UUID index behaviour survives as a
+> change writes `dms.Document`" is void: there is no shared table to write. A root-row change stamps
+> that same root row; a child / collection / `_ext` change still updates its root row through the
+> trigger's `MirrorStampTargetTable`, but that root row *is* the document rather than an extra write to
+> a global table. The `*_Stamp` triggers accordingly do two things per affected document, not three:
+> write the stamp and populate `tracked_changes_*`. Random-UUID index behaviour survives as a
 > concern for `DocumentUuid` alone. See
 > [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 

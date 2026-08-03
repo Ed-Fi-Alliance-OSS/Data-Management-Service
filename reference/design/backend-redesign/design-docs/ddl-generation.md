@@ -7,11 +7,16 @@
 > three sequences, `GetMaxChangeVersion` (plus `throw_error` on PostgreSQL) and the SQL Server
 > `BigIntTable` type.
 >
-> The **trigger and constraint responsibilities** stated against those tables go with them: `*_Stamp`
-> triggers do not "stamp `dms.Document`, mirror onto `MirrorStampTargetTable`" — they stamp the row they
-> are attached to, which *is* the document; there is no `dms.ReferentialIdentity` to "maintain
-> transactionally on identity projection changes", so the derived trigger inventory has two kinds
-> (`DocumentStamping`, `AbstractIdentityMaintenance`) rather than three; `dms.Document.ResourceKeyId` is
+> The **trigger and constraint responsibilities** stated against those tables go with them. A `*_Stamp`
+> trigger no longer stamps `dms.Document` *and then* mirrors: it writes one stamp. A **root-table**
+> trigger stamps its own `NEW` row; a **child / collection / `_ext`** trigger still `UPDATE`s the
+> resource root row named by its `MirrorStampTargetTable`, and that mechanism is unchanged — what
+> changed is that the row it targets is now the only copy of the stamp rather than a mirror of a
+> `dms.Document` row. There is no `dms.ReferentialIdentity` to "maintain transactionally on identity
+> projection changes", so `TriggerKindParameters.ReferentialIdentityMaintenance` is gone from the
+> derived trigger inventory; the four surviving kinds are `DocumentStamping`,
+> `AbstractIdentityMaintenance`, `MssqlIdentityPropagationTrigger` and `AuthHierarchyMaintenance`.
+> `dms.Document.ResourceKeyId` is
 > not read at read time and `dms.Document(ResourceKeyId) → dms.ResourceKey` is not emitted — the only
 > core-table FK is `FK_SchemaComponent_EffectiveSchemaHash`; `dms.Document.CreatedByOwnershipTokenId` is
 > a column on every resource root table and on `dms.Descriptor` instead; and `abstractResources[*]` feed

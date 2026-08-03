@@ -3,9 +3,10 @@
 > **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** **every** mention of those
 > two tables in this document, which is more than a footnote's worth. Specifically: descriptors stored in
 > "`dms.Descriptor` (+ `dms.Document`)"; tracked-change columns "copied from `dms.Document.DocumentUuid`
-> / `ContentVersion`"; the `TriggerKindParameters.ReferentialIdentityMaintenance` record — that trigger
-> kind no longer exists in the contract type, which declares only `DocumentStamping` and
-> `AbstractIdentityMaintenance`; `ResourceKeyIdByResource` "when writing to shared tables like
+> / `ContentVersion`"; the `TriggerKindParameters.ReferentialIdentityMaintenance` record — that one
+> record is gone from the contract type, which still declares the other four kinds this document lists
+> (`DocumentStamping`, `AbstractIdentityMaintenance`, `MssqlIdentityPropagationTrigger` and
+> `AuthHierarchyMaintenance`); `ResourceKeyIdByResource` "when writing to shared tables like
 > `dms.Document` / `dms.ReferentialIdentity`"; the "single batched lookup against
 > `dms.ReferentialIdentity` to resolve `ReferentialId → DocumentId`"; and the read-path steps that
 > resolve `DocumentUuid → DocumentId` via `dms.Document` or `SELECT` `dms.Document` joined to the page

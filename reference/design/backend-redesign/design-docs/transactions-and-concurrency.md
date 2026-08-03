@@ -10,14 +10,17 @@
 > document.** The write sequence's "Insert/update `dms.Document` (allocate `DocumentId`; persist
 > `DocumentUuid` and `ResourceKeyId`)" step is gone: `DocumentId` comes from a `dms.DocumentIdSequence`
 > column default on the root row itself, which the root `INSERT` returns. The `*_Stamp` triggers do not
-> "stamp `dms.Document.ContentVersion` / `ContentLastModifiedAt` … and mirror" — they stamp the row they
-> are attached to, which is the only copy. `_lastModifiedDate` and `ChangeVersion` are served from that
-> same row. The delete sequence's "Delete the corresponding `dms.Document` row" and the cascade paths
+> "stamp `dms.Document.ContentVersion` / `ContentLastModifiedAt` … and mirror" — they write one stamp:
+> a root-table trigger stamps its own `NEW` row, and a child / collection / `_ext` trigger `UPDATE`s the
+> resource root row through its `MirrorStampTargetTable`, which is still how a child write reaches the
+> document's stamp. What is gone is the second copy, not the mechanism. `_lastModifiedDate` and
+> `ChangeVersion` are served from that same root row.
+> The delete sequence's "Delete the corresponding `dms.Document` row" and the cascade paths
 > into it do not exist. And the "Random UUID index behavior (`dms.ReferentialIdentity.ReferentialId`)"
 > section — including its hash-partitioning advice — analyses an index that is not created; the
 > `DocumentUuid` half of that concern does survive, on `UX_<Root>_DocumentUuid` / `UX_Descriptor_DocumentUuid`.
 >
-> The transaction *reasoning* — isolation levels, lock scope and ordering, retry/transient
+> The transaction *reasoning* — isolation levels, the deadlock/retry policy and its transient error
 > classification, and the read-consistency arguments — is current, and the write path still takes one
 > row lock per document; it takes it on the root row. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
