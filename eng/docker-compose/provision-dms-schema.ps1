@@ -730,10 +730,20 @@ function Test-LocalComposeLoopbackHostSpelling {
         marker, so it names the same host (measured: it resolves to 127.0.0.1).
       - IPv4 text that canonicalizes EXACTLY to 127.0.0.1, which is what recognizes the short forms the
         runtime accepts, such as 127.1.
+      - An IPv4-MAPPED IPv6 address for that same node, bracketed or not: ::ffff:127.0.0.1 and
+        [::ffff:127.0.0.1]. Such an address represents an IPv4 node, so it reaches the IPv4-published
+        Compose listener; .NET exposes exactly this with IsIPv4MappedToIPv6 / MapToIPv4()
+        (learn.microsoft.com/dotnet/api/system.net.ipaddress.isipv4mappedtoipv6). Reading it as an
+        unrecognized IPv6 host classified a reachable local target as external.
+
+    NATIVE IPv6 is deliberately NOT recognized: ::1 is not IPv4-mapped, and these services are published
+    on IPv4 127.0.0.1 only, so ::1 stays external. Mapping is applied only when the runtime reports the
+    address IS an IPv4 node.
 
     Deliberately NOT IPAddress.IsLoopback: that predicate is true for the whole 127/8 block, but these
     services bind specifically to 127.0.0.1, so 127.0.0.2 is a different listener and must stay external
-    (measured: IsLoopback('127.0.0.2') is true, exactly the over-broad answer this avoids).
+    (measured: IsLoopback('127.0.0.2') is true, exactly the over-broad answer this avoids). The mapped
+    form is held to the same standard: ::ffff:127.0.0.2 maps to 127.0.0.2 and stays external.
 
     No DNS resolution, no connection attempt, no new authority - only deterministic spellings of an
     endpoint this environment already defines.
@@ -760,9 +770,26 @@ function Test-LocalComposeLoopbackHostSpelling {
         return $true
     }
 
+    # Exactly one matching outer bracket pair, the literal-IPv6 wrapper an endpoint value carries so its
+    # colons cannot be read as a port separator. Stripped for PARSING only; nothing downstream sees it.
+    if ($text.Length -ge 2 -and
+        $text.StartsWith("[", [System.StringComparison]::Ordinal) -and
+        $text.EndsWith("]", [System.StringComparison]::Ordinal)) {
+        $text = $text.Substring(1, $text.Length - 2).Trim()
+        if ([string]::IsNullOrEmpty($text)) {
+            return $false
+        }
+    }
+
     [System.Net.IPAddress]$address = [System.Net.IPAddress]::Any
     if (-not [System.Net.IPAddress]::TryParse($text, [ref]$address)) {
         return $false
+    }
+
+    # An IPv4-mapped IPv6 address IS an IPv4 node; compare the IPv4 it denotes. Native IPv6 is left
+    # alone, so ::1 keeps its own canonical form and never equals 127.0.0.1.
+    if ($address.IsIPv4MappedToIPv6) {
+        $address = $address.MapToIPv4()
     }
 
     return [string]::Equals($address.ToString(), "127.0.0.1", [System.StringComparison]::Ordinal)
@@ -821,7 +848,17 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
         # spelling like 127.1 or localhost. cannot be local on one engine and external on the other.
         $targetHostName = (Split-MssqlServerEndpoint -DataSource $Target.Host).HostName
 
-        return ((Test-LocalComposeLoopbackHostSpelling -HostName $targetHostName) -and
+        # '(local)' is a SqlClient data-source token for the local SQL Server
+        # (learn.microsoft.com/dotnet/api/microsoft.data.sqlclient.sqlconnection.datasource), so on this
+        # engine it names the Compose server and was reaching it while classified external. Checked HERE
+        # rather than in the engine-neutral helper on purpose: it is SqlClient-only, and PostgreSQL must
+        # not inherit it - Npgsql would treat '(local)' as an ordinary hostname. Exactly this token, no
+        # other endpoint form; the port comparison below stays load-bearing, so '(local)' on a different
+        # port remains external.
+        $isSqlClientLocalToken =
+            [string]::Equals($targetHostName.Trim(), "(local)", [System.StringComparison]::OrdinalIgnoreCase)
+
+        return (($isSqlClientLocalToken -or (Test-LocalComposeLoopbackHostSpelling -HostName $targetHostName)) -and
             (Test-PortNumberEquivalent -Left $Target.Port -Right $localEndpoint.Port))
     }
 
