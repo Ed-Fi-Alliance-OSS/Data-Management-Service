@@ -849,5 +849,76 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter PostgresqlCdcSlotHistory"
     ],
     "completed": true
+  },
+  {
+    "category": "cdc-security",
+    "description": "Medium: Narrowly extend CDC connector-principal exact-match validation to reject extra snapshot read grants on DMS-owned non-source tables that are already part of ordinary DDL/provider-known inventories. Keep the provider-created grant SQL unchanged and do not add a general database permission auditor, recursive permission-provenance model, non-DMS schema scan, server-wide audit, connector polling, or required live connector probe.",
+    "acceptance-criteria": [
+      "PostgreSQL connector-principal validation fails closed when the connector can SELECT DMS-owned non-source base tables that ordinary DDL already knows how to identify, including non-source dms tables, generated project/resource tables, authorization tables, and tracked-change tables; it must not introduce a second resource-table model or scan unrelated application schemas.",
+      "SQL Server connector-principal validation fails closed when the connector can SELECT DMS-owned non-source tables outside dms.Document, dms.DocumentCache, and dms.CdcHeartbeat in the same bounded DMS-owned scopes already used by CDC capture validation: dms, auth, tracked_changes_*, and generated project/resource schemas.",
+      "dms.DocumentProjectionWork remains reported with the existing WorkTableGrantViolation diagnostic, while other extra non-source read grants use a stable ConnectorPrincipalPrivilegeFailure diagnostic with safe schema/table values and grant-source tokens only where the existing provider inspection already exposes them.",
+      "The provider-created grant SQL remains limited to the existing required connector access: source SELECT, heartbeat SELECT, heartbeat column UPDATE, PostgreSQL schema/database access, and SQL Server gating-role membership.",
+      "The validation scope is limited to DMS/provider-managed schemas and tables already known to ordinary DDL or CDC capture validation; PostgreSQL system catalogs, SQL Server system catalogs, CDC metadata needed by Debezium, and unrelated non-DMS application schemas remain out of scope.",
+      "Focused PostgreSQL and SQL Server unit coverage proves extra read grants on at least one generated project/resource table and one authorization, tracked-change, or other core DMS-owned non-source table fail closed, while the exact least-privilege connector case still passes."
+    ],
+    "steps-to-verify": [
+      "Review ConnectorPrincipalAccessSql in CdcPostgresqlHeartbeatPublicationProvider and CdcSqlServerHeartbeatDatabaseProvider for non-source DMS-owned table enumeration and safe diagnostic values.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter PostgresqlCdcPrincipalAccess",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcPrincipalAccess",
+      "With provider prerequisites available, run the CDC provider-access integration filters for PostgreSQL and SQL Server to confirm live permission inspection matches the unit fixtures."
+    ],
+    "completed": true
+  },
+  {
+    "category": "sqlserver-capture-instances",
+    "description": "Medium: Fail closed when SQL Server capture instances created during InitialCreateOrExactMatch do not exact-match after the existing post-create inspection. Keep this limited to result/diagnostic classification over inspected provider metadata; do not add repair, teardown, connector polling, Kafka calls, or new sp_cdc_enable_table options.",
+    "acceptance-criteria": [
+      "CaptureInstanceState or equivalent state selection returns Mismatched for an inspected capture instance whose post-create inspection is not exact, even when that source table kind was in the createdKinds set for the current setup call.",
+      "InitialCreateOrExactMatch returns CdcProviderSetupOutcome.Failed when a capture created by the current call is observed with mismatched source object, capture instance name, gating role, supports_net_changes, drop-pending state, source index, filegroup, partition-switch state, or captured column inventory.",
+      "A just-created SQL Server capture instance is reported as Created only after post-create inspection proves it is exact-match.",
+      "ProviderHistoryObservations and cdc-provider.mssql.manifest.json classify non-exact post-create capture instances as fail-closed mismatches, not Created artifacts with None continuity classification.",
+      "The fix does not add drop, disable, rename, recreate, repair, offset reset, connector polling, Kafka Connect calls, or changes to the existing sp_cdc_enable_table create options.",
+      "Focused unit coverage uses the existing provider test double to simulate missing capture instances, successful sp_cdc_enable_table execution, and a mismatched post-create inspection row, then proves setup fails with a SqlServerCaptureInstance mismatch diagnostic; no expanded live SQL Server fixture matrix is required for this task."
+    ],
+    "steps-to-verify": [
+      "Review ExecuteCaptureInstancesAsync, CaptureInstancesResult, CaptureInstanceState, and CaptureInstanceHistoryClassification in CdcSqlServerHeartbeatDatabaseProvider.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcCaptureInstances",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase"
+    ],
+    "completed": false
+  },
+  {
+    "category": "source-inventory",
+    "description": "Low/non-blocking: Make the fixed CDC source-table order intentional and narrowly shared where duplicate literals already exist. This is maintainability cleanup only; do not reorder outputs for style, expand the source set, add a second hard-coded column model, or change provider behavior beyond deriving existing order-sensitive code from an explicit helper.",
+    "acceptance-criteria": [
+      "The source inventory contract, expected source inventory builder, PostgreSQL publication table ordering, SQL Server capture-instance ordering, and CDC provider manifest sorting either derive from one shared fixed CDC source-table order/helper or clearly name and test the one deliberate provider/manifest ordering difference that remains.",
+      "The shared order or documented order contains exactly dms.DocumentCache, dms.Document, and dms.CdcHeartbeat, or documents and tests a deliberate alternative order consistently enough that future changes cannot accidentally diverge provider setup from manifest/source-inventory expectations.",
+      "The refactor keeps dms.DocumentProjectionWork excluded from expected source inventory, publication membership, capture instances, grants, metadata, and manifests.",
+      "Provider-specific SQL generation still uses emitted quoted identifiers and caller-supplied artifact names, and does not introduce a second hard-coded column model.",
+      "Unit tests assert the fixed source set/order once, and provider-specific tests assert only provider-specific SQL or metadata behavior that is intentionally order-sensitive; existing snapshot/order changes are avoided unless they directly follow from selecting the shared helper."
+    ],
+    "steps-to-verify": [
+      "Review CdcSourceInventoryContract.RequiredSourceTableKinds, CdcSourceInventoryBuilder.BuildExpectedSourceInventory, CdcPostgresqlHeartbeatPublicationProvider publication table ordering, CdcSqlServerHeartbeatDatabaseProvider capture table ordering, and CdcProviderManifest source/key sorting.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcSourceInventory",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"PostgresqlCdcHeartbeatPublication|MssqlCdcCaptureInstances|CdcProviderManifest\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "postgresql-heartbeat-publication",
+    "description": "Medium: Classify PostgreSQL FOR ALL TABLES publications as the existing work-table capture violation during CDC provider validation. Keep this to diagnostic/result classification over the existing publication inspection; do not enumerate every table in the database, repair the publication, or broaden provider setup beyond exact-match validation.",
+    "acceptance-criteria": [
+      "ValidateOnly against a binding-derived PostgreSQL publication defined FOR ALL TABLES returns the existing CDC_POSTGRESQL_WORK_TABLE_PUBLICATION_FORBIDDEN diagnostic with category WorkTableCaptureViolation, even when pg_publication_tables does not explicitly enumerate dms.DocumentProjectionWork.",
+      "InitialCreateOrExactMatch rerun against an existing FOR ALL TABLES publication fails closed with the same WorkTableCaptureViolation diagnostic and does not drop, recreate, rename, or repair the publication.",
+      "The publication artifact state and cdc-provider.pgsql.manifest.json retain the observed publishes_all_tables=true evidence alongside the work-table violation diagnostic; they do not need to list every table that FOR ALL TABLES currently implies.",
+      "Explicit publication membership that includes dms.DocumentProjectionWork continues to use the existing work-table violation diagnostic.",
+      "Exact-match publications containing only dms.DocumentCache, dms.Document, and dms.CdcHeartbeat remain successful."
+    ],
+    "steps-to-verify": [
+      "Review InspectPublicationAsync and PublicationDiagnostics in CdcPostgresqlHeartbeatPublicationProvider to confirm publishes_all_tables feeds the work-table diagnostic path.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter PostgresqlCdcHeartbeatPublication",
+      "With PostgreSQL provider prerequisites available, run or manually inspect a publication created FOR ALL TABLES and confirm setup reports CDC_POSTGRESQL_WORK_TABLE_PUBLICATION_FORBIDDEN without mutating the publication."
+    ],
+    "completed": false
   }
 ]

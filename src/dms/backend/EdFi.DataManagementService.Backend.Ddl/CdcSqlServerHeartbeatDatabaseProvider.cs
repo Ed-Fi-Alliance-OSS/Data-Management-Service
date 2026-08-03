@@ -958,6 +958,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             SourceTable(request, CdcSourceTableKind.CdcHeartbeat).TableName
         );
         var workTableObjectName = ObjectIdName(DmsTableNames.DocumentProjectionWork);
+        var dmsSchema = EscapeSqlLiteral(DmsTableNames.DmsSchema.Value);
+        var authSchema = EscapeSqlLiteral(AuthNames.AuthSchema.Value);
         var expectedCaptureInstances = string.Join(
             ",\n            ",
             _captureTableOrder.Select(kind =>
@@ -1136,25 +1138,82 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     ON permission_info.grantee_principal_id = connector.principal_id
                     AND permission_info.state IN (N'G', N'W')
             ),
-            dms_base_tables AS (
+            character_positions(position) AS (
+                SELECT TOP (128) ROW_NUMBER() OVER (ORDER BY (SELECT NULL))
+                FROM sys.all_objects
+            ),
+            active_project_endpoints(project_endpoint_name) AS (
+                SELECT schema_component.[ProjectEndpointName]
+                FROM [dms].[SchemaComponent] schema_component
+                INNER JOIN [dms].[EffectiveSchema] effective_schema
+                    ON effective_schema.[EffectiveSchemaHash] = schema_component.[EffectiveSchemaHash]
+                WHERE effective_schema.[EffectiveSchemaSingletonId] = 1
+            ),
+            project_schemas(schema_name) AS (
+                SELECT
+                    CASE
+                        WHEN normalized_schema_name = N''
+                            OR UNICODE(LEFT(normalized_schema_name, 1)) NOT BETWEEN 97 AND 122
+                            THEN N'p' + normalized_schema_name
+                        ELSE normalized_schema_name
+                    END
+                FROM active_project_endpoints project_endpoint
+                CROSS APPLY (
+                    SELECT
+                        COALESCE(
+                            (
+                                SELECT LOWER(endpoint_character.character)
+                                FROM character_positions character_position
+                                CROSS APPLY (
+                                    SELECT SUBSTRING(
+                                        project_endpoint.project_endpoint_name,
+                                        character_position.position,
+                                        1
+                                    ) AS character
+                                ) endpoint_character
+                                WHERE character_position.position <= LEN(project_endpoint.project_endpoint_name)
+                                AND (
+                                    UNICODE(endpoint_character.character) BETWEEN 48 AND 57
+                                    OR UNICODE(endpoint_character.character) BETWEEN 65 AND 90
+                                    OR UNICODE(endpoint_character.character) BETWEEN 97 AND 122
+                                )
+                                ORDER BY character_position.position
+                                FOR XML PATH(N''), TYPE
+                            ).value(N'.', N'nvarchar(128)'),
+                            N''
+                        ) AS normalized_schema_name
+                ) normalized
+            ),
+            dms_managed_base_tables AS (
                 SELECT
                     object_info.object_id,
+                    schema_info.name COLLATE DATABASE_DEFAULT AS schema_name,
                     object_info.name COLLATE DATABASE_DEFAULT AS object_name,
                     object_info.schema_id
                 FROM sys.objects object_info
                 INNER JOIN sys.schemas schema_info
                     ON schema_info.schema_id = object_info.schema_id
-                WHERE schema_info.name = N'dms'
-                AND object_info.type = N'U'
+                WHERE object_info.type = N'U'
+                AND (
+                    schema_info.name = N'{dmsSchema}'
+                    OR schema_info.name = N'{authSchema}'
+                    OR schema_info.name LIKE N'tracked[_]changes[_]%'
+                    OR EXISTS (
+                        SELECT 1
+                        FROM project_schemas project_schema
+                        WHERE project_schema.schema_name = schema_info.name
+                    )
+                )
             ),
             dms_table_columns AS (
                 SELECT
                     table_info.object_id,
+                    table_info.schema_name,
                     table_info.object_name,
                     table_info.schema_id,
                     column_info.column_id,
                     column_info.name COLLATE DATABASE_DEFAULT AS column_name
-                FROM dms_base_tables table_info
+                FROM dms_managed_base_tables table_info
                 INNER JOIN sys.columns column_info
                     ON column_info.object_id = table_info.object_id
             ),
@@ -1162,10 +1221,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 SELECT DISTINCT
                     grant_info.permission_name,
                     table_info.object_id,
+                    table_info.schema_name,
                     table_info.object_name,
                     grant_info.source_name
                 FROM connector_permissions grant_info
-                INNER JOIN dms_base_tables table_info
+                INNER JOIN dms_managed_base_tables table_info
                     ON (
                         grant_info.class = 0
                         AND grant_info.major_id = 0
@@ -1258,7 +1318,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     column_info.object_id,
                     CONVERT(
                         nvarchar(700),
-                        N'dms.'
+                        column_info.schema_name COLLATE DATABASE_DEFAULT
+                            + N'.'
                             + column_info.object_name COLLATE DATABASE_DEFAULT
                             + N'.'
                             + column_info.column_name COLLATE DATABASE_DEFAULT
@@ -1660,15 +1721,22 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     SELECT STRING_AGG(permission_info.object_source, N',') WITHIN GROUP (ORDER BY permission_info.object_source)
                     FROM (
                         SELECT DISTINCT
-                            object_info.object_name COLLATE DATABASE_DEFAULT
+                            object_info.schema_name COLLATE DATABASE_DEFAULT
+                                + N'.'
+                                + object_info.object_name COLLATE DATABASE_DEFAULT
                                 + N'.via.'
                                 + permission_info.source_name COLLATE DATABASE_DEFAULT AS object_source
                         FROM dms_object_effective_permissions permission_info
-                    INNER JOIN dms_base_tables object_info
+                    INNER JOIN dms_managed_base_tables object_info
                         ON object_info.object_id = permission_info.object_id
                         WHERE 1 = 1
                         AND permission_info.permission_name = N'SELECT'
-                        AND object_info.object_name NOT IN (N'Document', N'DocumentCache', N'CdcHeartbeat', N'DocumentProjectionWork')
+                        AND object_info.object_id NOT IN (
+                            @document_object_id,
+                            @document_cache_object_id,
+                            @heartbeat_object_id,
+                            @work_table_object_id
+                        )
                     ) permission_info
                 ), N'') AS extra_dms_select_tables,
                 COALESCE((

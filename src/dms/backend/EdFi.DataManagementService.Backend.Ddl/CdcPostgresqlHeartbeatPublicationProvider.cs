@@ -1496,11 +1496,47 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 FROM pg_catalog.pg_roles role_info
                 WHERE role_info.rolname = '{connectorPrincipal}'
             ),
-            dms_tables AS (
-                SELECT table_info.table_name
+            active_project_endpoints AS (
+                SELECT schema_component."ProjectEndpointName" AS project_endpoint_name
+                FROM "dms"."SchemaComponent" schema_component
+                INNER JOIN "dms"."EffectiveSchema" effective_schema
+                    ON effective_schema."EffectiveSchemaHash" = schema_component."EffectiveSchemaHash"
+                WHERE effective_schema."EffectiveSchemaSingletonId" = 1
+            ),
+            project_schemas AS (
+                SELECT
+                    CASE
+                        WHEN normalized_schema_name = ''
+                            OR substring(normalized_schema_name from 1 for 1) !~ '^[a-z]$'
+                            THEN 'p' || normalized_schema_name
+                        ELSE normalized_schema_name
+                    END AS schema_name
+                FROM active_project_endpoints project_endpoint
+                CROSS JOIN LATERAL (
+                    SELECT pg_catalog.regexp_replace(
+                        lower(project_endpoint.project_endpoint_name),
+                        '[^a-z0-9]',
+                        '',
+                        'g'
+                    ) AS normalized_schema_name
+                ) normalized
+            ),
+            dms_managed_tables AS (
+                SELECT
+                    table_info.table_schema,
+                    table_info.table_name
                 FROM information_schema.tables table_info
-                WHERE table_info.table_schema = 'dms'
-                AND table_info.table_type = 'BASE TABLE'
+                WHERE table_info.table_type = 'BASE TABLE'
+                AND (
+                    table_info.table_schema = 'dms'
+                    OR table_info.table_schema = 'auth'
+                    OR table_info.table_schema LIKE 'tracked\_changes\_%' ESCAPE '\'
+                    OR EXISTS (
+                        SELECT 1
+                        FROM project_schemas project_schema
+                        WHERE project_schema.schema_name = table_info.table_schema
+                    )
+                )
             )
             SELECT
                 EXISTS (SELECT 1 FROM connector)::text AS role_exists,
@@ -1636,11 +1672,18 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 ) AS work_table_privileges,
                 COALESCE(
                     (
-                        SELECT string_agg(table_name, ',' ORDER BY table_name)
+                        SELECT string_agg(table_schema || '.' || table_name, ',' ORDER BY table_schema, table_name)
                         FROM connector
-                        CROSS JOIN dms_tables
-                        WHERE dms_tables.table_name NOT IN ('Document', 'DocumentCache', 'CdcHeartbeat', 'DocumentProjectionWork')
-                        AND pg_catalog.has_table_privilege(connector.oid, pg_catalog.format('%I.%I', 'dms', dms_tables.table_name), 'SELECT')
+                        CROSS JOIN dms_managed_tables
+                        WHERE NOT (
+                            dms_managed_tables.table_schema = 'dms'
+                            AND dms_managed_tables.table_name IN ('Document', 'DocumentCache', 'CdcHeartbeat', 'DocumentProjectionWork')
+                        )
+                        AND pg_catalog.has_table_privilege(
+                            connector.oid,
+                            pg_catalog.format('%I.%I', dms_managed_tables.table_schema, dms_managed_tables.table_name),
+                            'SELECT'
+                        )
                     ),
                     ''
                 ) AS extra_dms_select_tables;

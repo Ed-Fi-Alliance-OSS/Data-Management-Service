@@ -1654,7 +1654,7 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
                 DocumentCacheWritePrivileges = ["DELETE.via.public"],
                 HeartbeatWritePrivileges = ["INSERT.via.public", "DELETE.via.public"],
                 WorkTablePrivileges = ["SELECT.via.public"],
-                ExtraDmsSelectTables = ["ResourceKey.via.role.custom_writer"],
+                ExtraDmsSelectTables = ["dms.ResourceKey.via.role.custom_writer"],
             }
         );
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
@@ -1683,7 +1683,7 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
             )
             .And.Contain(diagnostic =>
                 diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH"
-                && diagnostic.ObservedValue == "ResourceKey.via.role.custom_writer"
+                && diagnostic.ObservedValue == "dms.ResourceKey.via.role.custom_writer"
             );
         result
             .GrantInventory.Should()
@@ -1692,6 +1692,59 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
                 && grant.Privileges.Contains("UPDATE")
                 && !grant.Privileges.Contains("UPDATE.via.role.custom_writer")
             );
+    }
+
+    [Test]
+    public async Task It_should_reject_extra_select_on_dms_owned_non_source_tables()
+    {
+        var extraSelectTables = new[]
+        {
+            "auth.EducationOrganizationIdToEducationOrganizationId.via.direct",
+            "edfi.School.via.role.custom_reader",
+            "tracked_changes_edfi.School.via.public",
+        };
+        var executor = ExistingArtifactsWithConnectorAccess(
+            new RecordingSqlServerConnectorAccess
+            {
+                GatingRoleExists = true,
+                GatingRoleDirectMembers = ["connector_principal"],
+                DatabaseConnect = true,
+                DocumentSelect = true,
+                DocumentCacheSelect = true,
+                HeartbeatSelect = true,
+                HeartbeatSequenceUpdate = true,
+                HeartbeatAtUpdate = true,
+                ExtraDmsSelectTables = extraSelectTables,
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure
+                && diagnostic.ObservedValue == string.Join(",", extraSelectTables)
+            );
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.Grant
+                && observation.SafeObservedValues["extra_dms_select_tables"]
+                    == string.Join(",", extraSelectTables)
+            );
+
+        var connectorAccessSql = executor.QueriedSql.Single(sql =>
+            sql.Contains("cdc:sqlserver:connector-principal-access")
+        );
+        connectorAccessSql.Should().Contain("[dms].[SchemaComponent]");
+        connectorAccessSql.Should().Contain("schema_info.name = N'auth'");
+        connectorAccessSql.Should().Contain("tracked[_]changes[_]%");
     }
 
     [Test]
@@ -1996,6 +2049,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
 
     public List<string> ExecutedSql { get; } = [];
 
+    public List<string> QueriedSql { get; } = [];
+
     public static RecordingSqlServerCdcExecutor WithExistingHeartbeatDatabase(
         bool readCommittedSnapshotOn = true,
         string nestedTriggersValue = "1",
@@ -2094,6 +2149,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         CancellationToken cancellationToken
     )
     {
+        QueriedSql.Add(sql);
+
         IReadOnlyList<IReadOnlyDictionary<string, string?>> rows = sql switch
         {
             var text when text.Contains("cdc:sqlserver:source-fingerprint") =>

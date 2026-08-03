@@ -729,6 +729,44 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
             );
     }
 
+    [Test]
+    public async Task It_should_reject_extra_select_on_dms_owned_non_source_tables()
+    {
+        const string extraSelectTables =
+            "auth.EducationOrganizationIdToEducationOrganizationId,edfi.School,tracked_changes_edfi.School";
+        var executor = ExistingArtifactsWithConnectorAccess(connectorExtraDmsSelectTables: extraSelectTables);
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                databaseExecutor: executor,
+                postgresqlInitialReplicationSlotProof: CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof()
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure
+                && diagnostic.ObservedValue == extraSelectTables
+            );
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.Grant
+                && observation.SafeObservedValues["extra_dms_select_tables"] == extraSelectTables
+            );
+
+        var connectorAccessSql = executor.QueriedSql.Single(sql =>
+            sql.Contains("cdc:postgresql:connector-principal-access")
+        );
+        connectorAccessSql.Should().Contain("\"dms\".\"SchemaComponent\"");
+        connectorAccessSql.Should().Contain("table_info.table_schema = 'auth'");
+        connectorAccessSql.Should().Contain("tracked\\_changes\\_%");
+    }
+
     [TestCase("INSERT", "", "INSERT")]
     [TestCase("DELETE", "", "DELETE")]
     [TestCase("TRUNCATE", "", "TRUNCATE")]
@@ -824,7 +862,8 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
         string connectorDisallowedRoleAttributes = "",
         string connectorWorkTablePrivileges = "",
         string connectorHeartbeatForbiddenTablePrivileges = "",
-        string connectorHeartbeatUnexpectedUpdateColumns = ""
+        string connectorHeartbeatUnexpectedUpdateColumns = "",
+        string connectorExtraDmsSelectTables = ""
     ) =>
         new(
             heartbeatTableExists: true,
@@ -842,7 +881,8 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
             connectorHeartbeatAtUpdate: true,
             connectorHeartbeatForbiddenTablePrivileges: connectorHeartbeatForbiddenTablePrivileges,
             connectorHeartbeatUnexpectedUpdateColumns: connectorHeartbeatUnexpectedUpdateColumns,
-            connectorWorkTablePrivileges: connectorWorkTablePrivileges
+            connectorWorkTablePrivileges: connectorWorkTablePrivileges,
+            connectorExtraDmsSelectTables: connectorExtraDmsSelectTables
         );
 }
 

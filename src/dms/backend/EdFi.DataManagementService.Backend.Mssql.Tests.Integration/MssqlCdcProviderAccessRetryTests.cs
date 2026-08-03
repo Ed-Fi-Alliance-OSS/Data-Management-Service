@@ -348,8 +348,9 @@ public class Given_MssqlCdcProviderAccessRetry
         result
             .Diagnostics.Should()
             .ContainSingle(diagnostic =>
-                diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISSING"
-                && diagnostic.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+                diagnostic.Code == "CDC_SQLSERVER_DATABASE_CDC_MISSING"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.SourceHistoryLost
             );
         (await IsDatabaseCdcEnabledAsync(connection)).Should().BeFalse();
         (await TableExistsAsync(connection, "CdcHeartbeat")).Should().BeFalse();
@@ -450,7 +451,7 @@ public class Given_MssqlCdcProviderAccessRetry
             )
             .And.Contain(diagnostic =>
                 diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH"
-                && diagnostic.ObservedValue == "ResourceKey.via.direct"
+                && diagnostic.ObservedValue == "dms.ResourceKey.via.direct"
             );
         (await HasConnectorObjectPermissionAsync(connection, "DocumentProjectionWork", "SELECT"))
             .Should()
@@ -551,7 +552,7 @@ public class Given_MssqlCdcProviderAccessRetry
             )
             .And.Contain(diagnostic =>
                 diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH"
-                && diagnostic.ObservedValue == "ResourceKey.via.public"
+                && diagnostic.ObservedValue == "dms.ResourceKey.via.public"
             );
     }
 
