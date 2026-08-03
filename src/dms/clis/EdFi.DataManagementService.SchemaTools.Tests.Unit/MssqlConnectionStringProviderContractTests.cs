@@ -5,6 +5,7 @@
 
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Npgsql;
 
 namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 
@@ -183,6 +184,57 @@ public class MssqlConnectionStringProviderContractTests
 
         builder.InitialCatalog.Should().Be("edfi_datastore");
         builder.DataSource.Should().Be("sql.example.com");
+    }
+
+    /// <summary>
+    /// The PostgreSQL side of the same phase: which port spellings Npgsql resolves to the SAME TCP port.
+    /// The provisioning phase decides whether a target is the local Compose database by comparing its
+    /// port against the configured one, so any spelling this provider accepts and normalizes must compare
+    /// equal there too - otherwise the target is classified external while Npgsql still connects to the
+    /// local server, which is exactly how a padded or signed spelling escaped the separate-topology
+    /// guard. Pinned here because the phase's own suite cannot rely on a built Npgsql being present.
+    /// </summary>
+    [TestCase("5544", 5544)]
+    [TestCase("05544", 5544)]
+    [TestCase("+5544", 5544)]
+    [TestCase("+05544", 5544)]
+    [TestCase(" 5544 ", 5544)]
+    public void Npgsql_resolves_padded_and_signed_port_spellings_to_the_same_port(
+        string portValue,
+        int expectedPort
+    )
+    {
+        new NpgsqlConnectionStringBuilder($"Host=localhost;Port={portValue}").Port.Should().Be(expectedPort);
+    }
+
+    /// <summary>
+    /// The other half: spellings Npgsql refuses outright. The phase never needs to call any of these
+    /// equivalent to a port, and skipping them costs nothing because no connection could be made with
+    /// them either.
+    /// </summary>
+    [TestCase("-5544")]
+    [TestCase("0")]
+    [TestCase("5544.0")]
+    [TestCase("1_5544")]
+    [TestCase("2147483648")]
+    public void Npgsql_rejects_values_that_are_not_ports(string portValue)
+    {
+        Assert.Throws<ArgumentException>(() =>
+            _ = new NpgsqlConnectionStringBuilder($"Host=localhost;Port={portValue}")
+        );
+    }
+
+    /// <summary>
+    /// Measured boundary worth recording rather than assuming: Npgsql does NOT enforce the upper TCP
+    /// bound, so it will hold a Port above 65535. The phase's own 1-65535 check is therefore a sanity
+    /// bound and not a locality decision - such a value can never equal the configured local port, which
+    /// is always a real one, so bounding it cannot classify a genuinely local target as external.
+    /// </summary>
+    [TestCase("65535", 65535)]
+    [TestCase("65536", 65536)]
+    public void Npgsql_does_not_enforce_the_upper_tcp_port_bound(string portValue, int expectedPort)
+    {
+        new NpgsqlConnectionStringBuilder($"Host=localhost;Port={portValue}").Port.Should().Be(expectedPort);
     }
 
     /// <summary>

@@ -5312,17 +5312,26 @@ if (Test-Path -LiteralPath $ChildCapturePath) {
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
-        It "treats a zero-padded local port as the same TCP port the environment configures: <Name>" -ForEach @(
+        It "treats every spelling Npgsql resolves to the configured local port as that port: <Name>" -ForEach @(
             @{ Name = "PostgreSQL localhost:05544 against configured 5544"; Engine = "postgresql"; StoredConnectionString = 'host=localhost;port=05544;username=postgres;password=isolated-pass;database=edfi_configurationservice;'; ExpectRefused = $true }
-            @{ Name = "PostgreSQL localhost:5544 against configured 5544 (unpadded control)"; Engine = "postgresql"; StoredConnectionString = 'host=localhost;port=5544;username=postgres;password=isolated-pass;database=edfi_configurationservice;'; ExpectRefused = $true }
+            @{ Name = "PostgreSQL localhost:+5544 (leading sign) against configured 5544"; Engine = "postgresql"; StoredConnectionString = 'host=localhost;port=+5544;username=postgres;password=isolated-pass;database=edfi_configurationservice;'; ExpectRefused = $true }
+            @{ Name = "PostgreSQL localhost:+05544 (sign and padding) against configured 5544"; Engine = "postgresql"; StoredConnectionString = 'host=localhost;port=+05544;username=postgres;password=isolated-pass;database=edfi_configurationservice;'; ExpectRefused = $true }
+            @{ Name = "PostgreSQL localhost:5544 against configured 5544 (plain control)"; Engine = "postgresql"; StoredConnectionString = 'host=localhost;port=5544;username=postgres;password=isolated-pass;database=edfi_configurationservice;'; ExpectRefused = $true }
             @{ Name = "PostgreSQL localhost:9999 stays external"; Engine = "postgresql"; StoredConnectionString = 'host=localhost;port=9999;username=postgres;password=isolated-pass;database=edfi_configurationservice;'; ExpectRefused = $false }
+            @{ Name = "PostgreSQL localhost:-5544 is not a port and is not claimed equivalent"; Engine = "postgresql"; StoredConnectionString = 'host=localhost;port=-5544;username=postgres;password=isolated-pass;database=edfi_configurationservice;'; ExpectRefused = $false }
         ) {
-            # '05544' and '5544' are the same TCP port, so a zero-padded spelling of the local Compose
-            # port must not read as a different instance and escape the separate-topology guard. The
-            # unpadded row is the control that the correction did not change existing behaviour, and the
-            # 9999 row is the control that a genuinely different numeric port is still external - it names
-            # the reserved database and must STILL be provisioned, because on another port it is another
-            # server's database.
+            # Every spelling Npgsql resolves to the configured port must be treated as that port, or the
+            # target is classified EXTERNAL while the provider still connects to the local server and
+            # deploys into the reserved database. Measured against the built Npgsql: '05544', '+5544' and
+            # '+05544' all resolve to 5544 (that provider premise is pinned in
+            # EdFi.DataManagementService.SchemaTools.Tests.Unit, which always builds).
+            #
+            # The plain row is the control that the correction changed nothing already working. The 9999
+            # row is the control that a genuinely different numeric port is still external - it names the
+            # reserved database and must STILL be provisioned, because on another port it is another
+            # server's database. The negative row is the control that widening the parse to accept a sign
+            # did not start claiming non-ports equivalent: Npgsql refuses to set -5544 as a port at all,
+            # so nothing local is being skipped.
             $capturePath = Initialize-CanonicalMssqlWorkspace
             try {
                 . $script:repo.ProvisionScript
@@ -5373,9 +5382,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
-        It "treats a zero-padded MSSQL port as the same TCP port and consults the live authority: <Name>" -ForEach @(
+        It "treats a padded or signed MSSQL port as the same TCP port and consults the live authority: <Name>" -ForEach @(
             @{ Name = "localhost,015433 against configured 15433"; ServerSegment = 'Server=localhost,015433'; ExpectLocal = $true }
-            @{ Name = "localhost,15433 (unpadded control)"; ServerSegment = 'Server=localhost,15433'; ExpectLocal = $true }
+            @{ Name = "localhost,+15433 (leading sign) against configured 15433"; ServerSegment = 'Server=localhost,+15433'; ExpectLocal = $true }
+            @{ Name = "localhost,15433 (plain control)"; ServerSegment = 'Server=localhost,15433'; ExpectLocal = $true }
             @{ Name = "localhost,19999 stays external"; ServerSegment = 'Server=localhost,19999'; ExpectLocal = $false }
         ) {
             # The same shared predicate on the other engine: a zero-padded MSSQL port must reach the
