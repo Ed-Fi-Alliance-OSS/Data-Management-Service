@@ -41,10 +41,9 @@ internal static class IdentityValueCanonicalizer
     /// decimal point, no trailing fractional zeros, no trailing decimal point,
     /// and signed-zero collapsed to '0'.
     ///
-    /// Output must match the SQL identity-text formatters in <c>DialectIdentityTextFormatter</c>
-    /// (PG <c>::text</c> + regexp trimming, MSSQL <c>CAST AS nvarchar(max)</c> + trim CASE).
     /// Both DB engines render <c>numeric</c>/<c>decimal</c> in fixed-point form, so this
-    /// canonicalizer must also stay fixed-point — never scientific notation.
+    /// canonicalizer must stay fixed-point — never scientific notation — for a canonicalized
+    /// value to compare equal to a stored one.
     /// </summary>
     internal static string CanonicalizeDecimal(string identityValue)
     {
