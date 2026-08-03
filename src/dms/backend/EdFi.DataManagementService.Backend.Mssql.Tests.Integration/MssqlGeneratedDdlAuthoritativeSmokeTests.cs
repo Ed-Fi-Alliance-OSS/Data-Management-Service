@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -1073,6 +1073,12 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         (afterInsertMaxChangeVersion - beforeInsertMaxChangeVersion)
             .Should()
             .Be(1L, "a root insert stamps both pairs from one NEXT VALUE FOR evaluation");
+        (await ReadCreatedByOwnershipTokenIdAsync("sample", "Bus", busDocumentId))
+            .Should()
+            .BeNull(
+                "CreatedByOwnershipTokenId is a forward-compatible placeholder: the column is nullable "
+                    + "with no default, and no trigger, write plan, or seeder writes it"
+            );
 
         await DelayForDistinctTimestampsAsync();
         var updateRowsAffected = await _database.ExecuteNonQueryAsync(
@@ -3847,6 +3853,26 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             ReadDateTimeOffset(row["ContentLastModifiedAt"]),
             ReadDateTimeOffset(row["IdentityLastModifiedAt"])
         );
+    }
+
+    private async Task<object?> ReadCreatedByOwnershipTokenIdAsync(
+        string schemaName,
+        string tableName,
+        long documentId
+    )
+    {
+        var row = (
+            await _database.QueryRowsAsync(
+                $"""
+                SELECT [CreatedByOwnershipTokenId]
+                FROM [{schemaName}].[{tableName}]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
+        return row["CreatedByOwnershipTokenId"];
     }
 
     private async Task<DocumentStampState> GetRootMirrorStampStateAsync(
