@@ -419,7 +419,29 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
             );
         result
             .Diagnostics.Should()
-            .ContainSingle(diagnostic => diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISSING");
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_DATABASE_CDC_MISSING"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.SourceHistoryLost
+            );
+        result
+            .ProviderHistoryObservations.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+                && observation.SafeArtifactName.Value == "sqlserver_database_cdc"
+                && observation.Classification == CdcProviderRetryContinuityClassification.SourceHistoryLost
+            );
+
+        using var manifestDocument = JsonDocument.Parse(result.ManifestPayload!.Json);
+        manifestDocument
+            .RootElement.GetProperty("validation_diagnostics")
+            .EnumerateArray()
+            .Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.GetProperty("code").GetString() == "CDC_SQLSERVER_DATABASE_CDC_MISSING"
+                && diagnostic.GetProperty("category").GetString() == "provider_history_loss_evidence"
+                && diagnostic.GetProperty("classification").GetString() == "source_history_lost"
+            );
         executor.ExecutedSql.Should().BeEmpty();
     }
 
@@ -752,10 +774,39 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
             );
         result
             .Diagnostics.Should()
-            .Contain(diagnostic =>
+            .NotContain(diagnostic =>
                 diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISSING"
                 && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
             );
+        result
+            .Diagnostics.Where(diagnostic => diagnostic.Code == "CDC_SQLSERVER_CAPTURE_INSTANCE_MISSING")
+            .Should()
+            .HaveCount(3)
+            .And.OnlyContain(diagnostic =>
+                diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.SourceHistoryLost
+            );
+        result
+            .ProviderHistoryObservations.Where(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            )
+            .Should()
+            .HaveCount(3)
+            .And.OnlyContain(observation =>
+                observation.Classification == CdcProviderRetryContinuityClassification.SourceHistoryLost
+            );
+
+        using var manifestDocument = JsonDocument.Parse(result.ManifestPayload!.Json);
+        manifestDocument
+            .RootElement.GetProperty("validation_diagnostics")
+            .EnumerateArray()
+            .Count(diagnostic =>
+                diagnostic.GetProperty("code").GetString() == "CDC_SQLSERVER_CAPTURE_INSTANCE_MISSING"
+                && diagnostic.GetProperty("category").GetString() == "provider_history_loss_evidence"
+                && diagnostic.GetProperty("classification").GetString() == "source_history_lost"
+            )
+            .Should()
+            .Be(3);
         executor.ExecutedSql.Should().BeEmpty();
     }
 

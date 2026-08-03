@@ -133,7 +133,16 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         CdcProviderArtifactState.Missing,
                         inspection,
                         wasEnabledAtStart: false,
-                        diagnostics: []
+                        diagnostics:
+                        [
+                            ProviderHistoryLossEvidence(
+                                CdcProviderArtifactKind.ProviderHistory,
+                                _databaseCdcSafeName,
+                                "CDC_SQLSERVER_DATABASE_CDC_MISSING",
+                                expectedValue: "database-cdc-enabled",
+                                observedValue: "database_cdc_enabled=False"
+                            ),
+                        ]
                     );
                 }
 
@@ -395,7 +404,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     || inspection.HasMismatchedExistingArtifacts
                 )
                 {
-                    return CaptureInstancesResult(inspection, createdKinds: []);
+                    return CaptureInstancesResult(
+                        inspection,
+                        createdKinds: [],
+                        sourceHistoryLostForMissing: context.Mode == CdcProviderSetupStepMode.ExactMatchOnly
+                    );
                 }
 
                 var gatingRole = await InspectGatingRoleBeforeCaptureCreationAsync(
@@ -2717,7 +2730,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     private static CdcProviderSetupStepResult CaptureInstancesResult(
         SqlServerCaptureInstancesInspection inspection,
         IReadOnlyCollection<CdcSourceTableKind> createdKinds,
-        CdcSafeName? createdGatingRoleName = null
+        CdcSafeName? createdGatingRoleName = null,
+        bool sourceHistoryLostForMissing = false
     )
     {
         var created = createdKinds.ToHashSet();
@@ -2747,6 +2761,15 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 ),
             ];
         }
+        var diagnostics = sourceHistoryLostForMissing
+            ? inspection
+                .Diagnostics.Concat(
+                    inspection
+                        .ExpectedInstances.Where(capture => !capture.Exists)
+                        .Select(MissingCaptureInstanceHistoryLossEvidence)
+                )
+                .ToArray()
+            : inspection.Diagnostics;
 
         return new CdcProviderSetupStepResult(
             artifactInventory: artifactInventory,
@@ -2755,14 +2778,45 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     observation.ArtifactKind,
                     observation.SafeArtifactName,
                     observation.SafeObservedValues,
-                    observation.State is CdcProviderArtifactState.Created or CdcProviderArtifactState.Matched
-                        ? CdcProviderRetryContinuityClassification.None
-                        : CdcProviderRetryContinuityClassification.FailClosed
+                    CaptureInstanceHistoryClassification(observation, sourceHistoryLostForMissing)
                 ))
                 .ToArray(),
-            diagnostics: inspection.Diagnostics
+            diagnostics: diagnostics
         );
     }
+
+    private static CdcProviderRetryContinuityClassification CaptureInstanceHistoryClassification(
+        CdcProviderArtifactObservation observation,
+        bool sourceHistoryLostForMissing
+    )
+    {
+        if (observation.State is CdcProviderArtifactState.Created or CdcProviderArtifactState.Matched)
+        {
+            return CdcProviderRetryContinuityClassification.None;
+        }
+
+        if (
+            sourceHistoryLostForMissing
+            && observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            && observation.State == CdcProviderArtifactState.Missing
+        )
+        {
+            return CdcProviderRetryContinuityClassification.SourceHistoryLost;
+        }
+
+        return CdcProviderRetryContinuityClassification.FailClosed;
+    }
+
+    private static CdcProviderDiagnostic MissingCaptureInstanceHistoryLossEvidence(
+        SqlServerCaptureInstanceInspection capture
+    ) =>
+        ProviderHistoryLossEvidence(
+            CdcProviderArtifactKind.SqlServerCaptureInstance,
+            capture.CaptureInstanceName,
+            "CDC_SQLSERVER_CAPTURE_INSTANCE_MISSING",
+            expectedValue: "binding-derived-capture-instance-present",
+            observedValue: "missing"
+        );
 
     private static CdcProviderSetupStepResult GatingRolePreCaptureResult(
         CdcProviderSetupRequest request,
@@ -3572,7 +3626,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             diagnostics
                 .FirstOrDefault(diagnostic =>
                     diagnostic.Severity == CdcProviderDiagnosticSeverity.Error
-                    && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+                    && IsProviderHistoryContinuityDiagnostic(diagnostic)
                 )
                 ?.Classification
             ?? CdcProviderRetryContinuityClassification.None;
@@ -3613,7 +3667,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             diagnostics
                 .FirstOrDefault(diagnostic =>
                     diagnostic.Severity == CdcProviderDiagnosticSeverity.Error
-                    && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+                    && IsProviderHistoryContinuityDiagnostic(diagnostic)
                 )
                 ?.Classification
             ?? CdcProviderRetryContinuityClassification.None;
@@ -3837,6 +3891,26 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             Classification: CdcProviderRetryContinuityClassification.SourceHistoryUnknown
         );
 
+    private static CdcProviderDiagnostic ProviderHistoryLossEvidence(
+        CdcProviderArtifactKind artifactKind,
+        CdcSafeName safeName,
+        string code,
+        string expectedValue,
+        string observedValue
+    ) =>
+        new(
+            Code: code,
+            Category: CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence,
+            Severity: CdcProviderDiagnosticSeverity.Error,
+            PrincipalKind: CdcPrincipalKind.None,
+            ArtifactKind: artifactKind,
+            SafeName: safeName,
+            ExpectedValue: expectedValue,
+            ObservedValue: observedValue,
+            ProviderErrorClass: null,
+            Classification: CdcProviderRetryContinuityClassification.SourceHistoryLost
+        );
+
     private static CdcProviderDiagnostic ProviderHistoryWarning(
         string code,
         string expectedValue,
@@ -3854,6 +3928,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ProviderErrorClass: null,
             Classification: CdcProviderRetryContinuityClassification.SourceHistoryUnknown
         );
+
+    private static bool IsProviderHistoryContinuityDiagnostic(CdcProviderDiagnostic diagnostic) =>
+        diagnostic.Category
+            is CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+                or CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence;
 
     private static string MissingOrPresent(bool missing) => missing ? "missing" : "present";
 
