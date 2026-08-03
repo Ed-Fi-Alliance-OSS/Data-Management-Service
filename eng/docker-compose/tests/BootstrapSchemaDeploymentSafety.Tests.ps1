@@ -4571,6 +4571,108 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
+        It "provisions an EXTERNAL PostgreSQL target named like the reserved database" {
+            # This provisioner supports per-data-store external servers, and already treats the same
+            # database name on different hosts as different targets. A database of that name on some
+            # other server is a different physical database, so the local reserved-name rule does not
+            # reach it. Only the host differs from the refused local row above.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 711
+                            name = "External"
+                            connectionString = 'host=pg.example.com;port=5432;username=postgres;password=isolated-pass;database=edfi_configurationservice;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardPostgresEnvFile) `
+                    -DataStoreId @(711) `
+                    -SeparateConfigDatabase } |
+                    Should -Not -Throw
+
+                @(Get-Content -LiteralPath $capturePath) |
+                    Should -Contain "host=pg.example.com;port=5432;username=postgres;password=isolated-pass;database=edfi_configurationservice" -Because "an external server's namespace is its own; the host is preserved untranslated"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "provisions an EXTERNAL SQL Server target named like the reserved database, without asking the local instance" {
+            # The symmetric half, and the sharper one: the local dms-mssql container's collation can
+            # say nothing about a database on another server, so consulting it would answer for the
+            # wrong instance entirely.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:provisionAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:provisionAuthorityCalled = $true
+                    throw "the local instance must not be asked about an external server's database"
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 712
+                            name = "External"
+                            connectionString = 'Server=sql.example.com,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardMssqlEnvFile) `
+                    -DataStoreId @(712) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase *>&1 | Out-Null
+
+                $script:provisionAuthorityCalled | Should -BeFalse
+                @(Get-Content -LiteralPath $capturePath) | Should -Contain "mssql"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "still refuses a target authored directly against the local host-side coordinates" {
+            # Endpoint identity, not provenance: a stored connection string written straight to the
+            # published host/port IS the local Compose database, so it must not slip past the guard
+            # merely because it never carried the Docker-internal hostname.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 713
+                            name = "DirectLocal"
+                            connectionString = 'host=localhost;port=5544;username=postgres;password=isolated-pass;database=edfi_configurationservice;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardPostgresEnvFile) `
+                    -DataStoreId @(713) `
+                    -SeparateConfigDatabase } |
+                    Should -Throw "*edfi_configurationservice*"
+
+                Test-Path -LiteralPath $capturePath | Should -BeFalse
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
         It "refuses before provisioning ANY target when one of several selected targets is the reserved database" {
             # The guard runs over the whole target set before the schema tool is resolved, so an
             # earlier distinct target is not provisioned on the way to discovering a later bad one.

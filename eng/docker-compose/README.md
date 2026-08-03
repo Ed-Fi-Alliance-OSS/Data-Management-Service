@@ -709,6 +709,11 @@ wait passes.
 > the existing ones. Use the explicit phase commands against the data stores the earlier run
 > created: `./start-local-dms.ps1 -InfraOnly -DmsBaseUrl <url>` for the health wait, then
 > `./load-dms-seed-data.ps1 -DmsBaseUrl <url> -SchoolYear <years...>` for seed loading.
+>
+> A fresh run recomposes the environment from its own switches, so if the stack was started with
+> `-SeparateConfigDatabase`, carry that switch on every follow-up command too — dropping it
+> continues a separate-mode stack in shared mode. Both terminal guidance blocks print the switch
+> for you when it applies.
 
 ```pwsh
 cd eng/docker-compose

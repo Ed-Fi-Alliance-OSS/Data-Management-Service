@@ -629,6 +629,28 @@ $failureStatement
             # The follow-up wrapper hint must carry -NoDataStore: the terminal run already created
             # the data store, and a plain wrapper re-run creates a duplicate (verified live).
             $output | Should -Match "bootstrap-local-dms\.ps1\s+-InfraOnly\s+-DmsBaseUrl\s+<url>\s+-NoDataStore" -Because "the continuation hint must reuse the data store the terminal run created, not duplicate it"
+
+            # Shared mode must not advertise a topology switch it was not started with.
+            $output | Should -Not -Match "-NoDataStore\s+-SeparateConfigDatabase" -Because "the hint records the topology this run actually used"
+        }
+
+        It "carries -SeparateConfigDatabase on the continuation hint when the run is separate-topology" {
+            # A fresh wrapper run recomposes the environment from its own switches, so a hint that
+            # drops the declaration continues a separate-mode stack in SHARED mode and undoes the
+            # operator's selection.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-sep-guidance.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $output = & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                -SeparateConfigDatabase `
+                *>&1 | Out-String
+
+            $output | Should -Match "bootstrap-local-dms\.ps1\s+-InfraOnly\s+-DmsBaseUrl\s+<url>\s+-NoDataStore\s+-SeparateConfigDatabase" -Because "the continuation must reuse the data store AND keep the topology the stack was started with"
         }
 
         It "forwards -DatabaseEngine to the provision phase (DMS-1270 Phase 1b)" {
@@ -768,14 +790,17 @@ $failureStatement
             @(Get-Content -LiteralPath $forwardLog) | Should -Contain "provision separate=False" -Because "shared mode must remain the default all the way through the wrapper"
         }
 
-        It "start-local-dms.ps1 -InfraOnly separate-topology guidance prints the switch on BOTH datastore phases" {
+        It "start-local-dms.ps1 -InfraOnly separate-topology guidance prints the switch on every command it emits" {
             # The manual continuation is where the declaration cannot be inferred: the marker lives
-            # in the derived file this start wrote. Printing it on only one of the two phases leaves
-            # the other unable to refuse the dedicated Configuration Service database.
+            # in the derived file this start wrote. Printing it on only some of the emitted commands
+            # leaves the rest unable to refuse the dedicated Configuration Service database, or -
+            # for the fresh wrapper run, which recomposes the environment from its own switches -
+            # silently continues the stack in shared mode.
             $startContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
 
             $startContent | Should -Match 'Write-Output\s+"[^"\n]*configure-local-data-store\.ps1 -SeparateConfigDatabase'
             $startContent | Should -Match 'Write-Output\s+"[^"\n]*provision-dms-schema\.ps1 -SeparateConfigDatabase'
+            $startContent | Should -Match 'Write-Output\s+"[^"\n]*bootstrap-local-dms\.ps1 -InfraOnly -DmsBaseUrl <url> -SeparateConfigDatabase'
         }
 
         It "start-local-dms.ps1 terminal guidance block does not print a second start run as a resume mechanism" {
