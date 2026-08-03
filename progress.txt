@@ -187,3 +187,8 @@ Completed simplification follow-up task for reference/design/backend-redesign/ep
 Key decisions: added shared administrative workflow helper for effective cancellation scope and mutex-owned short transaction commit/rollback; kept command-specific lifecycle and destructive gates in workflows.
 Files changed: DocumentCacheAdministrativeWorkflow.cs; guarded/offline/online/recovery/scrub/baseline/drain workflow files; tasks.json; progress.txt.
 Blockers/notes: none. Verification passed with DocumentCacheAdministrative unit filter.
+
+Completed transaction-cancellation follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: active admin/writer transactions now use uncancelable in-transaction tokens after cancellable begin; runner reclassifies caller/workflow cancellation after active transaction returns using true mutated flag; provider writer cancellation-hook tests now expect commit/ack after transaction start.
+Files changed: DocumentCacheAdministrativeWorkflow.cs; DocumentCacheAdministrativeCommandRunner.cs; admin workflow callers; PG/MSSQL DocumentCacheWriter.cs; focused unit and PG/MSSQL writer integration tests; tasks.json; progress.txt.
+Blockers/notes: MSSQL first failed before tests because container was stopped; started dms-mssql-integration-2025 and reran with ConnectionStrings__MssqlAdmin localhost,14333. Remaining follow-up tasks still open in tasks.json.

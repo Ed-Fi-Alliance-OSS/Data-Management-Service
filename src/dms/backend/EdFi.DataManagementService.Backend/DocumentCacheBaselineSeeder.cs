@@ -137,8 +137,8 @@ internal sealed class DocumentCacheBaselineSeeder(
             .ExecuteInTransactionAsync(
                 context.MutexLease,
                 IsolationLevel.ReadCommitted,
-                session =>
-                    context.Primitives.CaptureBaselineBoundaryAsync(session, effectiveCancellationToken),
+                (session, transactionCancellationToken) =>
+                    context.Primitives.CaptureBaselineBoundaryAsync(session, transactionCancellationToken),
                 commit: true,
                 effectiveCancellationToken
             )
@@ -254,14 +254,14 @@ internal sealed class DocumentCacheBaselineSeeder(
         DocumentCacheAdministrativeWorkflow.ExecuteInTransactionAsync(
             context.MutexLease,
             IsolationLevel.ReadCommitted,
-            session =>
+            (session, transactionCancellationToken) =>
                 context.Primitives.ObserveWorkHighWaterAsync(
                     session,
                     new DocumentCacheAdministrativeWorkHighWaterObservationRequest(
                         highWaterMark,
                         diagnosticCapacity: pageSize
                     ),
-                    cancellationToken
+                    transactionCancellationToken
                 ),
             commit: true,
             cancellationToken
@@ -277,7 +277,7 @@ internal sealed class DocumentCacheBaselineSeeder(
         DocumentCacheAdministrativeWorkflow.ExecuteInTransactionAsync(
             context.MutexLease,
             IsolationLevel.Serializable,
-            session =>
+            (session, transactionCancellationToken) =>
                 context.Primitives.SeedBaselinePageAsync(
                     session,
                     new DocumentCacheAdministrativeBaselineSeedPageRequest(
@@ -285,7 +285,7 @@ internal sealed class DocumentCacheBaselineSeeder(
                         afterDocumentId,
                         pageSize
                     ),
-                    cancellationToken
+                    transactionCancellationToken
                 ),
             static page =>
                 page.Status != DocumentCacheAdministrativeBaselineSeedPageStatus.RetryFromLastCommittedKey,

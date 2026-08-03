@@ -161,11 +161,11 @@ internal sealed class DocumentCacheOnlineCacheRebuildCommand(
                 .ExecuteInTransactionAsync(
                     context.MutexLease,
                     IsolationLevel.ReadCommitted,
-                    session =>
+                    (session, transactionCancellationToken) =>
                         context.Primitives.ClearDocumentCacheBatchAsync(
                             session,
                             new DocumentCacheAdministrativeClearBatchRequest(pageSize),
-                            cancellationToken
+                            transactionCancellationToken
                         ),
                     commit: true,
                     cancellationToken
@@ -188,8 +188,11 @@ internal sealed class DocumentCacheOnlineCacheRebuildCommand(
                 .ExecuteInTransactionAsync(
                     context.MutexLease,
                     IsolationLevel.ReadCommitted,
-                    session =>
-                        context.Primitives.ReadProjectedStateEmptinessAsync(session, cancellationToken),
+                    (session, transactionCancellationToken) =>
+                        context.Primitives.ReadProjectedStateEmptinessAsync(
+                            session,
+                            transactionCancellationToken
+                        ),
                     commit: true,
                     cancellationToken
                 )
@@ -224,7 +227,7 @@ internal sealed class DocumentCacheOnlineCacheRebuildCommand(
                 .ExecuteInTransactionAsync(
                     context.MutexLease,
                     IsolationLevel.ReadCommitted,
-                    async session =>
+                    async (session, transactionCancellationToken) =>
                     {
                         DocumentCacheAdministrativeLifecycleTransitionResult transition = await context
                             .Primitives.TryTransitionLifecycleAsync(
@@ -235,7 +238,7 @@ internal sealed class DocumentCacheOnlineCacheRebuildCommand(
                                     nextLifecycle,
                                     nextCacheAheadRecoveryRequired: false
                                 ),
-                                cancellationToken
+                                transactionCancellationToken
                             )
                             .ConfigureAwait(false);
 

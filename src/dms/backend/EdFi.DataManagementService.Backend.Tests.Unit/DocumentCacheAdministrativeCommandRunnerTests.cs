@@ -285,6 +285,145 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             );
     }
 
+    [TestCase(false, DocumentCacheAdministrativeCommandStatus.FailedNoMutation)]
+    [TestCase(true, DocumentCacheAdministrativeCommandStatus.IncompleteRetryable)]
+    public async Task It_reports_workflow_timeout_after_an_active_transaction_finishes(
+        bool transactionMutates,
+        DocumentCacheAdministrativeCommandStatus expectedStatus
+    )
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            generation: 1,
+            workflowTimeout: TimeSpan.FromMilliseconds(20)
+        );
+        DocumentCacheProjectionTargetRuntimeContext runtimeContext = RuntimeContext(executionContext);
+        List<CancellationToken> transactionTokens = [];
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([runtimeContext]),
+            new RecordingAdministrativeMutex()
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: async (context, cancellationToken) =>
+            {
+                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.ClearCache);
+                await DocumentCacheAdministrativeWorkflow
+                    .ExecuteInTransactionAsync(
+                        context.MutexLease,
+                        IsolationLevel.ReadCommitted,
+                        async (_, transactionCancellationToken) =>
+                        {
+                            transactionTokens.Add(transactionCancellationToken);
+                            await Task.Delay(TimeSpan.FromMilliseconds(80), transactionCancellationToken)
+                                .ConfigureAwait(false);
+
+                            if (transactionMutates)
+                            {
+                                context.MarkMutated(
+                                    new DocumentCacheLifecycleObservation(
+                                        DocumentCacheLifecycleState.Resetting,
+                                        false
+                                    )
+                                );
+                            }
+
+                            return true;
+                        },
+                        commit: true,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                return context.Completed();
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        transactionTokens.Should().ContainSingle().Which.Should().Be(CancellationToken.None);
+        result.Status.Should().Be(expectedStatus);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.WorkflowTimeout);
+        result.Mutated.Should().Be(transactionMutates);
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout
+            );
+    }
+
+    [TestCase(
+        false,
+        DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+        DocumentCacheAdministrativeCommandClassification.CancellationBeforeMutation
+    )]
+    [TestCase(
+        true,
+        DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
+        DocumentCacheAdministrativeCommandClassification.CancellationAfterMutation
+    )]
+    public async Task It_reports_caller_cancellation_after_an_active_transaction_finishes(
+        bool transactionMutates,
+        DocumentCacheAdministrativeCommandStatus expectedStatus,
+        DocumentCacheAdministrativeCommandClassification expectedClassification
+    )
+    {
+        using CancellationTokenSource cancellationTokenSource = new();
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        DocumentCacheProjectionTargetRuntimeContext runtimeContext = RuntimeContext(executionContext);
+        List<CancellationToken> transactionTokens = [];
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([runtimeContext]),
+            new RecordingAdministrativeMutex()
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: async (context, cancellationToken) =>
+            {
+                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.ClearWork);
+                await DocumentCacheAdministrativeWorkflow
+                    .ExecuteInTransactionAsync(
+                        context.MutexLease,
+                        IsolationLevel.ReadCommitted,
+                        (_, transactionCancellationToken) =>
+                        {
+                            transactionTokens.Add(transactionCancellationToken);
+                            cancellationTokenSource.Cancel();
+
+                            if (transactionMutates)
+                            {
+                                context.MarkMutated(
+                                    new DocumentCacheLifecycleObservation(
+                                        DocumentCacheLifecycleState.Resetting,
+                                        false
+                                    )
+                                );
+                            }
+
+                            return Task.FromResult(true);
+                        },
+                        commit: true,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                return context.Completed();
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            Request(),
+            workflow,
+            cancellationTokenSource.Token
+        );
+
+        transactionTokens.Should().ContainSingle().Which.Should().Be(CancellationToken.None);
+        result.Status.Should().Be(expectedStatus);
+        result.Classification.Should().Be(expectedClassification);
+        result.Mutated.Should().Be(transactionMutates);
+    }
+
     [Test]
     public async Task It_preserves_baseline_high_water_context_when_workflow_timeout_expires()
     {

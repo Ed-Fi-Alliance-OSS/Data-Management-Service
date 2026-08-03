@@ -78,12 +78,12 @@ internal sealed class DocumentCacheGuardedNewEmptyActivationCommand(
                 .ExecuteInTransactionAsync(
                     context.MutexLease,
                     IsolationLevel.ReadCommitted,
-                    async session =>
+                    async (session, transactionCancellationToken) =>
                     {
                         DocumentCacheAdministrativeCommandResult? guardedRejection = await VerifyGuardAsync(
                                 context,
                                 session,
-                                effectiveCancellationToken
+                                transactionCancellationToken
                             )
                             .ConfigureAwait(false);
                         if (guardedRejection is not null)
@@ -102,7 +102,7 @@ internal sealed class DocumentCacheGuardedNewEmptyActivationCommand(
                                     DocumentCacheLifecycleState.Tracking,
                                     nextCacheAheadRecoveryRequired: false
                                 ),
-                                effectiveCancellationToken
+                                transactionCancellationToken
                             )
                             .ConfigureAwait(false);
 

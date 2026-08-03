@@ -593,6 +593,22 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     )
                     .ConfigureAwait(false);
 
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return RecordAdministrativeCommandResult(
+                        CreateCancellationResult(commandContext),
+                        commandContext
+                    );
+                }
+
+                if (workflowTimeout.IsCancellationRequested)
+                {
+                    return RecordAdministrativeCommandResult(
+                        CreateWorkflowTimeoutResult(commandContext),
+                        commandContext
+                    );
+                }
+
                 return RecordAdministrativeCommandResult(
                     AddRuntimeResultFields(result, commandContext),
                     commandContext
@@ -1362,17 +1378,18 @@ file static class DocumentCacheAdministrativeCommandPrimitiveExtensions
             )
             .ConfigureAwait(false);
 
+        CancellationToken activeTransactionCancellationToken = CancellationToken.None;
         try
         {
             DocumentCacheLifecycleReadResult result = await primitives
-                .ReadLifecycleAsync(session, lockMode, cancellationToken)
+                .ReadLifecycleAsync(session, lockMode, activeTransactionCancellationToken)
                 .ConfigureAwait(false);
-            await session.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await session.CommitAsync(activeTransactionCancellationToken).ConfigureAwait(false);
             return result;
         }
         catch
         {
-            await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            await session.RollbackAsync(activeTransactionCancellationToken).ConfigureAwait(false);
             throw;
         }
     }

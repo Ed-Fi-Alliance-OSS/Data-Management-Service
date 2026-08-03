@@ -155,7 +155,8 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
             .ExecuteInTransactionAsync(
                 context.MutexLease,
                 IsolationLevel.ReadCommitted,
-                session => context.Primitives.CaptureBaselineBoundaryAsync(session, cancellationToken),
+                (session, transactionCancellationToken) =>
+                    context.Primitives.CaptureBaselineBoundaryAsync(session, transactionCancellationToken),
                 commit: true,
                 cancellationToken
             )
@@ -175,7 +176,7 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
         DocumentCacheAdministrativeWorkflow.ExecuteInTransactionAsync(
             context.MutexLease,
             IsolationLevel.Serializable,
-            session =>
+            (session, transactionCancellationToken) =>
                 context.Primitives.ScrubPageAsync(
                     session,
                     new DocumentCacheAdministrativeScrubPageRequest(
@@ -183,7 +184,7 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
                         afterDocumentId,
                         pageSize
                     ),
-                    cancellationToken
+                    transactionCancellationToken
                 ),
             static page =>
                 page.Status != DocumentCacheAdministrativeScrubPageStatus.RetryFromLastCommittedKey,

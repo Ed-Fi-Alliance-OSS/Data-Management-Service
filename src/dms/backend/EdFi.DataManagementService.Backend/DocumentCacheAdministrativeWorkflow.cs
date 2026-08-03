@@ -54,7 +54,7 @@ internal static class DocumentCacheAdministrativeWorkflow
     public static Task<TResult> ExecuteInTransactionAsync<TResult>(
         IDocumentCacheAdministrativeMutexLease mutexLease,
         IsolationLevel isolationLevel,
-        Func<IRelationalWriteSession, Task<TResult>> executeAsync,
+        Func<IRelationalWriteSession, CancellationToken, Task<TResult>> executeAsync,
         bool commit,
         CancellationToken cancellationToken
     ) => ExecuteInTransactionAsync(mutexLease, isolationLevel, executeAsync, _ => commit, cancellationToken);
@@ -62,7 +62,7 @@ internal static class DocumentCacheAdministrativeWorkflow
     public static async Task<TResult> ExecuteInTransactionAsync<TResult>(
         IDocumentCacheAdministrativeMutexLease mutexLease,
         IsolationLevel isolationLevel,
-        Func<IRelationalWriteSession, Task<TResult>> executeAsync,
+        Func<IRelationalWriteSession, CancellationToken, Task<TResult>> executeAsync,
         Func<TResult, bool> shouldCommit,
         CancellationToken cancellationToken
     )
@@ -75,23 +75,25 @@ internal static class DocumentCacheAdministrativeWorkflow
             .BeginTransactionAsync(isolationLevel, cancellationToken)
             .ConfigureAwait(false);
 
+        CancellationToken activeTransactionCancellationToken = CancellationToken.None;
         try
         {
-            TResult result = await executeAsync(session).ConfigureAwait(false);
+            TResult result = await executeAsync(session, activeTransactionCancellationToken)
+                .ConfigureAwait(false);
             if (shouldCommit(result))
             {
-                await session.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await session.CommitAsync(activeTransactionCancellationToken).ConfigureAwait(false);
             }
             else
             {
-                await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                await session.RollbackAsync(activeTransactionCancellationToken).ConfigureAwait(false);
             }
 
             return result;
         }
         catch
         {
-            await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            await session.RollbackAsync(activeTransactionCancellationToken).ConfigureAwait(false);
             throw;
         }
     }

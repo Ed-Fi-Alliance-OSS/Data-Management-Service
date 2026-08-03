@@ -170,7 +170,7 @@ public class Given_A_Mssql_DocumentCacheWriter
 
     [TestCaseSource(nameof(CancellationRollbackHookCases))]
     [Category("DocumentCacheWriterCancellation")]
-    public async Task DocumentCacheWriterCancellation_it_rolls_back_started_transactions_after_caller_cancellation(
+    public async Task DocumentCacheWriterCancellation_it_finishes_started_transactions_after_caller_cancellation(
         string hookName
     )
     {
@@ -192,19 +192,16 @@ public class Given_A_Mssql_DocumentCacheWriter
             )
         );
 
-        result
-            .Should()
-            .BeOfType<DocumentCacheWriterResult.CallerAbortedRetry>()
-            .Which.AttemptCount.Should()
-            .Be(1);
+        AssertCancellationCompletedWriterResult(hook, result);
         observer.Contexts.Should().ContainSingle(context => context.Hook == hook);
-        await AssertCancellationRollbackStateAsync(hook, source);
+        cancellationSource.IsCancellationRequested.Should().BeTrue();
+        await AssertCancellationCompletedStateAsync(source);
     }
 
     [TestCaseSource(nameof(CancellationRollbackHookCases))]
     [Category("DocumentCacheSessionBoundWriter")]
     [Category("DocumentCacheWriterCancellation")]
-    public async Task DocumentCacheSessionBoundWriterCancellation_it_rolls_back_on_the_mutex_session_without_the_canceled_token(
+    public async Task DocumentCacheSessionBoundWriterCancellation_it_commits_on_the_mutex_session_without_the_canceled_token(
         string hookName
     )
     {
@@ -243,22 +240,21 @@ public class Given_A_Mssql_DocumentCacheWriter
             )
         );
 
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
-        result
-            .Classification.Should()
-            .Be(DocumentCacheAdministrativeCommandClassification.CancellationAfterMutation);
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
         result.Mutated.Should().BeTrue();
-        result.WriterResult.Should().BeOfType<DocumentCacheWriterResult.CallerAbortedRetry>();
+        AssertCancellationCompletedWriterResult(hook, result.WriterResult!);
         recordingLease
-            .RollbackCancellationTokens.Should()
+            .CommitCancellationTokens.Should()
             .ContainSingle()
-            .Which.IsCancellationRequested.Should()
-            .BeFalse();
+            .Which.Should()
+            .Be(CancellationToken.None);
+        recordingLease.RollbackCancellationTokens.Should().BeEmpty();
 
         await using IRelationalWriteSession session = await recordingLease.BeginTransactionAsync();
         await session.CommitAsync(CancellationToken.None);
 
-        await AssertCancellationRollbackStateAsync(hook, source);
+        await AssertCancellationCompletedStateAsync(source);
     }
 
     [Test]
@@ -1524,22 +1520,33 @@ public class Given_A_Mssql_DocumentCacheWriter
         return (source, CreateCandidate(source, "candidate-canceled"));
     }
 
-    private async Task AssertCancellationRollbackStateAsync(
+    private static void AssertCancellationCompletedWriterResult(
         DocumentCacheWriterFaultInjectionHook hook,
-        SourceDocument source
+        DocumentCacheWriterResult result
     )
     {
         if (hook == DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit)
         {
-            (await ReadCacheCountAsync(source.DocumentId)).Should().Be(1);
-            (await ReadCacheRowAsync(source.DocumentId)).ContentVersion.Should().Be(10);
-        }
-        else
-        {
-            (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+            result
+                .Should()
+                .BeOfType<DocumentCacheWriterResult.AlreadyCurrentAcknowledged>()
+                .Which.AcknowledgedContentVersion.Should()
+                .Be(10);
+            return;
         }
 
-        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(10);
+    }
+
+    private async Task AssertCancellationCompletedStateAsync(SourceDocument source)
+    {
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(1);
+        (await ReadCacheRowAsync(source.DocumentId)).ContentVersion.Should().Be(10);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
         (await ReadCacheAheadLatchAsync()).Should().BeFalse();
     }
 
@@ -2545,6 +2552,8 @@ public class Given_A_Mssql_DocumentCacheWriter
     private sealed class RecordingAdministrativeMutexLease(IDocumentCacheAdministrativeMutexLease innerLease)
         : IDocumentCacheAdministrativeMutexLease
     {
+        public List<CancellationToken> CommitCancellationTokens { get; } = [];
+
         public List<CancellationToken> RollbackCancellationTokens { get; } = [];
 
         public RelationalProviderToken ProviderToken => innerLease.ProviderToken;
@@ -2562,7 +2571,11 @@ public class Given_A_Mssql_DocumentCacheWriter
                 .BeginTransactionAsync(isolationLevel, cancellationToken)
                 .ConfigureAwait(false);
 
-            return new RecordingRelationalWriteSession(session, RollbackCancellationTokens);
+            return new RecordingRelationalWriteSession(
+                session,
+                CommitCancellationTokens,
+                RollbackCancellationTokens
+            );
         }
 
         public ValueTask DisposeAsync() => innerLease.DisposeAsync();
@@ -2570,6 +2583,7 @@ public class Given_A_Mssql_DocumentCacheWriter
 
     private sealed class RecordingRelationalWriteSession(
         IRelationalWriteSession innerSession,
+        List<CancellationToken> commitCancellationTokens,
         List<CancellationToken> rollbackCancellationTokens
     ) : IRelationalWriteSession
     {
@@ -2579,8 +2593,11 @@ public class Given_A_Mssql_DocumentCacheWriter
 
         public DbCommand CreateCommand(RelationalCommand command) => innerSession.CreateCommand(command);
 
-        public Task CommitAsync(CancellationToken cancellationToken = default) =>
-            innerSession.CommitAsync(cancellationToken);
+        public async Task CommitAsync(CancellationToken cancellationToken = default)
+        {
+            commitCancellationTokens.Add(cancellationToken);
+            await innerSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         public async Task RollbackAsync(CancellationToken cancellationToken = default)
         {

@@ -380,7 +380,11 @@ internal sealed class DocumentCacheAdministrativeDrainer(
             .ExecuteInTransactionAsync(
                 context.MutexLease,
                 IsolationLevel.ReadCommitted,
-                session => context.Primitives.ReadProjectedStateEmptinessAsync(session, cancellationToken),
+                (session, transactionCancellationToken) =>
+                    context.Primitives.ReadProjectedStateEmptinessAsync(
+                        session,
+                        transactionCancellationToken
+                    ),
                 commit: true,
                 cancellationToken
             )

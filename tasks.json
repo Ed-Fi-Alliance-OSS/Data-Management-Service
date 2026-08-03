@@ -648,5 +648,115 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrative\""
     ],
     "completed": true
+  },
+  {
+    "category": "administrative-runner",
+    "description": "Medium: Preserve the initially pinned administrative target through mutex wait and post-acquisition startup by retaining/protecting that context before waiting and removing post-mutex current-target rejection. Keep this to pinning and retention semantics; do not add durable command history, command idempotency, leases, new settings, or public API changes.",
+    "acceptance-criteria": [
+      "After the runner resolves target context, generation, physical source fingerprint, and session input before mutex acquisition, later CMS refresh removal or replacement does not produce targetReplacedBeforeExecution or target-ineligible rejection for that pinned command.",
+      "The pinned target context is retained as command-owned, or otherwise protected from supervisor cancellation/disposal, before a potentially blocking mutex acquisition starts.",
+      "The post-mutex path does not re-read CurrentRuntimeSnapshot or CurrentSnapshot to reject the command for generation replacement, removal, or eligibility changes that occurred after the initial pin.",
+      "Fingerprint mismatch and provider ineligibility are still rejected before mutex acquisition when present in the initial resolved target snapshot.",
+      "A command whose pinned generation becomes noncurrent before or during mutex acquisition continues on the pinned mutex-owned session and returns bounded noncurrent-generation diagnostics when it completes or aborts.",
+      "The fix does not retarget an accepted command to a replacement generation and does not persist administrative command execution state.",
+      "Focused tests cover CMS target replacement while a command is waiting for the administrative mutex and after mutex acquisition but before workflow execution begins."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeCommandRunner|FullyQualifiedName~DocumentCacheProjectionSupervisor\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "administrative-primitives",
+    "description": "Medium: Make PostgreSQL baseline seeding retry when the observed DocumentProjectionWork row changes before the page repair. Keep the change limited to the PostgreSQL baseline seed page stale-row guard and result classification; do not change schema, paging strategy, SQL Server behavior except parity tests, or broader seeding workflow.",
+    "acceptance-criteria": [
+      "The PostgreSQL baseline seed page upsert only updates an existing DocumentProjectionWork row when the row still matches the previously observed RequiredContentVersion for that document.",
+      "If a conflict row appears or changes after the page observation, and the current work row no longer matches the observed RequiredContentVersion, the page returns mutationKind Retry so the Serializable transaction rolls back and the seeder retries from the last committed key.",
+      "The PostgreSQL behavior matches the SQL Server baseline seed page guard and the existing PostgreSQL scrub page guard for stale observed work rows.",
+      "The mutationKind result does not report Inserted, Advanced, Lowered, or None for a document whose work row changed under the observed page.",
+      "The implementation does not introduce new DocumentProjectionWork columns, locks that survive the seed transaction, or a new repair/reconciliation mechanism.",
+      "Provider integration tests cover a PostgreSQL baseline seed race where DocumentProjectionWork changes between observation and repair."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheBaselineSeeding\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativePrimitives|FullyQualifiedName~DocumentCacheBaselineSeeding\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "simplification",
+    "description": "Low: Remove the unused activation-prerequisite lifecycle transition primitive so the provider interface does not carry a production-dead administrative path. This is cleanup only; do not wire a new activation workflow merely to preserve the helper.",
+    "acceptance-criteria": [
+      "DocumentCacheAdministrativeActivationTransitionResult and TryTransitionLifecycleAfterActivationPrerequisitesAsync are removed from IDocumentCacheAdministrativePrimitives, provider wrappers, support helpers, and test fakes.",
+      "No production activation workflow is rewritten or expanded solely to use the removed combined primitive.",
+      "Guarded activation, offline activation, and provider prerequisite validation keep their existing fail-closed behavior and command classifications.",
+      "Provider primitive tests no longer assert behavior for a helper that is unreachable from production command workflows.",
+      "No new administrative abstraction, lifecycle state, command phase, provider primitive, setting, or endpoint is introduced as part of this cleanup."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativePrimitives|FullyQualifiedName~DocumentCacheGuardedNewEmptyActivation|FullyQualifiedName~DocumentCacheOfflineActivation\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "explicit-integrity-scrub",
+    "description": "Medium: Recheck explicit integrity scrub lifecycle and cache-ahead latch admission on the mutex session immediately before any boundary capture, scan, or mutation. Keep the fix to admission fencing and the existing no-mutation failure path; do not add a new scrub mode, latch lifecycle, retry policy, or setting.",
+    "acceptance-criteria": [
+      "Explicit integrity scrub performs a mutex-session lifecycle and latch admission check after live preflight and before CaptureBoundary or ScrubScan begins.",
+      "The admission check rejects anything other than Tracking with CacheAheadRecoveryRequired false before any O(N) source/cache/work scan or durable mutation is attempted.",
+      "A cache-ahead latch set by an ordinary writer after command preflight but before scrub admission returns a no-mutation failure with cache-ahead latch diagnostics and leaves command mutated false.",
+      "Scrub page execution does not keep retrying the same page until WorkflowTimeout when cache-ahead rows are present but the latch was already set by another writer.",
+      "Successful scrub behavior is unchanged when admission observes Tracking with a clear latch, including setting the latch only for current cache-ahead rows and never clearing it.",
+      "The implementation reuses existing lifecycle/latch state and administrative result classifications rather than introducing durable scrub markers or additional recovery state."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheExplicitIntegrityScrub|FullyQualifiedName~DocumentCacheAdministrativePrimitives\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheExplicitIntegrityScrub|FullyQualifiedName~DocumentCacheAdministrativePrimitives\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheExplicitIntegrityScrub|FullyQualifiedName~DocumentCacheAdministrativePrimitives\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "session-bound-writer",
+    "description": "Medium: Distinguish already-current/no-work writer observations from acknowledged work mutations in command-owned drain mutation accounting. Keep the change to writer result semantics and command mutation/count plumbing; do not alter drain selection, retry policy, schema, or ordinary writer durability behavior.",
+    "acceptance-criteria": [
+      "The writer path for cache current and no DocumentProjectionWork row returns a distinct non-mutating outcome/result, or otherwise carries an explicit mutation flag that is false for that observation.",
+      "Session-bound writer results mark the administrative command mutated only when the current execution actually performs durable lifecycle, latch, cache, or work DML.",
+      "Command-owned drain does not increment acknowledgement/removal counts or call MarkMutated when a selected work row has already disappeared and the cache is already current.",
+      "WorkflowTimeout, caller cancellation, provider timeout, and session-loss classifications continue to use the current command execution's true mutation state rather than a previous or peer execution's mutation.",
+      "The implementation does not add per-document drain leases, command history, new durable counters, or a second work-ownership model.",
+      "Focused tests cover ordinary and session-bound writer classification for cache current with no work row, plus an administrative drain race where the selected work row disappears before writer classification."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheWriterClassification|FullyQualifiedName~DocumentCacheSessionBoundWriter|FullyQualifiedName~DocumentCacheAdministrativeDrain|FullyQualifiedName~DocumentCacheProjectionItemProcessor\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheWriter|FullyQualifiedName~DocumentCacheSessionBoundWriter\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheWriter|FullyQualifiedName~DocumentCacheSessionBoundWriter\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "transaction-cancellation",
+    "description": "High: Stop caller shutdown and Administration WorkflowTimeout tokens from interrupting already-started DocumentCache short database transactions. Keep the change to cancellation-token routing and classification around existing short transactions; do not add timeout settings, redesign provider command timeout, or lengthen transaction scope.",
+    "acceptance-criteria": [
+      "Administrative workflows still observe caller cancellation and WorkflowTimeout before starting a clear, seed, scrub, lifecycle, emptiness-read, or command-owned drain transaction, and while waiting for backpressure, poison retry, poll sleep, mutex acquisition, or the global worker gate.",
+      "After an administrative short transaction begins on the mutex-owning session, lifecycle, latch, cache, work, seed, scrub, read, commit, and rollback operations are allowed to finish under provider command timeout, provider session loss, or transaction rollback rules rather than the WorkflowTimeout token.",
+      "Ordinary and session-bound cache-writer attempts observe caller shutdown or WorkflowTimeout before starting a writer transaction and between retry attempts, but do not pass those cancellation tokens into DML, commit, or rollback after the writer transaction has begun.",
+      "If WorkflowTimeout or caller cancellation is requested while a short transaction is already active, command classification waits for the active transaction to commit or roll back and then reports workflowTimeout or cancellationBeforeMutation/cancellationAfterMutation from the true current-execution mutation state.",
+      "Provider command timeout and mutex session loss remain distinct from WorkflowTimeout and caller cancellation, and still abort/classify through providerCommandTimeout or sessionLoss outcomes.",
+      "The implementation does not introduce new timeout configuration, long-running transaction wrappers, durable command status tables, or provider-specific cancellation semantics beyond the existing command timeout/session-loss model.",
+      "Focused tests cover WorkflowTimeout or caller cancellation firing during an administrative transaction and during a session-bound writer transaction for both no-mutation and after-mutation cases."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeCommandRunner|FullyQualifiedName~DocumentCacheProjectionShutdown|FullyQualifiedName~DocumentCacheSessionBoundWriter|FullyQualifiedName~DocumentCacheWriterRetry\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheWriter|FullyQualifiedName~DocumentCacheSessionBoundWriter|FullyQualifiedName~DocumentCacheAdministration\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheWriter|FullyQualifiedName~DocumentCacheSessionBoundWriter|FullyQualifiedName~DocumentCacheAdministration\""
+    ],
+    "completed": true
   }
 ]

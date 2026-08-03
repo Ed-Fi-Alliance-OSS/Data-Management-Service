@@ -50,8 +50,11 @@ internal sealed class DocumentCacheOfflineActivationCommand(
                 .ExecuteInTransactionAsync(
                     context.MutexLease,
                     IsolationLevel.ReadCommitted,
-                    session =>
-                        context.Primitives.ValidateActivationPrerequisitesAsync(session, cancellationToken),
+                    (session, transactionCancellationToken) =>
+                        context.Primitives.ValidateActivationPrerequisitesAsync(
+                            session,
+                            transactionCancellationToken
+                        ),
                     commit: true,
                     cancellationToken
                 )
@@ -202,11 +205,11 @@ internal sealed class DocumentCacheOfflineActivationCommand(
                 .ExecuteInTransactionAsync(
                     context.MutexLease,
                     IsolationLevel.ReadCommitted,
-                    session =>
+                    (session, transactionCancellationToken) =>
                         context.Primitives.ClearDocumentCacheBatchAsync(
                             session,
                             new DocumentCacheAdministrativeClearBatchRequest(pageSize),
-                            cancellationToken
+                            transactionCancellationToken
                         ),
                     commit: true,
                     cancellationToken
@@ -245,12 +248,12 @@ internal sealed class DocumentCacheOfflineActivationCommand(
                 .ExecuteInTransactionAsync(
                     context.MutexLease,
                     IsolationLevel.ReadCommitted,
-                    session =>
+                    (session, transactionCancellationToken) =>
                         context.Primitives.ClearDocumentProjectionWorkBatchAsync(
                             session,
                             new DocumentCacheAdministrativeClearBatchRequest(pageSize),
                             clearance,
-                            cancellationToken
+                            transactionCancellationToken
                         ),
                     commit: true,
                     cancellationToken
@@ -285,10 +288,13 @@ internal sealed class DocumentCacheOfflineActivationCommand(
                 .ExecuteInTransactionAsync(
                     context.MutexLease,
                     IsolationLevel.ReadCommitted,
-                    async session =>
+                    async (session, transactionCancellationToken) =>
                     {
                         DocumentCacheAdministrativeProjectedStateEmptinessResult emptiness = await context
-                            .Primitives.ReadProjectedStateEmptinessAsync(session, cancellationToken)
+                            .Primitives.ReadProjectedStateEmptinessAsync(
+                                session,
+                                transactionCancellationToken
+                            )
                             .ConfigureAwait(false);
                         if (!emptiness.CacheAndWorkEmpty)
                         {
@@ -312,7 +318,7 @@ internal sealed class DocumentCacheOfflineActivationCommand(
                                     DocumentCacheLifecycleState.Rebuilding,
                                     nextCacheAheadRecoveryRequired: false
                                 ),
-                                cancellationToken
+                                transactionCancellationToken
                             )
                             .ConfigureAwait(false);
 
@@ -353,7 +359,7 @@ internal sealed class DocumentCacheOfflineActivationCommand(
                 .ExecuteInTransactionAsync(
                     context.MutexLease,
                     IsolationLevel.ReadCommitted,
-                    async session =>
+                    async (session, transactionCancellationToken) =>
                     {
                         DocumentCacheAdministrativeLifecycleTransitionResult transition = await context
                             .Primitives.TryTransitionLifecycleAsync(
@@ -364,7 +370,7 @@ internal sealed class DocumentCacheOfflineActivationCommand(
                                     nextLifecycle,
                                     nextCacheAheadRecoveryRequired: false
                                 ),
-                                cancellationToken
+                                transactionCancellationToken
                             )
                             .ConfigureAwait(false);
 

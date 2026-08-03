@@ -204,6 +204,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
             .ConfigureAwait(false);
         NpgsqlConnection connection = transactionScope.Connection;
         NpgsqlTransaction transaction = transactionScope.Transaction;
+        CancellationToken activeTransactionCancellationToken = CancellationToken.None;
 
         var transactionCompleted = false;
         var transactionTelemetryRecorded = false;
@@ -216,7 +217,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
             DocumentCacheLifecycleReadResult lifecycleReadResult = await ReadLifecycleForShareAsync(
                     connection,
                     transaction,
-                    cancellationToken
+                    activeTransactionCancellationToken
                 )
                 .ConfigureAwait(false);
             telemetryLifecycleState = lifecycleReadResult.Lifecycle?.State;
@@ -237,27 +238,28 @@ internal sealed class PostgresqlDocumentCacheWriter(
             // row-locking work, perform cache DML against DocumentCache/source rows, then delete
             // matching work as the final commit gate. Duplicate writers and enqueue/acknowledge
             // races therefore meet on the cache row or final work delete, not on a pre-held work lock.
-            DocumentCacheWriterCurrentObservation currentObservation = await ReadCurrentObservationAsync(
-                    connection,
-                    transaction,
-                    request.DocumentId,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            PostgresqlDocumentCacheWriterCurrentObservation currentObservation =
+                await ReadCurrentObservationAsync(
+                        connection,
+                        transaction,
+                        request.DocumentId,
+                        activeTransactionCancellationToken
+                    )
+                    .ConfigureAwait(false);
 
             DocumentCacheWriterClassificationSelection selection =
                 DocumentCacheWriterClassificationSelector.Select(
                     new DocumentCacheWriterClassificationRequest(
                         lifecycleReadResult,
                         currentObservation.ToCurrentState(),
-                        DocumentCacheWriterSupport.BuildCandidateObservation(request, currentObservation)
+                        BuildCandidateObservation(request, currentObservation)
                     )
                 );
 
             if (!selection.RequiresProviderCompletion)
             {
                 telemetryOutcome = selection.TerminalResult!.Outcome;
-                await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await transactionScope.CommitAsync(activeTransactionCancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return selection.TerminalResult!;
             }
@@ -265,7 +267,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
             if (selection.RequestsCacheAheadLatchFlow)
             {
                 telemetryOutcome = selection.Outcome;
-                await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await transactionScope.CommitAsync(activeTransactionCancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 DocumentCacheWriterSupport.RecordTransactionDuration(
                     _telemetry,
@@ -298,7 +300,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
                         request,
                         lifecycleReadResult,
                         selection,
-                        cancellationToken
+                        activeTransactionCancellationToken
                     )
                     .ConfigureAwait(false)
                 : await AcknowledgeAlreadyCurrentAsync(
@@ -308,7 +310,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
                         lifecycleReadResult,
                         request.DocumentId,
                         selection.ExpectedContentVersion!.Value,
-                        cancellationToken
+                        activeTransactionCancellationToken
                     )
                     .ConfigureAwait(false);
 
@@ -320,7 +322,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
                 return result;
             }
 
-            await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transactionScope.CommitAsync(activeTransactionCancellationToken).ConfigureAwait(false);
             transactionCompleted = true;
             return result;
         }
@@ -511,6 +513,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
             .ConfigureAwait(false);
         NpgsqlConnection connection = transactionScope.Connection;
         NpgsqlTransaction transaction = transactionScope.Transaction;
+        CancellationToken activeTransactionCancellationToken = CancellationToken.None;
 
         var transactionCompleted = false;
         long transactionStartTimestamp = Stopwatch.GetTimestamp();
@@ -522,7 +525,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
             DocumentCacheLifecycleReadResult lifecycleReadResult = await ReadLifecycleForUpdateAsync(
                     connection,
                     transaction,
-                    cancellationToken
+                    activeTransactionCancellationToken
                 )
                 .ConfigureAwait(false);
             telemetryLifecycleState = lifecycleReadResult.Lifecycle?.State;
@@ -537,24 +540,25 @@ internal sealed class PostgresqlDocumentCacheWriter(
                 return lifecycleFence;
             }
 
-            DocumentCacheWriterCurrentObservation currentObservation = await ReadCurrentObservationAsync(
-                    connection,
-                    transaction,
-                    request.DocumentId,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            PostgresqlDocumentCacheWriterCurrentObservation currentObservation =
+                await ReadCurrentObservationAsync(
+                        connection,
+                        transaction,
+                        request.DocumentId,
+                        activeTransactionCancellationToken
+                    )
+                    .ConfigureAwait(false);
             DocumentCacheWriterCacheAheadIncidentDecision recheckDecision =
                 DocumentCacheWriterCacheAheadIncidentFlow.SelectRecheckDecision(
                     lifecycleReadResult,
                     currentObservation.ToCurrentState(),
-                    DocumentCacheWriterSupport.BuildCandidateObservation(request, currentObservation)
+                    BuildCandidateObservation(request, currentObservation)
                 );
 
             if (recheckDecision.TerminalResult is not null)
             {
                 telemetryOutcome = recheckDecision.TerminalResult.Outcome;
-                await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await transactionScope.CommitAsync(activeTransactionCancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return recheckDecision.TerminalResult;
             }
@@ -563,7 +567,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
                     connection,
                     transaction,
                     request.DocumentId,
-                    cancellationToken
+                    activeTransactionCancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -579,12 +583,12 @@ internal sealed class PostgresqlDocumentCacheWriter(
                         cacheDmlRowCount: null,
                         acknowledgementRowCount: null,
                         cacheAheadLatchRowCount: latchUpdateResult.AffectedRows,
-                        cancellationToken: cancellationToken
+                        cancellationToken: activeTransactionCancellationToken
                     )
                     .ConfigureAwait(false);
             }
 
-            await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transactionScope.CommitAsync(activeTransactionCancellationToken).ConfigureAwait(false);
             transactionCompleted = true;
 
             DocumentCacheWriterResult result = DocumentCacheWriterCacheAheadIncidentFlow.CompleteLatchUpdate(
@@ -688,7 +692,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
         }
     }
 
-    private static async Task<DocumentCacheWriterCurrentObservation> ReadCurrentObservationAsync(
+    private static async Task<PostgresqlDocumentCacheWriterCurrentObservation> ReadCurrentObservationAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         long documentId,
@@ -729,15 +733,15 @@ internal sealed class PostgresqlDocumentCacheWriter(
             );
         }
 
-        var observation = new DocumentCacheWriterCurrentObservation(
-            DocumentCacheWriterSupport.GetNullableInt64(reader, "SourceContentVersion"),
-            DocumentCacheWriterSupport.GetNullableInt64(reader, "CacheContentVersion"),
-            DocumentCacheWriterSupport.GetNullableInt64(reader, "WorkRequiredContentVersion"),
-            DocumentCacheWriterSupport.GetNullableGuid(reader, "SourceDocumentUuid"),
-            DocumentCacheWriterSupport.GetNullableInt16(reader, "SourceResourceKeyId"),
-            DocumentCacheWriterSupport.GetNullableString(reader, "SourceProjectName"),
-            DocumentCacheWriterSupport.GetNullableString(reader, "SourceResourceName"),
-            DocumentCacheWriterSupport.GetNullableString(reader, "SourceResourceVersion")
+        var observation = new PostgresqlDocumentCacheWriterCurrentObservation(
+            GetNullableInt64(reader, "SourceContentVersion"),
+            GetNullableInt64(reader, "CacheContentVersion"),
+            GetNullableInt64(reader, "WorkRequiredContentVersion"),
+            GetNullableGuid(reader, "SourceDocumentUuid"),
+            GetNullableInt16(reader, "SourceResourceKeyId"),
+            GetNullableString(reader, "SourceProjectName"),
+            GetNullableString(reader, "SourceResourceName"),
+            GetNullableString(reader, "SourceResourceVersion")
         );
 
         if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -748,6 +752,90 @@ internal sealed class PostgresqlDocumentCacheWriter(
         }
 
         return observation;
+    }
+
+    private static DocumentCacheWriterCandidateObservation BuildCandidateObservation(
+        DocumentCacheWriterRequest request,
+        PostgresqlDocumentCacheWriterCurrentObservation currentObservation
+    )
+    {
+        DocumentCacheMaterializationCandidate? candidate = request.Candidate;
+        if (candidate is null)
+        {
+            return DocumentCacheWriterCandidateObservation.Absent;
+        }
+
+        return new DocumentCacheWriterCandidateObservation(
+            candidate,
+            CompareCandidateMetadata(request.TargetContext.MappingSet, candidate, currentObservation)
+        );
+    }
+
+    private static DocumentCacheWriterCandidateMetadataComparison CompareCandidateMetadata(
+        MappingSet mappingSet,
+        DocumentCacheMaterializationCandidate candidate,
+        PostgresqlDocumentCacheWriterCurrentObservation currentObservation
+    )
+    {
+        if (currentObservation.SourceContentVersion is null)
+        {
+            return DocumentCacheWriterCandidateMetadataComparison.MatchesCurrentSource;
+        }
+
+        if (currentObservation.SourceDocumentUuid != candidate.DocumentUuid.Value)
+        {
+            return DocumentCacheWriterCandidateMetadataComparison.DocumentUuidMismatch;
+        }
+
+        if (
+            !string.Equals(
+                currentObservation.SourceProjectName,
+                candidate.ProjectName,
+                StringComparison.Ordinal
+            )
+            || !string.Equals(
+                currentObservation.SourceResourceName,
+                candidate.ResourceName,
+                StringComparison.Ordinal
+            )
+            || !string.Equals(
+                currentObservation.SourceResourceVersion,
+                candidate.ResourceVersion,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return DocumentCacheWriterCandidateMetadataComparison.ResourceMetadataMismatch;
+        }
+
+        if (
+            currentObservation.SourceResourceKeyId is null
+            || !mappingSet.ResourceKeyById.TryGetValue(
+                currentObservation.SourceResourceKeyId.Value,
+                out ResourceKeyEntry? resourceKey
+            )
+            || resourceKey.ResourceKeyId != currentObservation.SourceResourceKeyId.Value
+            || !string.Equals(
+                resourceKey.Resource.ProjectName,
+                candidate.ProjectName,
+                StringComparison.Ordinal
+            )
+            || !string.Equals(
+                resourceKey.Resource.ResourceName,
+                candidate.ResourceName,
+                StringComparison.Ordinal
+            )
+            || !string.Equals(
+                resourceKey.ResourceVersion,
+                candidate.ResourceVersion,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return DocumentCacheWriterCandidateMetadataComparison.TargetMappingMismatch;
+        }
+
+        return DocumentCacheWriterCandidateMetadataComparison.MatchesCurrentSource;
     }
 
     private static async Task<int> ExecuteCacheWriteAsync(

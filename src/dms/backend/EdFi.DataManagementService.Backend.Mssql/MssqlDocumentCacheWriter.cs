@@ -206,6 +206,7 @@ internal sealed class MssqlDocumentCacheWriter(
             .ConfigureAwait(false);
         SqlConnection connection = transactionScope.Connection;
         SqlTransaction transaction = transactionScope.Transaction;
+        CancellationToken activeTransactionCancellationToken = CancellationToken.None;
 
         var transactionCompleted = false;
         var transactionTelemetryRecorded = false;
@@ -218,7 +219,7 @@ internal sealed class MssqlDocumentCacheWriter(
             DocumentCacheLifecycleReadResult lifecycleReadResult = await ReadLifecycleForShareAsync(
                     connection,
                     transaction,
-                    cancellationToken
+                    activeTransactionCancellationToken
                 )
                 .ConfigureAwait(false);
             telemetryLifecycleState = lifecycleReadResult.Lifecycle?.State;
@@ -243,7 +244,7 @@ internal sealed class MssqlDocumentCacheWriter(
                     connection,
                     transaction,
                     request.DocumentId,
-                    cancellationToken
+                    activeTransactionCancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -259,7 +260,7 @@ internal sealed class MssqlDocumentCacheWriter(
             if (!selection.RequiresProviderCompletion)
             {
                 telemetryOutcome = selection.TerminalResult!.Outcome;
-                await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await transactionScope.CommitAsync(activeTransactionCancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return selection.TerminalResult!;
             }
@@ -267,7 +268,7 @@ internal sealed class MssqlDocumentCacheWriter(
             if (selection.RequestsCacheAheadLatchFlow)
             {
                 telemetryOutcome = selection.Outcome;
-                await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await transactionScope.CommitAsync(activeTransactionCancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 DocumentCacheWriterSupport.RecordTransactionDuration(
                     _telemetry,
@@ -300,7 +301,7 @@ internal sealed class MssqlDocumentCacheWriter(
                         request,
                         lifecycleReadResult,
                         selection,
-                        cancellationToken
+                        activeTransactionCancellationToken
                     )
                     .ConfigureAwait(false)
                 : await AcknowledgeAlreadyCurrentAsync(
@@ -310,7 +311,7 @@ internal sealed class MssqlDocumentCacheWriter(
                         lifecycleReadResult,
                         request.DocumentId,
                         selection.ExpectedContentVersion!.Value,
-                        cancellationToken
+                        activeTransactionCancellationToken
                     )
                     .ConfigureAwait(false);
 
@@ -322,7 +323,7 @@ internal sealed class MssqlDocumentCacheWriter(
                 return result;
             }
 
-            await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transactionScope.CommitAsync(activeTransactionCancellationToken).ConfigureAwait(false);
             transactionCompleted = true;
             return result;
         }
@@ -514,6 +515,7 @@ internal sealed class MssqlDocumentCacheWriter(
             .ConfigureAwait(false);
         SqlConnection connection = transactionScope.Connection;
         SqlTransaction transaction = transactionScope.Transaction;
+        CancellationToken activeTransactionCancellationToken = CancellationToken.None;
 
         var transactionCompleted = false;
         long transactionStartTimestamp = Stopwatch.GetTimestamp();
@@ -525,7 +527,7 @@ internal sealed class MssqlDocumentCacheWriter(
             DocumentCacheLifecycleReadResult lifecycleReadResult = await ReadLifecycleForUpdateAsync(
                     connection,
                     transaction,
-                    cancellationToken
+                    activeTransactionCancellationToken
                 )
                 .ConfigureAwait(false);
             telemetryLifecycleState = lifecycleReadResult.Lifecycle?.State;
@@ -544,7 +546,7 @@ internal sealed class MssqlDocumentCacheWriter(
                     connection,
                     transaction,
                     request.DocumentId,
-                    cancellationToken
+                    activeTransactionCancellationToken
                 )
                 .ConfigureAwait(false);
             DocumentCacheWriterCacheAheadIncidentDecision recheckDecision =
@@ -557,7 +559,7 @@ internal sealed class MssqlDocumentCacheWriter(
             if (recheckDecision.TerminalResult is not null)
             {
                 telemetryOutcome = recheckDecision.TerminalResult.Outcome;
-                await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await transactionScope.CommitAsync(activeTransactionCancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return recheckDecision.TerminalResult;
             }
@@ -566,7 +568,7 @@ internal sealed class MssqlDocumentCacheWriter(
                     connection,
                     transaction,
                     request.DocumentId,
-                    cancellationToken
+                    activeTransactionCancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -582,12 +584,12 @@ internal sealed class MssqlDocumentCacheWriter(
                         cacheDmlRowCount: null,
                         acknowledgementRowCount: null,
                         cacheAheadLatchRowCount: latchUpdateResult.AffectedRows,
-                        cancellationToken: cancellationToken
+                        cancellationToken: activeTransactionCancellationToken
                     )
                     .ConfigureAwait(false);
             }
 
-            await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transactionScope.CommitAsync(activeTransactionCancellationToken).ConfigureAwait(false);
             transactionCompleted = true;
 
             DocumentCacheWriterResult result = DocumentCacheWriterCacheAheadIncidentFlow.CompleteLatchUpdate(
