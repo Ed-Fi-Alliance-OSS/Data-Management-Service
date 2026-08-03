@@ -10,9 +10,9 @@
 # so the BulkLoadClient CAN seed /mt-dms directly. This clone path is kept as a FASTER
 # alternative -- copying the already-seeded single-tenant data beats re-bulk-loading each tenant.
 #
-# It copies document/descriptor data only (data-only, triggers disabled) and EXCLUDES the
-# schema-fingerprint / provisioning tables (EffectiveSchema, SchemaComponent, ResourceKey),
-# which already exist (identical) in the provisioned target.
+# It copies the per-resource edfi.* rows and dms."Descriptor" (data-only, triggers disabled)
+# and EXCLUDES the schema-fingerprint / provisioning tables (EffectiveSchema, SchemaComponent,
+# ResourceKey), which already exist (identical) in the provisioned target.
 #
 # PREREQ: target DB(s) provisioned with api-schema-tools (same ApiSchema as the source) and empty
 # of documents; source DB already seeded (e.g. edfi_st via API bulk-load or grandbend.sh).
@@ -60,8 +60,27 @@ for db in "${TARGETS[@]}"; do
   echo "== Cloning $SOURCE -> $db =="
   # TRUNCATE + restore in ONE transaction: any error (incl. \i failing) rolls back the truncate
   # too, so a failed clone leaves the target's prior data intact instead of empty/half-loaded.
+  # Empty the target by COMPLEMENT of the dump's --exclude-table list rather than by naming
+  # tables: dms."Document" used to be the universal cascade root (every edfi.* root carried an
+  # ON DELETE CASCADE FK into it, so truncating it emptied the whole database), and with that
+  # table gone no single named table reaches every row. Truncating everything except the three
+  # provisioning tables keeps this list and the pg_dump exclusions above in lockstep, which is
+  # what makes TRUNCATE + restore a faithful whole-database replace.
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 --single-transaction -U "$PG_USER" -d "$db" -q <<SQL
-TRUNCATE dms."Document", dms."Descriptor", dms."ReferentialIdentity", dms."DocumentCache" CASCADE;
+DO \$\$
+DECLARE targets text;
+BEGIN
+    SELECT string_agg(format('%I.%I', schemaname, tablename), ', ')
+      INTO targets
+      FROM pg_tables
+     WHERE schemaname NOT LIKE 'pg\_%'
+       AND schemaname <> 'information_schema'
+       AND NOT (schemaname = 'dms' AND tablename IN ('ResourceKey', 'EffectiveSchema', 'SchemaComponent'));
+    IF targets IS NOT NULL THEN
+        EXECUTE 'TRUNCATE ' || targets || ' CASCADE';
+    END IF;
+END
+\$\$;
 \i $DUMP
 SQL
   echo "   done."

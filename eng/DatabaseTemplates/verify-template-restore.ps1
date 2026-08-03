@@ -13,20 +13,20 @@
 .DESCRIPTION
     Extracts the database dump from the template .nupkg and restores it into a
     fresh verification database inside the running database container. The
-    restored schema set must match the source database's user schemas, and
-    core data (dms.EffectiveSchema, dms.Document, dms.Descriptor) must be
-    non-empty; extension schemas may be DDL-only. Serveability is then proven
+    restored schema set must match the source database's user schemas, and core
+    data (dms.EffectiveSchema, dms.Descriptor) must be non-empty; extension
+    schemas may be DDL-only. Serveability is then proven
     end to end: a CMS data store and application bound only to the restored
     database are registered, DMS is restarted to clear its data store cache, and
     an authenticated descriptor read must return HTTP 200 with a non-empty
     array.
 
     With -RequirePopulatedData, the script additionally proves the package
-    contains populated sample data: the source database must hold at least one
-    non-descriptor, non-school-year document, populated counts must restore
-    exactly (source-to-restored comparison, never hard-coded counts), and an
-    authenticated read of a populated resource (schools) must return HTTP 200
-    with a non-empty array.
+    contains populated sample data: the source database must hold descriptors
+    beyond the school-year seed rows and at least one school, those counts must
+    restore exactly (source-to-restored comparison, never hard-coded counts),
+    and an authenticated read of a populated resource (schools) must return
+    HTTP 200 with a non-empty array.
 
 .PARAMETER SourceDatabaseName
     The relational database the template was dumped from; its user-schema set
@@ -148,9 +148,6 @@ try {
         $effectiveSchemaCount = Invoke-SqlcmdScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM [dms].[EffectiveSchema];'
         if ($effectiveSchemaCount -lt 1) { throw 'Restored [dms].[EffectiveSchema] is empty.' }
 
-        $documentCount = Invoke-SqlcmdScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM [dms].[Document];'
-        if ($documentCount -lt 1) { throw 'Restored [dms].[Document] is empty.' }
-
         $descriptorCount = Invoke-SqlcmdScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM [dms].[Descriptor];'
         if ($descriptorCount -lt 1) { throw 'Restored [dms].[Descriptor] is empty.' }
     }
@@ -158,40 +155,45 @@ try {
         $effectiveSchemaCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM dms."EffectiveSchema";'
         if ($effectiveSchemaCount -lt 1) { throw 'Restored dms."EffectiveSchema" is empty.' }
 
-        $documentCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM dms."Document";'
-        if ($documentCount -lt 1) { throw 'Restored dms."Document" is empty.' }
-
         $descriptorCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM dms."Descriptor";'
         if ($descriptorCount -lt 1) { throw 'Restored dms."Descriptor" is empty.' }
     }
 
-    Write-Host "Data assertions passed: EffectiveSchema=$effectiveSchemaCount, Document=$documentCount, Descriptor=$descriptorCount" -ForegroundColor Green
+    # dms.Descriptor is the emptiness sentinel for document data: there is no longer a central
+    # document table, and every template - minimal or populated - restores with descriptors, so an
+    # empty dms.Descriptor means the dump carried DDL only.
+    Write-Host "Data assertions passed: EffectiveSchema=$effectiveSchemaCount, Descriptor=$descriptorCount" -ForegroundColor Green
 
     # --- Populated-data assertions (opt-in) ---
     # Counts are compared source-to-restored rather than hard-coded so the check is
     # robust to data-standard sample changes. The %SchoolYear% exclusion is broader
     # than the exact school-year resource name so school-year seed rows can never
     # satisfy the "more than minimal data" assertion.
+    #
+    # There is no central document table to count non-descriptor documents from, so the two
+    # halves of the old check are carried separately: dms.Descriptor joined to dms.ResourceKey
+    # proves the descriptor inventory survives the dump row for row, and the edfi.School counts
+    # below are what prove the package holds genuinely populated (non-descriptor) data - a
+    # minimal template has descriptors but no schools.
     $probeSchoolId = $null
 
     if ($RequirePopulatedData) {
         if ($DatabaseEngine -eq "mssql") {
-            $populatedDocumentCountQuery = @'
+            $descriptorInventoryCountQuery = @'
 SELECT COUNT(*)
-FROM [dms].[Document] d
+FROM [dms].[Descriptor] d
 JOIN [dms].[ResourceKey] rk ON rk.[ResourceKeyId] = d.[ResourceKeyId]
-WHERE rk.[ResourceName] NOT LIKE '%Descriptor'
-  AND rk.[ResourceName] NOT LIKE '%SchoolYear%';
+WHERE rk.[ResourceName] NOT LIKE '%SchoolYear%';
 '@
 
-            $sourcePopulatedDocumentCount = Invoke-SqlcmdScalar -DatabaseName $SourceDatabaseName -Query $populatedDocumentCountQuery
-            if ($sourcePopulatedDocumentCount -lt 1) {
-                throw "Source database '$SourceDatabaseName' contains no populated (non-descriptor) documents; the populated bulk load did not land there."
+            $sourceDescriptorInventoryCount = Invoke-SqlcmdScalar -DatabaseName $SourceDatabaseName -Query $descriptorInventoryCountQuery
+            if ($sourceDescriptorInventoryCount -lt 1) {
+                throw "Source database '$SourceDatabaseName' contains no non-school-year descriptors; the sample data load did not land there."
             }
 
-            $restoredPopulatedDocumentCount = Invoke-SqlcmdScalar -DatabaseName $VerificationDatabaseName -Query $populatedDocumentCountQuery
-            if ($restoredPopulatedDocumentCount -ne $sourcePopulatedDocumentCount) {
-                throw "Restored populated document count ($restoredPopulatedDocumentCount) does not match the source ($sourcePopulatedDocumentCount); the dump dropped populated rows."
+            $restoredDescriptorInventoryCount = Invoke-SqlcmdScalar -DatabaseName $VerificationDatabaseName -Query $descriptorInventoryCountQuery
+            if ($restoredDescriptorInventoryCount -ne $sourceDescriptorInventoryCount) {
+                throw "Restored descriptor count ($restoredDescriptorInventoryCount) does not match the source ($sourceDescriptorInventoryCount); the dump dropped descriptor rows."
             }
 
             $schoolCountQuery = 'SELECT COUNT(*) FROM [edfi].[School];'
@@ -209,22 +211,21 @@ WHERE rk.[ResourceName] NOT LIKE '%Descriptor'
             $probeSchoolId = Invoke-SqlcmdScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT TOP 1 [SchoolId] FROM [edfi].[School] ORDER BY [SchoolId];'
         }
         else {
-            $populatedDocumentCountQuery = @'
+            $descriptorInventoryCountQuery = @'
 SELECT COUNT(*)
-FROM dms."Document" d
+FROM dms."Descriptor" d
 JOIN dms."ResourceKey" rk ON rk."ResourceKeyId" = d."ResourceKeyId"
-WHERE rk."ResourceName" NOT LIKE '%Descriptor'
-  AND rk."ResourceName" NOT ILIKE '%SchoolYear%';
+WHERE rk."ResourceName" NOT ILIKE '%SchoolYear%';
 '@
 
-            $sourcePopulatedDocumentCount = Invoke-PsqlScalar -DatabaseName $SourceDatabaseName -Query $populatedDocumentCountQuery
-            if ($sourcePopulatedDocumentCount -lt 1) {
-                throw "Source database '$SourceDatabaseName' contains no populated (non-descriptor) documents; the populated bulk load did not land there."
+            $sourceDescriptorInventoryCount = Invoke-PsqlScalar -DatabaseName $SourceDatabaseName -Query $descriptorInventoryCountQuery
+            if ($sourceDescriptorInventoryCount -lt 1) {
+                throw "Source database '$SourceDatabaseName' contains no non-school-year descriptors; the sample data load did not land there."
             }
 
-            $restoredPopulatedDocumentCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query $populatedDocumentCountQuery
-            if ($restoredPopulatedDocumentCount -ne $sourcePopulatedDocumentCount) {
-                throw "Restored populated document count ($restoredPopulatedDocumentCount) does not match the source ($sourcePopulatedDocumentCount); the dump dropped populated rows."
+            $restoredDescriptorInventoryCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query $descriptorInventoryCountQuery
+            if ($restoredDescriptorInventoryCount -ne $sourceDescriptorInventoryCount) {
+                throw "Restored descriptor count ($restoredDescriptorInventoryCount) does not match the source ($sourceDescriptorInventoryCount); the dump dropped descriptor rows."
             }
 
             $schoolCountQuery = 'SELECT COUNT(*) FROM edfi."School";'
@@ -242,7 +243,7 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
             $probeSchoolId = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT "SchoolId" FROM edfi."School" ORDER BY "SchoolId" LIMIT 1;'
         }
 
-        Write-Host "Populated data assertions passed: PopulatedDocuments=$restoredPopulatedDocumentCount, Schools=$restoredSchoolCount" -ForegroundColor Green
+        Write-Host "Populated data assertions passed: Descriptors=$restoredDescriptorInventoryCount, Schools=$restoredSchoolCount" -ForegroundColor Green
     }
 
     # --- Serveability probe ---

@@ -78,8 +78,8 @@ function Assert-RelationalSchemaProvisioned {
             Description = 'dms.EffectiveSchema'
         },
         @{
-            QualifiedName = '"dms"."Document"'
-            Description = 'dms.Document'
+            QualifiedName = '"dms"."Descriptor"'
+            Description = 'dms.Descriptor'
         },
         @{
             QualifiedName = '"edfi"."School"'

@@ -533,13 +533,14 @@ Describe "Invoke-DatabaseDump" {
     }
 
     Context "when -DatabaseEngine is postgresql (the default)" {
-        It "runs pg_dump scoped to the requested schemas, in order, and precedes the dump with a pgcrypto preamble" {
+        It "runs pg_dump scoped to the requested schemas, in order, and writes the dump with no extension preamble" {
             InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
                 param($backupDir)
                 $calls = [System.Collections.Generic.List[object]]::new()
                 Mock docker {
                     $calls.Add(@($args))
                     $global:LASTEXITCODE = 0
+                    "-- fake pg_dump output"
                 }
 
                 Invoke-DatabaseDump -DatabaseEngine postgresql -ContainerName "dms-postgresql" -DatabaseName "edfi_datamanagementservice" -DatabaseSchemas @("dms", "edfi") -BackupDirectory $backupDir -BackupFileName "test.sql"
@@ -547,10 +548,12 @@ Describe "Invoke-DatabaseDump" {
                 $calls.Count | Should -Be 1
                 ($calls[0] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'pg_dump', '-U', 'postgres', 'edfi_datamanagementservice', '-n', 'dms', '-n', 'edfi') -join '|')
 
-                # Schema-scoped pg_dump never emits CREATE EXTENSION, but the dumped dms.uuidv5()
-                # function requires pgcrypto's digest(), so the preamble must precede the dump.
+                # Inverted pin: the dumped schema no longer declares dms.uuidv5(), so nothing in it
+                # needs pgcrypto's digest() and no CREATE EXTENSION preamble may be reintroduced.
+                # The file must be the pg_dump output verbatim.
                 $content = Get-Content -LiteralPath (Join-Path $backupDir "test.sql") -Raw
-                $content | Should -Match ([regex]::Escape('CREATE EXTENSION IF NOT EXISTS "pgcrypto";'))
+                $content | Should -Not -Match 'CREATE EXTENSION'
+                $content.Trim() | Should -Be '-- fake pg_dump output'
             }
         }
 
