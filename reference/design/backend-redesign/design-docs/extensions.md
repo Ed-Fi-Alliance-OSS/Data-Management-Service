@@ -1,5 +1,11 @@
 # Backend Redesign: Extensions (`_ext`) — Relational Mapping (Tables per Resource)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the two lines stating that
+> document and descriptor references inside `_ext` are "resolved via `dms.ReferentialIdentity`". They
+> resolve exactly as core references do — an index seek on the target's `UX_<T>_RefKey` natural-key
+> index, or `UX_Descriptor_UriLowered_Discriminator` for a descriptor. The `_ext` table shape, naming
+> rules and flattening integration are otherwise current. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Status
 
 Draft.

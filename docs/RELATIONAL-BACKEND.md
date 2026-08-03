@@ -638,10 +638,12 @@ Two things ride on that single statement that used to ride on a cascade out of `
 - **That arm is also what makes a still-referenced document's delete a 409.** An abstract reference's
   foreign key targets the `<Abstract>Identity` row, not the concrete root row, so deleting the root row
   alone would not violate it. Deleting the identity row does. The violated constraint
-  (`FK_<Referrer>_<Abstract>_RefKey`) is owned by the **referrer's own root table**, which is exactly
-  what `RelationalDeleteConstraintResolver` enumerates when it builds its constraint-name → resource
-  index, so the driver error maps back to the referencing resource name and is served as a reference
-  conflict — the same mechanism a concrete reference already used
+  (`FK_<Referrer>_<Abstract>_RefKey`) is owned by a **table of the referrer's own resource** — its root
+  table, or whichever child table holds the reference — and that is exactly what
+  `RelationalDeleteConstraintResolver` enumerates when it builds its constraint-name → resource index
+  (every concrete resource's `TablesInDependencyOrder`), so the driver error maps back to the
+  referencing resource name and is served as a reference conflict — the same mechanism a concrete
+  reference already used
   ([`RelationalDeleteConstraintResolver.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalDeleteConstraintResolver.cs)).
   Pinned end to end by `It_refuses_to_delete_a_document_referenced_through_an_abstract_reference` in the
   abstract-`EducationOrganization` link-injection integration suites, one per dialect.

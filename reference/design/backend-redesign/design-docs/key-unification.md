@@ -1,5 +1,14 @@
 # Backend Redesign: Key Unification (Canonical Columns + Generated Aliases; Presence-Gated When Optional)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** two trigger-contract
+> references in the derived-trigger section — the `TriggerKindParameters.DocumentStamping` heading's
+> "(stamps `dms.Document`)", since the stamps are written onto the resource root row (or the
+> `dms.Descriptor` row), which is the row the trigger is attached to; and
+> `TriggerKindParameters.ReferentialIdentityMaintenance`, which no longer exists as a trigger kind. The
+> null-safe value-diff gating rule those sections state is still the contract, for `DocumentStamping`
+> and `AbstractIdentityMaintenance`. Key unification itself — canonical columns, generated aliases,
+> presence gating — is entirely current. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Summary
 
 ApiSchema supports “key unification” via `resourceSchema.equalityConstraints`: the same logical identity value can

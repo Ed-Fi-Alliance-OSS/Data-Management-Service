@@ -2,8 +2,15 @@
 
 > **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the statements that DMS
 > resolves identities via `dms.ReferentialIdentity` and that `dms.DocumentCache` is an available
-> pre-materialized projection. Neither table is emitted. The natural-key view sketch itself is
-> unaffected. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+> pre-materialized projection; and **every use of `dms.Document` as the stamp source** — the view
+> definition's "`LastModifiedDate` and `ChangeVersion` from `dms.Document` stamps", the
+> `LastModifiedDate(P) = dms.Document.ContentLastModifiedAt` / `ChangeVersion(P) =
+> dms.Document.ContentVersion` definitions, and the worked example's
+> `JOIN dms.Document d ON d.DocumentId = ssa.DocumentId`. Those stamps are now columns on the resource
+> root row itself (`ContentLastModifiedAt` / `ContentVersion`, written there by that table's own
+> stamping trigger), so a view selects them from `{schema}.{R}` directly and needs no join — the join in
+> the worked example would fail against a provisioned database. The natural-key projection shape this
+> sketch is about is otherwise unaffected. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 ## Status
 

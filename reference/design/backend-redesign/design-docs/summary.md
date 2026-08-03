@@ -3,8 +3,10 @@
 > **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the core-table list and the
 > "keep `ReferentialId` (UUIDv5 …) as the uniform natural-identity key" decision. `dms.Document`,
 > `dms.ReferentialIdentity` and `dms.DocumentCache` are not emitted; update-tracking stamps live on the
-> resource root row (or the `dms.Descriptor` row). Each source document listed below carries its own
-> banner. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+> resource root row (or the `dms.Descriptor` row) — including the `ChangeVersion` stamping contract the
+> note below assigns to `dms.Document`. Every source document listed below that the removal touches
+> carries its own banner; `sql-server-pruning.md`, `aot-compilation.md` and `mpack-format-v1.md` are
+> untouched by it and carry none. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 Status: Draft (summary of the draft design docs in this directory).
 

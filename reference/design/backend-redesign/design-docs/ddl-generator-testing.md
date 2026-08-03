@@ -1,5 +1,15 @@
 # Backend Redesign: DDL Generator Verification Harness (DDL + AOT Packs)
 
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** every harness step written
+> against `dms.Document` — the `dms.Document.CreatedByOwnershipTokenId` coverage item, the
+> change-tracking smoke check that inserts into `dms.Document`, reads `dms.Document.ContentVersion` and
+> compares the resource root's mirror to it, and the delete step's "resource root first, then
+> `dms.Document`" cascade ordering. `CreatedByOwnershipTokenId` is a permanently-NULL column on each
+> resource root table and on `dms.Descriptor`; the stamps are written onto that same row, so there is no
+> second row to compare a mirror against; and a delete is a single statement against the root row, so no
+> ordering requirement survives. The determinism, cross-engine and provisioned-schema-manifest parts of
+> the harness are unaffected. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+
 ## Status
 
 Draft.
