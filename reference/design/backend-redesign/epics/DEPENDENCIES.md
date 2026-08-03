@@ -4,7 +4,7 @@ Status: Draft (planning aid derived from `reference/design/backend-redesign/epic
 
 Scope:
 - Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 21 epic files and
-  224 story/support files).
+  234 story/support files).
 - Captures *implementation* dependencies implied by acceptance criteria and shared design contracts.
 - Does not attempt to define ownership, sequencing within sprints, or exact delivery dates.
 
@@ -391,6 +391,29 @@ Epic: `15-plan-compilation/EPIC.md`
 | E15-S04b | [`04b-stable-collection-merge-plans.md`](15-plan-compilation/04b-stable-collection-merge-plans.md) | E01-S11, E15-S04 | — | Stable-identity collection merge write-plan retrofit |
 | E15-S05 | [`05-read-plan-compiler-hydration.md`](15-plan-compilation/05-read-plan-compiler-hydration.md) | E15-S03 | — | Full hydration read plans (`SelectByKeysetSql`) for all tables |
 | E15-S06 | [`06-projection-plan-compilers.md`](15-plan-compilation/06-projection-plan-compilers.md) | E15-S05 | E15-S04, E15-S04b | Projection plans (reference identity + descriptor URI) |
+
+### E20 — Partitioned Cursor Paging
+
+Epic: `20-partitioned-cursor-paging/EPIC.md`
+
+These identifiers and files are provisional planning allocations with `jira: TBD`; they are not
+Jira keys. E20-S09 has an early baseline checkpoint and a later final gate. The baseline artifact
+must exist before E20-S03 changes planner SQL, but E20-S09 story completion also consumes the
+finished E20-S03 through E20-S08 implementation. Do not encode those two phase relationships as
+reciprocal Jira `Blocks` links.
+
+| Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
+| --- | --- | --- | --- | --- |
+| E20-S00 | [`00-cursor-contract-foundation.md`](20-partitioned-cursor-paging/00-cursor-contract-foundation.md) | — | E08-S04, E08-S05, E10, E14 | Typed paging/range contracts, token codec, validation, configuration |
+| E20-S01 | [`01-typed-resource-path-operations.md`](20-partitioned-cursor-paging/01-typed-resource-path-operations.md) | E20-S00 | — | Typed path operations, query canonicalization, routing regressions |
+| E20-S02 | [`02-shared-candidate-planning.md`](20-partitioned-cursor-paging/02-shared-candidate-planning.md) | E20-S00 | E08-S04, E08-S05, E10, E14 | Shared regular/descriptor candidate plan and uniqueness contract |
+| E20-S03 | [`03-provider-cursor-sql.md`](20-partitioned-cursor-paging/03-provider-cursor-sql.md) | E20-S00, E20-S02, E20-S09 baseline checkpoint | — | PostgreSQL/SQL Server cursor SQL and plan goldens |
+| E20-S04 | [`04-regular-resource-cursor-execution.md`](20-partitioned-cursor-paging/04-regular-resource-cursor-execution.md) | E20-S00–E20-S03 | — | Regular-resource keyset boundary propagation and response header |
+| E20-S05 | [`05-descriptor-cursor-execution.md`](20-partitioned-cursor-paging/05-descriptor-cursor-execution.md) | E20-S00–E20-S03 | — | Descriptor boundary propagation and response header |
+| E20-S06 | [`06-partition-pipeline-and-sql.md`](20-partitioned-cursor-paging/06-partition-pipeline-and-sql.md) | E20-S00–E20-S03 | E20-S04, E20-S05 | Dedicated partition pipeline and both-provider boundary SQL |
+| E20-S07 | [`07-openapi-and-client-contract.md`](20-partitioned-cursor-paging/07-openapi-and-client-contract.md) | E20-S00 | E20-S01, E20-S06 | Resource/extension/descriptor/profile OpenAPI augmentation |
+| E20-S08 | [`08-authorization-parity-and-e2e.md`](20-partitioned-cursor-paging/08-authorization-parity-and-e2e.md) | E20-S04–E20-S07 | — | Authorization matrix, ODS parity, and E2E evidence |
+| E20-S09 | [`09-performance-and-observability-gate.md`](20-partitioned-cursor-paging/09-performance-and-observability-gate.md) | — for baseline; E20-S03–E20-S08 for final gate | E12, E13 | Pre-change baseline, cross-provider harness, plans, telemetry, final thresholds |
 
 ---
 

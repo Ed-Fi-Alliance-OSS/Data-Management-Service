@@ -15,11 +15,12 @@ related:
 
 ## Status
 
-This planning draft is the initial design output of `DMS-1349`. `DMS-1348` has no
-implementation children yet, so the work-package names below are provisional and have no
-Jira keys or story files. Create those Jira children before turning the packages into
-implementation-owned story documents. The source spike is currently targeted to Ed-Fi API
-v8.1.
+This planning draft is the design output of `DMS-1349`. `DMS-1348` has no implementation
+children yet. The ten linked work-package files below are provisional planning placeholders that
+were approved before Jira creation; they use `jira: TBD` and are not implementation-owned story
+documents. Create Jira children only after separate authorization, then replace each placeholder's
+frontmatter and update `JIRA-INDEX.md` in a mapping-only change. The source spike is currently
+targeted to Ed-Fi API v8.1.
 
 ## Outcome
 
@@ -556,34 +557,43 @@ The approved intentional ODS differences are:
 
 ## Proposed Work Packages
 
-Jira keys and final filenames are intentionally deferred until `DMS-1348` is decomposed.
+These provisional allocation files are approved for decomposition before Jira creation. They
+allocate ownership and evidence while this epic remains authoritative for every shared contract.
+Their `E20-S00` through `E20-S09` identifiers are stable planning identifiers, not Jira keys.
 
-1. **Cursor contract foundation** — typed paging/range models, token codec, phase-gated validation,
-   ProblemDetails, configuration, and focused unit tests.
-2. **Typed resource path operations** — collection/by-id/partition routing, canonicalization, and
-   regression tests without exposing an incomplete partition handler.
-3. **Shared candidate planning** — reusable regular/descriptor candidate specs, shared filter
-   validation, deterministic parameters, and uniqueness contracts.
-4. **Provider cursor SQL** — PostgreSQL and SQL Server compilers, explicit parameter roles, and
-   SQL/golden tests preserving traditional SQL.
-5. **Regular-resource cursor execution** — hydration keyset `RETURNING`/`OUTPUT`, selected maximum,
-   `QuerySuccess`, response header, and both-provider integration tests.
-6. **Descriptor cursor execution** — descriptor boundary propagation, headers, and provider tests.
-7. **Partition pipeline and SQL** — route exposure, dedicated Core/backend contracts, regular and
-   descriptor boundary planning, both provider compilers, validation, and integration tests.
-8. **OpenAPI and client contract** — platform-wide resource/extension/descriptor augmentation,
-   profile association, `operationId` values, summaries/descriptions, runtime defaults,
-   snapshots, and client-facing documentation.
-9. **Authorization, parity, and E2E suite** — cross-strategy accessible-set tests, ODS comparison,
-   route/tenant/profile coverage, terminal walks, and parallel partition consumption.
-10. **Performance and observability gate** — pre-change baselines, reproducible cross-provider
-    harness, pinned large-data fixtures, provider-plan evidence, bounded telemetry, thresholds,
-    and regression reporting.
+1. **[E20-S00: Cursor contract foundation](00-cursor-contract-foundation.md)** — typed paging/range
+   models, token codec, phase-gated validation, ProblemDetails, configuration, and focused unit
+   tests.
+2. **[E20-S01: Typed resource path operations](01-typed-resource-path-operations.md)** —
+   collection/by-id/partition routing, canonicalization, and regression tests without exposing an
+   incomplete partition handler.
+3. **[E20-S02: Shared candidate planning](02-shared-candidate-planning.md)** — reusable
+   regular/descriptor candidate specs, shared filter validation, deterministic parameters, and
+   uniqueness contracts.
+4. **[E20-S03: Provider cursor SQL](03-provider-cursor-sql.md)** — PostgreSQL and SQL Server
+   compilers, explicit parameter roles, and SQL/golden tests preserving traditional SQL.
+5. **[E20-S04: Regular-resource cursor execution](04-regular-resource-cursor-execution.md)** —
+   hydration keyset `RETURNING`/`OUTPUT`, selected maximum, `QuerySuccess`, response header, and
+   both-provider integration tests.
+6. **[E20-S05: Descriptor cursor execution](05-descriptor-cursor-execution.md)** — descriptor
+   boundary propagation, headers, and provider tests.
+7. **[E20-S06: Partition pipeline and SQL](06-partition-pipeline-and-sql.md)** — route exposure,
+   dedicated Core/backend contracts, regular and descriptor boundary planning, both provider
+   compilers, validation, and integration tests.
+8. **[E20-S07: OpenAPI and client contract](07-openapi-and-client-contract.md)** — platform-wide
+   resource/extension/descriptor augmentation, profile association, `operationId` values,
+   summaries/descriptions, runtime defaults, snapshots, and client-facing documentation.
+9. **[E20-S08: Authorization, parity, and E2E suite](08-authorization-parity-and-e2e.md)** —
+   cross-strategy accessible-set tests, ODS comparison, route/tenant/profile coverage, terminal
+   walks, and parallel partition consumption.
+10. **[E20-S09: Performance and observability gate](09-performance-and-observability-gate.md)** —
+    pre-change baselines, reproducible cross-provider harness, pinned large-data fixtures,
+    provider-plan evidence, bounded telemetry, thresholds, and regression reporting.
 
-Capture package 10's traditional-paging baselines before package 4 changes planner code. Packages
-2 through 4 follow package 1. Packages 5 through 7 consume the shared candidate plan. Package 8
-may proceed once package 1 fixes the public contract. Package 9 consumes packages 5 through 8,
-and package 10 completes after provider, authorization, and E2E behavior is stable.
+Capture E20-S09's traditional-paging baseline before E20-S03 changes planner code. E20-S01
+through E20-S03 follow E20-S00. E20-S04 through E20-S06 consume the shared candidate plan.
+E20-S07 may proceed once E20-S00 fixes the public contract. E20-S08 consumes E20-S04 through
+E20-S07, and E20-S09's final gate runs after provider, authorization, and E2E behavior is stable.
 
 ## Completion Evidence
 
