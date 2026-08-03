@@ -233,21 +233,29 @@ internal static partial class ProvisionTestHelper
     {
         var builder = new SqlConnectionStringBuilder(connectionString);
 
-        var args = new List<string>
+        var args = new List<string> { "-S", builder.DataSource };
+
+        // Mirror the connection string's authentication mode. An Integrated Security admin connection
+        // carries no user id or password, and passing empty -U/-P makes sqlcmd fail with
+        // "Login failed for user ''" — it needs the trusted-connection switch instead.
+        if (builder.IntegratedSecurity || string.IsNullOrEmpty(builder.UserID))
         {
-            "-S",
-            builder.DataSource,
-            "-U",
-            builder.UserID,
-            "-P",
-            builder.Password,
-            "-d",
-            builder.InitialCatalog,
-            "-b",
-            "-I",
-            "-i",
-            sqlFilePath,
-        };
+            args.Add("-E");
+        }
+        else
+        {
+            args.Add("-U");
+            args.Add(builder.UserID);
+            args.Add("-P");
+            args.Add(builder.Password);
+        }
+
+        if (builder.TrustServerCertificate)
+        {
+            args.Add("-C");
+        }
+
+        args.AddRange(["-d", builder.InitialCatalog, "-b", "-I", "-i", sqlFilePath]);
 
         return CliTestHelper.RunProcess("sqlcmd", args);
     }
