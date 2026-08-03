@@ -552,9 +552,19 @@ function Split-MssqlServerEndpoint {
     $backslashIndex = $text.IndexOf('\')
     $hostEnd = if ($backslashIndex -ge 0 -and $backslashIndex -lt $commaIndex) { $backslashIndex } else { $commaIndex }
 
+    # The instance suffix can appear on EITHER side of the port, and an explicit port makes it irrelevant
+    # both ways: 'host\instance,1433' and 'host,1433\instance' name the same endpoint. So the port text
+    # ends at a backslash that follows the comma - taking everything after the comma yielded the port
+    # '1433\instance', which is not a port at all, and the target read as external.
+    $portStart = $commaIndex + 1
+    $portEnd = $text.IndexOf('\', $portStart)
+    $portText =
+        if ($portEnd -ge 0) { $text.Substring($portStart, $portEnd - $portStart) }
+        else { $text.Substring($portStart) }
+
     return [pscustomobject]@{
         HostName = $text.Substring(0, $hostEnd).Trim()
-        Port = $text.Substring($commaIndex + 1).Trim()
+        Port = $portText.Trim()
     }
 }
 
