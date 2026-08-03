@@ -297,8 +297,16 @@ The switch exists on every public entry point and is forwarded unchanged:
 | `-DmsOnly`, `-DbOnly`, teardown (`-d [-v]`) | No effect either way: these shapes never start CMS. The switch is accepted so continuation invocations of a running stack don't have to drop it; the stack keeps the topology it was started with |
 | `bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1` / `build-dms.ps1 StartEnvironment` | Same as the start script they invoke | Same — forwarded unchanged |
 
-Either way, the DMS relational datastore itself, `DATABASE_CONNECTION_STRING_ADMIN`, and the
-configure/provision phases are unaffected — the seam moves only the Configuration Service.
+The switch moves only the CMS seam: the DMS relational datastore itself and
+`DATABASE_CONNECTION_STRING_ADMIN` are unaffected. The configure and provision phases do consume
+the topology declaration, though, because each enforces one half of the same rule — in separate
+mode every DMS datastore, newly registered or reused, must stay distinct from
+`edfi_configurationservice`. `configure-local-data-store.ps1 -SeparateConfigDatabase` judges a
+datastore name it is about to register; `provision-dms-schema.ps1 -SeparateConfigDatabase` judges
+the database each selected target actually resolves to, which is the only place a *reused* data
+store's stored connection string (`-NoDataStore`) is known. The turnkey entry points forward the
+switch to both, so you only pass it yourself when running the phases by hand — and a
+separate-topology `-InfraOnly` start prints both commands with the switch already on them.
 
 ### How the selection travels
 
@@ -373,14 +381,24 @@ no part in these shapes, so CMS topology consistency is not evaluated — and wh
 running there is no instance to ask, and no offline rule can answer in its place.
 
 To continue the manual phases from a `-SeparateConfigDatabase -InfraOnly` start, declare the same
-topology to the configure phase: `configure-local-data-store.ps1 -SeparateConfigDatabase` (the
-start script prints the switch in its next-step guidance). That phase registers the DMS datastore,
-so it re-derives the same effective environment the start wrote — the topology marker lives only in
-the derived file — and checks the name it is about to register, on SQL Server against the running
-instance and on PostgreSQL against the reserved name as the provider parses it, before it creates
-any Configuration Service state. `provision-dms-schema.ps1` takes its targets from what CMS already
-holds, so it needs no such declaration. Omit the switch and both phases behave exactly as they do
-for a shared-topology stack.
+topology to **both** datastore phases — the start script prints each command with the switch already
+on it in its next-step guidance:
+
+```pwsh
+./configure-local-data-store.ps1 -SeparateConfigDatabase
+./provision-dms-schema.ps1 -SeparateConfigDatabase
+```
+
+Each re-derives the same effective environment the start wrote — the topology marker lives only in
+the derived file — and each enforces one half of the same rule.
+`configure-local-data-store.ps1` checks the name it is about to register, on SQL Server against the
+running instance and on PostgreSQL against the reserved name as the provider parses it, before it
+creates any Configuration Service state. `provision-dms-schema.ps1` checks the database each
+selected target actually resolves to, after placeholder resolution and decryption of the stored
+connection string and before SchemaTools runs — the only point at which a *reused* data store
+(`configure-local-data-store.ps1 -NoDataStore`) reveals where its schema would land, since that run
+registers no name for the configure phase to judge. Omit the switch and both phases behave exactly
+as they do for a shared-topology stack.
 
 Switching an existing stack between modes re-points CMS but does not move data: `dmscs` content
 already written in one database stays there. For a clean switch, tear down with `-d -v` and start

@@ -141,10 +141,11 @@ param(
     # Redirects the CMS (Configuration Service) database to a dedicated edfi_configurationservice
     # database instead of sharing the DMS datastore database. Forwarded unchanged to
     # start-published-dms.ps1, where it also brings published-config.yml into the compose set so CMS
-    # actually runs to create that database. Also forwarded to the configure phase, which registers
-    # the DMS datastore and must therefore know it may not land in the dedicated Configuration
-    # Service database. Not forwarded to the provision phase, which takes its targets from what CMS
-    # already holds. Supported on both database engines.
+    # actually runs to create that database. Also forwarded to both datastore phases, each of which
+    # enforces one half of the rule that the DMS datastore may not land in the dedicated
+    # Configuration Service database: the configure phase judges a name it is about to register, and
+    # the provision phase judges the database each selected target resolves to - the only place a
+    # REUSED data store's stored connection string is known. Supported on both database engines.
     [Switch]$SeparateConfigDatabase,
 
     # Data standard version for the local-bootstrap package surface. The .env.bootstrap.<token>

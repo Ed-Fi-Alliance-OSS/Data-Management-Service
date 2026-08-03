@@ -241,7 +241,11 @@ Add-Content -LiteralPath '$CallLogPath' -Value "configure smoke=`$AddSmokeTestCr
                 # When supplied, the bound -DatabaseEngine is recorded to this separate file.
                 # Deliberately not the shared call log: several tests assert that log's exact line
                 # count and ordering, so adding a line there would break them.
-                [string]$EngineLogPath
+                [string]$EngineLogPath,
+
+                # When supplied, the bound -SeparateConfigDatabase state is recorded to this separate
+                # file, for the same reason the engine log is kept out of the shared call log.
+                [string]$ForwardLogPath
             )
 
             $scriptPath = Join-Path $Directory "provision-dms-schema.ps1"
@@ -251,15 +255,23 @@ Add-Content -LiteralPath '$CallLogPath' -Value "configure smoke=`$AddSmokeTestCr
             else {
                 "Add-Content -LiteralPath '$EngineLogPath' -Value `"provision-engine=`$DatabaseEngine`""
             }
+            $forwardRecording = if ([string]::IsNullOrWhiteSpace($ForwardLogPath)) {
+                ""
+            }
+            else {
+                "Add-Content -LiteralPath '$ForwardLogPath' -Value `"provision separate=`$(`$SeparateConfigDatabase.IsPresent)`""
+            }
             @"
 param(
     [string] `$EnvironmentFile,
     [long[]] `$DataStoreId,
     [string] `$DatabaseEngine,
+    [switch] `$SeparateConfigDatabase,
     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
 )
 Add-Content -LiteralPath '$CallLogPath' -Value "provision"
 $engineRecording
+$forwardRecording
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
         }
@@ -697,11 +709,12 @@ $failureStatement
         }
 
         It "runs configure and provision to completion with -SeparateConfigDatabase requested" {
-            # The configure phase registers the DMS datastore, so it DOES receive the switch (that
-            # forwarding is pinned in BootstrapSchemaDeploymentSafety.Tests.ps1, whose stub binds the
-            # switch by name); the provision phase takes its targets from what CMS already holds and
-            # is not given it. What this row adds is that the whole -InfraOnly chain still completes
-            # with the switch requested, reaching both phases.
+            # Both datastore phases receive the switch, because each enforces one half of the same
+            # rule: configure judges a name it is about to register (that forwarding is pinned in
+            # BootstrapSchemaDeploymentSafety.Tests.ps1, whose stub binds the switch by name), and
+            # provision judges the database each selected target resolves to - the only place a
+            # REUSED data store's stored connection string is known. What this row adds is that the
+            # whole -InfraOnly chain still completes with the switch requested, reaching both phases.
             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
             $callLog = Join-Path $script:repo.RepoRoot "call-log-sep-phases.txt"
             New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
@@ -714,6 +727,55 @@ $failureStatement
             $log = @(Get-Content -LiteralPath $callLog)
             $log | Should -Contain "configure smoke=False"
             $log | Should -Contain "provision"
+        }
+
+        It "forwards -SeparateConfigDatabase to the provision phase for <_>" -ForEach @('postgresql', 'mssql') {
+            # Asserted through the recording stub's own parameter binding, so the switch has to
+            # survive the wrapper -> provision-script boundary rather than merely appear in a
+            # hashtable. Without it the phase cannot judge a REUSED data store's stored target and
+            # would deploy the DMS schema into the dedicated Configuration Service database.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-prov-sep-$_.txt"
+            $forwardLog = Join-Path $script:repo.RepoRoot "forward-log-prov-sep-$_.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -ForwardLogPath $forwardLog | Out-Null
+
+            & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                -DatabaseEngine $_ `
+                -SeparateConfigDatabase `
+                *>&1 | Out-Null
+
+            @(Get-Content -LiteralPath $forwardLog) | Should -Contain "provision separate=True"
+        }
+
+        It "does not forward -SeparateConfigDatabase to the provision phase when it was not requested, for <_>" -ForEach @('postgresql', 'mssql') {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-prov-nosep-$_.txt"
+            $forwardLog = Join-Path $script:repo.RepoRoot "forward-log-prov-nosep-$_.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -ForwardLogPath $forwardLog | Out-Null
+
+            & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                -DatabaseEngine $_ `
+                *>&1 | Out-Null
+
+            @(Get-Content -LiteralPath $forwardLog) | Should -Contain "provision separate=False" -Because "shared mode must remain the default all the way through the wrapper"
+        }
+
+        It "start-local-dms.ps1 -InfraOnly separate-topology guidance prints the switch on BOTH datastore phases" {
+            # The manual continuation is where the declaration cannot be inferred: the marker lives
+            # in the derived file this start wrote. Printing it on only one of the two phases leaves
+            # the other unable to refuse the dedicated Configuration Service database.
+            $startContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
+
+            $startContent | Should -Match 'Write-Output\s+"[^"\n]*configure-local-data-store\.ps1 -SeparateConfigDatabase'
+            $startContent | Should -Match 'Write-Output\s+"[^"\n]*provision-dms-schema\.ps1 -SeparateConfigDatabase'
         }
 
         It "start-local-dms.ps1 terminal guidance block does not print a second start run as a resume mechanism" {

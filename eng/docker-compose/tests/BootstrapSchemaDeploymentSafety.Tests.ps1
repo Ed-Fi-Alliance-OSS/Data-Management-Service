@@ -281,18 +281,33 @@ exit $ExitCode
     }
 
     Context "public script contracts" {
-        It "provision-dms-schema.ps1 exposes only the selector, env, and engine overlay parameters" {
+        It "provision-dms-schema.ps1 exposes only the selector, env, engine overlay, and topology parameters" {
             $params = Get-DeclaredScriptParameters -Path $script:repo.ProvisionScript
 
             $params | Should -Contain "EnvironmentFile"
             $params | Should -Contain "DataStoreId"
             $params | Should -Contain "SchoolYear"
             $params | Should -Contain "DatabaseEngine"
+            # The phase judges the database each selected target resolves to, which for a REUSED data
+            # store is the only place its stored connection string is known - so the topology
+            # declaration is part of this phase's public contract, not just configure's.
+            $params | Should -Contain "SeparateConfigDatabase"
             $params | Should -Not -Contain "SchemaToolPath"
             $params | Should -Not -Contain "SeedTemplate"
             $params | Should -Not -Contain "LoadSeedData"
             $params | Should -Not -Contain "ApiSchemaPath"
-            $params.Count | Should -Be 4
+            # Never a datastore-name parameter: the target comes from CMS, so a caller-authored name
+            # here could only disagree with what will actually be provisioned.
+            $params | Should -Not -Contain "DataStoreDatabaseName"
+            $params.Count | Should -Be 5
+        }
+
+        It "provision-dms-schema.ps1 forwards the topology declaration from its parameter surface into the phase function" {
+            # The manual-phase boundary: a switch the entry point accepts but drops would leave the
+            # guard unreachable for exactly the direct invocation the start script's guidance prints.
+            $content = Get-Content -LiteralPath $script:repo.ProvisionScript -Raw
+
+            $content | Should -Match ([regex]::Escape('-SeparateConfigDatabase:$SeparateConfigDatabase'))
         }
 
         It "provision-dms-schema.ps1 composes the MSSQL engine overlay after resolving the environment file and before reading env values" {
@@ -4215,6 +4230,381 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             $script:guardRegisteredName | Should -Be "edfi_datamanagementservice_sy" -Because "every year registers the single validated name"
             $result.DataStoreIds | Should -Be @([long]613, [long]614)
+        }
+    }
+
+    Context "separate-topology target guard at the provisioning boundary" {
+        # The configure guard can only judge a name it is about to REGISTER. Under -NoDataStore it
+        # registers none: it selects an existing data store whose STORED connection string is what
+        # decides where the schema lands. These rows pin that boundary - the value judged is the
+        # database the resolved/decrypted stored connection string yields, and a refusal reaches
+        # SchemaTools with nothing.
+        BeforeAll {
+            function script:New-ProvisionGuardPostgresEnvFile {
+                param([string]$DatastoreName = "edfi_datamanagementservice")
+
+                $path = Join-Path $script:repo.DockerComposeRoot "env-provguard-pg-$([Guid]::NewGuid().ToString('N')).env"
+                @"
+POSTGRES_PASSWORD=isolated-pass
+POSTGRES_DB_NAME=$DatastoreName
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $path -Encoding utf8
+                return $path
+            }
+
+            function script:New-ProvisionGuardMssqlEnvFile {
+                param([string]$DatastoreName = "edfi_datamanagementservice")
+
+                $path = Join-Path $script:repo.DockerComposeRoot "env-provguard-mssql-$([Guid]::NewGuid().ToString('N')).env"
+                @"
+POSTGRES_PASSWORD=isolated-pass
+MSSQL_PORT=15433
+MSSQL_SA_PASSWORD=abcdefgh1!
+MSSQL_DB_NAME=$DatastoreName
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+"@ | Set-Content -LiteralPath $path -Encoding utf8
+                return $path
+            }
+
+            # One staged workspace + one fake tool per row, with the capture path as the single
+            # record of whether any DDL was attempted. Absence of the file is "SchemaTools was
+            # never invoked" - stronger than counting lines in a file the tool created.
+            function script:Initialize-ProvisionGuardWorkspace {
+                New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot -Extensions @()
+                $capturePath = Join-Path $script:repo.RepoRoot "provguard-schema-args-$([Guid]::NewGuid().ToString('N')).txt"
+                $env:DMS_SCHEMA_TOOL_PATH = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+                return $capturePath
+            }
+        }
+
+        It "refuses a reused PostgreSQL data store whose stored target is the reserved database, before SchemaTools" {
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 701
+                            name = "Reused"
+                            connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=isolated-pass;database=edfi_configurationservice;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                $thrown = { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardPostgresEnvFile) `
+                    -DataStoreId @(701) `
+                    -SeparateConfigDatabase } |
+                    Should -Throw -PassThru
+
+                $thrown.Exception.Message | Should -BeLike "*701*" -Because "the data store id is a permitted diagnostic"
+                $thrown.Exception.Message | Should -BeLike "*'CMS_DATA_STORE_CONNECTION_STRING'*" -Because "the diagnostic must name where the target came from"
+                $thrown.Exception.Message | Should -BeLike "*edfi_configurationservice*" -Because "the fixed reserved literal is allowed in diagnostics"
+                $thrown.Exception.Message | Should -Not -BeLike "*isolated-pass*" -Because "the stored connection string and its credentials are never printed"
+                Test-Path -LiteralPath $capturePath | Should -BeFalse -Because "a refused target must reach SchemaTools with nothing"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "refuses a reused MSSQL data store the running server reports as the same physical database, before SchemaTools" {
+            # The MSSQL verdict belongs to the instance collation, so the row stands in for the
+            # authority's answer rather than re-litigating it: what is pinned here is that the
+            # authority is consulted, and that its refusal stops the phase before any DDL.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    throw "CMS database topology mismatch: SQL Server reports that the datastore name resolved from '$RegisteredDatastoreDatabaseSourceKey' denotes the SAME physical database as the dedicated 'edfi_configurationservice'."
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 702
+                            name = "Reused"
+                            connectionString = 'Server=dms-mssql,1433;Database=EDFI_ConfigurationService;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                $thrown = { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardMssqlEnvFile) `
+                    -DataStoreId @(702) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase } |
+                    Should -Throw -PassThru
+
+                $thrown.Exception.Message | Should -BeLike "*SAME physical database*"
+                $thrown.Exception.Message | Should -BeLike "*'CMS_DATA_STORE_CONNECTION_STRING'*" -Because "the candidate came from the stored connection string, not a parameter this phase never accepts"
+                Test-Path -LiteralPath $capturePath | Should -BeFalse -Because "the server's verdict arrives before any DDL"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "asks the MSSQL authority about the stored connection string's database, on the derived topology environment" {
+            # Not MSSQL_DB_NAME, which is the datastore key the authority resolves itself, and not a
+            # caller-authored parameter this phase does not have. The marker that selects separate-mode
+            # semantics lives only in the derived file this phase re-derived.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:provisionAuthorityArgument = $null
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:provisionAuthorityArgument = @{
+                        EnvironmentFile = $EnvironmentFile
+                        ContainerName = $ContainerName
+                        SaPassword = $SaPassword
+                        Registered = $RegisteredDatastoreDatabaseName
+                        SourceKey = $RegisteredDatastoreDatabaseSourceKey
+                    }
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 703
+                            name = "Reused"
+                            connectionString = 'Server=dms-mssql,1433;Database=some_other_datastore;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                $envFile = New-ProvisionGuardMssqlEnvFile -DatastoreName "edfi_datamanagementservice"
+                Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile $envFile `
+                    -DataStoreId @(703) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase *>&1 | Out-Null
+
+                $script:provisionAuthorityArgument.Registered | Should -Be "some_other_datastore" -Because "the judged value is the stored connection string's database"
+                $script:provisionAuthorityArgument.Registered | Should -Not -Be "edfi_datamanagementservice" -Because "MSSQL_DB_NAME is the authority's own datastore key, not the reused target"
+                $script:provisionAuthorityArgument.SourceKey | Should -Be "CMS_DATA_STORE_CONNECTION_STRING"
+                $script:provisionAuthorityArgument.ContainerName | Should -Be "dms-mssql"
+                $script:provisionAuthorityArgument.SaPassword | Should -Be "abcdefgh1!"
+                @(Get-Content -LiteralPath $script:provisionAuthorityArgument.EnvironmentFile) |
+                    Should -Contain "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true"
+                @(Get-Content -LiteralPath $envFile) |
+                    Should -Not -Contain "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true" -Because "the caller's source file is never edited"
+                @(Get-Content -LiteralPath $capturePath) |
+                    Should -Contain "mssql" -Because "a verified target must run to completion, not merely avoid the refusal"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "refuses a reused data store whose ENCRYPTED stored connection string decrypts to the reserved database" {
+            # CMS returns ciphertext as base64. A guard reading the raw connectionString would find no
+            # database segment at all and let this through, so the encrypted case is the row that
+            # rejects a raw-base64 implementation.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $encrypted = New-CmsEncryptedConnectionString `
+                    -PlainText 'host=dms-postgresql;port=5432;username=postgres;password=isolated-pass;database=edfi_configurationservice;'
+
+                function Get-CmsToken { return "token" }
+                $script:provisionEncryptedValue = $encrypted
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 704
+                            name = "ReusedEncrypted"
+                            connectionString = $script:provisionEncryptedValue
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                # Proves the fixture really is opaque ciphertext, not a readable connection string.
+                $encrypted | Should -Not -BeLike "*edfi_configurationservice*"
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardPostgresEnvFile) `
+                    -DataStoreId @(704) `
+                    -SeparateConfigDatabase } |
+                    Should -Throw "*edfi_configurationservice*"
+
+                Test-Path -LiteralPath $capturePath | Should -BeFalse
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "provisions a reused data store whose stored target is distinct from the reserved database" {
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 705
+                            name = "Reused"
+                            connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=isolated-pass;database=edfi_datamanagementservice;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardPostgresEnvFile) `
+                    -DataStoreId @(705) `
+                    -SeparateConfigDatabase } |
+                    Should -Not -Throw
+
+                @(Get-Content -LiteralPath $capturePath) | Should -Contain "provision" -Because "a distinct target must still be provisioned"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "judges the stored target, not POSTGRES_DB_NAME: a reserved-looking datastore key does not refuse a distinct target" {
+            # The discriminating direction. If the guard read the environment's own datastore key it
+            # would refuse here, where the database SchemaTools receives is a different one.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 706
+                            name = "Reused"
+                            connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=isolated-pass;database=edfi_datamanagementservice;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardPostgresEnvFile -DatastoreName "edfi_configurationservice") `
+                    -DataStoreId @(706) `
+                    -SeparateConfigDatabase } |
+                    Should -Not -Throw
+
+                @(Get-Content -LiteralPath $capturePath) | Should -Contain "--connection-string"
+                @(Get-Content -LiteralPath $capturePath) |
+                    Should -Contain "host=localhost;port=5544;username=postgres;password=isolated-pass;database=edfi_datamanagementservice" -Because "the provisioned target is the stored one"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "leaves shared mode unchanged for the very same stored target" {
+            # Without the declaration the datastore and the Configuration Service share one database
+            # by design, so this exact record still provisions - the guard adds nothing to shared mode.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 707
+                            name = "Reused"
+                            connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=isolated-pass;database=edfi_configurationservice;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardPostgresEnvFile) `
+                    -DataStoreId @(707) } |
+                    Should -Not -Throw
+
+                @(Get-Content -LiteralPath $capturePath) |
+                    Should -Contain "host=localhost;port=5544;username=postgres;password=isolated-pass;database=edfi_configurationservice" -Because "shared mode's behavior is unchanged by this guard"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "asks the MSSQL server nothing in shared mode" {
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:provisionAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:provisionAuthorityCalled = $true
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 708
+                            name = "Reused"
+                            connectionString = 'Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardMssqlEnvFile) `
+                    -DataStoreId @(708) `
+                    -DatabaseEngine mssql *>&1 | Out-Null
+
+                $script:provisionAuthorityCalled | Should -BeFalse -Because "no round trip belongs to a topology that shares one database by design"
+                @(Get-Content -LiteralPath $capturePath) | Should -Contain "mssql"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "refuses before provisioning ANY target when one of several selected targets is the reserved database" {
+            # The guard runs over the whole target set before the schema tool is resolved, so an
+            # earlier distinct target is not provisioned on the way to discovering a later bad one.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 709
+                            name = "Distinct"
+                            connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=isolated-pass;database=edfi_datamanagementservice;'
+                            dataStoreContexts = @()
+                        },
+                        [pscustomobject]@{
+                            id = 710
+                            name = "Reserved"
+                            connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=isolated-pass;database=edfi_configurationservice;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardPostgresEnvFile) `
+                    -DataStoreId @(709, 710) `
+                    -SeparateConfigDatabase } |
+                    Should -Throw "*710*"
+
+                Test-Path -LiteralPath $capturePath | Should -BeFalse -Because "no target is provisioned when any of them is refused"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
     }
 }

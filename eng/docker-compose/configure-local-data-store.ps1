@@ -364,12 +364,16 @@ function Invoke-ConfigureLocalDataStore {
     # reporting its own established diagnostic - and before Add-CmsClient, so a refused run leaves
     # no CMS state behind at all: no bootstrap admin client, no tenant, no data store.
     #
-    # Gated on a registration actually happening. -NoDataStore selects an EXISTING data store and
-    # registers no name, so the value is inert and nothing is checked - on MSSQL, no server round
-    # trip at all. -SchoolYearRange is NOT inert: Add-DmsSchoolYearInstances forwards this same
-    # resolved name and connection string verbatim to every per-year Add-DataStore - only the data
-    # store's display name and route context carry the year - so the single candidate resolved
-    # above is exactly what every year registers.
+    # Gated on a registration actually happening, because that is the limit of what this phase can
+    # judge - NOT because the other shape is harmless. -NoDataStore selects an EXISTING data store
+    # and registers no name, so the candidate resolved above is not what provisioning will target:
+    # the selected record's own STORED connection string is, and this phase never sees it decrypted.
+    # Judging the candidate here would be false assurance, so the reused target is judged where it
+    # first exists - provision-dms-schema.ps1's -SeparateConfigDatabase guard, in front of
+    # SchemaTools. -SchoolYearRange, by contrast, IS judged here: Add-DmsSchoolYearInstances forwards
+    # this same resolved name and connection string verbatim to every per-year Add-DataStore - only
+    # the data store's display name and route context carry the year - so the single candidate
+    # resolved above is exactly what every year registers.
     if ($SeparateConfigDatabase -and -not $NoDataStore) {
         if ($DatabaseEngine -eq "mssql") {
             # SQL Server renders no offline verdict: database names inherit the INSTANCE collation
