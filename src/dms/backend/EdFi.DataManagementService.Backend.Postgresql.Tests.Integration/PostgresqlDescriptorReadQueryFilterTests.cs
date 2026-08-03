@@ -263,6 +263,24 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
     }
 
     [Test]
+    public async Task It_returns_an_empty_page_beyond_the_seeded_descriptor_rows()
+    {
+        // The page keyset and the total count both root on dms.Descriptor, so paging past the last
+        // descriptor row yields an empty page rather than selecting an unbacked document id.
+        await SeedDescriptorsAsync([PagingFirstSeed]);
+
+        var result = await ExecuteQueryAsync(
+            [],
+            "pg-descriptor-query-page-beyond-descriptors",
+            totalCount: true,
+            limit: 1,
+            offset: 1
+        );
+
+        AssertEmptyPage(result, expectedTotalCount: 1);
+    }
+
+    [Test]
     public async Task It_returns_only_descriptors_inside_the_change_version_window()
     {
         await SeedDescriptorsAsync(PagingDescriptorSeeds);
