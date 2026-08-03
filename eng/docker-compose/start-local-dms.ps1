@@ -228,6 +228,11 @@ else {
     # teardown - work on a clean checkout with no hand-created .env, matching the phase commands.
     $EnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path "" -DockerComposeRoot $PSScriptRoot
 }
+# The base env file, before any overlay composition below reassigns $EnvironmentFile to a derived path.
+# A continuation that recomposes the environment from its own switches - the fresh wrapper run the
+# -InfraOnly guidance prints - must start from THIS file, not from a derived one it would then compose
+# a second set of overlays over.
+$baseEnvironmentFile = $EnvironmentFile
 if (-not $databaseOnlyStartup) {
     $bootstrapEnvSnapshot = Get-BootstrapEnvSnapshot
 }
@@ -450,6 +455,58 @@ else {
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to build images. Exit code $LASTEXITCODE"
         }
+    }
+
+    function Get-ContinuationCommandArgument {
+        <#
+        .SYNOPSIS
+        Formats the argument text a printed continuation command needs to reconstruct THIS run's
+        execution state: the database engine, the environment file the continuation should read, and
+        the topology declaration when this run declared it.
+
+        .DESCRIPTION
+        One helper for every command the -InfraOnly guidance emits, so the separate-mode and
+        shared-mode branches cannot drift apart in which state they carry. Carrying only
+        -SeparateConfigDatabase was the defect: following the hint after an MSSQL run, or after a run
+        against a custom environment file, silently continued on the PostgreSQL default and the default
+        environment.
+
+        -EnvironmentFile is emitted as a PowerShell single-quoted literal so a path containing spaces
+        stays one argument and an embedded apostrophe is doubled rather than terminating the quote.
+        Single quotes also suppress interpolation, so a '$' in a path is not expanded by the shell the
+        operator pastes into.
+
+        -DataStandardVersion is emitted only for a command that recomposes a data-standard overlay of
+        its own AND only when this run selected a version explicitly. With no selection this script
+        composed no overlay, so there is no version to carry and naming one would compose an overlay the
+        run never had.
+        #>
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $DatabaseEngine,
+
+            [Parameter(Mandatory)]
+            [string]
+            $EnvironmentFile,
+
+            [switch]
+            $SeparateConfigDatabase,
+
+            [string]
+            $DataStandardVersion = ""
+        )
+
+        $quotedEnvironmentFile = "'" + $EnvironmentFile.Replace("'", "''") + "'"
+        $argumentText = "-DatabaseEngine $DatabaseEngine -EnvironmentFile $quotedEnvironmentFile"
+        if (-not [string]::IsNullOrWhiteSpace($DataStandardVersion)) {
+            $argumentText += " -DataStandardVersion $DataStandardVersion"
+        }
+        if ($SeparateConfigDatabase) {
+            $argumentText += " -SeparateConfigDatabase"
+        }
+
+        return $argumentText
     }
 
     function Wait-HttpEndpointHealthy {
@@ -743,26 +800,37 @@ else {
             # target resolves to, which is the only place a REUSED data store's stored connection
             # string is known. Without the switch the continuation could register, or deploy the DMS
             # schema into, the dedicated Configuration Service database.
-            if ($SeparateConfigDatabase) {
-                Write-Output "  1. configure-local-data-store.ps1 -SeparateConfigDatabase    (instance creation / selection)"
-                Write-Output "  2. provision-dms-schema.ps1 -SeparateConfigDatabase          (schema provisioning; prints IDE configuration guidance)"
-            }
-            else {
-                Write-Output "  1. configure-local-data-store.ps1    (instance creation / selection)"
-                Write-Output "  2. provision-dms-schema.ps1          (schema provisioning; prints IDE configuration guidance)"
-            }
+            #
+            # These two phases continue from the environment THIS run already composed, so they receive
+            # $EnvironmentFile - the derived file carrying the engine overlay and the topology marker -
+            # rather than the operator's base file. Both recompose idempotently from it: the engine
+            # overlay detects it is already applied, and the topology derivation recomputes the same
+            # artifact from the same switch. The engine is still declared explicitly, because it selects
+            # each phase's dialect gate as well as the overlay.
+            $phaseContinuationArgument = Get-ContinuationCommandArgument `
+                -DatabaseEngine $DatabaseEngine `
+                -EnvironmentFile $EnvironmentFile `
+                -SeparateConfigDatabase:$SeparateConfigDatabase
+            Write-Output "  1. configure-local-data-store.ps1 $phaseContinuationArgument    (instance creation / selection)"
+            Write-Output "  2. provision-dms-schema.ps1 $phaseContinuationArgument          (schema provisioning; prints IDE configuration guidance)"
             Write-Output "  3. Launch DMS in your IDE / debugger"
             Write-Output "  4. load-dms-seed-data.ps1 -DmsBaseUrl <url>   (optional seed delivery to the IDE-hosted DMS)"
             Write-Output "For a wrapper-managed health-wait and optional seed, run a fresh:"
             # The fresh wrapper run recomposes the environment from its own switches, so omitting the
             # topology declaration here would silently hand the operator a SHARED-mode continuation
-            # of a separate-mode stack.
-            if ($SeparateConfigDatabase) {
-                Write-Output "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -SeparateConfigDatabase [-LoadSeedData ...]"
-            }
-            else {
-                Write-Output "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> [-LoadSeedData ...]"
-            }
+            # of a separate-mode stack - and omitting the engine or the base environment file would
+            # recompose a PostgreSQL stack, or the default environment, over this one. It gets
+            # $baseEnvironmentFile, captured before this script's own overlays ran: handing the wrapper a
+            # derived file would layer its bootstrap-scoped overlays on top of them. For the same reason
+            # an explicitly selected data standard travels too - the wrapper always recomposes a
+            # data-standard overlay for a local bootstrap, and with no version named it would recompose
+            # the default one over a run that selected another.
+            $wrapperContinuationArgument = Get-ContinuationCommandArgument `
+                -DatabaseEngine $DatabaseEngine `
+                -EnvironmentFile $baseEnvironmentFile `
+                -DataStandardVersion $DataStandardVersion `
+                -SeparateConfigDatabase:$SeparateConfigDatabase
+            Write-Output "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> $wrapperContinuationArgument [-LoadSeedData ...]"
         }
         return
     }

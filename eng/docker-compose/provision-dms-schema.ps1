@@ -241,6 +241,14 @@ function Get-ConnectionStringValue {
     Returns the first non-empty value among the supplied case-insensitive keys, or $null when none
     is present. Used instead of direct indexer access because PowerShell's ['key'] sugar misbehaves
     on DbConnectionStringBuilder.
+
+    .DESCRIPTION
+    FIRST-LISTED, not provider-effective. That is the right answer for a key family whose members
+    cannot both appear in one string (PostgreSQL's host / database / username each have a single
+    spelling here), and for asking whether ANY member is present at all. It is the wrong answer for
+    deciding which member of a SQL Server synonym family the provider will resolve, because SqlClient
+    keeps the LAST occurrence: see Get-MssqlProviderConnectionStringBuilder, which owns that
+    decision.
     #>
     param(
         [System.Data.Common.DbConnectionStringBuilder]
@@ -285,6 +293,133 @@ function Set-ConnectionStringValue {
     $Builder.set_Item($Key, $Value)
 }
 
+function Get-MssqlProviderConnectionStringBuilder {
+    <#
+    .SYNOPSIS
+    Parses a SQL Server connection string with the ADO.NET SqlClient provider, so this phase decides
+    the effective server and database by the same rules the provider SchemaTools reparses the string
+    with applies - last occurrence of a synonym family wins.
+
+    .DESCRIPTION
+    Neither builder already used here can answer that question:
+
+      - Get-ConnectionStringValue over an ordered alias list returns the FIRST listed synonym. So
+        "Database=safe;Initial Catalog=edfi_configurationservice" reports 'safe' while a SqlClient
+        reparse resolves 'edfi_configurationservice' - one database validated, a different one
+        deployed into.
+      - System.Data.Common.DbConnectionStringBuilder knows no synonyms at all, and its key order is
+        not occurrence order: a repeated key keeps its FIRST position while taking its LAST value
+        ("Database=first;Initial Catalog=second;Database=last" enumerates as database=last then
+        initial catalog=second), so no traversal of that collection reconstructs provider
+        precedence.
+
+    SchemaTools links Microsoft.Data.SqlClient (MssqlDatabaseProvisioner.GetDatabaseName reads
+    SqlConnectionStringBuilder.InitialCatalog). That exact assembly is not loadable at this boundary:
+    the copy beside the built tool is a platform stub whose constructor throws "Microsoft.Data.SqlClient
+    is not supported on this platform", the real implementation lives in a RID-specific runtimes/
+    subdirectory the .NET host - not Add-Type - selects, and the tool path is deliberately resolved only
+    AFTER this guard has run so a refusal deploys no DDL. System.Data.SqlClient is used instead: it is
+    in-box with PowerShell 7 on Windows and Linux alike, it is already the provider setup-openiddict.ps1
+    uses in this same directory, and its keyword table and synonym precedence for Data Source and
+    Initial Catalog are identical to Microsoft.Data.SqlClient's - pinned by a test that asserts the two
+    agree, reading the Microsoft.Data.SqlClient assembly out of the SchemaTools build output itself
+    rather than assuming the equivalence.
+
+    Diagnostics never echo the parsed value: an unsupported keyword message from the provider would
+    carry connection-string text.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $ConnectionString
+    )
+
+    try {
+        return [System.Data.SqlClient.SqlConnectionStringBuilder]::new($ConnectionString)
+    }
+    catch {
+        throw "CMS data store connection string is not a valid SQL Server connection string for the SqlClient provider SchemaTools parses it with. The resolved value is withheld."
+    }
+}
+
+function Split-MssqlServerEndpoint {
+    <#
+    .SYNOPSIS
+    Splits a SqlClient data-source value into its host and its comma-delimited port, removing one
+    leading "tcp:" protocol prefix so endpoint decisions see the host itself.
+
+    .DESCRIPTION
+    "Server=tcp:localhost,<port>" is documented SqlClient syntax
+    (learn.microsoft.com/troubleshoot/sql/connect/use-server-name-parameter-connection-string) and
+    reaches the same server "localhost,<port>" does. Comparing the raw value instead leaves the
+    prefixed spelling looking like a hostname of its own: it escapes the Docker-internal translation
+    (tcp:dms-mssql,1433 stays untranslated) and it reads as an external server to the separate-topology
+    guard, which is the whole point of the guard.
+
+    Deliberately narrow, and MSSQL-only: exactly one "tcp:" prefix, then the existing comma split.
+    Named pipes, IPv6 literals, "(local)", ".", LocalDB, and named instances are untouched - each is a
+    distinct endpoint grammar, and inventing rules for them here would decide reachability questions
+    this phase has no way to verify.
+    #>
+    param(
+        [string]
+        $DataSource
+    )
+
+    $text = ([string]$DataSource).Trim()
+    if ($text.StartsWith("tcp:", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $text = $text.Substring(4).Trim()
+    }
+
+    $parts = $text.Split(',', 2)
+
+    return [pscustomobject]@{
+        HostName = $parts[0].Trim()
+        Port = if ($parts.Count -gt 1) { $parts[1].Trim() } else { "" }
+    }
+}
+
+function Set-ConnectionStringFamilyValue {
+    <#
+    .SYNOPSIS
+    Writes one effective value for a synonym family onto the builder and removes every OTHER member of
+    that family, so the rendered string carries exactly one key the provider can resolve the family
+    from and no surviving synonym can override it on reparse.
+
+    .DESCRIPTION
+    The retained key is the family member the source string actually used first, so an unrelated
+    keyword's own spelling is never rewritten - only the family is collapsed. When the source carried
+    no member of the family, the first alias is used.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Mutates an in-memory builder object; no system state changes and no -WhatIf surface.')]
+    param(
+        [System.Data.Common.DbConnectionStringBuilder]
+        $Builder,
+
+        [string[]]
+        $Aliases,
+
+        [string]
+        $Value
+    )
+
+    # Materialized before any removal: Keys is a live view over the builder.
+    $presentKeys = @(
+        foreach ($key in $Builder.PSBase.Keys) {
+            if ($Aliases -contains ([string]$key).ToLowerInvariant()) { [string]$key }
+        }
+    )
+
+    $retainedKey = if ($presentKeys.Count -gt 0) { $presentKeys[0] } else { $Aliases[0] }
+    foreach ($key in $presentKeys) {
+        if (-not [string]::Equals($key, $retainedKey, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $null = $Builder.PSBase.Remove($key)
+        }
+    }
+
+    Set-ConnectionStringValue -Builder $Builder -Key $retainedKey -Value $Value
+}
+
 function Get-DatabaseNameFromConnectionString {
     param(
         [string]
@@ -294,6 +429,12 @@ function Get-DatabaseNameFromConnectionString {
         $AllowMissing
     )
 
+    # A PRESENCE probe, not an effective-value decision: its one caller
+    # (Resolve-CmsInstanceConnectionString) asks only "does this text carry a database name at all?"
+    # to tell a readable connection string from CMS ciphertext. Which member of a SQL Server synonym
+    # family the provider would select is decided later, by
+    # Convert-MssqlCmsConnectionStringToHostSideTarget.
+    #
     # AllowParseFailure: a CMS-encrypted connection string is an opaque base64 blob that is not a
     # valid connection string. Treat an unparseable value as "no database name" so the caller falls
     # through to the decryption path rather than throwing here.
@@ -454,10 +595,12 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
 
     $localEndpoint = Get-LocalComposeDatabaseHostSideEndpoint -Dialect $Target.Dialect -EnvValues $EnvValues
 
-    # SQL Server carries host and port in one value ("host,port"); take the host part alone. The
-    # port is already available separately on the target for both dialects.
+    # SQL Server carries host and port in one value ("host,port") and may carry a "tcp:" protocol
+    # prefix; Split-MssqlServerEndpoint yields the host part alone from either spelling, so
+    # "tcp:localhost,<port>" is recognized as the same server "localhost,<port>" is rather than read as
+    # a hostname of its own. The port is already available separately on the target for both dialects.
     $targetHostName =
-        if ($Target.Dialect -eq "mssql") { ([string]$Target.Host -split ',', 2)[0].Trim() }
+        if ($Target.Dialect -eq "mssql") { (Split-MssqlServerEndpoint -DataSource $Target.Host).HostName }
         else { ([string]$Target.Host).Trim() }
 
     $isLoopbackHost = @("localhost", "127.0.0.1") -contains $targetHostName.ToLowerInvariant()
@@ -474,6 +617,18 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
     host-side 127.0.0.1,MSSQL_PORT while preserving the user, password, database, and every
     other stored option. A non-Docker server (e.g. an external SQL Server configured per
     instance) is preserved as-is.
+
+    .DESCRIPTION
+    ONE canonicalization boundary: the server and database every field below is derived from - and
+    that the separate-topology guard therefore judges - are the ones SqlClient selects, and the
+    HostConnectionString handed to SchemaTools carries exactly those and no synonym able to override
+    them. Validating a separately reconstructed name and then passing the original ambiguous string is
+    the defect this shape exists to make unrepresentable.
+
+    Both inputs are needed and neither substitutes for the other: -ConnectionString is the only
+    faithful input for provider precedence (the builder's own round-trip already collapses a repeated
+    key onto its first position, changing which occurrence a reparse would see), while -Builder carries
+    the source's keyword spellings and every unrelated stored option through to the rendered result.
     #>
     param(
         [Parameter(Mandatory)]
@@ -481,46 +636,61 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
         $Builder,
 
         [Parameter(Mandatory)]
+        [string]
+        $ConnectionString,
+
+        [Parameter(Mandatory)]
         [hashtable]
         $EnvValues
     )
 
-    # SQL Server accepts either Database or Initial Catalog for the database name.
-    $databaseName = Get-ConnectionStringValue -Builder $Builder -Keys @("database", "initial catalog")
+    # Full SqlClient synonym families, so collapsing one leaves no other member of it behind:
+    # Data Source also answers to Server / Addr / Address / Network Address, and Initial Catalog to
+    # Database. Same alias sets database-safety.psm1 recognizes for this engine.
+    $serverAliases = @("server", "data source", "addr", "address", "network address")
+    $databaseAliases = @("database", "initial catalog")
+
+    $provider = Get-MssqlProviderConnectionStringBuilder -ConnectionString $ConnectionString
+
+    $databaseName = [string]$provider.InitialCatalog
     if ([string]::IsNullOrWhiteSpace($databaseName)) {
         throw "CMS data store connection string did not contain a database name."
     }
 
-    $server = Get-ConnectionStringValue -Builder $Builder -Keys @("server", "data source")
+    $server = [string]$provider.DataSource
     if ([string]::IsNullOrWhiteSpace($server)) {
         throw "CMS data store connection string is missing the server key."
     }
 
-    $instanceUser = Get-ConnectionStringValue -Builder $Builder -Keys @("user id", "uid")
+    $instanceUser = [string]$provider.UserID
     if ([string]::IsNullOrWhiteSpace($instanceUser)) {
         throw "CMS data store connection string is missing the user id key."
     }
 
-    # SQL Server encodes host and port together as "host,port" (and named instances as
-    # "host\instance"). Split off the host to decide whether this is the Docker-internal target.
-    $serverHost = ($server -split ',')[0].Trim()
+    # The prefix-stripped host decides the Docker-internal translation, so "tcp:dms-mssql,1433"
+    # translates exactly as "dms-mssql,1433" does instead of surviving as an untranslatable hostname.
+    $endpoint = Split-MssqlServerEndpoint -DataSource $server
 
     $effectiveServer = $server
-    if ($serverHost.Equals("dms-mssql", [System.StringComparison]::OrdinalIgnoreCase)) {
+    if ($endpoint.HostName.Equals("dms-mssql", [System.StringComparison]::OrdinalIgnoreCase)) {
         $effectiveServer = (Get-LocalComposeDatabaseHostSideEndpoint -Dialect "mssql" -EnvValues $EnvValues).Host
     }
 
-    # Mutate only the server; every other stored option (password, TrustServerCertificate,
-    # Encrypt, a password containing ';' or '=', etc.) is carried through verbatim and correctly
-    # re-quoted by the builder. Set whichever server key the source used so we never duplicate it.
-    $serverKey = if ($Builder.ContainsKey("data source")) { "data source" } else { "server" }
-    Set-ConnectionStringValue -Builder $Builder -Key $serverKey -Value $effectiveServer
+    # Write back only the two synonym families, each collapsed onto the single key the source used for
+    # it. Every other stored option (password, TrustServerCertificate, Encrypt, a quoted password
+    # containing ';' or '=', etc.) is carried through verbatim and correctly re-quoted by the builder.
+    # The server value keeps any "tcp:" prefix it came with - that prefix selects the protocol SqlClient
+    # connects over, so it is normalized for endpoint decisions but never stripped from the string
+    # SchemaTools receives.
+    Set-ConnectionStringFamilyValue -Builder $Builder -Aliases $serverAliases -Value $effectiveServer
+    Set-ConnectionStringFamilyValue -Builder $Builder -Aliases $databaseAliases -Value $databaseName
 
     $hostConnectionString = $Builder.get_ConnectionString()
 
     # The port is encoded inside the server value for SQL Server; surface it for the summary.
+    $effectiveEndpoint = Split-MssqlServerEndpoint -DataSource $effectiveServer
     $effectivePort =
-        if ($effectiveServer -match ',') { (($effectiveServer -split ',', 2)[1]).Trim() }
+        if (-not [string]::IsNullOrWhiteSpace($effectiveEndpoint.Port)) { $effectiveEndpoint.Port }
         else { "1433" }
 
     # TargetKey identifies an effective provisioning target so two instances pointing at the same
@@ -567,7 +737,12 @@ function Convert-CmsConnectionStringToHostSideTarget {
     $dialect = Resolve-TargetDialect -Builder $builder
 
     if ($dialect -eq "mssql") {
-        return Convert-MssqlCmsConnectionStringToHostSideTarget -Builder $builder -EnvValues $EnvValues
+        # The ORIGINAL text travels with the builder: provider precedence is decided from occurrence
+        # order, which the builder no longer represents once it has parsed.
+        return Convert-MssqlCmsConnectionStringToHostSideTarget `
+            -Builder $builder `
+            -ConnectionString $ConnectionString `
+            -EnvValues $EnvValues
     }
 
     # PostgreSQL path: the surviving keys are database / host / username.
