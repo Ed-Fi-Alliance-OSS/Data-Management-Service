@@ -39277,6 +39277,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_CohortProgram_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganization_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."CommunityOrganizationId" IS DISTINCT FROM NEW."CommunityOrganizationId") THEN
         INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."CommunityOrganizationId", 'Ed-Fi:CommunityOrganization')
@@ -39289,7 +39293,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CommunityOrganization_AbstractIdentity" ON "edfi"."CommunityOrganization";
 CREATE TRIGGER "TR_CommunityOrganization_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CommunityOrganization"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."CommunityOrganization"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganization_AbstractIdentity"();
 
@@ -39573,6 +39577,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganizationInternationalAddress_Stamp"(
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProvider_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."CommunityProviderId" IS DISTINCT FROM NEW."CommunityProviderId") THEN
         INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."CommunityProviderId", 'Ed-Fi:CommunityProvider')
@@ -39585,7 +39593,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CommunityProvider_AbstractIdentity" ON "edfi"."CommunityProvider";
 CREATE TRIGGER "TR_CommunityProvider_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CommunityProvider"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."CommunityProvider"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CommunityProvider_AbstractIdentity"();
 
@@ -41984,6 +41992,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationInterventionPrescriptionA_eb
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationNetworkId" IS DISTINCT FROM NEW."EducationOrganizationNetworkId") THEN
         INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."EducationOrganizationNetworkId", 'Ed-Fi:EducationOrganizationNetwork')
@@ -41996,7 +42008,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EducationOrganizationNetwork_AbstractIdentity" ON "edfi"."EducationOrganizationNetwork";
 CREATE TRIGGER "TR_EducationOrganizationNetwork_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."EducationOrganizationNetwork"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."EducationOrganizationNetwork"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_AbstractIdentity"();
 
@@ -42408,6 +42420,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationPeerAssociation_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenter_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."EducationServiceCenterId" IS DISTINCT FROM NEW."EducationServiceCenterId") THEN
         INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."EducationServiceCenterId", 'Ed-Fi:EducationServiceCenter')
@@ -42420,7 +42436,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EducationServiceCenter_AbstractIdentity" ON "edfi"."EducationServiceCenter";
 CREATE TRIGGER "TR_EducationServiceCenter_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."EducationServiceCenter"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."EducationServiceCenter"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenter_AbstractIdentity"();
 
@@ -45132,6 +45148,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalContractedStaff_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."LocalEducationAgencyId" IS DISTINCT FROM NEW."LocalEducationAgencyId") THEN
         INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."LocalEducationAgencyId", 'Ed-Fi:LocalEducationAgency')
@@ -45144,7 +45164,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_AbstractIdentity" ON "edfi"."LocalEducationAgency";
 CREATE TRIGGER "TR_LocalEducationAgency_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."LocalEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"();
 
@@ -46327,6 +46347,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_OperationalUnitDimensionReportingTag_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartment_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."OrganizationDepartmentId" IS DISTINCT FROM NEW."OrganizationDepartmentId") THEN
         INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."OrganizationDepartmentId", 'Ed-Fi:OrganizationDepartment')
@@ -46339,7 +46363,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_OrganizationDepartment_AbstractIdentity" ON "edfi"."OrganizationDepartment";
 CREATE TRIGGER "TR_OrganizationDepartment_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."OrganizationDepartment"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."OrganizationDepartment"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartment_AbstractIdentity"();
 
@@ -46874,6 +46898,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryEvent_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."PostSecondaryInstitutionId" IS DISTINCT FROM NEW."PostSecondaryInstitutionId") THEN
         INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."PostSecondaryInstitutionId", 'Ed-Fi:PostSecondaryInstitution')
@@ -46886,7 +46914,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_PostSecondaryInstitution_AbstractIdentity" ON "edfi"."PostSecondaryInstitution";
 CREATE TRIGGER "TR_PostSecondaryInstitution_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."PostSecondaryInstitution"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."PostSecondaryInstitution"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_AbstractIdentity"();
 
@@ -48281,6 +48309,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_RestraintEventReason_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
         INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."SchoolId", 'Ed-Fi:School')
@@ -48293,7 +48325,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_School_AbstractIdentity" ON "edfi"."School";
 CREATE TRIGGER "TR_School_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."School"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"();
 
@@ -50811,6 +50843,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffVisa_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgency_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."StateEducationAgencyId" IS DISTINCT FROM NEW."StateEducationAgencyId") THEN
         INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."StateEducationAgencyId", 'Ed-Fi:StateEducationAgency')
@@ -50823,7 +50859,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StateEducationAgency_AbstractIdentity" ON "edfi"."StateEducationAgency";
 CREATE TRIGGER "TR_StateEducationAgency_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StateEducationAgency"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StateEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgency_AbstractIdentity"();
 
@@ -52109,6 +52145,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentStudentObjectiveAssessmentSco_6f
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociation_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."GeneralStudentProgramAssociationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "DocumentUuid", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentCTEProgramAssociation')
@@ -52121,7 +52161,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentCTEProgramAssociation_AbstractIdentity" ON "edfi"."StudentCTEProgramAssociation";
 CREATE TRIGGER "TR_StudentCTEProgramAssociation_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentCTEProgramAssociation"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentCTEProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociation_AbstractIdentity"();
 
@@ -53871,6 +53911,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentHealthRequiredImmunizationDate_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociation_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."GeneralStudentProgramAssociationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "DocumentUuid", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentHomelessProgramAssociation')
@@ -53883,7 +53927,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentHomelessProgramAssociation_AbstractIdentity" ON "edfi"."StudentHomelessProgramAssociation";
 CREATE TRIGGER "TR_StudentHomelessProgramAssociation_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentHomelessProgramAssociation"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentHomelessProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociation_AbstractIdentity"();
 
@@ -54237,6 +54281,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentInterventionAttendanceEvent_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociation_A_a427138fb0"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."GeneralStudentProgramAssociationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "DocumentUuid", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentLanguageInstructionProgramAssociation')
@@ -54249,7 +54297,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentLanguageInstructionProgramAssociation_Abst_57ea525497" ON "edfi"."StudentLanguageInstructionProgramAssociation";
 CREATE TRIGGER "TR_StudentLanguageInstructionProgramAssociation_Abst_57ea525497"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentLanguageInstructionProgramAssociation"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentLanguageInstructionProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociation_A_a427138fb0"();
 
@@ -54395,6 +54443,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociationPr_90
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociation_Abst_bd3ba064b4"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."GeneralStudentProgramAssociationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "DocumentUuid", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentMigrantEducationProgramAssociation')
@@ -54407,7 +54459,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentMigrantEducationProgramAssociation_AbstractIdentity" ON "edfi"."StudentMigrantEducationProgramAssociation";
 CREATE TRIGGER "TR_StudentMigrantEducationProgramAssociation_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentMigrantEducationProgramAssociation"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentMigrantEducationProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociation_Abst_bd3ba064b4"();
 
@@ -54528,6 +54580,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociationProgr_4c
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAssociation_d42448777f"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."GeneralStudentProgramAssociationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "DocumentUuid", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation')
@@ -54540,7 +54596,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentNeglectedOrDelinquentProgramAssociation_Ab_87c6f879b8" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation";
 CREATE TRIGGER "TR_StudentNeglectedOrDelinquentProgramAssociation_Ab_87c6f879b8"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAssociation_d42448777f"();
 
@@ -54711,6 +54767,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentPersonalIdentificationDocument_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramAssociation_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."GeneralStudentProgramAssociationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "DocumentUuid", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentProgramAssociation')
@@ -54723,7 +54783,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentProgramAssociation_AbstractIdentity" ON "edfi"."StudentProgramAssociation";
 CREATE TRIGGER "TR_StudentProgramAssociation_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentProgramAssociation"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramAssociation_AbstractIdentity"();
 
@@ -55419,6 +55479,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAttendanceEvent_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociation_Abs_a18cc7d62d"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."GeneralStudentProgramAssociationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "DocumentUuid", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentSchoolFoodServiceProgramAssociation')
@@ -55431,7 +55495,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSchoolFoodServiceProgramAssociation_AbstractIdentity" ON "edfi"."StudentSchoolFoodServiceProgramAssociation";
 CREATE TRIGGER "TR_StudentSchoolFoodServiceProgramAssociation_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSchoolFoodServiceProgramAssociation"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentSchoolFoodServiceProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociation_Abs_a18cc7d62d"();
 
@@ -55552,6 +55616,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociationScho_a4
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSection504ProgramAssociation_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."GeneralStudentProgramAssociationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "DocumentUuid", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentSection504ProgramAssociation')
@@ -55564,7 +55632,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSection504ProgramAssociation_AbstractIdentity" ON "edfi"."StudentSection504ProgramAssociation";
 CREATE TRIGGER "TR_StudentSection504ProgramAssociation_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSection504ProgramAssociation"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentSection504ProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSection504ProgramAssociation_AbstractIdentity"();
 
@@ -55935,6 +56003,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSectionAttendanceEventClassPeriod_Stamp"()
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociation_Abst_1454967766"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."GeneralStudentProgramAssociationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "DocumentUuid", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentSpecialEducationProgramAssociation')
@@ -55947,7 +56019,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSpecialEducationProgramAssociation_AbstractIdentity" ON "edfi"."StudentSpecialEducationProgramAssociation";
 CREATE TRIGGER "TR_StudentSpecialEducationProgramAssociation_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSpecialEducationProgramAssociation"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentSpecialEducationProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociation_Abst_1454967766"();
 
@@ -56276,6 +56348,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramEligibilityAssoc_86
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociation_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."GeneralStudentProgramAssociationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "DocumentUuid", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentTitleIPartAProgramAssociation')
@@ -56288,7 +56364,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentTitleIPartAProgramAssociation_AbstractIdentity" ON "edfi"."StudentTitleIPartAProgramAssociation";
 CREATE TRIGGER "TR_StudentTitleIPartAProgramAssociation_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentTitleIPartAProgramAssociation"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentTitleIPartAProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociation_AbstractIdentity"();
 
@@ -58308,6 +58384,10 @@ EXECUTE FUNCTION "sample"."TF_TR_StudentAcademicRecordExtension_Stamp"();
 CREATE OR REPLACE FUNCTION "sample"."TF_TR_StudentArtProgramAssociation_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."GeneralStudentProgramAssociationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "DocumentUuid", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Sample:StudentArtProgramAssociation')
@@ -58320,7 +58400,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentArtProgramAssociation_AbstractIdentity" ON "sample"."StudentArtProgramAssociation";
 CREATE TRIGGER "TR_StudentArtProgramAssociation_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "sample"."StudentArtProgramAssociation"
+BEFORE INSERT OR UPDATE OR DELETE ON "sample"."StudentArtProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "sample"."TF_TR_StudentArtProgramAssociation_AbstractIdentity"();
 

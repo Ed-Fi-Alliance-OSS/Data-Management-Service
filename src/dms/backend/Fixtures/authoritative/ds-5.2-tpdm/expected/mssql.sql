@@ -42040,40 +42040,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_CommunityOrganization_AbstractIdentity]
 ON [edfi].[CommunityOrganization]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[CommunityOrganizationId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[CommunityOrganizationId], N'Ed-Fi:CommunityOrganization'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[EducationOrganizationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([CommunityOrganizationId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[CommunityOrganizationId] <> d.[CommunityOrganizationId] OR (i.[CommunityOrganizationId] IS NULL AND d.[CommunityOrganizationId] IS NOT NULL) OR (i.[CommunityOrganizationId] IS NOT NULL AND d.[CommunityOrganizationId] IS NULL));
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[CommunityOrganizationId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[CommunityOrganizationId], N'Ed-Fi:CommunityOrganization'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[CommunityOrganizationId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[CommunityOrganizationId], N'Ed-Fi:CommunityOrganization'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([CommunityOrganizationId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[CommunityOrganizationId] <> d.[CommunityOrganizationId] OR (i.[CommunityOrganizationId] IS NULL AND d.[CommunityOrganizationId] IS NOT NULL) OR (i.[CommunityOrganizationId] IS NOT NULL AND d.[CommunityOrganizationId] IS NULL));
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[CommunityOrganizationId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[CommunityOrganizationId], N'Ed-Fi:CommunityOrganization'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -42420,40 +42428,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_CommunityProvider_AbstractIdentity]
 ON [edfi].[CommunityProvider]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[CommunityProviderId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[CommunityProviderId], N'Ed-Fi:CommunityProvider'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[EducationOrganizationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([CommunityProviderId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[CommunityProviderId] <> d.[CommunityProviderId] OR (i.[CommunityProviderId] IS NULL AND d.[CommunityProviderId] IS NOT NULL) OR (i.[CommunityProviderId] IS NOT NULL AND d.[CommunityProviderId] IS NULL));
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[CommunityProviderId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[CommunityProviderId], N'Ed-Fi:CommunityProvider'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[CommunityProviderId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[CommunityProviderId], N'Ed-Fi:CommunityProvider'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([CommunityProviderId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[CommunityProviderId] <> d.[CommunityProviderId] OR (i.[CommunityProviderId] IS NULL AND d.[CommunityProviderId] IS NOT NULL) OR (i.[CommunityProviderId] IS NOT NULL AND d.[CommunityProviderId] IS NULL));
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[CommunityProviderId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[CommunityProviderId], N'Ed-Fi:CommunityProvider'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -46135,40 +46151,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_EducationOrganizationNetwork_AbstractIdentity]
 ON [edfi].[EducationOrganizationNetwork]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[EducationOrganizationNetworkId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationNetworkId], N'Ed-Fi:EducationOrganizationNetwork'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[EducationOrganizationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([EducationOrganizationNetworkId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganizationNetworkId] <> d.[EducationOrganizationNetworkId] OR (i.[EducationOrganizationNetworkId] IS NULL AND d.[EducationOrganizationNetworkId] IS NOT NULL) OR (i.[EducationOrganizationNetworkId] IS NOT NULL AND d.[EducationOrganizationNetworkId] IS NULL));
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[EducationOrganizationNetworkId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationNetworkId], N'Ed-Fi:EducationOrganizationNetwork'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[EducationOrganizationNetworkId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationNetworkId], N'Ed-Fi:EducationOrganizationNetwork'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([EducationOrganizationNetworkId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[EducationOrganizationNetworkId] <> d.[EducationOrganizationNetworkId] OR (i.[EducationOrganizationNetworkId] IS NULL AND d.[EducationOrganizationNetworkId] IS NOT NULL) OR (i.[EducationOrganizationNetworkId] IS NOT NULL AND d.[EducationOrganizationNetworkId] IS NULL));
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[EducationOrganizationNetworkId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationNetworkId], N'Ed-Fi:EducationOrganizationNetwork'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -46703,40 +46727,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_EducationServiceCenter_AbstractIdentity]
 ON [edfi].[EducationServiceCenter]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[EducationServiceCenterId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationServiceCenterId], N'Ed-Fi:EducationServiceCenter'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[EducationOrganizationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([EducationServiceCenterId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationServiceCenterId] <> d.[EducationServiceCenterId] OR (i.[EducationServiceCenterId] IS NULL AND d.[EducationServiceCenterId] IS NOT NULL) OR (i.[EducationServiceCenterId] IS NOT NULL AND d.[EducationServiceCenterId] IS NULL));
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[EducationServiceCenterId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationServiceCenterId], N'Ed-Fi:EducationServiceCenter'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[EducationServiceCenterId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationServiceCenterId], N'Ed-Fi:EducationServiceCenter'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([EducationServiceCenterId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[EducationServiceCenterId] <> d.[EducationServiceCenterId] OR (i.[EducationServiceCenterId] IS NULL AND d.[EducationServiceCenterId] IS NOT NULL) OR (i.[EducationServiceCenterId] IS NOT NULL AND d.[EducationServiceCenterId] IS NULL));
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[EducationServiceCenterId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationServiceCenterId], N'Ed-Fi:EducationServiceCenter'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -50509,40 +50541,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_AbstractIdentity]
 ON [edfi].[LocalEducationAgency]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[LocalEducationAgencyId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[LocalEducationAgencyId], N'Ed-Fi:LocalEducationAgency'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[EducationOrganizationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([LocalEducationAgencyId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[LocalEducationAgencyId] <> d.[LocalEducationAgencyId] OR (i.[LocalEducationAgencyId] IS NULL AND d.[LocalEducationAgencyId] IS NOT NULL) OR (i.[LocalEducationAgencyId] IS NOT NULL AND d.[LocalEducationAgencyId] IS NULL));
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[LocalEducationAgencyId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[LocalEducationAgencyId], N'Ed-Fi:LocalEducationAgency'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[LocalEducationAgencyId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[LocalEducationAgencyId], N'Ed-Fi:LocalEducationAgency'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([LocalEducationAgencyId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[LocalEducationAgencyId] <> d.[LocalEducationAgencyId] OR (i.[LocalEducationAgencyId] IS NULL AND d.[LocalEducationAgencyId] IS NOT NULL) OR (i.[LocalEducationAgencyId] IS NOT NULL AND d.[LocalEducationAgencyId] IS NULL));
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[LocalEducationAgencyId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[LocalEducationAgencyId], N'Ed-Fi:LocalEducationAgency'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -52126,40 +52166,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_OrganizationDepartment_AbstractIdentity]
 ON [edfi].[OrganizationDepartment]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[OrganizationDepartmentId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[OrganizationDepartmentId], N'Ed-Fi:OrganizationDepartment'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[EducationOrganizationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([OrganizationDepartmentId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[OrganizationDepartmentId] <> d.[OrganizationDepartmentId] OR (i.[OrganizationDepartmentId] IS NULL AND d.[OrganizationDepartmentId] IS NOT NULL) OR (i.[OrganizationDepartmentId] IS NOT NULL AND d.[OrganizationDepartmentId] IS NULL));
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[OrganizationDepartmentId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[OrganizationDepartmentId], N'Ed-Fi:OrganizationDepartment'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[OrganizationDepartmentId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[OrganizationDepartmentId], N'Ed-Fi:OrganizationDepartment'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([OrganizationDepartmentId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[OrganizationDepartmentId] <> d.[OrganizationDepartmentId] OR (i.[OrganizationDepartmentId] IS NULL AND d.[OrganizationDepartmentId] IS NOT NULL) OR (i.[OrganizationDepartmentId] IS NOT NULL AND d.[OrganizationDepartmentId] IS NULL));
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[OrganizationDepartmentId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[OrganizationDepartmentId], N'Ed-Fi:OrganizationDepartment'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -52839,40 +52887,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_PostSecondaryInstitution_AbstractIdentity]
 ON [edfi].[PostSecondaryInstitution]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[PostSecondaryInstitutionId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[PostSecondaryInstitutionId], N'Ed-Fi:PostSecondaryInstitution'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[EducationOrganizationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([PostSecondaryInstitutionId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[PostSecondaryInstitutionId] <> d.[PostSecondaryInstitutionId] OR (i.[PostSecondaryInstitutionId] IS NULL AND d.[PostSecondaryInstitutionId] IS NOT NULL) OR (i.[PostSecondaryInstitutionId] IS NOT NULL AND d.[PostSecondaryInstitutionId] IS NULL));
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[PostSecondaryInstitutionId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[PostSecondaryInstitutionId], N'Ed-Fi:PostSecondaryInstitution'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[PostSecondaryInstitutionId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[PostSecondaryInstitutionId], N'Ed-Fi:PostSecondaryInstitution'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([PostSecondaryInstitutionId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[PostSecondaryInstitutionId] <> d.[PostSecondaryInstitutionId] OR (i.[PostSecondaryInstitutionId] IS NULL AND d.[PostSecondaryInstitutionId] IS NOT NULL) OR (i.[PostSecondaryInstitutionId] IS NOT NULL AND d.[PostSecondaryInstitutionId] IS NULL));
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[PostSecondaryInstitutionId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[PostSecondaryInstitutionId], N'Ed-Fi:PostSecondaryInstitution'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -54954,40 +55010,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_School_AbstractIdentity]
 ON [edfi].[School]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[SchoolId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[SchoolId], N'Ed-Fi:School'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[EducationOrganizationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([SchoolId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL));
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[SchoolId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[SchoolId], N'Ed-Fi:School'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[SchoolId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[SchoolId], N'Ed-Fi:School'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([SchoolId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL));
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[SchoolId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[SchoolId], N'Ed-Fi:School'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -58406,40 +58470,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_StateEducationAgency_AbstractIdentity]
 ON [edfi].[StateEducationAgency]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[StateEducationAgencyId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[StateEducationAgencyId], N'Ed-Fi:StateEducationAgency'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[EducationOrganizationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([StateEducationAgencyId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[StateEducationAgencyId] <> d.[StateEducationAgencyId] OR (i.[StateEducationAgencyId] IS NULL AND d.[StateEducationAgencyId] IS NOT NULL) OR (i.[StateEducationAgencyId] IS NOT NULL AND d.[StateEducationAgencyId] IS NULL));
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[StateEducationAgencyId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[StateEducationAgencyId], N'Ed-Fi:StateEducationAgency'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[StateEducationAgencyId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[StateEducationAgencyId], N'Ed-Fi:StateEducationAgency'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([StateEducationAgencyId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[StateEducationAgencyId] <> d.[StateEducationAgencyId] OR (i.[StateEducationAgencyId] IS NULL AND d.[StateEducationAgencyId] IS NOT NULL) OR (i.[StateEducationAgencyId] IS NOT NULL AND d.[StateEducationAgencyId] IS NULL));
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[StateEducationAgencyId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[StateEducationAgencyId], N'Ed-Fi:StateEducationAgency'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -60116,40 +60188,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentCTEProgramAssociation_AbstractIdentity]
 ON [edfi].[StudentCTEProgramAssociation]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentCTEProgramAssociation'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[GeneralStudentProgramAssociationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentCTEProgramAssociation'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentCTEProgramAssociation'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentCTEProgramAssociation'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -62461,40 +62541,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentHomelessProgramAssociation_AbstractIdentity]
 ON [edfi].[StudentHomelessProgramAssociation]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentHomelessProgramAssociation'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[GeneralStudentProgramAssociationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentHomelessProgramAssociation'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentHomelessProgramAssociation'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentHomelessProgramAssociation'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -62946,40 +63034,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentLanguageInstructionProgramAssociation_AbstractIdentity]
 ON [edfi].[StudentLanguageInstructionProgramAssociation]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentLanguageInstructionProgramAssociation'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[GeneralStudentProgramAssociationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentLanguageInstructionProgramAssociation'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentLanguageInstructionProgramAssociation'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentLanguageInstructionProgramAssociation'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -63161,40 +63257,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentMigrantEducationProgramAssociation_AbstractIdentity]
 ON [edfi].[StudentMigrantEducationProgramAssociation]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentMigrantEducationProgramAssociation'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[GeneralStudentProgramAssociationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentMigrantEducationProgramAssociation'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentMigrantEducationProgramAssociation'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentMigrantEducationProgramAssociation'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -63345,40 +63449,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentNeglectedOrDelinquentProgramAssociation_AbstractIdentity]
 ON [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[GeneralStudentProgramAssociationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -63591,40 +63703,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentProgramAssociation_AbstractIdentity]
 ON [edfi].[StudentProgramAssociation]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentProgramAssociation'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[GeneralStudentProgramAssociationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentProgramAssociation'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentProgramAssociation'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentProgramAssociation'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -64516,40 +64636,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolFoodServiceProgramAssociation_AbstractIdentity]
 ON [edfi].[StudentSchoolFoodServiceProgramAssociation]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[GeneralStudentProgramAssociationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -64700,40 +64828,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentSection504ProgramAssociation_AbstractIdentity]
 ON [edfi].[StudentSection504ProgramAssociation]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSection504ProgramAssociation'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[GeneralStudentProgramAssociationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSection504ProgramAssociation'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSection504ProgramAssociation'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSection504ProgramAssociation'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -65228,40 +65364,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentSpecialEducationProgramAssociation_AbstractIdentity]
 ON [edfi].[StudentSpecialEducationProgramAssociation]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSpecialEducationProgramAssociation'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[GeneralStudentProgramAssociationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSpecialEducationProgramAssociation'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSpecialEducationProgramAssociation'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSpecialEducationProgramAssociation'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -65672,40 +65816,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentTitleIPartAProgramAssociation_AbstractIdentity]
 ON [edfi].[StudentTitleIPartAProgramAssociation]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentTitleIPartAProgramAssociation'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[GeneralStudentProgramAssociationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        UPDATE t
-        SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
-        FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentTitleIPartAProgramAssociation'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentTitleIPartAProgramAssociation'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
+            UPDATE t
+            SET t.[BeginDate] = s.[BeginDate], t.[EducationOrganization_EducationOrganizationId] = s.[EducationOrganization_EducationOrganizationId], t.[Program_EducationOrganizationId] = s.[ProgramProgram_EducationOrganizationId], t.[Program_ProgramName] = s.[ProgramProgram_ProgramName], t.[Program_ProgramTypeDescriptor_DescriptorId] = s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], t.[Student_StudentUniqueId] = s.[Student_StudentUniqueId]
+            FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [DocumentUuid], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentTitleIPartAProgramAssociation'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO

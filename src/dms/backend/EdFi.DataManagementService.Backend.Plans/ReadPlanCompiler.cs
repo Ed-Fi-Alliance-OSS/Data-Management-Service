@@ -203,8 +203,8 @@ public sealed class ReadPlanCompiler
 
     /// <summary>
     /// Projects the resource model down to its hydration (read) column set by excluding the synthesized
-    /// <c>dms.Document</c> mirror columns (change-version and document-metadata) from every table. Tables
-    /// without mirror columns are returned by reference, so only the resource root is rebuilt.
+    /// change-version and document-metadata columns from every table. Tables that carry none of them are
+    /// returned by reference, so only the resource root is rebuilt.
     /// </summary>
     private static RelationalResourceModel ToHydrationProjectionModel(RelationalResourceModel resourceModel)
     {

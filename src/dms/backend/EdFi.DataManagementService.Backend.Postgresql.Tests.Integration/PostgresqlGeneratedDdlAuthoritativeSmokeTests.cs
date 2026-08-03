@@ -2356,6 +2356,17 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         )
             .Should()
             .Be(0);
+        // The abstract identity row is retired by TR_School_AbstractIdentity's DELETE arm. It is the FK
+        // target every abstract reference points at, so leaving it behind would both strand a
+        // resolvable identity for a deleted document and disarm the referencing-FK 409.
+        (
+            await CountRowsAsync(
+                """SELECT COUNT(*) FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", schoolDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
             .Should()

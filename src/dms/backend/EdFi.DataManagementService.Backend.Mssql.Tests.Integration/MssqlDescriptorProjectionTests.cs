@@ -142,6 +142,11 @@ internal static class MssqlDescriptorProjectionFixture
             -- only the modeled columns, so no document-metadata columns are scaffolded here.
             CREATE TABLE [{TestSchema}].[StudentSchoolAssociation] (
                 [DocumentId] bigint PRIMARY KEY,
+                [DocumentUuid] uniqueidentifier NOT NULL DEFAULT NEWID(),
+                [ContentVersion] bigint NOT NULL DEFAULT 1,
+                [IdentityVersion] bigint NOT NULL DEFAULT 1,
+                [ContentLastModifiedAt] datetimeoffset NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+                [IdentityLastModifiedAt] datetimeoffset NOT NULL DEFAULT SYSDATETIMEOFFSET(),
                 [GradeLevelDescriptor_DescriptorId] bigint NULL
             );
             """

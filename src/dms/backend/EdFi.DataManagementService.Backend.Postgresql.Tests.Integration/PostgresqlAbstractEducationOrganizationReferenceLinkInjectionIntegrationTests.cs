@@ -143,6 +143,35 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
         );
     }
 
+    [Test]
+    public async Task It_refuses_to_delete_a_document_referenced_through_an_abstract_reference()
+    {
+        // The Course references the School abstractly: the FK
+        // FK_Course_EducationOrganization_RefKey targets edfi.EducationOrganizationIdentity, not the
+        // School root table. Retiring the School therefore only surfaces as a conflict because
+        // TR_School_AbstractIdentity's DELETE arm removes the identity row the Course still points at.
+        // The violated constraint is owned by the Course root table, so RelationalDeleteConstraintResolver
+        // finds it in its per-model-set index and names Course as the referencing resource.
+        DeleteResult delete;
+        await using (var scope = _serviceProvider.CreateAsyncScope())
+        {
+            delete = await scope
+                .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+                .DeleteDocumentById(
+                    new DeleteRequest(
+                        DocumentUuid: SchoolDocumentUuid,
+                        ResourceInfo: _schoolResourceInfo,
+                        TraceId: new TraceId("pg-abstract-delete-conflict"),
+                        Headers: [],
+                        MappingSet: _mappingSet
+                    )
+                );
+        }
+
+        var reference = delete.Should().BeOfType<DeleteResult.DeleteFailureReference>().Subject;
+        reference.ReferencingDocumentResourceNames.Should().BeEquivalentTo("Course");
+    }
+
     private ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];

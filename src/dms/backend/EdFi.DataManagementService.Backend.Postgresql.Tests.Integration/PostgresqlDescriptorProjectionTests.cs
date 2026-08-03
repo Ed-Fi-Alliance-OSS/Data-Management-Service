@@ -189,6 +189,11 @@ internal static class DescriptorProjectionFixture
 
             CREATE TABLE {TestSchema}."StudentSchoolAssociation" (
                 "DocumentId" bigint PRIMARY KEY,
+                "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "IdentityVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "GradeLevelDescriptor_DescriptorId" bigint NULL
             );
             """,

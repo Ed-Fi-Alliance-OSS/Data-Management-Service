@@ -1345,6 +1345,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_ResourceB_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
         INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."SchoolId", 'Ed-Fi:School')
@@ -1357,7 +1361,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_School_AbstractIdentity" ON "edfi"."School";
 CREATE TRIGGER "TR_School_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."School"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"();
 

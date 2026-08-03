@@ -479,13 +479,13 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ma
             .Contain(
                 "INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], "
                     + "[EducationOrganizationId], [Discriminator])\n"
-                    + "        SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], "
+                    + "            SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], "
                     + "N'Ed-Fi:School'\n"
-                    + "        FROM inserted s\n"
-                    + "        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]\n"
-                    + "        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing "
+                    + "            FROM inserted s\n"
+                    + "            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]\n"
+                    + "            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing "
                     + "ON existing.[DocumentId] = s.[DocumentId]\n"
-                    + "        WHERE existing.[DocumentId] IS NULL;"
+                    + "            WHERE existing.[DocumentId] IS NULL;"
             );
         _triggerBody.Should().NotContain("[dms].[Document]");
     }

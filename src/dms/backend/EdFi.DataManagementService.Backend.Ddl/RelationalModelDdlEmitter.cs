@@ -828,6 +828,22 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.AppendLine("END IF;");
             }
 
+            if (trigger.Parameters is TriggerKindParameters.AbstractIdentityMaintenance abstractIdentity)
+            {
+                // Retiring the concrete root row retires its <Abstract>Identity row with it. That row is
+                // the FK target every abstract reference points at, so deleting it here is what makes a
+                // still-referenced document's delete fail on the referencing constraint — the 409 path —
+                // and what keeps abstract natural-key resolution from binding a deleted document. Until
+                // the DocumentId FK into dms.Document was dropped this was that FK's ON DELETE CASCADE.
+                writer.AppendLine("IF TG_OP = 'DELETE' THEN");
+                using (writer.Indent())
+                {
+                    EmitPgsqlAbstractIdentityDelete(writer, abstractIdentity.TargetTable);
+                    writer.AppendLine("RETURN OLD;");
+                }
+                writer.AppendLine("END IF;");
+            }
+
             EmitTriggerBody(
                 writer,
                 trigger,
@@ -848,11 +864,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append("CREATE TRIGGER ");
         writer.AppendLine(Quote(trigger.Name));
 
-        // DELETE is part of the trigger event list because the DELETE branch emits
-        // tracked-change tombstones (DMS-1179).
+        // DELETE is part of the trigger event list for two kinds: document stamping emits
+        // tracked-change tombstones there (DMS-1179), and abstract-identity maintenance retires the
+        // owning <Abstract>Identity row there.
         var pgsqlTriggerEvent = trigger.Parameters switch
         {
             TriggerKindParameters.DocumentStamping => "BEFORE INSERT OR UPDATE OR DELETE ON ",
+            TriggerKindParameters.AbstractIdentityMaintenance => "BEFORE INSERT OR UPDATE OR DELETE ON ",
             _ => "BEFORE INSERT OR UPDATE ON ",
         };
         writer.Append(pgsqlTriggerEvent);
@@ -885,6 +903,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var mssqlTriggerEvent = trigger.Parameters switch
         {
             TriggerKindParameters.DocumentStamping => "AFTER INSERT, UPDATE, DELETE",
+            TriggerKindParameters.AbstractIdentityMaintenance => "AFTER INSERT, UPDATE, DELETE",
             TriggerKindParameters.MssqlIdentityPropagationTrigger => "AFTER UPDATE",
             _ => "AFTER INSERT, UPDATE",
         };
@@ -1837,6 +1856,21 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
     }
 
+    /// <summary>
+    /// Emits the DELETE that retires the <c>&lt;Abstract&gt;Identity</c> row belonging to the concrete
+    /// root row being deleted.
+    /// </summary>
+    private void EmitPgsqlAbstractIdentityDelete(SqlWriter writer, DbTableName targetTableName)
+    {
+        writer.Append("DELETE FROM ");
+        writer.Append(Quote(targetTableName));
+        writer.Append(" WHERE ");
+        writer.Append(Quote(DocumentIdColumn));
+        writer.Append(" = OLD.");
+        writer.Append(Quote(DocumentIdColumn));
+        writer.AppendLine(";");
+    }
+
     private void EmitPgsqlAbstractIdentityBody(
         SqlWriter writer,
         IReadOnlyList<DbColumnName> identityProjectionColumns,
@@ -1918,19 +1952,43 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         string discriminatorValue
     )
     {
-        EmitMssqlInsertUpdateDispatch(
-            writer,
-            identityProjectionColumns,
-            tableModel,
-            isInsert =>
-                EmitMssqlAbstractIdentityUpsert(
-                    writer,
-                    targetTableName,
-                    mappings,
-                    discriminatorValue,
-                    isInsert
-                )
-        );
+        // Retiring the concrete root row retires its <Abstract>Identity row with it. That row is the FK
+        // target every abstract reference points at, so deleting it here is what makes a still-referenced
+        // document's delete fail on the referencing constraint — the 409 path — and what keeps abstract
+        // natural-key resolution from binding a deleted document. Until the DocumentId FK into
+        // dms.Document was dropped this was that FK's ON DELETE CASCADE.
+        writer.AppendLine("IF NOT EXISTS (SELECT 1 FROM inserted)");
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            writer.Append("DELETE FROM ");
+            writer.AppendLine(Quote(targetTableName));
+            writer.Append("WHERE ");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(" IN (SELECT ");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.AppendLine(" FROM deleted);");
+        }
+        writer.AppendLine("END");
+        writer.AppendLine("ELSE");
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            EmitMssqlInsertUpdateDispatch(
+                writer,
+                identityProjectionColumns,
+                tableModel,
+                isInsert =>
+                    EmitMssqlAbstractIdentityUpsert(
+                        writer,
+                        targetTableName,
+                        mappings,
+                        discriminatorValue,
+                        isInsert
+                    )
+            );
+        }
+        writer.AppendLine("END");
     }
 
     /// <summary>

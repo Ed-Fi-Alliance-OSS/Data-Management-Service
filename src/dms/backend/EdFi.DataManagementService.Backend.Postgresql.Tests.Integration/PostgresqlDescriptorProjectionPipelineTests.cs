@@ -158,6 +158,11 @@ internal static class DescriptorProjectionPipelineFixture
 
             CREATE TABLE "{TestSchema}"."CourseOffering" (
                 "DocumentId" bigint PRIMARY KEY,
+                "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "IdentityVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
                 "InstructionLanguageDescriptor_DescriptorId" bigint NULL
             );

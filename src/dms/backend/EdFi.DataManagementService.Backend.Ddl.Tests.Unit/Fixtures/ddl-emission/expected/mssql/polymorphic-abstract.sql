@@ -72,40 +72,48 @@ FROM [edfi].[LocalEducationAgency]
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_AbstractIdentity]
 ON [edfi].[LocalEducationAgency]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[EducationOrganizationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([EducationOrganizationId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL));
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([EducationOrganizationId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL));
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO
@@ -165,40 +173,48 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_School_AbstractIdentity]
 ON [edfi].[School]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], N'Ed-Fi:School'
-        FROM inserted s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        DELETE FROM [edfi].[EducationOrganizationIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM deleted);
     END
-    ELSE IF (UPDATE([EducationOrganizationId]))
+    ELSE
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL));
-        UPDATE t
-        SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
-        FROM [edfi].[EducationOrganizationIdentity] t
-        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], N'Ed-Fi:School'
-        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
-        INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
-        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
-        WHERE existing.[DocumentId] IS NULL;
+        IF NOT EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], N'Ed-Fi:School'
+            FROM inserted s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
+        ELSE IF (UPDATE([EducationOrganizationId]))
+        BEGIN
+            DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+            INSERT INTO @changedDocs ([DocumentId])
+            SELECT i.[DocumentId]
+            FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+            WHERE (i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL));
+            UPDATE t
+            SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
+            FROM [edfi].[EducationOrganizationIdentity] t
+            INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+            SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], N'Ed-Fi:School'
+            FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+            INNER JOIN inserted d ON d.[DocumentId] = s.[DocumentId]
+            LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+            WHERE existing.[DocumentId] IS NULL;
+        END
     END
 END;
 GO

@@ -843,8 +843,10 @@ public sealed record ReferenceResolverSeedData(
 
     /// <summary>
     /// Resolves the seeded <c>DocumentUuid</c> for a document id. <c>dms.Document</c> no longer exists, so
-    /// the uuid is bound onto the owning root / descriptor / abstract-identity row instead. The seed set
-    /// still declares it once, in <see cref="Documents"/>, so every table mirroring a document agrees.
+    /// the uuid is bound onto <c>dms.Descriptor</c> — the one table in this synthetic fixture that carries
+    /// the column — instead of relying on its <c>DF_Descriptor_DocumentUuid</c> default. The synthetic
+    /// resource root tables this fixture builds carry no document-metadata columns at all, so there is
+    /// nothing to bind there. <see cref="Documents"/> stays the single declaration of the seeded id space.
     /// </summary>
     private Guid DocumentUuidFor(long documentId) =>
         Documents.FirstOrDefault(document => document.DocumentId == documentId)?.DocumentUuid
@@ -878,33 +880,18 @@ public sealed record ReferenceResolverSeedData(
             ),
             new(
                 new DbTableName(new DbSchemaName("edfi"), "School"),
-                [
-                    new DbColumnName("DocumentId"),
-                    new DbColumnName("DocumentUuid"),
-                    new DbColumnName("SchoolId"),
-                ],
+                [new DbColumnName("DocumentId"), new DbColumnName("SchoolId")],
                 Schools
-                    .Select(school =>
-                        (IReadOnlyList<object?>)
-                            [school.DocumentId, DocumentUuidFor(school.DocumentId), school.SchoolId]
-                    )
+                    .Select(school => (IReadOnlyList<object?>)[school.DocumentId, school.SchoolId])
                     .ToArray()
             ),
             new(
                 new DbTableName(new DbSchemaName("edfi"), "LocalEducationAgency"),
-                [
-                    new DbColumnName("DocumentId"),
-                    new DbColumnName("DocumentUuid"),
-                    new DbColumnName("LocalEducationAgencyId"),
-                ],
+                [new DbColumnName("DocumentId"), new DbColumnName("LocalEducationAgencyId")],
                 LocalEducationAgencies
                     .Select(localEducationAgency =>
                         (IReadOnlyList<object?>)
-                            [
-                                localEducationAgency.DocumentId,
-                                DocumentUuidFor(localEducationAgency.DocumentId),
-                                localEducationAgency.LocalEducationAgencyId,
-                            ]
+                            [localEducationAgency.DocumentId, localEducationAgency.LocalEducationAgencyId]
                     )
                     .ToArray()
             ),
@@ -912,19 +899,13 @@ public sealed record ReferenceResolverSeedData(
                 new DbTableName(new DbSchemaName("edfi"), "EducationOrganizationIdentity"),
                 [
                     new DbColumnName("DocumentId"),
-                    new DbColumnName("DocumentUuid"),
                     new DbColumnName("EducationOrganizationId"),
                     new DbColumnName("Discriminator"),
                 ],
                 EducationOrganizationIdentities
                     .Select(identity =>
                         (IReadOnlyList<object?>)
-                            [
-                                identity.DocumentId,
-                                DocumentUuidFor(identity.DocumentId),
-                                identity.EducationOrganizationId,
-                                identity.Discriminator,
-                            ]
+                            [identity.DocumentId, identity.EducationOrganizationId, identity.Discriminator]
                     )
                     .ToArray()
             ),
@@ -932,7 +913,6 @@ public sealed record ReferenceResolverSeedData(
                 new DbTableName(new DbSchemaName("edfi"), "WideIdentityResource"),
                 [
                     new DbColumnName("DocumentId"),
-                    new DbColumnName("DocumentUuid"),
                     new DbColumnName("Int64Key"),
                     new DbColumnName("DecimalKey"),
                     new DbColumnName("DateKey"),
@@ -945,7 +925,6 @@ public sealed record ReferenceResolverSeedData(
                         (IReadOnlyList<object?>)
                             [
                                 wideIdentity.DocumentId,
-                                DocumentUuidFor(wideIdentity.DocumentId),
                                 wideIdentity.Int64Key,
                                 wideIdentity.DecimalKey,
                                 wideIdentity.DateKey,

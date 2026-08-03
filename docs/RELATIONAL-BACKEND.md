@@ -255,15 +255,14 @@ to the phase that makes these columns authoritative.
 - [`DeriveDocumentMetadataColumnsPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveDocumentMetadataColumnsPass.cs) — derives the five metadata columns onto root tables, including their non-writable classification
 - [`CoreDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs) — the `dms.Descriptor` copies, including `ResourceKeyId` and the `IX_Descriptor_ResourceKeyId_DocumentId` index that serves the descriptor page keyset
 
-These columns are still written twice — once onto `dms.Document`, once onto the mirror — but **only the
-mirror is ever read**. Both the read paths and the write path now take a document's metadata from a row
-they were already reading, so a wrong *served* value points at the mirror, not at `dms.Document`. The
-read side moved first; the list below is where each read gets its metadata. The write side followed
-(see [Locking and write-side metadata reads](#locking-and-write-side-metadata-reads) below), which
-leaves `dms.Document` **written by everything and read by nothing**.
+These columns are **authoritative**: the resource root row — or the `dms.Descriptor` row for a
+descriptor — is the document, and the stamping triggers write its metadata there and nowhere else.
+Both the read paths and the write path take a document's metadata from a row they were already reading,
+so a wrong *served* value points at that row (see
+[Locking and write-side metadata reads](#locking-and-write-side-metadata-reads) below).
 
 - **GET metadata** (`id`, `_etag`, `_lastModifiedDate`) — the hydration batch's metadata `SELECT` reads
-  whichever table [`HydrationExecutionOptions.DocumentMetadataSource`](../src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/HydrationExecutionOptions.cs)
+  the resource root table ([`HydrationBatchBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs)
   names. Every production caller — GET-by-id, the query page, and the write path's current-state
   loader — passes `RootTable`; the `DocumentTable` default survives only for a caller with no root row
   to read, and no production caller is left in that position
@@ -317,15 +316,13 @@ Caveats when debugging a mismatch — all of them concern rows written **out of 
 generated triggers are the only legitimate writers of these columns:
 
 - `CreatedByOwnershipTokenId` is a forward-compatible placeholder and is **permanently NULL** — this
-  schema base has no `dms.Document.CreatedByOwnershipTokenId` to copy from, so no trigger writes it.
-  It is deliberately left unindexed until the phase that populates it.
-- Tamper repair differs by dialect **and by table kind**. On resource **root** tables, PostgreSQL's
-  `BEFORE` trigger assigns `DocumentUuid` / `CreatedAt` only on `INSERT` and does **not** self-heal a
-  later out-of-band change to them, while SQL Server's `AFTER` trigger re-mirrors all six from the
-  post-update `dms.Document` row image on every stamp. On `dms.Descriptor`, **both** dialects
-  self-heal: the descriptor stamping trigger's `UPDATE` branch re-asserts all seven — those six plus
-  `ResourceKeyId` — from the `dms.Document` image on every stamp, so a tampered descriptor mirror is
-  repaired by the next write to that row.
+  schema base has no ownership token to record, so no trigger writes it. It is deliberately left
+  unindexed until the phase that populates it.
+- **Neither dialect self-heals out-of-band tampering** of these columns. `DocumentUuid` and `CreatedAt`
+  are settled on the insert path — by the root table's own column defaults and, on PostgreSQL, by the
+  `BEFORE INSERT` trigger — and no later stamp re-asserts them; the stamp `UPDATE` writes only the
+  content (and, on an identity change, the identity) pair. There is no second copy of the row to
+  repair from.
 - Reads **fail closed rather than loudly**: the mirror predicates are equality comparisons and NULL
   matches nothing, so a trigger-bypassed `dms.Descriptor` row whose `ResourceKeyId` is NULL is invisible
   to descriptor reads — a **404**, not an error. `DescriptorReadRowReader`'s "must not be null"
@@ -448,8 +445,8 @@ PostgreSQL and `WITH (UPDLOCK, HOLDLOCK, ROWLOCK)` on SQL Server
 ([`RelationalDocumentLockCommandBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentLockCommandBuilder.cs)).
 
 The same statement is reused for the guarded-no-op freshness re-check and for the post-persist stamp
-read-back, and the write path's current-state load passes `DocumentMetadataSource.RootTable` for the
-same reason — so a stale-versus-fresh comparison never straddles two tables
+read-back, and the write path's current-state load hydrates from that same root row — so a
+stale-versus-fresh comparison never straddles two tables
 ([`RelationalWriteCurrentState.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteCurrentState.cs),
 [`RelationalWriteNoProfilePersister.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs)).
 
@@ -563,63 +560,44 @@ recognizing before hunting one.
   target's own table, so a hit is a member of that resource by construction; there is no longer a way
   for a resolved id to belong to some other resource.
 
-#### What is left on `dms.Document` and `dms.ReferentialIdentity`
+#### `dms.Document`, `dms.DocumentCache` and `dms.ReferentialIdentity` are gone
 
-At this point `dms.Document` is **traffic-free** and `dms.ReferentialIdentity` is **inert**:
+The three tables are **dropped from the generated DDL** (commit `efd40ea20`). A provisioned database now
+carries exactly four `dms.*` tables — `Descriptor`, `EffectiveSchema`, `ResourceKey`, `SchemaComponent` —
+plus the sequences `ChangeVersionSequence`, `CollectionItemIdSequence` and `DocumentIdSequence`, the
+`GetMaxChangeVersion` function (and `throw_error` on PostgreSQL), and the SQL Server table type
+`BigIntTable`.
 
-- `dms.Document` is **no longer written by anything** (commit `064f08650` + `5db216110`). `DocumentId`
-  now originates from **`dms.DocumentIdSequence`**, through a column default on every resource root
-  table and on `dms.Descriptor`; the root `INSERT` omits the column and returns the drawn value
-  (PostgreSQL `RETURNING "DocumentId"`; SQL Server `OUTPUT INSERTED.[DocumentId] INTO @newDocumentId`
-  plus a trailing `SELECT`, because a plain `OUTPUT` is illegal on the trigger-bearing root table)
+- **`dms.Document`.** It stopped being written at commits `064f08650` + `5db216110`: `DocumentId`
+  originates from **`dms.DocumentIdSequence`** through a column default on every resource root table and
+  on `dms.Descriptor`; the root `INSERT` omits the column and returns the drawn value (PostgreSQL
+  `RETURNING "DocumentId"`; SQL Server `OUTPUT INSERTED.[DocumentId] INTO @newDocumentId` plus a
+  trailing `SELECT`, because a plain `OUTPUT` is illegal on the trigger-bearing root table)
   ([`WritePlanCompiler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs),
   [`RelationalWriteNoProfilePersister.InsertRootRowAsync`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs)).
   The descriptor insert does the same on `dms.Descriptor`
-  ([`DescriptorWriteHandler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs)).
-  The delete is a **single statement** on the root (or descriptor) row whose returned `DocumentId` is
-  the affected-rows signal
-  ([`OrderedDeleteCommandBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/OrderedDeleteCommandBuilder.cs)),
-  and every foreign key into `dms.Document` — from resource roots, from `dms.Descriptor`, and from the
-  abstract identity tables — is **gone**. The table itself is still emitted until it is dropped, but
-  nothing writes it: no generated trigger body names it any more (Task 4 re-sourced the stamps onto the
-  root rows), and the table carries no trigger of its own, so a freshly provisioned database keeps it
-  **permanently empty**. **No production code path reads it** — and no *dead* production
-  reader is left either. The UUIDv5 hash resolver and its
-  `dms.ReferentialIdentity` ⋈ `dms.Document` join are **deleted** — every dialect composition now
-  registers the natural-key resolver into the `IReferenceResolver` slot
-  ([`WebApplicationBuilderExtensions.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs)) —
-  and so are the caller-less probes that outlived it (the PUT/DELETE uuid lookups, the referential-id
-  POST probe), together with their dialect builders and result records. What is left in
-  [`RelationalDocumentUuidLookup.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentUuidLookup.cs)
-  seeks `dms.Descriptor` or a resource root table, never `dms.Document`. The **test tree still reads
-  it**, in dozens of integration suites that assert on what the write path and the stamping triggers
-  put there; those assertions are what has to be re-pointed or deleted when the table goes.
-- `dms.ReferentialIdentity` is **no longer written by anything**. The generated
-  `TR_<Root>_ReferentialIdentity` triggers that maintained it are neither derived nor emitted
-  (commit `c90f35be1`), so no generated object touches the table. The table itself, its two foreign
-  keys and `IX_ReferentialIdentity_DocumentId` are still emitted — a freshly provisioned database
-  has it and it stays **permanently empty**. An already-populated database keeps the rows it has
-  until the table is dropped; nothing adds to them, and `FK_ReferentialIdentity_Document`'s
-  `ON DELETE CASCADE` still removes them alongside their `dms.Document` row. **No production code
-  path reads it** either: the hash resolver that read it has been deleted, so no registration —
-  production or test — can resolve a reference through it. **No fixture seeds it.** And the test
-  tree no longer asserts on it: the two suites where the table *was* the subject under test
-  (`{Postgresql,Mssql}ReferentialIdentityTests`) are deleted, and the trigger-output assertions in
-  the surviving reader suites — `{Postgresql,Mssql}GeneratedDdlAuthoritativeSmokeTests` together
-  with the `dms_test.ReferentialIdentityAudit` capture table that observed the triggers firing,
-  `{Postgresql,Mssql}Relational{Query,Post}AuthorizationTests`,
-  `{Postgresql,Mssql}RelationalDeleteByIdTests`, and
-  `PostgresqlRelationalWrite{PostAsUpdate,GuardedNoOp}Tests` — are stripped, leaving each suite's
-  stamping and authorization assertions intact. What still names the table is the DDL surface
-  itself: `CoreDdlEmitter`, its `CoreDdlEmitterTests` pins, and the schema-inventory lists in
-  `MssqlDatabaseFingerprintReaderTests`, `ProvisionTestHelper` and
-  `{Postgresql,Mssql}ReferenceResolverTestDatabaseTests` — all of which move when the table is
-  dropped.
+  ([`DescriptorWriteHandler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs)),
+  and the delete is a **single statement** on the root (or descriptor) row whose returned `DocumentId`
+  is the affected-rows signal
+  ([`OrderedDeleteCommandBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/OrderedDeleteCommandBuilder.cs)).
+  It stopped being read even earlier. With nothing writing and nothing reading it, the `CREATE TABLE`,
+  `FK_Document_ResourceKey` and `IX_Document_ResourceKeyId_DocumentId` left the emitter.
+- **`dms.ReferentialIdentity`.** The generated `TR_<Root>_ReferentialIdentity` triggers that maintained
+  it stopped being derived and emitted at commit `c90f35be1`; the UUIDv5 hash resolver that read it was
+  deleted with them. Its table, both foreign keys and `IX_ReferentialIdentity_DocumentId` are now gone
+  too, and with them **`dms.uuidv5()`** on both dialects, the **pgcrypto** extension that existed only
+  for that function's `digest()`, and the **`dms.UniqueIdentifierTable`** TVP that bound referential-id
+  lists. (`BigIntTable` stays — it serves the surviving authorization TVPs.)
+- **`dms.DocumentCache`** was never wired to a runtime reader or writer; its table, unique constraint,
+  JSON check and index go with the other two.
 
-That means a stale or missing `dms.Document` row can no longer explain a wrong *served* value or a
-failed lookup — if that table looks wrong, look for what wrote it, not for what read it. It can still
-explain a failing **test**, since the suites listed above assert on stamping-trigger output directly.
-`dms.ReferentialIdentity` can explain nothing at all: nothing writes it and nothing reads it.
+The test estate followed in the same commit: reads of the vanished rows are re-anchored on the owning
+root or `dms.Descriptor` row, and every seed helper that used to mint ids from `dms.Document`'s
+`IDENTITY` now draws from `dms.DocumentIdSequence`, so seeded and production-created rows share one
+id space.
+
+Debugging consequence: a stale or missing document row can no longer explain a wrong *served* value or
+a failed lookup, because the row that would be stale **is** the row being served.
 
 These columns, the read-path re-point, and the natural-key write path above are the first three phases
 of the planned removal of `dms.Document` and `dms.ReferentialIdentity` as the read/write path's central

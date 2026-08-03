@@ -214,6 +214,11 @@ internal static class CollectionDescriptorProjectionFixture
 
             CREATE TABLE "{TestSchema}"."School" (
                 "DocumentId" bigint PRIMARY KEY,
+                "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "IdentityVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "SchoolId" int NOT NULL
             );
 

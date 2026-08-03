@@ -96,6 +96,10 @@ FROM "edfi"."StateEducationAgency"
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId") THEN
         INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."EducationOrganizationId", 'Ed-Fi:LocalEducationAgency')
@@ -108,7 +112,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_AbstractIdentity" ON "edfi"."LocalEducationAgency";
 CREATE TRIGGER "TR_LocalEducationAgency_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."LocalEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"();
 
@@ -266,6 +270,10 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgency_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId") THEN
         INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "Discriminator")
         VALUES (NEW."DocumentId", NEW."DocumentUuid", NEW."EducationOrganizationId", 'Ed-Fi:StateEducationAgency')
@@ -278,7 +286,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StateEducationAgency_AbstractIdentity" ON "edfi"."StateEducationAgency";
 CREATE TRIGGER "TR_StateEducationAgency_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StateEducationAgency"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StateEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgency_AbstractIdentity"();
 

@@ -29,7 +29,7 @@ public sealed record ProjectSchemaInfo(
 public enum DiscriminatorStrategy
 {
     /// <summary>
-    /// Use <c>dms.Document.ResourceKeyId</c> as the primary resource-type discriminator.
+    /// Use <c>dms.Descriptor.ResourceKeyId</c> as the primary resource-type discriminator.
     /// </summary>
     ResourceKeyId,
 

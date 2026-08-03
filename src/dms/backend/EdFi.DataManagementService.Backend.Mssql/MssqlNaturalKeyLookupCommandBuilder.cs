@@ -33,8 +33,7 @@ namespace EdFi.DataManagementService.Backend.Mssql;
 /// <c>references × probe width</c> parameters dominated everything else. The hash resolver escaped to a
 /// table-valued parameter above 2000 ids for exactly that reason. <c>OPENJSON</c> buys the same
 /// set-valued input with no server-side type dependency; it needs database compatibility level 130 or
-/// higher, which the DMS core schema already requires — <c>CK_DocumentCache_IsJsonObject</c> is an
-/// <c>ISJSON</c> check constraint.
+/// higher, which is SQL Server 2016 and below the floor DMS already targets.
 ///
 /// The JSON is written with <see cref="Utf8JsonWriter" />, never by string concatenation: identity values
 /// are data, so a value carrying a quote or a bracket is escaped by construction and can never alter the
