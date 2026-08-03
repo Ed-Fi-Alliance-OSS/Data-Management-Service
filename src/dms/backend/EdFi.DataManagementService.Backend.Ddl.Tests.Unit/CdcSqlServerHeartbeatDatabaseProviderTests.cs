@@ -880,6 +880,71 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     }
 
     [Test]
+    public async Task MssqlCdcCaptureInstances_should_fail_closed_when_created_capture_instance_post_create_inspection_mismatches()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            connectorAccess: new RecordingSqlServerConnectorAccess { GatingRoleExists = true },
+            postCreateMismatchedCaptureInstanceKind: CdcSourceTableKind.DocumentCache
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        executor
+            .ExecutedSql.Where(sql => sql.Contains("cdc:sqlserver:enable-capture-instance"))
+            .Should()
+            .HaveCount(3);
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_document_cache"
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["supports_net_changes"] == "True"
+                && observation.SafeObservedValues["expected_supports_net_changes"] == "False"
+            );
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_document"
+                && observation.State == CdcProviderArtifactState.Created
+            );
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && diagnostic.SafeName.Value == "dms_binding_document_cache"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ValidationMismatch
+            );
+        result
+            .ProviderHistoryObservations.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_document_cache"
+                && observation.Classification == CdcProviderRetryContinuityClassification.FailClosed
+            );
+
+        using var manifestDocument = JsonDocument.Parse(result.ManifestPayload!.Json);
+        manifestDocument
+            .RootElement.GetProperty("provider_artifacts")
+            .EnumerateArray()
+            .Should()
+            .ContainSingle(artifact =>
+                artifact.GetProperty("artifact_kind").GetString() == "sqlserver_capture_instance"
+                && artifact.GetProperty("artifact_name").GetString() == "dms_binding_document_cache"
+                && artifact.GetProperty("state").GetString() == "mismatched"
+                && artifact.GetProperty("observed_values").GetProperty("supports_net_changes").GetString()
+                    == "True"
+            );
+    }
+
+    [Test]
     public async Task MssqlCdcCaptureInstances_should_fail_closed_when_capture_instance_metadata_mismatches()
     {
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
@@ -1991,6 +2056,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     private readonly string _sourceIdentity;
     private readonly CdcSourceTableKind? _omittedSourceInventoryTableKind;
     private readonly string _omittedSourceInventoryColumnName;
+    private readonly CdcSourceTableKind? _postCreateMismatchedCaptureInstanceKind;
     private int _databaseCdcStateQueryCount;
 
     public RecordingSqlServerCdcExecutor(
@@ -2016,7 +2082,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         RecordingSqlServerConnectorAccess? connectorAccess = null,
         string sourceIdentity = CdcProviderSetupContractTestData.SourceIdentity,
         CdcSourceTableKind? omittedSourceInventoryTableKind = null,
-        string omittedSourceInventoryColumnName = ""
+        string omittedSourceInventoryColumnName = "",
+        CdcSourceTableKind? postCreateMismatchedCaptureInstanceKind = null
     )
     {
         _databaseCdcEnabled = databaseCdcEnabled;
@@ -2045,6 +2112,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         _sourceIdentity = sourceIdentity;
         _omittedSourceInventoryTableKind = omittedSourceInventoryTableKind;
         _omittedSourceInventoryColumnName = omittedSourceInventoryColumnName;
+        _postCreateMismatchedCaptureInstanceKind = postCreateMismatchedCaptureInstanceKind;
     }
 
     public List<string> ExecutedSql { get; } = [];
@@ -2068,7 +2136,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null,
         RecordingSqlServerConnectorAccess? connectorAccess = null,
         string heartbeatSingletonCheckDefinition = ExpectedHeartbeatSingletonCheckDefinition,
-        string heartbeatSequenceCheckDefinition = ExpectedHeartbeatSequenceCheckDefinition
+        string heartbeatSequenceCheckDefinition = ExpectedHeartbeatSequenceCheckDefinition,
+        CdcSourceTableKind? postCreateMismatchedCaptureInstanceKind = null
     ) =>
         new(
             databaseCdcEnabled: true,
@@ -2090,7 +2159,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             failFinalProviderMetadataRefresh: failFinalProviderMetadataRefresh,
             dropJobsDuringFinalProviderMetadataRefresh: dropJobsDuringFinalProviderMetadataRefresh,
             captureInstances: captureInstances,
-            connectorAccess: connectorAccess ?? RecordingSqlServerConnectorAccess.Exact()
+            connectorAccess: connectorAccess ?? RecordingSqlServerConnectorAccess.Exact(),
+            postCreateMismatchedCaptureInstanceKind: postCreateMismatchedCaptureInstanceKind
         );
 
     public Task ExecuteNonQueryAsync(string sql, CancellationToken cancellationToken)
@@ -2118,6 +2188,14 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         if (sql.Contains("cdc:sqlserver:enable-capture-instance"))
         {
             var captureInstance = RecordingSqlServerCaptureInstance.FromEnableSql(sql);
+            if (
+                _postCreateMismatchedCaptureInstanceKind is { } tableKind
+                && IsCaptureKind(captureInstance, tableKind)
+            )
+            {
+                captureInstance = captureInstance with { SupportsNetChanges = true };
+            }
+
             _captureInstances[captureInstance.CaptureInstanceName.Value] = captureInstance;
             _captureInstanceCount = Math.Max(_captureInstanceCount, _captureInstances.Count);
             _captureJobPresent = true;
@@ -2528,6 +2606,22 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             || sourceSchema.StartsWith("tracked_changes_", StringComparison.Ordinal)
             || sourceSchema is "edfi" or "sample";
     }
+
+    private static bool IsCaptureKind(
+        RecordingSqlServerCaptureInstance capture,
+        CdcSourceTableKind tableKind
+    ) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.Document => capture.TableKindToken == "document",
+            CdcSourceTableKind.DocumentCache => capture.TableKindToken == "document_cache",
+            CdcSourceTableKind.CdcHeartbeat => capture.TableKindToken == "cdc_heartbeat",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC source table kind."
+            ),
+        };
 
     private static IReadOnlyDictionary<string, string?> Row(params (string Key, string? Value)[] values) =>
         values.ToDictionary(value => value.Key, value => value.Value);

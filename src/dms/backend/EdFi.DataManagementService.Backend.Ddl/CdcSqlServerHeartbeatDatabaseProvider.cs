@@ -2913,14 +2913,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             return CdcProviderArtifactState.Missing;
         }
 
-        if (createdKinds.Contains(capture.TableKind))
-        {
-            return CdcProviderArtifactState.Created;
-        }
-
         if (!capture.IsExactMatch)
         {
             return CdcProviderArtifactState.Mismatched;
+        }
+
+        if (createdKinds.Contains(capture.TableKind))
+        {
+            return CdcProviderArtifactState.Created;
         }
 
         return CdcProviderArtifactState.Matched;
