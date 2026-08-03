@@ -1,9 +1,22 @@
 # Backend Redesign: Unified Mapping Models (In-Memory)
 
-> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the statements that
-> descriptors are stored in "`dms.Descriptor` (+ `dms.Document`)" and that tracked-change columns are
-> copied from `dms.Document.DocumentUuid` / `ContentVersion`. Those values come from the `dms.Descriptor`
-> row or the resource root row. The in-memory mapping-model object graph is otherwise current. See
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** **every** mention of those
+> two tables in this document, which is more than a footnote's worth. Specifically: descriptors stored in
+> "`dms.Descriptor` (+ `dms.Document`)"; tracked-change columns "copied from `dms.Document.DocumentUuid`
+> / `ContentVersion`"; the `TriggerKindParameters.ReferentialIdentityMaintenance` record — that trigger
+> kind no longer exists in the contract type, which declares only `DocumentStamping` and
+> `AbstractIdentityMaintenance`; `ResourceKeyIdByResource` "when writing to shared tables like
+> `dms.Document` / `dms.ReferentialIdentity`"; the "single batched lookup against
+> `dms.ReferentialIdentity` to resolve `ReferentialId → DocumentId`"; and the read-path steps that
+> resolve `DocumentUuid → DocumentId` via `dms.Document` or `SELECT` `dms.Document` joined to the page
+> keyset. All of that metadata is on the resource root row (or the `dms.Descriptor` row), and references
+> resolve by natural-key index seek.
+>
+> **Member names here have also drifted from the code they describe:** `ResolvedReferenceSet` exposes
+> `LookupsByReferentialId`, not the `DocumentIdByReferentialId` named twice below. Check any member
+> against `Backend.External` before relying on it. What is unchanged is this document's *purpose* and
+> the shape of the graph it defines — one shared in-memory representation of tables, columns,
+> constraints, indexes and triggers, so DDL generation, plan compilation and runtime cannot drift. See
 > [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 Status: Draft.

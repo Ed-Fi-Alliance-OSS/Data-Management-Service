@@ -1,9 +1,23 @@
 # Authorization Design (Subject/EdOrg Model)
 
-> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the statements that
-> `dms.Document` "remains the store for resource payloads" and the identity-resolution paths that run
-> through `dms.ReferentialIdentity`. Payloads live in the per-resource tables; identity resolution is a
-> natural-key index seek. The subject/EdOrg authorization model itself is current. See
+> **Superseded in full — retained as historical context.** Two independent supersessions apply, and the
+> earlier one reaches the whole document.
+>
+> 1. **The subject/EdOrg model itself was rejected by the authorization redesign that followed it.**
+>    `dms.DocumentSubject`, `dms.SubjectEdOrg` and `dms.DocumentIndex` are not the authorization design —
+>    see ["Why not use `dms.DocumentSubject`"](../backend-redesign/design-docs/auth.md), which records the
+>    reasons (unbounded growth over deep EdOrg hierarchies, phantom risk on hierarchy updates, an
+>    unverified assumption about primary-association write rates) and adopts the ODS approach instead.
+>    The core DDL emitter pins the outcome: `DocumentSubject` is asserted absent from the generated DDL
+>    on both dialects (`CoreDdlEmitterTests.It_should_not_contain_auth_schema_objects`). This
+>    supersession predates and is independent of the `dms.Document` removal.
+> 2. **Separately, `dms.Document` and `dms.ReferentialIdentity` no longer exist at all**, so the
+>    statements that `dms.Document` "remains the store for resource payloads" and the identity-resolution
+>    paths running through `dms.ReferentialIdentity` are dead on their own terms. Payloads live in the
+>    per-resource tables; identity resolution is a natural-key index seek.
+>
+> For the authorization design in force, see
+> [`design-docs/auth.md`](../backend-redesign/design-docs/auth.md); for the storage end state, see
 > [`docs/RELATIONAL-BACKEND.md` §4](../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 ## 1. Purpose and Goals

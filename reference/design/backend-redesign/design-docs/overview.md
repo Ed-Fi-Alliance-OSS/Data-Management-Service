@@ -4,8 +4,13 @@
 > `ReferentialId`" rationale and every statement that identities resolve through a persisted
 > `ReferentialId → DocumentId` index maintained transactionally by per-resource triggers. Identity
 > resolution is now an index seek on stored natural-key columns, and `ReferentialId` survives only as an
-> in-memory, request-scoped equality key. The tables-per-resource direction this document introduces is
-> current. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+> in-memory, request-scoped equality key. Also superseded: the two statements that resource-state stamps
+> live on `dms.Document` — "this redesign stores resource-state stamps on `dms.Document`" and "update
+> tracking metadata is maintained by normal stamping on `dms.Document`". Those stamps are columns on the
+> resource root row (or the `dms.Descriptor` row), written by that table's own trigger; the `_etag`
+> composition rule stated alongside them (`ContentVersion` plus the request `variantKey`, never a hash of
+> canonical JSON) is itself current — only the row moved. The tables-per-resource direction this document
+> introduces is current. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 ## Status
 

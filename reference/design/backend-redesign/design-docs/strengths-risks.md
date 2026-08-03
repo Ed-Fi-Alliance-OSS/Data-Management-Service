@@ -2,8 +2,14 @@
 
 > **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the "`ReferentialId`
 > retention" strength, the risks that follow from a persisted `ReferentialId → DocumentId` index
-> (including "ReferentialIdentity Incorrect Mapping"), and serving stamps from `dms.Document`. That index
-> no longer exists, so those risk classes are retired rather than mitigated. See
+> (including "ReferentialIdentity Incorrect Mapping" and the audit/repair tool proposed for it), and
+> serving stamps from `dms.Document`. That index no longer exists, so those risk classes are retired
+> rather than mitigated. The `dms.Document (~100M rows)` scale section goes with it — there is no shared
+> hot table to keep narrow indexes on, and the write-amplification concern that "every representation
+> change writes `dms.Document`" is void because the stamp is written to the row being changed. The
+> `*_Stamp` triggers accordingly do two things per affected document, not three: stamp the row and
+> populate `tracked_changes_*`; there is nothing to mirror. Random-UUID index behaviour survives as a
+> concern for `DocumentUuid` alone. See
 > [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 ## Status

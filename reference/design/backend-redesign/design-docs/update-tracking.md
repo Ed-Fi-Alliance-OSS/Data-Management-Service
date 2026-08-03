@@ -4,8 +4,12 @@
 > against `dms.Document` columns, including `_etag` being derived from `dms.Document.ContentVersion`.
 > The `ContentVersion` / `ContentLastModifiedAt` and `IdentityVersion` / `IdentityLastModifiedAt` pairs
 > are written onto the resource root row — or the `dms.Descriptor` row — by that table's own stamping
-> trigger, and `_etag` is composed from that row's `ContentVersion`. The stamping semantics themselves
-> are unchanged. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+> trigger, and `_etag` is composed from that row's `ContentVersion`. The "Interaction with
+> `dms.DocumentCache` (when enabled)" subsection goes with them: that table was never wired to a runtime
+> reader or writer and is not emitted, so nothing is keyed by `(DocumentId, ContentVersion)` and there is
+> no cache freshness to judge. The stamping semantics themselves — when each pair moves, what counts as
+> a representation-state change, and composing `_etag` from `ContentVersion` plus the request's
+> `variantKey` rather than by hashing — are unchanged. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 ## Status
 

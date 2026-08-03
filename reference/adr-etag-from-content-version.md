@@ -3,8 +3,11 @@
 > **Superseded storage location:** this ADR decides to store the content-derived version on
 > `dms.Document` and serve `_etag` from `dms.Document.ContentVersion`. That table no longer exists —
 > `ContentVersion` is stamped onto the resource root row, or the `dms.Descriptor` row, and `_etag` is
-> composed from that row. The decision this ADR made (derive `_etag` from `ContentVersion` rather than a
-> content hash) is unchanged; only the row it is read from moved. See
+> composed from that row. The concurrency analysis's "`dms.Document` row (the `FOR UPDATE` Bottleneck)"
+> is likewise the root row — or the `dms.Descriptor` row — now, and the note that a caller "issues **no**
+> `dms.Document` query of its own" is true of every caller, because there is no such table to query.
+> The decision this ADR made (derive `_etag` from `ContentVersion` rather than a content hash) is
+> unchanged; only the row it is read from moved. See
 > [`docs/RELATIONAL-BACKEND.md` §4](../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 **Status:** Accepted — implemented in the relational backend; the three design docs

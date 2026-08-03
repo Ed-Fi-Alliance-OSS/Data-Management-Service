@@ -9,8 +9,12 @@ epic: DMS-1089
 > **Superseded Kafka/Debezium content:** the DMS Debezium/Kafka source-connector pipeline this design
 > targets has been abandoned. `eng/docker-compose/kafka.yml`, `kafka-ui.yml`, the connector configs and
 > the `-EnableKafka` / `-EnableKafkaUI` switches referenced here no longer exist, and no replacement
-> streaming design has been adopted. Retained as the record of the `expandjsonsmt` analysis. What DMS
-> records about changes today is the tracked-change tables in
+> streaming design has been adopted. The tables it would have streamed are gone too: the connector's
+> assumed source field `dms."DocumentCache"."DocumentJson"` is not emitted (that table was never wired
+> to a runtime reader or writer), and the legacy `dms.Document` this document's field list corresponds
+> to no longer exists either. Retained as the record of the `expandjsonsmt` analysis — its comparison of
+> SMT alternatives stands on its own. What DMS records about changes today is the tracked-change tables
+> in
 > [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 > Status: Proposed (DMS-911 spike). This document is the design deliverable for

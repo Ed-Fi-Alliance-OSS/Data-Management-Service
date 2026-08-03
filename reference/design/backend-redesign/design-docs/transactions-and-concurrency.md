@@ -4,8 +4,22 @@
 > POST-existence-detection and delete-cascade paths described here as running through
 > `dms.ReferentialIdentity` and `dms.Document`, and the optional `dms.DocumentCache` projection section.
 > Existence detection and reference resolution are index seeks on stored identity values; a delete is a
-> single statement against the resource root (or `dms.Descriptor`) row. The transaction and locking
-> reasoning is otherwise current. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+> single statement against the resource root (or `dms.Descriptor`) row.
+>
+> **That reaches the write sequence and the contention analysis, which are otherwise the heart of this
+> document.** The write sequence's "Insert/update `dms.Document` (allocate `DocumentId`; persist
+> `DocumentUuid` and `ResourceKeyId`)" step is gone: `DocumentId` comes from a `dms.DocumentIdSequence`
+> column default on the root row itself, which the root `INSERT` returns. The `*_Stamp` triggers do not
+> "stamp `dms.Document.ContentVersion` / `ContentLastModifiedAt` … and mirror" — they stamp the row they
+> are attached to, which is the only copy. `_lastModifiedDate` and `ChangeVersion` are served from that
+> same row. The delete sequence's "Delete the corresponding `dms.Document` row" and the cascade paths
+> into it do not exist. And the "Random UUID index behavior (`dms.ReferentialIdentity.ReferentialId`)"
+> section — including its hash-partitioning advice — analyses an index that is not created; the
+> `DocumentUuid` half of that concern does survive, on `UX_<Root>_DocumentUuid` / `UX_Descriptor_DocumentUuid`.
+>
+> The transaction *reasoning* — isolation levels, lock scope and ordering, retry/transient
+> classification, and the read-consistency arguments — is current, and the write path still takes one
+> row lock per document; it takes it on the root row. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 ## Status
 

@@ -3,8 +3,11 @@
 > **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the description of links as
 > foreign keys into `dms.Document` and of one auxiliary `dms.Document` lookup per page. The auxiliary
 > lookup joins each target's own root table — or its `<Abstract>Identity` table for a polymorphic target
-> — for that target's `DocumentUuid` and discriminator. The injected link shape and the injection points
-> are unchanged. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+> — for that target's `DocumentUuid` and discriminator. The later `dms.DocumentCache` sections go too:
+> that table — which "stores the fully reconstituted caller-agnostic intermediate document", with
+> freshness judged as "cached `ContentVersion` == `dms.Document.ContentVersion`" — was never wired to a
+> runtime reader or writer and is not emitted, so there is no cache to keep fresh and no second copy to
+> compare against. The injected link shape and the injection points are unchanged. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 ## Status
 

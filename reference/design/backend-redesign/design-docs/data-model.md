@@ -4,8 +4,18 @@
 > `dms.ReferentialIdentity` and `dms.DocumentCache` table definitions below, and every rule that routes
 > document metadata or identity resolution through them. Those tables are no longer emitted — a
 > provisioned database carries four `dms.*` tables (`Descriptor`, `EffectiveSchema`, `ResourceKey`,
-> `SchemaComponent`) — and document metadata lives on the resource root row. The per-resource table,
-> descriptor and abstract-identity modelling is otherwise current. See
+> `SchemaComponent`) — and document metadata lives on the resource root row.
+>
+> **That reaches the per-resource DDL sketches too.** Each one opens with `DocumentId bigint PRIMARY KEY
+> REFERENCES dms.Document(DocumentId) ON DELETE CASCADE`. A root row's `DocumentId` is now a plain
+> `bigint` primary key whose value comes from a `dms.DocumentIdSequence` column default, with **no**
+> foreign key to anything; the root row also carries the document-metadata columns (`DocumentUuid`,
+> the content and identity stamp pairs, `CreatedAt`, `CreatedByOwnershipTokenId`) that those sketches do
+> not show.
+>
+> What the sketches still illustrate correctly is the per-resource table *shape*: natural-key (`UX_<R>_NK`)
+> and reference-key (`UX_<R>_RefKey`) unique constraints, descriptor references as FKs directly to
+> `dms.Descriptor`, child-table scoping, and the abstract-identity tables. See
 > [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 ## Status

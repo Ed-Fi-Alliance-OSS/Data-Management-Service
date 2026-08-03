@@ -1,9 +1,16 @@
 # DMS-916: Bootstrap DMS Design — Developer Environment Initialization
 
-> **Superseded Kafka content:** `-EnableKafkaUI` no longer exists on any start or bootstrap script — the
-> Kafka/Debezium compose surface it gated was removed, so passing it is now a hard parameter-binding
-> error. Read the infrastructure-UI-flag example below with `-EnableSwaggerUI` as the only surviving
-> member of that class; the rest of the design is current.
+> **Superseded Kafka content:** the Kafka/Debezium compose surface was removed from the repository, so
+> **every Kafka element of the local topology described below is gone**, not merely optional. There is
+> no `kafka.yml` / `kafka-ui.yml`, and `start-local-dms.ps1` contains no Kafka reference at all. Read as
+> struck: "Docker manages … Kafka (bootstrap server `localhost:9092`) … and any optional supporting
+> services (Kafka UI, OpenSearch)"; the `kafka :9092 -> localhost:9092` port-map row; "start PostgreSQL
+> + Kafka + Config Service"; the Kafka-bootstrap-server note for host-run DMS; and the split-startup
+> step "Start Docker infrastructure (PostgreSQL, Kafka, Config Service)". Docker manages PostgreSQL (or
+> SQL Server), the identity provider and the Configuration Service. `-EnableKafkaUI` likewise no longer
+> exists on any start or bootstrap script — passing it is a hard parameter-binding error, and
+> `-EnableSwaggerUI` is the only surviving member of that flag class. Everything else — schema and
+> claims staging, the bootstrap manifest and workspace, phase ordering, and provisioning — is current.
 
 ## Table of Contents
 

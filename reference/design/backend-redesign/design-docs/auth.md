@@ -5,7 +5,20 @@
 > that retrieve referenced `DocumentId`s through `dms.ReferentialIdentity`. `CreatedByOwnershipTokenId`
 > is a permanently-NULL placeholder column on each resource root table and on `dms.Descriptor`;
 > authorization reads are single-table on the root row; references resolve by natural-key index seek.
-> The authorization model itself is current. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+>
+> **The ownership-token argument is inverted, not merely relocated.** This document reasons that
+> "there is a shared table where all resource entries are tracked (`dms.Document`), meaning that we
+> don't need to add the `CreatedByOwnershipTokenId` to each resource root table", and that we
+> "must join with `dms.Document` to authorize". There is no shared table: the column is on every root
+> table and on `dms.Descriptor`, and no join is needed. The recommendation that "there should be an
+> index on `dms.Document.CreatedByOwnershipTokenId`" is also superseded — the column is deliberately
+> left unindexed while it stays NULL. **Every worked SQL sample and POC snippet below that joins
+> `dms.Document`, inserts into it, or resolves references through `dms.ReferentialIdentity` will not run
+> against a provisioned database**; read them for the authorization shape, not as SQL.
+>
+> What is current is the authorization *model*: the EducationOrganization-hierarchy, Student/Staff/
+> Contact relationship and namespace strategies, the pathway decomposition, and the batching approach
+> that keeps auth checks on the same round trips as the rest of the write. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 ## Why not use `dms.DocumentSubject`
 

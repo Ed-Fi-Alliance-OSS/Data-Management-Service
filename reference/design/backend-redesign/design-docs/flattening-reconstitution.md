@@ -3,8 +3,25 @@
 > **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the passages naming
 > `dms.ReferentialIdentity` as the primary identity resolver "maintained transactionally", and reference
 > resolution as a `ReferentialId → DocumentId` lookup. References resolve by seeking the target's
-> `UX_<T>_RefKey` natural-key index — `UX_Descriptor_UriLowered_Discriminator` for descriptors. The
-> flattening and reconstitution mapping rules are otherwise current. See
+> `UX_<T>_RefKey` natural-key index — `UX_Descriptor_UriLowered_Discriminator` for descriptors.
+>
+> **The response-metadata and write-order rules go with them.** The reconstitution rule list sources
+> `id` from `dms.Document.DocumentUuid`, `_lastModifiedDate` from `dms.Document.ContentLastModifiedAt`
+> and `_etag` from `dms.Document.ContentVersion`; the write order opens with "Write `dms.Document` and
+> `dms.ReferentialIdentity`"; the authorization passages insert `dms.Document` on POST-create, stamp
+> `dms.Document.CreatedByOwnershipTokenId`, and join the root table to `dms.Document` to filter on it;
+> the read SQL sketches `JOIN dms.Document d ON d.DocumentId = r.DocumentId` and describe a result set
+> as "`dms.Document` joined to the `page` keyset"; and the `MirroredContentVersion` /
+> `MirroredContentLastModifiedAt` doc-comments describe those columns as mirroring `dms.Document`. All
+> of those values are columns on the resource root row (or the `dms.Descriptor` row) written by that
+> table's own `*_Stamp` trigger, so a write inserts one root row and a read needs no join.
+> `CreatedByOwnershipTokenId` is a permanently-NULL placeholder that nothing writes.
+>
+> **The `_etag` composition rule stated here is itself current** — `"{ContentVersion}-{variantKey}"`,
+> never a hash of the reconstituted document — and so are the flattening and reconstitution *mapping*
+> rules this document exists for: JSON-to-column and column-to-JSON derivation, deterministic
+> compiled-path ordering, descriptor projection, and polymorphic/abstract handling. Only the row those
+> stamps are read from moved. See
 > [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 ## Status

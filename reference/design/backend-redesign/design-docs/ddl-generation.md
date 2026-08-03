@@ -5,7 +5,21 @@
 > `dms.uuidv5()` helper, the pgcrypto extension or the `dms.UniqueIdentifierTable` table type. Emitted
 > core objects are `dms.Descriptor`, `dms.EffectiveSchema`, `dms.ResourceKey`, `dms.SchemaComponent`,
 > three sequences, `GetMaxChangeVersion` (plus `throw_error` on PostgreSQL) and the SQL Server
-> `BigIntTable` type. The emission mechanics are otherwise current. See
+> `BigIntTable` type.
+>
+> The **trigger and constraint responsibilities** stated against those tables go with them: `*_Stamp`
+> triggers do not "stamp `dms.Document`, mirror onto `MirrorStampTargetTable`" — they stamp the row they
+> are attached to, which *is* the document; there is no `dms.ReferentialIdentity` to "maintain
+> transactionally on identity projection changes", so the derived trigger inventory has two kinds
+> (`DocumentStamping`, `AbstractIdentityMaintenance`) rather than three; `dms.Document.ResourceKeyId` is
+> not read at read time and `dms.Document(ResourceKeyId) → dms.ResourceKey` is not emitted — the only
+> core-table FK is `FK_SchemaComponent_EffectiveSchemaHash`; `dms.Document.CreatedByOwnershipTokenId` is
+> a column on every resource root table and on `dms.Descriptor` instead; and `abstractResources[*]` feed
+> the `<Abstract>Identity` tables, not alias rows in a referential-identity index.
+>
+> The **emission mechanics** — determinism and canonicalization, statement ordering and phases,
+> existence-check patterns, identifier naming and shortening, and the manifest artifacts — are
+> unaffected. See
 > [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 ## Status

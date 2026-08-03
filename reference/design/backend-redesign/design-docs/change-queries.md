@@ -5,8 +5,20 @@
 > source of truth" for the mirror, and the delete ordering that deletes from `dms.Document` and relies on
 > its cascades. That table is not emitted; change versions, `_lastModifiedDate` and document ids are
 > stored on the resource root row (or the `dms.Descriptor` row) itself, and a delete is a single
-> statement against that row. The endpoint contract, `ChangeVersion` semantics and tracked-change table
-> design are otherwise current. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
+> statement against that row.
+>
+> **The mirror's invariants and the delete-ordering rules go with it.** "Mirror equals source
+> (`<root>.ContentVersion = dms.Document.ContentVersion`)" has no source to equal — the root column *is*
+> the value, so there is nothing to reconcile, and no `dms.Document` defaults for a root `INSERT` to
+> copy. The `ON DELETE CASCADE` FK "from the resource row to `dms.Document` … retained as a
+> referential-integrity safety net" is not emitted; neither is the `_Stamp` DELETE branch's join to
+> `dms.Document` "to read `DocumentUuid` and `ContentVersion`" (the trigger reads the `OLD`/`deleted`
+> row image and draws a fresh sequence value), so the ordering requirement it imposed is void. The
+> tracked-change columns still store what this document says they store — `Id` the document uuid,
+> `ChangeVersion` the bumped content version — they just take them from the root row.
+>
+> The endpoint contract, the `ChangeVersion` semantics and the tracked-change table shape are otherwise
+> current. See [`docs/RELATIONAL-BACKEND.md` §4](../../../../docs/RELATIONAL-BACKEND.md#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps).
 
 ## Purpose
 

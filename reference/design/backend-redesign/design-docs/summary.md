@@ -1,7 +1,12 @@
 # Backend Redesign Summary: Relational Primary Store (Tables per Resource)
 
-> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** the core-table list and the
-> "keep `ReferentialId` (UUIDv5 …) as the uniform natural-identity key" decision. `dms.Document`,
+> **Superseded by the `dms.Document` / `dms.ReferentialIdentity` removal:** every mention of those
+> tables below — the core-table list, the "keep `ReferentialId` (UUIDv5 …) as the uniform
+> natural-identity key" decision, the write sequence's "Insert/update `dms.Document`" step, the
+> per-resource trigger that "recompute[s] `dms.ReferentialIdentity`", bulk resolution via
+> `ReferentialId → DocumentId`, the per-resource "PK `DocumentId` (FK to `dms.Document(DocumentId)` ON
+> DELETE CASCADE)", and the `dms.Document` / `dms.ReferentialIdentity` scale and indexing risk bullets.
+> `dms.Document`,
 > `dms.ReferentialIdentity` and `dms.DocumentCache` are not emitted; update-tracking stamps live on the
 > resource root row (or the `dms.Descriptor` row) — including the `ChangeVersion` stamping contract the
 > note below assigns to `dms.Document`. Every source document listed below that the removal touches
