@@ -1698,12 +1698,14 @@ Describe "reserved-CMS-database collision authorities (one per physical creation
     }
 }
 
-Describe "CMS-target agreement authority (ordinal-exact, pre-start)" {
-    # One conservative textual agreement rule for every CMS database-target comparison. It is NOT
-    # SQL Server physical-identity modeling: these checks run before any server exists to ask, and
-    # whether two DIFFERENT spellings denote one physical database is the running instance's
-    # collation's call (measured: a case variant folds on the default collation and is DISTINCT on
-    # a case-sensitive instance). Exact text - any Unicode text - is the safe sufficient condition.
+Describe "PostgreSQL CMS-target agreement predicate (ordinal-exact, PostgreSQL-ONLY)" {
+    # One textual agreement rule for the PostgreSQL CMS database-target comparisons, where the
+    # compared values are literal provider values and nothing folds - so exact text IS the correct
+    # final rule there. It renders NO SQL Server verdict of any kind: whether two DIFFERENT MSSQL
+    # spellings denote one physical database is the running instance's collation's call (measured
+    # BOTH ways: a case variant folds on the default collation and is DISTINCT on a case-sensitive
+    # instance), so every collation-dependent MSSQL name relationship belongs to the live topology
+    # authority, and the superseded offline MSSQL helpers stay deleted.
     BeforeAll {
         $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
         Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
@@ -1716,33 +1718,32 @@ Describe "CMS-target agreement authority (ordinal-exact, pre-start)" {
         @{ Label = 'a non-ASCII case variant (U+00C9 vs U+00E9) - refused'; Actual = "$([char]0xC9)dfi_datastore"; Expected = "$([char]0xE9)dfi_datastore"; Agrees = $false }
         @{ Label = 'a blank actual - never an agreement'; Actual = ''; Expected = 'edfi_datamanagementservice'; Agrees = $false }
     ) {
-        Test-CmsTargetNameAgreement -ActualName $Actual -ExpectedName $Expected | Should -Be $Agrees
+        Test-PostgresCmsTargetNameAgreement -ActualName $Actual -ExpectedName $Expected | Should -Be $Agrees
     }
 
-    It "Assert-MssqlCmsDatabaseIsShared refuses the case split and names the exact-spelling requirement" {
-        $thrown = {
-            Assert-MssqlCmsDatabaseIsShared `
-                -ResolvedConnectionString 'Server=dms-mssql,1433;Database=EDFI_DATAMANAGEMENTSERVICE;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;' `
-                -ExpectedDatabaseName 'edfi_datamanagementservice'
-        } | Should -Throw "*shared-database configuration mismatch*" -PassThru
-        $thrown.Exception.Message | Should -BeLike "*exact configured spelling*" -Because "the diagnostic must say WHY a case variant cannot be accepted before the server exists"
-        $thrown.Exception.Message | Should -Not -BeLike "*Password*abcdefgh1*" -Because "the message never echoes credentials or the full connection string"
+    It "keeps every superseded offline MSSQL name verdict deleted, generic predicate included" {
+        # The resurrection tripwire for this design's central decision: no fixed offline comparer
+        # can decide MSSQL physical identity, so neither the engine-generic predicate nor the
+        # offline shared-database invariant nor the mode-reading gate helper may come back.
+        $modulePath = Join-Path $script:dockerComposeRoot "env-utility.psm1"
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($modulePath, [ref]$null, [ref]$null)
+        foreach ($deletedName in @('Test-CmsTargetNameAgreement', 'Assert-MssqlCmsDatabaseIsShared', 'Test-CmsSeparateTopologyDeclared')) {
+            @($ast.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $deletedName
+            }, $true)).Count | Should -Be 0 -Because "$deletedName was superseded by the PostgreSQL-only predicate and the live MSSQL topology authority"
+            Get-Command $deletedName -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+        }
     }
 
-    It "Assert-MssqlCmsDatabaseIsShared accepts identical non-ASCII text" {
-        $unicodeName = "$([char]0xE9)dfi_datastore"
-        {
-            Assert-MssqlCmsDatabaseIsShared `
-                -ResolvedConnectionString "Server=dms-mssql,1433;Database=$unicodeName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;" `
-                -ExpectedDatabaseName $unicodeName
-        } | Should -Not -Throw
-    }
-
-    It "routes every CMS-target agreement site through the one predicate - and no case-insensitive comparison remains at those sites" {
-        # The adopter sweep: exactly four production calls, one per required agreement site. A
-        # fifth call is a new adopter to review; a missing one is a site that grew its own rule
-        # back. The OrdinalIgnoreCase census then proves none of the owning functions kept a
-        # direct case-insensitive comparison - except Confirm's accepted-HOST check, which is
+    It "routes both PostgreSQL agreement sites through the one predicate, each behind an explicit engine guard - and no case-insensitive comparison remains at those sites" {
+        # The adopter sweep: exactly two production calls, both in Confirm (the connection-string
+        # segments and the ambient seam). A third call is a new adopter to review; a missing one
+        # is a site that grew its own rule back. Every call must sit under an explicit
+        # postgresql engine test, so the predicate is UNREACHABLE for MSSQL - the guardrail that
+        # keeps a PostgreSQL-only rule from quietly becoming an offline MSSQL verdict again. The
+        # OrdinalIgnoreCase census then proves none of the owning functions kept a direct
+        # case-insensitive comparison - except Confirm's accepted-HOST check, which is
         # deliberately case-insensitive and pinned to the host property here.
         $modulePath = Join-Path $script:dockerComposeRoot "env-utility.psm1"
         $ast = [System.Management.Automation.Language.Parser]::ParseFile($modulePath, [ref]$null, [ref]$null)
@@ -1750,7 +1751,7 @@ Describe "CMS-target agreement authority (ordinal-exact, pre-start)" {
         $adopterCalls = @($ast.FindAll({
             param($node)
             $node -is [System.Management.Automation.Language.CommandAst] -and
-            $node.GetCommandName() -eq 'Test-CmsTargetNameAgreement'
+            $node.GetCommandName() -eq 'Test-PostgresCmsTargetNameAgreement'
         }, $true))
         $enclosingNames = @($adopterCalls | ForEach-Object {
             $ancestor = $_.Parent
@@ -1758,13 +1759,25 @@ Describe "CMS-target agreement authority (ordinal-exact, pre-start)" {
             if ($ancestor) { $ancestor.Name } else { '(none)' }
         } | Sort-Object)
         $enclosingNames | Should -Be @(
-            'Assert-MssqlCmsDatabaseIsShared',
             'Confirm-CmsDatabaseTopologyAgreement',
-            'Confirm-CmsDatabaseTopologyAgreement',
-            'Resolve-DatabaseEngineEnvironmentFile'
-        ) -Because "the shared invariant, both Confirm comparisons (segments and ambient), and the continuation gate are the four required adopters"
+            'Confirm-CmsDatabaseTopologyAgreement'
+        ) -Because "both Confirm comparisons (segments and ambient) are the only adopters; MSSQL renders no offline name verdict anywhere"
 
-        foreach ($ownerName in @('Test-CmsTargetNameAgreement', 'Assert-MssqlCmsDatabaseIsShared', 'Resolve-DatabaseEngineEnvironmentFile', 'Confirm-CmsDatabaseTopologyAgreement')) {
+        foreach ($call in $adopterCalls) {
+            $guarded = $false
+            $ancestor = $call.Parent
+            while ($null -ne $ancestor) {
+                if ($ancestor -is [System.Management.Automation.Language.IfStatementAst] -and
+                    (@($ancestor.Clauses | Where-Object { $_.Item1.Extent.Text -like '*$DatabaseEngine -eq "postgresql"*' }).Count -gt 0)) {
+                    $guarded = $true
+                    break
+                }
+                $ancestor = $ancestor.Parent
+            }
+            $guarded | Should -BeTrue -Because "every predicate call must sit under an explicit postgresql engine test: $($call.Extent.Text)"
+        }
+
+        foreach ($ownerName in @('Test-PostgresCmsTargetNameAgreement', 'Assert-MssqlTopologyPhysicalConsistency', 'Confirm-CmsDatabaseTopologyAgreement')) {
             $owner = $ast.FindAll({
                 param($node)
                 $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $ownerName
@@ -1783,7 +1796,7 @@ Describe "CMS-target agreement authority (ordinal-exact, pre-start)" {
                 $hostStatement.Extent.Text | Should -BeLike "*.Host*" -Because "the surviving case-insensitive comparison must be the endpoint-host check, never a database name"
             }
             else {
-                $ignoreCaseUses.Count | Should -Be 0 -Because "$ownerName must not keep a direct case-insensitive comparison beside the exact-agreement predicate"
+                $ignoreCaseUses.Count | Should -Be 0 -Because "$ownerName must not keep a direct case-insensitive comparison: names compare ordinally offline (PostgreSQL) or on the server (MSSQL)"
             }
         }
     }
@@ -2511,42 +2524,95 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME", "some_conflicting_value")
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*some_conflicting_value*"
         }
+
+        It "fails deterministically for an ambient DMS_CONFIG_DATABASE_NAME supplied as <Label> on <Engine>, withholding the value" -ForEach @(
+            @{ Label = 'a single space'; Value = ' '; Engine = 'postgresql' }
+            @{ Label = 'a tab'; Value = "`t"; Engine = 'postgresql' }
+            @{ Label = 'the empty string'; Value = ''; Engine = 'postgresql' }
+            @{ Label = 'a single space'; Value = ' '; Engine = 'mssql' }
+            @{ Label = 'a tab'; Value = "`t"; Engine = 'mssql' }
+            @{ Label = 'the empty string'; Value = ''; Engine = 'mssql' }
+        ) {
+            # The measured bypass this pins: presence is `$null`-awareness, never
+            # IsNullOrWhiteSpace - under Compose precedence ANY non-null ambient value is
+            # supplied, and a supplied blank would render the seam empty at run time. It fails
+            # HERE, before any Docker invocation, naming the key and never echoing the shape.
+            $lines =
+                if ($Engine -eq 'mssql') {
+                    @(
+                        'MSSQL_DB_NAME=edfi_datamanagementservice',
+                        'MSSQL_SA_PASSWORD=abcdefgh1!',
+                        'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                    )
+                }
+                else {
+                    @(
+                        'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                        'POSTGRES_PASSWORD=abcdefgh1!',
+                        'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_datamanagementservice;'
+                    )
+                }
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value ($lines -join "`n") -NoNewline
+
+            [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME", $Value)
+            if ($null -eq [System.Environment]::GetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME")) {
+                Set-ItResult -Skipped -Because "this platform cannot represent a present-but-blank ambient environment variable"
+                return
+            }
+
+            $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine $Engine } |
+                Should -Throw "*empty or whitespace-only value*" -PassThru
+            $thrown.Exception.Message | Should -BeLike "*'DMS_CONFIG_DATABASE_NAME'*"
+            $thrown.Exception.Message | Should -BeLike "*withheld*"
+        }
     }
 
     Context "MSSQL-specific comparison rules" {
-        It "rejects a case-different database name: pre-start agreement is exact, because physical equivalence is the instance's call" {
-            # The P1 this pins: the previous case-insensitive comparison accepted this shape, but on
-            # a CASE-SENSITIVE SQL Server (measured on the pinned image with
-            # MSSQL_COLLATION=SQL_Latin1_General_CP1_CS_AS) 'edfi_datamanagementservice' and
-            # 'EDFI_DATAMANAGEMENTSERVICE' are DISTINCT physical databases - accepting the split
-            # quietly points CMS at a different database than the datastore the shared topology
-            # promises it shares. No server exists to consult at this boundary, so only the exact
-            # spelling is a safe claim of agreement.
-            $path = Join-Path $script:work ".env"
-            Set-Content -LiteralPath $path -Value (@(
+        It "renders no MSSQL name verdict: <Label> passes structural validation (the live authority decides after readiness)" -ForEach @(
+            @{ Label = 'a case-different shared-mode CMS target'; Lines = @(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
                 'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=EDFI_DATAMANAGEMENTSERVICE;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
-            ) -join "`n") -NoNewline
-
-            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
-                Should -Throw "*exact spelling*"
-        }
-
-        It "rejects an uppercase reserved target in separate mode: only the exact reserved literal agrees" {
-            $path = Join-Path $script:work ".env"
-            Set-Content -LiteralPath $path -Value (@(
+            ) }
+            @{ Label = 'an uppercase reserved target in separate mode'; Lines = @(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
                 'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=EDFI_CONFIGURATIONSERVICE;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
-            ) -join "`n") -NoNewline
+            ) }
+            @{ Label = 'a dual-segment string whose second synonym is a case variant'; Lines = @(
+                'MSSQL_DB_NAME=edfi_datamanagementservice',
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;Initial Catalog=EDFI_CONFIGURATIONSERVICE;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            ) }
+            @{ Label = 'a name unrelated to the datastore in shared mode'; Lines = @(
+                'MSSQL_DB_NAME=edfi_datamanagementservice',
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=some_other_db;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            ) }
+        ) {
+            # The regression the decision table pins BOTH ways: the superseded ordinal-exact rule
+            # rejected the case-variant rows here, yet the default-collation instance folds those
+            # spellings onto ONE physical database (measured live: the comparison reports EQUAL and
+            # DB_ID resolves both) - a working configuration refused offline. The inverse
+            # measurement (a case-sensitive instance keeps the pair DISTINCT) is why acceptance
+            # here renders no verdict either: structure is validated, and every MSSQL name
+            # relationship is decided by Assert-MssqlTopologyPhysicalConsistency on the running
+            # server after readiness - the wiring suite proves every participating start reaches
+            # it, and the live suite proves the per-instance answers.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value ($Lines -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
-                Should -Throw "*exact spelling*"
+                Should -Not -Throw
         }
 
-        It "rejects an ambient DMS_CONFIG_DATABASE_NAME case variant" {
+        It "renders no MSSQL name verdict for an ambient DMS_CONFIG_DATABASE_NAME spelling variant either" {
+            # A supplied nonblank ambient seam IS the effective CMS target under Compose
+            # precedence; whether its spelling denotes the reserved database is the running
+            # instance's call, so no offline verdict is rendered here.
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value (@(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
@@ -2557,28 +2623,12 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
 
             [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME", "EDFI_CONFIGURATIONSERVICE")
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
-                Should -Throw "*exact spelling*"
+                Should -Not -Throw
         }
 
-        It "rejects a dual-segment connection string whose second synonym is a case variant" {
-            # Both Database and Initial Catalog segments must EACH agree exactly - a case-variant
-            # synonym would hand the provider a segment whose physical meaning only the running
-            # instance's collation can decide.
-            $path = Join-Path $script:work ".env"
-            Set-Content -LiteralPath $path -Value (@(
-                'MSSQL_DB_NAME=edfi_datamanagementservice',
-                'MSSQL_SA_PASSWORD=abcdefgh1!',
-                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;Initial Catalog=EDFI_CONFIGURATIONSERVICE;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
-            ) -join "`n") -NoNewline
-
-            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
-                Should -Throw "*exact spelling*"
-        }
-
-        It "accepts an exact non-ASCII database name when expected and actual text are identical" {
+        It "accepts an exact non-ASCII database name" {
             # The Unicode-preservation control: exact text denotes the same database under EVERY
-            # collation, so the exact-agreement rule must not regress valid Unicode names. The
+            # collation, so structural validation must not regress valid Unicode names. The
             # name is built from code points to keep this file ASCII-only.
             $unicodeName = "$([char]0xE9)dfi_datastore"
             $path = Join-Path $script:work ".env"
@@ -2591,9 +2641,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Not -Throw
         }
 
-        It "rejects a mismatched non-ASCII database name" {
-            # The counterpart: a case variant of the accented letter is a DIFFERENT spelling, and
-            # different spellings are the running instance's call, not this boundary's.
+        It "accepts a mismatched non-ASCII database name structurally - different spellings are the running instance's call" {
             $expectedName = "$([char]0xE9)dfi_datastore"
             $actualName = "$([char]0xC9)dfi_datastore"
             $path = Join-Path $script:work ".env"
@@ -2604,7 +2652,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             ) -join "`n"), [System.Text.UTF8Encoding]::new($false))
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
-                Should -Throw "*exact spelling*"
+                Should -Not -Throw
         }
 
         It "still accepts a case-variant HOST, which stays deliberately case-insensitive" {
@@ -3205,7 +3253,11 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Not -Throw
         }
 
-        It "rejects a connection string carrying two disagreeing database-name aliases" {
+        It "discovers two disagreeing MSSQL database-name aliases without judging them - each is the live authority's candidate" {
+            # Whether a_different_database and the datastore are the same physical database is the
+            # running instance's call: both segments are discovered structurally here, and the
+            # live authority verifies each independently after readiness (its dual-segment
+            # keying has its own unit pin).
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value (@(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
@@ -3213,7 +3265,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_datamanagementservice;Initial Catalog=a_different_database;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) -join "`n") -NoNewline
 
-            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Throw "*a_different_database*"
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Not -Throw
         }
     }
 }
@@ -3872,49 +3924,24 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must proceed to the docker boundary"
         }
 
-        # Two independent signals let a documented continuation past the legacy shared-mode invariant,
-        # and each is exercised on its own here: the EXPLICIT SWITCH (a caller declaration, whatever
-        # the file says) and the RESERVED DEDICATED NAME in the file's own CMS connection string (a
-        # content declaration, no switch needed). The topology marker itself lives only in derived
-        # files, so neither continuation carries it.
-        It "mssql -DmsOnly -SeparateConfigDatabase: accepts a caller-authored file the reserved-name signal alone would reject" {
-            # A third database name is not the reserved dedicated name, so only the explicit switch can
-            # carry this file through. CMS does not start in this shape at all, so judging a shared-mode
-            # invariant against a topology the caller explicitly declined would reject the documented
-            # "accepted, gated no-op" continuation.
-            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=caller_authored_cms;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+        # Non-participating shapes get STRUCTURAL validation only: CMS never starts here, and the
+        # superseded offline shared-database invariant is deleted (no fixed offline comparer can
+        # decide MSSQL name identity - the measured decision consequence is that these shapes
+        # render no name verdict at all). Every row must reach the docker boundary regardless of
+        # what the CMS connection string names and regardless of the switch.
+        It "mssql -DmsOnly: accepts <Label> - no offline name verdict for a non-participating shape" -ForEach @(
+            @{ Label = 'a caller-authored third database name WITH the switch'; Database = 'caller_authored_cms'; Switch = $true }
+            @{ Label = 'the reserved dedicated name WITHOUT the switch'; Database = 'edfi_configurationservice'; Switch = $false }
+            @{ Label = 'a caller-authored third database name WITHOUT the switch (the superseded invariant refused this)'; Database = 'caller_authored_cms'; Switch = $false }
+        ) {
+            $envFile = New-MssqlWiringEnvFile -CmsConnectionString "Server=dms-mssql,1433;Database=$Database;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
 
             $run = Invoke-StartScript {
-                & "$script:dockerComposeRoot/start-local-dms.ps1" -DmsOnly -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
+                & "$script:dockerComposeRoot/start-local-dms.ps1" -DmsOnly -DatabaseEngine mssql -SeparateConfigDatabase:$Switch -EnvironmentFile $envFile *>$null
             }
 
-            $run.ErrorMessage | Should -Not -BeLike "*shared-database configuration mismatch*" -Because "the shared-mode invariant is definitionally inapplicable to the topology the switch declares"
-            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the continuation must reach the docker boundary"
-        }
-
-        It "mssql -DmsOnly WITHOUT the switch: accepts a file whose CMS connection string targets the reserved dedicated database" {
-            # The standalone continuation passes no switch, so the file's own reserved-name target is
-            # the only separate-topology signal available.
-            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
-
-            $run = Invoke-StartScript {
-                & "$script:dockerComposeRoot/start-local-dms.ps1" -DmsOnly -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
-            }
-
-            $run.ErrorMessage | Should -Not -BeLike "*shared-database configuration mismatch*"
-            $run.ComposeCommand | Should -Not -BeNullOrEmpty
-        }
-
-        It "mssql -DmsOnly WITHOUT the switch: still rejects a file targeting some third database (today's behavior preserved)" {
-            # Neither signal is present, so the legacy check runs exactly as it does today.
-            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=caller_authored_cms;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
-
-            $run = Invoke-StartScript {
-                & "$script:dockerComposeRoot/start-local-dms.ps1" -DmsOnly -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
-            }
-
-            $run.ErrorMessage | Should -BeLike "*shared-database configuration mismatch*" -Because "with no switch and no separate-topology content, today's shared-mode check runs exactly as before"
-            $run.Invocations | Should -BeNullOrEmpty
+            $run.ErrorMessage | Should -Not -BeLike "*configuration mismatch*" -Because "no offline name verdict exists to reject this shape"
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must reach the docker boundary"
         }
     }
 
@@ -4025,37 +4052,22 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must proceed to the docker boundary"
         }
 
-        It "mssql -DmsOnly -SeparateConfigDatabase: accepts a caller-authored file the reserved-name signal alone would reject" {
-            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=caller_authored_cms;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+        It "mssql -DmsOnly: accepts <Label> - no offline name verdict for a non-participating shape" -ForEach @(
+            @{ Label = 'a caller-authored third database name WITH the switch'; Database = 'caller_authored_cms'; Switch = $true }
+            @{ Label = 'the reserved dedicated name WITHOUT the switch'; Database = 'edfi_configurationservice'; Switch = $false }
+            @{ Label = 'a caller-authored third database name WITHOUT the switch (the superseded invariant refused this)'; Database = 'caller_authored_cms'; Switch = $false }
+        ) {
+            # Same structural-only contract as the local script: CMS never starts in this shape
+            # and the offline shared-database invariant is deleted, so no name spelling can be
+            # judged before a server exists to ask.
+            $envFile = New-MssqlWiringEnvFile -CmsConnectionString "Server=dms-mssql,1433;Database=$Database;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
 
             $run = Invoke-StartScript {
-                & "$script:dockerComposeRoot/start-published-dms.ps1" -DmsOnly -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DmsOnly -DatabaseEngine mssql -SeparateConfigDatabase:$Switch -EnvironmentFile $envFile *>$null
             }
 
-            $run.ErrorMessage | Should -Not -BeLike "*shared-database configuration mismatch*" -Because "the shared-mode invariant is definitionally inapplicable to the topology the switch declares"
-            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the continuation must reach the docker boundary"
-        }
-
-        It "mssql -DmsOnly WITHOUT the switch: accepts a file whose CMS connection string targets the reserved dedicated database" {
-            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
-
-            $run = Invoke-StartScript {
-                & "$script:dockerComposeRoot/start-published-dms.ps1" -DmsOnly -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
-            }
-
-            $run.ErrorMessage | Should -Not -BeLike "*shared-database configuration mismatch*"
-            $run.ComposeCommand | Should -Not -BeNullOrEmpty
-        }
-
-        It "mssql -DmsOnly WITHOUT the switch: still rejects a file targeting some third database (today's behavior preserved)" {
-            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=caller_authored_cms;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
-
-            $run = Invoke-StartScript {
-                & "$script:dockerComposeRoot/start-published-dms.ps1" -DmsOnly -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
-            }
-
-            $run.ErrorMessage | Should -BeLike "*shared-database configuration mismatch*" -Because "with no switch and no separate-topology content, today's shared-mode check runs exactly as before"
-            $run.Invocations | Should -BeNullOrEmpty
+            $run.ErrorMessage | Should -Not -BeLike "*configuration mismatch*" -Because "no offline name verdict exists to reject this shape"
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must reach the docker boundary"
         }
 
         It "rejects -DataStoreDatabaseName edfi_configurationservice with -SeparateConfigDatabase, before any docker activity" {
@@ -4263,8 +4275,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             if (-not (Assert-NoStagedBootstrapWorkspace)) { return }
             # CMS is absent from the compose set, so Confirm-CmsDatabaseTopologyAgreement must not
             # run and no topology-derived file may be written. A consistent (shared) CMS connection
-            # string keeps the legacy shared-database check satisfied, isolating the gate itself as
-            # the behavior under test.
+            # string isolates the gate itself as the behavior under test.
             $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
 
             $run = Invoke-StartScript {
@@ -4277,34 +4288,31 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.ErrorMessage | Should -Not -BeLike "*topology*"
         }
 
-        It "keeps today's legacy shared-database rejection for a bare Keycloak start whose CMS database name disagrees" {
+        It "accepts a bare Keycloak start whose CMS database name disagrees: no offline verdict for a non-participating shape" {
             if (-not (Assert-NoStagedBootstrapWorkspace)) { return }
-            # Non-participating shapes must keep running Assert-MssqlCmsDatabaseIsShared exactly as
-            # they do today (the spec's own requirement), so a CMS connection string naming a
-            # different database is still rejected here - by the legacy DMS-1255 check, not by this
-            # story's topology validator. Only the database name differs: that check inspects the
-            # Database/Initial Catalog aliases and nothing else, so the database name alone is what
-            # drives this rejection.
+            # The superseded offline shared-database invariant (the legacy DMS-1255 check) is
+            # deleted with the rest of the offline MSSQL name verdicts, so a CMS connection string
+            # naming a different database no longer stops a shape in which CMS never starts. The
+            # run must reach the docker boundary with CMS still omitted from the compose set.
             $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=a_totally_different_db;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
 
             $run = Invoke-StartScript {
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider keycloak -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
             }
 
-            $run.ErrorMessage | Should -BeLike "*shared-database configuration mismatch*"
-            $run.ErrorMessage | Should -BeLike "*a_totally_different_db*"
-            $run.ErrorMessage | Should -Not -BeLike "*CMS database topology mismatch*" -Because "the legacy check owns this non-participating shape, not this story's validator"
-            $run.Invocations | Should -BeNullOrEmpty -Because "the legacy check rejects the invocation before any docker call, exactly as it does today"
+            $run.ErrorMessage | Should -Not -BeLike "*configuration mismatch*" -Because "no offline name verdict exists to reject this shape"
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must reach the docker boundary"
+            $run.ComposeCommand | Should -Not -BeLike "*published-config.yml*"
+            $run.TopologyFile | Should -BeNullOrEmpty
         }
 
         It "accepts a custom CMS host under bare Keycloak, proving the endpoint validator did not run" {
             if (-not (Assert-NoStagedBootstrapWorkspace)) { return }
-            # The sharpest available probe of the participation gate: host and port are checked only
-            # by Confirm-CmsDatabaseTopologyAgreement, never by the legacy database-name check. So a
-            # CMS connection string whose database name agrees but whose host is not dms-mssql must
-            # be accepted for this non-participating shape - if the gate were wrongly broad the new
-            # validator would run and reject the host. Complements the database-mismatch test above,
-            # which the legacy check alone can explain.
+            # The sharpest available probe of the participation gate: host and port are checked
+            # only by Confirm-CmsDatabaseTopologyAgreement. So a CMS connection string whose
+            # database name agrees but whose host is not dms-mssql must be accepted for this
+            # non-participating shape - if the gate were wrongly broad the new validator would run
+            # and reject the host.
             $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=some-other-host,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
 
             $run = Invoke-StartScript {

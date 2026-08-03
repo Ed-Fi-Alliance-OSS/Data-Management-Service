@@ -3705,9 +3705,13 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_O
             $result.SelectedDataStoreIds | Should -Be @([long]91) -Because "the phase must run to completion, not merely avoid the specific rejection"
         }
 
-        It "configure-local-data-store.ps1 still rejects a CMS connection string naming some third database" {
-            # The continuation exemption must stay narrow: only the reserved dedicated name declares
-            # the separate topology, so an ordinary misconfiguration is still caught here.
+        It "configure-local-data-store.ps1 renders no name verdict for a CMS connection string naming some third database" {
+            # The superseded offline shared-database invariant rejected this file here. It is
+            # deleted with the rest of the offline MSSQL name verdicts: whether legacy_config and
+            # the datastore are the same physical database is the running instance's collation's
+            # call, and this manual phase owns the DMS datastore, never the CMS seam. The
+            # physical protection lives in the start scripts' live authority, which every
+            # CMS-consuming start runs.
             . $script:repo.ConfigureScript
 
             function Add-CmsClient { }
@@ -3718,8 +3722,9 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_O
 
             $envFile = New-SeparateTopologyMssqlEnvFile -CmsDatabaseName "legacy_config"
 
-            { Invoke-ConfigureLocalDataStore -EnvironmentFile $envFile -DatabaseEngine mssql -NoDataStore } |
-                Should -Throw "*shared-database configuration mismatch*"
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $envFile -DatabaseEngine mssql -NoDataStore
+
+            $result.SelectedDataStoreIds | Should -Be @([long]92) -Because "the phase must run to completion, not merely avoid the specific rejection"
         }
 
         It "provision-dms-schema.ps1 accepts the caller-authored file targeting the dedicated CMS database" {
@@ -3756,17 +3761,36 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_O
             }
         }
 
-        It "provision-dms-schema.ps1 still rejects a CMS connection string naming some third database" {
+        It "provision-dms-schema.ps1 renders no name verdict for a CMS connection string naming some third database" {
+            # The symmetric half: both manual phases reach the engine gate independently, so both
+            # lose the deleted offline invariant together. Provisioning must run to completion.
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
-            . $script:repo.ProvisionScript
+            $capturePath = Join-Path $script:repo.RepoRoot "third-database-schema-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            try {
+                . $script:repo.ProvisionScript
 
-            function Get-CmsToken { return "token" }
-            function Get-DataStore { return @() }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 94
+                            name = "ThirdDatabase"
+                            connectionString = 'Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
 
-            $envFile = New-SeparateTopologyMssqlEnvFile -CmsDatabaseName "legacy_config"
+                $envFile = New-SeparateTopologyMssqlEnvFile -CmsDatabaseName "legacy_config"
 
-            { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(94) -DatabaseEngine mssql } |
-                Should -Throw "*shared-database configuration mismatch*"
+                { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(94) -DatabaseEngine mssql } |
+                    Should -Not -Throw
+
+                @(Get-Content -LiteralPath $capturePath) | Should -Contain "mssql"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
     }
 }

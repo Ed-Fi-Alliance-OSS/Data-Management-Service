@@ -621,51 +621,93 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
             Should -Be $path
     }
 
-    It "recognizes an export-spelled, quoted topology marker in the engine gate too" {
-        # The marker's third consumer read it through the legacy parser, so the exported and quoted
-        # spellings approved elsewhere in this design were not recognized here and the shared-mode
-        # invariant ran against a separate-mode file.
-        $realComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
-        $path = Join-Path $script:work ".env.gate-marker"
-        Set-Content -LiteralPath $path -Value @"
-MSSQL_SA_PASSWORD=abcdefgh1!
-MSSQL_DB_NAME=edfi_datamanagementservice
-DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
-export DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = "true"
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=some_third_db;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
-"@ -NoNewline
+    # The superseded offline shared-database invariant, its reserved-name continuation signal,
+    # and its exact-spelling P-fix are all DELETED: no fixed offline comparer can decide MSSQL
+    # name identity (measured both ways - the default collation folds a case variant, a
+    # case-sensitive instance keeps it distinct), so this composition path validates STRUCTURE
+    # only and every CMS-participating start verifies names live on the running server
+    # (Assert-MssqlTopologyPhysicalConsistency). The rows below pin that no name spelling - a
+    # third database, the reserved literal, a case variant, with or without a marker - is judged
+    # here anymore.
+    It "renders no MSSQL name verdict in composition: <_.label>" -ForEach @(
+        @{
+            label = 'a caller-authored file naming a third CMS database'
+            lines = @(
+                'DMS_CONFIG_DATASTORE=mssql'
+                'MSSQL_DB_NAME=shared_database'
+                'CMS_DATABASE_NAME=legacy_config'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=${CMS_DATABASE_NAME};User Id=custom;Password=secret;'
+            )
+        }
+        @{
+            label = 'a separate-topology file (marker, seam, and reserved target all declared)'
+            lines = @(
+                'DMS_DATASTORE=mssql'
+                'DMS_CONFIG_DATASTORE=mssql'
+                'MSSQL_SA_PASSWORD=abcdefgh1!'
+                'MSSQL_DB_NAME=edfi_datamanagementservice'
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true'
+                'DMS_CONFIG_DATABASE_NAME=edfi_configurationservice'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            )
+        }
+        @{
+            label = 'a markerless file targeting the reserved dedicated database via Database='
+            lines = @(
+                'DMS_DATASTORE=mssql'
+                'DMS_CONFIG_DATASTORE=mssql'
+                'MSSQL_SA_PASSWORD=abcdefgh1!'
+                'MSSQL_DB_NAME=edfi_datamanagementservice'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            )
+        }
+        @{
+            label = 'a markerless file targeting the reserved dedicated database via Initial Catalog='
+            lines = @(
+                'DMS_DATASTORE=mssql'
+                'DMS_CONFIG_DATASTORE=mssql'
+                'MSSQL_SA_PASSWORD=abcdefgh1!'
+                'MSSQL_DB_NAME=edfi_datamanagementservice'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Initial Catalog=edfi_configurationservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            )
+        }
+        @{
+            label = 'a case-variant of the reserved dedicated database name (the superseded rule refused this)'
+            lines = @(
+                'DMS_DATASTORE=mssql'
+                'DMS_CONFIG_DATASTORE=mssql'
+                'MSSQL_SA_PASSWORD=abcdefgh1!'
+                'MSSQL_DB_NAME=edfi_datamanagementservice'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=EDFI_ConfigurationService;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            )
+        }
+        @{
+            label = 'a third-database target with an explicitly false marker (the superseded invariant refused this)'
+            lines = @(
+                'DMS_DATASTORE=mssql'
+                'DMS_CONFIG_DATASTORE=mssql'
+                'MSSQL_SA_PASSWORD=abcdefgh1!'
+                'MSSQL_DB_NAME=edfi_datamanagementservice'
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            )
+        }
+    ) {
+        $path = Join-Path $script:work ".env.noverdict-$([Guid]::NewGuid().ToString('N'))"
+        Set-Content -LiteralPath $path -Value ($_.lines -join "`n") -NoNewline
 
         {
             Resolve-DatabaseEngineEnvironmentFile `
                 -DatabaseEngine "mssql" `
                 -BaseEnvironmentFile $path `
-                -DockerComposeRoot $realComposeRoot
-        } | Should -Not -Throw -Because "a separate-mode file is outside the shared-mode invariant's scope"
-    }
-
-    It "detects a caller value whose own dependency composition relocates, instead of writing an empty database" {
-        # CMS_DATABASE_NAME is not an overlay key, so it stays in the base block; MSSQL_DB_NAME is one, so
-        # it moves into the overlay block below. The base-block reference therefore resolves to nothing
-        # and the composed file would render Database= empty. Validating a separately-modelled
-        # environment could not see this; validating the composed lines does, and it fails loudly.
-        $partialPath = Join-Path $script:work ".env.relocated-dependency"
-        Set-Content -LiteralPath $partialPath -Value @"
-DMS_CONFIG_DATASTORE=mssql
-MSSQL_DB_NAME=custom_database
-CMS_DATABASE_NAME=`${MSSQL_DB_NAME}
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DATABASE_NAME};User Id=custom;Password=secret;
-"@ -NoNewline
-
-        {
-            Resolve-DatabaseEngineEnvironmentFile `
-                -DatabaseEngine "mssql" `
-                -BaseEnvironmentFile $partialPath `
                 -DockerComposeRoot $script:composeRoot
-        } | Should -Throw "*must include Database or Initial Catalog*"
+        } | Should -Not -Throw
     }
 
-    It "fails fast when a fully composed MSSQL environment points CMS at a different database" {
+    It "renders no name verdict for a fully composed MSSQL environment pointing CMS at a different database" {
+        # The superseded invariant rejected this file loudly; whether legacy_config and the
+        # datastore are the same physical database is the running instance's call, so the
+        # composed file passes composition and the participating start's live authority decides.
         $mismatchedPath = Join-Path $script:work ".env.mismatched-cms-database"
         $mismatchedContent = (Get-Content -LiteralPath (Join-Path $script:composeRoot ".env.mssql") -Raw).
             Replace(
@@ -679,43 +721,12 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
                 -DatabaseEngine "mssql" `
                 -BaseEnvironmentFile $mismatchedPath `
                 -DockerComposeRoot $script:composeRoot
-        } | Should -Throw "*shared-database configuration mismatch*legacy_config*edfi_datamanagementservice*DMS-1270*"
+        } | Should -Not -Throw
     }
 
-    It "resolves caller-authored CMS database references before enforcing the shared database" {
-        $mismatchedPath = Join-Path $script:work ".env.mismatched-cms-reference"
-        Set-Content -LiteralPath $mismatchedPath -Value @"
-DMS_CONFIG_DATASTORE=mssql
-MSSQL_DB_NAME=shared_database
-CMS_DATABASE_NAME=legacy_config
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DATABASE_NAME};User Id=custom;Password=secret;
-"@ -NoNewline
-
-        {
-            Resolve-DatabaseEngineEnvironmentFile `
-                -DatabaseEngine "mssql" `
-                -BaseEnvironmentFile $mismatchedPath `
-                -DockerComposeRoot $script:composeRoot
-        } | Should -Throw "*shared-database configuration mismatch*legacy_config*shared_database*DMS-1270*"
-    }
-
-    It "fails fast when a caller-authored CMS MSSQL connection omits its database" {
-        $missingDatabasePath = Join-Path $script:work ".env.missing-cms-database"
-        Set-Content -LiteralPath $missingDatabasePath -Value @"
-DMS_CONFIG_DATASTORE=mssql
-MSSQL_DB_NAME=shared_database
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;User Id=custom;Password=secret;
-"@ -NoNewline
-
-        {
-            Resolve-DatabaseEngineEnvironmentFile `
-                -DatabaseEngine "mssql" `
-                -BaseEnvironmentFile $missingDatabasePath `
-                -DockerComposeRoot $script:composeRoot
-        } | Should -Throw "*must include Database or Initial Catalog*shared_database*"
-    }
-
-    It "allows only an explicit database-only diagnostic caller to bypass the CMS database invariant" {
+    It "keeps -SkipMssqlCmsDatabaseValidation as a retained no-op: the same result with and without it" {
+        # The switch used to skip the deleted invariant; it stays only because five stable call
+        # sites pass it. Passing it must change nothing.
         $mismatchedPath = Join-Path $script:work ".env.db-only-mismatched-cms"
         $mismatchedContent = (Get-Content -LiteralPath (Join-Path $script:composeRoot ".env.mssql") -Raw).
             Replace(
@@ -724,150 +735,88 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;User Id=custom;Pass
             )
         Set-Content -LiteralPath $mismatchedPath -Value $mismatchedContent -NoNewline
 
-        $result = Resolve-DatabaseEngineEnvironmentFile `
+        $withSwitch = Resolve-DatabaseEngineEnvironmentFile `
             -DatabaseEngine "mssql" `
             -BaseEnvironmentFile $mismatchedPath `
             -DockerComposeRoot $script:composeRoot `
             -SkipMssqlCmsDatabaseValidation
+        $withoutSwitch = Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine "mssql" `
+            -BaseEnvironmentFile $mismatchedPath `
+            -DockerComposeRoot $script:composeRoot
 
-        $result | Should -Be $mismatchedPath -Because "DbOnly neither starts CMS nor initializes OpenIddict"
+        $withSwitch | Should -Be $mismatchedPath
+        $withoutSwitch | Should -Be $withSwitch -Because "the retained switch is documented as a no-op"
     }
 
-    It "does not apply the shared-database invariant to a file declaring the separate topology" {
-        # Regression, DMS-1270 Phase 3: the invariant asserts that CMS and OpenIddict both target
-        # MSSQL_DB_NAME, which is false by definition once a run opts into a dedicated CMS database.
-        # The configure and provision phases own the DMS datastore, take no part in the CMS seam, and
-        # so pass no skip switch here - without this they rejected the configuration the preceding
-        # start phase had just established, which is how a full
-        # `build-dms.ps1 StartEnvironment -SeparateConfigDatabase -DatabaseEngine mssql` run failed
-        # after its infrastructure phase had already succeeded.
-        $separatePath = Join-Path $script:work ".env.separate-topology"
-        Set-Content -LiteralPath $separatePath -Value @"
-DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
-MSSQL_SA_PASSWORD=abcdefgh1!
-MSSQL_DB_NAME=edfi_datamanagementservice
-DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true
-DMS_CONFIG_DATABASE_NAME=edfi_configurationservice
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
-"@ -NoNewline
-
-        {
-            Resolve-DatabaseEngineEnvironmentFile `
-                -DatabaseEngine "mssql" `
-                -BaseEnvironmentFile $separatePath `
-                -DockerComposeRoot $script:composeRoot
-        } | Should -Not -Throw
-    }
-
-    It "does not apply the shared-database invariant to a caller-authored file targeting the reserved dedicated CMS database" {
-        # Regression, DMS-1270 post-PR review: the documented standalone continuation runs a
-        # -SeparateConfigDatabase start phase and then invokes configure-local-data-store.ps1 /
-        # provision-dms-schema.ps1 directly against the SAME caller-authored source file. The
-        # topology marker exists only in the start script's derived file, so it is absent here and
-        # the reserved database name is the only separate-topology signal the file carries. Without
-        # honoring it, the terminal guidance those phases print led straight into a rejection of the
-        # topology the run had just established. Both provider synonyms are covered, since a
-        # connection string may name the database with either key.
-        foreach ($databaseKey in @('Database', 'Initial Catalog')) {
-            $path = Join-Path $script:work ".env.reserved-$([Guid]::NewGuid().ToString('N'))"
-            Set-Content -LiteralPath $path -Value @"
-DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
-MSSQL_SA_PASSWORD=abcdefgh1!
-MSSQL_DB_NAME=edfi_datamanagementservice
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;$databaseKey=edfi_configurationservice;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
-"@ -NoNewline
-
-            {
-                Resolve-DatabaseEngineEnvironmentFile `
-                    -DatabaseEngine "mssql" `
-                    -BaseEnvironmentFile $path `
-                    -DockerComposeRoot $script:composeRoot
-            } | Should -Not -Throw
+    It "hands an empty-database composition to the topology validator, which fails it structurally: <_.label>" -ForEach @(
+        @{
+            # CMS_DATABASE_NAME is not an overlay key, so it stays in the base block; MSSQL_DB_NAME
+            # is one, so composition relocates it below the reference, which freezes empty.
+            label = 'a dependency the composition relocates'
+            lines = @(
+                'DMS_CONFIG_DATASTORE=mssql'
+                'MSSQL_DB_NAME=custom_database'
+                'CMS_DATABASE_NAME=${MSSQL_DB_NAME}'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${CMS_DATABASE_NAME};User Id=custom;Password=secret;'
+            )
         }
-    }
-
-    It "does not treat a case-variant of the reserved dedicated CMS database name as an exact declaration" {
-        # The P1 flip: whether a case-variant even IS the reserved database depends on the running
-        # instance's collation (measured: distinct on a case-sensitive server), and this gate runs
-        # before any server exists to ask - so only the EXACT reserved literal is an unambiguous
-        # separate-topology declaration. A case-variant falls through to the shared-database
-        # invariant, which fails loudly with exact-spelling guidance instead of silently skipping
-        # the check for a name it cannot vouch for.
-        $path = Join-Path $script:work ".env.reserved-case"
-        Set-Content -LiteralPath $path -Value @"
-DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
-MSSQL_SA_PASSWORD=abcdefgh1!
-MSSQL_DB_NAME=edfi_datamanagementservice
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=EDFI_ConfigurationService;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
-"@ -NoNewline
-
-        {
-            Resolve-DatabaseEngineEnvironmentFile `
-                -DatabaseEngine "mssql" `
-                -BaseEnvironmentFile $path `
-                -DockerComposeRoot $script:composeRoot
-        } | Should -Throw "*shared-database configuration mismatch*exact configured spelling*"
-    }
-
-    It "still applies the shared-database invariant when neither separate-topology signal is present" {
-        # Guards the narrowness of the two exemptions: a mismatch naming some third database is
-        # neither the marker nor the reserved dedicated name, so it is still rejected. The absent and
-        # explicitly-false marker forms are both covered.
-        foreach ($markerLine in @('', 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false')) {
-            $path = Join-Path $script:work ".env.marker-$([Guid]::NewGuid().ToString('N'))"
-            Set-Content -LiteralPath $path -Value @"
-DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
-MSSQL_SA_PASSWORD=abcdefgh1!
-MSSQL_DB_NAME=edfi_datamanagementservice
-$markerLine
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
-"@ -NoNewline
-
-            {
-                Resolve-DatabaseEngineEnvironmentFile `
-                    -DatabaseEngine "mssql" `
-                    -BaseEnvironmentFile $path `
-                    -DockerComposeRoot $script:composeRoot
-            } | Should -Throw "*shared-database configuration mismatch*"
+        @{
+            label = 'a caller-authored CMS connection string with no database segment at all'
+            lines = @(
+                'DMS_CONFIG_DATASTORE=mssql'
+                'MSSQL_DB_NAME=shared_database'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;User Id=custom;Password=secret;'
+            )
         }
+    ) {
+        # Composition itself validates structure (MSSQL shape, parseability) and renders no name
+        # verdict, so it accepts these files - and the empty-database protection now lives one
+        # step later, where every CMS-participating shape runs the topology validator: segment
+        # discovery is structural and fails closed before any container starts.
+        $path = Join-Path $script:work ".env.emptydb-$([Guid]::NewGuid().ToString('N'))"
+        Set-Content -LiteralPath $path -Value ($_.lines -join "`n") -NoNewline
+
+        $resolved = Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine "mssql" `
+            -BaseEnvironmentFile $path `
+            -DockerComposeRoot $script:composeRoot
+
+        { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $resolved -DatabaseEngine "mssql" } |
+            Should -Throw "*must include Database or Initial Catalog*"
     }
 
-    # The continuation signal and the shared-mode invariant both resolve the CMS connection string with
-    # the shared Compose-equivalent resolver now, not a narrow single-${NAME} grammar. The two grammars
-    # disagreed, and the disagreement split a run in half: an operator-shaped database segment passed
-    # the start phase's topology validation and then threw "unsupported environment expression" in the
-    # manual phases the start script's own guidance points to.
+    # The composition path and the topology validator resolve the CMS connection string with the
+    # shared Compose-equivalent resolver, not a narrow single-${NAME} grammar. The two grammars
+    # once disagreed, splitting a run in half: an operator-shaped database segment passed the
+    # start phase and then threw "unsupported environment expression" in the manual phases. With
+    # no offline name verdict left, the oracle is the CHAIN: composition accepts the file, and
+    # the topology validator - which structurally requires the segment it discovers - accepts
+    # the composed artifact. A resolution regression freezes the segment empty and fails that
+    # second, structural step.
     It "resolves an operator-shaped database segment the way the start path does: <_.label>" -ForEach @(
         @{
-            label = 'nested default resolving to the reserved dedicated name is exempted'
+            label = 'nested default resolving to the reserved dedicated name'
             segment = 'Database=${CMS_DB_OVERRIDE_XYZ:-edfi_configurationservice}'
             extra = ''
-            shouldThrow = $false
         }
         @{
-            label = 'nested ${A:-${B}} resolving to the shared name passes the invariant'
+            label = 'nested ${A:-${B}} resolving to the shared name'
             segment = 'Database=${CMS_DB_OVERRIDE_XYZ:-${MSSQL_DB_NAME}}'
             extra = ''
-            shouldThrow = $false
         }
         @{
-            label = 'a default that fires to some third database is still rejected'
+            label = 'a default that fires to some third database (no name verdict is rendered)'
             segment = 'Database=${CMS_DB_OVERRIDE_XYZ:-legacy_config}'
             extra = ''
-            shouldThrow = $true
         }
         @{
             # The alias is declared in the file itself, as a LITERAL. Referencing ${MSSQL_DB_NAME} here
             # would not hold: MSSQL_DB_NAME is an overlay-owned key, so composition moves it below this
             # base-block line, the alias freezes empty, and ':-' fires after all.
-            label = 'a default that does NOT fire, because the alias is defined, targets the shared name'
+            label = 'a default that does NOT fire, because the alias is defined'
             segment = 'Database=${DMS_CONFIG_DATABASE_NAME:-legacy_config}'
             extra = 'DMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice'
-            shouldThrow = $false
         }
     ) {
         $path = Join-Path $script:work ".env.operator-$([Guid]::NewGuid().ToString('N'))"
@@ -880,25 +829,23 @@ $($_.extra)
 DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;$($_.segment);User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
 
-        $resolve = {
-            Resolve-DatabaseEngineEnvironmentFile `
-                -DatabaseEngine "mssql" `
-                -BaseEnvironmentFile $path `
-                -DockerComposeRoot $script:composeRoot
-        }
+        $resolved = Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine "mssql" `
+            -BaseEnvironmentFile $path `
+            -DockerComposeRoot $script:composeRoot
 
-        if ($_.shouldThrow) { $resolve | Should -Throw "*shared-database configuration mismatch*" }
-        else { $resolve | Should -Not -Throw }
+        { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $resolved -DatabaseEngine "mssql" } |
+            Should -Not -Throw -Because "the operator must have resolved to a discoverable segment"
     }
 
     # The referenced names are resolved through the sequential model of the base file composed with the
     # overlay, not a ReadValuesFromEnvFile map. That map mis-keys `export KEY=...` and collapses
-    # duplicates, which reintroduced the start/continuation split one level down: a dependency the start
-    # path resolves would resolve EMPTY here and a valid dedicated target would be rejected.
+    # duplicates - a dependency the start path resolves would resolve EMPTY here, which the chained
+    # structural segment-discovery step below turns into a loud failure.
     It "resolves a dependency of the connection string declared as '<_.declaration>'" -ForEach @(
-        @{ declaration = 'export CMS_DB_OVERRIDE_XYZ=edfi_configurationservice'; shouldThrow = $false }
-        @{ declaration = 'CMS_DB_OVERRIDE_XYZ = edfi_configurationservice'; shouldThrow = $false }
-        @{ declaration = 'export CMS_DB_OVERRIDE_XYZ=legacy_config'; shouldThrow = $true }
+        @{ declaration = 'export CMS_DB_OVERRIDE_XYZ=edfi_configurationservice' }
+        @{ declaration = 'CMS_DB_OVERRIDE_XYZ = edfi_configurationservice' }
+        @{ declaration = 'export CMS_DB_OVERRIDE_XYZ=legacy_config' }
     ) {
         $path = Join-Path $script:work ".env.dependency-$([Guid]::NewGuid().ToString('N'))"
         Set-Content -LiteralPath $path -Value @"
@@ -910,30 +857,26 @@ $($_.declaration)
 DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_OVERRIDE_XYZ};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
 
-        $resolve = {
-            Resolve-DatabaseEngineEnvironmentFile `
-                -DatabaseEngine "mssql" `
-                -BaseEnvironmentFile $path `
-                -DockerComposeRoot $script:composeRoot
-        }
+        $resolved = Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine "mssql" `
+            -BaseEnvironmentFile $path `
+            -DockerComposeRoot $script:composeRoot
 
-        if ($_.shouldThrow) { $resolve | Should -Throw "*shared-database configuration mismatch*" }
-        else { $resolve | Should -Not -Throw }
+        { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $resolved -DatabaseEngine "mssql" } |
+            Should -Not -Throw -Because "the declared dependency must have resolved to a discoverable segment"
     }
 
-    # The MSSQL-shape check used to run on the RAW text, so a value that only looks MSSQL-shaped once
-    # resolved reached neither the reserved-name signal nor the shared invariant and was silently
-    # skipped. Resolution now happens first, so both judge the same resolved text.
-    It "judges a <_.label> connection string instead of skipping it" -ForEach @(
+    # The MSSQL-shape check runs on the RESOLVED text, so a value that only looks MSSQL-shaped
+    # once resolved is still seen. The chained structural step proves the resolved string's
+    # segment was actually discovered - no name is judged.
+    It "sees a <_.label> connection string instead of skipping it" -ForEach @(
         @{
             label = 'outer-quoted'
             lines = @('DMS_CONFIG_DATABASE_CONNECTION_STRING="Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"')
-            shouldThrow = $true
         }
         @{
             label = 'outer-quoted reserved-name'
             lines = @('DMS_CONFIG_DATABASE_CONNECTION_STRING="Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"')
-            shouldThrow = $false
         }
         @{
             label = 'whole-string reference'
@@ -941,7 +884,6 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_O
                 'WHOLE_CONN=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
                 'DMS_CONFIG_DATABASE_CONNECTION_STRING=${WHOLE_CONN}'
             )
-            shouldThrow = $true
         }
         @{
             label = 'whole-string reference to the reserved name'
@@ -949,7 +891,6 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_O
                 'WHOLE_CONN=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
                 'DMS_CONFIG_DATABASE_CONNECTION_STRING=${WHOLE_CONN}'
             )
-            shouldThrow = $false
         }
     ) {
         $path = Join-Path $script:work ".env.shape-$([Guid]::NewGuid().ToString('N'))"
@@ -960,22 +901,20 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_O
             'MSSQL_DB_NAME=edfi_datamanagementservice'
         ) + $_.lines) -join "`n") -NoNewline
 
-        $resolve = {
-            Resolve-DatabaseEngineEnvironmentFile `
-                -DatabaseEngine "mssql" `
-                -BaseEnvironmentFile $path `
-                -DockerComposeRoot $script:composeRoot
-        }
+        $resolved = Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine "mssql" `
+            -BaseEnvironmentFile $path `
+            -DockerComposeRoot $script:composeRoot
 
-        if ($_.shouldThrow) { $resolve | Should -Throw "*shared-database configuration mismatch*" }
-        else { $resolve | Should -Not -Throw }
+        { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $resolved -DatabaseEngine "mssql" } |
+            Should -Not -Throw -Because "the resolved string's segment must have been discovered structurally"
     }
 
     It "still resolves a name supplied only by the overlay default" {
         # Precedence is ambient, then the caller's base file, then the overlay - so a name the base file
         # never declares must still resolve from the overlay rather than coming back empty. The base file
-        # here deliberately omits MSSQL_DB_NAME, which the overlay supplies, so both the connection
-        # string's reference and the invariant's expected name come from the overlay default.
+        # here deliberately omits MSSQL_DB_NAME, which the overlay supplies, so the connection
+        # string's reference resolves from the overlay default.
         $path = Join-Path $script:work ".env.overlay-default"
         Set-Content -LiteralPath $path -Value @"
 DMS_DATASTORE=mssql
@@ -992,47 +931,37 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB
         } | Should -Not -Throw
     }
 
-    It "sees an export-spelled CMS connection string instead of silently skipping the gate" {
-        # The legacy parser stored `export KEY=...` under an `export `-prefixed name, so this gate saw
-        # no connection string at all and neither signal nor invariant ran for a file that has one.
-        $path = Join-Path $script:work ".env.export-mismatch"
+    It "sees an export-spelled CMS connection string instead of silently skipping it: <_.label>" -ForEach @(
+        @{ label = 'targeting a third database (no name verdict)'; database = 'legacy_config' }
+        @{ label = 'targeting the reserved dedicated database'; database = 'edfi_configurationservice' }
+    ) {
+        # The legacy parser stored `export KEY=...` under an `export `-prefixed name, so this
+        # path once saw no connection string at all. The chained structural step proves the
+        # export-spelled string was seen, resolved, and its segment discovered.
+        $path = Join-Path $script:work ".env.export-$([Guid]::NewGuid().ToString('N'))"
         Set-Content -LiteralPath $path -Value @"
 DMS_DATASTORE=mssql
 DMS_CONFIG_DATASTORE=mssql
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
-export DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+export DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$($_.database);User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
 
-        {
-            Resolve-DatabaseEngineEnvironmentFile `
-                -DatabaseEngine "mssql" `
-                -BaseEnvironmentFile $path `
-                -DockerComposeRoot $script:composeRoot
-        } | Should -Throw "*shared-database configuration mismatch*"
+        $resolved = Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine "mssql" `
+            -BaseEnvironmentFile $path `
+            -DockerComposeRoot $script:composeRoot
+
+        { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $resolved -DatabaseEngine "mssql" } |
+            Should -Not -Throw
     }
 
-    It "exempts an export-spelled connection string that targets the reserved dedicated database" {
-        $path = Join-Path $script:work ".env.export-reserved"
-        Set-Content -LiteralPath $path -Value @"
-DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
-MSSQL_SA_PASSWORD=abcdefgh1!
-MSSQL_DB_NAME=edfi_datamanagementservice
-export DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
-"@ -NoNewline
-
-        {
-            Resolve-DatabaseEngineEnvironmentFile `
-                -DatabaseEngine "mssql" `
-                -BaseEnvironmentFile $path `
-                -DockerComposeRoot $script:composeRoot
-        } | Should -Not -Throw
-    }
-
-    It "honors an ambient alias override when deciding whether the reserved name is targeted" {
-        # Compose gives the shell precedence, so an ambient DMS_CONFIG_DATABASE_NAME genuinely moves
-        # where CMS points and must be what this gate judges.
+    It "honors an ambient alias override when resolving the connection string's database segment" {
+        # Compose gives the shell precedence, so an ambient DMS_CONFIG_DATABASE_NAME genuinely
+        # moves where CMS points. The matched pair is the oracle: with the ambient value the
+        # segment resolves and the chain passes structurally; without it the same reference
+        # freezes empty and the chained structural discovery fails - so the ambient value is
+        # provably what got resolved.
         $path = Join-Path $script:work ".env.ambient-alias"
         Set-Content -LiteralPath $path -Value @"
 DMS_DATASTORE=mssql
@@ -1044,22 +973,28 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${DMS_CONF
 
         [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME", "edfi_configurationservice")
         try {
-            {
-                Resolve-DatabaseEngineEnvironmentFile `
-                    -DatabaseEngine "mssql" `
-                    -BaseEnvironmentFile $path `
-                    -DockerComposeRoot $script:composeRoot
-            } | Should -Not -Throw
+            $resolved = Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine "mssql" `
+                -BaseEnvironmentFile $path `
+                -DockerComposeRoot $script:composeRoot
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $resolved -DatabaseEngine "mssql" } |
+                Should -Not -Throw
         }
         finally { Remove-Item Env:\DMS_CONFIG_DATABASE_NAME -ErrorAction SilentlyContinue }
+
+        $resolvedWithout = Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine "mssql" `
+            -BaseEnvironmentFile $path `
+            -DockerComposeRoot $script:composeRoot
+        { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $resolvedWithout -DatabaseEngine "mssql" } |
+            Should -Throw "*must include Database or Initial Catalog*" -Because "without the ambient value the same reference freezes empty, proving the first half really resolved the ambient override"
     }
 
-    It "does not treat a partially-reserved connection string as a separate-topology declaration" {
-        # The reserved-name signal requires EVERY recognized database-name segment to name the
-        # dedicated database. A string carrying both the reserved name and some other database is
-        # ambiguous, not a declaration, and must still fail the invariant loudly rather than be
-        # waved through - SqlClient keeps the LAST synonym, so the effective target is the one this
-        # invariant would otherwise have caught.
+    It "discovers every synonym segment of a mixed connection string without judging any name" {
+        # A string carrying both the reserved name and some other database once tripped the
+        # deleted invariant; now both segments are discovered structurally and their physical
+        # meaning is the running server's call (SqlClient keeps the LAST synonym at run time,
+        # and the live authority checks each discovered segment independently).
         $path = Join-Path $script:work ".env.reserved-mixed"
         Set-Content -LiteralPath $path -Value @"
 DMS_DATASTORE=mssql
@@ -1069,18 +1004,19 @@ MSSQL_DB_NAME=edfi_datamanagementservice
 DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;Initial Catalog=legacy_config;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
 
-        {
-            Resolve-DatabaseEngineEnvironmentFile `
-                -DatabaseEngine "mssql" `
-                -BaseEnvironmentFile $path `
-                -DockerComposeRoot $script:composeRoot
-        } | Should -Throw "*shared-database configuration mismatch*"
+        $resolved = Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine "mssql" `
+            -BaseEnvironmentFile $path `
+            -DockerComposeRoot $script:composeRoot
+
+        { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $resolved -DatabaseEngine "mssql" } |
+            Should -Not -Throw
     }
 
-    It "does not let an ambient topology marker switch the shared-database invariant off" {
-        # The marker is read raw from the file, never through Compose precedence, so a stray shell
-        # variable cannot disable a safety check. The connection string names a third database, so
-        # the reserved-name signal is not in play either.
+    It "keeps composition marker-independent: an ambient topology marker changes nothing structural" {
+        # The marker selects the live authority's semantics and is read raw from the effective
+        # file there; composition reads no marker at all, so a stray shell variable can neither
+        # add nor remove validation on this path.
         $path = Join-Path $script:work ".env.ambient-marker"
         Set-Content -LiteralPath $path -Value @"
 DMS_DATASTORE=mssql
@@ -1094,17 +1030,21 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_conf
         $previous = $env:DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE
         try {
             $env:DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = "true"
-            {
-                Resolve-DatabaseEngineEnvironmentFile `
-                    -DatabaseEngine "mssql" `
-                    -BaseEnvironmentFile $path `
-                    -DockerComposeRoot $script:composeRoot
-            } | Should -Throw "*shared-database configuration mismatch*"
+            $withMarker = Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine "mssql" `
+                -BaseEnvironmentFile $path `
+                -DockerComposeRoot $script:composeRoot
         }
         finally {
             if ($had) { $env:DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = $previous }
             else { Remove-Item Env:\DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE -ErrorAction SilentlyContinue }
         }
+        $withoutMarker = Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine "mssql" `
+            -BaseEnvironmentFile $path `
+            -DockerComposeRoot $script:composeRoot
+
+        $withMarker | Should -Be $withoutMarker
     }
 
     It "requires every current overlay key before short-circuiting composition" {

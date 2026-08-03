@@ -1,5 +1,5 @@
-# Wiring, gating, and ordering coverage for the server-backed MSSQL physical-identity check in
-# start-local-dms.ps1 and start-published-dms.ps1.
+# Wiring, gating, and ordering coverage for the server-backed MSSQL topology-consistency check
+# in start-local-dms.ps1 and start-published-dms.ps1.
 #
 # The harness runs the REAL scripts and intercepts three seams, portably and with no PATH files:
 #
@@ -7,7 +7,7 @@
 #   commands, and lookup walks into `&`-invoked scripts). Its policy lets exactly the
 #   `compose ... up ... db` call SUCCEED - the boundary under test lies past it - and fails
 #   every other compose subcommand, so each run ends at a deterministic, assertable point.
-# - Test-NativeCommandWithTimeout and Assert-MssqlPhysicalDatastoreDistinctness are intercepted
+# - Test-NativeCommandWithTimeout and Assert-MssqlTopologyPhysicalConsistency are intercepted
 #   with global ALIASES over recording shims. An alias is required, not a function: the scripts
 #   re-run Import-Module -Force, which re-registers same-named FUNCTIONS in the global table,
 #   but aliases outrank functions in command precedence and imports do not touch them
@@ -17,15 +17,15 @@
 #   registration) can execute.
 #
 # Every event (docker argv, readiness probe, authority call) lands in one ordered list, which is
-# what the ordering assertions read. The authority's own behavior (marker no-op, transport,
-# verdicts) is unit-tested in MssqlPhysicalDistinctnessAuthority.Tests.ps1; here the shim
-# records what the SCRIPTS hand it.
+# what the ordering assertions read. The authority's own behavior (mode selection from the raw
+# marker, transport, verdicts, relation enforcement) is unit-tested in
+# MssqlPhysicalDistinctnessAuthority.Tests.ps1; here the shim records what the SCRIPTS hand it.
 
 # The authority shim must mirror the real parameter surface, including -SaPassword, to bind the
 # scripts' named arguments; the real parameter's plaintext trade-off is documented on the
 # authority itself, and the stand-in only records the value for assertions. Scriptblock-level
 # suppression attributes are not honored by the analyzer, so the suppression lives here.
-[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Test stand-in mirrors the real authority parameter surface to bind named arguments; see the suppression on Assert-MssqlPhysicalDatastoreDistinctness.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Test stand-in mirrors the real authority parameter surface to bind named arguments; see the suppression on Assert-MssqlTopologyPhysicalConsistency.')]
 param()
 
 BeforeAll {
@@ -117,7 +117,7 @@ BeforeAll {
         if (Get-Command docker -CommandType Alias -ErrorAction SilentlyContinue) {
             throw "Refusing to run: an effective 'docker' alias is defined in this session and would outrank the function stand-in, so the scripts could reach real Docker."
         }
-        $interceptedAliasNames = @('Test-NativeCommandWithTimeout', 'Assert-MssqlPhysicalDatastoreDistinctness', 'Start-Sleep')
+        $interceptedAliasNames = @('Test-NativeCommandWithTimeout', 'Assert-MssqlTopologyPhysicalConsistency', 'Start-Sleep')
         $savedAliases = @{}
         foreach ($aliasName in $interceptedAliasNames) {
             $aliasSnapshot = Get-CommandStateSnapshot -ItemPath "Alias:\$aliasName"
@@ -210,7 +210,7 @@ BeforeAll {
                     })
                 throw "WIRING-AUTHORITY-SENTINEL"
             }.GetNewClosure()
-            Set-Alias -Name Assert-MssqlPhysicalDatastoreDistinctness -Value $authorityShimName -Scope Global -Force
+            Set-Alias -Name Assert-MssqlTopologyPhysicalConsistency -Value $authorityShimName -Scope Global -Force
 
             # The first Start-Sleep past the readiness/authority boundary is the scripts' next
             # statement on every gated-off path, so throwing there gives negative runs a
@@ -479,18 +479,30 @@ Describe "MSSQL physical-distinctness wiring" {
         @($run.Events | Select-Object -Skip ($authorityIndex + 1) | Where-Object { $_ -like "docker:*" }) | Should -HaveCount 0
     }
 
-    It "mssql shared mode: ZERO authority invocations, proven by a run that passes THROUGH the boundary region" {
-        # The post-boundary sentinel (the sleep shim) fires only after the gate decision, so
-        # reaching it with zero authority calls proves the shared-mode run genuinely traversed
-        # the boundary rather than dying earlier for an unrelated reason.
+    It "mssql shared mode: calls the authority exactly once too - the live check is not separate-only (mutant: old separate-only outer gate kept)" {
+        # The review-measured regression this flips: shared mode used to have a frozen
+        # zero-invocation contract, leaving the shared topology's name relations unverified on
+        # the running server. Every CMS-participating MSSQL start now reaches the authority,
+        # and the effective file it receives carries the shared marker for the authority's own
+        # raw-read mode selection.
         $envFile = New-WiringEnvFile
         $run = Invoke-WiringRun -ScriptBlock {
             & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -EnvironmentFile $envFile -InfraOnly *>$null
         }
 
-        $run.AuthorityCalls | Should -HaveCount 0
-        (Get-EventIndex -Run $run -Pattern "readiness") | Should -BeGreaterOrEqual 0 -Because "the run must have passed the readiness wait"
-        $run.ErrorMessage | Should -Be "WIRING-POSTBOUNDARY-SENTINEL"
+        $run.AuthorityCalls | Should -HaveCount 1
+        $run.ErrorMessage | Should -Be $script:authoritySentinel -Because "the run must stop exactly at the boundary"
+        $call = $run.AuthorityCalls[0]
+        $call.ContainerName | Should -Be "dms-mssql"
+        $call.RegisteredDatastoreDatabaseName | Should -Be ""
+        # Measured: the shared-mode resolver leaves the marker UNDECLARED when nothing needs to
+        # change (the engine-composed file already aliases the seam), and the authority's raw
+        # read treats absent as shared - so the pin is that the file never declares 'true'.
+        Get-Content -LiteralPath $call.EnvironmentFile -Raw | Should -Not -Match '(?m)^DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true'
+        $readinessIndex = Get-EventIndex -Run $run -Pattern "readiness"
+        (Get-EventIndex -Run $run -Pattern "authority") | Should -Be ($readinessIndex + 1)
+        @($run.Events | Select-Object -Skip ((Get-EventIndex -Run $run -Pattern "authority") + 1) | Where-Object { $_ -like "docker:*" }) |
+            Should -HaveCount 0 -Because "nothing may follow the failed check in shared mode either"
     }
 
     It "postgresql: ZERO authority invocations even in separate mode (engine gate), proven past the boundary region" {
@@ -560,6 +572,18 @@ Describe "MSSQL physical-distinctness wiring" {
         $run.ErrorMessage | Should -Be $script:authoritySentinel
         $readinessIndex = Get-EventIndex -Run $run -Pattern "readiness"
         (Get-EventIndex -Run $run -Pattern "authority") | Should -Be ($readinessIndex + 1)
+    }
+
+    It "keycloak shared mode reaches the authority too (staged sibling stub): the symmetric half of the shared-mode flip" {
+        $stage = New-StagedComposeRoot
+        $envFile = New-WiringEnvFile
+        $run = Invoke-WiringRun -AllowKeycloakUp -ScriptBlock {
+            & "$stage/start-local-dms.ps1" -DatabaseEngine mssql -IdentityProvider keycloak -EnvironmentFile $envFile -InfraOnly *>$null
+        }
+
+        $run.AuthorityCalls | Should -HaveCount 1
+        $run.ErrorMessage | Should -Be $script:authoritySentinel
+        Get-Content -LiteralPath $run.AuthorityCalls[0].EnvironmentFile -Raw | Should -Not -Match '(?m)^DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true'
     }
     }
 
@@ -650,15 +674,30 @@ Describe "MSSQL physical-distinctness wiring" {
         $run.ErrorMessage | Should -Be "WIRING-POSTBOUNDARY-SENTINEL"
     }
 
-    It "mssql shared self-contained: ZERO authority invocations, proven past the boundary region" {
+    It "mssql shared self-contained: calls the authority exactly once too - the live check is not separate-only (mutant: old separate-only outer gate kept)" {
         $envFile = New-WiringEnvFile
         $run = Invoke-WiringRun -ScriptBlock {
             & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
         }
 
-        $run.AuthorityCalls | Should -HaveCount 0
-        (Get-EventIndex -Run $run -Pattern "readiness") | Should -BeGreaterOrEqual 0
-        $run.ErrorMessage | Should -Be "WIRING-POSTBOUNDARY-SENTINEL"
+        $run.AuthorityCalls | Should -HaveCount 1
+        $run.ErrorMessage | Should -Be $script:authoritySentinel
+        $call = $run.AuthorityCalls[0]
+        $call.RegisteredDatastoreDatabaseName | Should -Be ""
+        Get-Content -LiteralPath $call.EnvironmentFile -Raw | Should -Not -Match '(?m)^DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true'
+        $readinessIndex = Get-EventIndex -Run $run -Pattern "readiness"
+        (Get-EventIndex -Run $run -Pattern "authority") | Should -Be ($readinessIndex + 1)
+    }
+
+    It "mssql shared full with -DataStoreDatabaseName: the parsed registered value is still handed over (the authority applies it only where it participates)" {
+        $envFile = New-WiringEnvFile
+        $rawRegisteredName = "edfi_probe_datastore`n"
+        $run = Invoke-WiringRun -ScriptBlock {
+            & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -EnvironmentFile $envFile -DataStoreDatabaseName $rawRegisteredName *>$null
+        }
+
+        $run.AuthorityCalls | Should -HaveCount 1
+        $run.AuthorityCalls[0].RegisteredDatastoreDatabaseName | Should -Be "edfi_probe_datastore"
     }
 
     It "-DmsOnly with -SeparateConfigDatabase: non-participating, zero authority invocations" {
@@ -691,21 +730,28 @@ Describe "MSSQL physical-distinctness wiring" {
         $script:publishedText = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "start-published-dms.ps1") -Raw
     }
 
-    It "each script calls the authority exactly once, inside the mssql readiness block, gated on participating separate topology" {
+    It "each script calls the authority exactly once, inside the mssql readiness block, gated on CMS participation alone" {
         foreach ($scriptText in @($script:localText, $script:publishedText)) {
-            [regex]::Matches($scriptText, [regex]::Escape("Assert-MssqlPhysicalDatastoreDistinctness")).Count | Should -Be 1
+            # Line-anchored: the CALL starts its own line; the participation comments also name
+            # the authority, and comments are not invocations.
+            $callMatches = [regex]::Matches($scriptText, '(?m)^\s*Assert-MssqlTopologyPhysicalConsistency\b')
+            $callMatches.Count | Should -Be 1
 
             # Region: the main-flow mssql readiness block. The call must sit after the readiness
             # wait and before the identity/OpenIddict parameter construction that follows it,
-            # and the gate must require BOTH CMS participation and the declared separate
-            # topology - shared mode has a frozen zero-invocation contract.
-            $callIndex = $scriptText.IndexOf("Assert-MssqlPhysicalDatastoreDistinctness")
+            # and the gate must require CMS participation ONLY - the topology mode never gates
+            # the invocation (shared and separate both verify live; the authority selects the
+            # semantics from the file's own raw marker).
+            $callIndex = $callMatches[0].Index
             $waitIndex = $scriptText.LastIndexOf("Wait-MssqlReady -ContainerName", $callIndex)
-            $gateIndex = $scriptText.LastIndexOf('if ($cmsParticipates -and (Test-CmsSeparateTopologyDeclared -EnvironmentFile $EnvironmentFile))', $callIndex)
+            $gateIndex = $scriptText.LastIndexOf('if ($cmsParticipates) {', $callIndex)
             $identityIndex = $scriptText.IndexOf('$identityDbParams =', $callIndex)
             $waitIndex | Should -BeGreaterThan 0
             $gateIndex | Should -BeGreaterThan $waitIndex
             $identityIndex | Should -BeGreaterThan $callIndex
+
+            # The deleted mode-reading gate helper must never come back at the call sites.
+            $scriptText | Should -Not -Match "Test-CmsSeparateTopologyDeclared"
         }
     }
 
@@ -986,18 +1032,21 @@ Describe "MSSQL physical-distinctness wiring" {
     }
     }
 
-    Context "raw-marker gate semantics" {
+    Context "raw-marker invocation invariance" {
+    # The marker no longer gates WHETHER the authority runs - it selects the semantics INSIDE
+    # the authority (unit-tested there, including the raw-read spelling matrix). At the wiring
+    # level the matched ambient pair pins the remaining invariant: an ambient marker can change
+    # neither the fact nor the count of the invocation in either direction.
 
-    It "ambient marker 'true' cannot invoke the authority for a shared-mode file (kills the effective-value lookup mutant)" {
-        # Measured gap: a helper mutated to Compose-effective lookup (ambient wins) behaves
-        # identically when ambient is absent - this matched pair is what kills it.
+    It "ambient marker 'true' cannot change the shared-mode file's single invocation" {
         $env:DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = "true"
         $envFile = New-WiringEnvFile
         $run = Invoke-WiringRun -ScriptBlock {
             & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -EnvironmentFile $envFile -InfraOnly *>$null
         }
-        $run.AuthorityCalls | Should -HaveCount 0
-        $run.ErrorMessage | Should -Be "WIRING-POSTBOUNDARY-SENTINEL"
+        $run.AuthorityCalls | Should -HaveCount 1
+        $run.ErrorMessage | Should -Be $script:authoritySentinel
+        Get-Content -LiteralPath $run.AuthorityCalls[0].EnvironmentFile -Raw | Should -Not -Match '(?m)^DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true'
     }
 
     It "ambient marker 'false' cannot suppress the authority for a separate effective file" {
@@ -1008,26 +1057,7 @@ Describe "MSSQL physical-distinctness wiring" {
         }
         $run.AuthorityCalls | Should -HaveCount 1
         $run.ErrorMessage | Should -Be $script:authoritySentinel
-    }
-
-    It "interprets raw marker spellings exactly like the topology validator: only a declared ordinal 'true' is separate" {
-        $rows = @(
-            @{ Line = $null; Ambient = $null; Expected = $false; Label = "no declaration" }
-            @{ Line = "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false"; Ambient = $null; Expected = $false; Label = "declared false" }
-            @{ Line = "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=TRUE"; Ambient = $null; Expected = $false; Label = "case variant is not a topology declaration (ordinal)" }
-            @{ Line = "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true"; Ambient = $null; Expected = $true; Label = "declared true" }
-            @{ Line = 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE="true"'; Ambient = $null; Expected = $true; Label = "double-quoted true unwraps like Compose" }
-            @{ Line = $null; Ambient = "true"; Expected = $false; Label = "ambient-only value is not a file declaration" }
-        )
-        foreach ($row in $rows) {
-            if ($null -ne $row.Ambient) { $env:DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = $row.Ambient }
-            $lines = @("MSSQL_DB_NAME=edfi_datamanagementservice")
-            if ($null -ne $row.Line) { $lines = @($row.Line) + $lines }
-            $path = Join-Path $script:work ".env.marker-$([Guid]::NewGuid().ToString('N'))"
-            Set-Content -LiteralPath $path -NoNewline -Value ($lines -join "`n")
-            Test-CmsSeparateTopologyDeclared -EnvironmentFile $path | Should -Be $row.Expected -Because $row.Label
-            Remove-Item -LiteralPath "Env:\DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE" -Force -ErrorAction SilentlyContinue
-        }
+        (ReadValuesFromEnvFile $run.AuthorityCalls[0].EnvironmentFile)["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "true"
     }
     }
 }
