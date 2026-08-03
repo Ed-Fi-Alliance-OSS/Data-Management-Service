@@ -232,3 +232,8 @@ Completed target-refresh follow-up task for reference/design/backend-redesign/ep
 Key decisions: frontend IDataStoreProvider now wraps the production ConfigurationServiceDataStoreProvider and notifies the existing projection supervisor with CmsRefreshNotification after post-startup loads or metadata-changing refreshes; target registry uses the underlying provider directly to avoid recursive refresh; notification failures log and do not fail request data-store refresh.
 Files changed: DocumentCacheRefreshNotifyingDataStoreProvider.cs; WebApplicationBuilderExtensions.cs; DocumentCacheRefreshNotifyingDataStoreProviderTests.cs; WebApplicationBuilderExtensionsTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Verified focused frontend DocumentCache/Configuration and backend supervisor/registry unit filters.
+
+Completed administrative-command-runner follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: shared runner classifies provider command timeouts structurally without adding provider package dependencies; SQL Server -2, PostgreSQL query-canceled 57014, Npgsql timeout wrappers, and direct TimeoutException map to providerCommandTimeout with existing mutation-aware status; non-timeout provider failures remain unexpectedProviderFailure.
+Files changed: DocumentCacheAdministrativeCommandRunner.cs; DocumentCacheAdministrativeCommandRunnerTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Verified focused backend administrative runner/workflow/primitives unit filter.

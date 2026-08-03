@@ -6,6 +6,8 @@
 using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -13,8 +15,10 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -457,6 +461,117 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         result.Mutated.Should().Be(transactionMutates);
     }
 
+    [TestCaseSource(nameof(ProviderCommandTimeoutCases))]
+    public async Task It_classifies_provider_command_timeouts_escaping_administrative_primitives(
+        RelationalProviderToken providerToken,
+        Exception providerException,
+        bool commandMutated,
+        DocumentCacheAdministrativeCommandStatus expectedStatus
+    )
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            generation: 1,
+            providerToken: providerToken
+        );
+        var primitives = new StubAdministrativePrimitives(
+            providerToken,
+            projectedStateEmptinessException: providerException
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(providerToken: providerToken),
+            primitives: primitives
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: async (context, cancellationToken) =>
+            {
+                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.ClearCache);
+                if (commandMutated)
+                {
+                    context.MarkMutated(
+                        new DocumentCacheLifecycleObservation(
+                            DocumentCacheLifecycleState.Resetting,
+                            CacheAheadRecoveryRequired: false
+                        )
+                    );
+                }
+
+                await context
+                    .Primitives.ReadProjectedStateEmptinessAsync(
+                        new RecordingWriteSession(providerToken),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                return context.Completed();
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        result.Status.Should().Be(expectedStatus);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.ProviderCommandTimeout);
+        result.Mutated.Should().Be(commandMutated);
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.ClearCache
+                && diagnostic.LastCompletedPhase == DocumentCacheAdministrativeCommandPhase.Preflight
+                && diagnostic.Retryable == commandMutated
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.ProviderCommandTimeout
+            );
+    }
+
+    [Test]
+    public async Task It_keeps_non_timeout_provider_failures_classified_as_unexpected()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            generation: 1,
+            providerToken: RelationalProviderToken.SqlServer
+        );
+        var primitives = new StubAdministrativePrimitives(
+            RelationalProviderToken.SqlServer,
+            projectedStateEmptinessException: CreateSqlException(
+                547,
+                "The statement conflicted with a foreign key constraint."
+            )
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(providerToken: RelationalProviderToken.SqlServer),
+            primitives: primitives
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: async (context, cancellationToken) =>
+            {
+                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.ClearWork);
+                await context
+                    .Primitives.ReadProjectedStateEmptinessAsync(
+                        new RecordingWriteSession(RelationalProviderToken.SqlServer),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                return context.Completed();
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure);
+        result.Mutated.Should().BeFalse();
+    }
+
     [Test]
     public async Task It_preserves_baseline_high_water_context_when_workflow_timeout_expires()
     {
@@ -716,7 +831,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         IDocumentCacheTargetRegistry registry,
         IDocumentCacheProjectionSupervisor supervisor,
         IDocumentCacheAdministrativeMutex mutex,
-        IDocumentCacheProjectionObservationSink? observationSink = null
+        IDocumentCacheProjectionObservationSink? observationSink = null,
+        IDocumentCacheAdministrativePrimitives? primitives = null
     )
     {
         DocumentCacheProjectionObservationStore defaultObservationStore = new(
@@ -728,7 +844,7 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             supervisor,
             registry,
             mutex,
-            new StubAdministrativePrimitives(),
+            primitives ?? new StubAdministrativePrimitives(mutex.ProviderToken),
             sink,
             new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
@@ -819,6 +935,52 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         ).SetName("Unknown admission");
     }
 
+    private static IEnumerable<TestCaseData> ProviderCommandTimeoutCases()
+    {
+        foreach (bool commandMutated in new[] { false, true })
+        {
+            DocumentCacheAdministrativeCommandStatus expectedStatus = commandMutated
+                ? DocumentCacheAdministrativeCommandStatus.IncompleteRetryable
+                : DocumentCacheAdministrativeCommandStatus.FailedNoMutation;
+
+            yield return new TestCaseData(
+                RelationalProviderToken.SqlServer,
+                CreateSqlException(-2, "Execution Timeout Expired."),
+                commandMutated,
+                expectedStatus
+            ).SetName(
+                commandMutated
+                    ? "SQL Server command timeout after mutation"
+                    : "SQL Server command timeout before mutation"
+            );
+
+            yield return new TestCaseData(
+                RelationalProviderToken.Postgresql,
+                CreatePostgresException("57014"),
+                commandMutated,
+                expectedStatus
+            ).SetName(
+                commandMutated
+                    ? "PostgreSQL query canceled after mutation"
+                    : "PostgreSQL query canceled before mutation"
+            );
+
+            yield return new TestCaseData(
+                RelationalProviderToken.Postgresql,
+                new NpgsqlException(
+                    "Exception while reading from stream.",
+                    new TimeoutException("The operation has timed out.")
+                ),
+                commandMutated,
+                expectedStatus
+            ).SetName(
+                commandMutated
+                    ? "PostgreSQL timeout wrapper after mutation"
+                    : "PostgreSQL timeout wrapper before mutation"
+            );
+        }
+    }
+
     private static DocumentCacheOfflineWriterAdmission UnknownOfflineWriterAdmission() =>
         JsonSerializer.Deserialize<DocumentCacheOfflineWriterAdmission>(
             """
@@ -858,14 +1020,21 @@ public class Given_DocumentCacheAdministrativeCommandRunner
 
     private static DocumentCacheTargetExecutionContext ExecutionContext(
         long generation,
-        TimeSpan? workflowTimeout = null
+        TimeSpan? workflowTimeout = null,
+        RelationalProviderToken? providerToken = null
     ) =>
         new(
             TargetKey,
             new DocumentCacheTargetContextGeneration(generation),
             EffectiveSettings(workflowTimeout ?? TimeSpan.FromHours(24)),
-            new DocumentCacheTargetDataStoreMetadata(TargetKey.DataStoreId, "postgresql"),
-            new DocumentCacheTargetConnectionInput(RelationalProviderToken.Postgresql, "connection"),
+            new DocumentCacheTargetDataStoreMetadata(
+                TargetKey.DataStoreId,
+                (providerToken ?? RelationalProviderToken.Postgresql).Value
+            ),
+            new DocumentCacheTargetConnectionInput(
+                providerToken ?? RelationalProviderToken.Postgresql,
+                "connection"
+            ),
             Fingerprint,
             TrackingLifecycle,
             new DocumentCacheInventoryValidationResult(
@@ -978,8 +1147,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         new(
             executionContext,
             new DocumentCacheProjectionTargetProviderAdapters(
-                RelationalProviderToken.Postgresql,
-                MaterializationTargetContext(),
+                executionContext.ProviderToken,
+                MaterializationTargetContext(executionContext.ProviderToken),
                 new ThrowingDocumentCacheMaterializer(),
                 new ThrowingDocumentCacheWriter()
             ),
@@ -998,16 +1167,20 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             executionContext.PhysicalSourceFingerprint
         );
 
-    private static DocumentCacheMaterializationTargetContext MaterializationTargetContext() =>
+    private static DocumentCacheMaterializationTargetContext MaterializationTargetContext(
+        RelationalProviderToken providerToken
+    ) =>
         new(
             new DocumentCacheProjectionTargetKey(TargetKey.TenantKey, new DataStoreId(TargetKey.DataStoreId)),
-            MappingSet(),
+            MappingSet(providerToken),
             DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated,
             "connection"
         );
 
-    private static MappingSet MappingSet()
+    private static MappingSet MappingSet(RelationalProviderToken providerToken)
     {
+        SqlDialect dialect =
+            providerToken == RelationalProviderToken.SqlServer ? SqlDialect.Mssql : SqlDialect.Pgsql;
         EffectiveSchemaInfo effectiveSchema = new(
             ApiSchemaFormatVersion: "5.2.0",
             RelationalMappingVersion: "v2",
@@ -1021,10 +1194,10 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         return new MappingSet(
             new MappingSetKey(
                 effectiveSchema.EffectiveSchemaHash,
-                SqlDialect.Pgsql,
+                dialect,
                 effectiveSchema.RelationalMappingVersion
             ),
-            new DerivedRelationalModelSet(effectiveSchema, SqlDialect.Pgsql, [], [], [], [], [], []),
+            new DerivedRelationalModelSet(effectiveSchema, dialect, [], [], [], [], [], []),
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
             ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
             ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
@@ -1126,6 +1299,7 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     }
 
     private sealed class RecordingAdministrativeMutex(
+        RelationalProviderToken? providerToken = null,
         TimeSpan? acquireDelay = null,
         Exception? acquireException = null,
         Func<CancellationToken, Task>? beforeAcquireCompletes = null,
@@ -1134,7 +1308,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     {
         public int AcquireCount { get; private set; }
 
-        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+        public RelationalProviderToken ProviderToken { get; } =
+            providerToken ?? RelationalProviderToken.Postgresql;
 
         public async Task<IDocumentCacheAdministrativeMutexLease> AcquireAsync(
             DocumentCacheTargetConnectionInput connectionInput,
@@ -1163,13 +1338,14 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 await afterAcquireCompletes(cancellationToken).ConfigureAwait(false);
             }
 
-            return new RecordingMutexLease();
+            return new RecordingMutexLease(ProviderToken);
         }
     }
 
-    private sealed class RecordingMutexLease : IDocumentCacheAdministrativeMutexLease
+    private sealed class RecordingMutexLease(RelationalProviderToken providerToken)
+        : IDocumentCacheAdministrativeMutexLease
     {
-        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+        public RelationalProviderToken ProviderToken { get; } = providerToken;
 
         public DbConnection Connection => throw new NotSupportedException();
 
@@ -1178,13 +1354,16 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         public Task<IRelationalWriteSession> BeginTransactionAsync(
             IsolationLevel isolationLevel = IsolationLevel.ReadCommitted,
             CancellationToken cancellationToken = default
-        ) => Task.FromResult<IRelationalWriteSession>(new RecordingWriteSession());
+        ) => Task.FromResult<IRelationalWriteSession>(new RecordingWriteSession(ProviderToken));
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    private sealed class RecordingWriteSession : IRelationalWriteSession
+    private sealed class RecordingWriteSession(RelationalProviderToken providerToken)
+        : IRelationalWriteSession
     {
+        public RelationalProviderToken ProviderToken { get; } = providerToken;
+
         public DbConnection Connection => throw new NotSupportedException();
 
         public DbTransaction Transaction => throw new NotSupportedException();
@@ -1198,9 +1377,13 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    private sealed class StubAdministrativePrimitives : IDocumentCacheAdministrativePrimitives
+    private sealed class StubAdministrativePrimitives(
+        RelationalProviderToken? providerToken = null,
+        Exception? projectedStateEmptinessException = null
+    ) : IDocumentCacheAdministrativePrimitives
     {
-        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+        public RelationalProviderToken ProviderToken { get; } =
+            providerToken ?? RelationalProviderToken.Postgresql;
 
         public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
             IRelationalWriteSession mutexSession,
@@ -1246,7 +1429,17 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         public Task<DocumentCacheAdministrativeProjectedStateEmptinessResult> ReadProjectedStateEmptinessAsync(
             IRelationalWriteSession mutexSession,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            if (projectedStateEmptinessException is not null)
+            {
+                return Task.FromException<DocumentCacheAdministrativeProjectedStateEmptinessResult>(
+                    projectedStateEmptinessException
+                );
+            }
+
+            throw new NotSupportedException();
+        }
 
         public Task<DocumentCacheAdministrativeBaselineBoundaryResult> CaptureBaselineBoundaryAsync(
             IRelationalWriteSession mutexSession,
@@ -1316,4 +1509,54 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
+
+    private static SqlException CreateSqlException(int number, string message)
+    {
+        var sqlError = (SqlError)RuntimeHelpers.GetUninitializedObject(typeof(SqlError));
+        typeof(SqlError)
+            .GetField("_number", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(sqlError, number);
+        typeof(SqlError)
+            .GetField("_message", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(sqlError, message);
+
+        var errorList = new List<object> { sqlError };
+        var errorCollection = (SqlErrorCollection)
+            RuntimeHelpers.GetUninitializedObject(typeof(SqlErrorCollection));
+        typeof(SqlErrorCollection)
+            .GetField("_errors", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(errorCollection, errorList);
+
+        var sqlException = (SqlException)RuntimeHelpers.GetUninitializedObject(typeof(SqlException));
+        typeof(Exception)
+            .GetField("_message", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(sqlException, message);
+        typeof(SqlException)
+            .GetField("_errors", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(sqlException, errorCollection);
+
+        return sqlException;
+    }
+
+    private static PostgresException CreatePostgresException(string sqlState) =>
+        new(
+            messageText: "simulated provider command timeout",
+            severity: "ERROR",
+            invariantSeverity: "ERROR",
+            sqlState: sqlState,
+            detail: string.Empty,
+            hint: string.Empty,
+            position: 0,
+            internalPosition: 0,
+            internalQuery: string.Empty,
+            where: string.Empty,
+            schemaName: "dms",
+            tableName: "DocumentCacheState",
+            columnName: string.Empty,
+            dataTypeName: string.Empty,
+            constraintName: string.Empty,
+            file: "test.sql",
+            line: "1",
+            routine: "Execute"
+        );
 }

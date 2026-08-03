@@ -827,7 +827,7 @@
       "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend.Postgresql",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeCommandRunner|FullyQualifiedName~DocumentCacheAdministrativeWorkflow|FullyQualifiedName~DocumentCacheAdministrativePrimitives\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "projection-supervisor",
