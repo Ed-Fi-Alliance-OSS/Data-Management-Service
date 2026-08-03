@@ -29,8 +29,8 @@ traditional paging behavior or introducing offset/count work in cursor mode.
 - Compile PostgreSQL range predicates plus `LIMIT @pageSize` with no offset/count SQL.
 - Compile SQL Server range predicates plus `TOP (@pageSize)` with no `OFFSET`/count SQL.
 - Preserve existing traditional PostgreSQL `LIMIT/OFFSET` and SQL Server `OFFSET/FETCH`
-  page-selection output except for reviewed candidate-plan factoring. Collection hydration-batch
-  result-set changes belong to E20-S04 and are outside this textual gate.
+  page-selection output unchanged. Collection hydration-batch result-set changes belong to E20-S04
+  and are outside this textual gate.
 - Supply compiled cursor plans to both regular-resource and descriptor execution stories.
 
 ## Acceptance Evidence and Test Expectations
@@ -38,7 +38,7 @@ traditional paging behavior or introducing offset/count work in cursor mode.
 - Provider SQL-golden tests assert exact range predicates, ordering, size syntax, and parameter
   roles.
 - Negative assertions prove cursor plans contain no offset, row-number skip, or total-count SQL.
-- Traditional plan goldens demonstrate no semantic or unexplained textual regression.
+- Traditional plan goldens remain unchanged and demonstrate no semantic regression.
 - Edge cases cover inverted and extreme `Int64` ranges and page sizes 0, 1, and maximum.
 - Focused PostgreSQL and real SQL Server integration probes prove the generated SQL executes.
 

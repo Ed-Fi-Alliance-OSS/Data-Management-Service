@@ -45,8 +45,10 @@ approved DMS differences explicit and detects any unreviewed cursor or partition
 
 - A clean supported environment can start the pinned ODS API, seed it, pass a smoke comparison,
   and tear it down using documented commands.
-- The three validation-precedence cases from the DMS-1349 review return the verified ODS 7.3.2
-  messages, and the harness asserts exactly one error.
+- The harness implements every case in the epic's
+  [`Worked precedence examples`](EPIC.md#worked-precedence-examples) table and asserts each listed
+  DMS message and ODS parity/difference outcome, including exactly one error whenever either target
+  rejects the request.
 - Header cases distinguish ODS's hydrated-body-count gate from DMS's selected-keyset gate and also
   prove ODS emits a token for a non-empty traditional page.
 - Difference-ledger tests cover DMS message text, stricter parameter rejection, configurable

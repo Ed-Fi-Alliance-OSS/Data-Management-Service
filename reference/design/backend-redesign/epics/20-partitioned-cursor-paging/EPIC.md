@@ -42,6 +42,11 @@ The ODS 7.3.2 implementation is a behavioral reference where the guide is not pr
 
 - [`PagingHelpers`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/v7.3.2/Application/EdFi.Ods.Common/Infrastructure/Repositories/PagingHelpers.cs)
   defines the token syntax.
+- [`QueryParameters`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/v7.3.2/Application/EdFi.Ods.Common/Models/Queries/QueryParameters.cs#L31-L37)
+  decodes a supplied token before
+  [`QueryParametersValidator`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/v7.3.2/Application/EdFi.Ods.Common/Models/Queries/QueryParametersValidator.cs#L16-L45)
+  runs from
+  [`DataManagementControllerBase`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/v7.3.2/Application/EdFi.Ods.Api/Controllers/DataManagementControllerBase.cs#L171-L180).
 - [`KeySetPagingStrategy`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/v7.3.2/Application/EdFi.Ods.Common/Providers/Queries/Paging/KeySetPagingStrategy.cs)
   applies inclusive range bounds and a zero offset.
 - [`PartitionsController`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/v7.3.2/Application/EdFi.Ods.Api/Controllers/Partitions/Controllers/PartitionsController.cs)
@@ -62,7 +67,7 @@ cursor request even though ODS 7.3.2 accidentally accepts `limit` when `pageSize
 | `pageToken` | Selects the next inclusive `DocumentId` range. It is opaque to clients and is normally copied from `Next-Page-Token` or a `/partitions` response. |
 | `pageSize` | Optional only when `pageToken` is present; integer `0..MaximumPageSize`. When omitted, use the configured `MaximumPageSize`, initially `500`, matching the existing default GET-many size. |
 | `limit`, `offset` | Remain supported for traditional paging. When `limit` is omitted, use the configured `MaximumPageSize`, initially `500`. Neither parameter may be combined with `pageToken` or `pageSize`, including when its value is zero. |
-| `totalCount` | Remains supported for traditional paging. `totalCount=true` is invalid in cursor mode; an explicitly supplied `totalCount=false` is allowed. Clients may issue `?totalCount=true&limit=0` separately before a cursor walk. |
+| `totalCount` | Remains supported for traditional paging. When `pageToken` is present and valid, `totalCount=true` is invalid and an explicitly supplied `totalCount=false` is allowed. Clients may issue `?totalCount=true&limit=0` separately before a cursor walk. |
 | filters | Resource-property filters and `minChangeVersion`/`maxChangeVersion` compose with the cursor range. Clients must repeat the same filters on each request; the token does not store or validate them. |
 
 The first cursor page is an ordinary GET-many request, optionally using `limit`. Its
@@ -95,17 +100,43 @@ The presence of either `pageToken` or `pageSize`, including a blank or malformed
 the new cursor validation path and its parameter-validation ProblemDetails shell. Traditional-only
 `limit`/`offset` failures retain the existing generic bad-request response and messages.
 
-Cursor validation returns exactly one error and follows ODS 7.3.2 control-flow precedence:
+Cursor validation returns exactly one error. Evaluate the following four phases in order, use the
+exact message shown for each rule, and stop at the first match. Query-key presence, including a
+blank, malformed, or zero value, controls phase selection and relationship/conflict ordering
+through phase 2 before general syntax/range parsing.
 
-1. paging-strategy and mixed-mode conflicts;
-2. required parameter relationships; and
-3. syntax and range validation.
+**Phase 0 — token decode**
 
-The ODS early check for `offset` with `pageToken` has highest precedence. For the remaining
-mixed-mode conflicts, evaluate `limit` with either cursor parameter and then `totalCount=true` in
-cursor mode. Presence, including a blank, malformed, or zero value, controls those checks before
-values are parsed. Within required relationships, `pageSize` with `offset` and neither `pageToken`
-nor `limit` uses the ODS limit/offset guidance before the general missing-`pageToken` rule.
+- `pageToken` present and not decodable: `The page token provided was invalid.`
+
+**Phase 1 — mixed-mode conflicts**
+
+All rules in this phase require `pageToken` to be present and valid:
+
+1. `offset` present: `Both offset and pageToken parameters were provided, but they support alternative paging approaches and cannot be used together.`
+2. `limit` present: `Use pageSize instead of limit when using cursor paging with pageToken.`
+3. `totalCount=true`: `The totalCount parameter cannot be set to true when using cursor paging with pageToken.`
+
+**Phase 2 — required relationships**
+
+These rules apply when `pageToken` is absent:
+
+4. `pageSize` and `offset` present, with no `limit`: `Use limit instead of pageSize when using limit/offset paging.`
+5. `pageSize` present: `PageToken is required when pageSize is specified.`
+
+**Phase 3 — syntax and range**
+
+Evaluate this phase in canonical order `pageSize`, `limit`, `offset`, `totalCount`:
+
+6. invalid `pageSize`: `PageSize must be a value between 0 and {MaximumPageSize}.`
+7. invalid `limit`: `Limit must be omitted or set to a numeric value between 0 and {MaximumPageSize}.`
+8. invalid `offset`: `Offset must be a numeric value greater than or equal to 0.`
+9. invalid `totalCount`: `TotalCount must be a boolean value.`
+
+The numbered rules define the within-phase tie-breakers. A phase-0 failure suppresses every other
+rule, a mixed-mode conflict suppresses relationship and syntax/range rules, and a required-
+relationship failure suppresses syntax/range rules. This matches ODS's one-element validation-
+error response rather than accumulating every applicable cursor message.
 
 New cursor and partition failures use HTTP 400 with this JSON shape and the current DMS
 `application/json` response media type:
@@ -118,27 +149,31 @@ New cursor and partition failures use HTTP 400 with this JSON shape and the curr
   "status": 400,
   "correlationId": "<request correlation id>",
   "validationErrors": {},
-  "errors": ["<one or more messages>"]
+  "errors": ["<message>"]
 }
 ```
 
-Use these exact messages:
+For a cursor failure, `errors` contains exactly the one message selected above. A partition
+failure uses the same shell but may contain several ordered messages.
 
-- malformed `pageToken`: `The page token provided was invalid.`
-- invalid `pageSize`: `PageSize must be a value between 0 and {MaximumPageSize}.`
-- invalid `limit` while the cursor shell applies: `Limit must be omitted or set to a numeric value between 0 and {MaximumPageSize}.`
-- invalid `offset` while the cursor shell applies: `Offset must be a numeric value greater than or equal to 0.`
-- invalid `totalCount` while the cursor shell applies: `TotalCount must be a boolean value.`
-- `pageSize` without `pageToken`: `PageToken is required when pageSize is specified.`
-- `pageSize` with `offset` and neither `pageToken` nor `limit`: `Use limit instead of pageSize when using limit/offset paging.`
-- cursor parameters with `limit`: `Use pageSize instead of limit when using cursor paging with pageToken.`
-- cursor parameters with `offset`: `Both offset and pageToken parameters were provided, but they support alternative paging approaches and cannot be used together.`
-- `totalCount=true` in cursor mode: `The totalCount parameter cannot be set to true when using cursor paging with pageToken.`
+##### Worked precedence examples
 
-Stop after the first applicable rule. A mixed-mode error suppresses relationship and syntax/range
-errors, and a required-relationship error suppresses syntax/range errors. This intentionally
-matches ODS's one-element validation-error response rather than accumulating all applicable
-messages.
+`X` denotes any successfully decoded page token. Every expected DMS failure below returns HTTP 400
+with exactly the listed message.
+
+| Request | Expected DMS message | Matches ODS 7.3.2? |
+| --- | --- | --- |
+| `?pageToken=X&offset=-1` | `Both offset and pageToken parameters were provided, but they support alternative paging approaches and cannot be used together.` | Yes. |
+| `?pageToken=X&limit=99999` | `Use pageSize instead of limit when using cursor paging with pageToken.` | Yes. |
+| `?pageSize=99999` | `PageToken is required when pageSize is specified.` | Yes. |
+| `?pageToken=!!!&offset=5` | `The page token provided was invalid.` | Yes. |
+| `?pageToken=!!!&limit=10` | `The page token provided was invalid.` | Yes. |
+| `?pageSize=5&limit=10` | `PageToken is required when pageSize is specified.` | No. ODS returns HTTP 200; this is an approved stricter DMS rejection. |
+| `?pageSize=5&totalCount=true` | `PageToken is required when pageSize is specified.` | Yes. ODS returns the same message from its limit/offset branch. |
+| `?pageSize=5&offset=3&totalCount=true` | `Use limit instead of pageSize when using limit/offset paging.` | Yes. |
+| `?pageToken=X&pageSize=-1` | `PageSize must be a value between 0 and {MaximumPageSize}.` | Yes. |
+| `?pageToken=X&limit=10&pageSize=5` | `Use pageSize instead of limit when using cursor paging with pageToken.` | No. ODS returns HTTP 200; this is an approved stricter DMS rejection. |
+| `?pageToken=X&totalCount=true` | `The totalCount parameter cannot be set to true when using cursor paging with pageToken.` | No. ODS returns HTTP 200; this is an approved DMS rejection. |
 
 Cursor parameter recognition is operation-scoped. Supplying `pageToken` or `pageSize` to
 `/deletes` or `/keyChanges` returns the existing HTTP 400 bad-request shell with
@@ -164,13 +199,15 @@ continue to compose through their existing DMS boundaries.
 | filters | Supports the same resource-property and live-resource change-version filters as GET-many. Boundaries are calculated after filters and authorization. |
 | excluded parameters | `limit`, `offset`, `pageToken`, `pageSize`, and `totalCount` are not part of the partition operation. |
 
-Partition validation is also phase-gated. A malformed or out-of-range `number` produces the
+Partition validation uses its own ordered phases. A malformed or out-of-range `number` produces the
 exact error `Number of partitions must be between 1 and 200.` Partition-reserved parameters are
 reported as unsupported without first parsing their values, using the exact error
 `The '{parameter}' parameter is not supported by the partitions endpoint.` If several reserved
 parameters are present, report them in canonical order `pageToken`, `pageSize`, `limit`, `offset`,
 `totalCount`. The syntax/range phase for `number` takes precedence over the unsupported parameter
-phase.
+phase. This distinction is intentional: cursor validation reproduces ODS's short-circuiting
+single-error control flow, while partition validation reports every unsupported reserved parameter
+in deterministic order after the higher-priority `number` phase passes.
 
 The ODS-compatible partition calculation is:
 
@@ -290,9 +327,9 @@ ORDER BY r.[DocumentId];
 ```
 
 Cursor mode never compiles or runs total-count SQL. Existing traditional page-selection SQL must
-remain behaviorally and textually unchanged except for unavoidable factoring of the shared
-candidate plan. This textual gate does not cover the collection hydration-batch change required
-to expose selected keys; traditional response behavior remains unchanged.
+remain behaviorally and textually unchanged. This textual gate does not cover the collection
+hydration-batch change required to expose selected keys; traditional response behavior remains
+unchanged.
 
 Materialize a regular-resource collection page keyset once, as the current hydration batch does.
 For `PageKeysetSpec.Query`, surface the inserted ids as the first batch result set with PostgreSQL
@@ -502,9 +539,9 @@ Acceptance gates are:
 
 - cursor SQL contains no `OFFSET`, row-number skip, or count query and uses the root
   `DocumentId` key as a range predicate;
-- existing `limit`/`offset` page-selection SQL and behavior remain unchanged except for reviewed
-  candidate-plan factoring; the expected selected-id result set in collection hydration batches
-  is outside this textual SQL gate;
+- existing `limit`/`offset` page-selection SQL remains behaviorally and textually unchanged; the
+  expected selected-id result set in collection hydration batches is outside this textual SQL
+  gate;
 - cursor hydration performs one database command, uses the existing single-command page-keyset
   architecture, and adds no roundtrip;
 - `/partitions` performs one database command and returns identifiers only;
@@ -569,7 +606,7 @@ bounds, filter names or values, client identity, or candidate identifiers.
 The approved intentional ODS differences are:
 
 - reject `limit` whenever cursor parameters are present, including when `pageSize` is also present;
-- reject `totalCount=true` in cursor mode;
+- reject `totalCount=true` when a valid `pageToken` is present;
 - reject `limit`, `offset`, `pageToken`, `pageSize`, and `totalCount` on `/partitions`, where ODS
   7.3.2 validates only `number` and otherwise passes these through as additional parameters;
 - reject ODS's undocumented `allowSmallPartitions` and `useJoinAuth` partition pass-through
