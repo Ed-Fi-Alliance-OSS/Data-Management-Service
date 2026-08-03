@@ -1136,16 +1136,17 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             Exists: true,
             exactTables && exactProperties,
             observedValues,
-            PublicationDiagnostics(publicationName, observedTableSet)
+            PublicationDiagnostics(publicationName, observedTableSet, publishesAllTables)
         );
     }
 
     private static IReadOnlyList<CdcProviderDiagnostic> PublicationDiagnostics(
         CdcSafeName publicationName,
-        HashSet<string> observedTableSet
+        HashSet<string> observedTableSet,
+        bool publishesAllTables
     )
     {
-        if (!observedTableSet.Contains("dms.DocumentProjectionWork"))
+        if (!publishesAllTables && !observedTableSet.Contains("dms.DocumentProjectionWork"))
         {
             return [];
         }
@@ -1160,7 +1161,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 ArtifactKind: CdcProviderArtifactKind.PostgresqlPublication,
                 SafeName: publicationName,
                 ExpectedValue: "dms.DocumentProjectionWork-not-published",
-                ObservedValue: "published",
+                ObservedValue: publishesAllTables ? "publishes_all_tables" : "published",
                 ProviderErrorClass: null,
                 Classification: CdcProviderRetryContinuityClassification.FailClosed
             ),

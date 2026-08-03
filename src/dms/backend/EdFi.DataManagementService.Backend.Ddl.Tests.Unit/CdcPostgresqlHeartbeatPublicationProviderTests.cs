@@ -275,6 +275,78 @@ public class Given_PostgresqlCdcHeartbeatPublication_ValidateOnly
             );
         executor.ExecutedSql.Should().BeEmpty();
     }
+
+    [Test]
+    public async Task It_should_fail_closed_in_validate_only_when_an_existing_publication_publishes_all_tables()
+    {
+        var executor = new RecordingPostgresqlCdcExecutor(
+            heartbeatTableExists: true,
+            heartbeatSingletonExists: true,
+            documentReplicaIdentityFull: true,
+            publicationExists: true,
+            publicationPublishesAllTables: true
+        );
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlPublication
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["publishes_all_tables"] == "True"
+                && !observation.SafeObservedValues["tables"].Contains("dms.DocumentProjectionWork")
+            );
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_WORK_TABLE_PUBLICATION_FORBIDDEN"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.WorkTableCaptureViolation
+                && diagnostic.ObservedValue == "publishes_all_tables"
+            );
+        result.ManifestPayload!.Json.Should().Contain("\"publishes_all_tables\": \"True\"");
+        executor.ExecutedSql.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_in_initial_rerun_when_an_existing_publication_publishes_all_tables()
+    {
+        var executor = new RecordingPostgresqlCdcExecutor(
+            heartbeatTableExists: true,
+            heartbeatSingletonExists: true,
+            documentReplicaIdentityFull: true,
+            publicationExists: true,
+            publicationPublishesAllTables: true
+        );
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlPublication
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["publishes_all_tables"] == "True"
+            );
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_WORK_TABLE_PUBLICATION_FORBIDDEN"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.WorkTableCaptureViolation
+            );
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("CREATE PUBLICATION"));
+    }
 }
 
 [TestFixture]
@@ -958,6 +1030,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
     private bool _documentReplicaIdentityFull;
     private bool _publicationExists;
     private readonly bool _publicationCapturesWorkTable;
+    private readonly bool _publicationPublishesAllTables;
     private bool _slotExists;
     private readonly string _slotPlugin;
     private readonly string _slotType;
@@ -1004,6 +1077,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         bool documentReplicaIdentityFull = false,
         bool publicationExists = false,
         bool publicationCapturesWorkTable = false,
+        bool publicationPublishesAllTables = false,
         bool slotExists = false,
         string slotPlugin = "pgoutput",
         string slotType = "logical",
@@ -1047,6 +1121,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         _documentReplicaIdentityFull = documentReplicaIdentityFull;
         _publicationExists = publicationExists;
         _publicationCapturesWorkTable = publicationCapturesWorkTable;
+        _publicationPublishesAllTables = publicationPublishesAllTables;
         _slotExists = slotExists;
         _slotPlugin = slotPlugin;
         _slotType = slotType;
@@ -1231,7 +1306,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
                         ("publishes_update", "true"),
                         ("publishes_delete", "true"),
                         ("publishes_truncate", "false"),
-                        ("publishes_all_tables", "false"),
+                        ("publishes_all_tables", _publicationPublishesAllTables.ToString()),
                         ("publish_via_partition_root", "false")
                     ),
                 ]

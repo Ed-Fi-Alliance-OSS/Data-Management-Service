@@ -919,6 +919,6 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter PostgresqlCdcHeartbeatPublication",
       "With PostgreSQL provider prerequisites available, run or manually inspect a publication created FOR ALL TABLES and confirm setup reports CDC_POSTGRESQL_WORK_TABLE_PUBLICATION_FORBIDDEN without mutating the publication."
     ],
-    "completed": false
+    "completed": true
   }
 ]

@@ -487,6 +487,48 @@ public class Given_PostgresqlCdcProviderAccessRetry
     }
 
     [Test]
+    public async Task It_should_fail_closed_on_for_all_tables_publication_without_repairing_it()
+    {
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        setupResult.Diagnostics.Should().BeEmpty();
+
+        await ExecuteNonQueryAsync(
+            connection,
+            $"""
+            DROP PUBLICATION {QuoteIdentifier(PublicationName)};
+            CREATE PUBLICATION {QuoteIdentifier(PublicationName)}
+            FOR ALL TABLES
+            WITH (publish = 'insert, update, delete', publish_via_partition_root = false);
+            """
+        );
+
+        var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        validateResult.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        validateResult
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlPublication
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["publishes_all_tables"] == "True"
+                && !observation.SafeObservedValues["tables"].Contains("dms.DocumentProjectionWork")
+            );
+        validateResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_WORK_TABLE_PUBLICATION_FORBIDDEN"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.WorkTableCaptureViolation
+                && diagnostic.ObservedValue == "publishes_all_tables"
+            );
+        validateResult.ManifestPayload!.Json.Should().Contain("\"publishes_all_tables\": \"True\"");
+        (await PublicationPublishesAllTablesAsync(connection))
+            .Should()
+            .BeTrue("validation reports but does not repair FOR ALL TABLES publication state");
+    }
+
+    [Test]
     public async Task It_should_fail_source_fingerprint_mismatch_before_creating_provider_artifacts()
     {
         await using var connection = new NpgsqlConnection(_database.ConnectionString);
@@ -894,6 +936,18 @@ public class Given_PostgresqlCdcProviderAccessRetry
         }
 
         return tables;
+    }
+
+    private static async Task<bool> PublicationPublishesAllTablesAsync(NpgsqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT puballtables
+            FROM pg_catalog.pg_publication
+            WHERE pubname = @publication_name;
+            """;
+        command.Parameters.AddWithValue("publication_name", PublicationName);
+        return (bool)(await command.ExecuteScalarAsync())!;
     }
 
     private async Task<bool> HasDatabasePrivilegeAsync(NpgsqlConnection connection, string privilege)
