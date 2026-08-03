@@ -343,6 +343,95 @@ public class Given_DocumentCacheProjectionSupervisor
             .Be(DocumentCacheProjectionTargetEndReason.Removed);
     }
 
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_retains_an_ordinary_drain_generation_until_the_current_slice_releases_when_the_target_changes(
+        bool replaceTarget
+    )
+    {
+        DocumentCacheTargetKey targetKey = DocumentCacheTargetKey.Create("TenantA", 7);
+        DocumentCacheTargetExecutionContext firstGeneration = ExecutionContext(targetKey, generation: 1);
+        DocumentCacheTargetExecutionContext replacementGeneration = ExecutionContext(
+            targetKey,
+            generation: 2,
+            connectionInput: "connection-b"
+        );
+        DocumentCacheProjectionTargetEndReason expectedEndReason = replaceTarget
+            ? DocumentCacheProjectionTargetEndReason.Replaced
+            : DocumentCacheProjectionTargetEndReason.Removed;
+        DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+        RecordingTargetContextFactory targetContextFactory = new(observationStore);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(firstGeneration)]),
+            RuntimeSnapshot([firstGeneration])
+        );
+        registry.QueueRefresh(
+            replaceTarget ? Snapshot([EligibleObservation(replacementGeneration)]) : Snapshot([]),
+            replaceTarget ? RuntimeSnapshot([replacementGeneration]) : RuntimeSnapshot([])
+        );
+        BlockingOrdinaryDrainScheduler scheduler = new();
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationStore,
+            OptionsFor([targetKey]),
+            scheduler
+        );
+
+        try
+        {
+            await supervisor.StartAsync(CancellationToken.None);
+            await scheduler.WaitForDrainStartedAsync();
+            DocumentCacheProjectionTargetRuntimeContext oldContext =
+                targetContextFactory.CreatedContexts.Single();
+
+            await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.SupervisorTriggered);
+
+            oldContext.CancellationRequested.Should().BeTrue();
+            targetContextFactory.DisposedContexts.Should().NotContain(oldContext.ContextKey);
+            supervisor
+                .CurrentTargetContexts.Select(context => context.ContextKey)
+                .Should()
+                .NotContain(oldContext.ContextKey);
+            observationStore.CurrentSnapshot.GetCurrentTarget(oldContext.ContextKey).Should().BeNull();
+            observationStore.CurrentSnapshot.LastEndedTargetDiagnostics.Should().BeEmpty();
+
+            if (replaceTarget)
+            {
+                supervisor
+                    .CurrentTargetContexts.Should()
+                    .ContainSingle()
+                    .Which.Generation.Value.Should()
+                    .Be(2);
+                observationStore.CurrentSnapshot.GetCurrentTarget(targetKey)!.Generation.Value.Should().Be(2);
+            }
+            else
+            {
+                supervisor.CurrentTargetContexts.Should().BeEmpty();
+                observationStore.CurrentSnapshot.GetCurrentTarget(targetKey).Should().BeNull();
+            }
+
+            scheduler.ReleaseDrain();
+            await scheduler.WaitForDrainReleasedAsync();
+            await targetContextFactory.WaitForDisposedContextAsync(oldContext.ContextKey);
+
+            observationStore
+                .CurrentSnapshot.LastEndedTargetDiagnostics.Values.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<DocumentCacheProjectionTargetEndedDiagnosticSnapshot>(diagnostic =>
+                    diagnostic.ContextKey == oldContext.ContextKey
+                    && diagnostic.EndReason == expectedEndReason
+                );
+        }
+        finally
+        {
+            scheduler.ReleaseDrain();
+            await supervisor.StopAsync(CancellationToken.None);
+        }
+    }
+
     [Test]
     public async Task It_marks_only_the_ineligible_target_generation_ended()
     {
@@ -679,6 +768,10 @@ public class Given_DocumentCacheProjectionSupervisor
         IDocumentCacheProjectionObservationSink observationSink
     ) : IDocumentCacheProjectionTargetRuntimeContextFactory
     {
+        private readonly object _disposeSync = new();
+        private readonly List<DocumentCacheProjectionTargetContextKey> _disposedContexts = [];
+        private readonly List<DisposeWaiter> _disposeWaiters = [];
+
         public StubDocumentCacheMaterializer Materializer { get; } = new();
 
         public StubDocumentCacheWriter Writer { get; } = new();
@@ -686,6 +779,17 @@ public class Given_DocumentCacheProjectionSupervisor
         public List<DocumentCacheTargetExecutionContext> CreateCalls { get; } = [];
 
         public List<DocumentCacheProjectionTargetRuntimeContext> CreatedContexts { get; } = [];
+
+        public ImmutableArray<DocumentCacheProjectionTargetContextKey> DisposedContexts
+        {
+            get
+            {
+                lock (_disposeSync)
+                {
+                    return _disposedContexts.ToImmutableArray();
+                }
+            }
+        }
 
         public Task<DocumentCacheProjectionTargetRuntimeContext> CreateAsync(
             DocumentCacheTargetExecutionContext executionContext,
@@ -703,11 +807,51 @@ public class Given_DocumentCacheProjectionSupervisor
                     Materializer,
                     Writer
                 ),
-                observationSink
+                observationSink,
+                () => RecordDisposedContextAsync(executionContext)
             );
             CreatedContexts.Add(context);
 
             return Task.FromResult(context);
+        }
+
+        public Task WaitForDisposedContextAsync(DocumentCacheProjectionTargetContextKey contextKey)
+        {
+            lock (_disposeSync)
+            {
+                if (_disposedContexts.Contains(contextKey))
+                {
+                    return Task.CompletedTask;
+                }
+
+                TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                _disposeWaiters.Add(new DisposeWaiter(contextKey, completion));
+                return completion.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+
+        private ValueTask RecordDisposedContextAsync(DocumentCacheTargetExecutionContext executionContext)
+        {
+            DocumentCacheProjectionTargetContextKey contextKey = new(
+                executionContext.TargetKey,
+                executionContext.Generation
+            );
+
+            lock (_disposeSync)
+            {
+                _disposedContexts.Add(contextKey);
+                foreach (
+                    DisposeWaiter waiter in _disposeWaiters
+                        .Where(waiter => waiter.ContextKey == contextKey)
+                        .ToArray()
+                )
+                {
+                    waiter.Completion.SetResult();
+                    _disposeWaiters.Remove(waiter);
+                }
+            }
+
+            return ValueTask.CompletedTask;
         }
 
         private static DocumentCacheMaterializationTargetContext MaterializationTargetContext(
@@ -755,6 +899,11 @@ public class Given_DocumentCacheProjectionSupervisor
                 >()
             );
         }
+
+        private sealed record DisposeWaiter(
+            DocumentCacheProjectionTargetContextKey ContextKey,
+            TaskCompletionSource Completion
+        );
     }
 
     private sealed class RecordingObservationSink : IDocumentCacheProjectionObservationSink
@@ -879,6 +1028,99 @@ public class Given_DocumentCacheProjectionSupervisor
         }
 
         private sealed record Waiter(int CallCount, TaskCompletionSource Completion);
+    }
+
+    private sealed class BlockingOrdinaryDrainScheduler : IDocumentCacheProjectionScheduler
+    {
+        private readonly object _sync = new();
+        private readonly TaskCompletionSource _drainStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _releaseDrain = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _drainReleased = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private int _callCount;
+
+        public List<ImmutableArray<DocumentCacheProjectionTargetContextKey>> CallBatches { get; } = [];
+
+        public Task<ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>> RunReadyTargetsOnceAsync(
+            IEnumerable<DocumentCacheProjectionTargetRuntimeContext> targetContexts,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> contexts =
+                targetContexts.ToImmutableArray();
+
+            lock (_sync)
+            {
+                CallBatches.Add(contexts.Select(context => context.ContextKey).ToImmutableArray());
+            }
+
+            if (Interlocked.Increment(ref _callCount) != 1 || contexts.IsEmpty)
+            {
+                return Task.FromResult(
+                    DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.NoEligibleWork)
+                );
+            }
+
+            return RunBlockingOrdinaryDrainAsync(contexts[0], cancellationToken);
+        }
+
+        public Task<DocumentCacheProjectionSchedulerDispatchResult> RunAdministrativeDrainSliceAsync(
+            DocumentCacheProjectionTargetRuntimeContext targetContext,
+            CancellationToken cancellationToken = default
+        ) => throw new NotImplementedException();
+
+        public Task WaitForDrainStartedAsync() => _drainStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        public Task WaitForDrainReleasedAsync() => _drainReleased.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        public void ReleaseDrain() => _releaseDrain.TrySetResult();
+
+        private async Task<
+            ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>
+        > RunBlockingOrdinaryDrainAsync(
+            DocumentCacheProjectionTargetRuntimeContext context,
+            CancellationToken cancellationToken
+        )
+        {
+            DocumentCacheProjectionDrainPageResult? drainResult = await context
+                .DrainExecutor.TryRunOrdinaryDrainSliceAsync(
+                    async _ =>
+                    {
+                        _drainStarted.TrySetResult();
+                        await _releaseDrain.Task.ConfigureAwait(false);
+                        return DocumentCacheProjectionDrainPageResult.NoEligibleWork;
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            _drainReleased.TrySetResult();
+
+            return drainResult is null
+                ?
+                [
+                    DocumentCacheProjectionSchedulerDispatchResult.Skipped(
+                        context,
+                        DocumentCacheProjectionTargetReadinessBlockReason.LocalDrainActive,
+                        ObservedAt
+                    ),
+                ]
+                :
+                [
+                    DocumentCacheProjectionSchedulerDispatchResult.Dispatched(
+                        context,
+                        drainResult,
+                        ObservedAt,
+                        ObservedAt
+                    ),
+                ];
+        }
     }
 
     private sealed class StubDocumentCacheMaterializer : IDocumentCacheMaterializer

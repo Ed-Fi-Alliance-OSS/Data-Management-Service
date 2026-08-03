@@ -668,10 +668,17 @@ public sealed class DocumentCacheProjectionSupervisor(
     >.Empty;
     private ImmutableDictionary<
         DocumentCacheProjectionTargetContextKey,
-        RetainedCommandOwnedTargetContext
+        RetainedTargetContext
     > _retainedCommandOwnedTargetContexts = ImmutableDictionary<
         DocumentCacheProjectionTargetContextKey,
-        RetainedCommandOwnedTargetContext
+        RetainedTargetContext
+    >.Empty;
+    private ImmutableDictionary<
+        DocumentCacheProjectionTargetContextKey,
+        RetainedTargetContext
+    > _retainedOrdinaryDrainTargetContexts = ImmutableDictionary<
+        DocumentCacheProjectionTargetContextKey,
+        RetainedTargetContext
     >.Empty;
 
     public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts =>
@@ -729,6 +736,8 @@ public sealed class DocumentCacheProjectionSupervisor(
                 .RunReadyTargetsOnceAsync(CurrentTargetContexts, stoppingToken)
                 .ConfigureAwait(false);
 
+            await EndCompletedRetainedTargetContextsAsync(stoppingToken).ConfigureAwait(false);
+
             if (!AnyPageProcessed(results))
             {
                 return;
@@ -764,21 +773,21 @@ public sealed class DocumentCacheProjectionSupervisor(
         try
         {
             if (
-                !_retainedCommandOwnedTargetContexts.TryGetValue(
+                _retainedCommandOwnedTargetContexts.TryGetValue(
                     targetContext.ContextKey,
-                    out RetainedCommandOwnedTargetContext? retainedContext
+                    out RetainedTargetContext? retainedContext
                 )
-                || !ReferenceEquals(retainedContext.TargetContext, targetContext)
-                || IsCommandOwned(targetContext)
+                && ReferenceEquals(retainedContext.TargetContext, targetContext)
+                && !IsRetainedCommandOwnedTargetContextActive(targetContext)
             )
             {
-                return;
+                _retainedCommandOwnedTargetContexts = _retainedCommandOwnedTargetContexts.Remove(
+                    targetContext.ContextKey
+                );
+                await EndTargetContextAsync(targetContext, retainedContext.EndReason).ConfigureAwait(false);
             }
 
-            _retainedCommandOwnedTargetContexts = _retainedCommandOwnedTargetContexts.Remove(
-                targetContext.ContextKey
-            );
-            await EndTargetContextAsync(targetContext, retainedContext.EndReason).ConfigureAwait(false);
+            await EndCompletedRetainedTargetContextsNoLockAsync().ConfigureAwait(false);
         }
         finally
         {
@@ -821,6 +830,10 @@ public sealed class DocumentCacheProjectionSupervisor(
             if (IsCommandOwned(currentContext))
             {
                 RetainCommandOwnedTargetContext(currentContext, endReason);
+            }
+            else if (IsOrdinaryDrainOwned(currentContext))
+            {
+                RetainOrdinaryDrainTargetContext(currentContext, endReason);
             }
             else
             {
@@ -875,7 +888,7 @@ public sealed class DocumentCacheProjectionSupervisor(
         }
 
         _targetContexts = nextContexts.ToImmutable();
-        await EndCompletedRetainedTargetContextsAsync().ConfigureAwait(false);
+        await EndCompletedRetainedTargetContextsNoLockAsync().ConfigureAwait(false);
     }
 
     private async Task EndAllTargetContextsAsync(DocumentCacheProjectionTargetEndReason endReason)
@@ -898,10 +911,16 @@ public sealed class DocumentCacheProjectionSupervisor(
         ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> contexts =
             _retainedCommandOwnedTargetContexts
                 .Values.Select(context => context.TargetContext)
+                .Concat(_retainedOrdinaryDrainTargetContexts.Values.Select(context => context.TargetContext))
+                .Distinct()
                 .ToImmutableArray();
         _retainedCommandOwnedTargetContexts = ImmutableDictionary<
             DocumentCacheProjectionTargetContextKey,
-            RetainedCommandOwnedTargetContext
+            RetainedTargetContext
+        >.Empty;
+        _retainedOrdinaryDrainTargetContexts = ImmutableDictionary<
+            DocumentCacheProjectionTargetContextKey,
+            RetainedTargetContext
         >.Empty;
 
         foreach (DocumentCacheProjectionTargetRuntimeContext context in contexts)
@@ -927,25 +946,75 @@ public sealed class DocumentCacheProjectionSupervisor(
     {
         _retainedCommandOwnedTargetContexts = _retainedCommandOwnedTargetContexts.SetItem(
             context.ContextKey,
-            new RetainedCommandOwnedTargetContext(context, endReason)
+            new RetainedTargetContext(context, endReason)
         );
 
+        MarkTargetContextNoncurrent(context);
+    }
+
+    private void RetainOrdinaryDrainTargetContext(
+        DocumentCacheProjectionTargetRuntimeContext context,
+        DocumentCacheProjectionTargetEndReason endReason
+    )
+    {
+        context.Cancel();
+        _retainedOrdinaryDrainTargetContexts = _retainedOrdinaryDrainTargetContexts.SetItem(
+            context.ContextKey,
+            new RetainedTargetContext(context, endReason)
+        );
+
+        MarkTargetContextNoncurrent(context);
+    }
+
+    private void MarkTargetContextNoncurrent(DocumentCacheProjectionTargetRuntimeContext context)
+    {
         if (observationSink is IDocumentCacheProjectionCurrentTargetHealthSink currentTargetHealthSink)
         {
             currentTargetHealthSink.MarkTargetContextNoncurrent(context.ContextKey, timeProvider.GetUtcNow());
         }
     }
 
-    private async Task EndCompletedRetainedTargetContextsAsync()
+    private async Task EndCompletedRetainedTargetContextsAsync(CancellationToken cancellationToken)
     {
-        ImmutableArray<RetainedCommandOwnedTargetContext> completedRetainedContexts =
+        await _refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await EndCompletedRetainedTargetContextsNoLockAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
+    }
+
+    private async Task EndCompletedRetainedTargetContextsNoLockAsync()
+    {
+        ImmutableArray<RetainedTargetContext> completedCommandOwnedRetainedContexts =
             _retainedCommandOwnedTargetContexts
-                .Values.Where(retainedContext => !IsCommandOwned(retainedContext.TargetContext))
+                .Values.Where(retainedContext =>
+                    !IsRetainedCommandOwnedTargetContextActive(retainedContext.TargetContext)
+                )
                 .ToImmutableArray();
 
-        foreach (RetainedCommandOwnedTargetContext retainedContext in completedRetainedContexts)
+        foreach (RetainedTargetContext retainedContext in completedCommandOwnedRetainedContexts)
         {
             _retainedCommandOwnedTargetContexts = _retainedCommandOwnedTargetContexts.Remove(
+                retainedContext.TargetContext.ContextKey
+            );
+            await EndTargetContextAsync(retainedContext.TargetContext, retainedContext.EndReason)
+                .ConfigureAwait(false);
+        }
+
+        ImmutableArray<RetainedTargetContext> completedOrdinaryDrainRetainedContexts =
+            _retainedOrdinaryDrainTargetContexts
+                .Values.Where(retainedContext =>
+                    IsRetainedOrdinaryDrainTargetContextComplete(retainedContext.TargetContext)
+                )
+                .ToImmutableArray();
+
+        foreach (RetainedTargetContext retainedContext in completedOrdinaryDrainRetainedContexts)
+        {
+            _retainedOrdinaryDrainTargetContexts = _retainedOrdinaryDrainTargetContexts.Remove(
                 retainedContext.TargetContext.ContextKey
             );
             await EndTargetContextAsync(retainedContext.TargetContext, retainedContext.EndReason)
@@ -955,6 +1024,17 @@ public sealed class DocumentCacheProjectionSupervisor(
 
     private static bool IsCommandOwned(DocumentCacheProjectionTargetRuntimeContext context) =>
         context.HasAdministrativeCommandRetention || context.DrainExecutor.IsCommandOwned;
+
+    private static bool IsOrdinaryDrainOwned(DocumentCacheProjectionTargetRuntimeContext context) =>
+        context.DrainExecutor.CurrentOwner == DocumentCacheProjectionDrainInvocationKind.Ordinary;
+
+    private static bool IsRetainedCommandOwnedTargetContextActive(
+        DocumentCacheProjectionTargetRuntimeContext context
+    ) => context.HasAdministrativeCommandRetention || context.DrainExecutor.IsOwned;
+
+    private static bool IsRetainedOrdinaryDrainTargetContextComplete(
+        DocumentCacheProjectionTargetRuntimeContext context
+    ) => !context.DrainExecutor.IsOwned && !context.HasAdministrativeCommandRetention;
 
     private static DocumentCacheProjectionTargetEndReason DetermineEndReason(
         DocumentCacheProjectionTargetRuntimeContext currentContext,
@@ -1051,7 +1131,7 @@ public sealed class DocumentCacheProjectionSupervisor(
         );
     }
 
-    private sealed record RetainedCommandOwnedTargetContext(
+    private sealed record RetainedTargetContext(
         DocumentCacheProjectionTargetRuntimeContext TargetContext,
         DocumentCacheProjectionTargetEndReason EndReason
     );
