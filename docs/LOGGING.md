@@ -266,16 +266,14 @@ The `OtlpLogging` section supports these keys:
 > facility rather than through the application's own structured logs.
 
 > [!WARNING]
-> Enabling the compiled-in OTLP sink through raw `Serilog:Using` /
-> `Serilog:WriteTo` configuration is unsupported, even though it is
-> technically reachable because both applications use
-> `ReadFrom.Configuration`. The `OtlpLogging` section is the only supported
-> surface for enabling OTLP export. The standard `OTEL_EXPORTER_OTLP_*`
+> The `OtlpLogging` section is the only surface for enabling OTLP export.
+> Configuration-driven sink discovery is pinned to the Console and File sink
+> assemblies, so a raw `Serilog:Using` / `Serilog:WriteTo` entry naming the
+> OTLP sink does not activate it: the entry is ignored and a notice is
+> written to stderr through `SelfLog`. The standard `OTEL_EXPORTER_OTLP_*`
 > environment variables are likewise ignored by the exporter, so they cannot
 > silently override the configured endpoint, protocol, headers, or resource
-> identity. A sink enabled through raw Serilog configuration bypasses every
-> `OtlpLogging` safeguard described in this section, including the ignored
-> OTLP environment variables and the bounded export attempts.
+> identity.
 
 Vendor-specific integrations belong outside the CMS and DMS processes: send
 OTLP directly to a compatible service, or through an OpenTelemetry Collector,
@@ -343,11 +341,14 @@ in-cluster OpenTelemetry Collector.
 
 Enable OTLP export through environment variables passed to the container, for
 example `OtlpLogging__Enabled=true` and
-`OtlpLogging__Endpoint=http://collector:4318`. Compose operators must pass
-these variables through to the container environment (for example, via the
-service's `environment` key or an `env_file:` entry); they are not set
-automatically. A top-level `.env` file only provides values for compose-file
-interpolation; it does not reach the container environment by itself.
+`OtlpLogging__Endpoint=http://collector:4318`. The compose files under
+`eng/docker-compose` (and the azure-vm stack) forward the core keys from the
+`.env` file: `OTLP_LOGGING_ENABLED`, `OTLP_LOGGING_ENDPOINT`,
+`OTLP_LOGGING_PROTOCOL`, and `OTLP_LOGGING_DEPLOYMENT_ENVIRONMENT` for DMS,
+with `DMS_CONFIG_`-prefixed equivalents for CMS. `Headers` values cannot be
+forwarded statically (header names are arbitrary keys): add
+`OtlpLogging__Headers__<Name>` entries to the compose service's `environment`
+map directly.
 
 #### Windows Services
 

@@ -186,6 +186,19 @@ public class Given_OtlpLogging_Keys_Are_Fully_Configured
     }
 
     [Test]
+    public void It_applies_the_otlp_sink_with_the_grpc_protocol()
+    {
+        var options = LoggingConfigurator.BindOtlpLoggingOptions(BuildConfiguration("Grpc"));
+        var loggerConfiguration = new LoggerConfiguration();
+
+        // Exporter construction happens inside the WriteTo call, so this covers the gRPC
+        // channel + bounded-handler construction path that the HttpProtobuf tests never reach.
+        var sinkApplied = LoggingConfigurator.ApplyOtlpSink(loggerConfiguration, options);
+
+        sinkApplied.Should().BeTrue();
+    }
+
+    [Test]
     public void It_binds_every_key_with_the_http_protobuf_protocol()
     {
         var options = LoggingConfigurator.BindOtlpLoggingOptions(BuildConfiguration("HttpProtobuf"));
@@ -323,6 +336,7 @@ public class Given_An_Unreachable_Otlp_Export_Target
 {
     private const string EnabledEnv = "OtlpLogging__Enabled";
     private const string EndpointEnv = "OtlpLogging__Endpoint";
+    private const string OtelEndpointEnv = "OTEL_EXPORTER_OTLP_ENDPOINT";
 
     [TearDown]
     public void TearDown()
@@ -330,6 +344,7 @@ public class Given_An_Unreachable_Otlp_Export_Target
         Serilog.Debugging.SelfLog.Disable();
         Environment.SetEnvironmentVariable(EnabledEnv, null);
         Environment.SetEnvironmentVariable(EndpointEnv, null);
+        Environment.SetEnvironmentVariable(OtelEndpointEnv, null);
     }
 
     [Test]
@@ -344,6 +359,28 @@ public class Given_An_Unreachable_Otlp_Export_Target
 
         Environment.SetEnvironmentVariable(EnabledEnv, "true");
         Environment.SetEnvironmentVariable(EndpointEnv, $"http://127.0.0.1:{closedPort}");
+
+        // Decoy listener at the address of the standard OTEL env var: the exporter is configured
+        // with ignoreEnvironment: true, so this listener must never receive a connection.
+        var decoy = new TcpListener(IPAddress.Loopback, 0);
+        decoy.Start();
+        int decoyPort = ((IPEndPoint)decoy.LocalEndpoint).Port;
+        var decoyConnections = new ConcurrentQueue<TcpClient>();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    decoyConnections.Enqueue(await decoy.AcceptTcpClientAsync());
+                }
+            }
+            catch
+            {
+                // Listener stopped at the end of the test.
+            }
+        });
+        Environment.SetEnvironmentVariable(OtelEndpointEnv, $"http://127.0.0.1:{decoyPort}");
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -378,5 +415,55 @@ public class Given_An_Unreachable_Otlp_Export_Target
                 line => line.Contains("failed emitting a batch"),
                 "the export attempt against the closed port must be observable through SelfLog"
             );
+
+        // The failed export above proves an attempt happened; had OTEL_EXPORTER_OTLP_ENDPOINT
+        // been honored, that attempt would have connected to the decoy instead.
+        decoyConnections.Should().BeEmpty("OTEL_EXPORTER_OTLP_ENDPOINT must be ignored by the exporter");
+        decoy.Stop();
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
+public class Given_Raw_Serilog_Configuration_Naming_The_Otlp_Sink
+{
+    [TearDown]
+    public void TearDown()
+    {
+        Serilog.Debugging.SelfLog.Disable();
+    }
+
+    [Test]
+    public void It_ignores_the_sink_and_reports_it_through_selflog()
+    {
+        IConfigurationRoot configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["Serilog:Using:0"] = "Serilog.Sinks.OpenTelemetry",
+                    ["Serilog:WriteTo:0:Name"] = "OpenTelemetry",
+                    ["Serilog:WriteTo:0:Args:endpoint"] = "http://127.0.0.1:59999",
+                }
+            )
+            .Build();
+        var selfLogLines = new ConcurrentQueue<string>();
+        Serilog.Debugging.SelfLog.Enable(message => selfLogLines.Enqueue(message));
+
+        // Discovery is pinned to the Console and File sink assemblies, so the raw WriteTo entry
+        // must not activate the compiled-in OTLP sink; it is skipped with a SelfLog notice.
+        var logger = LoggingConfigurator.ConfigureLogging(configuration);
+        try
+        {
+            selfLogLines
+                .Should()
+                .Contain(
+                    line => line.Contains("Unable to find a method called OpenTelemetry"),
+                    "the pinned configuration reader must skip the OTLP sink method"
+                );
+        }
+        finally
+        {
+            (logger as IDisposable)?.Dispose();
+        }
     }
 }

@@ -12,6 +12,10 @@ services:
       AppSettings__BypassTypeCoercion: ${BYPASS_TYPE_COERCION:-false}
       AppSettings__AllowIdentityUpdateOverrides: ${ALLOW_IDENTITY_UPDATE_OVERRIDES:-}
       Serilog__MinimumLevel__Default: ${LOG_LEVEL:-DEBUG}
+      OtlpLogging__Enabled: ${OTLP_LOGGING_ENABLED:-false}
+      OtlpLogging__Endpoint: ${OTLP_LOGGING_ENDPOINT:-}
+      OtlpLogging__Protocol: ${OTLP_LOGGING_PROTOCOL:-HttpProtobuf}
+      OtlpLogging__DeploymentEnvironment: ${OTLP_LOGGING_DEPLOYMENT_ENVIRONMENT:-}
       # Mask incoming HTTP POST and PUT request body structures in DEBUG logging
       AppSettings__MaskRequestBodyInLogs: ${MASK_REQUEST_BODY_IN_LOGS:-true}
       AppSettings__MaximumPageSize: ${MAXIMUM_PAGE_SIZE:-500}

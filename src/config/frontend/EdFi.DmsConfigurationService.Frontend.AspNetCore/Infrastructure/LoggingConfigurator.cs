@@ -5,6 +5,7 @@
 
 using Microsoft.Extensions.Configuration;
 using Serilog;
+using Serilog.Settings.Configuration;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
@@ -88,13 +89,23 @@ public static class LoggingConfigurator
 
     /// <summary>
     /// Configures the application's Serilog logger from <paramref name="configuration"/>, including
-    /// optional OTLP export. OTLP is configured exclusively through the "OtlpLogging" section - never
-    /// through the "Serilog" section's "Using"/"WriteTo" configuration.
+    /// optional OTLP export. OTLP is configured exclusively through the "OtlpLogging" section and
+    /// cannot be routed through the "Serilog" section's "Using"/"WriteTo" configuration:
+    /// configuration-driven sink discovery is pinned to the Console and File sink assemblies, so a
+    /// WriteTo entry naming the OTLP sink is ignored with a SelfLog notice.
     /// </summary>
     public static Serilog.ILogger ConfigureLogging(IConfiguration configuration)
     {
+        // Pin configuration-driven sink discovery to the sinks supported through the Serilog
+        // section (Console and File). Without this, the compiled-in OTLP sink is reachable from
+        // raw Serilog:Using/WriteTo configuration, bypassing every OtlpLogging safeguard.
+        var configurationReaderOptions = new ConfigurationReaderOptions(
+            typeof(ConsoleLoggerConfigurationExtensions).Assembly,
+            typeof(FileLoggerConfigurationExtensions).Assembly
+        );
+
         var loggerConfiguration = new LoggerConfiguration()
-            .ReadFrom.Configuration(configuration)
+            .ReadFrom.Configuration(configuration, configurationReaderOptions)
             .Enrich.FromLogContext();
 
         ApplyOtlpSink(loggerConfiguration, BindOtlpLoggingOptions(configuration));
