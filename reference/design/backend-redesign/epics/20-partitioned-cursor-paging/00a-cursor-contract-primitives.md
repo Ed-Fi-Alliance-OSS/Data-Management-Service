@@ -1,11 +1,11 @@
 ---
-jira: TBD
+jira: DMS-1383
 source_spike: DMS-1349
 epic: DMS-1348
 status: proposed
 ---
 
-# E20-S00a: Cursor Contract Primitives
+# Story: Cursor Contract Primitives
 
 ## Outcome
 
@@ -24,9 +24,9 @@ acceptance evidence for them.
 
 ## Dependencies
 
-- No hard dependency on another E20 story.
-- This story blocks E20-S00b, E20-S02, E20-S04, E20-S06, and E20-S07 wherever they consume paging,
-  range, token, result-boundary, or configuration contracts.
+- No hard dependency on another story in this epic.
+- This story blocks DMS-1384, DMS-1385, DMS-1386, DMS-1387, and DMS-1388 wherever they consume
+  paging, range, token, result-boundary, or configuration contracts.
 - Existing E08 query contracts, E10 live change-version behavior, and E15 plan contracts are
   compatibility inputs.
 
@@ -64,7 +64,7 @@ acceptance evidence for them.
 
 - Cursor precedence validation, partition validation, the ProblemDetails shell, operation-scoped
   cursor parameter rejection, typed path classification, and repeated-parameter canonicalization
-  belong to E20-S00b.
-- Candidate planning and SQL compilation belong to E20-S02 and E20-S06.
-- Response-header execution belongs to E20-S04.
-- OpenAPI publication belongs to E20-S07.
+  belong to DMS-1384.
+- Candidate planning and SQL compilation belong to DMS-1385 and DMS-1387.
+- Response-header execution belongs to DMS-1386.
+- OpenAPI publication belongs to DMS-1388.

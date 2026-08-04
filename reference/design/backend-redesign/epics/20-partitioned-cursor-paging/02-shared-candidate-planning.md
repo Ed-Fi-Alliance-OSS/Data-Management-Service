@@ -1,11 +1,11 @@
 ---
-jira: TBD
+jira: DMS-1385
 source_spike: DMS-1349
 epic: DMS-1348
 status: proposed
 ---
 
-# E20-S02: Candidate Planning and Provider Cursor SQL
+# Story: Candidate Planning and Provider Cursor SQL
 
 ## Outcome
 
@@ -30,19 +30,20 @@ a dialect compiler emits them.
 
 ## Dependencies
 
-- Hard dependencies: E20-S00a for typed paging/range and backend contract boundaries, and the
-  completed E20-S09 harness and baseline.
-- The E20-S09 baseline is required because this story modifies the shared page-selection compiler.
+- Hard dependencies: DMS-1383 for typed paging/range and backend contract boundaries, and the
+  completed DMS-1391 harness and baseline.
+- The DMS-1391 baseline is required because this story modifies the shared page-selection compiler.
   Traditional page-selection output stays behaviorally and textually unchanged, so the baseline is
   regression insurance over that shared compiler rather than a record of an expected change: it is
-  the evidence that traditional SQL and latency did not move. E20-S09 has no E20 predecessor and can
-  be delivered while E20-S00a and E20-S00b are in progress, so this gate should not idle the story.
+  the evidence that traditional SQL and latency did not move. DMS-1391 has no predecessor in this
+  epic and can be delivered while DMS-1383 and DMS-1384 are in progress, so this gate should not
+  idle the story.
 - External foundations: E08 regular/descriptor query planning, E10 live change-version filters,
   E14 row-level authorization planning, and E15 plan-SQL foundations plus plan-contract and
   deterministic-binding artifacts. This story extends the E15-owned `PageDocumentIdSqlCompiler`
   output and plan contract, whose canonicalized/golden output must stay stable for both dialects.
-- Blocks execution in E20-S04 and E20-S06.
-- E20-S10 performs the final performance gate after implementation; it does not create a cycle.
+- Blocks execution in DMS-1386 and DMS-1387.
+- DMS-1392 performs the final performance gate after implementation; it does not create a cycle.
 
 ## Implementation Scope
 
@@ -59,9 +60,9 @@ a dialect compiler emits them.
 - Compile PostgreSQL range predicates plus `LIMIT @pageSize` with no offset/count SQL.
 - Compile SQL Server range predicates plus `TOP (@pageSize)` with no `OFFSET`/count SQL.
 - Preserve existing traditional PostgreSQL `LIMIT/OFFSET` and SQL Server `OFFSET/FETCH`
-  page-selection output unchanged. Collection hydration-batch result-set changes belong to E20-S04
+  page-selection output unchanged. Collection hydration-batch result-set changes belong to DMS-1386
   and are outside this textual gate.
-- Supply compiled cursor plans to the E20-S04 execution story and the E20-S06 partition story.
+- Supply compiled cursor plans to the DMS-1386 execution story and the DMS-1387 partition story.
 
 ## Acceptance Evidence and Test Expectations
 
@@ -78,9 +79,9 @@ a dialect compiler emits them.
 - Negative assertions prove cursor plans contain no offset, row-number skip, or total-count SQL.
 - Existing traditional page-selection SQL goldens remain unchanged and demonstrate no semantic
   regression.
-- The E20-S09 baseline artifacts exist and identify a commit at or before this story, so the
+- The DMS-1391 baseline artifacts exist and identify a commit at or before this story, so the
   pre-change baseline is genuinely pre-change. Comparing traditional latency against that baseline
-  is E20-S10's acceptance gate, not this story's.
+  is DMS-1392's acceptance gate, not this story's.
 - Edge cases cover inverted and extreme `Int64` ranges and page sizes 0, 1, and maximum.
 - Focused PostgreSQL and real SQL Server integration probes prove the generated SQL executes.
 
@@ -95,6 +96,6 @@ a dialect compiler emits them.
 
 ## Explicit Exclusions / Not Assigned
 
-- Keyset hydration/output, descriptor boundary propagation, and HTTP headers belong to E20-S04.
-- Partition window SQL and endpoint execution belong to E20-S06.
-- Full plan and latency acceptance belongs to E20-S10.
+- Keyset hydration/output, descriptor boundary propagation, and HTTP headers belong to DMS-1386.
+- Partition window SQL and endpoint execution belong to DMS-1387.
+- Full plan and latency acceptance belongs to DMS-1392.

@@ -1,11 +1,11 @@
 ---
-jira: TBD
+jira: DMS-1388
 source_spike: DMS-1349
 epic: DMS-1348
 status: proposed
 ---
 
-# E20-S07: OpenAPI and Client Contract
+# Story: OpenAPI and Client Contract
 
 ## Outcome
 
@@ -22,19 +22,19 @@ core, extension, descriptor, and profile OpenAPI documents without per-resource 
 
 ## Dependencies
 
-- Hard dependencies: E20-S00a for the approved public parameter, response, and runtime-default
-  contracts; E20-S04 for regular-resource and descriptor cursor execution; and E20-S06 for the
+- Hard dependencies: DMS-1383 for the approved public parameter, response, and runtime-default
+  contracts; DMS-1386 for regular-resource and descriptor cursor execution; and DMS-1387 for the
   active partition pipeline. No cursor parameter, response header, or partition path may be
   published before its runtime behavior is available.
-- E20-S00b validation and route integration are consumed transitively through E20-S04 and E20-S06.
-- E20-S08b consumes the published contract for API/E2E parity coverage.
+- DMS-1384 validation and route integration are consumed transitively through DMS-1386 and DMS-1387.
+- DMS-1390 consumes the published contract for API/E2E parity coverage.
 
 ## Implementation Scope
 
 - Augment eligible collection GET operations after fragment merge with `pageToken`, `pageSize`,
   and `Next-Page-Token` metadata.
 - Generate sibling partition GET operations for core, extension, and descriptor collections only
-  when E20-S06 activates the runtime route, with partition-specific summaries/descriptions and
+  when DMS-1387 activates the runtime route, with partition-specific summaries/descriptions and
   `application/json` token responses.
 - Append `Partitions` to the exact base collection `operationId`, preserving extension prefixes.
 - Publish runtime `MaximumPageSize` as both the default and maximum for `limit` and `pageSize`;
@@ -60,7 +60,7 @@ its own increment after the OpenAPI slice, and it must not gate OpenAPI acceptan
 - Negative tests prove no augmentation of item-by-id, `/deletes`, `/keyChanges`, discovery, or
   management paths and no introduction of composite paths.
 - Sequencing tests or review evidence prove cursor parameters and `Next-Page-Token` metadata are
-  absent before E20-S04 and `/partitions` paths are absent before E20-S06, then are published
+  absent before DMS-1386 and `/partitions` paths are absent before DMS-1387, then are published
   atomically with their active runtime operations.
 - OpenAPI generator integration tests produce the same augmented contract as runtime assembly.
 - For the separable documentation slice, review confirms examples use `pageSize`, repeat filters,
@@ -75,6 +75,6 @@ its own increment after the OpenAPI slice, and it must not gate OpenAPI acceptan
 
 ## Explicit Exclusions / Not Assigned
 
-- Runtime cursor and partition execution belong to E20-S04 and E20-S06.
+- Runtime cursor and partition execution belong to DMS-1386 and DMS-1387.
 - SDK generation changes outside DMS and per-resource ApiSchema path duplication are not assigned.
 - Descriptor operations are not added to resource-derived profile documents.

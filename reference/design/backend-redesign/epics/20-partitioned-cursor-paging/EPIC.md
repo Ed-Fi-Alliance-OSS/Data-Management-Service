@@ -23,18 +23,19 @@ executable acceptance evidence for those contracts.
 
 ## Status
 
-This planning draft is the design output of `DMS-1349`. `DMS-1348` has no implementation
-children yet. The eleven linked work-package files below are provisional planning placeholders that
-were approved before Jira creation; they use `jira: TBD` and are not implementation-owned story
-documents. Create Jira children only after separate authorization, then replace each placeholder's
-frontmatter and update `JIRA-INDEX.md` in a mapping-only change. The source spike is currently
-targeted to Ed-Fi API v8.1.
+This epic is the design output of `DMS-1349`. Its eleven work packages were approved and then filed
+as `DMS-1348` children `DMS-1383` through `DMS-1393`; each work-package file now carries its own
+Jira key in frontmatter, and `JIRA-INDEX.md` records the mapping. Each story's issue description is
+the work-package file converted to Jira wiki markup, so the file remains the editable source and any
+change to it must be pushed to the corresponding issue. `DMS-1348` itself carries no description,
+because this file is longer than Jira's 32,767-character description limit. The source spike is
+currently targeted to Ed-Fi API v8.1.
 
-The planning identifiers are not contiguous. Typed path operations, provider cursor SQL, and
-descriptor cursor execution were consolidated into `E20-S00b`, `E20-S02`, and `E20-S04`
-respectively, and the separate ODS reference-deployment package was removed in favor of static
-comparison cases owned by `E20-S08b`. The retired `E20-S01`, `E20-S03`, `E20-S05`, and `E20-S11`
-identifiers are not reused.
+The eleven packages are the result of consolidation during design: typed path operations, provider
+cursor SQL, and descriptor cursor execution were each folded into a sibling package, and a separate
+ODS reference-deployment package was dropped in favor of the static comparison cases owned by
+`DMS-1390`. The file-name number prefixes are left at their pre-consolidation values and are
+therefore not contiguous; they carry no meaning beyond ordering.
 
 ## Outcome
 
@@ -95,7 +96,7 @@ The design doc owns the normative public surface:
 The expected DMS messages below are the design doc's
 [worked precedence examples](../../design-docs/partitioned-cursor-paging.md#worked-precedence-examples).
 The third column is unique to this epic: it records how ODS 7.3.2 answers the same request, as
-established by reading the pinned sources cited in `Compatibility Baseline`. `E20-S08b` turns this
+established by reading the pinned sources cited in `Compatibility Baseline`. `DMS-1390` turns this
 column into static comparison cases.
 
 DMS returns exactly one error per rejected cursor request, which matches ODS's one-element
@@ -156,12 +157,12 @@ The design doc owns the augmentation rules, published runtime defaults, and prof
 "Publish only what runs" story-free. This epic supplies the corresponding delivery sequencing:
 
 - Append `pageToken` and `pageSize` parameter references to the collection GET, and document
-  `Next-Page-Token` as a string header on its HTTP 200 response, only after E20-S04 has activated
+  `Next-Page-Token` as a string header on its HTTP 200 response, only after DMS-1386 has activated
   both regular-resource and descriptor cursor execution.
-- Add the sibling `/partitions` GET operation only when the E20-S06 runtime partition pipeline is
+- Add the sibling `/partitions` GET operation only when the DMS-1387 runtime partition pipeline is
   activated. The path must not be published ahead of the implementation, and there is no interim
   feature toggle.
-- Because regular-resource and descriptor cursor execution land together in E20-S04, the cursor
+- Because regular-resource and descriptor cursor execution land together in DMS-1386, the cursor
   parameter and response-header gate is a single predecessor rather than two.
 
 ## Consistency Under Writes
@@ -174,25 +175,25 @@ change-query extraction:
 ## Performance Invariants and Evidence
 
 Implementation is incomplete without reproducible PostgreSQL and real SQL Server evidence.
-E20-S09 must add a repeatable script/configuration/result format or explicitly integrate and pin
+DMS-1391 must add a repeatable script/configuration/result format or explicitly integrate and pin
 the external Suite-3 performance runner, then capture the traditional-paging baseline before
-E20-S02 modifies the shared page-selection compiler. E20-S02 preserves traditional page-selection
+DMS-1385 modifies the shared page-selection compiler. DMS-1385 preserves traditional page-selection
 SQL behaviorally and textually, so the baseline is regression insurance over that shared compiler
 rather than a record of an expected change: it is the evidence that traditional SQL and latency did
-not move. Because E20-S04 depends on E20-S02, the baseline also lands before the first change that
-does alter shared traditional runtime execution, E20-S04's selected-id result set in the collection
-hydration batch. E20-S09 has no E20 predecessor and can be delivered while E20-S00a and E20-S00b
-are in progress.
+not move. Because DMS-1386 depends on DMS-1385, the baseline also lands before the first change that
+does alter shared traditional runtime execution, DMS-1386's selected-id result set in the collection
+hydration batch. DMS-1391 has no predecessor in this epic and can be delivered while DMS-1383 and
+DMS-1384 are in progress.
 
-The pre-change E20-S09 baseline is deliberately limited to the three traditional offset
+The pre-change DMS-1391 baseline is deliberately limited to the three traditional offset
 scenarios used by the gates: offset 0, a one-page shallow offset, and a recorded deep offset, for
 page sizes 25 and 500 on both providers. It records commit/environment identity, p50/p95, command
 count, returned rows, reads or buffers, database CPU/time, and plans using the same primary fixture
-that E20-S10 reuses, so baseline and final-gate results are directly comparable. It does not
+that DMS-1392 reuses, so baseline and final-gate results are directly comparable. It does not
 provision the authorized, filtered, or descriptor variants and does not run cursor or partition
 scenarios.
 
-After E20-S02 through E20-S08b are complete, E20-S10 uses the E20-S09 harness and baseline to run
+After DMS-1385 through DMS-1390 are complete, DMS-1392 uses the DMS-1391 harness and baseline to run
 the final matrix and evaluate the acceptance gates. The fixture set is deliberately narrow: one
 primary regular-resource fixture, reused for the authorized and filtered variants rather than
 provisioned a second time, plus a small descriptor set and a smoke set.
@@ -241,7 +242,7 @@ only after reviewed provider evidence demonstrates a repeatable deficiency.
 
 ## Bounded Telemetry
 
-E20-S12 adds production telemetry independently of the measurement matrix. The recorded dimensions
+DMS-1393 adds production telemetry independently of the measurement matrix. The recorded dimensions
 and the never-record list are owned by
 [Bounded Telemetry](../../design-docs/partitioned-cursor-paging.md#bounded-telemetry).
 
@@ -279,7 +280,7 @@ and the never-record list are owned by
 - E2E tests cover the public headers/body, the terminal empty request, malformed/mixed parameters,
   default and requested partition counts, parallel consumption without overlap, route qualifiers,
   multi-tenancy, extension resources, descriptors, and OpenAPI/profile metadata.
-- E20-S08b owns the ODS-comparison case definitions as static expected values derived from the
+- DMS-1390 owns the ODS-comparison case definitions as static expected values derived from the
   `ODS Precedence Comparison` table above and the approved-difference list below, both of which were
   established by reading the pinned ODS 7.3.2 sources cited in `Compatibility Baseline`. No live ODS
   reference deployment is in scope. Any additional difference must be recorded here before
@@ -300,8 +301,9 @@ The approved intentional ODS differences are:
   returns HTTP 200, and fails binding on a non-numeric value before its validator can emit a range
   message;
 - return `Number of partitions must be between 1 and 200.` for a non-numeric
-  `/partitions?number=abc`, where ODS's `[FromQuery] int? number` binding fails before its controller
-  body runs. `PartitionsController` is an `[ApiController]`, and `ApiBehaviorOptionsConfigurator`
+  `/partitions?number=abc`, where ODS's `[FromQuery] int? number` binding fails before its
+  controller body runs. `PartitionsController` is an `[ApiController]`, and
+  `ApiBehaviorOptionsConfigurator`
   supplies an `InvalidModelStateResponseFactory` without setting `SuppressModelStateInvalidFilter`,
   so automatic model-state validation answers with an `ErrorTranslator` ProblemDetails shell built
   from `ModelState`, and the controller's own range check — which is what produces ODS's otherwise
@@ -397,8 +399,8 @@ that are valid rather than server errors.
 
 This epic adds one delivery guardrail:
 
-- No implementation Jira children or story documents exist. This spike may refine the epic and
-  package boundaries but does not authorize production code or Jira creation.
+- The eleven children exist as filed stories only. Filing them authorized no production code; each
+  story is picked up on its own, and the design doc remains the normative contract it implements.
 
 ## Non-Goals
 
@@ -407,59 +409,58 @@ The non-goals are owned by
 
 ## Proposed Work Packages
 
-These provisional allocation files are approved for decomposition before Jira creation. They
-allocate implementation ownership and acceptance evidence for the contracts the design doc owns.
-Their `E20-S00a` through `E20-S12` identifiers are stable planning identifiers, not Jira keys, and
-they are intentionally non-contiguous as described in `Status`.
+These files allocate implementation ownership and acceptance evidence for the contracts the design
+doc owns. Each is filed as the Jira story whose key heads its entry below, and that key is how the
+package is referred to everywhere else in this epic.
 
-1. **[E20-S00a: Cursor contract primitives](00a-cursor-contract-primitives.md)** — typed
+1. **[DMS-1383: Cursor contract primitives](00a-cursor-contract-primitives.md)** — typed
    paging/range models, token codec, nullable-boundary and partition-result contract shapes,
    configuration and startup validation, and focused unit tests.
-2. **[E20-S00b: Request validation and typed paths](00b-cursor-and-partition-validation.md)** —
+2. **[DMS-1384: Request validation and typed paths](00b-cursor-and-partition-validation.md)** —
    ODS-precedence single-error cursor validation, phase-gated partition validation, the
    ProblemDetails shell, operation-scoped rejection on `/deletes` and `/keyChanges`, typed
    collection/by-id/partition path operations, and parameter canonicalization.
-3. **[E20-S02: Candidate planning and provider cursor SQL](02-shared-candidate-planning.md)** —
+3. **[DMS-1385: Candidate planning and provider cursor SQL](02-shared-candidate-planning.md)** —
    extend the shared page-document-id spec/compiler, share Core filter validation, add parameter
    roles, assert candidate uniqueness, and compile PostgreSQL and SQL Server cursor SQL with
    goldens preserving traditional page-selection SQL.
-4. **[E20-S04: Cursor execution](04-regular-resource-cursor-execution.md)** — regular-resource
+4. **[DMS-1386: Cursor execution](04-regular-resource-cursor-execution.md)** — regular-resource
    hydration keyset `RETURNING`/`OUTPUT`, descriptor boundary propagation, nullable selected
    maximum, `QuerySuccess`, the response header, and both-provider integration tests.
-5. **[E20-S06: Partition pipeline and SQL](06-partition-pipeline-and-sql.md)** — route exposure,
+5. **[DMS-1387: Partition pipeline and SQL](06-partition-pipeline-and-sql.md)** — route exposure,
    dedicated Core/backend contracts, regular and descriptor boundary planning, both provider
    compilers, validation, and integration tests.
-6. **[E20-S07: OpenAPI and client contract](07-openapi-and-client-contract.md)** — platform-wide
+6. **[DMS-1388: OpenAPI and client contract](07-openapi-and-client-contract.md)** — platform-wide
    resource/extension/descriptor augmentation, profile association, `operationId` values,
    summaries/descriptions, runtime defaults, and snapshots, plus the client-facing documentation
    update, which is a separable delivery slice within this story.
-7. **[E20-S08a: Cursor and partition authorization matrix](08a-authorization-matrix.md)** —
+7. **[DMS-1389: Cursor and partition authorization matrix](08a-authorization-matrix.md)** —
    cross-strategy accessible-set agreement between cursor walks and partition boundaries plus
    forged-range negative cases.
-8. **[E20-S08b: Public contract, parity, and E2E suite](08b-public-contract-parity-and-e2e.md)** —
+8. **[DMS-1390: Public contract, parity, and E2E suite](08b-public-contract-parity-and-e2e.md)** —
    public parameter/header/body coverage, route/tenant/profile/extension/descriptor coverage,
    terminal and parallel walks, concurrency scenarios, and the static ODS-comparison cases.
-9. **[E20-S09: Performance harness and traditional baseline](09-performance-harness-and-baseline.md)** —
+9. **[DMS-1391: Performance harness and traditional baseline](09-performance-harness-and-baseline.md)** —
    reproducible cross-provider harness and the three pre-change offset baseline scenarios.
-10. **[E20-S10: Performance final gate](10-performance-and-observability-final-gate.md)** — the
+10. **[DMS-1392: Performance final gate](10-performance-and-observability-final-gate.md)** — the
     narrow reused fixture set, full provider-plan evidence, thresholds, and regression reporting.
-11. **[E20-S12: Bounded cursor and partition telemetry](12-bounded-cursor-and-partition-telemetry.md)** —
+11. **[DMS-1393: Bounded cursor and partition telemetry](12-bounded-cursor-and-partition-telemetry.md)** —
     production paging metrics with bounded dimensions and explicit privacy constraints.
 
-E20-S00b follows E20-S00a because its validators consume the typed contracts and token codec, and it
+DMS-1384 follows DMS-1383 because its validators consume the typed contracts and token codec, and it
 owns the request boundary end to end: the query-key presence its phase selection depends on is
-produced by its own parameter canonicalization. E20-S09 has no E20 predecessor and must complete
-before E20-S02 modifies the shared page-selection compiler, so the baseline stands as regression
-insurance that traditional page-selection SQL and latency did not move; that dependency also places
-the baseline before the downstream E20-S04 shared execution change. E20-S04 and E20-S06 consume the
-shared page-document-id plan and the compiled cursor SQL. E20-S06 boundary compilation may proceed
-from E20-S00a through E20-S02, but route activation additionally requires E20-S04, so `/partitions`
-cannot hand out tokens before both regular-resource and descriptor GET-many can consume them.
-E20-S07 publishes no cursor parameter, response header, or partition path until E20-S04 and E20-S06
-provide the corresponding runtime behavior, as recorded in `OpenAPI Publication Gating`. E20-S08a
-and E20-S08b both consume E20-S04 and E20-S06, E20-S08b additionally consumes E20-S07, and the two
-may proceed in parallel. E20-S10 runs after E20-S02 through E20-S09, while E20-S12 may proceed
-independently after E20-S04 and E20-S06.
+produced by its own parameter canonicalization. DMS-1391 has no predecessor in this epic and must
+complete before DMS-1385 modifies the shared page-selection compiler, so the baseline stands as
+regression insurance that traditional page-selection SQL and latency did not move; that dependency
+also places the baseline before the downstream DMS-1386 shared execution change. DMS-1386 and
+DMS-1387 consume the shared page-document-id plan and the compiled cursor SQL. DMS-1387 boundary
+compilation may proceed from DMS-1383 through DMS-1385, but route activation additionally requires
+DMS-1386, so `/partitions` cannot hand out tokens before both regular-resource and descriptor
+GET-many can consume them. DMS-1388 publishes no cursor parameter, response header, or partition
+path until DMS-1386 and DMS-1387 provide the corresponding runtime behavior, as recorded in
+`OpenAPI Publication Gating`. DMS-1389 and DMS-1390 both consume DMS-1386 and DMS-1387, DMS-1390
+additionally consumes DMS-1388, and the two may proceed in parallel. DMS-1392 runs after DMS-1385
+through DMS-1391, while DMS-1393 may proceed independently after DMS-1386 and DMS-1387.
 
 ## Completion Evidence
 

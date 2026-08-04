@@ -1,11 +1,11 @@
 ---
-jira: TBD
+jira: DMS-1389
 source_spike: DMS-1349
 epic: DMS-1348
 status: proposed
 ---
 
-# E20-S08a: Cursor and Partition Authorization Matrix
+# Story: Cursor and Partition Authorization Matrix
 
 ## Outcome
 
@@ -23,11 +23,11 @@ cannot widen it.
 
 ## Dependencies
 
-- Hard dependencies: E20-S04 for the regular-resource and descriptor cursor paths and E20-S06 for
+- Hard dependencies: DMS-1386 for the regular-resource and descriptor cursor paths and DMS-1387 for
   the partition execution path under test.
 - E14 row-level authorization planning and E15 plan contracts are the upstream foundations whose
   strategies this matrix exercises.
-- E20-S08b consumes the same fixtures for public-contract and E2E coverage. E20-S10 consumes the
+- DMS-1390 consumes the same fixtures for public-contract and E2E coverage. DMS-1392 consumes the
   representative authorized fixtures where useful.
 
 ## Implementation Scope
@@ -63,8 +63,8 @@ cannot widen it.
 ## Explicit Exclusions / Not Assigned
 
 - Public parameter/header/body contracts, route qualifiers, tenants, profiles, walks, concurrency
-  scenarios, and ODS comparison execution belong to E20-S08b.
-- Fundamental contract, planner, SQL, execution, and OpenAPI implementation belongs to E20-S00a
-  through E20-S07.
-- The static ODS-comparison cases and approved-difference enforcement belong to E20-S08b.
-- Load/latency thresholds and provider plan capture belong to E20-S10.
+  scenarios, and ODS comparison execution belong to DMS-1390.
+- Fundamental contract, planner, SQL, execution, and OpenAPI implementation belongs to DMS-1383
+  through DMS-1388.
+- The static ODS-comparison cases and approved-difference enforcement belong to DMS-1390.
+- Load/latency thresholds and provider plan capture belong to DMS-1392.

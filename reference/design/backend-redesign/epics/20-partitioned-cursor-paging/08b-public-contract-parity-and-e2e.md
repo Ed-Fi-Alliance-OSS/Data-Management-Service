@@ -1,11 +1,11 @@
 ---
-jira: TBD
+jira: DMS-1390
 source_spike: DMS-1349
 epic: DMS-1348
 status: proposed
 ---
 
-# E20-S08b: Public Contract, Parity, and E2E Suite
+# Story: Public Contract, Parity, and E2E Suite
 
 ## Outcome
 
@@ -32,9 +32,9 @@ scope.
 
 ## Dependencies
 
-- Hard dependencies: E20-S04, E20-S06, and E20-S07.
-- E20-S08a covers the authorization matrix and shares its fixtures.
-- E20-S10 consumes the stable scenarios and fixtures for its final performance gate where useful.
+- Hard dependencies: DMS-1386, DMS-1387, and DMS-1388.
+- DMS-1389 covers the authorization matrix and shares its fixtures.
+- DMS-1392 consumes the stable scenarios and fixtures for its final performance gate where useful.
 
 ## Implementation Scope
 
@@ -43,7 +43,7 @@ scope.
 - Add stable-fixture sequential and parallel partition walks over regular resources, extension
   resources, and descriptors, with filters and live change-version bounds repeated on each request.
 - Cover route qualifiers, tenant segments, profile routing including the write-only profile outcome,
-  and the published OpenAPI/profile metadata from E20-S07.
+  and the published OpenAPI/profile metadata from DMS-1388.
 - Own the ODS-comparison case definitions as static expected values derived from the epic's ODS
   precedence comparison and approved-difference list, execute them against a DMS target, and assert
   each case either matches the recorded ODS behavior or maps to a named approved difference. This
@@ -78,14 +78,14 @@ scope.
 - PostgreSQL receives the complete DMS Docker E2E walk; real SQL Server receives provider
   integration and API-level coverage for every provider-sensitive behavior.
 - Authorization is exercised only as far as the public contract requires. The supported-strategy
-  matrix belongs to E20-S08a.
+  matrix belongs to DMS-1389.
 
 ## Explicit Exclusions / Not Assigned
 
-- The cross-strategy authorization matrix and forged-range negative cases belong to E20-S08a.
-- Fundamental contract, planner, SQL, execution, and OpenAPI implementation belongs to E20-S00a
-  through E20-S07.
+- The cross-strategy authorization matrix and forged-range negative cases belong to DMS-1389.
+- Fundamental contract, planner, SQL, execution, and OpenAPI implementation belongs to DMS-1383
+  through DMS-1388.
 - A live or automated ODS 7.3.2 reference deployment is out of scope; the epic's source-derived
   tables are the reference.
-- Load/latency thresholds and provider plan capture belong to E20-S10.
+- Load/latency thresholds and provider plan capture belong to DMS-1392.
 - Snapshot consistency is not asserted.

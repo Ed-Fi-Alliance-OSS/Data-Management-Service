@@ -218,3 +218,14 @@ This index links design documents under `reference/design/backend-redesign/epics
 
 - `DMS-1348` — Partitioned Cursor Paging — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/EPIC.md`
   - `DMS-1349` — Design Partitioned Cursor Paging — `reference/design/backend-redesign/design-docs/partitioned-cursor-paging.md`
+  - `DMS-1383` — Cursor Contract Primitives — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/00a-cursor-contract-primitives.md`
+  - `DMS-1384` — Request Validation and Typed Paths — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/00b-cursor-and-partition-validation.md`
+  - `DMS-1385` — Candidate Planning and Provider Cursor SQL — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/02-shared-candidate-planning.md`
+  - `DMS-1386` — Cursor Execution — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/04-regular-resource-cursor-execution.md`
+  - `DMS-1387` — Partition Pipeline and SQL — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/06-partition-pipeline-and-sql.md`
+  - `DMS-1388` — OpenAPI and Client Contract — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/07-openapi-and-client-contract.md`
+  - `DMS-1389` — Cursor and Partition Authorization Matrix — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/08a-authorization-matrix.md`
+  - `DMS-1390` — Public Contract, Parity, and E2E Suite — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/08b-public-contract-parity-and-e2e.md`
+  - `DMS-1391` — Performance Harness and Traditional Baseline — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/09-performance-harness-and-baseline.md`
+  - `DMS-1392` — Performance Final Gate — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/10-performance-and-observability-final-gate.md`
+  - `DMS-1393` — Bounded Cursor and Partition Telemetry — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/12-bounded-cursor-and-partition-telemetry.md`

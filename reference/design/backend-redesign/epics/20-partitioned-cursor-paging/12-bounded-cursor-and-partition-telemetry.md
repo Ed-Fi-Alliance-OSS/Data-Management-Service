@@ -1,11 +1,11 @@
 ---
-jira: TBD
+jira: DMS-1393
 source_spike: DMS-1349
 epic: DMS-1348
 status: proposed
 ---
 
-# E20-S12: Bounded Cursor and Partition Telemetry
+# Story: Bounded Cursor and Partition Telemetry
 
 ## Outcome
 
@@ -20,9 +20,9 @@ planning without coupling instrumentation delivery to the large-fixture performa
 
 ## Dependencies
 
-- Hard dependencies: E20-S04 for the completed regular-resource and descriptor execution paths and
-  E20-S06 for the partition execution path being instrumented.
-- Existing E12 observability conventions are reusable inputs. E20-S10 measurement and threshold
+- Hard dependencies: DMS-1386 for the completed regular-resource and descriptor execution paths and
+  DMS-1387 for the partition execution path being instrumented.
+- Existing E12 observability conventions are reusable inputs. DMS-1392 measurement and threshold
   evaluation are independent and do not block this production work.
 
 ## Implementation Scope
@@ -59,6 +59,6 @@ planning without coupling instrumentation delivery to the large-fixture performa
 ## Explicit Exclusions / Not Assigned
 
 - Fixture provisioning, benchmark iteration, plan capture, thresholds, and regression reporting
-  belong to E20-S10.
+  belong to DMS-1392.
 - Dashboards, alert thresholds, paid APM integration, production capacity sizing, and raw-query
   logging are not assigned.

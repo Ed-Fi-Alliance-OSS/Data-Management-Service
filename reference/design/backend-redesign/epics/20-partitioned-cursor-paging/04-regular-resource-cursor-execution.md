@@ -1,11 +1,11 @@
 ---
-jira: TBD
+jira: DMS-1386
 source_spike: DMS-1349
 epic: DMS-1348
 status: proposed
 ---
 
-# E20-S04: Cursor Execution
+# Story: Cursor Execution
 
 ## Outcome
 
@@ -29,11 +29,11 @@ half a hidden dependency of the regular-resource half.
 
 ## Dependencies
 
-- Hard dependencies: E20-S00a, E20-S00b, and E20-S02.
+- Hard dependencies: DMS-1383, DMS-1384, and DMS-1385.
 - Existing E08 hydration, query-execution, and descriptor endpoint behavior remain compatibility
   inputs.
-- E20-S06 route activation, E20-S07 publication, E20-S08a, E20-S08b, E20-S10, and E20-S12 consume
-  this story's completed execution paths.
+- DMS-1387 route activation, DMS-1388 publication, DMS-1389, DMS-1390, DMS-1392, and DMS-1393
+  consume this story's completed execution paths.
 
 ## Implementation Scope
 
@@ -79,8 +79,8 @@ half a hidden dependency of the regular-resource half.
 
 ## Explicit Exclusions / Not Assigned
 
-- Partition endpoints and boundary SQL belong to E20-S06.
-- OpenAPI publication belongs to E20-S07.
-- The authorization matrix belongs to E20-S08a, and broad parity/E2E and performance gates belong to
-  E20-S08b and E20-S10.
-- Production telemetry belongs to E20-S12.
+- Partition endpoints and boundary SQL belong to DMS-1387.
+- OpenAPI publication belongs to DMS-1388.
+- The authorization matrix belongs to DMS-1389, and broad parity/E2E and performance gates belong to
+  DMS-1390 and DMS-1392.
+- Production telemetry belongs to DMS-1393.

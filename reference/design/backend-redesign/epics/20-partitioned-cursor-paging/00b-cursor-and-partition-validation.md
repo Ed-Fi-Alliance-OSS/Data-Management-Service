@@ -1,18 +1,19 @@
 ---
-jira: TBD
+jira: DMS-1384
 source_spike: DMS-1349
 epic: DMS-1348
 status: proposed
 ---
 
-# E20-S00b: Request Validation and Typed Paths
+# Story: Request Validation and Typed Paths
 
 ## Outcome
 
 Own the cursor and partition request boundary end to end: ODS-precedence single-error cursor
 validation, the separately phase-gated partition validator, the shared parameter-validation
-ProblemDetails shell, operation-scoped cursor parameter recognition, typed collection/by-id/partition
-path operations, and parameter canonicalization. The design doc is the source of truth for exact
+ProblemDetails shell, operation-scoped cursor parameter recognition, typed
+collection/by-id/partition path operations, and parameter canonicalization. The design doc is the
+source of truth for exact
 messages, phase gating, and within-phase tie-breakers; the epic owns work partitioning, the ODS
 comparison, and the acceptance evidence.
 
@@ -33,11 +34,11 @@ story assert a presence semantic the other owns.
 
 ## Dependencies
 
-- Hard dependency: E20-S00a for the typed paging/range contracts and the token codec that phase 0
+- Hard dependency: DMS-1383 for the typed paging/range contracts and the token codec that phase 0
   consumes.
-- This story blocks E20-S04 for the canonicalized cursor parameters that GET-many consumes and
-  E20-S06 for partition validation and the typed partition route.
-- E20-S06 owns activation of the dedicated partition pipeline and endpoint behavior.
+- This story blocks DMS-1386 for the canonicalized cursor parameters that GET-many consumes and
+  DMS-1387 for partition validation and the typed partition route.
+- DMS-1387 owns activation of the dedicated partition pipeline and endpoint behavior.
 - Existing E08 query contracts and E10 live change-version behavior are compatibility inputs.
 
 ## Implementation Scope
@@ -59,7 +60,7 @@ story assert a presence semantic the other owns.
   last-value-wins behavior across repeated parameters including case variants.
 - Preserve the existing invalid-UUID result for unknown third segments and unmatched behavior for
   additional segments.
-- Until E20-S06 activates the partition pipeline, dispatch
+- Until DMS-1387 activates the partition pipeline, dispatch
   `/{project}/{resource}/partitions` through the existing invalid-UUID HTTP 400 behavior, including
   `"validationErrors":{"$.id":["The value 'partitions' is not valid."]}`; do not return an
   incomplete partition response.
@@ -86,7 +87,7 @@ story assert a presence semantic the other owns.
 - Frontend tests prove repeated exact-name and case-variant query parameters choose the last value
   in request order, and that the chosen value is what drives validator phase selection.
 - Regression tests cover existing GET-many, GET-by-id, write, delete, and tracked-change routing.
-- Before E20-S06, `/partitions` regression coverage locks the existing invalid-UUID HTTP 400; no
+- Before DMS-1387, `/partitions` regression coverage locks the existing invalid-UUID HTTP 400; no
   incomplete endpoint is externally exposed.
 
 ## Cross-Provider and Authorization Responsibilities
@@ -100,8 +101,8 @@ story assert a presence semantic the other owns.
 ## Explicit Exclusions / Not Assigned
 
 - Typed paging/range contracts, the token codec, result-boundary shapes, and configuration belong to
-  E20-S00a.
-- Candidate planning and SQL compilation belong to E20-S02 and E20-S06.
-- Response-header execution belongs to E20-S04.
-- Partition response generation belongs to E20-S06.
-- OpenAPI publication belongs to E20-S07, and the static ODS-comparison cases belong to E20-S08b.
+  DMS-1383.
+- Candidate planning and SQL compilation belong to DMS-1385 and DMS-1387.
+- Response-header execution belongs to DMS-1386.
+- Partition response generation belongs to DMS-1387.
+- OpenAPI publication belongs to DMS-1388, and the static ODS-comparison cases belong to DMS-1390.
