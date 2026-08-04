@@ -247,10 +247,11 @@ the listed message.
 | `?pageToken=X&limit=10&pageSize=5` | `Use pageSize instead of limit when using cursor paging with pageToken.` |
 | `?pageToken=X&totalCount=true` | `The totalCount parameter cannot be set to true when using cursor paging with pageToken.` |
 
-Note the last two rows: a phase-1 conflict wins even though the request also carries a
-well-formed cursor parameter pair. Sending `limit` alongside `pageSize` is a paging-mode mistake,
-and answering it with a range message about `pageSize` would point the client at the wrong
-parameter.
+Note the `?pageToken=X&limit=10&pageSize=5` row: a phase-1 conflict rejects the request even though
+its cursor parameters are individually well formed and would otherwise have returned a page.
+Sending `limit` alongside `pageSize` is a paging-mode mistake, and it is reported ahead of any
+phase-3 range check on `pageSize` so that a request carrying both mistakes is answered with the mode
+error rather than a range message pointing at the wrong parameter.
 
 #### Operation scoping
 
@@ -392,8 +393,10 @@ authorization bypasses or errors. An inverted range is also how a bounded partit
 terminal empty page after returning the item at its upper bound.
 
 After a non-empty selected keyset, the next token uses `HighestSelectedDocumentId + 1` and retains
-the request's maximum bound — which is how a partition walk stays inside its slice. If the highest
-selected id is `Int64.MaxValue`, omit the header rather than overflowing.
+the request's maximum bound — which is how a partition walk stays inside its slice. A request that
+carried no `pageToken`, and therefore no maximum bound, uses `Int64.MaxValue`, so a walk entered from
+a traditional response is unbounded above. If the highest selected id is `Int64.MaxValue`, omit the
+header rather than overflowing.
 
 ### Security properties
 
@@ -749,8 +752,8 @@ hardware.
   the surface it supplements; the others are guards around it.
 - **Cheap entry.** A first cursor page costs at most `1.20x` (p50) / `1.30x` (p95) an offset-0
   traditional page, so beginning a walk is not itself an expensive operation.
-- **No traditional regression.** Shallow-offset traditional paging does not regress against its
-  pre-change cost.
+- **No traditional regression.** Shallow-offset traditional paging costs at most `1.20x` (p50) and
+  `1.30x` (p95) its pre-change cost.
 - **Partition count is free.** Requesting 200 partitions costs at most `1.25x` requesting 1 over
   the same candidate set, so the requested count cannot cause repeated scans of the candidate
   relation.

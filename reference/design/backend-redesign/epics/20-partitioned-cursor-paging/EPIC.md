@@ -199,9 +199,10 @@ provisioned a second time, plus a small descriptor set and a smoke set.
 
 - 10,000 candidates for smoke and setup validation;
 - one primary fixture of 500,000 accessible regular-resource candidates with at least 10%
-  `DocumentId` gaps. That count is the smallest at which `number=200` still yields all 200 tokens,
-  because the five-maximum-page minimum partition size is `500 * 5 = 2500` and
-  `ceiling(500000 / 200)` is exactly `2500`;
+  `DocumentId` gaps. That count is where a requested `number=200` and the five-maximum-page minimum
+  partition size coincide exactly: the minimum is `500 * 5 = 2500`, and `ceiling(500000 / 200)` is
+  also exactly `2500`. It therefore exercises `number=200` at the boundary where the minimum stops
+  binding, with no headroom to hide a sizing error;
 - the same primary fixture read by a second principal that can access approximately half of it,
   giving the representative row-level authorization variant without a second data load;
 - one filtered variant of the primary fixture at approximately 10% selectivity; and
@@ -299,7 +300,7 @@ The approved intentional ODS differences are:
   returns HTTP 200, and fails binding on a non-numeric value before its validator can emit a range
   message;
 - return `Number of partitions must be between 1 and 200.` for a non-numeric
-  `/partitions?number=`, where ODS's `[FromQuery] int? number` binding fails before its controller
+  `/partitions?number=abc`, where ODS's `[FromQuery] int? number` binding fails before its controller
   body runs. `PartitionsController` is an `[ApiController]`, and `ApiBehaviorOptionsConfigurator`
   supplies an `InvalidModelStateResponseFactory` without setting `SuppressModelStateInvalidFilter`,
   so automatic model-state validation answers with an `ErrorTranslator` ProblemDetails shell built

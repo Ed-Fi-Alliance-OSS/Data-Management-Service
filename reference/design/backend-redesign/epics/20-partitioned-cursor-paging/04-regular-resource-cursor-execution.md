@@ -30,7 +30,8 @@ half a hidden dependency of the regular-resource half.
 ## Dependencies
 
 - Hard dependencies: E20-S00a, E20-S00b, and E20-S02.
-- Existing E08 descriptor endpoint behavior remains a compatibility input.
+- Existing E08 hydration, query-execution, and descriptor endpoint behavior remain compatibility
+  inputs.
 - E20-S06 route activation, E20-S07 publication, E20-S08a, E20-S08b, E20-S10, and E20-S12 consume
   this story's completed execution paths.
 
