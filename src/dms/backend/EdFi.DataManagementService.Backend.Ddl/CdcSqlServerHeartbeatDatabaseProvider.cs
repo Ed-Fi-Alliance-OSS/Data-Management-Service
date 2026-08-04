@@ -1256,7 +1256,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     SELECT 1
                     FROM connector_permissions deny_info
                     WHERE deny_info.state = N'D'
-                    AND deny_info.permission_name = grant_info.permission_name
+                    AND deny_info.permission_name IN (grant_info.permission_name, N'CONTROL')
                     AND (
                         (
                             deny_info.class = 0
@@ -1297,7 +1297,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     SELECT 1
                     FROM connector_permissions deny_info
                     WHERE deny_info.state = N'D'
-                    AND deny_info.permission_name = grant_info.permission_name
+                    AND deny_info.permission_name IN (grant_info.permission_name, N'CONTROL')
                     AND (
                         (
                             deny_info.class = 0
@@ -1325,6 +1325,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                             + column_info.object_name COLLATE DATABASE_DEFAULT
                             + N'.'
                             + column_info.column_name COLLATE DATABASE_DEFAULT
+                            + CASE
+                                WHEN deny_info.permission_name = N'CONTROL'
+                                    THEN N'.DENY_CONTROL'
+                                ELSE N''
+                            END
                             + N'.via.'
                             + deny_info.source_name COLLATE DATABASE_DEFAULT
                     ) AS denial_token
@@ -1351,7 +1356,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         )
                     )
                 WHERE deny_info.state = N'D'
-                AND deny_info.permission_name = N'SELECT'
+                AND deny_info.permission_name IN (N'SELECT', N'CONTROL')
             )
             SELECT
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM connector) THEN 1 ELSE 0 END) AS connector_exists,

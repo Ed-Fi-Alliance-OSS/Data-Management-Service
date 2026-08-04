@@ -957,5 +957,42 @@
       "With ConnectionStrings__MssqlAdmin pointing at a disposable SQL Server 2025 instance, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderArtifacts"
     ],
     "completed": true
+  },
+  {
+    "category": "artifact-output",
+    "description": "Low: Preserve the CDC provider manifest's observed opt-in status when manifest artifact writing fails after successful provider inspection. Treat provider inspection status and artifact-output status as separate result facts. Keep this scoped to result/manifest aggregation for artifact-output diagnostics; do not change provider validation, retry behavior, output locations, manifest schema breadth, or database setup semantics.",
+    "acceptance-criteria": [
+      "When provider setup exact-matches or creates required CDC provider artifacts and only cdc-provider.{dialect}.manifest.json writing fails, CdcProviderSetupResult still returns Failed with CDC_PROVIDER_ARTIFACT_OUTPUT_FAILED, but ManifestPayload.Json does not report opt_in_status as validation_failed solely because of the output failure.",
+      "The manifest payload's provider opt-in status is based on the observed provider setup or validation result before artifact-output diagnostics are appended; artifact-output failure affects CdcProviderSetupResult.Outcome and diagnostics only.",
+      "The returned manifest payload still includes the artifact-output diagnostic and continues to omit raw artifact directory paths, invalid path fragments, credentials, connection strings, server names, and catalog identifiers.",
+      "Provider validation failures continue to report failed or validation-failed manifest status, and all provider artifact, grant, source-inventory, heartbeat, source-fingerprint, and provider-history fields remain generated from observed provider setup metadata.",
+      "The fix does not broaden CdcProviderArtifactOutputWriter exception handling, add retry or fallback output locations, add new manifest status concepts beyond the existing provider opt-in status and result outcome, add a user-facing CDC setup CLI, persist output state, or change ordinary DDL provisioning behavior."
+    ],
+    "steps-to-verify": [
+      "Review CdcProviderSetupService manifest-output aggregation and CdcProviderManifest.BuildManifest/Emit for separate handling of provider inspection status and artifact-output diagnostics.",
+      "Add focused unit coverage in CdcProviderArtifactOutputTests for a complete observed provider state plus invalid manifest output path, asserting the failed result and artifact-output diagnostic are present while the manifest payload does not classify provider opt-in as validation_failed solely due to the output failure.",
+      "Keep any provider-validation-failure coverage focused on preserving existing validation_failed behavior; do not add new artifact-output retry, fallback, or lifecycle scenarios.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"CdcProviderArtifactOutput|CdcProviderManifest\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-security",
+    "description": "Medium: Honor SQL Server DENY CONTROL as a covering deny when computing CDC connector effective permissions. Keep this limited to the existing CDC connector access inspection for DMS CDC source, heartbeat, work-table, and unexpected-DMS-table decisions; do not add a general SQL Server permission hierarchy engine, permission auditor, non-DMS schema scan, or provider setup grant changes.",
+    "acceptance-criteria": [
+      "SQL Server connector access inspection treats DENY CONTROL at database, SCHEMA::dms, and object scope as denying the SELECT, INSERT, UPDATE, DELETE, ALTER, TAKE OWNERSHIP, CONTROL, and other already-inspected permissions implied by CONTROL for the existing DMS CDC source, heartbeat, work-table, and unexpected-DMS-table decisions.",
+      "Required direct SELECT grants on dms.Document, dms.DocumentCache, and dms.CdcHeartbeat, and required direct heartbeat column UPDATE grants, do not satisfy required privileges when a covering DENY CONTROL from the connector principal, public, or a reachable database role makes the effective permission unavailable.",
+      "Forbidden positive access validation still rejects broad GRANT CONTROL, ALTER, TAKE OWNERSHIP, INSERT, UPDATE, DELETE, and unexpected SELECT access, while DENY-only restrictions are reported as missing required access rather than overprivileged grants.",
+      "Diagnostics and grant inventory identify only safe DMS object names, permission names, and safe sources such as direct, public, or role names, without raw server/catalog identifiers or credentials.",
+      "The fix reuses ConnectorPrincipalAccessSql, dms_object_effective_permissions, dms_column_specific_effective_permissions, and required_source_select_denials; it does not add login/user creation, credential handling, permission repair, non-DMS securable inventory, server-wide auditing, or new setup workflow.",
+      "Focused unit and SQL Server integration fixtures cover public or role DENY CONTROL at database/schema/object scope over otherwise valid direct provider grants, plus existing DENY SELECT and DENY UPDATE behavior."
+    ],
+    "steps-to-verify": [
+      "Review ConnectorPrincipalAccessSql, dms_object_effective_permissions, dms_column_specific_effective_permissions, and required_source_select_denials in CdcSqlServerHeartbeatDatabaseProvider for DENY CONTROL handling limited to existing DMS CDC effective-permission decisions.",
+      "Review the diff to confirm it does not add a general SQL Server permission auditor, non-DMS schema scan, credential handling, permission repair, or setup grant changes.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcPrincipalAccess",
+      "With ConnectionStrings__MssqlAdmin pointing at a disposable SQL Server 2025 instance, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderAccessRetry"
+    ],
+    "completed": true
   }
 ]

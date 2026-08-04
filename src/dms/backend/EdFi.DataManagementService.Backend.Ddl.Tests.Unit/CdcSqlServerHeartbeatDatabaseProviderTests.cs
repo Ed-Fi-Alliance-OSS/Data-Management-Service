@@ -1752,6 +1752,78 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
     }
 
     [Test]
+    public async Task It_should_reject_covering_deny_control_as_missing_required_access()
+    {
+        var sourceSelectDenial = "dms.Document.DocumentUuid.DENY_CONTROL.via.public";
+        var executor = ExistingArtifactsWithConnectorAccess(
+            new RecordingSqlServerConnectorAccess
+            {
+                GatingRoleExists = true,
+                GatingRoleDirectMembers = ["connector_principal"],
+                DatabaseConnect = true,
+                DocumentSelect = true,
+                DocumentCacheSelect = true,
+                HeartbeatSelect = true,
+                HeartbeatSequenceUpdate = true,
+                HeartbeatAtUpdate = true,
+                SourceSelectDenials = [sourceSelectDenial],
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_REQUIRED_GRANTS_MISSING"
+                && diagnostic.ObservedValue!.Contains("SELECT_dms.Document")
+            )
+            .And.NotContain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_SOURCE_WRITE_GRANT_MISMATCH"
+                || diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_HEARTBEAT_UPDATE_GRANT_MISMATCH"
+                || diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_WORK_TABLE_GRANT_MISMATCH"
+                || diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH"
+            );
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.Grant
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["source_select_denials"] == sourceSelectDenial
+            );
+        result
+            .GrantInventory.Should()
+            .NotContain(grant =>
+                grant.SafeObjectName.Value == "dms.Document" && grant.Privileges.Contains("SELECT")
+            );
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
+    }
+
+    [Test]
+    public async Task It_should_emit_connector_access_sql_that_treats_deny_control_as_a_covering_deny()
+    {
+        var executor = ExistingArtifactsWithConnectorAccess(RecordingSqlServerConnectorAccess.Exact());
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        var connectorAccessSql = executor.QueriedSql.Single(sql =>
+            sql.Contains("cdc:sqlserver:connector-principal-access")
+        );
+        connectorAccessSql
+            .Should()
+            .Contain("deny_info.permission_name IN (grant_info.permission_name, N'CONTROL')");
+        connectorAccessSql.Should().Contain("deny_info.permission_name IN (N'SELECT', N'CONTROL')");
+        connectorAccessSql.Should().Contain("N'.DENY_CONTROL'");
+    }
+
+    [Test]
     public async Task It_should_reject_inherited_or_public_forbidden_connector_permissions()
     {
         var executor = ExistingArtifactsWithConnectorAccess(

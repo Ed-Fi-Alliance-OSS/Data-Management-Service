@@ -259,6 +259,65 @@ public class Given_MssqlCdcProviderAccessRetry
             );
     }
 
+    [TestCase("DENY CONTROL TO public;", "dms.Document.DocumentUuid.DENY_CONTROL.via.public")]
+    [TestCase(
+        "DENY CONTROL ON SCHEMA::[dms] TO public;",
+        "dms.Document.DocumentUuid.DENY_CONTROL.via.public"
+    )]
+    [TestCase(
+        "DENY CONTROL ON OBJECT::[dms].[Document] TO public;",
+        "dms.Document.DocumentUuid.DENY_CONTROL.via.public"
+    )]
+    public async Task It_should_honor_public_deny_control_over_required_direct_provider_grants(
+        string denyControlSql,
+        string expectedDenialToken
+    )
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        setupResult
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+
+        await ExecuteNonQueryAsync(connection, denyControlSql);
+
+        var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        validateResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(validateResult.Diagnostics));
+        validateResult
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_REQUIRED_GRANTS_MISSING"
+                && diagnostic.ObservedValue!.Contains("SELECT_dms.Document", StringComparison.Ordinal)
+            )
+            .And.NotContain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_SOURCE_WRITE_GRANT_MISMATCH"
+                || diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_HEARTBEAT_UPDATE_GRANT_MISMATCH"
+                || diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_WORK_TABLE_GRANT_MISMATCH"
+                || diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH"
+            );
+        validateResult
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.Grant
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation
+                    .SafeObservedValues["source_select_denials"]
+                    .Contains(expectedDenialToken, StringComparison.Ordinal)
+            );
+        validateResult
+            .GrantInventory.Should()
+            .NotContain(grant =>
+                grant.SafeObjectName.Value == "dms.Document" && grant.Privileges.Contains("SELECT")
+            );
+        (await HasConnectorObjectPermissionAsync(connection, "Document", "SELECT"))
+            .Should()
+            .BeTrue("DENY CONTROL affects effective access without removing the direct provider grant");
+    }
+
     [Test]
     public async Task It_should_fail_closed_when_required_source_column_select_is_denied()
     {
