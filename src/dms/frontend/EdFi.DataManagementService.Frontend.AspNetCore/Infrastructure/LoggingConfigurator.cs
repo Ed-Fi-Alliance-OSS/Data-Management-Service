@@ -37,7 +37,8 @@ public static class LoggingConfigurator
     /// sink is not applied, because the sink's built-in default endpoint assumes gRPC conventions
     /// and would silently mismatch the configured protocol. An Endpoint that is not an absolute
     /// http or https URL is likewise warned and skipped, so both protocols reject a malformed
-    /// endpoint the same way.
+    /// endpoint the same way, and so is any sink construction failure such as an invalid header
+    /// name or value.
     /// </summary>
     public static bool ApplyOtlpSink(LoggerConfiguration loggerConfiguration, OtlpLoggingOptions options)
     {
@@ -70,39 +71,58 @@ public static class LoggingConfigurator
             return false;
         }
 
-        // Exporter failures (for example, an unreachable collector) would otherwise fail silently.
-        // Enabling SelfLog ensures they are diagnosable on stderr.
-        Serilog.Debugging.SelfLog.Enable(Console.Error);
-
-        // ignoreEnvironment: true keeps the OtlpLogging section authoritative; otherwise the sink
-        // lets OTEL_EXPORTER_OTLP_* environment variables silently override these values.
-        loggerConfiguration.WriteTo.OpenTelemetry(
-            o =>
-            {
-                o.Endpoint = options.Endpoint;
-                o.Protocol = options.Protocol;
-                o.ResourceAttributes = options
-                    .ToResourceAttributes()
-                    .ToDictionary(attribute => attribute.Key, attribute => attribute.Value);
-
-                foreach (var header in options.Headers)
+        // Sink and exporter construction happen inside the WriteTo call, and they validate the
+        // remaining options with rules that differ by protocol and belong to the transport
+        // libraries: the HTTP exporter rejects, for example, a header value with a trailing
+        // newline or a content header name, while the gRPC exporter rejects header key characters
+        // HTTP accepts. Rather than replicating those rules, any construction failure degrades to
+        // the same warn-and-skip posture as the guards above.
+        try
+        {
+            // ignoreEnvironment: true keeps the OtlpLogging section authoritative; otherwise the sink
+            // lets OTEL_EXPORTER_OTLP_* environment variables silently override these values.
+            loggerConfiguration.WriteTo.OpenTelemetry(
+                o =>
                 {
-                    if (!string.IsNullOrWhiteSpace(header.Key))
-                    {
-                        o.Headers[header.Key] = header.Value;
-                    }
-                }
+                    o.Endpoint = options.Endpoint;
+                    o.Protocol = options.Protocol;
+                    o.ResourceAttributes = options
+                        .ToResourceAttributes()
+                        .ToDictionary(attribute => attribute.Key, attribute => attribute.Value);
 
-                // Bound every export attempt: the sink's gRPC calls carry no deadline and would
-                // otherwise hang indefinitely on a stalled collector, wedging the batch worker
-                // and blocking logger disposal at shutdown.
-                o.HttpMessageHandler = new BoundedExportTimeoutHandler(
-                    ExportAttemptTimeout,
-                    new SocketsHttpHandler()
-                );
-            },
-            ignoreEnvironment: true
-        );
+                    foreach (var header in options.Headers)
+                    {
+                        if (!string.IsNullOrWhiteSpace(header.Key))
+                        {
+                            o.Headers[header.Key] = header.Value;
+                        }
+                    }
+
+                    // Bound every export attempt: the sink's gRPC calls carry no deadline and would
+                    // otherwise hang indefinitely on a stalled collector, wedging the batch worker
+                    // and blocking logger disposal at shutdown.
+                    o.HttpMessageHandler = new BoundedExportTimeoutHandler(
+                        ExportAttemptTimeout,
+                        new SocketsHttpHandler()
+                    );
+                },
+                ignoreEnvironment: true
+            );
+        }
+        catch (Exception exception)
+        {
+            // The exception message is deliberately not logged: it can embed a configured header
+            // value, and header values are secret material.
+            Console.Error.WriteLine(
+                $"OtlpLogging sink construction failed ({exception.GetType().Name}); check the OtlpLogging section, including Headers entries; OTLP export is not applied."
+            );
+            return false;
+        }
+
+        // Exporter failures (for example, an unreachable collector) would otherwise fail silently.
+        // Enabling SelfLog ensures they are diagnosable on stderr. Enabled only after successful
+        // construction, so a skipped sink leaves stderr behavior unchanged.
+        Serilog.Debugging.SelfLog.Enable(Console.Error);
 
         return true;
     }

@@ -175,6 +175,88 @@ public class Given_OtlpLogging_With_A_Malformed_Endpoint
 
 [TestFixture]
 [Parallelizable]
+public class Given_OtlpLogging_With_An_Invalid_Header
+{
+    // The transport libraries validate headers during sink construction with protocol-specific
+    // rules: HttpProtobuf rejects a value with a trailing newline (the shape a mounted secret
+    // file produces) and a content header name, while Grpc rejects key characters HTTP accepts.
+    // Every shape must land on the warn-and-skip path instead of throwing out of ApplyOtlpSink.
+    [TestCase("Authorization", "Bearer abc\n", "HttpProtobuf")]
+    [TestCase("Content-Type", "application/json", "HttpProtobuf")]
+    [TestCase("X-Api!Key", "v", "Grpc")]
+    public void It_does_not_apply_the_otlp_sink_and_does_not_throw(
+        string headerName,
+        string headerValue,
+        string protocol
+    )
+    {
+        IConfigurationRoot configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["OtlpLogging:Enabled"] = "true",
+                    ["OtlpLogging:Endpoint"] = "http://otel-collector:4317",
+                    ["OtlpLogging:Protocol"] = protocol,
+                    [$"OtlpLogging:Headers:{headerName}"] = headerValue,
+                }
+            )
+            .Build();
+        var options = LoggingConfigurator.BindOtlpLoggingOptions(configuration);
+        var loggerConfiguration = new LoggerConfiguration();
+
+        var sinkApplied = LoggingConfigurator.ApplyOtlpSink(loggerConfiguration, options);
+
+        sinkApplied.Should().BeFalse();
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
+public class Given_OtlpLogging_With_An_Invalid_Header_Value_Containing_A_Secret
+{
+    [Test]
+    public void It_reports_the_failure_without_echoing_the_header_value()
+    {
+        IConfigurationRoot configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["OtlpLogging:Enabled"] = "true",
+                    ["OtlpLogging:Endpoint"] = "http://otel-collector:4318",
+                    ["OtlpLogging:Protocol"] = "HttpProtobuf",
+                    ["OtlpLogging:Headers:Authorization"] = "Bearer SECRET-SENTINEL-VALUE\n",
+                }
+            )
+            .Build();
+        var options = LoggingConfigurator.BindOtlpLoggingOptions(configuration);
+        var loggerConfiguration = new LoggerConfiguration();
+
+        // The exporter's exception message embeds the offending header value, and stderr is part
+        // of the collector contract, so the warning must not echo the exception message.
+        var originalError = Console.Error;
+        var capturedError = new StringWriter();
+        Console.SetError(capturedError);
+        bool sinkApplied;
+        try
+        {
+            sinkApplied = LoggingConfigurator.ApplyOtlpSink(loggerConfiguration, options);
+        }
+        finally
+        {
+            Console.SetError(originalError);
+        }
+
+        sinkApplied.Should().BeFalse();
+        capturedError.ToString().Should().Contain("OtlpLogging sink construction failed");
+        capturedError
+            .ToString()
+            .Should()
+            .NotContain("SECRET-SENTINEL-VALUE", "the failure report must not leak header secret material");
+    }
+}
+
+[TestFixture]
+[Parallelizable]
 public class Given_An_Otlp_Protocol_Value_The_Binder_Cannot_Parse
 {
     // Binding fails even when the section is otherwise disabled: a Protocol typo takes the

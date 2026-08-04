@@ -191,6 +191,41 @@ public class OtlpLoggingConfiguratorTests
         sinkApplied.Should().BeFalse();
     }
 
+    // The transport libraries validate headers during sink construction with protocol-specific
+    // rules: HttpProtobuf rejects a value with a trailing newline (the shape a mounted secret
+    // file produces) and a content header name, while Grpc rejects key characters HTTP accepts.
+    // Every shape must land on the warn-and-skip path instead of throwing out of ApplyOtlpSink.
+    [TestCase("Authorization", "Bearer abc\n", "HttpProtobuf")]
+    [TestCase("Content-Type", "application/json", "HttpProtobuf")]
+    [TestCase("X-Api!Key", "v", "Grpc")]
+    public void ApplyOtlpSink_Returns_False_For_An_Invalid_Header_Without_Throwing(
+        string headerName,
+        string headerValue,
+        string protocol
+    )
+    {
+        // Arrange
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["OtlpLogging:Enabled"] = "true",
+                    ["OtlpLogging:Endpoint"] = "http://otel-collector:4317",
+                    ["OtlpLogging:Protocol"] = protocol,
+                    [$"OtlpLogging:Headers:{headerName}"] = headerValue,
+                }
+            )
+            .Build();
+        var options = LoggingConfigurator.BindOtlpLoggingOptions(configuration);
+        var loggerConfiguration = new LoggerConfiguration();
+
+        // Act
+        var sinkApplied = LoggingConfigurator.ApplyOtlpSink(loggerConfiguration, options);
+
+        // Assert
+        sinkApplied.Should().BeFalse();
+    }
+
     // Binding fails even when the section is otherwise disabled: a Protocol typo takes the
     // application down at startup instead of leaving export silently misconfigured. This pins
     // the fail-fast behavior documented in docs/CONFIGURATION.md.
@@ -497,6 +532,55 @@ public class Given_an_unreachable_otlp_collector_endpoint
         // been honored, that attempt would have connected to the decoy instead.
         decoyConnections.Should().BeEmpty("OTEL_EXPORTER_OTLP_ENDPOINT must be ignored by the exporter");
         decoy.Stop();
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
+public class Given_an_invalid_otlp_header_value_containing_a_secret
+{
+    [Test]
+    public void ApplyOtlpSink_Reports_The_Failure_Without_Echoing_The_Header_Value()
+    {
+        // Arrange
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["OtlpLogging:Enabled"] = "true",
+                    ["OtlpLogging:Endpoint"] = "http://otel-collector:4318",
+                    ["OtlpLogging:Protocol"] = "HttpProtobuf",
+                    ["OtlpLogging:Headers:Authorization"] = "Bearer SECRET-SENTINEL-VALUE\n",
+                }
+            )
+            .Build();
+        var options = LoggingConfigurator.BindOtlpLoggingOptions(configuration);
+        var loggerConfiguration = new LoggerConfiguration();
+
+        // The exporter's exception message embeds the offending header value, and stderr is part
+        // of the collector contract, so the warning must not echo the exception message.
+        var originalError = Console.Error;
+        var capturedError = new StringWriter();
+        Console.SetError(capturedError);
+        bool sinkApplied;
+
+        // Act
+        try
+        {
+            sinkApplied = LoggingConfigurator.ApplyOtlpSink(loggerConfiguration, options);
+        }
+        finally
+        {
+            Console.SetError(originalError);
+        }
+
+        // Assert
+        sinkApplied.Should().BeFalse();
+        capturedError.ToString().Should().Contain("OtlpLogging sink construction failed");
+        capturedError
+            .ToString()
+            .Should()
+            .NotContain("SECRET-SENTINEL-VALUE", "the failure report must not leak header secret material");
     }
 }
 

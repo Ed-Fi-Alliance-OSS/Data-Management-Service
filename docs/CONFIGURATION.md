@@ -247,7 +247,7 @@ log routing paths, including OTLP export and deployment recipes.
 | ServiceVersion          | The `service.version` resource attribute. Default: the application's informational version.                                                                             |
 | DeploymentEnvironment   | Optional deployment environment, emitted as both the `deployment.environment` and `deployment.environment.name` resource attributes. Omitted when unset.                 |
 | ServiceInstanceId       | Optional `service.instance.id` resource attribute. Omitted when unset.                                                                                                   |
-| Headers                 | Optional headers sent with every export request, e.g. `OtlpLogging__Headers__Authorization` for an authenticated collector receiver. Header values are secrets: source them from a secret store or environment variable, never a committed configuration file. |
+| Headers                 | Optional headers sent with every export request, e.g. `OtlpLogging__Headers__Authorization` for an authenticated collector receiver. Header values are secrets: source them from a secret store or environment variable, never a committed configuration file. An invalid header name or value (e.g. a trailing newline in the value) means OTLP export is not applied: a warning is written to stderr that deliberately omits the offending value. |
 
 ## Identity Provider Configuration
 

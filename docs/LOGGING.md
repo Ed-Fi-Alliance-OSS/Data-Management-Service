@@ -257,6 +257,10 @@ The `OtlpLogging` section supports these keys:
   values are secrets: supply them through environment variables (for
   example, `OtlpLogging__Headers__Authorization`) or a secret store, never a
   committed configuration file.
+  An invalid header name or value (for example, a value with a trailing
+  newline from a mounted secret file) prevents the sink from being created:
+  OTLP export is not applied, and the startup warning written to stderr
+  deliberately omits the offending value because it may be a secret.
 
 > [!NOTE]
 > OTLP export is disabled by default. Enabling it does not replace console
