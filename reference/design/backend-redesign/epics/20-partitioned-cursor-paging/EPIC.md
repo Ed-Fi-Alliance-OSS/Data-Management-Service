@@ -74,7 +74,9 @@ cursor request even though ODS 7.3.2 accidentally accepts `limit` when `pageSize
 Emitting `Next-Page-Token` on an ordinary `limit`/`offset` response extends the published Ed-Fi
 surface, because the client guide does not describe the header for traditional responses and the
 authoritative collection fixtures do not define it as a response header. It nevertheless matches
-ODS 7.3.2 runtime behavior and gives clients a cursor-walk entry point.
+ODS 7.3.2 runtime behavior, whose own generated OpenAPI also publishes the header as a described
+HTTP 200 response header on the non-composite collection GET, and gives clients a cursor-walk entry
+point.
 
 ## Public API Contract
 
@@ -99,7 +101,9 @@ column into static comparison cases.
 DMS returns exactly one error per rejected cursor request, which matches ODS's one-element
 validation-error response rather than accumulating every applicable cursor message. Partition
 validation deliberately differs: it reports every unsupported reserved parameter in deterministic
-order once the higher-priority `number` phase passes.
+order once the higher-priority `number` phase passes. Giving `number` the highest priority matches
+ODS, which range-checks `number` before it constructs its query parameters and therefore before it
+decodes a supplied `pageToken`.
 
 `X` denotes any successfully decoded page token. Every expected DMS failure below returns HTTP 400
 with exactly the listed message.
@@ -118,7 +122,7 @@ with exactly the listed message.
 | `?pageToken=X&pageSize=-1` | `PageSize must be a value between 0 and {MaximumPageSize}.` | Yes. |
 | `?pageToken=X&pageSize=abc` | `PageSize must be a value between 0 and {MaximumPageSize}.` | No. ODS's `int?` model binding fails before its validator runs, so ODS returns a model-binding response shell instead of this range message. |
 | `?pageToken=X&limit=10&pageSize=5` | `Use pageSize instead of limit when using cursor paging with pageToken.` | No. ODS returns HTTP 200; this is an approved stricter DMS rejection. |
-| `?pageToken=X&totalCount=true` | `The totalCount parameter cannot be set to true when using cursor paging with pageToken.` | No. ODS returns HTTP 200; this is an approved DMS rejection. |
+| `?pageToken=X&totalCount=true` | `The totalCount parameter cannot be set to true when using cursor paging with pageToken.` | Both reject with HTTP 400, but ODS rejects later and with different text. Its cursor validator allows the combination; its repository builds the count template, finds a `MinAggregateId` parameter in it, and throws `Total count cannot be determined while using cursor paging (when pageToken is specified).` DMS rejects during parameter validation. |
 
 ## Cursor Token Contract
 
@@ -285,7 +289,11 @@ and the never-record list are owned by
 The approved intentional ODS differences are:
 
 - reject `limit` whenever cursor parameters are present, including when `pageSize` is also present;
-- reject `totalCount=true` when a valid `pageToken` is present;
+- reject `totalCount=true` when a valid `pageToken` is present during parameter validation, with
+  DMS's `The totalCount parameter cannot be set to true when using cursor paging with pageToken.`
+  text. ODS 7.3.2 also rejects that combination with HTTP 400, but only after its repository builds
+  the count template and finds a `MinAggregateId` parameter in it, and it reports
+  `Total count cannot be determined while using cursor paging (when pageToken is specified).`;
 - treat query-key presence as significant for cursor parameters and apply the DMS validator to
   blank and non-numeric values, where ODS's `int?` model binding reads a blank value as absent and
   returns HTTP 200, and fails binding on a non-numeric value before its validator can emit a range
@@ -293,16 +301,33 @@ The approved intentional ODS differences are:
 - reject `pageToken` and `pageSize` on `/deletes` and `/keyChanges` under DMS's
   unknown-query-field rule, where ODS binds the same request model on those endpoints, accepts a
   valid token, and answers a malformed one with `The page token provided was invalid.`;
-- reject `limit`, `offset`, `pageToken`, `pageSize`, and `totalCount` on `/partitions`, where ODS
-  7.3.2 validates only `number` and otherwise passes these through as additional parameters;
-- reject ODS's undocumented `allowSmallPartitions` and `useJoinAuth` partition pass-through
-  parameters under DMS's unknown-query-field rule;
-- return at most the requested `number` of partition tokens by computing a true ceiling. ODS 7.3.2
-  spells the size as `CEILING(CountOfRows / @numberOfPartitions)` over two integer operands, so its
-  `CEILING` receives an already-truncated integer quotient and is a no-op: ODS effectively floors
-  the partition size and returns one more token than `number` whenever the division is inexact and
-  the computed size exceeds the minimum. DMS's at-most-`number` promise matches the client guide,
-  which only ever promises fewer partitions than requested;
+- reject all five of `limit`, `offset`, `pageToken`, `pageSize`, and `totalCount` on `/partitions`
+  as unsupported, where ODS 7.3.2 binds those reserved names into the request model its partitions
+  action declares, range-checks only `number`, and ignores `limit`, `offset`, `pageSize`, and
+  `totalCount`: they never reach its partition query, which carries no paging clause. ODS decodes a
+  supplied `pageToken`, answering a malformed one with `The page token provided was invalid.`, then
+  discards the decoded range, so a well-formed token does not move its partition boundaries;
+- reject ODS's undocumented `allowSmallPartitions` and `useJoinAuth` partition parameters under
+  DMS's unknown-query-field rule, where ODS reads them from the separate additional-parameters
+  dictionary that collects query parameters its request model does not define;
+- return evenly sized partitions, and at most the requested count of them, by computing a true
+  ceiling. ODS 7.3.2 spells the size as `CEILING(CountOfRows / @numberOfPartitions)` over two
+  integer operands, so its `CEILING` receives an already-truncated integer quotient and is a no-op:
+  ODS effectively floors the partition size and can compute one more starting id than the count it
+  sized for. When `number` is supplied, ODS still returns at most `number` tokens, because its token
+  loop emits a final token spanning the second-to-last starting id through `int.MaxValue` and stops;
+  the surplus partition is absorbed into a final range that can be roughly twice as wide as the
+  others rather than handed out as an extra token. When `number` is omitted, both of that loop's cap
+  expressions read the nullable request value and no cap applies, while the sizing SQL used the
+  configured default partition count, so only in that default case can ODS return one more token
+  than its configured `DefaultPartitionCount`. DMS honors its at-most-count promise for the default
+  count as well, and that promise matches the client guide, which only ever promises fewer
+  partitions than requested;
+- route `/partitions` through the same profile content-type outcome as GET-many, including the
+  HTTP 405 profile method-usage response, where ODS 7.3.2's partitions controller carries no
+  assigned-profile-usage enforcement filter and so does not enforce assigned profile usage on that
+  endpoint, unlike its data-management controller base, whose GET-many, GET-by-id, PUT, and POST
+  actions each apply that filter;
 - gate `Next-Page-Token` on a non-null `HighestSelectedDocumentId`, including when concurrent
   deletion leaves an empty hydrated body, while ODS gates the header on hydrated body count;
 - retain DMS's existing `Offset must be a numeric value greater than or equal to 0.` text rather
@@ -320,6 +345,11 @@ The approved intentional ODS differences are:
   Ed-Fi's published metadata omits entirely. ODS's default partition count is likewise a
   configurable setting defaulting to `10`, so DMS matches ODS runtime behavior here and differs only
   in the published metadata;
+- omit the `/partitions` path from a profile document for a resource the profile includes as
+  write-only, where ODS 7.3.2 publishes it: its paths factory keeps every resource that is readable
+  or writable, then adds the partition path for each non-composite resource through a path method
+  that has no `Readable` guard, unlike the sibling collection and by-id path methods, which gate
+  their read operations on it;
 - use DMS `Int64 DocumentId` bounds rather than ODS `Int32 AggregateId` bounds;
 - omit the next header rather than overflowing at `Int64.MaxValue`; and
 - use the stricter approved base64url and decimal decoder contract.

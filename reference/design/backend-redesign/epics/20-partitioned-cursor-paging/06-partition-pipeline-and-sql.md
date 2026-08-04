@@ -20,6 +20,7 @@ balanced cursor ranges in one identifiers-only database command.
 - [`Partition planning`](../../design-docs/partitioned-cursor-paging.md#partition-planning)
 - [`Application Boundaries`](../../design-docs/partitioned-cursor-paging.md#application-boundaries)
 - [`Consistency Under Writes`](../../design-docs/partitioned-cursor-paging.md#consistency-under-writes)
+- [`Approved Intentional ODS Differences`](EPIC.md#approved-intentional-ods-differences)
 
 ## Dependencies
 
@@ -58,8 +59,9 @@ balanced cursor ranges in one identifiers-only database command.
 - PostgreSQL and real SQL Server integration tests cover counts 1, 10, and 200; sparse/empty sets;
   filters; change versions; descriptors; and fewer-than-requested ranges.
 - Sizing tests prove the returned token count never exceeds the requested `number`, including
-  candidate counts that divide inexactly by `number`, where ODS's integer-division sizing would
-  return one extra token.
+  candidate counts that divide inexactly by `number`, where ODS's integer-division sizing reaches
+  the same count only by widening its final partition, and returns an extra token only when
+  `number` is omitted.
 - Stable-fixture tests prove ranges are non-overlapping, final ranges are unbounded, and starts are
   actual accessible candidate ids.
 - Profile tests cover the write-only profile outcome and prove it matches the collection GET
