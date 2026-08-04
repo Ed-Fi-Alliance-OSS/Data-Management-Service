@@ -17,10 +17,15 @@ namespace EdFi.DataManagementService.Tests.Integration.Doubles;
 /// </summary>
 internal static class FakeJwtValidationService
 {
+    /// <param name="namespacePrefixes">
+    /// Namespace prefixes carried on the returned <see cref="ClientAuthorizations"/> for NamespaceBased
+    /// authorization scenarios. Defaults to none, which is the historical behavior.
+    /// </param>
     public static IJwtValidationService Allowing(
         string tokenId,
         string clientId,
-        IReadOnlyList<long>? educationOrganizationIds = null
+        IReadOnlyList<long>? educationOrganizationIds = null,
+        IReadOnlyList<string>? namespacePrefixes = null
     )
     {
         var fake = A.Fake<IJwtValidationService>();
@@ -32,7 +37,9 @@ internal static class FakeJwtValidationService
             educationOrganizationIds is null
                 ? []
                 : [.. educationOrganizationIds.Select(static id => new EducationOrganizationId(id))],
-            [],
+            namespacePrefixes is null
+                ? []
+                : [.. namespacePrefixes.Select(static prefix => new NamespacePrefix(prefix))],
             [new DataStoreId(ExternalDoublesConstants.StableDataStoreId)]
         );
 

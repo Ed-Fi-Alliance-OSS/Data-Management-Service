@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Security;
@@ -23,12 +24,30 @@ namespace EdFi.DataManagementService.Tests.Integration.Doubles;
 /// </summary>
 internal static class ExternalDoublesRegistration
 {
+    /// <param name="clientNamespacePrefixes">
+    /// Namespace prefixes the fake JWT carries for NamespaceBased scenarios. Empty by default.
+    /// </param>
+    /// <param name="providerFailureTransform">
+    /// When supplied, replaces the authorization provider-failure extractor with a recording double that
+    /// rewrites the extracted payload after the real provider exception was raised. Null leaves the production
+    /// extraction in place, which is the historical behavior for every other scenario.
+    /// </param>
+    /// <param name="providerFailureRecorder">
+    /// Collects the real provider exceptions observed while <paramref name="providerFailureTransform"/> is
+    /// active, so a scenario can assert genuine <c>SqlException</c> provenance.
+    /// </param>
     public static void RegisterAll(
         IServiceCollection services,
         FixtureContext fixture,
         string leasedConnectionString,
         IClaimSetProvider claimSetProvider,
-        IReadOnlyList<long> clientEducationOrganizationIds
+        IReadOnlyList<long> clientEducationOrganizationIds,
+        IReadOnlyList<string>? clientNamespacePrefixes = null,
+        Func<
+            RelationshipAuthorizationProviderFailure,
+            RelationshipAuthorizationProviderFailure
+        >? providerFailureTransform = null,
+        ApiIntegrationProviderFailureRecorder? providerFailureRecorder = null
     )
     {
         services.RemoveAll<IJwtValidationService>();
@@ -43,9 +62,25 @@ internal static class ExternalDoublesRegistration
             FakeJwtValidationService.Allowing(
                 ExternalDoublesConstants.SmokeToken,
                 ExternalDoublesConstants.SmokeClientId,
-                clientEducationOrganizationIds
+                clientEducationOrganizationIds,
+                clientNamespacePrefixes
             )
         );
+
+        if (providerFailureTransform is not null && providerFailureRecorder is not null)
+        {
+            // The backend registers the production extractor with TryAdd before ConfigureServices runs, so the
+            // existing registration has to be removed rather than merely attempted.
+            services.RemoveAll<IRelationshipAuthorizationProviderFailureExtractor>();
+            services.AddSingleton(providerFailureRecorder);
+            services.AddScoped<IRelationshipAuthorizationProviderFailureExtractor>(
+                serviceProvider => new RecordingProviderFailureExtractor(
+                    serviceProvider.GetRequiredService<ApiIntegrationProviderFailureRecorder>(),
+                    providerFailureTransform
+                )
+            );
+        }
+
         services.AddSingleton(FakeOidcConfigurationManager.Stable());
         services.AddSingleton(claimSetProvider);
         services.AddSingleton<IApplicationContextProvider>(FakeApplicationContextProvider.Stable());

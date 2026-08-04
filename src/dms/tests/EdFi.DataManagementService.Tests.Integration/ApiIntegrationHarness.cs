@@ -22,13 +22,15 @@ public sealed class ApiIntegrationHarness : IAsyncDisposable
         HttpClient httpClient,
         DbConnection dbConnection,
         FixtureContext fixture,
-        ApiIntegrationQueryRecorder? queryRecorder = null
+        ApiIntegrationQueryRecorder? queryRecorder = null,
+        ApiIntegrationProviderFailureRecorder? providerFailureRecorder = null
     )
     {
         HttpClient = httpClient;
         DbConnection = dbConnection;
         Fixture = fixture;
         QueryRecorder = queryRecorder;
+        ProviderFailureRecorder = providerFailureRecorder;
 
         HttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer",
@@ -40,6 +42,12 @@ public sealed class ApiIntegrationHarness : IAsyncDisposable
     public DbConnection DbConnection { get; }
     public FixtureContext Fixture { get; }
     public ApiIntegrationQueryRecorder? QueryRecorder { get; }
+
+    /// <summary>
+    /// Provider exceptions the production authorization path raised, recorded only when the test class supplies
+    /// a <c>ProviderFailureTransform</c>. Null otherwise.
+    /// </summary>
+    public ApiIntegrationProviderFailureRecorder? ProviderFailureRecorder { get; }
 
     public async ValueTask DisposeAsync()
     {
