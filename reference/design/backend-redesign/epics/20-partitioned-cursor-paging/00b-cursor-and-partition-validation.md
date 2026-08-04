@@ -73,7 +73,10 @@ story assert a presence semantic the other owns.
   `pageSize` and non-numeric `pageSize` rows recorded as approved intentional ODS differences in the
   epic.
 - Partition validator tests preserve `number` precedence and canonical unsupported-parameter
-  ordering, and cover several reserved parameters in one request.
+  ordering, and cover several reserved parameters in one request. They also cover malformed, blank,
+  and out-of-range `number`, including the blank case the design doc treats as malformed rather than
+  absent, and prove resource-property and change-version filters are accepted rather than reported
+  as unsupported.
 - Traditional-only pagination failures retain their current response shell and messages, and the
   existing case-sensitive matching of `limit`, `offset`, and `totalCount` is unchanged.
 - `/deletes` and `/keyChanges` tests prove `pageToken` and `pageSize` are rejected rather than

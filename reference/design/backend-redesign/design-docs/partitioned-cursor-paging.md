@@ -290,17 +290,22 @@ profile documents agree.
 
 #### Partition validation
 
-`number` is the only query parameter the partition operation accepts. Any other query field is
-rejected by the existing unknown-query-field rule, except for the five reserved paging parameters,
-which get the specific message below so a client that confused the two endpoints gets a useful
-answer.
+`number` is the only partition-control parameter the operation accepts. Alongside it, `/partitions`
+accepts the same resource-property filters and `minChangeVersion`/`maxChangeVersion` live
+change-version filters that GET-many accepts, because boundaries are calculated over the filtered,
+authorized candidate set. The five reserved paging parameters — `pageToken`, `pageSize`, `limit`,
+`offset`, and `totalCount` — are instead reported with the specific unsupported message below, so a
+client that confused the two endpoints gets a useful answer. Every other query field is rejected by
+the existing unknown-query-field rule.
 
 Partition validation uses its own ordered phases, and unlike cursor validation it may report
 several errors:
 
 1. **`number` syntax and range.** A malformed or out-of-range `number` produces the exact error
-   `Number of partitions must be between 1 and 200.` This phase takes precedence over the
-   unsupported-parameter phase.
+   `Number of partitions must be between 1 and 200.` A present-but-blank `?number=` is a malformed
+   value and produces that same error rather than being treated as absent and defaulted: a client
+   that typed `number=` asked for a partition count, and the parameter it typed should not be
+   silently ignored. This phase takes precedence over the unsupported-parameter phase.
 2. **Reserved parameters.** Reserved paging parameters are reported as unsupported *without* first
    parsing their values, using the exact error
    `The '{parameter}' parameter is not supported by the partitions endpoint.` If several are
@@ -312,7 +317,8 @@ meaning of `limit`, `pageSize`, and `totalCount` all depend on whether a valid `
 present — so reporting more than one error would report consequences rather than the cause.
 Unsupported partition parameters are independent mistakes, and a client that sent three of them
 should learn about all three in one response instead of over three round trips. `number` is
-validated first because it is the only parameter this operation actually consumes.
+validated first because it is the only parameter that controls the partition calculation itself,
+while the reserved paging parameters have no effect on it at all.
 
 #### Partition sizing
 

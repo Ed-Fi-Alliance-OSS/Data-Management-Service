@@ -298,6 +298,21 @@ The approved intentional ODS differences are:
   blank and non-numeric values, where ODS's `int?` model binding reads a blank value as absent and
   returns HTTP 200, and fails binding on a non-numeric value before its validator can emit a range
   message;
+- return `Number of partitions must be between 1 and 200.` for a non-numeric
+  `/partitions?number=`, where ODS's `[FromQuery] int? number` binding fails before its controller
+  body runs. `PartitionsController` is an `[ApiController]`, and `ApiBehaviorOptionsConfigurator`
+  supplies an `InvalidModelStateResponseFactory` without setting `SuppressModelStateInvalidFilter`,
+  so automatic model-state validation answers with an `ErrorTranslator` ProblemDetails shell built
+  from `ModelState`, and the controller's own range check — which is what produces ODS's otherwise
+  identical `Number of partitions must be between 1 and 200.` text — never executes. This is the
+  partition-side form of the cursor `int?` binding difference above, with a different endpoint and a
+  different message;
+- return that same range error for a present-but-blank `/partitions?number=`, treating the present
+  query key as a malformed partition count, where ODS's nullable-int model binding reads an empty
+  value as absent, so `number` arrives null, its range check does not trigger for null, and the
+  request succeeds with the configured default partition count. The empty-value-binds-to-null step
+  rests on ASP.NET Core's standard binding of an empty value to a nullable simple type, the same
+  basis as the recorded blank-`pageSize` behavior above;
 - reject `pageToken` and `pageSize` on `/deletes` and `/keyChanges` under DMS's
   unknown-query-field rule, where ODS binds the same request model on those endpoints, accepts a
   valid token, and answers a malformed one with `The page token provided was invalid.`;

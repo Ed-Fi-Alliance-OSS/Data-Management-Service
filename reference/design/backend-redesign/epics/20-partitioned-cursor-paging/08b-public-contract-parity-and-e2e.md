@@ -65,6 +65,9 @@ scope.
 - The harness implements every row of the epic's ODS precedence comparison, asserting each listed
   DMS message and each recorded ODS parity/difference outcome, including exactly one error whenever
   DMS rejects the request.
+- The comparison cases also cover malformed, blank, and out-of-range `/partitions?number=`, whose
+  recorded ODS outcomes live in the epic's approved-difference list rather than in its cursor-only
+  precedence table.
 - The partition token count never exceeds the requested `number`, and requesting more partitions
   than the minimum size allows returns fewer tokens rather than an error.
 - Existing traditional paging response bodies, status codes, and `Total-Count` semantics remain
