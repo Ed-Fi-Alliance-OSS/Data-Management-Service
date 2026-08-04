@@ -687,6 +687,139 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     }
 
     [Test]
+    public async Task It_bounds_repeated_phase_diagnostics_in_active_observations_and_completed_results()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheProjectionTargetRuntimeContext runtimeContext = RuntimeContext(
+            executionContext,
+            observationStore
+        );
+        TaskCompletionSource diagnosticsAdded = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource releaseCommand = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: async (context, cancellationToken) =>
+            {
+                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.SeedBaseline);
+                AddBackpressureDiagnostics(context, count: 5);
+                diagnosticsAdded.SetResult();
+
+                await releaseCommand.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                return context.Completed();
+            }
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([runtimeContext]),
+            new RecordingAdministrativeMutex(),
+            observationStore
+        );
+
+        Task<DocumentCacheAdministrativeCommandResult> resultTask = runner.ExecuteAsync(Request(), workflow);
+        await diagnosticsAdded.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+
+        try
+        {
+            DocumentCacheAdministrativeCommandObservationSnapshot activeCommand = observationStore
+                .CurrentSnapshot.ActiveAdministrativeCommands.Values.Should()
+                .ContainSingle()
+                .Subject;
+            activeCommand
+                .PhaseDiagnostics.Should()
+                .HaveCount(executionContext.EffectiveSettings.ProjectorPageSize);
+            activeCommand
+                .PhaseDiagnostics.Select(diagnostic => diagnostic.Message)
+                .Should()
+                .Equal(
+                    "Backpressure observation 3.",
+                    "Backpressure observation 4.",
+                    "Backpressure observation 5."
+                );
+            activeCommand
+                .PhaseDiagnostics.Should()
+                .OnlyContain(diagnostic =>
+                    diagnostic.AffectedDocumentIds.Length
+                    == executionContext.EffectiveSettings.ProjectorPageSize
+                );
+        }
+        finally
+        {
+            releaseCommand.SetResult();
+        }
+
+        DocumentCacheAdministrativeCommandResult result = await resultTask.ConfigureAwait(false);
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.PhaseDiagnostics.Should().HaveCount(executionContext.EffectiveSettings.ProjectorPageSize);
+        result
+            .PhaseDiagnostics.Select(diagnostic => diagnostic.Message)
+            .Should()
+            .Equal(
+                "Backpressure observation 3.",
+                "Backpressure observation 4.",
+                "Backpressure observation 5."
+            );
+    }
+
+    [Test]
+    public async Task It_keeps_final_timeout_diagnostic_when_repeated_phase_diagnostics_reach_the_cap()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            generation: 1,
+            workflowTimeout: TimeSpan.FromMilliseconds(30)
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex()
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: static async (context, cancellationToken) =>
+            {
+                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.SeedBaseline);
+                AddBackpressureDiagnostics(context, count: 5);
+
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+                return context.Completed();
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.WorkflowTimeout);
+        result.PhaseDiagnostics.Should().HaveCount(executionContext.EffectiveSettings.ProjectorPageSize);
+        result
+            .PhaseDiagnostics.Select(diagnostic => diagnostic.DiagnosticCategory)
+            .Should()
+            .Equal(
+                DocumentCacheAdministrativeDiagnosticCategory.BaselineHighWaterBackpressure,
+                DocumentCacheAdministrativeDiagnosticCategory.BaselineHighWaterBackpressure,
+                DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout
+            );
+        result
+            .PhaseDiagnostics.Select(diagnostic => diagnostic.Message)
+            .Should()
+            .Contain("Backpressure observation 4.", "Backpressure observation 5.");
+        result
+            .PhaseDiagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout
+            );
+        result
+            .PhaseDiagnostics.Where(diagnostic =>
+                diagnostic.DiagnosticCategory
+                == DocumentCacheAdministrativeDiagnosticCategory.BaselineHighWaterBackpressure
+            )
+            .Should()
+            .OnlyContain(diagnostic =>
+                diagnostic.AffectedDocumentIds.Length == executionContext.EffectiveSettings.ProjectorPageSize
+            );
+    }
+
+    [Test]
     public async Task It_keeps_active_command_observation_for_a_noncurrent_pinned_generation()
     {
         DocumentCacheTargetExecutionContext firstGeneration = ExecutionContext(generation: 1);
@@ -1249,6 +1382,22 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             projectorBaselineHighWaterMark: 1000,
             workflowTimeout
         );
+
+    private static void AddBackpressureDiagnostics(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        int count
+    )
+    {
+        for (int index = 1; index <= count; index++)
+        {
+            context.AddPhaseDiagnostic(
+                DocumentCacheAdministrativeDiagnosticCategory.BaselineHighWaterBackpressure,
+                $"Backpressure observation {index}.",
+                retryable: true,
+                affectedDocumentIds: [index, index + 10, index + 20, index + 30]
+            );
+        }
+    }
 
     private static DocumentCacheTargetObservation EligibleObservation(
         DocumentCacheTargetExecutionContext executionContext

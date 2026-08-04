@@ -993,7 +993,7 @@ public sealed class DocumentCacheProjectionObservationStore
     }
 }
 
-file static class DocumentCacheProjectionObservationBounds
+internal static class DocumentCacheProjectionObservationBounds
 {
     public static ImmutableArray<T> Cap<T>(IEnumerable<T>? values, int maximumCount) =>
         (values ?? []).Take(maximumCount).ToImmutableArray();
@@ -1018,12 +1018,18 @@ file static class DocumentCacheProjectionObservationBounds
         int effectiveProjectorPageSize
     )
     {
+        DocumentCacheProjectionObservationGuard.RequirePositive(
+            effectiveProjectorPageSize,
+            nameof(effectiveProjectorPageSize)
+        );
+
         if (diagnostics.IsDefaultOrEmpty)
         {
             return [];
         }
 
         return diagnostics
+            .TakeLast(effectiveProjectorPageSize)
             .Select(diagnostic => new DocumentCacheAdministrativePhaseDiagnostic(
                 diagnostic.CurrentPhase,
                 diagnostic.LastCompletedPhase,
@@ -1037,6 +1043,19 @@ file static class DocumentCacheProjectionObservationBounds
                 diagnostic.Message
             ))
             .ToImmutableArray();
+    }
+
+    public static ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> AppendPhaseDiagnostic(
+        ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> diagnostics,
+        DocumentCacheAdministrativePhaseDiagnostic diagnostic,
+        int effectiveProjectorPageSize
+    )
+    {
+        ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> existingDiagnostics = diagnostics.IsDefault
+            ? []
+            : diagnostics;
+
+        return CapPhaseDiagnostics(existingDiagnostics.Add(diagnostic), effectiveProjectorPageSize);
     }
 }
 

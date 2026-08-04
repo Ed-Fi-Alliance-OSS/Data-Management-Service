@@ -949,7 +949,7 @@
       "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeCommandRunner|FullyQualifiedName~DocumentCacheBaselineSeeding\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "administrative-command-runner",

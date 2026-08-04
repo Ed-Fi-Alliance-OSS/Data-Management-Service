@@ -216,6 +216,9 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
 
     public ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> PhaseDiagnostics => _phaseDiagnostics;
 
+    public int PhaseDiagnosticCapacity =>
+        TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize;
+
     public void SetLiveTargetObservation(DocumentCacheTargetObservation liveTargetObservation)
     {
         ArgumentNullException.ThrowIfNull(liveTargetObservation);
@@ -267,7 +270,8 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
         ImmutableArray<long> affectedDocumentIds = default
     )
     {
-        _phaseDiagnostics = _phaseDiagnostics.Add(
+        _phaseDiagnostics = DocumentCacheProjectionObservationBounds.AppendPhaseDiagnostic(
+            _phaseDiagnostics,
             new DocumentCacheAdministrativePhaseDiagnostic(
                 CurrentPhase,
                 LastCompletedPhase,
@@ -275,7 +279,8 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
                 diagnosticCategory,
                 affectedDocumentIds,
                 message
-            )
+            ),
+            PhaseDiagnosticCapacity
         );
         Observe();
     }
@@ -926,10 +931,11 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                 ? DocumentCacheAdministrativeCommandStatus.IncompleteRetryable
                 : result.Status;
 
-        ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> phaseDiagnostics = result
-            .PhaseDiagnostics.Concat(commandContext.PhaseDiagnostics)
-            .Distinct()
-            .ToImmutableArray();
+        ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> phaseDiagnostics =
+            DocumentCacheProjectionObservationBounds.CapPhaseDiagnostics(
+                result.PhaseDiagnostics.Concat(commandContext.PhaseDiagnostics).Distinct().ToImmutableArray(),
+                commandContext.PhaseDiagnosticCapacity
+            );
 
         phaseDiagnostics = AddNoncurrentGenerationDiagnostic(phaseDiagnostics, commandContext, status);
 
@@ -966,7 +972,8 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             return phaseDiagnostics;
         }
 
-        return phaseDiagnostics.Add(
+        return DocumentCacheProjectionObservationBounds.AppendPhaseDiagnostic(
+            phaseDiagnostics,
             new DocumentCacheAdministrativePhaseDiagnostic(
                 commandContext.CurrentPhase,
                 commandContext.LastCompletedPhase,
@@ -974,7 +981,8 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                 DocumentCacheAdministrativeDiagnosticCategory.TargetReplaced,
                 affectedDocumentIds: [],
                 "Pinned target generation became noncurrent while the administrative command was running."
-            )
+            ),
+            commandContext.PhaseDiagnosticCapacity
         );
     }
 

@@ -277,3 +277,8 @@ Completed projection-supervisor starvation follow-up task for reference/design/b
 Key decisions: bounded RunReadyTargetsUntilIdleAsync by next poll tick so sustained PageProcessed dispatch returns to existing poll refresh/lifecycle path; restart drain immediately after poll without new timer/config/scheduler contracts.
 Files changed: DocumentCacheProjectionSupervisor.cs; DocumentCacheProjectionSupervisorTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Verified focused supervisor/scheduler unit filter. Administrative-diagnostics remains open.
+
+Completed administrative-diagnostics task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: phase diagnostics now use Projector:PageSize as deterministic keep-latest entry cap; same helper caps affected ids and final runtime/failure diagnostics can displace older repeated backpressure entries.
+Files changed: DocumentCacheProjectionObservation.cs; DocumentCacheAdministrativeCommandRunner.cs; DocumentCacheAdministrativeCommandRunnerTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Verified focused administrative runner/baseline seeding and observation unit filters.
