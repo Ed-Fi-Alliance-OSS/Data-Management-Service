@@ -310,7 +310,19 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
                 observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
                 && observation.SafeArtifactName.Value == "dms_binding_cdc_heartbeat"
                 && observation.SafeObservedValues["heartbeat_capture_visible"] == "True"
+                && observation.SafeObservedValues["heartbeat_capture_visibility_source"]
+                    == "cdc_change_stream_metadata"
+                && observation.SafeObservedValues["heartbeat_capture_all_changes_function_present"] == "True"
+                && observation.SafeObservedValues["heartbeat_capture_sequence_column_present"] == "True"
             );
+        _executor
+            .QueriedSql.Last(sql => sql.Contains("cdc:sqlserver:capture-instances"))
+            .Should()
+            .Contain("fn_cdc_get_all_changes_")
+            .And.Contain("__$start_lsn")
+            .And.Contain("__$seqval")
+            .And.Contain("__$operation")
+            .And.Contain("HeartbeatSequence");
         _result
             .ArtifactInventory.Should()
             .ContainSingle(observation =>
@@ -1036,6 +1048,65 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
                 && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
             );
         executor.ExecutedSql.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task MssqlCdcCaptureInstances_should_fail_closed_when_heartbeat_capture_visibility_is_not_proven()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances:
+            [
+                RecordingSqlServerCaptureInstance.Expected(CdcSourceTableKind.DocumentCache),
+                RecordingSqlServerCaptureInstance.Expected(CdcSourceTableKind.Document),
+                RecordingSqlServerCaptureInstance.Expected(
+                    CdcSourceTableKind.CdcHeartbeat,
+                    heartbeatCaptureAllChangesFunctionPresent: false
+                ),
+            ]
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_HEARTBEAT_CAPTURE_NOT_VISIBLE"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && diagnostic.SafeName.Value == "dms_binding_cdc_heartbeat"
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+                && diagnostic.ObservedValue!.Contains("heartbeat_capture_visible=False")
+                && diagnostic.ObservedValue.Contains("heartbeat_capture_all_changes_function_present=False")
+            );
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_cdc_heartbeat"
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["heartbeat_capture_visible"] == "False"
+                && observation.SafeObservedValues["heartbeat_capture_all_changes_function_present"] == "False"
+                && observation.SafeObservedValues["heartbeat_capture_visibility_source"]
+                    == "cdc_change_stream_metadata"
+            );
+        result
+            .ProviderHistoryObservations.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_cdc_heartbeat"
+                && observation.Classification == CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+            );
+        executor.ExecutedSql.Should().BeEmpty();
+        executor.QueriedSql.Should().NotContain(sql => sql.Contains("Kafka"));
     }
 
     [Test]
@@ -2835,6 +2906,26 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
                 .OrderBy(capture => capture.CaptureInstanceName.Value)
         )
         {
+            var isHeartbeat = IsCaptureKind(capture, CdcSourceTableKind.CdcHeartbeat);
+            var heartbeatCaptureChangeTablePresent =
+                isHeartbeat && capture.HeartbeatCaptureChangeTablePresent;
+            var heartbeatCaptureAllChangesFunctionPresent =
+                isHeartbeat && capture.HeartbeatCaptureAllChangesFunctionPresent;
+            var heartbeatCaptureStartLsnPresent = isHeartbeat && capture.HeartbeatCaptureStartLsnPresent;
+            var heartbeatCaptureSeqvalPresent = isHeartbeat && capture.HeartbeatCaptureSeqvalPresent;
+            var heartbeatCaptureOperationPresent = isHeartbeat && capture.HeartbeatCaptureOperationPresent;
+            var heartbeatCaptureSequenceColumnPresent =
+                isHeartbeat && capture.HeartbeatCaptureSequenceColumnPresent;
+            var heartbeatCaptureAtColumnPresent = isHeartbeat && capture.HeartbeatCaptureAtColumnPresent;
+            var heartbeatCaptureVisible =
+                heartbeatCaptureChangeTablePresent
+                && heartbeatCaptureAllChangesFunctionPresent
+                && heartbeatCaptureStartLsnPresent
+                && heartbeatCaptureSeqvalPresent
+                && heartbeatCaptureOperationPresent
+                && heartbeatCaptureSequenceColumnPresent
+                && heartbeatCaptureAtColumnPresent;
+
             rows.AddRange(
                 capture.CapturedColumns.Select(
                     (column, index) =>
@@ -2857,6 +2948,36 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
                             ("change_table", $"cdc.{capture.CaptureInstanceName.Value}_CT"),
                             ("retained_min_lsn", capture.RetainedMinLsn),
                             ("retained_max_lsn", capture.RetainedMaxLsn),
+                            ("heartbeat_capture_visible", heartbeatCaptureVisible.ToString()),
+                            (
+                                "heartbeat_capture_visibility_source",
+                                isHeartbeat ? "cdc_change_stream_metadata" : "not_applicable"
+                            ),
+                            (
+                                "heartbeat_capture_change_table_present",
+                                heartbeatCaptureChangeTablePresent.ToString()
+                            ),
+                            (
+                                "heartbeat_capture_all_changes_function_present",
+                                heartbeatCaptureAllChangesFunctionPresent.ToString()
+                            ),
+                            (
+                                "heartbeat_capture_start_lsn_present",
+                                heartbeatCaptureStartLsnPresent.ToString()
+                            ),
+                            ("heartbeat_capture_seqval_present", heartbeatCaptureSeqvalPresent.ToString()),
+                            (
+                                "heartbeat_capture_operation_present",
+                                heartbeatCaptureOperationPresent.ToString()
+                            ),
+                            (
+                                "heartbeat_capture_sequence_column_present",
+                                heartbeatCaptureSequenceColumnPresent.ToString()
+                            ),
+                            (
+                                "heartbeat_capture_at_column_present",
+                                heartbeatCaptureAtColumnPresent.ToString()
+                            ),
                             ("column_name", column),
                             ("column_ordinal", (index + 1).ToString())
                         )
@@ -2937,7 +3058,14 @@ internal sealed record RecordingSqlServerCaptureInstance(
     bool PartitionSwitch = false,
     bool SourceIsPartitioned = false,
     string RetainedMinLsn = "",
-    string RetainedMaxLsn = ""
+    string RetainedMaxLsn = "",
+    bool HeartbeatCaptureChangeTablePresent = true,
+    bool HeartbeatCaptureAllChangesFunctionPresent = true,
+    bool HeartbeatCaptureStartLsnPresent = true,
+    bool HeartbeatCaptureSeqvalPresent = true,
+    bool HeartbeatCaptureOperationPresent = true,
+    bool HeartbeatCaptureSequenceColumnPresent = true,
+    bool HeartbeatCaptureAtColumnPresent = true
 )
 {
     public static RecordingSqlServerCaptureInstance Expected(
@@ -2952,7 +3080,14 @@ internal sealed record RecordingSqlServerCaptureInstance(
         bool partitionSwitch = false,
         bool sourceIsPartitioned = false,
         string? retainedMinLsn = null,
-        string? retainedMaxLsn = null
+        string? retainedMaxLsn = null,
+        bool heartbeatCaptureChangeTablePresent = true,
+        bool heartbeatCaptureAllChangesFunctionPresent = true,
+        bool heartbeatCaptureStartLsnPresent = true,
+        bool heartbeatCaptureSeqvalPresent = true,
+        bool heartbeatCaptureOperationPresent = true,
+        bool heartbeatCaptureSequenceColumnPresent = true,
+        bool heartbeatCaptureAtColumnPresent = true
     )
     {
         var table = CdcProviderSetupContractTestData
@@ -2973,7 +3108,14 @@ internal sealed record RecordingSqlServerCaptureInstance(
             partitionSwitch,
             sourceIsPartitioned,
             retainedMinLsn ?? DefaultRetainedMinLsn(tableKind),
-            retainedMaxLsn ?? "0x00000000000000000010"
+            retainedMaxLsn ?? "0x00000000000000000010",
+            heartbeatCaptureChangeTablePresent,
+            heartbeatCaptureAllChangesFunctionPresent,
+            heartbeatCaptureStartLsnPresent,
+            heartbeatCaptureSeqvalPresent,
+            heartbeatCaptureOperationPresent,
+            heartbeatCaptureSequenceColumnPresent,
+            heartbeatCaptureAtColumnPresent
         );
     }
 

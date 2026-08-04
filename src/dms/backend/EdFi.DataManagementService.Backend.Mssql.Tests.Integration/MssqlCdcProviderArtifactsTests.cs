@@ -402,6 +402,10 @@ public class Given_MssqlCdcProviderArtifacts
                 observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
                 && observation.SafeArtifactName.Value == HeartbeatCaptureInstanceName
                 && observation.SafeObservedValues["heartbeat_capture_visible"] == "True"
+                && observation.SafeObservedValues["heartbeat_capture_visibility_source"]
+                    == "cdc_change_stream_metadata"
+                && observation.SafeObservedValues["heartbeat_capture_all_changes_function_present"] == "True"
+                && observation.SafeObservedValues["heartbeat_capture_sequence_column_present"] == "True"
             );
     }
 

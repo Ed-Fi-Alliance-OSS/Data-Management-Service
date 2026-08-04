@@ -2372,6 +2372,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         List<CdcProviderArtifactObservation> unexpectedArtifacts = [];
         List<CdcProviderDiagnostic> diagnostics = [];
         diagnostics.AddRange(expectedInstances.Where(IsDropPending).Select(DropPendingDiagnostic));
+        diagnostics.AddRange(
+            expectedInstances
+                .Where(HeartbeatCaptureVisibilityIsUnavailable)
+                .Select(HeartbeatCaptureVisibilityUnavailableDiagnostic)
+        );
 
         foreach (
             var unexpectedRows in rowsByCaptureInstance
@@ -2423,6 +2428,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var workTableSchema = EscapeSqlLiteral(DmsTableNames.DocumentProjectionWork.Schema.Value);
         var workTableName = EscapeSqlLiteral(DmsTableNames.DocumentProjectionWork.Name);
         var dmsManagedTableInventoryValues = SqlServerDmsManagedTableInventoryValues(request);
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var heartbeatSequenceColumn = EscapeSqlLiteral(
+            SourceColumn(heartbeat, "HeartbeatSequence").ColumnName.Value
+        );
+        var heartbeatAtColumn = EscapeSqlLiteral(SourceColumn(heartbeat, "HeartbeatAt").ColumnName.Value);
 
         return $"""
             /* cdc:sqlserver:capture-instances */
@@ -2447,6 +2457,15 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     CAST(NULL AS nvarchar(260)) AS change_table,
                     CAST(NULL AS nvarchar(64)) AS retained_min_lsn,
                     CAST(NULL AS nvarchar(64)) AS retained_max_lsn,
+                    CAST(NULL AS nvarchar(5)) AS heartbeat_capture_visible,
+                    CAST(NULL AS nvarchar(64)) AS heartbeat_capture_visibility_source,
+                    CAST(NULL AS nvarchar(5)) AS heartbeat_capture_change_table_present,
+                    CAST(NULL AS nvarchar(5)) AS heartbeat_capture_all_changes_function_present,
+                    CAST(NULL AS nvarchar(5)) AS heartbeat_capture_start_lsn_present,
+                    CAST(NULL AS nvarchar(5)) AS heartbeat_capture_seqval_present,
+                    CAST(NULL AS nvarchar(5)) AS heartbeat_capture_operation_present,
+                    CAST(NULL AS nvarchar(5)) AS heartbeat_capture_sequence_column_present,
+                    CAST(NULL AS nvarchar(5)) AS heartbeat_capture_at_column_present,
                     CAST(NULL AS nvarchar(128)) AS column_name,
                     CAST(NULL AS nvarchar(20)) AS column_ordinal
                 WHERE 1 = 0;
@@ -2513,6 +2532,65 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     OBJECT_SCHEMA_NAME(capture_info.object_id) + N'.' + OBJECT_NAME(capture_info.object_id) AS change_table,
                     COALESCE(sys.fn_varbintohexstr(sys.fn_cdc_get_min_lsn(capture_info.capture_instance)), N'') AS retained_min_lsn,
                     COALESCE(sys.fn_varbintohexstr(sys.fn_cdc_get_max_lsn()), N'') AS retained_max_lsn,
+                    CONVERT(nvarchar(5), CASE
+                        WHEN expected_by_instance.table_kind = N'cdc_heartbeat'
+                            AND heartbeat_capture_metadata.change_table_present = 1
+                            AND heartbeat_capture_metadata.all_changes_function_present = 1
+                            AND heartbeat_capture_metadata.start_lsn_present = 1
+                            AND heartbeat_capture_metadata.seqval_present = 1
+                            AND heartbeat_capture_metadata.operation_present = 1
+                            AND heartbeat_capture_metadata.sequence_column_present = 1
+                            AND heartbeat_capture_metadata.at_column_present = 1
+                            THEN 1
+                        ELSE 0
+                    END) AS heartbeat_capture_visible,
+                    CASE
+                        WHEN expected_by_instance.table_kind = N'cdc_heartbeat'
+                            THEN N'cdc_change_stream_metadata'
+                        ELSE N'not_applicable'
+                    END AS heartbeat_capture_visibility_source,
+                    CONVERT(nvarchar(5), CASE
+                        WHEN expected_by_instance.table_kind = N'cdc_heartbeat'
+                            AND heartbeat_capture_metadata.change_table_present = 1
+                            THEN 1
+                        ELSE 0
+                    END) AS heartbeat_capture_change_table_present,
+                    CONVERT(nvarchar(5), CASE
+                        WHEN expected_by_instance.table_kind = N'cdc_heartbeat'
+                            AND heartbeat_capture_metadata.all_changes_function_present = 1
+                            THEN 1
+                        ELSE 0
+                    END) AS heartbeat_capture_all_changes_function_present,
+                    CONVERT(nvarchar(5), CASE
+                        WHEN expected_by_instance.table_kind = N'cdc_heartbeat'
+                            AND heartbeat_capture_metadata.start_lsn_present = 1
+                            THEN 1
+                        ELSE 0
+                    END) AS heartbeat_capture_start_lsn_present,
+                    CONVERT(nvarchar(5), CASE
+                        WHEN expected_by_instance.table_kind = N'cdc_heartbeat'
+                            AND heartbeat_capture_metadata.seqval_present = 1
+                            THEN 1
+                        ELSE 0
+                    END) AS heartbeat_capture_seqval_present,
+                    CONVERT(nvarchar(5), CASE
+                        WHEN expected_by_instance.table_kind = N'cdc_heartbeat'
+                            AND heartbeat_capture_metadata.operation_present = 1
+                            THEN 1
+                        ELSE 0
+                    END) AS heartbeat_capture_operation_present,
+                    CONVERT(nvarchar(5), CASE
+                        WHEN expected_by_instance.table_kind = N'cdc_heartbeat'
+                            AND heartbeat_capture_metadata.sequence_column_present = 1
+                            THEN 1
+                        ELSE 0
+                    END) AS heartbeat_capture_sequence_column_present,
+                    CONVERT(nvarchar(5), CASE
+                        WHEN expected_by_instance.table_kind = N'cdc_heartbeat'
+                            AND heartbeat_capture_metadata.at_column_present = 1
+                            THEN 1
+                        ELSE 0
+                    END) AS heartbeat_capture_at_column_present,
                     COALESCE(captured_column.column_name, N'') AS column_name,
                     COALESCE(CONVERT(nvarchar(20), captured_column.column_ordinal), N'0') AS column_ordinal
                 FROM cdc.change_tables capture_info
@@ -2530,6 +2608,57 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 LEFT JOIN expected_capture_instances expected_by_source
                     ON expected_by_source.source_schema = source_schema.name
                     AND expected_by_source.source_name = source_table.name
+                OUTER APPLY (
+                    SELECT
+                        CASE WHEN EXISTS (
+                            SELECT 1
+                            FROM sys.objects change_table_info
+                            INNER JOIN sys.schemas change_table_schema
+                                ON change_table_schema.schema_id = change_table_info.schema_id
+                            WHERE change_table_info.object_id = capture_info.object_id
+                            AND change_table_info.type = N'U'
+                            AND change_table_schema.name = N'cdc'
+                        ) THEN 1 ELSE 0 END AS change_table_present,
+                        CASE WHEN EXISTS (
+                            SELECT 1
+                            FROM sys.objects all_changes_function
+                            INNER JOIN sys.schemas all_changes_schema
+                                ON all_changes_schema.schema_id = all_changes_function.schema_id
+                            WHERE all_changes_schema.name = N'cdc'
+                            AND all_changes_function.name = N'fn_cdc_get_all_changes_' + capture_info.capture_instance
+                            AND all_changes_function.type IN (N'IF', N'TF')
+                        ) THEN 1 ELSE 0 END AS all_changes_function_present,
+                        CASE WHEN EXISTS (
+                            SELECT 1
+                            FROM sys.columns change_table_column
+                            WHERE change_table_column.object_id = capture_info.object_id
+                            AND change_table_column.name = N'__$start_lsn'
+                        ) THEN 1 ELSE 0 END AS start_lsn_present,
+                        CASE WHEN EXISTS (
+                            SELECT 1
+                            FROM sys.columns change_table_column
+                            WHERE change_table_column.object_id = capture_info.object_id
+                            AND change_table_column.name = N'__$seqval'
+                        ) THEN 1 ELSE 0 END AS seqval_present,
+                        CASE WHEN EXISTS (
+                            SELECT 1
+                            FROM sys.columns change_table_column
+                            WHERE change_table_column.object_id = capture_info.object_id
+                            AND change_table_column.name = N'__$operation'
+                        ) THEN 1 ELSE 0 END AS operation_present,
+                        CASE WHEN EXISTS (
+                            SELECT 1
+                            FROM cdc.captured_columns heartbeat_column
+                            WHERE heartbeat_column.object_id = capture_info.object_id
+                            AND heartbeat_column.column_name = N'{heartbeatSequenceColumn}'
+                        ) THEN 1 ELSE 0 END AS sequence_column_present,
+                        CASE WHEN EXISTS (
+                            SELECT 1
+                            FROM cdc.captured_columns heartbeat_column
+                            WHERE heartbeat_column.object_id = capture_info.object_id
+                            AND heartbeat_column.column_name = N'{heartbeatAtColumn}'
+                        ) THEN 1 ELSE 0 END AS at_column_present
+                ) heartbeat_capture_metadata
                 WHERE expected_by_instance.capture_instance IS NOT NULL
                 OR expected_by_source.capture_instance IS NOT NULL
                 OR capture_info.role_name = N'{gatingRoleName}'
@@ -2602,6 +2731,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var sourceIsPartitioned = ReadBool(first, "source_is_partitioned");
         var retainedMinLsn = ReadOptional(first, "retained_min_lsn");
         var retainedMaxLsn = ReadOptional(first, "retained_max_lsn");
+        var heartbeatCaptureVisible = ReadBool(first, "heartbeat_capture_visible");
+        var heartbeatCaptureVisibilityIsRequired = definition.TableKind == CdcSourceTableKind.CdcHeartbeat;
         var capturedColumns = CapturedColumnNames(rows);
         var expectedColumns = definition
             .ExpectedSourceTable.Columns.Select(column => column.ColumnName.Value)
@@ -2640,7 +2771,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 && sourceIndexMatches
                 && string.IsNullOrWhiteSpace(filegroupName)
                 && partitionSwitchMatches
-                && capturedColumnsMatch,
+                && capturedColumnsMatch
+                && (!heartbeatCaptureVisibilityIsRequired || heartbeatCaptureVisible),
             CaptureInstanceObservedValues(
                 captureInstanceName,
                 definition,
@@ -2657,6 +2789,15 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 ReadOptional(first, "change_table"),
                 retainedMinLsn,
                 retainedMaxLsn,
+                heartbeatCaptureVisible,
+                ReadOptional(first, "heartbeat_capture_visibility_source"),
+                ReadBool(first, "heartbeat_capture_change_table_present"),
+                ReadBool(first, "heartbeat_capture_all_changes_function_present"),
+                ReadBool(first, "heartbeat_capture_start_lsn_present"),
+                ReadBool(first, "heartbeat_capture_seqval_present"),
+                ReadBool(first, "heartbeat_capture_operation_present"),
+                ReadBool(first, "heartbeat_capture_sequence_column_present"),
+                ReadBool(first, "heartbeat_capture_at_column_present"),
                 capturedColumns,
                 expectedColumns
             )
@@ -2808,6 +2949,17 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         }
 
         if (
+            observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            && observation.SafeObservedValues.TryGetValue("source_table_kind", out var tableKind)
+            && string.Equals(tableKind, "cdc_heartbeat", StringComparison.Ordinal)
+            && observation.SafeObservedValues.TryGetValue("heartbeat_capture_visible", out var visible)
+            && string.Equals(visible, "False", StringComparison.Ordinal)
+        )
+        {
+            return CdcProviderRetryContinuityClassification.SourceHistoryUnknown;
+        }
+
+        if (
             sourceHistoryLostForMissing
             && observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
             && observation.State == CdcProviderArtifactState.Missing
@@ -2908,6 +3060,15 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         string changeTable,
         string retainedMinLsn,
         string retainedMaxLsn,
+        bool heartbeatCaptureVisible,
+        string heartbeatCaptureVisibilitySource,
+        bool heartbeatCaptureChangeTablePresent,
+        bool heartbeatCaptureAllChangesFunctionPresent,
+        bool heartbeatCaptureStartLsnPresent,
+        bool heartbeatCaptureSeqvalPresent,
+        bool heartbeatCaptureOperationPresent,
+        bool heartbeatCaptureSequenceColumnPresent,
+        bool heartbeatCaptureAtColumnPresent,
         IReadOnlyList<string> capturedColumns,
         IReadOnlyList<string> expectedColumns
     ) =>
@@ -2936,13 +3097,60 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ["retained_min_lsn"] = EmptyAsNone(retainedMinLsn),
             ["retained_max_lsn"] = EmptyAsNone(retainedMaxLsn),
             ["retained_lsn_gap_evaluation"] = "not_evaluated_without_committed_offset",
+            ["heartbeat_capture_visible"] = heartbeatCaptureVisible.ToString(),
+            ["heartbeat_capture_visibility_source"] = SafeText(heartbeatCaptureVisibilitySource),
+            ["heartbeat_capture_change_table_present"] = heartbeatCaptureChangeTablePresent.ToString(),
+            ["heartbeat_capture_all_changes_function_present"] =
+                heartbeatCaptureAllChangesFunctionPresent.ToString(),
+            ["heartbeat_capture_start_lsn_present"] = heartbeatCaptureStartLsnPresent.ToString(),
+            ["heartbeat_capture_seqval_present"] = heartbeatCaptureSeqvalPresent.ToString(),
+            ["heartbeat_capture_operation_present"] = heartbeatCaptureOperationPresent.ToString(),
+            ["heartbeat_capture_sequence_column_present"] = heartbeatCaptureSequenceColumnPresent.ToString(),
+            ["heartbeat_capture_at_column_present"] = heartbeatCaptureAtColumnPresent.ToString(),
             ["captured_columns"] = CsvOrNone(capturedColumns),
             ["expected_captured_columns"] = CsvOrNone(expectedColumns),
             ["captured_column_count"] = capturedColumns.Count.ToString(),
-            ["heartbeat_capture_visible"] = (
-                definition.TableKind == CdcSourceTableKind.CdcHeartbeat
-            ).ToString(),
         };
+
+    private static bool HeartbeatCaptureVisibilityIsUnavailable(SqlServerCaptureInstanceInspection capture) =>
+        capture.TableKind == CdcSourceTableKind.CdcHeartbeat
+        && capture.Exists
+        && capture.ObservedValues.TryGetValue("heartbeat_capture_visible", out var visible)
+        && !string.Equals(visible, "True", StringComparison.Ordinal);
+
+    private static CdcProviderDiagnostic HeartbeatCaptureVisibilityUnavailableDiagnostic(
+        SqlServerCaptureInstanceInspection capture
+    ) =>
+        new(
+            Code: "CDC_SQLSERVER_HEARTBEAT_CAPTURE_NOT_VISIBLE",
+            Category: CdcProviderDiagnosticCategory.ProviderHistoryUnavailable,
+            Severity: CdcProviderDiagnosticSeverity.Error,
+            PrincipalKind: CdcPrincipalKind.None,
+            ArtifactKind: CdcProviderArtifactKind.SqlServerCaptureInstance,
+            SafeName: capture.CaptureInstanceName,
+            ExpectedValue: "heartbeat-capture-change-stream-visible",
+            ObservedValue: HeartbeatCaptureVisibilityObservedValue(capture.ObservedValues),
+            ProviderErrorClass: null,
+            Classification: CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+        );
+
+    private static string HeartbeatCaptureVisibilityObservedValue(
+        IReadOnlyDictionary<string, string> observedValues
+    ) =>
+        string.Join(
+            ";",
+            new[]
+            {
+                "heartbeat_capture_visible",
+                "heartbeat_capture_change_table_present",
+                "heartbeat_capture_all_changes_function_present",
+                "heartbeat_capture_start_lsn_present",
+                "heartbeat_capture_seqval_present",
+                "heartbeat_capture_operation_present",
+                "heartbeat_capture_sequence_column_present",
+                "heartbeat_capture_at_column_present",
+            }.Select(key => $"{key}={observedValues.GetValueOrDefault(key, "unavailable")}")
+        );
 
     private static bool SourceIndexMatches(string sourceIndex, string sourcePrimaryKeyName)
     {
