@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft. This document is the normative design for the partitioned cursor-paging surface on regular
+This document is the normative design for the partitioned cursor-paging surface on regular
 resource and descriptor GET-many endpoints:
 
 - the `pageToken` / `pageSize` query parameters and the `Next-Page-Token` response header,
@@ -713,142 +713,82 @@ not using snapshots, key changes observed without a `maxChangeVersion` filter, o
 newly accessible behind the client's change window. The mitigations recorded in
 [change-queries.md](change-queries.md) continue to apply to those.
 
-## Performance Invariants and Evidence
+## Performance Invariants
 
-Implementation is incomplete without reproducible PostgreSQL **and real SQL Server** evidence.
-PostgreSQL results do not establish SQL Server behavior: parameterized `TOP` and large window
-queries have provider-specific plan and memory-grant characteristics.
+These are properties of the running system. A change that preserves the contract above but
+violates one of these has not implemented this design.
 
-### Baseline before the shared compiler changes
-
-A repeatable harness — a script, configuration, and result format, or an explicitly integrated and
-pinned external performance runner — MUST capture the traditional-paging baseline *before* the
-shared page-selection compiler is modified.
-
-Because this design preserves traditional page-selection SQL behaviorally and textually, the
-baseline is regression insurance over that shared compiler rather than a record of an expected
-change: it is the evidence that traditional SQL and latency did not move. It must also land before
-the first change that alters shared traditional runtime execution — the selected-id result set
-added to the collection hydration batch.
-
-The pre-change baseline is deliberately narrow: the three traditional offset scenarios used by the
-gates — offset 0, a one-page shallow offset, and a recorded deep offset — for page sizes 25 and 500
-on both providers. It records commit and environment identity, p50/p95, command count, returned
-rows, reads or buffers, database CPU/time, and plans, using a reproducible fixture large enough to
-exercise those offsets. It does not provision the million-row, authorized, filtered, sparse-id, or
-descriptor fixtures, and it does not run cursor or partition scenarios.
-
-### Final measurement matrix
-
-Once cursor and partition execution are complete, the same harness and baseline drive the final
-matrix. Use these pinned data sets:
-
-- 10,000 candidates for smoke and setup validation;
-- 1,000,000 accessible regular-resource candidates with at least 10% `DocumentId` gaps;
-- 2,000,000 total regular-resource candidates with 1,000,000 accessible under representative
-  row-level authorization;
-- filtered candidate sets at approximately 1% and 10% selectivity; and
-- at least 250,000 descriptors split across accessible and inaccessible namespaces.
-
-Measure page sizes 25 and 500 at the first, middle, and last cursor ranges. Compare offset 0, a
-one-page shallow offset, and a recorded deep offset. Measure partition counts 1, 10, and 200 for
-unfiltered, filtered, and representative authorized candidates. Each scenario runs at least five
-warmups and 30 measured warm-cache iterations on a pinned environment. Record p50, p95, command
-count, returned rows or tokens, logical reads or buffers, database CPU/time, and the execution
-plan.
-
-### Acceptance gates
+### Structural invariants
 
 - Cursor SQL contains no `OFFSET`, no row-number skip, and no count query, and uses the root
   `DocumentId` key as a range predicate.
-- Existing `limit`/`offset` page-selection SQL remains behaviorally and textually unchanged. The
-  expected selected-id result set in collection hydration batches is outside this textual SQL gate.
-- Cursor hydration performs one database command, uses the existing single-command page-keyset
-  architecture, and adds no roundtrip.
+- Existing `limit`/`offset` page-selection SQL is behaviorally and textually unchanged. The
+  selected-id result set added to collection hydration batches is the one deliberate exception, and
+  it does not alter traditional response behavior.
+- Cursor hydration performs one database command and adds no roundtrip over the existing
+  single-command page-keyset architecture.
 - `/partitions` performs one database command and returns identifiers only.
-- Middle and last cursor p50 is at most `1.20x` first-page cursor p50; p95 at most `1.30x`. This is
-  the gate that actually proves depth insensitivity.
-- First-page cursor p50/p95 is at most `1.20x`/`1.30x` the offset-0 baseline.
-- Existing shallow-offset p50/p95 is at most `1.20x`/`1.30x` its pre-change baseline.
-- Partition `number=200` p50 is at most `1.25x` `number=1` on the same candidate set, proving the
-  requested count does not cause repeated scans.
-- Deep-offset results are recorded for comparison but are **not** a cursor acceptance gate.
 
-### Plan evidence
+### Latency invariants
 
-Capture PostgreSQL `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` and SQL Server actual XML plans with
-`SET STATISTICS IO, TIME ON`.
+Stated as ratios rather than absolute times, because they must hold on any provider and any
+hardware.
 
-- Unfiltered cursor plans should use primary-key range access.
-- Filtered and authorized plans should retain applicable existing indexes without repeated full
-  candidate scans.
-- A partition plan may scan and sort the candidate set once.
+- **Depth insensitivity.** The middle and last ranges of a cursor walk cost at most `1.20x` (p50)
+  and `1.30x` (p95) the first range. This is the invariant that distinguishes cursor paging from
+  the surface it supplements; the others are guards around it.
+- **Cheap entry.** A first cursor page costs at most `1.20x` (p50) / `1.30x` (p95) an offset-0
+  traditional page, so beginning a walk is not itself an expensive operation.
+- **No traditional regression.** Shallow-offset traditional paging does not regress against its
+  pre-change cost.
+- **Partition count is free.** Requesting 200 partitions costs at most `1.25x` requesting 1 over
+  the same candidate set, so the requested count cannot cause repeated scans of the candidate
+  relation.
 
-Add DDL or indexes only after reviewed provider evidence demonstrates a repeatable deficiency.
+Deep-offset latency is expected to improve substantially, but that is a consequence rather than an
+invariant: this design does not promise anything about the surface it is not replacing.
+
+### Provider independence
+
+PostgreSQL behavior does not establish SQL Server behavior. Parameterized `TOP` and large window
+queries have provider-specific plan and memory-grant characteristics, so both providers satisfy
+these invariants independently or the design is not satisfied.
+
+### Access-path expectations
+
+- Unfiltered cursor plans use primary-key range access.
+- Filtered and authorized plans retain applicable existing indexes without repeated full candidate
+  scans.
+- A partition plan may scan and sort the candidate set once — that single linear pass is the
+  intended cost of the endpoint.
+
+New DDL or indexes are justified only by a demonstrated, repeatable deficiency against these
+expectations, never by anticipation of one.
 
 ## Bounded Telemetry
 
-Production telemetry is independent of the measurement matrix above. Record paging mode, requested
-and returned page size, requested and returned partition count, duration, provider, command
-category, and success/failure, with bounded dimensions.
+Production telemetry records paging mode, requested and returned page size, requested and returned
+partition count, duration, provider, command category, and success/failure, with bounded
+dimensions.
 
 Never record raw token text, decoded bounds, filter names or values, client identity, or candidate
 identifiers. Decoded bounds are candidate identifiers by another name.
 
-## Test Expectations
-
-- **Token codec unit tests:** round trips, omitted maximum, padded and unpadded input, forbidden
-  alphabet and padding forms, invalid UTF-8, extra fields, decimal grammar, `Int64` bounds,
-  terminal inverted ranges, and overflow handling.
-- **Validation tests:** every query-parameter combination, the phase precedence above, exactly one
-  cursor error, partition phase gating and unsupported-parameter ordering, exact messages and
-  ProblemDetails shells, repeated-parameter last-value-wins behavior, and case-variant
-  canonicalization without an exception.
-- **Routing and handler tests:** typed collection/by-id/partition classification, the dedicated
-  pipeline order, header behavior for selected-keyset-empty, body-empty-after-selection, zero-size,
-  and `Int64.MaxValue` cases, cursor parameters rejected on `/deletes` and `/keyChanges`, and
-  startup configuration validation.
-- **SQL compiler and golden tests:** traditional, cursor, and partition SQL for both providers,
-  including explicit parameter roles, SQL Server `TOP`, the absence of offset and count SQL in
-  cursor mode, partition-sizing semantics, and identifiers-only output.
-- **Hydration tests:** PostgreSQL `RETURNING` and SQL Server `OUTPUT`, the batch result-set
-  sequence without assuming selected-id row order, the nullable selected-keyset maximum, unchanged
-  GET-by-id result sets, and the all-selected-rows-deleted-before-hydration case.
-- **Backend integration tests:** regular resources and descriptors; page sizes 0, 1, and maximum;
-  multiple pages; partition boundaries; a returned token count that never exceeds the requested
-  `number`, including candidate counts that divide inexactly; sparse ids; empty sets; filtered
-  queries; change-version ranges; concurrent insert/delete behavior; and identical boundaries for
-  equivalently seeded PostgreSQL and real SQL Server 2025 databases.
-- **Authorization integration tests:** partition boundaries and cursor pages use the same accessible
-  candidate set for no-further-authorization, relationship, namespace, ownership, and view-based
-  strategies where supported. Descriptor coverage includes its supported no-further and namespace
-  strategies. Forged ranges cannot expose inaccessible identifiers.
-- **OpenAPI tests:** core, extension, descriptor, excluded-domain, and readable/write-only profile
-  documents. `operationId` values, summaries and descriptions, parameters and defaults, response
-  headers and media types, tags, security, and excluded endpoint families are asserted exactly.
-- **E2E tests:** public headers, body, and the terminal empty request; malformed and mixed
-  parameters; default and requested partition counts; parallel consumption without overlap; route
-  qualifiers; multi-tenancy; extension resources; descriptors; and OpenAPI/profile metadata.
-- **Contract conformance:** a pinned set of request/response cases covering every parameter
-  combination, token form, error message, and partition count specified in this document, executed
-  against both providers. If a conformance case depends on behavior this document does not specify,
-  the behavior is added here before the implementation is accepted.
-
 ## Risks and Guardrails
 
 1. **Duplicate-producing authorization joins.** An authorization strategy that duplicates a root id
-   corrupts partition counts and boundaries — every downstream partition drifts. Assert the
-   one-row-per-`DocumentId` candidate invariant for every supported strategy, and fix the join
-   rather than masking it with `DISTINCT`.
+   corrupts partition counts and boundaries — every downstream partition drifts. The
+   one-row-per-`DocumentId` candidate invariant must hold for every supported strategy, and a
+   violation is fixed at the join rather than masked with `DISTINCT`.
 2. **Hydration batch ordering.** Adding the selected-id result set changes hydration batch result
-   ordering. Update both provider executors and all normalized plan contracts atomically; a partial
+   ordering. Both provider executors and all normalized plan contracts move together; a partial
    change misreads every subsequent result set.
 3. **SQL Server plan behavior.** Parameterized `TOP` and large window queries can produce
-   provider-specific plan or memory-grant behavior. Do not infer SQL Server parity from PostgreSQL
-   tests.
+   provider-specific plan or memory-grant behavior, so the two providers can satisfy the same
+   contract with materially different execution characteristics.
 4. **Partition query spill.** The intentionally linear partition query may sort or spill on large
-   filtered or authorized sets. Preserve the one-command, one-scan shape and require measured
-   evidence before proposing DDL.
+   filtered or authorized sets. The one-command, one-scan shape is preserved rather than traded
+   away for indexes that no observed deficiency justifies.
 5. **OpenAPI defaults conflict.** The authoritative OpenAPI paging defaults and fixed `limit`
    maximum conflict with runtime behavior. Assembled documents must expose `MaximumPageSize`
    consistently as both default and maximum across resource and descriptor specifications.
@@ -858,8 +798,3 @@ identifiers. Decoded bounds are candidate identifiers by another name.
 7. **Edge conditions are not errors.** `pageSize=0`, inverted ranges, sparse identifiers, an empty
    candidate set, and `Int64.MaxValue` are valid conditions with defined behavior, not server
    errors.
-
-## Open Questions
-
-None currently. Items previously treated as open — partition sizing semantics, cursor validation
-precedence, and `Next-Page-Token` gating — are resolved above.
