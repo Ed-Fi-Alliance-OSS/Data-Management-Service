@@ -938,46 +938,61 @@ public sealed class DocumentCacheProjectionScheduler(
             )
         );
 
-        DocumentCacheProjectionDrainPageResult drainResult = await targetContext
-            .DrainExecutor.RunAdministrativeDrainSliceAsync(
-                async drainCancellationToken =>
-                {
-                    await _workerGate.WaitAsync(drainCancellationToken).ConfigureAwait(false);
-                    try
+        bool activeProcessingObserved = false;
+        DocumentCacheProjectionDrainPageResult drainResult;
+        try
+        {
+            drainResult = await targetContext
+                .DrainExecutor.RunAdministrativeDrainSliceAsync(
+                    async drainCancellationToken =>
                     {
-                        ObserveTarget(
-                            targetContext,
-                            new DocumentCacheProjectionExecutionStateSnapshot(
-                                isRunning: true,
-                                isActivelyProcessing: true,
-                                isWaitingForWorkerGate: false,
-                                isInBackoff: false,
-                                backoffUntil: null,
-                                cancellationRequested: targetContext.CancellationRequested,
-                                cancellationObservedAt: targetContext.CancellationRequested
-                                    ? timeProvider.GetUtcNow()
-                                    : null
-                            )
-                        );
+                        await _workerGate.WaitAsync(drainCancellationToken).ConfigureAwait(false);
+                        try
+                        {
+                            ObserveTarget(
+                                targetContext,
+                                new DocumentCacheProjectionExecutionStateSnapshot(
+                                    isRunning: true,
+                                    isActivelyProcessing: true,
+                                    isWaitingForWorkerGate: false,
+                                    isInBackoff: false,
+                                    backoffUntil: null,
+                                    cancellationRequested: targetContext.CancellationRequested,
+                                    cancellationObservedAt: targetContext.CancellationRequested
+                                        ? timeProvider.GetUtcNow()
+                                        : null
+                                )
+                            );
+                            activeProcessingObserved = true;
 
-                        return await drainPageProcessor
-                            .ProcessPageAsync(
-                                new DocumentCacheProjectionDrainPageRequest(
-                                    targetContext,
-                                    DocumentCacheProjectionDrainInvocationKind.Administrative
-                                ),
-                                drainCancellationToken
-                            )
-                            .ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        _workerGate.Release();
-                    }
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+                            return await drainPageProcessor
+                                .ProcessPageAsync(
+                                    new DocumentCacheProjectionDrainPageRequest(
+                                        targetContext,
+                                        DocumentCacheProjectionDrainInvocationKind.Administrative
+                                    ),
+                                    drainCancellationToken
+                                )
+                                .ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            _workerGate.Release();
+                        }
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            if (!activeProcessingObserved)
+            {
+                ObserveIdleOrBackoff(targetContext, timeProvider.GetUtcNow());
+            }
+
+            throw;
+        }
 
         DateTimeOffset completedAt = timeProvider.GetUtcNow();
         targetContext.SchedulingState.RecordAdministrativeDrainCompleted(drainResult, startedAt, completedAt);
@@ -1104,6 +1119,7 @@ public sealed class DocumentCacheProjectionScheduler(
                 );
             if (blockReason is not null)
             {
+                ObserveIdleOrBackoff(context, dispatchStartedAt);
                 return RecordDispatchResult(
                     context,
                     DocumentCacheProjectionSchedulerDispatchResult.Skipped(
@@ -1115,6 +1131,7 @@ public sealed class DocumentCacheProjectionScheduler(
                 );
             }
 
+            ObserveIdleOrBackoff(context, dispatchStartedAt);
             DocumentCacheProjectionDrainPageResult? drainResult = await context
                 .DrainExecutor.TryRunOrdinaryDrainSliceAsync(
                     drainCancellationToken =>

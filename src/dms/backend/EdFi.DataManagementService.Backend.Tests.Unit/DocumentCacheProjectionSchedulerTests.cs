@@ -360,6 +360,166 @@ public class Given_DocumentCacheProjectionScheduler
         drainPageProcessor.Calls.Should().ContainSingle();
     }
 
+    [Test]
+    public async Task It_clears_worker_gate_waiting_snapshot_when_post_gate_readiness_recheck_skips_target()
+    {
+        BlockingDrainPageProcessor drainPageProcessor = new();
+        RecordingObservationSink observationSink = new();
+        DocumentCacheProjectionScheduler scheduler = CreateScheduler(
+            drainPageProcessor,
+            observationSink,
+            maxConcurrentTargets: 1
+        );
+        DocumentCacheProjectionTargetRuntimeContext gateHolder = RuntimeContext(
+            DocumentCacheTargetKey.Create("Tenant-A", 1),
+            generation: 1,
+            observationSink
+        );
+        DocumentCacheProjectionTargetRuntimeContext pausedWhileWaiting = RuntimeContext(
+            DocumentCacheTargetKey.Create("Tenant-B", 1),
+            generation: 1,
+            observationSink
+        );
+
+        Task<ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>> schedulerTask =
+            scheduler.RunReadyTargetsOnceAsync([gateHolder, pausedWhileWaiting]);
+        await drainPageProcessor.WaitForCallCountAsync(1);
+        await observationSink.WaitForWaitingGateAsync(pausedWhileWaiting.ContextKey);
+
+        pausedWhileWaiting.SchedulingState.PauseTarget();
+        drainPageProcessor.ReleaseOne(DocumentCacheProjectionDrainPageResult.PageProcessed(1));
+
+        ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult> results =
+            await schedulerTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        results
+            .Should()
+            .ContainSingle(result => result.ContextKey == pausedWhileWaiting.ContextKey)
+            .Which.BlockReason.Should()
+            .Be(DocumentCacheProjectionTargetReadinessBlockReason.TargetPaused);
+        DocumentCacheProjectionTargetHealthSnapshot finalSnapshot = observationSink.LastSnapshotFor(
+            pausedWhileWaiting.ContextKey
+        );
+        finalSnapshot.ExecutionState.IsWaitingForWorkerGate.Should().BeFalse();
+        finalSnapshot.ExecutionState.IsActivelyProcessing.Should().BeFalse();
+        drainPageProcessor.Calls.Should().ContainSingle().Which.Context.Should().BeSameAs(gateHolder);
+    }
+
+    [Test]
+    public async Task It_clears_worker_gate_waiting_snapshot_when_drain_executor_ownership_is_claimed_after_recheck()
+    {
+        RecordingDrainPageProcessor drainPageProcessor = new(_ =>
+            DocumentCacheProjectionDrainPageResult.PageProcessed(1)
+        );
+        TaskCompletionSource commandOwnerStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource releaseCommandOwner = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<DocumentCacheProjectionDrainPageResult>? commandOwnerTask = null;
+        DocumentCacheProjectionTargetRuntimeContext? context = null;
+        int commandOwnerRequested = 0;
+        RecordingObservationSink observationSink = new(snapshot =>
+        {
+            if (
+                context is null
+                || snapshot.ContextKey != context.ContextKey
+                || snapshot.ExecutionState.IsWaitingForWorkerGate
+                || snapshot.ExecutionState.IsActivelyProcessing
+                || Interlocked.Exchange(ref commandOwnerRequested, 1) != 0
+            )
+            {
+                return;
+            }
+
+            commandOwnerTask = context.DrainExecutor.RunAdministrativeDrainSliceAsync(async _ =>
+            {
+                commandOwnerStarted.SetResult();
+                await releaseCommandOwner.Task.ConfigureAwait(false);
+                return DocumentCacheProjectionDrainPageResult.PageProcessed(0);
+            });
+
+            commandOwnerStarted.Task.Wait(TimeSpan.FromSeconds(5)).Should().BeTrue();
+        });
+        DocumentCacheProjectionScheduler scheduler = CreateScheduler(
+            drainPageProcessor,
+            observationSink,
+            maxConcurrentTargets: 1
+        );
+        context = RuntimeContext(
+            DocumentCacheTargetKey.Create("Tenant-A", 1),
+            generation: 1,
+            observationSink
+        );
+
+        try
+        {
+            ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult> results = await scheduler
+                .RunReadyTargetsOnceAsync([context])
+                .WaitAsync(TimeSpan.FromSeconds(5));
+
+            DocumentCacheProjectionSchedulerDispatchResult result = results.Should().ContainSingle().Subject;
+            result.Status.Should().Be(DocumentCacheProjectionSchedulerDispatchStatus.Skipped);
+            result.BlockReason.Should().Be(DocumentCacheProjectionTargetReadinessBlockReason.CommandOwned);
+            drainPageProcessor.Calls.Should().BeEmpty();
+            observationSink
+                .LastSnapshotFor(context.ContextKey)
+                .ExecutionState.IsWaitingForWorkerGate.Should()
+                .BeFalse();
+        }
+        finally
+        {
+            releaseCommandOwner.TrySetResult();
+            if (commandOwnerTask is not null)
+            {
+                await commandOwnerTask.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+    }
+
+    [Test]
+    public async Task It_clears_administrative_worker_gate_waiting_snapshot_when_cancelled_before_active_processing()
+    {
+        using CancellationTokenSource administrativeCancellation = new();
+        BlockingDrainPageProcessor drainPageProcessor = new();
+        RecordingObservationSink observationSink = new();
+        DocumentCacheProjectionScheduler scheduler = CreateScheduler(
+            drainPageProcessor,
+            observationSink,
+            maxConcurrentTargets: 1
+        );
+        DocumentCacheProjectionTargetRuntimeContext gateHolder = RuntimeContext(
+            DocumentCacheTargetKey.Create("Tenant-A", 1),
+            generation: 1,
+            observationSink
+        );
+        DocumentCacheProjectionTargetRuntimeContext administrativeContext = RuntimeContext(
+            DocumentCacheTargetKey.Create("Tenant-B", 1),
+            generation: 1,
+            observationSink
+        );
+        Task<ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>> gateHolderTask =
+            scheduler.RunReadyTargetsOnceAsync([gateHolder]);
+        await drainPageProcessor.WaitForCallCountAsync(1);
+
+        Task<DocumentCacheProjectionSchedulerDispatchResult> administrativeTask =
+            scheduler.RunAdministrativeDrainSliceAsync(
+                administrativeContext,
+                administrativeCancellation.Token
+            );
+        await observationSink.WaitForWaitingGateAsync(administrativeContext.ContextKey);
+
+        await administrativeCancellation.CancelAsync();
+
+        Func<Task> act = async () => await administrativeTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        DocumentCacheProjectionTargetHealthSnapshot finalSnapshot = observationSink.LastSnapshotFor(
+            administrativeContext.ContextKey
+        );
+        finalSnapshot.ExecutionState.IsWaitingForWorkerGate.Should().BeFalse();
+        finalSnapshot.ExecutionState.IsActivelyProcessing.Should().BeFalse();
+
+        drainPageProcessor.ReleaseAll(DocumentCacheProjectionDrainPageResult.PageProcessed(1));
+        await gateHolderTask.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
     private static DocumentCacheProjectionScheduler CreateScheduler(
         IDocumentCacheProjectionDrainPageProcessor drainPageProcessor,
         IDocumentCacheProjectionObservationSink observationSink,
@@ -614,12 +774,25 @@ public class Given_DocumentCacheProjectionScheduler
         private sealed record Waiter(int CallCount, TaskCompletionSource Completion);
     }
 
-    private sealed class RecordingObservationSink : IDocumentCacheProjectionObservationSink
+    private sealed class RecordingObservationSink(
+        Action<DocumentCacheProjectionTargetHealthSnapshot>? onObserved = null
+    ) : IDocumentCacheProjectionObservationSink
     {
+        private readonly object _sync = new();
+        private readonly List<Waiter> _waiters = [];
+
         public List<DocumentCacheProjectionTargetHealthSnapshot> TargetSnapshots { get; } = [];
 
-        public void ObserveTarget(DocumentCacheProjectionTargetHealthSnapshot snapshot) =>
-            TargetSnapshots.Add(snapshot);
+        public void ObserveTarget(DocumentCacheProjectionTargetHealthSnapshot snapshot)
+        {
+            lock (_sync)
+            {
+                TargetSnapshots.Add(snapshot);
+                CompleteSatisfiedWaiters();
+            }
+
+            onObserved?.Invoke(snapshot);
+        }
 
         public void EndTargetContext(
             DocumentCacheProjectionTargetContextKey contextKey,
@@ -633,6 +806,52 @@ public class Given_DocumentCacheProjectionScheduler
 
         public void EndAdministrativeCommand(DocumentCacheAdministrativeCommandExecutionId executionId) =>
             _ = executionId;
+
+        public Task WaitForWaitingGateAsync(DocumentCacheProjectionTargetContextKey contextKey)
+        {
+            lock (_sync)
+            {
+                if (HasWaitingGateSnapshot(contextKey))
+                {
+                    return Task.CompletedTask;
+                }
+
+                TaskCompletionSource waiter = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                _waiters.Add(new Waiter(contextKey, waiter));
+                return waiter.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+
+        public DocumentCacheProjectionTargetHealthSnapshot LastSnapshotFor(
+            DocumentCacheProjectionTargetContextKey contextKey
+        )
+        {
+            lock (_sync)
+            {
+                return TargetSnapshots.Last(snapshot => snapshot.ContextKey == contextKey);
+            }
+        }
+
+        private bool HasWaitingGateSnapshot(DocumentCacheProjectionTargetContextKey contextKey) =>
+            TargetSnapshots.Exists(snapshot =>
+                snapshot.ContextKey == contextKey && snapshot.ExecutionState.IsWaitingForWorkerGate
+            );
+
+        private void CompleteSatisfiedWaiters()
+        {
+            foreach (
+                Waiter waiter in _waiters.Where(waiter => HasWaitingGateSnapshot(waiter.ContextKey)).ToArray()
+            )
+            {
+                waiter.Completion.SetResult();
+                _waiters.Remove(waiter);
+            }
+        }
+
+        private sealed record Waiter(
+            DocumentCacheProjectionTargetContextKey ContextKey,
+            TaskCompletionSource Completion
+        );
     }
 
     private sealed record DrainCall(
