@@ -4257,12 +4257,18 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             }
 
             function script:New-ProvisionGuardMssqlEnvFile {
-                param([string]$DatastoreName = "edfi_datamanagementservice")
+                # MssqlPort is parameterized because mssql.yml permits MSSQL_PORT=1434, which is exactly the
+                # DAC port a portless admin: endpoint resolves to. Default unchanged, so every existing
+                # caller is unaffected.
+                param(
+                    [string]$DatastoreName = "edfi_datamanagementservice",
+                    [string]$MssqlPort = "15433"
+                )
 
                 $path = Join-Path $script:repo.DockerComposeRoot "env-provguard-mssql-$([Guid]::NewGuid().ToString('N')).env"
                 @"
 POSTGRES_PASSWORD=isolated-pass
-MSSQL_PORT=15433
+MSSQL_PORT=$MssqlPort
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=$DatastoreName
 DMS_DATASTORE=mssql
@@ -4956,6 +4962,125 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
+        It "reaches the MSSQL authority for portless 'admin:localhost' when the published port IS the DAC port 1434" {
+            # mssql.yml permits MSSQL_PORT=1434, and a portless admin: endpoint resolves to exactly that
+            # port, so this reaches the host's published listener. Reported as a non-TCP transport it
+            # classified as external and skipped the authority entirely.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:provisionAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:provisionAuthorityCalled = $true
+                    throw "CMS database topology mismatch: SQL Server reports that the datastore name resolved from '$RegisteredDatastoreDatabaseSourceKey' denotes the SAME physical database as the dedicated 'edfi_configurationservice'."
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 735
+                            name = "AdminDacOnPublishedPort"
+                            connectionString = 'Server=admin:localhost;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardMssqlEnvFile -MssqlPort "1434") `
+                    -DataStoreId @(735) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase } |
+                    Should -Throw "*SAME physical database*"
+
+                $script:provisionAuthorityCalled |
+                    Should -BeTrue -Because "admin: resolves to 1434, which this environment publishes, so the authority must be consulted"
+                Test-Path -LiteralPath $capturePath |
+                    Should -BeFalse -Because "the refusal must precede any SchemaTools invocation, so no DDL is attempted"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "keeps portless 'admin:localhost' external when the published port is NOT the DAC port" {
+            # The control that makes the row above about the DAC port rather than about admin: being local:
+            # with MSSQL_PORT=15433 the admin endpoint still reaches 1434, which nothing here publishes.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:provisionAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:provisionAuthorityCalled = $true
+                    throw "the local instance must not be asked about a target on a port it does not publish"
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 736
+                            name = "AdminDacOffPublishedPort"
+                            connectionString = 'Server=admin:localhost;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardMssqlEnvFile -MssqlPort "15433") `
+                    -DataStoreId @(736) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase *>&1 | Out-Null
+
+                $script:provisionAuthorityCalled | Should -BeFalse
+                @(Get-Content -LiteralPath $capturePath) | Should -Contain "mssql"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "does not rewrite 'admin:dms-mssql' into the ordinary published listener" {
+            # Translation substitutes the published host-side endpoint, which is the NORMAL listener. Doing
+            # that for an admin: target would silently re-point a DAC endpoint at it. The value handed to
+            # SchemaTools must therefore still name admin: exactly as authored.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:provisionAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:provisionAuthorityCalled = $true
+                    throw "an admin endpoint must not be translated into the ordinary listener"
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 737
+                            name = "AdminInternalHost"
+                            connectionString = 'Server=admin:dms-mssql;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardMssqlEnvFile -MssqlPort "1434") `
+                    -DataStoreId @(737) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase *>&1 | Out-Null
+
+                $script:provisionAuthorityCalled | Should -BeFalse
+                $captured = @(Get-Content -LiteralPath $capturePath) -join "`n"
+                $captured | Should -Match 'admin:dms-mssql'
+                $captured |
+                    Should -Not -Match '127\.0\.0\.1,1434' -Because "the published host-side endpoint must not be substituted for a DAC target"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
         It "leaves a no-explicit-port named instance on the Docker-internal host untranslated and external" {
             # Sharing one grammar made the host of 'dms-mssql\SQLEXPRESS' parse as 'dms-mssql', which
             # the Docker-internal translation would otherwise have rewritten to the published host-side
@@ -5052,9 +5177,11 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             @{ DataSource = '[::1],1433'; Tcp = $true; ExpectedHost = '[::1]'; ExpectedPort = '1433'; Ssrp = $false }
             @{ DataSource = 'tcp:[::1],1433'; Tcp = $true; ExpectedHost = '[::1]'; ExpectedPort = '1433'; Ssrp = $false }
             @{ DataSource = '::ffff:127.0.0.1,1433'; Tcp = $true; ExpectedHost = '::ffff:127.0.0.1'; ExpectedPort = '1433'; Ssrp = $false }
-            # Recognized protocols that are NOT the TCP listener carry no endpoint at all.
+            # np: is a genuinely different transport and carries no TCP endpoint at all.
             @{ DataSource = 'np:\\host\pipe\sql'; Tcp = $false; ExpectedHost = 'np:\\host\pipe\sql'; ExpectedPort = ''; Ssrp = $false }
-            @{ DataSource = 'admin:host'; Tcp = $false; ExpectedHost = 'admin:host'; ExpectedPort = ''; Ssrp = $false }
+            # admin: DOES dispatch through CreateTcpHandle, so it is the TCP transport with the DAC port as
+            # its provider default. It is not a separate transport the way np: is.
+            @{ DataSource = 'admin:host'; Tcp = $true; ExpectedHost = 'host'; ExpectedPort = '1434'; Ssrp = $false }
             # lpc is NOT in managed SNI's recognized set, so it is not stripped: the whole value is the
             # host name, which is why it matches nothing. Not a claim that lpc is a known protocol.
             @{ DataSource = 'lpc:host'; Tcp = $true; ExpectedHost = 'lpc:host'; ExpectedPort = ''; Ssrp = $false }
@@ -5124,6 +5251,78 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             (& $parser -DataSource $DataSource).HasExplicitPort | Should -BeFalse
         }
 
+        It "treats admin: as the TCP transport and resolves its DAC port: '<DataSource>'" -ForEach @(
+            # Admin dispatches through CreateTcpHandle, so it is the TCP transport - only its default port
+            # differs. Reported as non-TCP it looked like a different transport entirely, which made an
+            # admin target on the published MSSQL_PORT=1434 listener classify as external.
+            @{ DataSource = 'admin:localhost'; ExpectedHost = 'localhost'; ExpectedPort = '1434' }
+            @{ DataSource = 'admin:dms-mssql'; ExpectedHost = 'dms-mssql'; ExpectedPort = '1434' }
+            @{ DataSource = 'ADMIN:localhost'; ExpectedHost = 'localhost'; ExpectedPort = '1434' }
+            @{ DataSource = 'admin : localhost'; ExpectedHost = 'localhost'; ExpectedPort = '1434' }
+        ) {
+            $parser = Get-StagedEndpointParser
+            $parsed = & $parser -DataSource $DataSource
+
+            $parsed.IsTcp | Should -BeTrue
+            $parsed.HostName | Should -BeExactly $ExpectedHost
+            $parsed.Port | Should -BeExactly $ExpectedPort
+            # The port is the PROVIDER's default, not something the caller authored. Conflating those two
+            # is what made the effective port invisible to a caller that only asked "was one authored?".
+            $parsed.HasExplicitPort |
+                Should -BeFalse -Because "the DAC port is provider-supplied, not authored by the caller"
+            $parsed.RequiresInstanceResolution | Should -BeFalse
+        }
+
+        It "gives no DAC default where SqlClient supplies none: '<DataSource>' (<Why>)" -ForEach @(
+            @{ DataSource = 'admin:localhost\SQLEXPRESS'; Why = 'an instance still needs SSRP, so no port is known' }
+            @{ DataSource = 'admin:dms-mssql\SQLEXPRESS'; Why = 'the same on the composed service' }
+        ) {
+            $parser = Get-StagedEndpointParser
+            $parsed = & $parser -DataSource $DataSource
+
+            $parsed.IsTcp | Should -BeTrue
+            $parsed.Port | Should -BeExactly ""
+            $parsed.RequiresInstanceResolution |
+                Should -BeTrue -Because "an unresolved instance must never be claimed as a known listener"
+        }
+
+        It "refuses a comma parameter on admin:, which SqlClient does not accept" {
+            $parser = Get-StagedEndpointParser
+
+            $thrown = { & $parser -DataSource 'admin:localhost,1434' } | Should -Throw -PassThru
+            $thrown.Exception.Message | Should -BeLike "*Invalid SQL Server data source*"
+            $thrown.Exception.Message | Should -Not -BeLike "*localhost*"
+        }
+
+        It "keeps np: a non-TCP transport" {
+            # The half that must NOT move with admin:. Named pipes is a different transport, not a TCP
+            # endpoint with a different default port.
+            $parser = Get-StagedEndpointParser
+            $parsed = & $parser -DataSource 'np:\\localhost\pipe\sql'
+
+            $parsed.IsTcp | Should -BeFalse
+            $parsed.HostName | Should -BeExactly 'np:\\localhost\pipe\sql'
+            $parsed.Port | Should -BeExactly ""
+        }
+
+        It "rejects a forward slash after protocol removal: '<DataSource>'" -ForEach @(
+            # SqlClient refuses a post-protocol data source containing '/' before inferring any endpoint, so
+            # this shape was reported as a plausible host and port for a string the provider rejects.
+            @{ DataSource = 'dms-mssql,1433,ignored/path' }
+            @{ DataSource = 'dms-mssql/path' }
+            @{ DataSource = 'tcp:dms-mssql,1433/x' }
+            @{ DataSource = 'admin:dms-mssql/x' }
+            @{ DataSource = 'np:\\dms-mssql/pipe' }
+        ) {
+            $parser = Get-StagedEndpointParser
+
+            $thrown = { & $parser -DataSource $DataSource } | Should -Throw -PassThru
+            $thrown.Exception.Message | Should -BeLike "*Invalid SQL Server data source*"
+            $thrown.Exception.Message |
+                Should -Not -BeLike "*dms-mssql*" -Because "the diagnostic is fixed text and never echoes the value"
+            $thrown.Exception.Message | Should -Not -BeLike "*path*"
+        }
+
         It "reports an inferred host as inferred, and a written host as written" {
             $parser = Get-StagedEndpointParser
 
@@ -5189,10 +5388,20 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             $calls.Count | Should -BeGreaterOrEqual $MinimumCalls
         }
 
-        It "handles the SqlClient protocol token in exactly one production function" {
-            # The loop's mechanism, pinned structurally: every previous round re-derived the protocol
-            # prefix at whichever boundary the finding named, and the two derivations drifted. Exactly
-            # one function may reason about the token at all, so an adopter cannot grow its own reading.
+        It "confines SqlClient protocol knowledge to the parser and the one adopter that must gate on it" {
+            # The loop's mechanism, pinned structurally: every previous round re-derived the protocol prefix
+            # at whichever boundary the finding named, and the derivations drifted.
+            #
+            # The parser owns the grammar. Exactly one adopter legitimately needs the protocol too:
+            # translation REWRITES a target to the ordinary published listener, and admin: resolves to the
+            # DAC port instead, so translating it would silently re-point a DAC target. That adopter reads
+            # the parser's REPORTED Protocol field - it does not re-parse the text - which is the whole
+            # point of returning structured results. Pinning the exact set still forbids a THIRD owner.
+            $expectedOwners = @(
+                "Get-SqlServerDataSourceEndpoint",
+                "Convert-MssqlCmsConnectionStringToHostSideTarget"
+            )
+
             $owners = @(
                 @("database-safety.psm1", "provision-dms-schema.ps1", "env-utility.psm1") | ForEach-Object {
                     $path = Join-Path $script:repo.DockerComposeRoot $_
@@ -5218,7 +5427,8 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
                 }
             )
 
-            $owners | Should -Be @("Get-SqlServerDataSourceEndpoint")
+            ($owners | Sort-Object) |
+                Should -Be ($expectedOwners | Sort-Object) -Because "a third function reasoning about the protocol is how the two readings diverged before"
         }
     }
 

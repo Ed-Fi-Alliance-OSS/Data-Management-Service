@@ -1205,7 +1205,10 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             @{ Name = "an unresolved named instance on the composed service"; Server = 'dms-mssql\SQLEXPRESS'; Expected = "*targets host*" }
             @{ Name = "an unresolved named instance behind tcp:"; Server = 'tcp:dms-mssql\SQLEXPRESS'; Expected = "*targets host*" }
             @{ Name = "LocalDB is a distinct grammar"; Server = '(localdb)\MSSQLLocalDB'; Expected = "*targets host*" }
-            @{ Name = "admin:/DAC is not the published listener"; Server = 'admin:dms-mssql'; Expected = "*targets host*" }
+            # admin: names the composed service, so the host is accepted - it is refused on the PORT,
+            # because a portless admin endpoint resolves to the DAC port 1434 rather than the expected 1433.
+            # That is the observable difference: reported as an omitted port it became 1433 and PASSED.
+            @{ Name = "admin:/DAC resolves to the DAC port, not the published one"; Server = 'admin:dms-mssql'; Expected = "*targets port*" }
             @{ Name = "an empty server name is the local server, not the composed service"; Server = ',1433'; Expected = "*targets host*" }
             @{ Name = "an empty server name behind tcp:"; Server = 'tcp:,1433'; Expected = "*targets host*" }
             @{ Name = "a later comma token cannot rescue a wrong port"; Server = 'dms-mssql,14330,1433'; Expected = "*targets port*" }
@@ -1215,6 +1218,12 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             # blank fields these inherited this caller's absent-port default and PASSED validation naming
             # exactly the composed service on exactly the expected port - a connection string that cannot
             # connect. The parser now refuses them, so the pre-start check fails closed.
+            # A forward slash anywhere after protocol removal is a data source SqlClient refuses outright.
+            # Reported as host dms-mssql on port 1433 it passed this preflight, so startup proceeded with a
+            # connection string the provider then rejects.
+            @{ Name = "a forward slash after the port token"; Server = 'dms-mssql,1433,ignored/path'; Expected = "*Invalid SQL Server data source*" }
+            @{ Name = "a forward slash directly on the host"; Server = 'dms-mssql/path'; Expected = "*Invalid SQL Server data source*" }
+            @{ Name = "a forward slash behind tcp:"; Server = 'tcp:dms-mssql,1433/x'; Expected = "*Invalid SQL Server data source*" }
             @{ Name = "an empty explicit port"; Server = 'dms-mssql,'; Expected = "*Invalid SQL Server data source*" }
             @{ Name = "an empty instance token"; Server = 'dms-mssql\'; Expected = "*Invalid SQL Server data source*" }
             @{ Name = "an empty explicit port behind tcp:"; Server = 'tcp:dms-mssql,'; Expected = "*Invalid SQL Server data source*" }
