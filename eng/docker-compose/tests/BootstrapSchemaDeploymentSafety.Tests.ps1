@@ -5194,6 +5194,51 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
+        It "follows SqlClient's normalization ORDER for the admin machine-name match: <Case>" -ForEach @(
+            # The provider invariant-lowercases the whole data source BEFORE extracting the server name, then
+            # compares the RAW machine name to that lowercased name with CurrentCultureIgnoreCase. Comparing
+            # the host as authored looks equivalent but is not: under tr-TR, raw 'I' equals 'I'
+            # case-insensitively, while the provider compares 'i' against 'I', which Turkish casing does not
+            # equate. Pinned against a SYNTHETIC machine name, which is why the helper takes it as a
+            # parameter - this machine's real name cannot be substituted.
+            @{ Case = "Turkish dotted-I is NOT localized, as the provider does not localize it"; MachineName = 'I'; HostName = 'I'; Expected = $false }
+            @{ Case = "an ASCII name without I still matches, so the fix is not blanket rejection"; MachineName = 'SERVER'; HostName = 'SERVER'; Expected = $true }
+        ) {
+            $tokens = $null
+            $errors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+                $script:repo.ProvisionScript, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -gt 0) { throw "Failed to parse $($script:repo.ProvisionScript)" }
+
+            $definition = @($ast.FindAll({
+                        param($node)
+                        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                        $node.Name -eq "Test-SqlClientAdminMachineNameLocalization"
+                    }, $true))
+            $definition.Count |
+                Should -Be 1 -Because "the comparison must live in one pure helper a culture test can call"
+
+            $helper = [scriptblock]::Create($definition[0].Body.Extent.Text.Trim('{', '}'))
+
+            # CurrentCulture only: the production comparison uses CurrentCultureIgnoreCase and never reads
+            # CurrentUICulture. Restored in finally so a failing assertion cannot leak the culture.
+            $originalCulture = [System.Threading.Thread]::CurrentThread.CurrentCulture
+            try {
+                [System.Threading.Thread]::CurrentThread.CurrentCulture =
+                    [System.Globalization.CultureInfo]::new("tr-TR")
+
+                $actual = & $helper -Protocol "admin" -HostName $HostName -MachineName $MachineName
+
+                $actual | Should -Be $Expected
+            }
+            finally {
+                [System.Threading.Thread]::CurrentThread.CurrentCulture = $originalCulture
+            }
+
+            [System.Threading.Thread]::CurrentThread.CurrentCulture.Name |
+                Should -BeExactly $originalCulture.Name -Because "the temporary culture must not leak past this test"
+        }
+
         It "leaves a no-explicit-port named instance on the Docker-internal host untranslated and external" {
             # Sharing one grammar made the host of 'dms-mssql\SQLEXPRESS' parse as 'dms-mssql', which
             # the Docker-internal translation would otherwise have rewritten to the published host-side
@@ -5511,14 +5556,15 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             #
             #   - translation REWRITES a target to the ordinary published listener, and admin: resolves to
             #     the DAC port instead, so translating it would silently re-point a DAC target;
-            #   - local-target classification applies the provider's admin-ONLY machine-name localization,
-            #     which InferLocalServerName performs for no other protocol.
+            #   - the admin machine-name localization helper, which applies the provider's admin-ONLY rule
+            #     that InferLocalServerName performs for no other protocol. The classifier itself delegates
+            #     to that helper and carries no protocol literal of its own.
             #
             # Pinning the exact set still forbids any FURTHER owner, which is how the readings diverged.
             $expectedOwners = @(
                 "Get-SqlServerDataSourceEndpoint",
                 "Convert-MssqlCmsConnectionStringToHostSideTarget",
-                "Test-ProvisionTargetIsLocalComposeDatabase"
+                "Test-SqlClientAdminMachineNameLocalization"
             )
 
             $owners = @(
