@@ -6,6 +6,7 @@
 using System.Collections.Immutable;
 using System.Data;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
@@ -428,7 +429,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                     currentPass = NewPass(context);
                     logger.LogDebug(
                         "DocumentCache administrative drain for target {TargetKey} found durable work after an empty page and will poll again.",
-                        context.TargetContext.TargetKey
+                        LoggingSanitizer.SanitizeForLogging(context.TargetContext.TargetKey.ToString())
                     );
                     await delay
                         .DelayAsync(

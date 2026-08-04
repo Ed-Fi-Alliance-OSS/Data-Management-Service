@@ -293,12 +293,23 @@ internal sealed class DocumentCacheProjectionItemProcessor(
                 LogContinuingWriterOutcome(targetContext, writerResult);
                 return DocumentCacheProjectionItemProcessResult.Continue;
 
-            case DocumentCacheWriterResult.WorkAnomaly:
+            case DocumentCacheWriterResult.WorkAnomaly anomaly when IsPossibleUnseededBaseline(anomaly):
+                RecordDocumentDiagnostic(
+                    targetContext,
+                    workItem,
+                    DocumentCacheProjectionDocumentDiagnosticCategory.PossibleUnseededBaseline,
+                    CreatePossibleUnseededBaselineMessage(anomaly),
+                    observedAt
+                );
+                LogContinuingWriterOutcome(targetContext, writerResult);
+                return DocumentCacheProjectionItemProcessResult.Continue;
+
+            case DocumentCacheWriterResult.WorkAnomaly anomaly:
                 RecordDocumentFailure(
                     targetContext,
                     workItem,
                     DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly,
-                    $"Cache writer outcome {writerResult.Outcome}.",
+                    CreateWorkAnomalyMessage(anomaly),
                     observedAt
                 );
                 return DocumentCacheProjectionItemProcessResult.DocumentScopedFailure;
@@ -789,6 +800,39 @@ internal sealed class DocumentCacheProjectionItemProcessor(
             observedAt,
             targetContext.TargetExecutionContext.EffectiveSettings.ProjectorFailureBackoff
         );
+
+    private static void RecordDocumentDiagnostic(
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        DocumentProjectionWorkPageItem workItem,
+        DocumentCacheProjectionDocumentDiagnosticCategory category,
+        string message,
+        DateTimeOffset observedAt
+    ) =>
+        targetContext.FailureBackoffState.RecordDiagnostic(
+            workItem.DocumentId,
+            category,
+            message,
+            observedAt
+        );
+
+    private static string CreatePossibleUnseededBaselineMessage(
+        DocumentCacheWriterResult.WorkAnomaly anomaly
+    ) =>
+        "Cache writer observed possible unseeded Rebuilding baseline work. "
+        + CreateWorkAnomalyEvidence(anomaly);
+
+    private static bool IsPossibleUnseededBaseline(DocumentCacheWriterResult.WorkAnomaly anomaly) =>
+        anomaly.Kind is DocumentCacheWriterWorkAnomalyKind.MissingWork
+        && anomaly.LifecycleState is DocumentCacheLifecycleState.Rebuilding;
+
+    private static string CreateWorkAnomalyMessage(DocumentCacheWriterResult.WorkAnomaly anomaly) =>
+        "Cache writer observed work anomaly. " + CreateWorkAnomalyEvidence(anomaly);
+
+    private static string CreateWorkAnomalyEvidence(DocumentCacheWriterResult.WorkAnomaly anomaly) =>
+        $"Kind: {anomaly.Kind}; Lifecycle: {anomaly.LifecycleState}; CurrentSourceContentVersion: {FormatContentVersion(anomaly.CurrentSourceContentVersion)}; WorkRequiredContentVersion: {FormatContentVersion(anomaly.WorkRequiredContentVersion)}.";
+
+    private static string FormatContentVersion(long? contentVersion) =>
+        contentVersion is null ? "absent" : contentVersion.Value.ToString();
 
     private void LogContinuingWriterOutcome(
         DocumentCacheProjectionTargetRuntimeContext targetContext,

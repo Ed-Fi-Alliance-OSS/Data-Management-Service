@@ -6,6 +6,7 @@
 using System.Collections.Immutable;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -1251,7 +1252,7 @@ public sealed class DocumentCacheProjectionScheduler(
             logger.LogError(
                 exception,
                 "DocumentCache projection scheduler page dispatch failed for target {TargetKey}; peer targets continue.",
-                context.TargetKey
+                LoggingSanitizer.SanitizeForLogging(context.TargetKey.ToString())
             );
             ObserveIdleOrBackoff(context, completedAt);
             return RecordDispatchResult(

@@ -70,6 +70,7 @@ public enum DocumentCacheProjectionDocumentDiagnosticCategory
     WriterOutcome = 5,
     ProviderFailure = 6,
     DeterministicInvariantFailure = 7,
+    PossibleUnseededBaseline = 8,
 }
 
 public enum DocumentCacheProjectionLifecycleFenceState

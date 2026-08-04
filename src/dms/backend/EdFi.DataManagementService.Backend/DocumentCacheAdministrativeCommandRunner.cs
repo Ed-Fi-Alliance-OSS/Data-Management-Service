@@ -7,6 +7,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
@@ -522,7 +523,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     exception,
                     "DocumentCache administrative mutex acquisition failed for command {Command} and target {TargetKey}.",
                     request.Command,
-                    request.TargetKey.TargetKey
+                    LoggingSanitizer.SanitizeForLogging(request.TargetKey.TargetKey.ToString())
                 );
                 RecordAdministrativeMutexOutcome(
                     request,
@@ -620,7 +621,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         exception,
                         "DocumentCache administrative mutex session was lost for command {Command} and target {TargetKey}.",
                         request.Command,
-                        request.TargetKey.TargetKey
+                        LoggingSanitizer.SanitizeForLogging(request.TargetKey.TargetKey.ToString())
                     );
                     classifiedResult = RecordAdministrativeCommandResult(
                         CreateSessionLossResult(commandContext),
@@ -635,7 +636,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         exception,
                         "DocumentCache administrative provider command timed out for command {Command} and target {TargetKey}.",
                         request.Command,
-                        request.TargetKey.TargetKey
+                        LoggingSanitizer.SanitizeForLogging(request.TargetKey.TargetKey.ToString())
                     );
                     classifiedResult = RecordAdministrativeCommandResult(
                         CreateProviderTimeoutResult(commandContext),
@@ -654,7 +655,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         exception,
                         "DocumentCache administrative mutex session was lost for command {Command} and target {TargetKey}.",
                         request.Command,
-                        request.TargetKey.TargetKey
+                        LoggingSanitizer.SanitizeForLogging(request.TargetKey.TargetKey.ToString())
                     );
                     classifiedResult = RecordAdministrativeCommandResult(
                         CreateSessionLossResult(commandContext),
@@ -668,7 +669,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         exception,
                         "DocumentCache administrative command {Command} failed unexpectedly for target {TargetKey}.",
                         request.Command,
-                        request.TargetKey.TargetKey
+                        LoggingSanitizer.SanitizeForLogging(request.TargetKey.TargetKey.ToString())
                     );
                     classifiedResult = RecordAdministrativeCommandResult(
                         CreateUnexpectedFailureResult(commandContext),
@@ -725,7 +726,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                 exception,
                 "DocumentCache administrative mutex cleanup failed after command {Command} and target {TargetKey}. ClassifiedResultPreserved: {ClassifiedResultPreserved}.",
                 request.Command,
-                targetContext.TargetKey,
+                LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString()),
                 hasClassifiedResult
             );
         }

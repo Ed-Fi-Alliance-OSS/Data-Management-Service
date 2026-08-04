@@ -78,6 +78,10 @@ public sealed class DocumentCacheProjectionFailureBackoffState
 {
     private readonly object _sync = new();
     private ImmutableDictionary<long, FailureEntry> _entries = ImmutableDictionary<long, FailureEntry>.Empty;
+    private ImmutableDictionary<long, DiagnosticEntry> _diagnostics = ImmutableDictionary<
+        long,
+        DiagnosticEntry
+    >.Empty;
     private ImmutableArray<long> _lastSuppressedDocumentIds = [];
     private int _lastSuppressedDocumentCount;
     private DateTimeOffset? _lastSuppressedEarliestRetryAt;
@@ -168,6 +172,48 @@ public sealed class DocumentCacheProjectionFailureBackoffState
                 documentId,
                 new FailureEntry(documentId, category, message, observedAt, observedAt + failureBackoff)
             );
+            _diagnostics = _diagnostics.Remove(documentId);
+        }
+    }
+
+    public void RecordDiagnostic(
+        long documentId,
+        DocumentCacheProjectionDocumentDiagnosticCategory category,
+        string message,
+        DateTimeOffset observedAt
+    )
+    {
+        if (documentId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(documentId), "Document id must be positive.");
+        }
+
+        if (!Enum.IsDefined(category))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(category),
+                category,
+                "Unsupported projection document diagnostic category."
+            );
+        }
+
+        lock (_sync)
+        {
+            _entries = _entries.Remove(documentId);
+            if (!_diagnostics.ContainsKey(documentId) && _diagnostics.Count >= Capacity)
+            {
+                DiagnosticEntry entryToEvict = _diagnostics
+                    .Values.OrderBy(entry => entry.ObservedAt)
+                    .ThenBy(entry => entry.DocumentId)
+                    .First();
+
+                _diagnostics = _diagnostics.Remove(entryToEvict.DocumentId);
+            }
+
+            _diagnostics = _diagnostics.SetItem(
+                documentId,
+                new DiagnosticEntry(documentId, category, message, observedAt)
+            );
         }
     }
 
@@ -180,8 +226,9 @@ public sealed class DocumentCacheProjectionFailureBackoffState
 
         lock (_sync)
         {
-            bool removed = _entries.ContainsKey(documentId);
+            bool removed = _entries.ContainsKey(documentId) || _diagnostics.ContainsKey(documentId);
             _entries = _entries.Remove(documentId);
+            _diagnostics = _diagnostics.Remove(documentId);
             return removed;
         }
     }
@@ -258,6 +305,10 @@ public sealed class DocumentCacheProjectionFailureBackoffState
                 .Values.OrderBy(entry => entry.ObservedAt)
                 .ThenBy(entry => entry.DocumentId)
                 .ToImmutableArray();
+            ImmutableArray<DiagnosticEntry> orderedDiagnostics = _diagnostics
+                .Values.OrderBy(entry => entry.ObservedAt)
+                .ThenBy(entry => entry.DocumentId)
+                .ToImmutableArray();
 
             DateTimeOffset? earliestRetryAt = orderedEntries.IsEmpty
                 ? null
@@ -268,13 +319,24 @@ public sealed class DocumentCacheProjectionFailureBackoffState
                 orderedEntries.Length,
                 earliestRetryAt,
                 _evictionCount,
-                orderedEntries.Select(entry => new DocumentCacheProjectionDocumentDiagnostic(
-                    entry.DocumentId,
-                    entry.Category,
-                    entry.Message,
-                    entry.ObservedAt,
-                    entry.NextRetryAt
-                ))
+                orderedEntries
+                    .Select(entry => new DocumentCacheProjectionDocumentDiagnostic(
+                        entry.DocumentId,
+                        entry.Category,
+                        entry.Message,
+                        entry.ObservedAt,
+                        entry.NextRetryAt
+                    ))
+                    .Concat(
+                        orderedDiagnostics.Select(entry => new DocumentCacheProjectionDocumentDiagnostic(
+                            entry.DocumentId,
+                            entry.Category,
+                            entry.Message,
+                            entry.ObservedAt
+                        ))
+                    )
+                    .OrderBy(diagnostic => diagnostic.ObservedAt)
+                    .ThenBy(diagnostic => diagnostic.DocumentId)
             );
         }
     }
@@ -308,6 +370,13 @@ public sealed class DocumentCacheProjectionFailureBackoffState
         string Message,
         DateTimeOffset ObservedAt,
         DateTimeOffset NextRetryAt
+    );
+
+    private sealed record DiagnosticEntry(
+        long DocumentId,
+        DocumentCacheProjectionDocumentDiagnosticCategory Category,
+        string Message,
+        DateTimeOffset ObservedAt
     );
 }
 

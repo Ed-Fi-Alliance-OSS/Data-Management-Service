@@ -183,7 +183,50 @@ public class Given_DocumentCacheProjectionItemProcessor
             .ContainSingle()
             .Subject;
         diagnostic.Category.Should().Be(DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly);
+        diagnostic.Message.Should().Contain("WorkVersionMismatch");
+        diagnostic.Message.Should().Contain("Tracking");
+        diagnostic.Message.Should().Contain("10");
+        diagnostic.Message.Should().Contain("11");
         diagnostic.NextRetryAt.Should().Be(ObservedAt.AddSeconds(10));
+    }
+
+    [Test]
+    public async Task It_records_possible_unseeded_baseline_without_document_backoff_for_rebuilding_missing_work()
+    {
+        RecordingDocumentCacheWriter writer = new(
+            new DocumentCacheWriterResult.WorkAnomaly(
+                DocumentCacheWriterWorkAnomalyKind.MissingWork,
+                DocumentCacheLifecycleState.Rebuilding,
+                currentSourceContentVersion: 10,
+                workRequiredContentVersion: null
+            )
+        );
+        RecordingDocumentCacheMaterializer materializer = new();
+        DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext(materializer, writer);
+
+        DocumentCacheProjectionItemProcessResult result = await CreateProcessor()
+            .ProcessItemAsync(Request(targetContext, WorkItem(101, requiredContentVersion: 10)));
+
+        result.Outcome.Should().Be(DocumentCacheProjectionItemProcessOutcome.Continue);
+        result.AcknowledgedOrRemovedDurableWork.Should().BeFalse();
+        result.DocumentScopedFailureRecorded.Should().BeFalse();
+        materializer.Calls.Should().BeEmpty();
+        targetContext.FailureBackoffState.Count.Should().Be(0);
+        DocumentCacheProjectionFailureDiagnostics diagnostics =
+            targetContext.FailureBackoffState.CreateFailureDiagnosticsSnapshot();
+        diagnostics.FailureCount.Should().Be(0);
+        DocumentCacheProjectionDocumentDiagnostic diagnostic = diagnostics
+            .DocumentDiagnostics.Should()
+            .ContainSingle()
+            .Subject;
+        diagnostic
+            .Category.Should()
+            .Be(DocumentCacheProjectionDocumentDiagnosticCategory.PossibleUnseededBaseline);
+        diagnostic.Message.Should().Contain("MissingWork");
+        diagnostic.Message.Should().Contain("Rebuilding");
+        diagnostic.Message.Should().Contain("10");
+        diagnostic.Message.Should().Contain("absent");
+        diagnostic.NextRetryAt.Should().BeNull();
     }
 
     [TestCaseSource(nameof(RetryExhaustionWriterOutcomes))]

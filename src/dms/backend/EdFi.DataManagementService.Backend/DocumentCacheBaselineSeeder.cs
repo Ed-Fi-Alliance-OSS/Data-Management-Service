@@ -6,6 +6,7 @@
 using System.Collections.Immutable;
 using System.Data;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
@@ -195,7 +196,7 @@ internal sealed class DocumentCacheBaselineSeeder(
 
                 logger.LogInformation(
                     "DocumentCache baseline seeding for target {TargetKey} is relieving high-water backpressure with {ObservedWorkRows} observed work rows.",
-                    context.TargetContext.TargetKey,
+                    LoggingSanitizer.SanitizeForLogging(context.TargetContext.TargetKey.ToString()),
                     highWater.ObservedWorkRows
                 );
 
