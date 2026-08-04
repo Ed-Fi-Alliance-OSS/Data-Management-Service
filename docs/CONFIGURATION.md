@@ -286,6 +286,27 @@ The `RateLimit` object should have the following parameters.
 | Window      | The number of seconds before the `PermitLimit` is reset. Must be > 0.                                                                                                                                                                                                      |
 | QueueLimit  | The maximum number of requests that can be Queued once `PermitLimit`s are exhausted. These requests will wait until the `Window` expires and will be processed FIFO. When the queue is exhausted, clients will receive a `429` `Too Many Requests` response. Must be >= 0. |
 
+## OtlpLogging
+
+CMS and DMS compile in `Serilog.Sinks.OpenTelemetry` as a single
+vendor-neutral OTLP log exporter. It is configured through the top-level
+`OtlpLogging` section, disabled by default, and can be enabled without
+recompilation using the environment-variable convention described in the note
+above (for example, `OtlpLogging__Enabled=true`). See
+[LOGGING.md](./LOGGING.md#otlp-export) for the full description of supported
+log routing paths, including OTLP export and deployment recipes.
+
+| Parameter              | Description                                                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Enabled                | When `true`, log events are also exported over OTLP. Default: `false`.                                                                                                   |
+| Endpoint                | The OTLP collector endpoint, as an absolute `http://` or `https://` URL. Required when `Enabled` is `true`: if omitted or not such a URL, OTLP export is not applied and a warning is written to stderr. Prefer `https://` for any endpoint outside a trusted network boundary (see [LOGGING.md](./LOGGING.md#security-considerations-for-otlp-export)). Example: `http://collector:4318`. |
+| Protocol                | The OTLP wire protocol. Valid values are `Grpc` and `HttpProtobuf` (case-insensitive); OTLP-convention spellings such as `http/protobuf` are rejected at startup. Default: `HttpProtobuf`. |
+| ServiceName             | The `service.name` resource attribute. Default: `EdFi.DataManagementService` (DMS) or `EdFi.DmsConfigurationService` (CMS).                                              |
+| ServiceVersion          | The `service.version` resource attribute. Default: the application's informational version.                                                                             |
+| DeploymentEnvironment   | Optional deployment environment, emitted as both the `deployment.environment` and `deployment.environment.name` resource attributes. Omitted when unset.                 |
+| ServiceInstanceId       | Optional `service.instance.id` resource attribute. Omitted when unset.                                                                                                   |
+| Headers                 | Optional headers sent with every export request, e.g. `OtlpLogging__Headers__Authorization` for an authenticated collector receiver. Header values are secrets: source them from a secret store or environment variable, never a committed configuration file. An invalid header name or value (e.g. a trailing newline in the value) means OTLP export is not applied: a warning is written to stderr that deliberately omits the offending value. |
+
 ## Identity Provider Configuration
 
 For most deployments, environment variables and the setup script are sufficient,

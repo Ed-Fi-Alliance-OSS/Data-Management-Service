@@ -36,6 +36,10 @@ x-dms-common-env: &dms-common-env
   # JwtAuthentication__MetadataAddress).
   AppSettings__AuthenticationService: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth/realms/${KEYCLOAK_REALM:-edfi}/protocol/openid-connect/token"
   Serilog__MinimumLevel__Default: "${LOG_LEVEL:-Information}"
+  OtlpLogging__Enabled: "${OTLP_LOGGING_ENABLED:-false}"
+  OtlpLogging__Endpoint: "${OTLP_LOGGING_ENDPOINT:-}"
+  OtlpLogging__Protocol: "${OTLP_LOGGING_PROTOCOL:-HttpProtobuf}"
+  OtlpLogging__DeploymentEnvironment: "${OTLP_LOGGING_DEPLOYMENT_ENVIRONMENT:-}"
   AppSettings__MaskRequestBodyInLogs: "true"
   AppSettings__MaximumPageSize: "500"
   RateLimit__PermitLimit: "${DMS_RATE_LIMIT_PERMIT_LIMIT:-20000}"
@@ -128,6 +132,10 @@ x-cms-common-env: &cms-common-env
   # calls to https://${PUBLIC_HOST}/auth/... described above. Harmless with a Let's Encrypt cert.
   SSL_CERT_FILE: "/gateway-tls/server.crt"
   Serilog__MinimumLevel__Default: "${DMS_CONFIG_LOG_LEVEL:-Information}"
+  OtlpLogging__Enabled: "${DMS_CONFIG_OTLP_LOGGING_ENABLED:-false}"
+  OtlpLogging__Endpoint: "${DMS_CONFIG_OTLP_LOGGING_ENDPOINT:-}"
+  OtlpLogging__Protocol: "${DMS_CONFIG_OTLP_LOGGING_PROTOCOL:-HttpProtobuf}"
+  OtlpLogging__DeploymentEnvironment: "${DMS_CONFIG_OTLP_LOGGING_DEPLOYMENT_ENVIRONMENT:-}"
 
 x-app-defaults: &app-defaults
   restart: unless-stopped

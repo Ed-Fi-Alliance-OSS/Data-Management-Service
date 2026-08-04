@@ -36,6 +36,20 @@ MINIMUM_THROUGHPUT=<Integer, this many actions or more must pass through the cir
 BREAK_DURATION_SECONDS=<The number of seconds a broken circuit will stay open before resetting. Eg. 30>
 ```
 
+OTLP log export is also available, disabled by default, through the
+`OtlpLogging` configuration section. The compose files forward the core keys
+from `.env`: `OTLP_LOGGING_ENABLED`, `OTLP_LOGGING_ENDPOINT`,
+`OTLP_LOGGING_PROTOCOL`, and `OTLP_LOGGING_DEPLOYMENT_ENVIRONMENT` for DMS,
+with `DMS_CONFIG_`-prefixed equivalents for CMS. The remaining `OtlpLogging`
+keys are not forwarded from `.env`: `ServiceName`, `ServiceVersion`, and
+`ServiceInstanceId` have sensible per-service defaults, and
+`OtlpLogging__Headers__*` names are arbitrary keys. To override any of them,
+add the corresponding `OtlpLogging__<Key>` variable to the compose service's
+`environment` map directly. See
+[LOGGING.md](./LOGGING.md#otlp-export) and
+[CONFIGURATION.md](./CONFIGURATION.md#otlplogging) for details, including the
+security guidance for the export path.
+
 For example, you might have a `.env` file like the following:
 
 ```none
