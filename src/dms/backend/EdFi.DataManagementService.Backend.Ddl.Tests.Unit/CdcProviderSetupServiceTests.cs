@@ -467,6 +467,49 @@ public class Given_CdcBindingAwareValidation
             .Which.Category.Should()
             .Be(CdcProviderDiagnosticCategory.WorkTableGrantViolation);
     }
+
+    [Test]
+    public async Task It_should_keep_work_table_grant_diagnostic_when_the_grant_principal_is_wrong()
+    {
+        var service = new CdcProviderSetupService([
+            new TestProvider(
+                CdcProvider.Postgresql,
+                [
+                    RecordingStep.Create(
+                        CdcProviderArtifactKind.SourceFingerprint,
+                        CdcSourceFingerprintMetadata.SafeArtifactName,
+                        canCreateInInitialSetup: false,
+                        observedSourceFingerprint: CdcProviderSetupContractTestData.PostgresqlSourceFingerprint,
+                        grantInventory:
+                        [
+                            new CdcGrantObservation(
+                                CdcPrincipalKind.ConnectorPrincipal,
+                                new CdcSafeName("other_principal"),
+                                CdcProviderArtifactKind.Grant,
+                                new CdcSafeName("dms.DocumentProjectionWork"),
+                                ["SELECT"],
+                                []
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+        ]);
+
+        var result = await service.SetupAsync(CdcProviderSetupContractTestData.BuildPostgresqlRequest());
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Where(diagnostic => diagnostic.SafeName.Value == "dms.DocumentProjectionWork")
+            .Select(diagnostic => diagnostic.Code)
+            .Should()
+            .Contain("CDC_BINDING_CONNECTOR_PRINCIPAL_MISMATCH", "CDC_BINDING_WORK_TABLE_GRANT_FORBIDDEN");
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Category == CdcProviderDiagnosticCategory.WorkTableGrantViolation
+            );
+    }
 }
 
 [TestFixture]

@@ -4196,7 +4196,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         if (!inspection.ReadCommittedSnapshotOn)
         {
             diagnostics.Add(
-                ProviderHistoryWarning(
+                ProjectionPrerequisiteWarning(
                     "CDC_SQLSERVER_READ_COMMITTED_SNAPSHOT_OFF",
                     expectedValue: "read-committed-snapshot-on",
                     observedValue: "false"
@@ -4207,7 +4207,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         if (inspection.NestedTriggersValue is not "1")
         {
             diagnostics.Add(
-                ProviderHistoryWarning(
+                ProjectionPrerequisiteWarning(
                     "CDC_SQLSERVER_NESTED_TRIGGERS_NOT_ENABLED",
                     expectedValue: "nested-triggers-enabled",
                     observedValue: SafeText(inspection.NestedTriggersValue)
@@ -4272,6 +4272,24 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ObservedValue: observedValue,
             ProviderErrorClass: null,
             Classification: CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+        );
+
+    private static CdcProviderDiagnostic ProjectionPrerequisiteWarning(
+        string code,
+        string expectedValue,
+        string observedValue
+    ) =>
+        new(
+            Code: code,
+            Category: CdcProviderDiagnosticCategory.ValidationMismatch,
+            Severity: CdcProviderDiagnosticSeverity.Warning,
+            PrincipalKind: CdcPrincipalKind.None,
+            ArtifactKind: CdcProviderArtifactKind.ProviderHistory,
+            SafeName: _databaseCdcSafeName,
+            ExpectedValue: expectedValue,
+            ObservedValue: observedValue,
+            ProviderErrorClass: null,
+            Classification: CdcProviderRetryContinuityClassification.None
         );
 
     private static bool IsProviderHistoryContinuityDiagnostic(CdcProviderDiagnostic diagnostic) =>

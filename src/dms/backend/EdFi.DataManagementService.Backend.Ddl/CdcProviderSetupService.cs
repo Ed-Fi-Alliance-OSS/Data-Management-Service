@@ -939,7 +939,9 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
     {
         if (
             _diagnostics.Exists(existing =>
-                existing.Severity == CdcProviderDiagnosticSeverity.Error
+                string.Equals(existing.Code, diagnostic.Code, StringComparison.Ordinal)
+                && existing.Category == diagnostic.Category
+                && existing.Severity == diagnostic.Severity
                 && existing.ArtifactKind == diagnostic.ArtifactKind
                 && existing.SafeName.Equals(diagnostic.SafeName)
             )

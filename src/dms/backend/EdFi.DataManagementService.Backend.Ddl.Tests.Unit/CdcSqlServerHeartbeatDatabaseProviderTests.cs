@@ -790,17 +790,27 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
         );
 
         result.Outcome.Should().Be(CdcProviderSetupOutcome.ExactMatch);
-        result
-            .Diagnostics.Should()
-            .Contain(diagnostic =>
-                diagnostic.Code == "CDC_SQLSERVER_READ_COMMITTED_SNAPSHOT_OFF"
-                && diagnostic.Severity == CdcProviderDiagnosticSeverity.Warning
+        var rcsiDiagnostics = result
+            .Diagnostics.Where(diagnostic => diagnostic.Code == "CDC_SQLSERVER_READ_COMMITTED_SNAPSHOT_OFF")
+            .ToArray();
+        rcsiDiagnostics
+            .Should()
+            .NotBeEmpty()
+            .And.OnlyContain(diagnostic =>
+                diagnostic.Severity == CdcProviderDiagnosticSeverity.Warning
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ValidationMismatch
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.None
             );
-        result
-            .Diagnostics.Should()
-            .Contain(diagnostic =>
-                diagnostic.Code == "CDC_SQLSERVER_NESTED_TRIGGERS_NOT_ENABLED"
-                && diagnostic.Severity == CdcProviderDiagnosticSeverity.Warning
+        var nestedTriggerDiagnostics = result
+            .Diagnostics.Where(diagnostic => diagnostic.Code == "CDC_SQLSERVER_NESTED_TRIGGERS_NOT_ENABLED")
+            .ToArray();
+        nestedTriggerDiagnostics
+            .Should()
+            .NotBeEmpty()
+            .And.OnlyContain(diagnostic =>
+                diagnostic.Severity == CdcProviderDiagnosticSeverity.Warning
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ValidationMismatch
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.None
             );
         executor.ExecutedSql.Should().BeEmpty();
     }
