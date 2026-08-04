@@ -984,5 +984,23 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionSupervisor|FullyQualifiedName~DocumentCacheProjectionScheduler\""
     ],
     "completed": true
+  },
+  {
+    "category": "administrative-timeouts",
+    "description": "Medium: Preserve provider command timeout classification only where administrative primitives currently hide it. Keep this to the lifecycle-read and SQL Server activation-prerequisite primitive paths that catch non-cancel exceptions and return unreadable state/prerequisites. Provider command timeout from those paths must reach the existing administrative command runner providerCommandTimeout classification. Do not change mutex identity, workflow timeout behavior, lifecycle states, command result shape, provider SQL, cancellation boundaries, or administrative workflow structure.",
+    "acceptance-criteria": [
+      "A provider command timeout raised by the administrative primitive DocumentCacheState read is not converted to an unreadable lifecycle result.",
+      "Administrative commands report that lifecycle-read timeout as providerCommandTimeout instead of lifecycleObservationFailure, lifecycleMismatch, or unexpectedProviderFailure.",
+      "A provider command timeout raised by SQL Server activation prerequisite validation is not converted to unreadable prerequisite diagnostics and is reported as providerCommandTimeout.",
+      "Missing, invalid, or genuinely unreadable lifecycle state that is not a provider command timeout continues to use the existing lifecycle observation failure behavior.",
+      "SQL Server prerequisite failures that are not provider command timeouts continue to use the existing prerequisite diagnostics and fail-closed behavior.",
+      "Caller cancellation and WorkflowTimeout classifications remain unchanged.",
+      "Focused tests cover lifecycle-read timeout classification from command preflight, transition failure after prior mutation, explicit scrub per-page lifecycle fencing, and SQL Server activation prerequisite validation."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeCommandRunner|FullyQualifiedName~DocumentCacheAdministrativePrimitives|FullyQualifiedName~DocumentCacheExplicitIntegrityScrub\""
+    ],
+    "completed": true
   }
 ]

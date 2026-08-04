@@ -282,3 +282,8 @@ Completed administrative-diagnostics task for reference/design/backend-redesign/
 Key decisions: phase diagnostics now use Projector:PageSize as deterministic keep-latest entry cap; same helper caps affected ids and final runtime/failure diagnostics can displace older repeated backpressure entries.
 Files changed: DocumentCacheProjectionObservation.cs; DocumentCacheAdministrativeCommandRunner.cs; DocumentCacheAdministrativeCommandRunnerTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Verified focused administrative runner/baseline seeding and observation unit filters.
+
+Completed administrative-timeouts task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: extracted shared structural provider command-timeout classifier; administrative lifecycle and SQL Server activation-prerequisite primitive catch blocks rethrow provider timeouts while preserving unreadable DTO behavior for non-timeout failures; runner keeps existing mutation-aware providerCommandTimeout envelope.
+Files changed: DocumentCacheProviderCommandTimeoutClassifier.cs; DocumentCacheAdministrativeCommandRunner.cs; DocumentCacheAdministrativePrimitives.cs; focused administrative runner/primitives tests; tasks.json; progress.txt.
+Blockers/notes: none. Verified focused administrative runner/primitives/explicit scrub unit filter.

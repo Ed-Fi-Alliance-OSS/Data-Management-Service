@@ -582,6 +582,194 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     }
 
     [Test]
+    public async Task It_classifies_lifecycle_read_timeout_during_command_preflight_as_provider_command_timeout()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            generation: 1,
+            providerToken: RelationalProviderToken.SqlServer
+        );
+        var primitives = new StubAdministrativePrimitives(
+            RelationalProviderToken.SqlServer,
+            lifecycleReads: [CreateSqlException(-2, "Execution Timeout Expired.")]
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(providerToken: RelationalProviderToken.SqlServer),
+            primitives: primitives
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            Request(),
+            SucceedingWorkflow.Instance
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.ProviderCommandTimeout);
+        result.Mutated.Should().BeFalse();
+        DocumentCacheAdministrativePhaseDiagnostic diagnostic = result
+            .PhaseDiagnostics.Should()
+            .ContainSingle()
+            .Subject;
+        diagnostic.CurrentPhase.Should().Be(DocumentCacheAdministrativeCommandPhase.Preflight);
+        diagnostic.LastCompletedPhase.Should().BeNull();
+        diagnostic
+            .DiagnosticCategory.Should()
+            .Be(DocumentCacheAdministrativeDiagnosticCategory.ProviderCommandTimeout);
+        diagnostic.Retryable.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_classifies_transition_timeout_after_prior_mutation_as_retryable_provider_command_timeout()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            generation: 1,
+            providerToken: RelationalProviderToken.SqlServer
+        );
+        var primitives = new StubAdministrativePrimitives(
+            RelationalProviderToken.SqlServer,
+            transitionLifecycleException: CreateSqlException(-2, "Execution Timeout Expired.")
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(providerToken: RelationalProviderToken.SqlServer),
+            primitives: primitives
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: async (context, cancellationToken) =>
+            {
+                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.EnterTracking);
+                context.MarkMutated(
+                    new DocumentCacheLifecycleObservation(
+                        DocumentCacheLifecycleState.Rebuilding,
+                        CacheAheadRecoveryRequired: false
+                    )
+                );
+
+                await context
+                    .Primitives.TryTransitionLifecycleAsync(
+                        new RecordingWriteSession(RelationalProviderToken.SqlServer),
+                        new DocumentCacheAdministrativeLifecycleTransitionRequest(
+                            DocumentCacheLifecycleState.Rebuilding,
+                            expectedCacheAheadRecoveryRequired: false,
+                            DocumentCacheLifecycleState.Tracking,
+                            nextCacheAheadRecoveryRequired: false
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                return context.Completed();
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.ProviderCommandTimeout);
+        result.Mutated.Should().BeTrue();
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.EnterTracking
+                && diagnostic.LastCompletedPhase == DocumentCacheAdministrativeCommandPhase.Preflight
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.ProviderCommandTimeout
+                && diagnostic.Retryable
+            );
+    }
+
+    [Test]
+    public async Task It_classifies_explicit_scrub_page_lifecycle_read_timeout_as_provider_command_timeout()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        var primitives = new StubAdministrativePrimitives(
+            lifecycleReads:
+            [
+                DocumentCacheLifecycleReadResult.Success(TrackingLifecycle),
+                DocumentCacheLifecycleReadResult.Success(TrackingLifecycle),
+                CreatePostgresException("57014"),
+            ],
+            baselineBoundary: new DocumentCacheAdministrativeBaselineBoundaryResult(5, "boundary")
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(),
+            primitives: primitives
+        );
+        var command = new DocumentCacheExplicitIntegrityScrubCommand(runner);
+
+        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
+            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.ProviderCommandTimeout);
+        result.Mutated.Should().BeFalse();
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.ScrubScan
+                && diagnostic.LastCompletedPhase == DocumentCacheAdministrativeCommandPhase.CaptureBoundary
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.ProviderCommandTimeout
+                && !diagnostic.Retryable
+            );
+    }
+
+    [Test]
+    public async Task It_classifies_sql_server_activation_prerequisite_timeout_as_provider_command_timeout()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            generation: 1,
+            providerToken: RelationalProviderToken.SqlServer,
+            lifecycle: DisabledLifecycle
+        );
+        var primitives = new StubAdministrativePrimitives(
+            RelationalProviderToken.SqlServer,
+            lifecycleReads:
+            [
+                DocumentCacheLifecycleReadResult.Success(DisabledLifecycle),
+                DocumentCacheLifecycleReadResult.Success(DisabledLifecycle),
+            ],
+            activationPrerequisiteException: CreateSqlException(-2, "Execution Timeout Expired.")
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(providerToken: RelationalProviderToken.SqlServer),
+            primitives: primitives
+        );
+        var command = new DocumentCacheGuardedNewEmptyActivationCommand(runner);
+
+        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
+            new DocumentCacheGuardedNewEmptyActivationRequest(AdministrativeTargetKey, Fingerprint)
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.ProviderCommandTimeout);
+        result.Mutated.Should().BeFalse();
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.ProviderCommandTimeout
+                && !diagnostic.Retryable
+            );
+    }
+
+    [Test]
     public async Task It_keeps_non_timeout_provider_failures_classified_as_unexpected()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
@@ -1279,7 +1467,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     private static DocumentCacheTargetExecutionContext ExecutionContext(
         long generation,
         TimeSpan? workflowTimeout = null,
-        RelationalProviderToken? providerToken = null
+        RelationalProviderToken? providerToken = null,
+        DocumentCacheLifecycleObservation? lifecycle = null
     ) =>
         new(
             TargetKey,
@@ -1294,7 +1483,7 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 "connection"
             ),
             Fingerprint,
-            TrackingLifecycle,
+            lifecycle ?? TrackingLifecycle,
             new DocumentCacheInventoryValidationResult(
                 DocumentCacheInventoryStatus.Satisfied,
                 "Inventory satisfied."
@@ -1693,9 +1882,18 @@ public class Given_DocumentCacheAdministrativeCommandRunner
 
     private sealed class StubAdministrativePrimitives(
         RelationalProviderToken? providerToken = null,
-        Exception? projectedStateEmptinessException = null
+        Exception? projectedStateEmptinessException = null,
+        IReadOnlyList<object>? lifecycleReads = null,
+        Exception? transitionLifecycleException = null,
+        Exception? activationPrerequisiteException = null,
+        DocumentCacheAdministrativeBaselineBoundaryResult? baselineBoundary = null,
+        DocumentCacheGuardedNewEmptyActivationState? guardedNewEmptyActivationState = null
     ) : IDocumentCacheAdministrativePrimitives
     {
+        private readonly Queue<object> _lifecycleReads = new(
+            lifecycleReads ?? [DocumentCacheLifecycleReadResult.Success(TrackingLifecycle)]
+        );
+
         public RelationalProviderToken ProviderToken { get; } =
             providerToken ?? RelationalProviderToken.Postgresql;
 
@@ -1704,28 +1902,87 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             DocumentCacheAdministrativeStateLockMode lockMode =
                 DocumentCacheAdministrativeStateLockMode.Shared,
             CancellationToken cancellationToken = default
-        ) => Task.FromResult(DocumentCacheLifecycleReadResult.Success(TrackingLifecycle));
+        )
+        {
+            _ = mutexSession;
+            _ = lockMode;
+            cancellationToken.ThrowIfCancellationRequested();
+
+            object nextRead =
+                _lifecycleReads.Count > 0
+                    ? _lifecycleReads.Dequeue()
+                    : DocumentCacheLifecycleReadResult.Success(TrackingLifecycle);
+
+            return nextRead switch
+            {
+                DocumentCacheLifecycleReadResult result => Task.FromResult(result),
+                Exception exception => Task.FromException<DocumentCacheLifecycleReadResult>(exception),
+                _ => throw new InvalidOperationException("Unsupported lifecycle read stub item."),
+            };
+        }
 
         public Task LockCanonicalDocumentsForGuardedActivationAsync(
             IRelationalWriteSession mutexSession,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            _ = mutexSession;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
 
         public Task<DocumentCacheGuardedNewEmptyActivationState> ReadGuardedNewEmptyActivationStateAsync(
             IRelationalWriteSession mutexSession,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            _ = mutexSession;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(
+                guardedNewEmptyActivationState
+                    ?? new DocumentCacheGuardedNewEmptyActivationState(
+                        canonicalDocumentsEmpty: true,
+                        documentCacheEmpty: true,
+                        documentProjectionWorkEmpty: true
+                    )
+            );
+        }
 
         public Task<DocumentCacheProviderPrerequisiteValidationResult> ValidateActivationPrerequisitesAsync(
             IRelationalWriteSession mutexSession,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            _ = mutexSession;
+            cancellationToken.ThrowIfCancellationRequested();
+            return activationPrerequisiteException is null
+                ? Task.FromResult(
+                    DocumentCacheProviderPrerequisiteValidationResult.ActivationPreflight(
+                        DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
+                    )
+                )
+                : Task.FromException<DocumentCacheProviderPrerequisiteValidationResult>(
+                    activationPrerequisiteException
+                );
+        }
 
         public Task<DocumentCacheAdministrativeLifecycleTransitionResult> TryTransitionLifecycleAsync(
             IRelationalWriteSession mutexSession,
             DocumentCacheAdministrativeLifecycleTransitionRequest request,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            _ = mutexSession;
+            _ = request;
+            cancellationToken.ThrowIfCancellationRequested();
+            return transitionLifecycleException is null
+                ? Task.FromResult(
+                    DocumentCacheAdministrativeLifecycleTransitionResult.Transitioned(TrackingLifecycle)
+                )
+                : Task.FromException<DocumentCacheAdministrativeLifecycleTransitionResult>(
+                    transitionLifecycleException
+                );
+        }
 
         public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentCacheBatchAsync(
             IRelationalWriteSession mutexSession,
@@ -1758,7 +2015,18 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         public Task<DocumentCacheAdministrativeBaselineBoundaryResult> CaptureBaselineBoundaryAsync(
             IRelationalWriteSession mutexSession,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            _ = mutexSession;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(
+                baselineBoundary
+                    ?? new DocumentCacheAdministrativeBaselineBoundaryResult(
+                        boundaryDocumentId: null,
+                        "No boundary."
+                    )
+            );
+        }
 
         public Task<DocumentCacheAdministrativeWorkHighWaterObservationResult> ObserveWorkHighWaterAsync(
             IRelationalWriteSession mutexSession,

@@ -1698,6 +1698,11 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
         {
             throw;
         }
+        catch (Exception exception)
+            when (DocumentCacheProviderCommandTimeoutClassifier.IsProviderCommandTimeout(exception))
+        {
+            throw;
+        }
         catch
         {
             return DocumentCacheLifecycleReadResult.Failure(
@@ -1855,6 +1860,11 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
             return DocumentCacheProviderPrerequisiteValidationResult.ActivationPreflight(details);
         }
         catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+            when (DocumentCacheProviderCommandTimeoutClassifier.IsProviderCommandTimeout(exception))
         {
             throw;
         }
