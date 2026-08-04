@@ -77,8 +77,11 @@ public class Given_CdcProviderArtifactOutput
 
     private static CdcProviderSetupRequest BuildPostgresqlRequest(
         CdcProviderArtifactOutputRequest artifactOutput
-    ) =>
-        new(
+    )
+    {
+        var emission = CdcSchemaToolsTestMetadata.BuildMinimalDdlEmission(SqlDialect.Pgsql);
+
+        return new(
             provider: CdcProvider.Postgresql,
             mode: CdcProviderSetupMode.ValidateOnly,
             boundPhysicalSourceFingerprint: CdcSourceFingerprintMetadata.Compute(
@@ -92,11 +95,10 @@ public class Given_CdcProviderArtifactOutput
                 new CdcSafeName("dms_binding_slot")
             ),
             artifactOutput: artifactOutput,
-            expectedSourceInventory: EmittedCdcSourceInventory(SqlDialect.Pgsql)
+            expectedSourceInventory: emission.CdcSourceInventory,
+            dmsManagedTableInventory: emission.CdcDmsManagedTableInventory
         );
-
-    private static IReadOnlyList<CdcSourceTableInventory> EmittedCdcSourceInventory(SqlDialect dialect) =>
-        new CoreDdlEmitter(SqlDialectFactory.Create(dialect)).EmitWithMetadata().CdcSourceInventory;
+    }
 
     private sealed class ArtifactOutputTestProvider : ICdcProviderSetupProvider
     {

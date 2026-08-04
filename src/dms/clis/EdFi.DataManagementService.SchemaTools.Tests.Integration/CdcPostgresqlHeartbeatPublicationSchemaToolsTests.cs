@@ -399,8 +399,11 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
         CdcProviderSetupMode mode,
         string boundSourceIdentity,
         CdcProviderArtifactOutputRequest? artifactOutput = null
-    ) =>
-        new(
+    )
+    {
+        var emission = CdcSchemaToolsTestMetadata.BuildMinimalDdlEmission(SqlDialect.Pgsql);
+
+        return new(
             provider: CdcProvider.Postgresql,
             mode: mode,
             boundPhysicalSourceFingerprint: CdcSourceFingerprintMetadata.Compute(
@@ -415,12 +418,11 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
             ),
             artifactOutput: artifactOutput
                 ?? new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
-            expectedSourceInventory: EmittedCdcSourceInventory(),
+            expectedSourceInventory: emission.CdcSourceInventory,
+            dmsManagedTableInventory: emission.CdcDmsManagedTableInventory,
             databaseExecutor: databaseExecutor
         );
-
-    private static IReadOnlyList<CdcSourceTableInventory> EmittedCdcSourceInventory() =>
-        new CoreDdlEmitter(SqlDialectFactory.Create(SqlDialect.Pgsql)).EmitWithMetadata().CdcSourceInventory;
+    }
 
     private async Task<CdcProviderSetupResult> RunSetupAsync(
         NpgsqlConnection connection,

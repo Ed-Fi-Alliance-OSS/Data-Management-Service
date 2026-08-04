@@ -323,8 +323,11 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         ICdcProviderDatabaseExecutor databaseExecutor,
         CdcProviderSetupMode mode,
         string boundSourceIdentity
-    ) =>
-        new(
+    )
+    {
+        var emission = CdcSchemaToolsTestMetadata.BuildMinimalDdlEmission(SqlDialect.Mssql);
+
+        return new(
             provider: CdcProvider.SqlServer,
             mode: mode,
             boundPhysicalSourceFingerprint: CdcSourceFingerprintMetadata.Compute(
@@ -343,12 +346,11 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
                 }
             ),
             artifactOutput: new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
-            expectedSourceInventory: EmittedCdcSourceInventory(),
+            expectedSourceInventory: emission.CdcSourceInventory,
+            dmsManagedTableInventory: emission.CdcDmsManagedTableInventory,
             databaseExecutor: databaseExecutor
         );
-
-    private static IReadOnlyList<CdcSourceTableInventory> EmittedCdcSourceInventory() =>
-        new CoreDdlEmitter(SqlDialectFactory.Create(SqlDialect.Mssql)).EmitWithMetadata().CdcSourceInventory;
+    }
 
     private async Task<CdcProviderSetupResult> RunSetupAsync(
         SqlConnection connection,
