@@ -416,7 +416,9 @@ public class WebApplicationBuilderExtensionsTests
             serviceProvider
                 .GetRequiredService<IDocumentCacheAdministrativePrimitives>()
                 .Should()
-                .BeOfType<PostgresqlDocumentCacheAdministrativePrimitives>();
+                .BeOfType<DocumentCacheAdministrativePrimitives>()
+                .Which.ProviderToken.Should()
+                .Be(RelationalProviderToken.Postgresql);
             serviceProvider
                 .GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>()
                 .Should()
@@ -687,9 +689,9 @@ public class WebApplicationBuilderExtensionsTests
             serviceProvider
                 .GetRequiredService<IDocumentCacheAdministrativePrimitives>()
                 .Should()
-                .Match<IDocumentCacheAdministrativePrimitives>(primitives =>
-                    primitives.GetType().Name == "MssqlDocumentCacheAdministrativePrimitives"
-                );
+                .BeOfType<DocumentCacheAdministrativePrimitives>()
+                .Which.ProviderToken.Should()
+                .Be(RelationalProviderToken.SqlServer);
             serviceProvider
                 .GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>()
                 .Should()
