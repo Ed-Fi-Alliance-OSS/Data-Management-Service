@@ -5081,14 +5081,21 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
-        It "reaches the MSSQL authority for an admin: target naming this machine on the DAC port: <Spelling>" -ForEach @(
+        It "reaches the MSSQL authority when SqlClient localizes an admin target naming this machine: <Spelling>" -ForEach @(
             @{ Spelling = 'exact machine name as the provider reports it'; UseCaseVariant = $false }
             @{ Spelling = 'a case variant, since the provider compares CurrentCultureIgnoreCase'; UseCaseVariant = $true }
         ) {
             # InferLocalServerName localizes Environment.MachineName to the local server for the Admin
             # protocol only. With MSSQL_PORT=1434 - the DAC port a portless admin: endpoint resolves to, and
-            # a port mssql.yml permits - this names the published Compose listener, so the authority must be
-            # consulted. Read as an ordinary hostname it looked external and the guard was skipped.
+            # a port mssql.yml permits - a localized target names the published Compose listener, so the
+            # authority must be consulted. Read as an ordinary hostname it looked external and the guard was
+            # skipped.
+            #
+            # WHETHER it localizes depends on this machine's name and the ambient culture: the provider
+            # invariant-lowercases the authored host before comparing it to the raw machine name with
+            # CurrentCultureIgnoreCase, so a Turkish/Azeri culture and a name containing 'I' do not match.
+            # This row is therefore conditional, and asks the production rule itself rather than restating
+            # it - the deterministic tr-TR helper test below is the load-bearing proof of the rule.
             $machineName = [Environment]::MachineName
             $authoredHost = $machineName
             if ($UseCaseVariant) {
@@ -5106,6 +5113,16 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             $capturePath = Initialize-ProvisionGuardWorkspace
             try {
                 . $script:repo.ProvisionScript
+
+                # Applicability, decided by the PRODUCTION rule rather than a copy of it. Inside the try so
+                # the finally below still restores the tool-path environment on the skip path.
+                if (-not (Test-SqlClientAdminMachineNameLocalization `
+                            -Protocol "admin" `
+                            -HostName $authoredHost `
+                            -MachineName $machineName)) {
+                    Set-ItResult -Skipped -Because "SqlClient does not localize this real-machine spelling under the current culture: it invariant-lowercases the authored host before comparing it to the raw machine name"
+                    return
+                }
 
                 $script:provisionAuthorityCalled = $false
                 function Assert-MssqlTopologyPhysicalConsistency {
@@ -5136,7 +5153,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
                     Should -Throw "*SAME physical database*"
 
                 $script:provisionAuthorityCalled |
-                    Should -BeTrue -Because "the provider localizes this machine's name for admin:, so the target is the published listener"
+                    Should -BeTrue -Because "the provider localizes this machine's name for admin: here, so the target is the published listener"
                 Test-Path -LiteralPath $capturePath |
                     Should -BeFalse -Because "the refusal must precede any SchemaTools invocation, so no DDL is attempted"
             }
