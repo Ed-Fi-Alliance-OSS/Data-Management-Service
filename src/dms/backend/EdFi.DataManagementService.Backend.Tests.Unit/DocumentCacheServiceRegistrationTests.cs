@@ -104,10 +104,12 @@ public class Given_DocumentCacheServiceRegistration
         AssertSingleton<IDocumentCacheAdministrativeMutex, PostgresqlDocumentCacheAdministrativeMutex>(
             services
         );
-        AssertSingleton<
+        AssertSingletonInstance<
             IDocumentCacheAdministrativePrimitives,
-            PostgresqlDocumentCacheAdministrativePrimitives
-        >(services);
+            DocumentCacheAdministrativePrimitives
+        >(services)
+            .ProviderToken.Should()
+            .Be(RelationalProviderToken.Postgresql);
         AssertSingleton<
             IDocumentCacheProjectionDrainPageProcessor,
             DocumentCacheProjectionDrainPageProcessor
@@ -125,9 +127,12 @@ public class Given_DocumentCacheServiceRegistration
         AssertScoped<IDocumentCacheSessionBoundWriter, MssqlDocumentCacheWriter>(services);
         AssertSingleton<IDocumentProjectionWorkPager, MssqlDocumentProjectionWorkPager>(services);
         AssertSingleton<IDocumentCacheAdministrativeMutex, MssqlDocumentCacheAdministrativeMutex>(services);
-        AssertSingleton<IDocumentCacheAdministrativePrimitives, MssqlDocumentCacheAdministrativePrimitives>(
-            services
-        );
+        AssertSingletonInstance<
+            IDocumentCacheAdministrativePrimitives,
+            DocumentCacheAdministrativePrimitives
+        >(services)
+            .ProviderToken.Should()
+            .Be(RelationalProviderToken.SqlServer);
         AssertSingleton<
             IDocumentCacheProjectionDrainPageProcessor,
             DocumentCacheProjectionDrainPageProcessor
@@ -144,6 +149,21 @@ public class Given_DocumentCacheServiceRegistration
         descriptor.ImplementationType.Should().Be(typeof(TImplementation));
         descriptor.ImplementationFactory.Should().BeNull();
         descriptor.ImplementationInstance.Should().BeNull();
+    }
+
+    private static TImplementation AssertSingletonInstance<TService, TImplementation>(
+        IServiceCollection services
+    )
+        where TService : class
+        where TImplementation : class, TService
+    {
+        ServiceDescriptor descriptor = GetSingleDescriptor<TService>(services);
+
+        descriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
+        descriptor.ImplementationType.Should().BeNull();
+        descriptor.ImplementationFactory.Should().BeNull();
+        descriptor.ImplementationInstance.Should().BeOfType<TImplementation>();
+        return (TImplementation)descriptor.ImplementationInstance!;
     }
 
     private static void AssertScoped<TService, TImplementation>(IServiceCollection services)

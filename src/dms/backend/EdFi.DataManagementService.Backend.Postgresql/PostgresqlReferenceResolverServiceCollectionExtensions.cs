@@ -51,10 +51,9 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
-            ServiceDescriptor.Singleton<
-                IDocumentCacheAdministrativePrimitives,
-                PostgresqlDocumentCacheAdministrativePrimitives
-            >()
+            ServiceDescriptor.Singleton<IDocumentCacheAdministrativePrimitives>(
+                DocumentCacheAdministrativePrimitives.Postgresql()
+            )
         );
 
         services.AddReferenceResolver<
@@ -64,12 +63,6 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
             PostgresqlDocumentHydrator,
             PostgresqlSessionDocumentHydrator
         >();
-        services.Replace(
-            ServiceDescriptor.Singleton<
-                IDocumentCacheProjectionDrainPageProcessor,
-                DocumentCacheProjectionDrainPageProcessor
-            >()
-        );
 
         return services;
     }

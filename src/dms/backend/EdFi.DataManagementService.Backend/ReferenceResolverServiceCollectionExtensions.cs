@@ -125,7 +125,7 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAdd(
             ServiceDescriptor.Singleton<
                 IDocumentCacheProjectionDrainPageProcessor,
-                NoOpDocumentCacheProjectionDrainPageProcessor
+                DocumentCacheProjectionDrainPageProcessor
             >()
         );
         services.TryAdd(

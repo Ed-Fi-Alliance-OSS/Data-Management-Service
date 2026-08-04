@@ -50,10 +50,9 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
-            ServiceDescriptor.Singleton<
-                IDocumentCacheAdministrativePrimitives,
-                MssqlDocumentCacheAdministrativePrimitives
-            >()
+            ServiceDescriptor.Singleton<IDocumentCacheAdministrativePrimitives>(
+                DocumentCacheAdministrativePrimitives.Mssql()
+            )
         );
 
         services.AddReferenceResolver<
@@ -63,12 +62,6 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
             MssqlDocumentHydrator,
             MssqlSessionDocumentHydrator
         >();
-        services.Replace(
-            ServiceDescriptor.Singleton<
-                IDocumentCacheProjectionDrainPageProcessor,
-                DocumentCacheProjectionDrainPageProcessor
-            >()
-        );
 
         return services;
     }

@@ -48,7 +48,7 @@ public class Given_A_Mssql_DocumentCacheQueryPlan_Evidence
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private MssqlDocumentProjectionWorkPager _pager = null!;
     private MssqlDocumentCacheAdministrativeMutex _mutex = null!;
-    private MssqlDocumentCacheAdministrativePrimitives _primitives = null!;
+    private DocumentCacheAdministrativePrimitives _primitives = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -73,7 +73,7 @@ public class Given_A_Mssql_DocumentCacheQueryPlan_Evidence
         _mutex = new MssqlDocumentCacheAdministrativeMutex(
             NullLogger<MssqlDocumentCacheAdministrativeMutex>.Instance
         );
-        _primitives = new MssqlDocumentCacheAdministrativePrimitives();
+        _primitives = DocumentCacheAdministrativePrimitives.Mssql();
     }
 
     [TearDown]

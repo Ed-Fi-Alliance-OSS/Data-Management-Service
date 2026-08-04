@@ -881,19 +881,6 @@ public sealed class DocumentCacheProjectionTargetSchedulingState
     }
 }
 
-public sealed class NoOpDocumentCacheProjectionDrainPageProcessor : IDocumentCacheProjectionDrainPageProcessor
-{
-    public Task<DocumentCacheProjectionDrainPageResult> ProcessPageAsync(
-        DocumentCacheProjectionDrainPageRequest request,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(DocumentCacheProjectionDrainPageResult.NoEligibleWork);
-    }
-}
-
 public sealed class DocumentCacheProjectionScheduler(
     IOptions<DocumentCacheOptions> options,
     IDocumentCacheProjectionDrainPageProcessor drainPageProcessor,

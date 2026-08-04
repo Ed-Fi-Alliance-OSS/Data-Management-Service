@@ -208,7 +208,7 @@ public class Given_A_Postgresql_DocumentCacheOnlineCacheRebuild_Command
                 _dataSourceCache,
                 NullLogger<PostgresqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            new PostgresqlDocumentCacheAdministrativePrimitives(),
+            DocumentCacheAdministrativePrimitives.Postgresql(),
             observationSink,
             new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance

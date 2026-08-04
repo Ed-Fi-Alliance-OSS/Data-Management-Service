@@ -420,7 +420,7 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
                 _dataSourceCache,
                 NullLogger<PostgresqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            new PostgresqlDocumentCacheAdministrativePrimitives(),
+            DocumentCacheAdministrativePrimitives.Postgresql(),
             observationStore,
             new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
@@ -646,7 +646,7 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
                 _dataSourceCache,
                 NullLogger<PostgresqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            new PostgresqlDocumentCacheAdministrativePrimitives(),
+            DocumentCacheAdministrativePrimitives.Postgresql(),
             observationSink,
             new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance

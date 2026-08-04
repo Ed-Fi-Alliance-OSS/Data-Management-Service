@@ -47,7 +47,7 @@ public class Given_A_Postgresql_DocumentCacheQueryPlan_Evidence
     private NpgsqlDataSourceCache _dataSourceCache = null!;
     private PostgresqlDocumentProjectionWorkPager _pager = null!;
     private PostgresqlDocumentCacheAdministrativeMutex _mutex = null!;
-    private PostgresqlDocumentCacheAdministrativePrimitives _primitives = null!;
+    private DocumentCacheAdministrativePrimitives _primitives = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -72,7 +72,7 @@ public class Given_A_Postgresql_DocumentCacheQueryPlan_Evidence
             _dataSourceCache,
             NullLogger<PostgresqlDocumentCacheAdministrativeMutex>.Instance
         );
-        _primitives = new PostgresqlDocumentCacheAdministrativePrimitives();
+        _primitives = DocumentCacheAdministrativePrimitives.Postgresql();
     }
 
     [TearDown]

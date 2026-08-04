@@ -437,7 +437,7 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
             new MssqlDocumentCacheAdministrativeMutex(
                 NullLogger<MssqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            new MssqlDocumentCacheAdministrativePrimitives(),
+            DocumentCacheAdministrativePrimitives.Mssql(),
             observationStore,
             new FixedTimeProvider(ObservedAtOffset),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
@@ -665,7 +665,7 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
             new MssqlDocumentCacheAdministrativeMutex(
                 NullLogger<MssqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            new MssqlDocumentCacheAdministrativePrimitives(),
+            DocumentCacheAdministrativePrimitives.Mssql(),
             observationSink,
             new FixedTimeProvider(ObservedAtOffset),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance

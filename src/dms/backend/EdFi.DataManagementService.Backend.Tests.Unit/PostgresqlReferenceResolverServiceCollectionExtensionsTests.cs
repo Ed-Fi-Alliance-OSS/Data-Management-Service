@@ -120,9 +120,8 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         documentCacheWriter.Should().BeOfType<PostgresqlDocumentCacheWriter>();
         documentCacheWriterRetryAdapter.Should().BeOfType<DocumentCacheWriterRetryAdapter>();
         documentProjectionWorkPager.Should().BeOfType<PostgresqlDocumentProjectionWorkPager>();
-        documentCacheAdministrativePrimitives
-            .Should()
-            .BeOfType<PostgresqlDocumentCacheAdministrativePrimitives>();
+        documentCacheAdministrativePrimitives.Should().BeOfType<DocumentCacheAdministrativePrimitives>();
+        documentCacheAdministrativePrimitives.ProviderToken.Should().Be(RelationalProviderToken.Postgresql);
         documentCacheBaselineSeeder.Should().BeOfType<DocumentCacheBaselineSeeder>();
         documentCacheOfflineActivationCommand.Should().BeOfType<DocumentCacheOfflineActivationCommand>();
         documentCacheOfflineDeactivationCommand.Should().BeOfType<DocumentCacheOfflineDeactivationCommand>();

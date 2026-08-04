@@ -116,7 +116,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         documentCacheWriterRetryAdapter.Should().BeOfType<DocumentCacheWriterRetryAdapter>();
         documentProjectionWorkPager.Should().BeOfType<MssqlDocumentProjectionWorkPager>();
         documentCacheAdministrativeMutex.Should().BeOfType<MssqlDocumentCacheAdministrativeMutex>();
-        documentCacheAdministrativePrimitives.Should().BeOfType<MssqlDocumentCacheAdministrativePrimitives>();
+        documentCacheAdministrativePrimitives.Should().BeOfType<DocumentCacheAdministrativePrimitives>();
+        documentCacheAdministrativePrimitives.ProviderToken.Should().Be(RelationalProviderToken.SqlServer);
         documentCacheBaselineSeeder.Should().BeOfType<DocumentCacheBaselineSeeder>();
         documentCacheOfflineActivationCommand.Should().BeOfType<DocumentCacheOfflineActivationCommand>();
         documentCacheOfflineDeactivationCommand.Should().BeOfType<DocumentCacheOfflineDeactivationCommand>();

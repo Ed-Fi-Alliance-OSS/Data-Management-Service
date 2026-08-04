@@ -1059,6 +1059,171 @@ internal interface IDocumentCacheAdministrativePrimitives
     );
 }
 
+internal sealed class DocumentCacheAdministrativePrimitives : IDocumentCacheAdministrativePrimitives
+{
+    private readonly DocumentCacheAdministrativePrimitiveCommands _commands;
+
+    public DocumentCacheAdministrativePrimitives(SqlDialect sqlDialect, RelationalProviderToken providerToken)
+    {
+        ArgumentNullException.ThrowIfNull(providerToken);
+
+        _commands = DocumentCacheAdministrativePrimitivesSupport.GetCommands(sqlDialect);
+        if (_commands.ProviderToken != providerToken)
+        {
+            throw new ArgumentException(
+                "Provider token must match the administrative primitive SQL dialect.",
+                nameof(providerToken)
+            );
+        }
+
+        ProviderToken = providerToken;
+    }
+
+    public RelationalProviderToken ProviderToken { get; }
+
+    public static DocumentCacheAdministrativePrimitives Postgresql() =>
+        new(SqlDialect.Pgsql, RelationalProviderToken.Postgresql);
+
+    public static DocumentCacheAdministrativePrimitives Mssql() =>
+        new(SqlDialect.Mssql, RelationalProviderToken.SqlServer);
+
+    public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeStateLockMode lockMode = DocumentCacheAdministrativeStateLockMode.Shared,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.ReadLifecycleAsync(
+            mutexSession,
+            _commands,
+            lockMode,
+            cancellationToken
+        );
+
+    public Task LockCanonicalDocumentsForGuardedActivationAsync(
+        IRelationalWriteSession mutexSession,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.LockCanonicalDocumentsForGuardedActivationAsync(
+            mutexSession,
+            _commands,
+            cancellationToken
+        );
+
+    public Task<DocumentCacheGuardedNewEmptyActivationState> ReadGuardedNewEmptyActivationStateAsync(
+        IRelationalWriteSession mutexSession,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.ReadGuardedNewEmptyActivationStateAsync(
+            mutexSession,
+            _commands,
+            cancellationToken
+        );
+
+    public Task<DocumentCacheProviderPrerequisiteValidationResult> ValidateActivationPrerequisitesAsync(
+        IRelationalWriteSession mutexSession,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.ValidateActivationPrerequisitesAsync(
+            mutexSession,
+            _commands,
+            cancellationToken
+        );
+
+    public Task<DocumentCacheAdministrativeLifecycleTransitionResult> TryTransitionLifecycleAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeLifecycleTransitionRequest request,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.TryTransitionLifecycleAsync(
+            mutexSession,
+            _commands,
+            request,
+            cancellationToken
+        );
+
+    public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentCacheBatchAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeClearBatchRequest request,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.ClearDocumentCacheBatchAsync(
+            mutexSession,
+            _commands,
+            request,
+            cancellationToken
+        );
+
+    public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentProjectionWorkBatchAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeClearBatchRequest request,
+        DocumentCacheAdministrativeWorkClearance clearance,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.ClearDocumentProjectionWorkBatchAsync(
+            mutexSession,
+            _commands,
+            request,
+            clearance,
+            cancellationToken
+        );
+
+    public Task<DocumentCacheAdministrativeProjectedStateEmptinessResult> ReadProjectedStateEmptinessAsync(
+        IRelationalWriteSession mutexSession,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.ReadProjectedStateEmptinessAsync(
+            mutexSession,
+            _commands,
+            cancellationToken
+        );
+
+    public Task<DocumentCacheAdministrativeBaselineBoundaryResult> CaptureBaselineBoundaryAsync(
+        IRelationalWriteSession mutexSession,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.CaptureBaselineBoundaryAsync(
+            mutexSession,
+            _commands,
+            cancellationToken
+        );
+
+    public Task<DocumentCacheAdministrativeWorkHighWaterObservationResult> ObserveWorkHighWaterAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeWorkHighWaterObservationRequest request,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.ObserveWorkHighWaterAsync(
+            mutexSession,
+            _commands,
+            request,
+            cancellationToken
+        );
+
+    public Task<DocumentCacheAdministrativeBaselineSeedPageResult> SeedBaselinePageAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeBaselineSeedPageRequest request,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.SeedBaselinePageAsync(
+            mutexSession,
+            _commands,
+            request,
+            cancellationToken
+        );
+
+    public Task<DocumentCacheAdministrativeScrubPageResult> ScrubPageAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeScrubPageRequest request,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.ScrubPageAsync(
+            mutexSession,
+            _commands,
+            request,
+            cancellationToken
+        );
+}
+
 internal sealed record DocumentCacheAdministrativePrimitiveCommands
 {
     public DocumentCacheAdministrativePrimitiveCommands(

@@ -37,7 +37,7 @@ public class Given_A_Mssql_DocumentCacheAdministrativeClear_Primitive
     private IMssqlGeneratedDdlBaselineLease _lease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private MssqlDocumentCacheAdministrativeMutex _mutex = null!;
-    private MssqlDocumentCacheAdministrativePrimitives _primitives = null!;
+    private DocumentCacheAdministrativePrimitives _primitives = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -61,7 +61,7 @@ public class Given_A_Mssql_DocumentCacheAdministrativeClear_Primitive
         _mutex = new MssqlDocumentCacheAdministrativeMutex(
             NullLogger<MssqlDocumentCacheAdministrativeMutex>.Instance
         );
-        _primitives = new MssqlDocumentCacheAdministrativePrimitives();
+        _primitives = DocumentCacheAdministrativePrimitives.Mssql();
     }
 
     [TearDown]
