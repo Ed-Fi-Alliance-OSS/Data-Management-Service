@@ -830,16 +830,32 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
         # '.', '(local)' and 'localhost'. Each names the local SQL Server, so on this engine each names the
         # Compose server. Checked HERE rather than in the engine-neutral helper on purpose: these are
         # SqlClient-only tokens and PostgreSQL must not inherit them - Npgsql would treat '(local)' or '.'
-        # as an ordinary hostname. The set is closed: no LocalDB, named pipes, lpc:, machine-name discovery,
-        # or arbitrary named instance is added to it. An admin:/DAC target is not added either, but it does
-        # not need to be: its host is parsed out of the value, so 'admin:localhost' arrives here as
-        # 'localhost' and matches on its own. The port comparison below stays load-bearing, so any of these
-        # on a different port remains external - which is what keeps admin: local only where the published
-        # port really is the DAC port it resolves to.
+        # as an ordinary hostname. The set is closed: no LocalDB, named pipes, lpc:, or arbitrary named
+        # instance is added to it. An admin:/DAC target needs no entry of its own for these spellings: its
+        # host is parsed out of the value, so 'admin:localhost' arrives here as 'localhost' and matches.
         $isSqlClientLocalToken =
             @(".", "(local)", "localhost") -contains $targetHostName.Trim().ToLowerInvariant()
 
-        return (($isSqlClientLocalToken -or (Test-LocalComposeLoopbackHostSpelling -HostName $targetHostName)) -and
+        # The ONE machine-name localization the provider performs, and only for the protocol it performs it
+        # for: InferLocalServerName maps Environment.MachineName to the local server when the resolved
+        # protocol is Admin, comparing with CurrentCultureIgnoreCase. So 'admin:<this machine>' reaches the
+        # same listener 'admin:localhost' does, and with MSSQL_PORT=1434 that is the published Compose
+        # endpoint - which this guard read as an external server, skipping the separate-topology authority.
+        #
+        # Deliberately NOT general machine-name discovery: the default and explicit-tcp protocols get no
+        # such localization from the provider, so '<this machine>,<port>' stays external here too. And this
+        # lives at the host-side boundary rather than in the shared parser because Environment.MachineName
+        # is runtime-local - SchemaTools runs on this host, while CMS endpoint validation models the
+        # container's runtime, where this machine's name means nothing.
+        $isAdminMachineName =
+            $parsedTarget.Protocol -eq "admin" -and
+            [string]::Equals($targetHostName.Trim(), [Environment]::MachineName, [System.StringComparison]::CurrentCultureIgnoreCase)
+
+        # The port comparison stays load-bearing for every spelling above, so the machine-name form is local
+        # only where the configured published port really is the DAC port admin resolves to.
+        return (($isSqlClientLocalToken -or
+                $isAdminMachineName -or
+                (Test-LocalComposeLoopbackHostSpelling -HostName $targetHostName)) -and
             (Test-PortNumberEquivalent -Left $Target.Port -Right $localEndpoint.Port))
     }
 
