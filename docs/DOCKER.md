@@ -40,9 +40,12 @@ OTLP log export is also available, disabled by default, through the
 `OtlpLogging` configuration section. The compose files forward the core keys
 from `.env`: `OTLP_LOGGING_ENABLED`, `OTLP_LOGGING_ENDPOINT`,
 `OTLP_LOGGING_PROTOCOL`, and `OTLP_LOGGING_DEPLOYMENT_ENVIRONMENT` for DMS,
-with `DMS_CONFIG_`-prefixed equivalents for CMS. Only `OtlpLogging__Headers__*`
-values cannot be set from `.env` (header names are arbitrary keys) and must be
-added to the compose service's `environment` map directly. See
+with `DMS_CONFIG_`-prefixed equivalents for CMS. The remaining `OtlpLogging`
+keys are not forwarded from `.env`: `ServiceName`, `ServiceVersion`, and
+`ServiceInstanceId` have sensible per-service defaults, and
+`OtlpLogging__Headers__*` names are arbitrary keys. To override any of them,
+add the corresponding `OtlpLogging__<Key>` variable to the compose service's
+`environment` map directly. See
 [LOGGING.md](./LOGGING.md#otlp-export) and
 [CONFIGURATION.md](./CONFIGURATION.md#otlplogging) for details, including the
 security guidance for the export path.

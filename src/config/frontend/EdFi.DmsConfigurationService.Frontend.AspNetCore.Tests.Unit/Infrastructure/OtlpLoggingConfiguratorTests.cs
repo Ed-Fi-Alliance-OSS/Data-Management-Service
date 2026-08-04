@@ -157,6 +157,65 @@ public class OtlpLoggingConfiguratorTests
             .BeFalse("a whitespace-only endpoint would otherwise install a silently inert sink");
     }
 
+    // "collector:4317" parses as an absolute URI whose scheme is "collector", exercising the
+    // scheme check; "not a valid uri" fails URI parsing outright. Without the endpoint validation
+    // the gRPC exporter throws during sink construction for the first shape while HttpProtobuf
+    // silently accepts both, so every combination must land on the same warn-and-skip path.
+    [TestCase("collector:4317", "Grpc")]
+    [TestCase("collector:4317", "HttpProtobuf")]
+    [TestCase("not a valid uri", "Grpc")]
+    [TestCase("not a valid uri", "HttpProtobuf")]
+    public void ApplyOtlpSink_Returns_False_For_A_Malformed_Endpoint_Without_Throwing(
+        string endpoint,
+        string protocol
+    )
+    {
+        // Arrange
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["OtlpLogging:Enabled"] = "true",
+                    ["OtlpLogging:Endpoint"] = endpoint,
+                    ["OtlpLogging:Protocol"] = protocol,
+                }
+            )
+            .Build();
+        var options = LoggingConfigurator.BindOtlpLoggingOptions(configuration);
+        var loggerConfiguration = new LoggerConfiguration();
+
+        // Act
+        var sinkApplied = LoggingConfigurator.ApplyOtlpSink(loggerConfiguration, options);
+
+        // Assert
+        sinkApplied.Should().BeFalse();
+    }
+
+    // Binding fails even when the section is otherwise disabled: a Protocol typo takes the
+    // application down at startup instead of leaving export silently misconfigured. This pins
+    // the fail-fast behavior documented in docs/CONFIGURATION.md.
+    [TestCase("true")]
+    [TestCase("false")]
+    public void Binding_Throws_For_An_Unparseable_Protocol_Regardless_Of_The_Enabled_Flag(string enabled)
+    {
+        // Arrange
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["OtlpLogging:Enabled"] = enabled,
+                    ["OtlpLogging:Protocol"] = "http/protobuf",
+                }
+            )
+            .Build();
+
+        // Act
+        Action act = () => LoggingConfigurator.BindOtlpLoggingOptions(configuration);
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>();
+    }
+
     [Test]
     public void ApplyOtlpSink_Constructs_The_Grpc_Exporter_When_Protocol_Is_Grpc()
     {
@@ -451,11 +510,8 @@ public class Given_raw_serilog_configuration_naming_the_otlp_sink
         Serilog.Debugging.SelfLog.Disable();
     }
 
-    [Test]
-    public void ConfigureLogging_Ignores_The_Sink_And_Reports_It_Through_SelfLog()
-    {
-        // Arrange
-        var configuration = new ConfigurationBuilder()
+    private static IConfigurationRoot BuildRawOtlpSinkConfiguration() =>
+        new ConfigurationBuilder()
             .AddInMemoryCollection(
                 new Dictionary<string, string?>
                 {
@@ -465,12 +521,19 @@ public class Given_raw_serilog_configuration_naming_the_otlp_sink
                 }
             )
             .Build();
+
+    [Test]
+    public void ConfigureLogging_Ignores_The_Sink_Through_Pinned_Discovery()
+    {
+        // Arrange
+        var configuration = BuildRawOtlpSinkConfiguration();
         var selfLogLines = new ConcurrentQueue<string>();
         Serilog.Debugging.SelfLog.Enable(message => selfLogLines.Enqueue(message));
 
         // Act
         // Discovery is pinned to the Console and File sink assemblies, so the raw WriteTo entry
-        // must not activate the compiled-in OTLP sink; it is skipped with a SelfLog notice.
+        // must not activate the compiled-in OTLP sink. The SelfLog capture pins the skip
+        // mechanism; the operator-visible report is the stderr warning covered below.
         var logger = LoggingConfigurator.ConfigureLogging(configuration);
 
         // Assert
@@ -487,5 +550,38 @@ public class Given_raw_serilog_configuration_naming_the_otlp_sink
         {
             (logger as IDisposable)?.Dispose();
         }
+    }
+
+    [Test]
+    public void ConfigureLogging_Warns_On_Stderr_Without_SelfLog_Enabled()
+    {
+        // Arrange
+        var configuration = BuildRawOtlpSinkConfiguration();
+
+        // In production nothing enables SelfLog before the configuration is read, so the reader's
+        // own skip notice is dropped. The warning must reach stderr without any SelfLog listener.
+        var originalError = Console.Error;
+        var capturedError = new StringWriter();
+        Console.SetError(capturedError);
+
+        // Act
+        try
+        {
+            var logger = LoggingConfigurator.ConfigureLogging(configuration);
+            (logger as IDisposable)?.Dispose();
+        }
+        finally
+        {
+            Console.SetError(originalError);
+        }
+
+        // Assert
+        capturedError
+            .ToString()
+            .Should()
+            .Contain(
+                "Serilog:WriteTo names the OpenTelemetry sink",
+                "the ignored raw sink entry must be reported where an operator can see it"
+            );
     }
 }

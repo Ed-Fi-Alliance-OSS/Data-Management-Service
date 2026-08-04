@@ -235,9 +235,10 @@ The `OtlpLogging` section supports these keys:
 
 * `Enabled`: when `true`, log events are also exported over OTLP. Default:
   `false`.
-* `Endpoint`: the OTLP collector endpoint, for example
-  `http://collector:4318`. Required when `Enabled` is `true`: if it is
-  omitted, OTLP export is not applied and a warning is written to stderr.
+* `Endpoint`: the OTLP collector endpoint, as an absolute `http://` or
+  `https://` URL, for example `http://collector:4318`. Required when
+  `Enabled` is `true`: if it is omitted or is not such a URL, OTLP export is
+  not applied and a warning is written to stderr.
 * `Protocol`: the OTLP wire protocol, either `Grpc` or `HttpProtobuf`. The
   value binds case-insensitively, but OTLP-convention spellings such as
   `http/protobuf` are not accepted and fail startup with a configuration
@@ -269,8 +270,8 @@ The `OtlpLogging` section supports these keys:
 > The `OtlpLogging` section is the only surface for enabling OTLP export.
 > Configuration-driven sink discovery is pinned to the Console and File sink
 > assemblies, so a raw `Serilog:Using` / `Serilog:WriteTo` entry naming the
-> OTLP sink does not activate it: the entry is ignored and a notice is
-> written to stderr through `SelfLog`. The standard `OTEL_EXPORTER_OTLP_*`
+> OTLP sink does not activate it: the entry is ignored, and the application
+> writes a warning to stderr at startup. The standard `OTEL_EXPORTER_OTLP_*`
 > environment variables are likewise ignored by the exporter, so they cannot
 > silently override the configured endpoint, protocol, headers, or resource
 > identity.
@@ -345,10 +346,11 @@ example `OtlpLogging__Enabled=true` and
 `eng/docker-compose` (and the azure-vm stack) forward the core keys from the
 `.env` file: `OTLP_LOGGING_ENABLED`, `OTLP_LOGGING_ENDPOINT`,
 `OTLP_LOGGING_PROTOCOL`, and `OTLP_LOGGING_DEPLOYMENT_ENVIRONMENT` for DMS,
-with `DMS_CONFIG_`-prefixed equivalents for CMS. `Headers` values cannot be
-forwarded statically (header names are arbitrary keys): add
-`OtlpLogging__Headers__<Name>` entries to the compose service's `environment`
-map directly.
+with `DMS_CONFIG_`-prefixed equivalents for CMS. The remaining keys are not
+forwarded from `.env` (the service identity keys have per-service defaults,
+and header names are arbitrary keys): to override them, add
+`OtlpLogging__<Key>` entries, such as `OtlpLogging__Headers__<Name>`, to the
+compose service's `environment` map directly.
 
 #### Windows Services
 

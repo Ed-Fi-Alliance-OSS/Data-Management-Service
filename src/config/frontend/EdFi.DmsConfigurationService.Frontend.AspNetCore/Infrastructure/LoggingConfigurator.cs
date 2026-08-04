@@ -32,7 +32,8 @@ public static class LoggingConfigurator
     /// requiring reflection into Serilog internals. Enabled without an Endpoint is a
     /// misconfiguration: a warning is written to stderr and the sink is not applied, because the
     /// sink's built-in default endpoint assumes gRPC conventions and would silently mismatch the
-    /// configured protocol.
+    /// configured protocol. An Endpoint that is not an absolute http or https URL is likewise
+    /// warned and skipped, so both protocols reject a malformed endpoint the same way.
     /// </summary>
     public static bool ApplyOtlpSink(LoggerConfiguration loggerConfiguration, OtlpLoggingOptions options)
     {
@@ -45,6 +46,22 @@ public static class LoggingConfigurator
         {
             Console.Error.WriteLine(
                 "OtlpLogging is enabled but no Endpoint is configured; OTLP export is not applied."
+            );
+            return false;
+        }
+
+        // Validate the endpoint before handing it to the sink; otherwise the two protocols
+        // diverge on the same bad value. A host:port endpoint like "collector:4317" parses as an
+        // absolute URI whose scheme is the host name: the gRPC exporter throws for it during sink
+        // construction, taking down startup, while HttpProtobuf accepts it and fails on every
+        // export attempt.
+        if (
+            !Uri.TryCreate(options.Endpoint, UriKind.Absolute, out var endpointUri)
+            || (endpointUri.Scheme != Uri.UriSchemeHttp && endpointUri.Scheme != Uri.UriSchemeHttps)
+        )
+        {
+            Console.Error.WriteLine(
+                $"OtlpLogging Endpoint '{options.Endpoint}' is not an absolute http or https URL; OTLP export is not applied."
             );
             return false;
         }
@@ -92,10 +109,13 @@ public static class LoggingConfigurator
     /// optional OTLP export. OTLP is configured exclusively through the "OtlpLogging" section and
     /// cannot be routed through the "Serilog" section's "Using"/"WriteTo" configuration:
     /// configuration-driven sink discovery is pinned to the Console and File sink assemblies, so a
-    /// WriteTo entry naming the OTLP sink is ignored with a SelfLog notice.
+    /// WriteTo entry naming the OTLP sink is ignored, and a warning is written to stderr when one
+    /// is present.
     /// </summary>
     public static Serilog.ILogger ConfigureLogging(IConfiguration configuration)
     {
+        WarnIfRawSerilogConfigurationNamesOtlpSink(configuration);
+
         // Pin configuration-driven sink discovery to the sinks supported through the Serilog
         // section (Console and File). Without this, the compiled-in OTLP sink is reachable from
         // raw Serilog:Using/WriteTo configuration, bypassing every OtlpLogging safeguard.
@@ -111,5 +131,34 @@ public static class LoggingConfigurator
         ApplyOtlpSink(loggerConfiguration, BindOtlpLoggingOptions(configuration));
 
         return loggerConfiguration.CreateLogger();
+    }
+
+    /// <summary>
+    /// Writes a startup warning to stderr when a Serilog:WriteTo entry names the OTLP sink, which
+    /// the pinned configuration reader ignores. The reader's own SelfLog notice cannot carry this
+    /// warning: it is emitted before any SelfLog listener is installed, and SelfLog does not buffer.
+    /// </summary>
+    private static void WarnIfRawSerilogConfigurationNamesOtlpSink(IConfiguration configuration)
+    {
+        var writeToSection = configuration.GetSection("Serilog:WriteTo");
+
+        // Cover both configuration shapes for a sink entry: a bare sink name as the entry's value,
+        // and an object entry carrying the sink name under "Name".
+        bool rawOtlpSinkConfigured = writeToSection
+            .GetChildren()
+            .Any(sinkEntry =>
+                string.Equals(
+                    sinkEntry.Value ?? sinkEntry["Name"],
+                    "OpenTelemetry",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            );
+
+        if (rawOtlpSinkConfigured)
+        {
+            Console.Error.WriteLine(
+                "Serilog:WriteTo names the OpenTelemetry sink, which cannot be configured through the Serilog section; the entry is ignored. Configure OTLP export through the OtlpLogging section instead."
+            );
+        }
     }
 }
