@@ -758,6 +758,52 @@ function Test-LocalComposeLoopbackHostSpelling {
     return [string]::Equals($address.ToString(), "127.0.0.1", [System.StringComparison]::Ordinal)
 }
 
+function Test-SqlClientAdminMachineNameLocalization {
+    <#
+    .SYNOPSIS
+    True when SqlClient would localize this data source's server name to the local server through its
+    admin-only machine-name rule. PURE: no environment lookup, no culture change, no I/O.
+
+    .DESCRIPTION
+    Reproduces the provider's OPERATION ORDER, not an equivalent-looking comparison. SqlClient
+    invariant-lowercases the WHOLE data source - dataSource.Trim().ToLowerInvariant() - before it
+    removes the protocol or extracts the server name, so the name its localization later sees is
+    already lowercased. Only then, and only when the resolved protocol is Admin, does
+    InferLocalServerName compare the RAW Environment.MachineName against that name with
+    CurrentCultureIgnoreCase
+    (github.com/dotnet/SqlClient/blob/v6.1.4/src/Microsoft.Data.SqlClient/src/Microsoft/Data/SqlClient/ManagedSni/SniProxy.netcore.cs).
+
+    Order is load-bearing because the two normalizations are not interchangeable. Comparing the host
+    as authored against the machine name accepted spellings the provider rejects: under tr-TR with a
+    machine name of 'I', raw 'I' equals 'I' case-insensitively, but the provider compares 'i' - the
+    invariant-lowercased host - against 'I', and Turkish casing does not equate them. So the host is
+    lowercased here and the machine name deliberately is NOT.
+
+    MachineName is a parameter rather than read here so this stays pure and a culture regression can
+    pin the rule without substituting the real machine's name.
+    #>
+    param(
+        [string]
+        $Protocol,
+
+        [string]
+        $HostName,
+
+        [string]
+        $MachineName
+    )
+
+    # Exactly the canonical protocol the shared parser reports; no other protocol receives this.
+    if ($Protocol -ne "admin") {
+        return $false
+    }
+
+    return [string]::Equals(
+        ([string]$HostName).Trim().ToLowerInvariant(),
+        [string]$MachineName,
+        [System.StringComparison]::CurrentCultureIgnoreCase)
+}
+
 function Test-ProvisionTargetIsLocalComposeDatabase {
     <#
     .SYNOPSIS
@@ -837,19 +883,23 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
             @(".", "(local)", "localhost") -contains $targetHostName.Trim().ToLowerInvariant()
 
         # The ONE machine-name localization the provider performs, and only for the protocol it performs it
-        # for: InferLocalServerName maps Environment.MachineName to the local server when the resolved
-        # protocol is Admin, comparing with CurrentCultureIgnoreCase. So 'admin:<this machine>' reaches the
-        # same listener 'admin:localhost' does, and with MSSQL_PORT=1434 that is the published Compose
-        # endpoint - which this guard read as an external server, skipping the separate-topology authority.
+        # for. SqlClient invariant-lowercases the whole data source BEFORE removing the protocol and
+        # extracting the server name, then - only for Admin - compares the RAW Environment.MachineName
+        # against that already-lowercased name with CurrentCultureIgnoreCase. That order is reproduced in
+        # the pure helper rather than approximated here, because the two normalizations are not
+        # interchangeable in every culture. So 'admin:<this machine>' reaches the same listener
+        # 'admin:localhost' does, and with MSSQL_PORT=1434 that is the published Compose endpoint - which
+        # this guard read as an external server, skipping the separate-topology authority.
         #
         # Deliberately NOT general machine-name discovery: the default and explicit-tcp protocols get no
         # such localization from the provider, so '<this machine>,<port>' stays external here too. And this
         # lives at the host-side boundary rather than in the shared parser because Environment.MachineName
         # is runtime-local - SchemaTools runs on this host, while CMS endpoint validation models the
         # container's runtime, where this machine's name means nothing.
-        $isAdminMachineName =
-            $parsedTarget.Protocol -eq "admin" -and
-            [string]::Equals($targetHostName.Trim(), [Environment]::MachineName, [System.StringComparison]::CurrentCultureIgnoreCase)
+        $isAdminMachineName = Test-SqlClientAdminMachineNameLocalization `
+            -Protocol $parsedTarget.Protocol `
+            -HostName $targetHostName `
+            -MachineName ([Environment]::MachineName)
 
         # The port comparison stays load-bearing for every spelling above, so the machine-name form is local
         # only where the configured published port really is the DAC port admin resolves to.
