@@ -336,18 +336,18 @@ inputs are not checked identically — and the two engines answer at different m
 rules are exact models of its creation mechanisms and are applied before any container starts, while
 SQL Server's answer can only come from the running instance itself.
 
-`POSTGRES_DB_NAME` reaches `postgresql-init.sh`, which runs an unquoted `CREATE DATABASE`: PostgreSQL
-folds the identifier to lower case and discards the whitespace around it, so
-`EDFI_ConfigurationService` and `'EDFI_ConfigurationService '` both name the reserved database and both
-are rejected.
+`POSTGRES_DB_NAME` reaches `postgresql-init.sh`, which passes it to `createdb` as a single quoted
+command argument. `createdb` quotes the identifier, so the database it creates is named the literal
+value and only `edfi_configurationservice` itself is rejected: a mixed-case name such as
+`EDFI_ConfigurationService`, or one differing only by surrounding whitespace, is a genuinely separate
+database you may use.
 
-`-DataStoreDatabaseName` takes a different route. It is serialized into the data-store record's
-connection string, that string is parsed again before use, and SchemaTools then creates the database
-with a *quoted* identifier. Because the serialization escapes values, the name survives parsing
-unchanged, so on PostgreSQL only `edfi_configurationservice` itself is rejected — a mixed-case name, or
-one differing only by surrounding whitespace, is a genuinely separate database you may use. The one
-exception is a trailing newline, which connection-string parsing drops; such a name is rejected because
-the server really would receive the reserved database.
+`-DataStoreDatabaseName` takes a different route, and differs in exactly one respect. It is serialized
+into the data-store record's connection string, that string is parsed again before use, and SchemaTools
+then creates the database with a *quoted* identifier — so here too only `edfi_configurationservice`
+itself is rejected. The one exception is a trailing newline: connection-string serialization and parsing
+can collapse it, so such a name is rejected because the server really would receive the reserved
+database, whereas `createdb` preserves it and the initialized path treats it as distinct.
 
 On SQL Server, quoting decides nothing, and no name is pre-judged offline: database-name identity is
 decided by the *instance's* collation semantics, whose equivalences reach far beyond letter case and

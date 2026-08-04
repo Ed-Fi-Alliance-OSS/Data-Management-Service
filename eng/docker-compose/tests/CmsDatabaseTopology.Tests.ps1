@@ -2534,8 +2534,8 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
 
         It "rejects a datastore name that IS edfi_configurationservice: separate mode must be physically separate (postgresql)" {
             # Every equality check below would pass while both services silently share one database,
-            # so distinctness is its own explicit assertion - on PostgreSQL, where the offline rule
-            # is an exact model of postgresql-init.sh's unquoted CREATE DATABASE lexer.
+            # so distinctness is its own explicit assertion - on PostgreSQL, where the offline rule is
+            # an exact model of postgresql-init.sh handing the name to createdb as a quoted identifier.
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_configurationservice',
@@ -2644,10 +2644,10 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
         }
 
         It "keeps the connection-string comparison separate from the collision authority on PostgreSQL" {
-            # The collision authority normalizes for an unquoted CREATE DATABASE; this comparison must
-            # not, because this mixed-case database name survives provider parsing unchanged (measured)
-            # and EDFI_ConfigurationService really is a different database. Widening this rule to match
-            # the collision rule would silently accept CMS pointed at a database that does not exist.
+            # Both the collision authority and this comparison are now exact, but they answer different
+            # questions and must stay separate: this mixed-case name survives provider parsing unchanged
+            # (measured) and EDFI_ConfigurationService really is a different database, so CMS pointed at
+            # it is pointed at a database that does not exist - which this comparison is what catches.
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',

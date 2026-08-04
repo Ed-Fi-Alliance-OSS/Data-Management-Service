@@ -400,8 +400,10 @@ function Invoke-ConfigureLocalDataStore {
             # predicate already models it: the name is serialized into the datastore connection
             # string, parsed back by the provider, and created with a QUOTED identifier, so only a
             # name that parses back AS the reserved name collides. This is the predicate the
-            # published start script's fail-fast boundary uses - deliberately not the unquoted-
-            # CREATE folding rule that governs POSTGRES_DB_NAME's own initialization path.
+            # published start script's fail-fast boundary uses - deliberately not the rule that
+            # governs POSTGRES_DB_NAME's own initialization path, where postgresql-init.sh hands the
+            # name to createdb and only the exact reserved literal collides. The two now agree except
+            # for a bare trailing line feed, which this transport can collapse and createdb preserves.
             if (Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine "postgresql" -DatastoreDatabaseName $postgresDbName) {
                 $datastoreNameSource =
                     if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) { "POSTGRES_DB_NAME" }

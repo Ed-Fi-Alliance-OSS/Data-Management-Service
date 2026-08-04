@@ -3518,14 +3518,16 @@ function Confirm-CmsDatabaseTopologyAgreement {
         # Resolved with the same Compose precedence as everything else here, so an ambient datastore-name
         # override that collides is caught too.
         #
-        # PostgreSQL only: this offline verdict is an exact model of postgresql-init.sh's unquoted
-        # CREATE DATABASE lexer. SQL Server renders NO offline verdict here - database names inherit the
+        # PostgreSQL only: this offline verdict is an exact model of postgresql-init.sh's creation call,
+        # which hands the name to createdb as one quoted command argument - so the created database is
+        # named the literal value, and only the exact reserved literal collides on this path. SQL Server
+        # renders NO offline verdict here - database names inherit the
         # INSTANCE collation, so MSSQL physical distinctness is decided by the server-backed authority
         # (Assert-MssqlTopologyPhysicalConsistency) against the running instance, after the database
         # container starts and before anything consumes it.
         $datastoreDatabaseName = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name $datastoreNameKey)
         if (Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine $DatabaseEngine -DatastoreDatabaseName $datastoreDatabaseName) {
-            throw "CMS database topology mismatch: -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct, but '$datastoreNameKey' resolves to a name that cannot be a separate DMS datastore alongside the dedicated 'edfi_configurationservice' (postgresql-init.sh creates that database with an unquoted CREATE DATABASE, and PostgreSQL discards the whitespace around an unquoted identifier and folds it to lower case). The resolved value is withheld. Rename the datastore database or use shared mode."
+            throw "CMS database topology mismatch: -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct, but '$datastoreNameKey' resolves to the dedicated 'edfi_configurationservice' itself (postgresql-init.sh passes the name to createdb as a quoted identifier, so it names exactly that database). The resolved value is withheld. Rename the datastore database or use shared mode."
         }
     }
 

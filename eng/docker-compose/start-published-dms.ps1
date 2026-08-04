@@ -286,11 +286,13 @@ if (-not $d) {
     # WHETHER a name collides is decided by Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase,
     # and that is deliberately NOT the predicate Confirm-CmsDatabaseTopologyAgreement uses. The two ask
     # about different physical creation mechanisms: -DataStoreDatabaseName never reaches
-    # postgresql-init.sh's unquoted CREATE DATABASE. It is serialized into the datastore connection
-    # string registered in CMS below, parsed back by the provider, and SchemaTools creates the database
-    # with a QUOTED identifier - so on PostgreSQL nothing folds: only a name the provider parses back AS
-    # the reserved name collides (the exact name, or - the measured exception - one whose bare trailing
-    # line feed the transport removes), and a mixed-case name is a genuinely distinct database. Sharing one engine-neutral
+    # postgresql-init.sh, which passes POSTGRES_DB_NAME to createdb as a quoted identifier. It is
+    # serialized into the datastore connection string registered in CMS below, parsed back by the
+    # provider, and SchemaTools creates the database with a QUOTED identifier - so on PostgreSQL nothing
+    # folds on either path: only a name the provider parses back AS the reserved name collides (the exact
+    # name, or - the measured exception, and now the one input where the two mechanisms still differ - one
+    # whose bare trailing line feed this transport collapses while createdb preserves it), and a
+    # mixed-case name is a genuinely distinct database. Sharing one engine-neutral
     # predicate across both call sites is what made this script reject that distinct PostgreSQL database
     # while the validator accepted a colliding one.
     #
