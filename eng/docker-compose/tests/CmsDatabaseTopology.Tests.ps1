@@ -1849,34 +1849,30 @@ Describe "reserved-CMS-database collision authorities (one per physical creation
     }
 
     Context "initialized path: the database the local initialization path creates from the datastore-name key" {
-        It "postgresql treats <Label> as the reserved CMS database" -ForEach @(
-            @{ Label = 'the reserved name itself'; Name = 'edfi_configurationservice' }
-            @{ Label = 'a case variant'; Name = 'EDFI_ConfigurationService' }
-            @{ Label = 'a trailing space'; Name = 'EDFI_ConfigurationService ' }
-            @{ Label = 'a leading space'; Name = ' edfi_configurationservice' }
-            @{ Label = 'a trailing tab'; Name = "edfi_configurationservice`t" }
-            @{ Label = 'a trailing line feed'; Name = "edfi_configurationservice`n" }
-            @{ Label = 'a trailing carriage return'; Name = "edfi_configurationservice`r" }
-            @{ Label = 'a trailing form feed'; Name = "edfi_configurationservice$([char]0x0C)" }
-            @{ Label = 'padding on both ends'; Name = "  EDFI_ConfigurationService`t" }
-        ) {
-            # Measured against postgres:16 by running postgresql-init.sh's own statement form,
-            # `CREATE DATABASE ${POSTGRES_DB_NAME};`: every one of these lands in pg_database as
-            # edfi_configurationservice, because the lexer discards the surrounding whitespace and
-            # folds the unquoted identifier.
-            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName $Name |
+        It "postgresql treats the reserved name itself as the reserved CMS database" {
+            # postgresql-init.sh creates the database with createdb, which takes the name as one quoted
+            # command argument and quotes the identifier, so the created database is named the LITERAL
+            # value. Only the exact reserved literal therefore names the reserved database.
+            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName 'edfi_configurationservice' |
                 Should -BeTrue
         }
 
         It "postgresql does NOT treat <Label> as the reserved CMS database" -ForEach @(
-            @{ Label = 'a trailing vertical tab (0x0B), which makes the CREATE fail outright'; Name = "edfi_configurationservice$([char]0x0B)" }
-            @{ Label = 'a trailing no-break space (0xA0), which creates a genuinely different database'; Name = "edfi_configurationservice$([char]0x00A0)" }
+            # These rows CHANGED with the creation mechanism, and that is the point. While the script
+            # interpolated the name into `CREATE DATABASE ${POSTGRES_DB_NAME};` each of them folded onto
+            # the reserved name, and '--comment' created it outright because it is a SQL comment. The
+            # name is now provider-quoted, so each creates a database literally named this way.
+            @{ Label = 'a SQL-comment suffix, measured as creating the reserved database under the old sink'; Name = 'edfi_configurationservice--comment' }
+            @{ Label = 'a case variant'; Name = 'EDFI_ConfigurationService' }
+            @{ Label = 'a trailing space'; Name = 'edfi_configurationservice ' }
+            @{ Label = 'a leading space'; Name = ' edfi_configurationservice' }
+            @{ Label = 'a trailing tab'; Name = "edfi_configurationservice`t" }
+            @{ Label = 'a trailing line feed'; Name = "edfi_configurationservice`n" }
+            @{ Label = 'padding on both ends'; Name = "  EDFI_ConfigurationService`t" }
+            @{ Label = 'a statement-terminator suffix'; Name = 'edfi_configurationservice;DROP DATABASE x' }
             @{ Label = 'an unrelated datastore name'; Name = 'edfi_datamanagementservice' }
             @{ Label = 'a blank name, which callers report as absence instead'; Name = '' }
         ) {
-            # The first two are exactly why the trim set is passed to Trim explicitly: .NET counts both
-            # 0x0B and 0xA0 as whitespace, so String.Trim() with no argument would report a collision
-            # PostgreSQL itself does not produce - a false positive traded for the fixed false negative.
             Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName $Name |
                 Should -BeFalse
         }
@@ -1920,12 +1916,15 @@ Describe "reserved-CMS-database collision authorities (one per physical creation
     }
 
     Context "the two authorities differ exactly where the creation mechanisms differ" {
-        It "a PostgreSQL case variant collides on the initialized path and not on the registered path" {
-            # One predicate could not express this, and that is the whole defect it produced: it
-            # accepted a colliding POSTGRES_DB_NAME and rejected a distinct -DataStoreDatabaseName.
-            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName 'EDFI_ConfigurationService' |
+        It "a PostgreSQL trailing line feed collides on the registered path and not on the initialized path" {
+            # Still two predicates, because the two mechanisms still differ - now at this input, and in
+            # the opposite direction from before. The REGISTERED name travels through connection-string
+            # serialization and parsing, which collapses a bare trailing LF, so it lands on the reserved
+            # name. The INITIALIZED name is handed to createdb as one quoted argument and keeps the LF,
+            # so it names a different database. One predicate still cannot express both.
+            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName "edfi_configurationservice`n" |
                 Should -BeTrue
-            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName 'EDFI_ConfigurationService' |
+            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName "edfi_configurationservice`n" |
                 Should -BeFalse
         }
     }
@@ -2591,11 +2590,13 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 Should -Not -Throw
         }
 
-        It "rejects a case-variant datastore collision on PostgreSQL: the unquoted CREATE DATABASE folds it" {
-            # postgresql-init.sh runs `CREATE DATABASE ${POSTGRES_DB_NAME};` with the identifier NOT
-            # SQL-quoted, and PostgreSQL folds an unquoted identifier to lower case - so this datastore
-            # physically creates edfi_configurationservice, the database separate mode reserves for CMS.
-            # An ordinal comparison here accepted exactly that while promising two distinct databases.
+        It "accepts a case-variant datastore name on PostgreSQL: createdb quotes the identifier" {
+            # CHANGED WITH THE CREATION MECHANISM. While postgresql-init.sh interpolated the name into
+            # `CREATE DATABASE ${POSTGRES_DB_NAME};` an unquoted identifier folded to lower case, so this
+            # datastore physically became edfi_configurationservice and the collision was real. The name
+            # now reaches createdb as one quoted argument and the identifier is quoted, so
+            # EDFI_ConfigurationService is a genuinely different database and refusing it would reject a
+            # working configuration. The exact reserved literal is still refused, above.
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=EDFI_ConfigurationService',
@@ -2604,20 +2605,15 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
             ) -join "`n") -NoNewline
 
-            $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
-                Should -Throw "*physically distinct*" -PassThru
-
-            # BeLikeExactly, not BeLike: -like is case-insensitive, so the case-insensitive form would
-            # match the reserved literal the message legitimately names and assert nothing.
-            $thrown.Exception.Message | Should -Not -BeLikeExactly "*EDFI_ConfigurationService*" -Because "the diagnostic names the key, never the resolved database-name value"
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
+                Should -Not -Throw
         }
 
-        It "rejects a file-authored POSTGRES_DB_NAME whose only difference is a trailing space" {
-            # The dotenv quoting preserves the space (measured: the resolved value's last byte is 0x20),
-            # the shell interpolates it into postgresql-init.sh's UNQUOTED
-            # `CREATE DATABASE ${POSTGRES_DB_NAME};`, and PostgreSQL's lexer discards it - so this
-            # datastore is physically created as edfi_configurationservice. Comparing without trimming
-            # accepted exactly this configuration while promising two distinct databases.
+        It "accepts a file-authored POSTGRES_DB_NAME whose only difference is a trailing space" {
+            # Same mechanism change. The dotenv quoting preserves the space (measured: the resolved
+            # value's last byte is 0x20); it used to be discarded by the SQL lexer of an unquoted
+            # identifier, folding this onto the reserved name. createdb keeps it, so this names a
+            # different database.
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value (@(
                 "POSTGRES_DB_NAME='EDFI_ConfigurationService '",
@@ -2626,19 +2622,14 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
             ) -join "`n") -NoNewline
 
-            $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
-                Should -Throw "*physically distinct*" -PassThru
-
-            $thrown.Exception.Message | Should -BeLike "*POSTGRES_DB_NAME*" -Because "the key is what the operator has to change"
-            # BeLikeExactly, not BeLike: -like is case-insensitive, so the case-insensitive form would
-            # match the reserved literal the message legitimately names and assert nothing.
-            $thrown.Exception.Message | Should -Not -BeLikeExactly "*EDFI_ConfigurationService*" -Because "the diagnostic names the key, never the resolved database-name value"
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
+                Should -Not -Throw
         }
 
-        It "rejects the same trailing-space collision when ambient precedence supplies POSTGRES_DB_NAME" {
+        It "accepts the same trailing-space name when ambient precedence supplies POSTGRES_DB_NAME" {
             # Compose ignores the file's declaration entirely once the name is set ambiently, so the
-            # ambient value is the one that moves the running datastore container and it has to reach
-            # the same authority.
+            # ambient value is the one that moves the running datastore container - and it reaches the
+            # same authority, which now reads it as the distinct database createdb would create.
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
@@ -2648,10 +2639,8 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             ) -join "`n") -NoNewline
 
             [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "EDFI_ConfigurationService ")
-            $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
-                Should -Throw "*physically distinct*" -PassThru
-
-            $thrown.Exception.Message | Should -Not -BeLikeExactly "*EDFI_ConfigurationService*" -Because "an ambient value is caller-authored too and must not be echoed"
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
+                Should -Not -Throw
         }
 
         It "keeps the connection-string comparison separate from the collision authority on PostgreSQL" {
@@ -2671,9 +2660,10 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 Should -Throw "*EDFI_ConfigurationService*"
         }
 
-        It "rejects an ambient POSTGRES_DB_NAME case variant of the dedicated CMS database name" {
-            # The ambient value is what genuinely moves the running datastore container, so it goes
-            # through the same collision authority as a file-declared name.
+        It "accepts an ambient POSTGRES_DB_NAME case variant of the dedicated CMS database name" {
+            # The ambient value still goes through the same authority as a file-declared name; what
+            # changed is the authority's model, because createdb quotes the identifier. The ambient
+            # EXACT reserved literal is still refused - the very next test.
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
@@ -2684,7 +2674,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
 
             [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "EDFI_ConfigurationService")
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
-                Should -Throw "*physically distinct*"
+                Should -Not -Throw
         }
 
         It "rejects an ambient datastore-name override that collides with the dedicated CMS database" {
@@ -3519,12 +3509,12 @@ Describe "Get-DatabaseNameFromResolvedConnectionString / Get-EndpointFromResolve
     }
 
     It "returns an empty array for a blank connection string" {
-        @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString "").Count | Should -Be 0
+        @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString "" -DatabaseEngine "mssql").Count | Should -Be 0
         @(Get-EndpointFromResolvedConnectionString -ConnectionString "" -DatabaseEngine "postgresql").Count | Should -Be 0
     }
 
     It "returns every present database-name candidate without picking a single winner" {
-        $names = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString "Database=A;Initial Catalog=B;")
+        $names = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString "Database=A;Initial Catalog=B;" -DatabaseEngine "mssql")
         $names.Count | Should -Be 2
         $names | Should -Contain "A"
         $names | Should -Contain "B"
@@ -3535,8 +3525,40 @@ Describe "Get-DatabaseNameFromResolvedConnectionString / Get-EndpointFromResolve
         # string (e.g. via Get-ComposeResolvedEnvValue), so a literal, un-interpolated ${...}
         # token that survives into the extracted sub-value must be returned verbatim, not
         # resolved a second time.
-        $names = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString 'Database=${SOME_LITERAL_TEXT};')
+        $names = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString 'Database=${SOME_LITERAL_TEXT};' -DatabaseEngine "mssql")
         $names | Should -Contain '${SOME_LITERAL_TEXT}'
+    }
+
+    It "recognizes only the given engine's database-name synonyms: <Case>" -ForEach @(
+        # The keyword family is not shared. Applying one union to both engines accepted
+        # 'Initial Catalog' for PostgreSQL during preflight - a keyword Npgsql rejects at connect
+        # time, so the failure surfaced only after containers had started.
+        @{ Case = 'postgresql Database'; Engine = 'postgresql'; ConnectionString = 'host=h;Database=d;'; Expected = @('d') }
+        @{ Case = 'postgresql DB'; Engine = 'postgresql'; ConnectionString = 'host=h;DB=d;'; Expected = @('d') }
+        @{ Case = 'mssql Database'; Engine = 'mssql'; ConnectionString = 'Server=s;Database=d;'; Expected = @('d') }
+        @{ Case = 'mssql Initial Catalog'; Engine = 'mssql'; ConnectionString = 'Server=s;Initial Catalog=d;'; Expected = @('d') }
+    ) {
+        $names = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $ConnectionString -DatabaseEngine $Engine)
+
+        $names.Count | Should -Be $Expected.Count
+        foreach ($expectedName in $Expected) { $names | Should -Contain $expectedName }
+    }
+
+    It "refuses the other engine's database-name synonym before startup: <Case>" -ForEach @(
+        @{ Case = "postgresql rejects Initial Catalog"; Engine = 'postgresql'; ConnectionString = 'host=h;Initial Catalog=edfi_configurationservice;' }
+        @{ Case = "postgresql rejects it even beside a valid Database"; Engine = 'postgresql'; ConnectionString = 'host=h;Database=edfi_datamanagementservice;Initial Catalog=edfi_configurationservice;' }
+        @{ Case = "mssql rejects DB"; Engine = 'mssql'; ConnectionString = 'Server=s;DB=edfi_configurationservice;' }
+    ) {
+        # Refused even when a valid synonym is present: silently preferring the valid one still hands
+        # the provider a string it rejects. The diagnostic names the engine and the allowed family only.
+        $thrown = { Get-DatabaseNameFromResolvedConnectionString -ConnectionString $ConnectionString -DatabaseEngine $Engine } |
+            Should -Throw -PassThru
+
+        $thrown.Exception.Message | Should -BeLike "*database-name keyword belonging to the other engine*"
+        $thrown.Exception.Message | Should -BeLike "*$Engine*"
+        $thrown.Exception.Message |
+            Should -Not -BeLike "*edfi_configurationservice*" -Because "diagnostics never render connection-string values"
+        $thrown.Exception.Message | Should -Not -BeLike "*edfi_datamanagementservice*"
     }
 
     It "splits an MSSQL host,port compound into separate Host and Port fields" {
@@ -3827,7 +3849,7 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
     }
 
     It "the extractor functions parse the genuine Compose-rendered oracle string identically to a hand-written fixture" {
-        $names = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $script:composeRenderedDefault)
+        $names = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $script:composeRenderedDefault -DatabaseEngine "postgresql")
         $names | Should -Be @("edfi_datamanagementservice")
 
         # PostgreSQL's own connection-string shape carries port as a standalone "port=" key - now
@@ -5719,8 +5741,30 @@ if (`$itemAfter.Definition -eq `$definitionBefore -and `$itemAfter.Options -eq `
         # OpenIddict bootstrap (self-contained) or CMS's deploy (Keycloak).
         $content = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot 'postgresql-init.sh') -Raw
 
-        $content | Should -Match 'CREATE DATABASE \$\{POSTGRES_DB_NAME\}'
+        $content | Should -Match 'createdb'
         $content | Should -Not -Match 'configurationservice' -Because "the CMS database is never a container-init concern"
         $content | Should -Not -Match 'DMS_CONFIG_DATABASE_NAME' -Because "the topology seam must not leak into container initialization"
+    }
+
+    It "postgresql-init.sh never interpolates the datastore name into SQL text" {
+        # The defect this replaced: `CREATE DATABASE ${POSTGRES_DB_NAME};` built the statement by
+        # concatenation, so authored characters became SQL syntax. Measured in a disposable
+        # postgres:16.8-alpine container, POSTGRES_DB_NAME=edfi_configurationservice--comment created
+        # edfi_configurationservice, because "--comment" is a SQL comment - the reserved database, made
+        # by the very path the guard protects. The same container confirmed the createdb form creates
+        # the literal edfi_configurationservice--comment instead.
+        $content = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot 'postgresql-init.sh') -Raw
+
+        $content | Should -Not -Match 'CREATE DATABASE' -Because "no SQL statement text may carry the name"
+        $content | Should -Not -Match 'psql[^\r\n]*POSTGRES_DB_NAME' -Because "the name must not reach psql -c"
+    }
+
+    It "postgresql-init.sh passes the datastore name as one quoted argument after --" {
+        $content = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot 'postgresql-init.sh') -Raw
+
+        # Both expansions quoted so word splitting cannot turn one name into several arguments, and "--"
+        # ends option parsing so a name beginning with "-" cannot be read as a switch.
+        $content | Should -Match 'createdb[^\r\n]*-U "\$POSTGRES_USER"'
+        $content | Should -Match 'createdb[^\r\n]*-- "\$POSTGRES_DB_NAME"'
     }
 }

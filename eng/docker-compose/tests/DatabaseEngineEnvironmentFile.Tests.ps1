@@ -783,7 +783,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
             -DockerComposeRoot $script:composeRoot
 
         { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $resolved -DatabaseEngine "mssql" } |
-            Should -Throw "*must include Database or Initial Catalog*"
+            Should -Throw "*must include a database-name keyword recognized for*"
     }
 
     # The composition path and the topology validator resolve the CMS connection string with the
@@ -987,7 +987,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${DMS_CONF
             -BaseEnvironmentFile $path `
             -DockerComposeRoot $script:composeRoot
         { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $resolvedWithout -DatabaseEngine "mssql" } |
-            Should -Throw "*must include Database or Initial Catalog*" -Because "without the ambient value the same reference freezes empty, proving the first half really resolved the ambient override"
+            Should -Throw "*must include a database-name keyword recognized for*" -Because "without the ambient value the same reference freezes empty, proving the first half really resolved the ambient override"
     }
 
     It "discovers every synonym segment of a mixed connection string without judging any name" {
@@ -1244,5 +1244,106 @@ Describe "The .env.example MSSQL hint block" {
         $commentedAlias | Should -BeGreaterOrEqual 0
         $activeAlias | Should -BeLessThan $activeConnection
         $commentedAlias | Should -BeLessThan $commentedConnection
+    }
+}
+
+Describe "ReadValuesFromEnvFile normalizes the 'export KEY=value' spelling" {
+    # Compose accepts an optional `export ` prefix on an assignment, and Get-DotenvAssignment already
+    # parses exactly that spelling - so topology validation ACCEPTED such a file while this legacy
+    # reader stored the value under the literal key "export <KEY>". No consumer looks that up, so the
+    # later -InitDb resolution reported a declared value as not set.
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+        Import-Module (Join-Path $script:dockerComposeRoot "database-safety.psm1") -Force
+
+        function script:New-ExportSpellingEnvFile {
+            param([string[]]$Line)
+
+            $path = Join-Path ([System.IO.Path]::GetTempPath()) "env-export-$([Guid]::NewGuid().ToString('N')).env"
+            Set-Content -LiteralPath $path -Value ($Line -join "`n") -Encoding utf8
+            return $path
+        }
+    }
+
+    It "reads <Label> back under the real key" -ForEach @(
+        @{ Label = 'an ordinary assignment'; Line = 'DMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice' }
+        @{ Label = 'an exported assignment'; Line = 'export DMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice' }
+        @{ Label = 'an exported assignment with a tab after export'; Line = "export`tDMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice" }
+        @{ Label = 'an exported assignment with leading whitespace'; Line = '   export DMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice' }
+    ) {
+        $path = New-ExportSpellingEnvFile -Line @($Line)
+        try {
+            $values = ReadValuesFromEnvFile -EnvironmentFile $path
+
+            $values.ContainsKey('DMS_CONFIG_DATABASE_NAME') | Should -BeTrue
+            $values['DMS_CONFIG_DATABASE_NAME'] | Should -Be 'edfi_datamanagementservice'
+            $values.ContainsKey('export DMS_CONFIG_DATABASE_NAME') |
+                Should -BeFalse -Because "the prefix is not part of the key"
+        }
+        finally { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+    }
+
+    It "collapses exported and ordinary duplicates onto one key, last declaration winning: <Label>" -ForEach @(
+        @{ Label = 'exported then ordinary'; Line = @('export DMS_CONFIG_DATABASE_NAME=first', 'DMS_CONFIG_DATABASE_NAME=second'); Expected = 'second' }
+        @{ Label = 'ordinary then exported'; Line = @('DMS_CONFIG_DATABASE_NAME=first', 'export DMS_CONFIG_DATABASE_NAME=second'); Expected = 'second' }
+    ) {
+        # Both orders, because collapsing onto one key is only correct if the sequential
+        # last-declaration-wins behavior survives it.
+        $path = New-ExportSpellingEnvFile -Line $Line
+        try {
+            $values = ReadValuesFromEnvFile -EnvironmentFile $path
+
+            $values['DMS_CONFIG_DATABASE_NAME'] | Should -Be $Expected
+            @($values.Keys | Where-Object { $_ -like '*DMS_CONFIG_DATABASE_NAME*' }).Count |
+                Should -Be 1 -Because "the two spellings name one variable"
+        }
+        finally { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+    }
+
+    It "fixes the legacy reader rather than one variable: an exported password reads back too" {
+        # The non-seam control. If this passed only for DMS_CONFIG_DATABASE_NAME the fix would be a
+        # special case rather than a correction to the reader.
+        $path = New-ExportSpellingEnvFile -Line @('export POSTGRES_PASSWORD=abcdefgh1!', 'POSTGRES_DB_NAME=edfi_datamanagementservice')
+        try {
+            $values = ReadValuesFromEnvFile -EnvironmentFile $path
+
+            $values['POSTGRES_PASSWORD'] | Should -Be 'abcdefgh1!'
+            $values['POSTGRES_DB_NAME'] | Should -Be 'edfi_datamanagementservice'
+        }
+        finally { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+    }
+
+    It "leaves a key that merely begins with 'export' alone" {
+        # The prefix requires whitespace after it, so this is an ordinary variable named exportPATH.
+        $path = New-ExportSpellingEnvFile -Line @('exportPATH=/somewhere')
+        try {
+            $values = ReadValuesFromEnvFile -EnvironmentFile $path
+
+            $values.ContainsKey('exportPATH') | Should -BeTrue
+            $values.ContainsKey('PATH') | Should -BeFalse
+        }
+        finally { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+    }
+
+    It "lets an exported shared-mode seam reach the InitDb resolution boundary without a false 'not set'" {
+        # The reported failure, at the boundary that produced it: setup-openiddict.ps1 -InitDb reads the
+        # env file with ReadValuesFromEnvFile and resolves keys through
+        # Get-RequiredComposeResolvedEnvValue, which throws BY KEY NAME when a value is configured
+        # nowhere. With the prefix retained in the key, a declared shared-mode seam threw here.
+        $path = New-ExportSpellingEnvFile -Line @(
+            'POSTGRES_DB_NAME=edfi_datamanagementservice'
+            'POSTGRES_PASSWORD=abcdefgh1!'
+            'export DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}'
+            'DMS_CONFIG_IDENTITY_PROVIDER=self-contained'
+        )
+        try {
+            $values = ReadValuesFromEnvFile -EnvironmentFile $path
+
+            # Resolved exactly as the InitDb path resolves it, reference-following included.
+            Get-RequiredComposeResolvedEnvValue -EnvironmentValues $values -Name 'DMS_CONFIG_DATABASE_NAME' |
+                Should -Be 'edfi_datamanagementservice'
+        }
+        finally { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
     }
 }
