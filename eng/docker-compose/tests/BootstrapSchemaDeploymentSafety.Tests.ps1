@@ -4775,6 +4775,320 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             }
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
+
+        # Every SqlClient data-source spelling that reaches the local Compose listener must reach the
+        # live topology authority. These rows are end-to-end through Invoke-ProvisionDmsSchema, so they
+        # pin the WHOLE path - parse, translate, classify, guard - not the parser in isolation. The
+        # environment file publishes MSSQL_PORT=15433, so each spelling below names that listener.
+        It "reaches the MSSQL authority for the provider-valid local spelling '<Spelling>' (<Why>)" -ForEach @(
+            @{ Spelling = ',15433'; Why = 'an empty server name is the local server (InferLocalServerName)' }
+            @{ Spelling = 'tcp:,15433'; Why = 'an empty server name behind an explicit protocol' }
+            @{ Spelling = 'tcp : localhost,15433'; Why = 'the protocol token is trimmed around the colon' }
+            @{ Spelling = 'localhost,15433,ignored'; Why = 'later comma tokens are ignored' }
+            @{ Spelling = 'localhost\ignored,15433'; Why = 'an explicit port makes the instance suffix irrelevant' }
+            @{ Spelling = 'localhost,15433\ignored'; Why = 'the same, with the delimiters in the other order' }
+            @{ Spelling = '(local),15433'; Why = "SqlClient's (local) token" }
+            @{ Spelling = '.,15433'; Why = "SqlClient's . token" }
+            @{ Spelling = '::ffff:127.0.0.1,15433'; Why = 'an IPv4-mapped IPv6 address is that IPv4 node' }
+        ) {
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:provisionAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:provisionAuthorityCalled = $true
+                    throw "CMS database topology mismatch: SQL Server reports that the datastore name resolved from '$RegisteredDatastoreDatabaseSourceKey' denotes the SAME physical database as the dedicated 'edfi_configurationservice'."
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 730
+                            name = "ProviderValidLocal"
+                            connectionString = "Server=$Spelling;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardMssqlEnvFile) `
+                    -DataStoreId @(730) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase } |
+                    Should -Throw "*SAME physical database*"
+
+                $script:provisionAuthorityCalled |
+                    Should -BeTrue -Because "a spelling the provider connects with must not skip the live authority"
+                Test-Path -LiteralPath $capturePath |
+                    Should -BeFalse -Because "the refusal must precede any SchemaTools invocation, so no DDL is attempted"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        # The controls that keep the rule above from degenerating into "everything is local". Each of
+        # these is provisioned WITHOUT consulting the local authority, because none of them is the
+        # published listener: a different port, a different host, a protocol that is not the TCP
+        # listener, or an instance whose port only SSRP could supply.
+        It "provisions '<Spelling>' without asking the local authority (<Why>)" -ForEach @(
+            @{ Spelling = 'localhost,19999'; Why = 'a different port is a different instance' }
+            @{ Spelling = ',19999'; Why = 'an inferred local host on a different port is still a different instance' }
+            @{ Spelling = 'localhost,19999,ignored'; Why = 'later comma tokens cannot rescue a wrong port' }
+            @{ Spelling = 'sql.example.com,15433'; Why = 'an external host on the same port is another server' }
+            @{ Spelling = 'localhost\SQLEXPRESS'; Why = 'a named instance with no explicit port needs SSRP, so it is never claimed as the listener' }
+            @{ Spelling = '(localdb)\MSSQLLocalDB'; Why = 'LocalDB is a distinct grammar' }
+            @{ Spelling = 'np:\\localhost\pipe\sql'; Why = 'named pipes is not the TCP listener' }
+            @{ Spelling = 'admin:localhost'; Why = 'the DAC endpoint is not the published listener' }
+            @{ Spelling = 'lpc:localhost'; Why = 'lpc is not a recognized protocol, so it stays whole as a host name that matches nothing' }
+        ) {
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:provisionAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:provisionAuthorityCalled = $true
+                    throw "the local instance must not be asked about a target that is not the local listener"
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 731
+                            name = "NotTheListener"
+                            connectionString = "Server=$Spelling;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardMssqlEnvFile) `
+                    -DataStoreId @(731) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase *>&1 | Out-Null
+
+                $script:provisionAuthorityCalled | Should -BeFalse
+                @(Get-Content -LiteralPath $capturePath) | Should -Contain "mssql"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "leaves a no-explicit-port named instance on the Docker-internal host untranslated and external" {
+            # Sharing one grammar made the host of 'dms-mssql\SQLEXPRESS' parse as 'dms-mssql', which
+            # the Docker-internal translation would otherwise have rewritten to the published host-side
+            # coordinates - turning an endpoint whose port only SSRP could supply INTO the Compose
+            # listener. Translation is therefore gated on the same two conditions classification is.
+            # The datastore name here is the RESERVED one, so if this target were treated as local the
+            # authority would be consulted and the run would refuse; provisioning proves it was not.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:provisionAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:provisionAuthorityCalled = $true
+                    throw "an unresolved named instance must not be treated as the local Compose listener"
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 732
+                            name = "InternalNamedInstance"
+                            connectionString = 'Server=dms-mssql\SQLEXPRESS;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardMssqlEnvFile) `
+                    -DataStoreId @(732) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase *>&1 | Out-Null
+
+                $script:provisionAuthorityCalled | Should -BeFalse
+                # The value handed to SchemaTools still names the instance as authored: the published
+                # host-side endpoint was never substituted for it.
+                $captured = @(Get-Content -LiteralPath $capturePath) -join "`n"
+                $captured | Should -Match 'dms-mssql\\SQLEXPRESS'
+                $captured | Should -Not -Match '127\.0\.0\.1,15433'
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+    }
+
+    Context "one SqlClient data-source grammar governs every MSSQL endpoint boundary" {
+        # The review loop this closes was caused by TWO independent readings of one provider grammar,
+        # unequal to each other, so each round found a spelling one of them mishandled. These tests pin
+        # the grammar directly and then pin the STRUCTURE that keeps it singular.
+        BeforeAll {
+            # Extracted from the staged source rather than imported: this suite's ownership checks treat
+            # any module loaded from under the temp root as residue, and the staged repo lives there. AST
+            # extraction exercises the same production text with no module state to leak.
+            function script:Get-StagedEndpointParser {
+                $path = Join-Path $script:repo.DockerComposeRoot "database-safety.psm1"
+                $tokens = $null
+                $errors = $null
+                $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+                if ($errors.Count -gt 0) { throw "Failed to parse $path" }
+
+                $definition = @($ast.FindAll({
+                            param($node)
+                            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                            $node.Name -eq "Get-SqlServerDataSourceEndpoint"
+                        }, $true))
+                if ($definition.Count -ne 1) {
+                    throw "Expected exactly one Get-SqlServerDataSourceEndpoint definition, found $($definition.Count)"
+                }
+
+                return [scriptblock]::Create($definition[0].Body.Extent.Text.Trim('{', '}'))
+            }
+        }
+
+        It "parses '<DataSource>' as tcp=<Tcp> host=<ExpectedHost> port=<ExpectedPort> ssrp=<Ssrp>" -ForEach @(
+            # Empty server name -> localhost (InferLocalServerName).
+            @{ DataSource = ',1433'; Tcp = $true; ExpectedHost = 'localhost'; ExpectedPort = '1433'; Ssrp = $false }
+            @{ DataSource = 'tcp:,1433'; Tcp = $true; ExpectedHost = 'localhost'; ExpectedPort = '1433'; Ssrp = $false }
+            @{ DataSource = ''; Tcp = $true; ExpectedHost = 'localhost'; ExpectedPort = ''; Ssrp = $false }
+            # Protocol token is trimmed around the colon (PopulateProtocol).
+            @{ DataSource = 'tcp:host,1433'; Tcp = $true; ExpectedHost = 'host'; ExpectedPort = '1433'; Ssrp = $false }
+            @{ DataSource = 'tcp : host,1433'; Tcp = $true; ExpectedHost = 'host'; ExpectedPort = '1433'; Ssrp = $false }
+            @{ DataSource = 'TCP:host,1433'; Tcp = $true; ExpectedHost = 'host'; ExpectedPort = '1433'; Ssrp = $false }
+            # Later comma tokens are ignored.
+            @{ DataSource = 'host,1433,ignored'; Tcp = $true; ExpectedHost = 'host'; ExpectedPort = '1433'; Ssrp = $false }
+            # Both delimiter orders name the same endpoint, and an explicit port removes the SSRP need.
+            @{ DataSource = 'host\inst,1433'; Tcp = $true; ExpectedHost = 'host'; ExpectedPort = '1433'; Ssrp = $false }
+            @{ DataSource = 'host,1433\inst'; Tcp = $true; ExpectedHost = 'host'; ExpectedPort = '1433'; Ssrp = $false }
+            # No explicit port: the instance suffix needs SSRP, which nothing here can resolve.
+            @{ DataSource = 'host\SQLEXPRESS'; Tcp = $true; ExpectedHost = 'host'; ExpectedPort = ''; Ssrp = $true }
+            @{ DataSource = '(localdb)\MSSQLLocalDB'; Tcp = $true; ExpectedHost = '(localdb)'; ExpectedPort = ''; Ssrp = $true }
+            # An IPv6 colon is not a protocol: the token before it is not in the recognized set.
+            @{ DataSource = '::1,1433'; Tcp = $true; ExpectedHost = '::1'; ExpectedPort = '1433'; Ssrp = $false }
+            @{ DataSource = '[::1],1433'; Tcp = $true; ExpectedHost = '[::1]'; ExpectedPort = '1433'; Ssrp = $false }
+            @{ DataSource = 'tcp:[::1],1433'; Tcp = $true; ExpectedHost = '[::1]'; ExpectedPort = '1433'; Ssrp = $false }
+            @{ DataSource = '::ffff:127.0.0.1,1433'; Tcp = $true; ExpectedHost = '::ffff:127.0.0.1'; ExpectedPort = '1433'; Ssrp = $false }
+            # Recognized protocols that are NOT the TCP listener carry no endpoint at all.
+            @{ DataSource = 'np:\\host\pipe\sql'; Tcp = $false; ExpectedHost = 'np:\\host\pipe\sql'; ExpectedPort = ''; Ssrp = $false }
+            @{ DataSource = 'admin:host'; Tcp = $false; ExpectedHost = 'admin:host'; ExpectedPort = ''; Ssrp = $false }
+            # lpc is NOT in managed SNI's recognized set, so it is not stripped: the whole value is the
+            # host name, which is why it matches nothing. Not a claim that lpc is a known protocol.
+            @{ DataSource = 'lpc:host'; Tcp = $true; ExpectedHost = 'lpc:host'; ExpectedPort = ''; Ssrp = $false }
+            # Ordinary controls.
+            @{ DataSource = 'host,1433'; Tcp = $true; ExpectedHost = 'host'; ExpectedPort = '1433'; Ssrp = $false }
+            @{ DataSource = '  host , 1433  '; Tcp = $true; ExpectedHost = 'host'; ExpectedPort = '1433'; Ssrp = $false }
+            @{ DataSource = 'host'; Tcp = $true; ExpectedHost = 'host'; ExpectedPort = ''; Ssrp = $false }
+        ) {
+            $parser = Get-StagedEndpointParser
+            $parsed = & $parser -DataSource $DataSource
+
+            $parsed.IsTcp | Should -Be $Tcp
+            $parsed.HostName | Should -BeExactly $ExpectedHost
+            $parsed.Port | Should -BeExactly $ExpectedPort
+            $parsed.RequiresInstanceResolution | Should -Be $Ssrp
+        }
+
+        It "reports an inferred host as inferred, and a written host as written" {
+            $parser = Get-StagedEndpointParser
+
+            (& $parser -DataSource ',1433').HostNameWasInferred | Should -BeTrue
+            (& $parser -DataSource 'localhost,1433').HostNameWasInferred | Should -BeFalse
+        }
+
+        It "defines the SqlClient endpoint parser exactly once across the production sources" {
+            $definitions = @(
+                @("database-safety.psm1", "provision-dms-schema.ps1", "env-utility.psm1") | ForEach-Object {
+                    $path = Join-Path $script:repo.DockerComposeRoot $_
+                    $tokens = $null
+                    $errors = $null
+                    $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+                    if ($errors.Count -gt 0) { throw "Failed to parse $path" }
+                    $ast.FindAll({
+                            param($node)
+                            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                            $node.Name -eq "Get-SqlServerDataSourceEndpoint"
+                        }, $true) | ForEach-Object { $_.Name }
+                }
+            )
+
+            $definitions.Count |
+                Should -Be 1 -Because "one grammar means one definition; a second would let the two boundaries diverge again"
+        }
+
+        It "leaves no second MSSQL endpoint parser behind in production" {
+            # The specific shape that caused the loop: a private comma-split reading of a data-source
+            # value living beside the shared one. Named directly so reintroducing it fails here.
+            $provisionPath = Join-Path $script:repo.DockerComposeRoot "provision-dms-schema.ps1"
+            $tokens = $null
+            $errors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($provisionPath, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -gt 0) { throw "Failed to parse $provisionPath" }
+
+            @($ast.FindAll({
+                        param($node)
+                        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                        $node.Name -eq "Split-MssqlServerEndpoint"
+                    }, $true)).Count |
+                Should -Be 0 -Because "the private duplicate was replaced by the shared parser, not kept alongside it"
+        }
+
+        It "delegates every MSSQL endpoint decision in <File> to the shared parser" -ForEach @(
+            @{ File = "provision-dms-schema.ps1"; MinimumCalls = 3 }
+            @{ File = "database-safety.psm1"; MinimumCalls = 1 }
+        ) {
+            # Both subsystems must CALL the one parser. Counting call sites keeps a future edit from
+            # quietly reintroducing an inline reading in one of them while the other still delegates.
+            $path = Join-Path $script:repo.DockerComposeRoot $File
+            $tokens = $null
+            $errors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -gt 0) { throw "Failed to parse $path" }
+
+            $calls = @($ast.FindAll({
+                        param($node)
+                        $node -is [System.Management.Automation.Language.CommandAst] -and
+                        $node.GetCommandName() -eq "Get-SqlServerDataSourceEndpoint"
+                    }, $true))
+
+            $calls.Count | Should -BeGreaterOrEqual $MinimumCalls
+        }
+
+        It "handles the SqlClient protocol token in exactly one production function" {
+            # The loop's mechanism, pinned structurally: every previous round re-derived the protocol
+            # prefix at whichever boundary the finding named, and the two derivations drifted. Exactly
+            # one function may reason about the token at all, so an adopter cannot grow its own reading.
+            $owners = @(
+                @("database-safety.psm1", "provision-dms-schema.ps1", "env-utility.psm1") | ForEach-Object {
+                    $path = Join-Path $script:repo.DockerComposeRoot $_
+                    $tokens = $null
+                    $errors = $null
+                    $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+                    if ($errors.Count -gt 0) { throw "Failed to parse $path" }
+
+                    $ast.FindAll({
+                            param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst]
+                        }, $true) |
+                        Where-Object {
+                            # STRING LITERALS in executable code, found through the AST rather than by
+                            # scanning text: comments and comment-based help are not AST nodes, so a
+                            # function that merely DESCRIBES the protocol token is correctly not an owner.
+                            @($_.Body.FindAll({
+                                        param($node)
+                                        $node -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
+                                        $node.Value -in @("tcp", "tcp:", "np", "np:", "admin", "admin:")
+                                    }, $true)).Count -gt 0
+                        } |
+                        ForEach-Object { $_.Name }
+                }
+            )
+
+            $owners | Should -Be @("Get-SqlServerDataSourceEndpoint")
+        }
     }
 
     Context "one canonical MSSQL target: what is validated is what SchemaTools receives" {

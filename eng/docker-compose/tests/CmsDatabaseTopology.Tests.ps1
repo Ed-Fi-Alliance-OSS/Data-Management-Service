@@ -1163,12 +1163,49 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
                 Should -Not -Throw
         }
 
+        It "accepts the composed service through SqlClient's full data-source grammar: <Name>" -ForEach @(
+            # All of these resolve to dms-mssql:1433 under Microsoft.Data.SqlClient's own parsing, so the
+            # endpoint check must accept them. A comma-only reading rejected them: it took
+            # "dms-mssql\ignored" as a host name and "1433\ignored" as a port.
+            @{ Name = "instance suffix BEFORE the explicit port"; Server = 'dms-mssql\ignored,1433'; Separate = $false }
+            @{ Name = "instance suffix AFTER the explicit port"; Server = 'dms-mssql,1433\ignored'; Separate = $false }
+            @{ Name = "instance suffix before the port, separate topology"; Server = 'dms-mssql\ignored,1433'; Separate = $true }
+            @{ Name = "instance suffix after the port, separate topology"; Server = 'dms-mssql,1433\ignored'; Separate = $true }
+            @{ Name = "a later comma token is ignored"; Server = 'dms-mssql,1433,ignored'; Separate = $false }
+            @{ Name = "both a later comma token and an instance suffix"; Server = 'dms-mssql,1433,ignored\also'; Separate = $false }
+            @{ Name = "the protocol token is trimmed around the colon"; Server = 'tcp : dms-mssql,1433'; Separate = $false }
+            @{ Name = "spaced protocol token in separate topology"; Server = 'tcp : dms-mssql,1433'; Separate = $true }
+            @{ Name = "spaced protocol token with an instance suffix"; Server = 'tcp : dms-mssql\ignored,1433'; Separate = $false }
+            @{ Name = "the compose service-key alias with a suffix"; Server = 'db\ignored,1433'; Separate = $false }
+        ) {
+            # With an explicit comma port SqlClient uses that port and does not resolve the instance
+            # suffix through SSRP, so the suffix cannot change which endpoint is named.
+            $configName = if ($Separate) { "edfi_configurationservice" } else { "edfi_datamanagementservice" }
+            $envFile = New-EndpointAgreementEnvFile -Engine "mssql" -Separate:$Separate `
+                -ConnectionString "Server=$Server;Database=$configName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $envFile -DatabaseEngine "mssql" } |
+                Should -Not -Throw
+        }
+
         It "still rejects an endpoint that is wrong for a reason other than the tcp: prefix: <Name>" -ForEach @(
             @{ Name = "tcp: on a host that is not the composed service"; Server = 'tcp:sql.example.com,1433'; Expected = "*targets host*" }
             @{ Name = "tcp: on the right host but the wrong port"; Server = 'tcp:dms-mssql,14330'; Expected = "*targets port*" }
             @{ Name = "np: named-pipe prefix is not stripped"; Server = 'np:dms-mssql,1433'; Expected = "*targets host*" }
             @{ Name = "lpc: shared-memory prefix is not stripped"; Server = 'lpc:dms-mssql'; Expected = "*targets host*" }
             @{ Name = "host-side localhost is still refused"; Server = 'tcp:localhost,1433'; Expected = "*targets host*" }
+            # An instance suffix with NO explicit port needs SSRP to yield a port. The endpoint reporter
+            # deliberately surfaces the raw value for these, because this caller defaults an absent port
+            # to the expected one - reporting a bare host would turn an unresolved instance into an
+            # apparently matching endpoint.
+            @{ Name = "an unresolved named instance on the composed service"; Server = 'dms-mssql\SQLEXPRESS'; Expected = "*targets host*" }
+            @{ Name = "an unresolved named instance behind tcp:"; Server = 'tcp:dms-mssql\SQLEXPRESS'; Expected = "*targets host*" }
+            @{ Name = "LocalDB is a distinct grammar"; Server = '(localdb)\MSSQLLocalDB'; Expected = "*targets host*" }
+            @{ Name = "admin:/DAC is not the published listener"; Server = 'admin:dms-mssql'; Expected = "*targets host*" }
+            @{ Name = "an empty server name is the local server, not the composed service"; Server = ',1433'; Expected = "*targets host*" }
+            @{ Name = "an empty server name behind tcp:"; Server = 'tcp:,1433'; Expected = "*targets host*" }
+            @{ Name = "a later comma token cannot rescue a wrong port"; Server = 'dms-mssql,14330,1433'; Expected = "*targets port*" }
+            @{ Name = "an instance suffix cannot rescue a wrong port"; Server = 'dms-mssql\ignored,14330'; Expected = "*targets port*" }
             @{ Name = "a doubled tcp: prefix leaves a bad host"; Server = 'tcp:tcp:dms-mssql,1433'; Expected = "*targets host*" }
         ) {
             # Exactly ONE tcp: prefix is removed, and no other protocol is. This connection string is the
