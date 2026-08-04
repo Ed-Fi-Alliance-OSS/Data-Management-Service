@@ -846,6 +846,56 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
     }
 
     [Test]
+    public async Task It_should_reject_extra_write_reference_trigger_privileges_on_dms_owned_non_source_tables()
+    {
+        const string extraDmsForbiddenPrivileges =
+            "dms.ResourceKey.REFERENCES,edfi.School.UPDATE,tracked_changes_edfi.School.TRIGGER";
+        var executor = ExistingArtifactsWithConnectorAccess(
+            connectorExtraDmsForbiddenPrivileges: extraDmsForbiddenPrivileges
+        );
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                databaseExecutor: executor,
+                postgresqlInitialReplicationSlotProof: CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof()
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_CONNECTOR_EXTRA_DMS_PRIVILEGE_MISMATCH"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure
+                && diagnostic.ObservedValue == extraDmsForbiddenPrivileges
+            );
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.Grant
+                && observation.SafeObservedValues["extra_dms_forbidden_privileges"]
+                    == extraDmsForbiddenPrivileges
+            );
+        result
+            .GrantInventory.Should()
+            .Contain(grant =>
+                grant.SafeObjectName.Value == "edfi.School"
+                && grant.Privileges.SequenceEqual(new[] { "UPDATE" })
+            )
+            .And.Contain(grant =>
+                grant.SafeObjectName.Value == "tracked_changes_edfi.School"
+                && grant.Privileges.SequenceEqual(new[] { "TRIGGER" })
+            );
+
+        var connectorAccessSql = executor.QueriedSql.Single(sql =>
+            sql.Contains("cdc:postgresql:connector-principal-access")
+        );
+        connectorAccessSql.Should().Contain("extra_dms_forbidden_privileges");
+        connectorAccessSql.Should().Contain("pg_catalog.has_any_column_privilege");
+    }
+
+    [Test]
     public async Task It_should_use_caller_supplied_shortened_dms_managed_table_inventory_for_extra_select_validation()
     {
         var rawPhysicalSchema = $"p{new string('a', 80)}";
@@ -988,7 +1038,8 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
         string connectorWorkTablePrivileges = "",
         string connectorHeartbeatForbiddenTablePrivileges = "",
         string connectorHeartbeatUnexpectedUpdateColumns = "",
-        string connectorExtraDmsSelectTables = ""
+        string connectorExtraDmsSelectTables = "",
+        string connectorExtraDmsForbiddenPrivileges = ""
     ) =>
         new(
             heartbeatTableExists: true,
@@ -1007,7 +1058,8 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
             connectorHeartbeatForbiddenTablePrivileges: connectorHeartbeatForbiddenTablePrivileges,
             connectorHeartbeatUnexpectedUpdateColumns: connectorHeartbeatUnexpectedUpdateColumns,
             connectorWorkTablePrivileges: connectorWorkTablePrivileges,
-            connectorExtraDmsSelectTables: connectorExtraDmsSelectTables
+            connectorExtraDmsSelectTables: connectorExtraDmsSelectTables,
+            connectorExtraDmsForbiddenPrivileges: connectorExtraDmsForbiddenPrivileges
         );
 }
 
@@ -1114,6 +1166,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
     private readonly string _connectorDocumentCacheWritePrivileges;
     private readonly string _connectorWorkTablePrivileges;
     private readonly string _connectorExtraDmsSelectTables;
+    private readonly string _connectorExtraDmsForbiddenPrivileges;
     private readonly string _sourceIdentity;
     private readonly CdcSourceTableKind? _omittedSourceInventoryTableKind;
     private readonly string _omittedSourceInventoryColumnName;
@@ -1161,6 +1214,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         string connectorDocumentCacheWritePrivileges = "",
         string connectorWorkTablePrivileges = "",
         string connectorExtraDmsSelectTables = "",
+        string connectorExtraDmsForbiddenPrivileges = "",
         string sourceIdentity = CdcProviderSetupContractTestData.SourceIdentity,
         CdcSourceTableKind? omittedSourceInventoryTableKind = null,
         string omittedSourceInventoryColumnName = ""
@@ -1211,6 +1265,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         _connectorDocumentCacheWritePrivileges = connectorDocumentCacheWritePrivileges;
         _connectorWorkTablePrivileges = connectorWorkTablePrivileges;
         _connectorExtraDmsSelectTables = connectorExtraDmsSelectTables;
+        _connectorExtraDmsForbiddenPrivileges = connectorExtraDmsForbiddenPrivileges;
         _sourceIdentity = sourceIdentity;
         _omittedSourceInventoryTableKind = omittedSourceInventoryTableKind;
         _omittedSourceInventoryColumnName = omittedSourceInventoryColumnName;
@@ -1407,7 +1462,8 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
                     ("document_write_privileges", _connectorDocumentWritePrivileges),
                     ("document_cache_write_privileges", _connectorDocumentCacheWritePrivileges),
                     ("work_table_privileges", _connectorWorkTablePrivileges),
-                    ("extra_dms_select_tables", _connectorExtraDmsSelectTables)
+                    ("extra_dms_select_tables", _connectorExtraDmsSelectTables),
+                    ("extra_dms_forbidden_privileges", _connectorExtraDmsForbiddenPrivileges)
                 ),
             ],
             _ => throw new InvalidOperationException($"Unexpected PostgreSQL CDC query: {sql}"),

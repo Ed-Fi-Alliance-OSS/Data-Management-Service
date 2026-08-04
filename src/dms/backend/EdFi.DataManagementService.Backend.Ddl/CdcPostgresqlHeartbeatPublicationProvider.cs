@@ -1379,6 +1379,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         var documentCacheWritePrivileges = ReadCsv(row, "document_cache_write_privileges");
         var workTablePrivileges = ReadCsv(row, "work_table_privileges");
         var extraDmsSelectTables = ReadCsv(row, "extra_dms_select_tables");
+        var extraDmsForbiddenPrivileges = ReadCsv(row, "extra_dms_forbidden_privileges");
 
         var missingRequiredPrivileges = MissingRequiredConnectorPrivileges(
             hasDatabaseConnect,
@@ -1400,7 +1401,8 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             || documentWritePrivileges.Count > 0
             || documentCacheWritePrivileges.Count > 0
             || workTablePrivileges.Count > 0
-            || extraDmsSelectTables.Count > 0;
+            || extraDmsSelectTables.Count > 0
+            || extraDmsForbiddenPrivileges.Count > 0;
         var isGrantableMissingPrivilege =
             hasRequiredRoleAttributes && !hasForbiddenPrivileges && missingRequiredPrivileges.Count > 0;
         var isExactMatch =
@@ -1422,6 +1424,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             ["heartbeat_forbidden_privileges"] = CsvOrNone(heartbeatForbiddenPrivileges),
             ["work_table_privileges"] = CsvOrNone(workTablePrivileges),
             ["extra_dms_select_tables"] = CsvOrNone(extraDmsSelectTables),
+            ["extra_dms_forbidden_privileges"] = CsvOrNone(extraDmsForbiddenPrivileges),
         };
 
         var diagnostics = ConnectorPrincipalAccessDiagnostics(
@@ -1437,7 +1440,8 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             documentWritePrivileges,
             documentCacheWritePrivileges,
             workTablePrivileges,
-            extraDmsSelectTables
+            extraDmsSelectTables,
+            extraDmsForbiddenPrivileges
         );
 
         return new ConnectorPrincipalAccessInspection(
@@ -1457,7 +1461,8 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 heartbeatUnexpectedUpdateColumns,
                 documentWritePrivileges,
                 documentCacheWritePrivileges,
-                workTablePrivileges
+                workTablePrivileges,
+                extraDmsForbiddenPrivileges
             ),
             diagnostics
         );
@@ -1655,7 +1660,47 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                         )
                     ),
                     ''
-                ) AS extra_dms_select_tables;
+                ) AS extra_dms_select_tables,
+                COALESCE(
+                    (
+                        SELECT string_agg(
+                            dms_managed_tables.table_schema || '.' || dms_managed_tables.table_name || '.' || forbidden_privilege.privilege_name,
+                            ','
+                            ORDER BY dms_managed_tables.table_schema, dms_managed_tables.table_name, forbidden_privilege.privilege_order
+                        )
+                        FROM connector
+                        CROSS JOIN dms_managed_tables
+                        CROSS JOIN (
+                            VALUES
+                                ('INSERT', 1),
+                                ('UPDATE', 2),
+                                ('DELETE', 3),
+                                ('TRUNCATE', 4),
+                                ('REFERENCES', 5),
+                                ('TRIGGER', 6)
+                        ) forbidden_privilege(privilege_name, privilege_order)
+                        WHERE NOT (
+                            dms_managed_tables.table_schema = 'dms'
+                            AND dms_managed_tables.table_name IN ('Document', 'DocumentCache', 'CdcHeartbeat', 'DocumentProjectionWork')
+                        )
+                        AND (
+                            pg_catalog.has_table_privilege(
+                                connector.oid,
+                                pg_catalog.format('%I.%I', dms_managed_tables.table_schema, dms_managed_tables.table_name),
+                                forbidden_privilege.privilege_name
+                            )
+                            OR (
+                                forbidden_privilege.privilege_name IN ('UPDATE', 'REFERENCES')
+                                AND pg_catalog.has_any_column_privilege(
+                                    connector.oid,
+                                    pg_catalog.format('%I.%I', dms_managed_tables.table_schema, dms_managed_tables.table_name),
+                                    forbidden_privilege.privilege_name
+                                )
+                            )
+                        )
+                    ),
+                    ''
+                ) AS extra_dms_forbidden_privileges;
             """;
     }
 
@@ -1790,7 +1835,8 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         IReadOnlyList<string> documentWritePrivileges,
         IReadOnlyList<string> documentCacheWritePrivileges,
         IReadOnlyList<string> workTablePrivileges,
-        IReadOnlyList<string> extraDmsSelectTables
+        IReadOnlyList<string> extraDmsSelectTables,
+        IReadOnlyList<string> extraDmsForbiddenPrivileges
     )
     {
         List<CdcProviderDiagnostic> diagnostics = [];
@@ -1901,6 +1947,18 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             );
         }
 
+        if (extraDmsForbiddenPrivileges.Count > 0)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_POSTGRESQL_CONNECTOR_EXTRA_DMS_PRIVILEGE_MISMATCH",
+                    expectedValue: "no-write-reference-trigger-on-non-source-dms-owned-tables",
+                    observedValue: CsvOrNone(extraDmsForbiddenPrivileges)
+                )
+            );
+        }
+
         if (workTablePrivileges.Count > 0)
         {
             diagnostics.Add(
@@ -1954,7 +2012,8 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         IReadOnlyList<string> heartbeatUnexpectedUpdateColumns,
         IReadOnlyList<string> documentWritePrivileges,
         IReadOnlyList<string> documentCacheWritePrivileges,
-        IReadOnlyList<string> workTablePrivileges
+        IReadOnlyList<string> workTablePrivileges,
+        IReadOnlyList<string> extraDmsForbiddenPrivileges
     )
     {
         var connector = request.ConnectorPrincipal.SafePrincipalName;
@@ -2043,7 +2102,43 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             );
         }
 
+        grants.AddRange(ExtraDmsGrantObservations(connector, extraDmsForbiddenPrivileges));
+
         return grants;
+    }
+
+    private static IReadOnlyList<CdcGrantObservation> ExtraDmsGrantObservations(
+        CdcSafeName connector,
+        IReadOnlyList<string> privilegeTokens
+    ) =>
+        privilegeTokens
+            .Select(ExtraDmsGrantToken.From)
+            .GroupBy(token => token.SafeObjectName, StringComparer.Ordinal)
+            .Select(group =>
+                GrantObservation(
+                    connector,
+                    new CdcSafeName(group.Key),
+                    group.Select(token => token.Privilege).ToArray()
+                )
+            )
+            .ToArray();
+
+    private sealed record ExtraDmsGrantToken(string SafeObjectName, string Privilege)
+    {
+        public static ExtraDmsGrantToken From(string privilegeToken)
+        {
+            var provenanceIndex = privilegeToken.IndexOf(".via.", StringComparison.Ordinal);
+            var tokenWithoutProvenance =
+                provenanceIndex < 0 ? privilegeToken : privilegeToken[..provenanceIndex];
+            var privilegeSeparatorIndex = tokenWithoutProvenance.LastIndexOf('.');
+
+            return privilegeSeparatorIndex <= 0
+                ? new ExtraDmsGrantToken(tokenWithoutProvenance, "UNKNOWN")
+                : new ExtraDmsGrantToken(
+                    tokenWithoutProvenance[..privilegeSeparatorIndex],
+                    tokenWithoutProvenance[(privilegeSeparatorIndex + 1)..]
+                );
+        }
     }
 
     private static CdcGrantObservation GrantObservation(

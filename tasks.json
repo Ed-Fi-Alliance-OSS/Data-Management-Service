@@ -1056,5 +1056,26 @@
       "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter CdcSourceInventory"
     ],
     "completed": true
+  },
+  {
+    "category": "cdc-security",
+    "description": "High: Narrowly reject extra write, control, trigger, and reference privileges on DMS-owned non-source base tables during CDC connector-principal exact-match validation. Reuse the existing DMS/provider-managed table inventory and connector-access inspection paths. Keep dms.DocumentProjectionWork on its dedicated grant-violation path; do not add a general permission auditor, unrelated schema scan, connector polling, credential handling, repair/revoke workflow, provider-created grant changes, or PostgreSQL grant-source provenance rewrite.",
+    "acceptance-criteria": [
+      "PostgreSQL connector-principal validation fails closed when the connector has effective INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, or TRIGGER access on any DMS-owned non-source base table from the existing managed-table inventory, excluding dms.Document, dms.DocumentCache, dms.CdcHeartbeat, and dms.DocumentProjectionWork.",
+      "SQL Server connector-principal validation fails closed when the connector has effective INSERT, UPDATE, DELETE, ALTER, CONTROL, TAKE OWNERSHIP, or REFERENCES access on any DMS-owned non-source base table from the existing managed-table inventory, excluding dms.Document, dms.DocumentCache, dms.CdcHeartbeat, and dms.DocumentProjectionWork.",
+      "The existing DocumentProjectionWork grant violation path remains dedicated to dms.DocumentProjectionWork, and existing source-table and heartbeat overgrant diagnostics continue to handle dms.Document, dms.DocumentCache, and dms.CdcHeartbeat.",
+      "Other extra non-source DMS-owned privileges use stable ConnectorPrincipalPrivilegeFailure diagnostics and safe observed values that identify only DMS-owned schema/table names, permission names, and provider-normal safe grant-source tokens when the existing provider inspection already exposes them. PostgreSQL observed values may omit grant-source provenance rather than adding a new provenance model.",
+      "The validation scope reuses the bounded DMS/provider-managed table inventory already used for extra-read and unexpected-capture validation; unrelated schemas, system catalogs beyond existing provider metadata needs, Kafka, Kafka Connect, connector offsets, and binding state remain out of scope.",
+      "Provider-created grant SQL remains limited to required connector access: source SELECT, heartbeat SELECT, heartbeat column UPDATE, PostgreSQL schema/database access, and SQL Server gating-role membership.",
+      "Focused PostgreSQL and SQL Server unit coverage proves at least one extra write/control privilege on a non-source DMS-owned table fails closed while the exact least-privilege connector case still passes."
+    ],
+    "steps-to-verify": [
+      "Review ConnectorPrincipalAccessSql in CdcPostgresqlHeartbeatPublicationProvider and CdcSqlServerHeartbeatDatabaseProvider to confirm extra non-source DMS-owned write/control privilege inventories feed exact-match failure, diagnostics, observed values, and grant inventory through the existing connector-access inspection path.",
+      "Review the diff to confirm provider grant creation, PostgreSQL grant-source provenance modeling, connector polling, Kafka/Kafka Connect calls, binding-state mutation, credential handling, repair/revoke workflows, and unrelated schema inspection were not added.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter PostgresqlCdcPrincipalAccess",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcPrincipalAccess",
+      "With provider prerequisites available, run the PostgreSQL and SQL Server CDC provider-access integration filters that cover connector-principal grant validation."
+    ],
+    "completed": true
   }
 ]

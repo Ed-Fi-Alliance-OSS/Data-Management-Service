@@ -774,6 +774,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var heartbeatWritePrivileges = ReadCsv(row, "heartbeat_write_privileges");
         var workTablePrivileges = ReadCsv(row, "work_table_privileges");
         var extraDmsSelectTables = ReadCsv(row, "extra_dms_select_tables");
+        var extraDmsForbiddenPrivileges = ReadCsv(row, "extra_dms_forbidden_privileges");
 
         var connectorPrincipal = request.ConnectorPrincipal.SafePrincipalName;
         var gatingRoleName = request.ArtifactNames.SqlServer!.GatingRoleName;
@@ -817,7 +818,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             || documentCacheWritePrivileges.Count > 0
             || heartbeatWritePrivileges.Count > 0
             || workTablePrivileges.Count > 0
-            || extraDmsSelectTables.Count > 0;
+            || extraDmsSelectTables.Count > 0
+            || extraDmsForbiddenPrivileges.Count > 0;
         var isGrantableMissingPrivilege =
             connectorIdentityIsGrantable
             && gatingRoleShapeIsGrantable
@@ -876,6 +878,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ["heartbeat_id_update"] = hasHeartbeatIdUpdate.ToString(),
             ["work_table_privileges"] = CsvOrNone(workTablePrivileges),
             ["extra_dms_select_tables"] = CsvOrNone(extraDmsSelectTables),
+            ["extra_dms_forbidden_privileges"] = CsvOrNone(extraDmsForbiddenPrivileges),
             ["source_select_denials"] = CsvOrNone(sourceSelectDenials),
         };
         var gatingRoleObservedValues = new Dictionary<string, string>
@@ -919,7 +922,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             documentCacheWritePrivileges,
             heartbeatWritePrivileges,
             workTablePrivileges,
-            extraDmsSelectTables
+            extraDmsSelectTables,
+            extraDmsForbiddenPrivileges
         );
 
         return new ConnectorPrincipalAccessInspection(
@@ -942,7 +946,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 documentWritePrivileges,
                 documentCacheWritePrivileges,
                 heartbeatWritePrivileges,
-                workTablePrivileges
+                workTablePrivileges,
+                extraDmsForbiddenPrivileges
             ),
             diagnostics
         );
@@ -1695,6 +1700,56 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         )
                     ) permission_info
                 ), N'') AS extra_dms_select_tables,
+                COALESCE((
+                    SELECT STRING_AGG(permission_info.object_privilege_source, N',') WITHIN GROUP (ORDER BY permission_info.object_privilege_source)
+                    FROM (
+                        SELECT DISTINCT
+                            object_info.schema_name COLLATE DATABASE_DEFAULT
+                                + N'.'
+                                + object_info.object_name COLLATE DATABASE_DEFAULT
+                                + N'.'
+                                + permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                + N'.via.'
+                                + permission_info.source_name COLLATE DATABASE_DEFAULT AS object_privilege_source
+                        FROM dms_object_effective_permissions permission_info
+                        INNER JOIN dms_managed_base_tables object_info
+                            ON object_info.object_id = permission_info.object_id
+                        WHERE permission_info.permission_name IN (
+                            N'INSERT',
+                            N'UPDATE',
+                            N'DELETE',
+                            N'ALTER',
+                            N'CONTROL',
+                            N'TAKE OWNERSHIP',
+                            N'REFERENCES'
+                        )
+                        AND object_info.object_id NOT IN (
+                            @document_object_id,
+                            @document_cache_object_id,
+                            @heartbeat_object_id,
+                            @work_table_object_id
+                        )
+                        UNION
+                        SELECT DISTINCT
+                            object_info.schema_name COLLATE DATABASE_DEFAULT
+                                + N'.'
+                                + object_info.object_name COLLATE DATABASE_DEFAULT
+                                + N'.'
+                                + permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                + N'.via.'
+                                + permission_info.source_name COLLATE DATABASE_DEFAULT AS object_privilege_source
+                        FROM dms_column_specific_effective_permissions permission_info
+                        INNER JOIN dms_managed_base_tables object_info
+                            ON object_info.object_id = permission_info.object_id
+                        WHERE permission_info.permission_name IN (N'UPDATE', N'REFERENCES')
+                        AND object_info.object_id NOT IN (
+                            @document_object_id,
+                            @document_cache_object_id,
+                            @heartbeat_object_id,
+                            @work_table_object_id
+                        )
+                    ) permission_info
+                ), N'') AS extra_dms_forbidden_privileges,
                 COALESCE((
                     SELECT STRING_AGG(denial_info.denial_token, N',') WITHIN GROUP (ORDER BY denial_info.denial_token)
                     FROM required_source_select_denials denial_info
@@ -3485,7 +3540,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         IReadOnlyList<string> documentCacheWritePrivileges,
         IReadOnlyList<string> heartbeatWritePrivileges,
         IReadOnlyList<string> workTablePrivileges,
-        IReadOnlyList<string> extraDmsSelectTables
+        IReadOnlyList<string> extraDmsSelectTables,
+        IReadOnlyList<string> extraDmsForbiddenPrivileges
     )
     {
         List<CdcProviderDiagnostic> diagnostics = [];
@@ -3644,6 +3700,18 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             );
         }
 
+        if (extraDmsForbiddenPrivileges.Count > 0)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_PRIVILEGE_MISMATCH",
+                    expectedValue: "no-write-control-reference-on-non-source-dms-owned-tables",
+                    observedValue: CsvOrNone(extraDmsForbiddenPrivileges)
+                )
+            );
+        }
+
         if (workTablePrivileges.Count > 0)
         {
             diagnostics.Add(
@@ -3715,7 +3783,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         IReadOnlyList<string> documentWritePrivileges,
         IReadOnlyList<string> documentCacheWritePrivileges,
         IReadOnlyList<string> heartbeatWritePrivileges,
-        IReadOnlyList<string> workTablePrivileges
+        IReadOnlyList<string> workTablePrivileges,
+        IReadOnlyList<string> extraDmsForbiddenPrivileges
     )
     {
         var connector = request.ConnectorPrincipal.SafePrincipalName;
@@ -3810,7 +3879,43 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             );
         }
 
+        grants.AddRange(ExtraDmsGrantObservations(connector, extraDmsForbiddenPrivileges));
+
         return grants;
+    }
+
+    private static IReadOnlyList<CdcGrantObservation> ExtraDmsGrantObservations(
+        CdcSafeName connector,
+        IReadOnlyList<string> privilegeTokens
+    ) =>
+        privilegeTokens
+            .Select(ExtraDmsGrantToken.From)
+            .GroupBy(token => token.SafeObjectName, StringComparer.Ordinal)
+            .Select(group =>
+                GrantObservation(
+                    connector,
+                    new CdcSafeName(group.Key),
+                    PrivilegeNames(group.Select(token => token.Privilege).ToArray())
+                )
+            )
+            .ToArray();
+
+    private sealed record ExtraDmsGrantToken(string SafeObjectName, string Privilege)
+    {
+        public static ExtraDmsGrantToken From(string privilegeToken)
+        {
+            var provenanceIndex = privilegeToken.IndexOf(".via.", StringComparison.Ordinal);
+            var tokenWithoutProvenance =
+                provenanceIndex < 0 ? privilegeToken : privilegeToken[..provenanceIndex];
+            var privilegeSeparatorIndex = tokenWithoutProvenance.LastIndexOf('.');
+
+            return privilegeSeparatorIndex <= 0
+                ? new ExtraDmsGrantToken(tokenWithoutProvenance, "UNKNOWN")
+                : new ExtraDmsGrantToken(
+                    tokenWithoutProvenance[..privilegeSeparatorIndex],
+                    tokenWithoutProvenance[(privilegeSeparatorIndex + 1)..]
+                );
+        }
     }
 
     private static CdcGrantObservation GrantObservation(

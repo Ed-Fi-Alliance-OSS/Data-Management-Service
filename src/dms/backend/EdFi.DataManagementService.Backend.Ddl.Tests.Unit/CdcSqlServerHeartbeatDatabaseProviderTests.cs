@@ -2074,6 +2074,71 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
     }
 
     [Test]
+    public async Task It_should_reject_extra_write_control_reference_privileges_on_dms_owned_non_source_tables()
+    {
+        var extraDmsForbiddenPrivileges = new[]
+        {
+            "auth.EducationOrganizationIdToEducationOrganizationId.ALTER.via.direct",
+            "edfi.School.CONTROL.via.role.custom_writer",
+            "tracked_changes_edfi.School.TAKE OWNERSHIP.via.public",
+        };
+        var expectedObservedForbiddenPrivileges =
+            "auth.EducationOrganizationIdToEducationOrganizationId.ALTER.via.direct,edfi.School.CONTROL.via.role.custom_writer,tracked_changes_edfi.School.TAKE_OWNERSHIP.via.public";
+        var executor = ExistingArtifactsWithConnectorAccess(
+            new RecordingSqlServerConnectorAccess
+            {
+                GatingRoleExists = true,
+                GatingRoleDirectMembers = ["connector_principal"],
+                DatabaseConnect = true,
+                DocumentSelect = true,
+                DocumentCacheSelect = true,
+                HeartbeatSelect = true,
+                HeartbeatSequenceUpdate = true,
+                HeartbeatAtUpdate = true,
+                ExtraDmsForbiddenPrivileges = extraDmsForbiddenPrivileges,
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_PRIVILEGE_MISMATCH"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure
+                && diagnostic.ObservedValue == expectedObservedForbiddenPrivileges
+            );
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.Grant
+                && observation.SafeObservedValues["extra_dms_forbidden_privileges"]
+                    == expectedObservedForbiddenPrivileges
+            );
+        result
+            .GrantInventory.Should()
+            .Contain(grant =>
+                grant.SafeObjectName.Value == "edfi.School" && grant.Privileges.Contains("CONTROL")
+            )
+            .And.Contain(grant =>
+                grant.SafeObjectName.Value == "tracked_changes_edfi.School"
+                && grant.Privileges.Contains("TAKE_OWNERSHIP")
+            );
+
+        var connectorAccessSql = executor.QueriedSql.Single(sql =>
+            sql.Contains("cdc:sqlserver:connector-principal-access")
+        );
+        connectorAccessSql.Should().Contain("extra_dms_forbidden_privileges");
+        connectorAccessSql.Should().Contain("N'TAKE OWNERSHIP'");
+        connectorAccessSql.Should().Contain("dms_column_specific_effective_permissions");
+        connectorAccessSql.Should().NotContain("ProjectEndpointName");
+    }
+
+    [Test]
     public async Task It_should_use_caller_supplied_shortened_dms_managed_table_inventory_for_extra_select_validation()
     {
         ShortenedSqlServerManagedTableTestData
@@ -2356,6 +2421,8 @@ internal sealed class RecordingSqlServerConnectorAccess
     public IReadOnlyList<string> WorkTablePrivileges { get; init; } = [];
 
     public IReadOnlyList<string> ExtraDmsSelectTables { get; init; } = [];
+
+    public IReadOnlyList<string> ExtraDmsForbiddenPrivileges { get; init; } = [];
 
     public IReadOnlyList<string> SourceSelectDenials { get; init; } = [];
 
@@ -2757,6 +2824,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             ("heartbeat_write_privileges", Csv(_connectorAccess.HeartbeatWritePrivileges)),
             ("work_table_privileges", Csv(_connectorAccess.WorkTablePrivileges)),
             ("extra_dms_select_tables", Csv(_connectorAccess.ExtraDmsSelectTables)),
+            ("extra_dms_forbidden_privileges", Csv(_connectorAccess.ExtraDmsForbiddenPrivileges)),
             ("source_select_denials", Csv(_connectorAccess.SourceSelectDenials))
         );
     }
