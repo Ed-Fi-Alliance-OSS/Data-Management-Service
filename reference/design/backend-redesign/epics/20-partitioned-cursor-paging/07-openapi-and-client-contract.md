@@ -22,10 +22,10 @@ core, extension, descriptor, and profile OpenAPI documents without per-resource 
 ## Dependencies
 
 - Hard dependencies: E20-S00a for the approved public parameter, response, and runtime-default
-  contracts; E20-S04 and E20-S05 for regular-resource and descriptor cursor execution; and
-  E20-S06 for the active partition pipeline. No cursor parameter, response header, or partition
-  path may be published before its runtime behavior is available.
-- E20-S00b and E20-S01 route integration are consumed transitively through E20-S06.
+  contracts; E20-S04 for regular-resource and descriptor cursor execution; and E20-S06 for the
+  active partition pipeline. No cursor parameter, response header, or partition path may be
+  published before its runtime behavior is available.
+- E20-S00b validation and route integration are consumed transitively through E20-S04 and E20-S06.
 - E20-S08b consumes the published contract for API/E2E parity coverage.
 
 ## Implementation Scope
@@ -59,8 +59,8 @@ its own increment after the OpenAPI slice, and it must not gate OpenAPI acceptan
 - Negative tests prove no augmentation of item-by-id, `/deletes`, `/keyChanges`, discovery, or
   management paths and no introduction of composite paths.
 - Sequencing tests or review evidence prove cursor parameters and `Next-Page-Token` metadata are
-  absent before E20-S04/E20-S05 and `/partitions` paths are absent before E20-S06, then are
-  published atomically with their active runtime operations.
+  absent before E20-S04 and `/partitions` paths are absent before E20-S06, then are published
+  atomically with their active runtime operations.
 - OpenAPI generator integration tests produce the same augmented contract as runtime assembly.
 - For the separable documentation slice, review confirms examples use `pageSize`, repeat filters,
   and treat tokens as opaque without implying snapshot consistency. This evidence is tracked
@@ -74,6 +74,6 @@ its own increment after the OpenAPI slice, and it must not gate OpenAPI acceptan
 
 ## Explicit Exclusions / Not Assigned
 
-- Runtime cursor and partition execution belong to E20-S04 through E20-S06.
+- Runtime cursor and partition execution belong to E20-S04 and E20-S06.
 - SDK generation changes outside DMS and per-resource ApiSchema path duplication are not assigned.
 - Descriptor operations are not added to resource-derived profile documents.

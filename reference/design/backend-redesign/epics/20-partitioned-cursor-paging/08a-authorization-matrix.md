@@ -22,8 +22,8 @@ cannot widen it.
 
 ## Dependencies
 
-- Hard dependencies: E20-S04, E20-S05, and E20-S06 for the regular-resource, descriptor, and
-  partition execution paths under test.
+- Hard dependencies: E20-S04 for the regular-resource and descriptor cursor paths and E20-S06 for
+  the partition execution path under test.
 - E14 row-level authorization planning and E15 plan contracts are the upstream foundations whose
   strategies this matrix exercises.
 - E20-S08b consumes the same fixtures for public-contract and E2E coverage. E20-S10 consumes the
@@ -65,6 +65,5 @@ cannot widen it.
   scenarios, and ODS comparison execution belong to E20-S08b.
 - Fundamental contract, planner, SQL, execution, and OpenAPI implementation belongs to E20-S00a
   through E20-S07.
-- The pinned ODS reference stack, comparison harness, and approved-difference ledger belong to
-  E20-S11.
+- The static ODS-comparison cases and approved-difference enforcement belong to E20-S08b.
 - Load/latency thresholds and provider plan capture belong to E20-S10.

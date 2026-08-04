@@ -21,11 +21,10 @@ balanced cursor ranges in one identifiers-only database command.
 
 ## Dependencies
 
-- Hard dependencies for boundary-compiler and SQL-golden work: E20-S00a, E20-S00b, E20-S01,
-  E20-S02, and E20-S03. E20-S04 and E20-S05 remain soft for that work.
-- Route activation additionally has hard dependencies on E20-S04 and E20-S05 so `/partitions`
-  cannot hand clients tokens before both regular-resource and descriptor GET-many endpoints can
-  consume them.
+- Hard dependencies for boundary-compiler and SQL-golden work: E20-S00a, E20-S00b, and E20-S02.
+  E20-S04 remains soft for that work.
+- Route activation additionally has a hard dependency on E20-S04 so `/partitions` cannot hand
+  clients tokens before both regular-resource and descriptor GET-many endpoints can consume them.
 - E20-S07 publishes partition paths only when this runtime pipeline lands. E20-S08a, E20-S08b, and
   E20-S10 consume the completed endpoint.
 
@@ -74,8 +73,8 @@ balanced cursor ranges in one identifiers-only database command.
 ## Explicit Exclusions / Not Assigned
 
 - OpenAPI publication belongs to E20-S07.
-- ODS reference infrastructure belongs to E20-S11, the cross-strategy authorization matrix belongs
-  to E20-S08a, broad parity execution and multi-scenario E2E belong to E20-S08b, and performance
-  evidence belongs to E20-S10.
+- The cross-strategy authorization matrix belongs to E20-S08a, ODS-comparison cases plus broad
+  parity execution and multi-scenario E2E belong to E20-S08b, and performance evidence belongs to
+  E20-S10.
 - Document hydration, descriptor projection, links, total count, DDL, and new indexes are not part
   of this endpoint story.

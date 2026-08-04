@@ -24,7 +24,7 @@ terminal-page behavior, and configuration limits.
 ## Dependencies
 
 - No hard dependency on another E20 story.
-- This story blocks E20-S00b, E20-S02 through E20-S07, and E20-S11 wherever they consume paging,
+- This story blocks E20-S00b, E20-S02, E20-S04, E20-S06, and E20-S07 wherever they consume paging,
   range, token, result-boundary, or configuration contracts.
 - Existing E08 query contracts, E10 live change-version behavior, and E15 plan contracts are
   compatibility inputs.
@@ -61,9 +61,9 @@ terminal-page behavior, and configuration limits.
 
 ## Explicit Exclusions / Not Assigned
 
-- Cursor precedence validation, partition validation, the ProblemDetails shell, and operation-scoped
-  cursor parameter rejection belong to E20-S00b.
-- Frontend path classification and repeated-parameter canonicalization belong to E20-S01.
-- Candidate planning and SQL compilation belong to E20-S02, E20-S03, and E20-S06.
-- Response-header execution belongs to E20-S04 and E20-S05.
+- Cursor precedence validation, partition validation, the ProblemDetails shell, operation-scoped
+  cursor parameter rejection, typed path classification, and repeated-parameter canonicalization
+  belong to E20-S00b.
+- Candidate planning and SQL compilation belong to E20-S02 and E20-S06.
+- Response-header execution belongs to E20-S04.
 - OpenAPI publication belongs to E20-S07.

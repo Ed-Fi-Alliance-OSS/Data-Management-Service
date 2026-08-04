@@ -10,8 +10,8 @@ status: proposed
 ## Outcome
 
 Provide a reproducible cross-provider performance harness and capture the narrow pre-change
-traditional-paging baseline required before E20-S03 modifies the shared page-selection compiler and
-before its downstream stories mutate shared traditional collection execution.
+traditional-paging baseline required before E20-S02 modifies the shared page-selection compiler and
+before its downstream story mutates shared traditional collection execution.
 
 ## Design References
 
@@ -21,10 +21,11 @@ before its downstream stories mutate shared traditional collection execution.
 
 ## Dependencies
 
-- No hard dependency on another E20 story; this story must complete before E20-S03. E20-S00a,
-  E20-S00b, E20-S01, and E20-S02 may proceed in parallel.
-- The baseline is regression insurance over the shared page-selection compiler that E20-S03
-  modifies. E20-S03 keeps traditional page-selection output behaviorally and textually unchanged, so
+- No hard dependency on another E20 story; this story must complete before E20-S02. E20-S00a and
+  E20-S00b may proceed in parallel, and this story should be started alongside them so the gate
+  never idles E20-S02.
+- The baseline is regression insurance over the shared page-selection compiler that E20-S02
+  modifies. E20-S02 keeps traditional page-selection output behaviorally and textually unchanged, so
   the baseline is the evidence that traditional SQL and latency did not move, not a record of an
   expected change. E20-S04's selected-id result set in the collection hydration batch is the first
   change that does alter shared traditional runtime execution.
@@ -37,8 +38,9 @@ before its downstream stories mutate shared traditional collection execution.
   configuration, fixture loader, run manifest, and stable JSON/CSV result format.
 - Capture only the three traditional offset scenarios used by the epic's comparison gates:
   offset 0, a one-page shallow offset, and a recorded deep offset, for page sizes 25 and 500.
-- Use a reproducible fixture large enough to exercise the recorded deep offset without requiring
-  the final gate's million-row, authorized, filtered, sparse-id, or descriptor data sets.
+- Use the epic's single primary fixture, the same one E20-S10 reuses, so baseline and final-gate
+  numbers are directly comparable. Do not provision the authorized, filtered, or descriptor variants
+  here.
 - Record commit/environment identity, p50/p95, command counts, returned rows, reads or buffers,
   database CPU/time, and PostgreSQL and SQL Server plans.
 - Retain machine-readable baseline artifacts for direct comparison by E20-S10.
@@ -47,7 +49,7 @@ before its downstream stories mutate shared traditional collection execution.
 
 - A clean environment can reproduce the same three scenario definitions and machine-readable
   outputs for both providers.
-- Baseline artifacts identify the commit and pinned environment and exist before E20-S03
+- Baseline artifacts identify the commit and pinned environment and exist before E20-S02
   page-selection compiler work begins and, transitively, before E20-S04 changes the shared
   collection hydration batch.
 - Each scenario records page size, offset, p50/p95, command count, returned rows, reads/buffers,
@@ -62,8 +64,9 @@ before its downstream stories mutate shared traditional collection execution.
 
 ## Explicit Exclusions / Not Assigned
 
-- Cursor and partition measurements, the full large-fixture matrix, final threshold evaluation,
-  and index recommendations belong to E20-S10. Bounded runtime telemetry belongs to E20-S12.
+- Cursor and partition measurements, the authorized/filtered/descriptor variants, final threshold
+  evaluation, and index recommendations belong to E20-S10. Bounded runtime telemetry belongs to
+  E20-S12.
 - Functional implementation belongs to E20-S00a through E20-S08b.
 - Production capacity sizing, dashboards, paid APM, and generalized load-test expansion are not
   assigned.

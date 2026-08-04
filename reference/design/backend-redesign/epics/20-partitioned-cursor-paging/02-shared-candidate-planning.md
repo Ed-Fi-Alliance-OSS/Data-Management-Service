@@ -5,31 +5,42 @@ epic: DMS-1348
 status: proposed
 ---
 
-# E20-S02: Shared Candidate Planning
+# E20-S02: Candidate Planning and Provider Cursor SQL
 
 ## Outcome
 
 Extend the existing shared page-document-id plan contract so traditional pages, cursor pages, and
 partition boundaries cannot drift in filtering, change-version behavior, parameter binding, or
-row-level authorization.
+row-level authorization, then compile seek-based cursor keyset selection for PostgreSQL and SQL
+Server without changing traditional paging behavior or introducing offset/count work in cursor mode.
+
+The contract extension and the provider compilers are one story because they are the same code area
+and the same goldens: the parameter roles added to the shared spec have no observable behavior until
+a dialect compiler emits them.
 
 ## Design References
 
 - [`Cursor page selection`](EPIC.md#cursor-page-selection)
 - [`Partition planning`](EPIC.md#partition-planning)
 - [`Consistency Under Writes`](EPIC.md#consistency-under-writes)
+- [`Performance Invariants and Evidence`](EPIC.md#performance-invariants-and-evidence)
 - [`Risks and Guardrails`](EPIC.md#risks-and-guardrails)
 
 ## Dependencies
 
-- Hard dependency: E20-S00a for typed paging/range and backend contract boundaries.
-- E20-S09 may run in parallel. Its captured baseline is a hard prerequisite of E20-S03 before that
-  story modifies the shared page-selection compiler, not of this contract-extension story.
+- Hard dependencies: E20-S00a for typed paging/range and backend contract boundaries, and the
+  completed E20-S09 harness and baseline.
+- The E20-S09 baseline is required because this story modifies the shared page-selection compiler.
+  Traditional page-selection output stays behaviorally and textually unchanged, so the baseline is
+  regression insurance over that shared compiler rather than a record of an expected change: it is
+  the evidence that traditional SQL and latency did not move. E20-S09 has no E20 predecessor and can
+  be delivered while E20-S00a and E20-S00b are in progress, so this gate should not idle the story.
 - External foundations: E08 regular/descriptor query planning, E10 live change-version filters,
   E14 row-level authorization planning, and E15 plan-SQL foundations plus plan-contract and
   deterministic-binding artifacts. This story extends the E15-owned `PageDocumentIdSqlCompiler`
   output and plan contract, whose canonicalized/golden output must stay stable for both dialects.
-- Blocks provider compilation and execution in E20-S03 through E20-S06.
+- Blocks execution in E20-S04 and E20-S06.
+- E20-S10 performs the final performance gate after implementation; it does not create a cycle.
 
 ## Implementation Scope
 
@@ -42,7 +53,12 @@ row-level authorization.
   `ResourceKeyId` behavior.
 - Add an explicit one-row-per-`DocumentId` assertion for every consumer and supported
   authorization strategy.
-- Keep provider-neutral candidate semantics separate from paging- and partition-specific SQL.
+- Compile PostgreSQL range predicates plus `LIMIT @pageSize` with no offset/count SQL.
+- Compile SQL Server range predicates plus `TOP (@pageSize)` with no `OFFSET`/count SQL.
+- Preserve existing traditional PostgreSQL `LIMIT/OFFSET` and SQL Server `OFFSET/FETCH`
+  page-selection output unchanged. Collection hydration-batch result-set changes belong to E20-S04
+  and are outside this textual gate.
+- Supply compiled cursor plans to the E20-S04 execution story and the E20-S06 partition story.
 
 ## Acceptance Evidence and Test Expectations
 
@@ -54,17 +70,26 @@ row-level authorization.
 - Authorization planner tests cover no-further, relationship, ownership, namespace, and view-based
   strategies where supported and detect duplicate candidate ids.
 - Normalized plan-contract tests lock deterministic parameter ordering.
-- Existing traditional page-selection SQL goldens remain unchanged; E20-S03 owns comparison with
-  the E20-S09 baseline before provider SQL changes.
+- Provider SQL-golden tests assert exact range predicates, ordering, size syntax, and parameter
+  roles.
+- Negative assertions prove cursor plans contain no offset, row-number skip, or total-count SQL.
+- Existing traditional page-selection SQL goldens remain unchanged and demonstrate no semantic
+  regression; traditional latency is compared against the E20-S09 baseline artifacts before this
+  story is accepted.
+- Edge cases cover inverted and extreme `Int64` ranges and page sizes 0, 1, and maximum.
+- Focused PostgreSQL and real SQL Server integration probes prove the generated SQL executes.
 
 ## Cross-Provider and Authorization Responsibilities
 
-- Candidate semantics and parameter roles are shared by PostgreSQL and SQL Server.
+- Candidate semantics and parameter roles are shared by PostgreSQL and SQL Server, and both
+  providers return the same ordered ids for equivalently seeded data.
 - Authorization is compiled into the candidate relation before any cursor range, row numbering,
   count, or partition sizing is applied.
+- Provider compilers must place range predicates alongside, not instead of, all candidate
+  authorization predicates.
 
 ## Explicit Exclusions / Not Assigned
 
-- PostgreSQL/SQL Server cursor syntax belongs to E20-S03.
-- Hydration, headers, and descriptor materialization belong to E20-S04 and E20-S05.
+- Keyset hydration/output, descriptor boundary propagation, and HTTP headers belong to E20-S04.
 - Partition window SQL and endpoint execution belong to E20-S06.
+- Full plan and latency acceptance belongs to E20-S10.

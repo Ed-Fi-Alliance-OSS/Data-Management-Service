@@ -20,8 +20,8 @@ planning without coupling instrumentation delivery to the large-fixture performa
 
 ## Dependencies
 
-- Hard dependencies: E20-S04, E20-S05, and E20-S06 for the completed regular-resource,
-  descriptor, and partition execution paths being instrumented.
+- Hard dependencies: E20-S04 for the completed regular-resource and descriptor execution paths and
+  E20-S06 for the partition execution path being instrumented.
 - Existing E12 observability conventions are reusable inputs. E20-S10 measurement and threshold
   evaluation are independent and do not block this production work.
 
@@ -58,7 +58,7 @@ planning without coupling instrumentation delivery to the large-fixture performa
 
 ## Explicit Exclusions / Not Assigned
 
-- Large-fixture provisioning, benchmark iteration, plan capture, thresholds, and regression
-  reporting belong to E20-S10.
+- Fixture provisioning, benchmark iteration, plan capture, thresholds, and regression reporting
+  belong to E20-S10.
 - Dashboards, alert thresholds, paid APM integration, production capacity sizing, and raw-query
   logging are not assigned.

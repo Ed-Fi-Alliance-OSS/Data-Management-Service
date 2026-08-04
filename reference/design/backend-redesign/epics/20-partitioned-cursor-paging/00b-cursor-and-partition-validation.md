@@ -5,28 +5,35 @@ epic: DMS-1348
 status: proposed
 ---
 
-# E20-S00b: Cursor and Partition Validation
+# E20-S00b: Request Validation and Typed Paths
 
 ## Outcome
 
-Implement ODS-precedence single-error cursor validation, the separately phase-gated partition
-validator, the shared parameter-validation ProblemDetails shell, and operation-scoped cursor
-parameter recognition. The epic remains the source of truth for exact messages, phase gating, and
-within-phase tie-breakers.
+Own the cursor and partition request boundary end to end: ODS-precedence single-error cursor
+validation, the separately phase-gated partition validator, the shared parameter-validation
+ProblemDetails shell, operation-scoped cursor parameter recognition, typed collection/by-id/partition
+path operations, and parameter canonicalization. The epic remains the source of truth for exact
+messages, phase gating, and within-phase tie-breakers.
+
+Validation and canonicalization are one story because phase selection turns on query-key presence,
+and which keys are present is exactly what canonicalization decides. Splitting them would let one
+story assert a presence semantic the other owns.
 
 ## Design References
 
 - [`Cursor validation and ProblemDetails`](EPIC.md#cursor-validation-and-problemdetails)
 - [`Worked precedence examples`](EPIC.md#worked-precedence-examples)
 - [`/partitions`](EPIC.md#partitions)
+- [`Application Boundaries`](EPIC.md#application-boundaries)
 - [`Approved Intentional ODS Differences`](EPIC.md#approved-intentional-ods-differences)
 
 ## Dependencies
 
 - Hard dependency: E20-S00a for the typed paging/range contracts and the token codec that phase 0
   consumes.
-- This story blocks E20-S01 for reserved parameter names and the validation boundary, E20-S06 for
-  partition validation, and E20-S11 for the fixed validation precedence it compares.
+- This story blocks E20-S04 for the canonicalized cursor parameters that GET-many consumes and
+  E20-S06 for partition validation and the typed partition route.
+- E20-S06 owns activation of the dedicated partition pipeline and endpoint behavior.
 - Existing E08 query contracts and E10 live change-version behavior are compatibility inputs.
 
 ## Implementation Scope
@@ -42,6 +49,16 @@ within-phase tie-breakers.
   leaving traditional-only `limit`/`offset` failures on their existing generic bad-request response.
 - Keep cursor parameter recognition operation-scoped so `/deletes` and `/keyChanges` retain their
   existing invalid-query-field HTTP 400 behavior instead of globally reserving the names.
+- Add typed `ResourcePathOperation` collection, by-id, and partition cases, and update path parsing,
+  request state, route semantics, logging classification, and API dispatch to consume them.
+- Canonicalize `pageToken`, `pageSize`, and partition `number` at the HTTP boundary, preserving
+  last-value-wins behavior across repeated parameters including case variants.
+- Preserve the existing invalid-UUID result for unknown third segments and unmatched behavior for
+  additional segments.
+- Until E20-S06 activates the partition pipeline, dispatch
+  `/{project}/{resource}/partitions` through the existing invalid-UUID HTTP 400 behavior, including
+  `"validationErrors":{"$.id":["The value 'partitions' is not valid."]}`; do not return an
+  incomplete partition response.
 
 ## Acceptance Evidence and Test Expectations
 
@@ -56,18 +73,27 @@ within-phase tie-breakers.
   existing case-sensitive matching of `limit`, `offset`, and `totalCount` is unchanged.
 - `/deletes` and `/keyChanges` tests prove `pageToken` and `pageSize` are rejected rather than
   ignored.
+- Unit tests cover every typed path case, unknown child segments, extra segments, route qualifiers,
+  and tenant-prefixed paths.
+- Frontend tests prove repeated exact-name and case-variant query parameters choose the last value
+  in request order, and that the chosen value is what drives validator phase selection.
+- Regression tests cover existing GET-many, GET-by-id, write, delete, and tracked-change routing.
+- Before E20-S06, `/partitions` regression coverage locks the existing invalid-UUID HTTP 400; no
+  incomplete endpoint is externally exposed.
 
 ## Cross-Provider and Authorization Responsibilities
 
-- Validation is provider-neutral and contains no PostgreSQL or SQL Server syntax.
+- Validation and routing are provider-neutral and contain no PostgreSQL or SQL Server syntax.
 - Validation must not make authorization decisions. A decoded range is not an access grant, and
   resource and row authorization remain independent inputs reapplied by later stories.
+- Typed dispatch must preserve the existing authentication, resource-action authorization, profile,
+  tenant, and datastore-resolution boundaries for collection and by-id operations.
 
 ## Explicit Exclusions / Not Assigned
 
 - Typed paging/range contracts, the token codec, result-boundary shapes, and configuration belong to
   E20-S00a.
-- Frontend path classification and repeated-parameter canonicalization belong to E20-S01.
-- Candidate planning and SQL compilation belong to E20-S02, E20-S03, and E20-S06.
-- Response-header execution belongs to E20-S04 and E20-S05.
-- OpenAPI publication belongs to E20-S07, and ODS-side comparison capture belongs to E20-S11.
+- Candidate planning and SQL compilation belong to E20-S02 and E20-S06.
+- Response-header execution belongs to E20-S04.
+- Partition response generation belongs to E20-S06.
+- OpenAPI publication belongs to E20-S07, and the static ODS-comparison cases belong to E20-S08b.
