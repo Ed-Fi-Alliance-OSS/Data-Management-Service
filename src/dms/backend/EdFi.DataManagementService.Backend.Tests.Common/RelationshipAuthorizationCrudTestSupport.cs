@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Security;
+
 namespace EdFi.DataManagementService.Backend.Tests.Common;
 
 public sealed record RelationshipAuthorizationCrudScenario(
@@ -22,10 +24,23 @@ public static class RelationshipAuthorizationCrudTestSupport
     public const string StudentAcademicRecordResourceName = "AuthorizationStudentAcademicRecordResource";
     public const string StudentSchoolResourceName = "AuthorizationStudentSchoolResource";
 
+    /// <summary>
+    /// The synthetic resource whose root table carries a nullable <c>Namespace</c> securable column plus a
+    /// root EdOrg securable column, so one resource covers NamespaceBased-only and composed
+    /// NamespaceBased/relationship scenarios.
+    /// </summary>
+    public const string NamespaceResourceName = "AuthorizationNamespaceResource";
+
     public const long ClaimEducationOrganizationId = 900;
     public const long AuthorizedSchoolId = 100;
     public const long SecondAuthorizedSchoolId = 200;
     public const long UnauthorizedSchoolId = 300;
+
+    // Prefixes differ by more than case so assertions never depend on the dialect's Namespace column
+    // collation (SQL Server's default LIKE is case-insensitive, PostgreSQL's is case-sensitive).
+    public const string AuthorizedNamespacePrefix = "uri://ns1.org/";
+    public const string SecondAuthorizedNamespacePrefix = "uri://ns2.org/";
+    public const string UnauthorizedNamespacePrefix = "uri://other.example/";
 
     public const string RelationshipsWithEdOrgsOnly = "RelationshipsWithEdOrgsOnly";
     public const string RelationshipsWithEdOrgsOnlyInverted = "RelationshipsWithEdOrgsOnlyInverted";
@@ -36,6 +51,7 @@ public static class RelationshipAuthorizationCrudTestSupport
         "RelationshipsWithStudentsOnlyThroughResponsibility";
     public const string NoFurtherAuthorizationRequired = "NoFurtherAuthorizationRequired";
     public const string OwnershipBased = "OwnershipBased";
+    public const string NamespaceBased = AuthorizationStrategyNameConstants.NamespaceBased;
 
     public static IReadOnlyList<string> EdOrgOnlyStrategyNames { get; } = [RelationshipsWithEdOrgsOnly];
 
@@ -63,6 +79,17 @@ public static class RelationshipAuthorizationCrudTestSupport
 
     public static IReadOnlyList<string> EdOrgOnlyPlusKnownUnsupportedStrategyNames { get; } =
     [RelationshipsWithEdOrgsOnly, OwnershipBased];
+
+    public static IReadOnlyList<string> NamespaceBasedStrategyNames { get; } = [NamespaceBased];
+
+    /// <summary>
+    /// NamespaceBased AND-composed around the relationship OR group, in the order the planner splits them.
+    /// </summary>
+    public static IReadOnlyList<string> NamespaceBasedPlusEdOrgOnlyStrategyNames { get; } =
+    [NamespaceBased, RelationshipsWithEdOrgsOnly];
+
+    public static IReadOnlyList<string> ConfiguredNamespacePrefixes { get; } =
+    [AuthorizedNamespacePrefix, SecondAuthorizedNamespacePrefix];
 
     public static RelationshipAuthorizationCrudScenario SupportedEdOrgOnlyScenario { get; } =
         new("supported-edorg-only", RootAndChildEdOrgResourceName, EdOrgOnlyStrategyNames);

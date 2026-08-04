@@ -34,6 +34,14 @@ internal sealed class MssqlRelationalQueryExecutionRecorder
     public List<PageKeysetSpec> HydrationKeysets { get; } = [];
     public List<long> PageMaterializedDocumentIds { get; } = [];
     public Func<CancellationToken, Task>? BeforeNextHydrationAsync { get; set; }
+
+    /// <summary>
+    /// One-shot callback invoked immediately after the production GET-by-id target lookup resolves, used to
+    /// open the window a stored authorization check must tolerate (for example a target deleted between the
+    /// unlocked lookup and the check). Only observed when a fixture opts into
+    /// <see cref="InterceptingRelationalReadTargetLookupService"/>.
+    /// </summary>
+    public Func<CancellationToken, Task>? AfterNextTargetLookupAsync { get; set; }
     public int SingleDocumentMaterializationCallCount { get; private set; }
     public int PageMaterializationCallCount { get; private set; }
 
@@ -69,6 +77,19 @@ internal sealed class MssqlRelationalQueryExecutionRecorder
 
         BeforeNextHydrationAsync = null;
         await beforeHydrationAsync(cancellationToken);
+    }
+
+    public async Task InvokeAfterTargetLookupAsync(CancellationToken cancellationToken)
+    {
+        var afterTargetLookupAsync = AfterNextTargetLookupAsync;
+
+        if (afterTargetLookupAsync is null)
+        {
+            return;
+        }
+
+        AfterNextTargetLookupAsync = null;
+        await afterTargetLookupAsync(cancellationToken);
     }
 }
 
@@ -157,6 +178,40 @@ internal sealed class ThrowingRelationalReadTargetLookupService : IRelationalRea
         throw new AssertionException(
             "Relational query execution should not route through get-by-id read target lookup."
         );
+    }
+}
+
+/// <summary>
+/// Runs the production GET-by-id target lookup and then invokes the recorder's one-shot
+/// <see cref="MssqlRelationalQueryExecutionRecorder.AfterNextTargetLookupAsync"/> callback, so a test can
+/// mutate or delete the resolved target in the window between the unlocked lookup and the stored
+/// authorization check. With no callback set it behaves exactly like the production service.
+/// </summary>
+internal sealed class InterceptingRelationalReadTargetLookupService(
+    IRelationalCommandExecutor commandExecutor,
+    MssqlRelationalQueryExecutionRecorder recorder
+) : IRelationalReadTargetLookupService
+{
+    private readonly RelationalReadTargetLookupService _inner = new(
+        commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor))
+    );
+    private readonly MssqlRelationalQueryExecutionRecorder _recorder =
+        recorder ?? throw new ArgumentNullException(nameof(recorder));
+
+    public async Task<RelationalReadTargetLookupResult> ResolveForGetByIdAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var lookupResult = await _inner
+            .ResolveForGetByIdAsync(mappingSet, resource, documentUuid, cancellationToken)
+            .ConfigureAwait(false);
+
+        await _recorder.InvokeAfterTargetLookupAsync(cancellationToken);
+
+        return lookupResult;
     }
 }
 

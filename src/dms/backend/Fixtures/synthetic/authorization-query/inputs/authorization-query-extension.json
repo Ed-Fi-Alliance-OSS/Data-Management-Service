@@ -5,6 +5,7 @@
     "caseInsensitiveEndpointNameMapping": {
       "authorizationandresources": "authorizationAndResources",
       "authorizationchildonlyresources": "authorizationChildOnlyResources",
+      "authorizationnamespaceresources": "authorizationNamespaceResources",
       "authorizationnullableresources": "authorizationNullableResources",
       "authorizationrootchildresources": "authorizationRootChildResources",
       "authorizationstudentacademicrecordresources": "authorizationStudentAcademicRecordResources",
@@ -22,6 +23,7 @@
     "resourceNameMapping": {
       "AuthorizationAndResource": "authorizationAndResources",
       "AuthorizationChildOnlyResource": "authorizationChildOnlyResources",
+      "AuthorizationNamespaceResource": "authorizationNamespaceResources",
       "AuthorizationNullableResource": "authorizationNullableResources",
       "AuthorizationRootChildResource": "authorizationRootChildResources",
       "AuthorizationStudentAcademicRecordResource": "authorizationStudentAcademicRecordResources",
@@ -597,6 +599,198 @@
             }
           ],
           "Namespace": [],
+          "Staff": [],
+          "Student": []
+        }
+      },
+      "authorizationNamespaceResources": {
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+          {
+            "paths": [
+              "$.classPeriods[*].classPeriodReference.classPeriodName",
+              "$.classPeriods[*].classPeriodReference.schoolId"
+            ]
+          }
+        ],
+        "authorizationPathways": [],
+        "booleanJsonPaths": [],
+        "commonExtensionOverrides": [],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
+        "documentPathsMapping": {
+          "AuthorizationNamespaceId": {
+            "isPartOfIdentity": true,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.authorizationNamespaceId",
+            "type": "number"
+          },
+          "ClassPeriod": {
+            "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isReference": true,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.classPeriodName",
+                "referenceJsonPath": "$.classPeriods[*].classPeriodReference.classPeriodName",
+                "type": "string"
+              },
+              {
+                "identityJsonPath": "$.schoolReference.schoolId",
+                "referenceJsonPath": "$.classPeriods[*].classPeriodReference.schoolId",
+                "type": "number"
+              }
+            ],
+            "resourceName": "ClassPeriod"
+          },
+          "Name": {
+            "isPartOfIdentity": false,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.name",
+            "type": "string"
+          },
+          "Namespace": {
+            "isPartOfIdentity": false,
+            "isReference": false,
+            "isRequired": false,
+            "path": "$.namespace",
+            "type": "string"
+          },
+          "School": {
+            "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isReference": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.schoolId",
+                "referenceJsonPath": "$.schoolReference.schoolId",
+                "type": "number"
+              }
+            ],
+            "resourceName": "School"
+          }
+        },
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": ["$.authorizationNamespaceId"],
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSchoolYearEnumeration": false,
+        "isSubclass": false,
+        "jsonSchemaForInsert": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Synthetic authorization resource with an optional root Namespace securable element.",
+          "properties": {
+            "authorizationNamespaceId": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "classPeriods": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "classPeriodReference": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "classPeriodName": {
+                        "maxLength": 60,
+                        "type": "string"
+                      },
+                      "schoolId": {
+                        "format": "int64",
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["classPeriodName", "schoolId"],
+                    "type": "object"
+                  }
+                },
+                "required": ["classPeriodReference"],
+                "type": "object"
+              },
+              "minItems": 0,
+              "type": "array",
+              "uniqueItems": false
+            },
+            "name": {
+              "maxLength": 75,
+              "type": "string"
+            },
+            "namespace": {
+              "maxLength": 255,
+              "type": "string"
+            },
+            "schoolReference": {
+              "additionalProperties": false,
+              "properties": {
+                "schoolId": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": ["schoolId"],
+              "type": "object"
+            }
+          },
+          "required": ["authorizationNamespaceId", "name", "schoolReference"],
+          "title": "Authz.AuthorizationNamespaceResource",
+          "type": "object"
+        },
+        "numericJsonPaths": [
+          "$.authorizationNamespaceId",
+          "$.classPeriods[*].classPeriodReference.schoolId",
+          "$.schoolReference.schoolId"
+        ],
+        "queryFieldMapping": {
+          "authorizationNamespaceId": [
+            {
+              "path": "$.authorizationNamespaceId",
+              "type": "number"
+            }
+          ],
+          "id": [
+            {
+              "path": "$.id",
+              "type": "string"
+            }
+          ],
+          "name": [
+            {
+              "path": "$.name",
+              "type": "string"
+            }
+          ],
+          "namespace": [
+            {
+              "path": "$.namespace",
+              "type": "string"
+            }
+          ],
+          "schoolId": [
+            {
+              "path": "$.schoolReference.schoolId",
+              "type": "number"
+            }
+          ]
+        },
+        "resourceName": "AuthorizationNamespaceResource",
+        "securableElements": {
+          "Contact": [],
+          "EducationOrganization": [
+            {
+              "jsonPath": "$.schoolReference.schoolId",
+              "metaEdName": "SchoolId"
+            }
+          ],
+          "Namespace": ["$.namespace"],
           "Staff": [],
           "Student": []
         }
