@@ -5081,6 +5081,119 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
+        It "reaches the MSSQL authority for an admin: target naming this machine on the DAC port: <Spelling>" -ForEach @(
+            @{ Spelling = 'exact machine name as the provider reports it'; UseCaseVariant = $false }
+            @{ Spelling = 'a case variant, since the provider compares CurrentCultureIgnoreCase'; UseCaseVariant = $true }
+        ) {
+            # InferLocalServerName localizes Environment.MachineName to the local server for the Admin
+            # protocol only. With MSSQL_PORT=1434 - the DAC port a portless admin: endpoint resolves to, and
+            # a port mssql.yml permits - this names the published Compose listener, so the authority must be
+            # consulted. Read as an ordinary hostname it looked external and the guard was skipped.
+            $machineName = [Environment]::MachineName
+            $authoredHost = $machineName
+            if ($UseCaseVariant) {
+                $authoredHost =
+                    if ($machineName -cmatch '[A-Z]') { $machineName.ToLowerInvariant() }
+                    elseif ($machineName -cmatch '[a-z]') { $machineName.ToUpperInvariant() }
+                    else { $machineName }
+
+                if ([string]::Equals($authoredHost, $machineName, [System.StringComparison]::Ordinal)) {
+                    Set-ItResult -Skipped -Because "this machine's name carries no cased letters, so no case variant exists to distinguish"
+                    return
+                }
+            }
+
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:provisionAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:provisionAuthorityCalled = $true
+                    throw "CMS database topology mismatch: SQL Server reports that the datastore name resolved from '$RegisteredDatastoreDatabaseSourceKey' denotes the SAME physical database as the dedicated 'edfi_configurationservice'."
+                }
+                function Get-CmsToken { return "token" }
+                # $authoredHost is read from THIS scope at call time, the way the sibling guard tests read
+                # their own row variables. A $script:-scoped variable would not resolve: the caller is the
+                # dot-sourced provisioning script, whose script scope is not this file's.
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 738
+                            name = "AdminMachineName"
+                            connectionString = "Server=admin:$authoredHost;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardMssqlEnvFile -MssqlPort "1434") `
+                    -DataStoreId @(738) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase } |
+                    Should -Throw "*SAME physical database*"
+
+                $script:provisionAuthorityCalled |
+                    Should -BeTrue -Because "the provider localizes this machine's name for admin:, so the target is the published listener"
+                Test-Path -LiteralPath $capturePath |
+                    Should -BeFalse -Because "the refusal must precede any SchemaTools invocation, so no DDL is attempted"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "does not grant the machine-name localization to '<Case>'" -ForEach @(
+            # Each row is the machine-name form minus exactly one of the conditions the provider requires.
+            @{ Case = 'admin: on the DAC port, but a DIFFERENT machine'; Protocol = 'admin:'; UseMachineName = $false; MssqlPort = '1434' }
+            @{ Case = 'admin: on this machine, but a port that is not the DAC port'; Protocol = 'admin:'; UseMachineName = $true; MssqlPort = '15433' }
+            @{ Case = 'this machine over DEFAULT tcp, which the provider never localizes'; Protocol = ''; UseMachineName = $true; MssqlPort = '1434' }
+            @{ Case = 'this machine behind an explicit tcp:, likewise not localized'; Protocol = 'tcp:'; UseMachineName = $true; MssqlPort = '1434' }
+        ) {
+            $authoredHost = if ($UseMachineName) { [Environment]::MachineName } else { "some-other-machine" }
+            # The non-admin rows must carry an explicit port, because default TCP has no provider default to
+            # compare - so the ONLY thing separating them from the row above is the protocol.
+            $server =
+                if ($Protocol -eq 'admin:') { "admin:$authoredHost" }
+                else { "$Protocol$authoredHost,$MssqlPort" }
+
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:provisionAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:provisionAuthorityCalled = $true
+                    throw "the local instance must not be asked about a target it does not publish"
+                }
+                function Get-CmsToken { return "token" }
+                # $server is read from THIS scope at call time. A $script:-scoped variable would not resolve:
+                # the caller is the dot-sourced provisioning script, whose script scope is not this file's.
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 739
+                            name = "NotLocalized"
+                            connectionString = "Server=$server;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardMssqlEnvFile -MssqlPort $MssqlPort) `
+                    -DataStoreId @(739) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase *>&1 | Out-Null
+
+                $script:provisionAuthorityCalled |
+                    Should -BeFalse -Because "the provider localizes the machine name for admin: on the DAC port only"
+                @(Get-Content -LiteralPath $capturePath) | Should -Contain "mssql"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
         It "leaves a no-explicit-port named instance on the Docker-internal host untranslated and external" {
             # Sharing one grammar made the host of 'dms-mssql\SQLEXPRESS' parse as 'dms-mssql', which
             # the Docker-internal translation would otherwise have rewritten to the published host-side
@@ -5392,14 +5505,20 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             # The loop's mechanism, pinned structurally: every previous round re-derived the protocol prefix
             # at whichever boundary the finding named, and the derivations drifted.
             #
-            # The parser owns the grammar. Exactly one adopter legitimately needs the protocol too:
-            # translation REWRITES a target to the ordinary published listener, and admin: resolves to the
-            # DAC port instead, so translating it would silently re-point a DAC target. That adopter reads
-            # the parser's REPORTED Protocol field - it does not re-parse the text - which is the whole
-            # point of returning structured results. Pinning the exact set still forbids a THIRD owner.
+            # The parser owns the grammar. Two adopters legitimately need to know WHICH protocol it resolved,
+            # and both read the parser's REPORTED Protocol field rather than re-parsing text - which is the
+            # whole point of returning structured results:
+            #
+            #   - translation REWRITES a target to the ordinary published listener, and admin: resolves to
+            #     the DAC port instead, so translating it would silently re-point a DAC target;
+            #   - local-target classification applies the provider's admin-ONLY machine-name localization,
+            #     which InferLocalServerName performs for no other protocol.
+            #
+            # Pinning the exact set still forbids any FURTHER owner, which is how the readings diverged.
             $expectedOwners = @(
                 "Get-SqlServerDataSourceEndpoint",
-                "Convert-MssqlCmsConnectionStringToHostSideTarget"
+                "Convert-MssqlCmsConnectionStringToHostSideTarget",
+                "Test-ProvisionTargetIsLocalComposeDatabase"
             )
 
             $owners = @(
