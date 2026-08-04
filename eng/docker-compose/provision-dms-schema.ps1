@@ -950,8 +950,17 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
     # suffix with no explicit port is a port only SSRP could supply - rewriting either to
     # "127.0.0.1,<published-port>" would turn an endpoint this phase cannot resolve INTO the Compose
     # listener. So "dms-mssql\SQLEXPRESS" is left exactly as authored and stays external.
+    #
+    # The protocol condition is deliberately NARROWER than IsTcp. admin: shares the TCP transport but
+    # resolves to the DAC port, so substituting the ordinary published endpoint for it would silently
+    # re-point a DAC target at the normal listener. Only the default and explicit-tcp spellings - the ones
+    # this rewrite exists for - are translated; admin: stays exactly as authored and is judged on its own
+    # effective port by the classifier.
+    $translatableProtocol = [string]::IsNullOrEmpty($endpoint.Protocol) -or $endpoint.Protocol -eq "tcp"
+
     $effectiveServer = $server
     if ($endpoint.IsTcp -and
+        $translatableProtocol -and
         (-not $endpoint.RequiresInstanceResolution) -and
         $endpoint.HostName.Equals("dms-mssql", [System.StringComparison]::OrdinalIgnoreCase)) {
         $effectiveServer = (Get-LocalComposeDatabaseHostSideEndpoint -Dialect "mssql" -EnvValues $EnvValues).Host

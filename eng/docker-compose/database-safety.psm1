@@ -881,10 +881,18 @@ function Get-SqlServerDataSourceEndpoint {
         can never equal a local token or a composed service alias. It is nonmatching because of what its
         host name is, not because this parser claims lpc is a recognized protocol.
 
-        No protocol is SqlClient's default TCP path, so IsTcp covers both. np and admin (DAC) are
-        recognized but are NOT the TCP listener these environments publish, so they report IsTcp false
-        and carry no endpoint; named pipes, DAC, LocalDB and named-instance discovery are each a distinct
-        grammar this phase has no way to verify.
+        No protocol is SqlClient's default TCP path, so IsTcp covers both. admin (the DAC prefix)
+        dispatches through CreateTcpHandle, so it is ALSO the TCP transport - only its default port
+        differs: a portless, non-instance admin endpoint resolves to DAC port 1434, reported in Port while
+        HasExplicitPort stays false because the provider supplied it rather than the caller authoring it.
+        That matters here because mssql.yml permits MSSQL_PORT=1434, so an admin target can reach the
+        published Compose listener; reporting it as non-TCP classified it external and skipped the
+        separate-topology authority. SqlClient accepts no comma parameters on admin, so an authored port
+        there is refused rather than supported. np (named pipes) remains a genuinely different transport:
+        IsTcp false, no endpoint. LocalDB and named-instance discovery stay unverifiable here.
+
+        A '/' anywhere in the post-protocol text is rejected before any endpoint is inferred, matching the
+        provider, so a string it refuses cannot be reported as a plausible host and port.
 
         ENDPOINT SPLIT. InferConnectionDetails splits the endpoint on BOTH ',' and '\' and selects by
         POSITION among the resulting tokens. Token 0 is the server. When a comma is present the port is
@@ -920,8 +928,14 @@ function Get-SqlServerDataSourceEndpoint {
 
     .OUTPUTS
         A [pscustomobject] carrying RawValue, Protocol ("" when none was specified), IsTcp, HostName,
-        HostNameWasInferred, Port ("" when no explicit comma port), HasExplicitPort, InstanceName ("" when
-        none) and RequiresInstanceResolution - enough for every caller to decide without reparsing text.
+        HostNameWasInferred, Port (the effective port: the authored comma port, or the protocol's provider
+        default where one applies, "" when neither), HasExplicitPort (whether the CALLER authored the port,
+        which is not the same as Port being nonblank), InstanceName ("" when none) and
+        RequiresInstanceResolution - enough for every caller to decide without reparsing text.
+
+        Throws a fixed, credential-free diagnostic for the data sources SqlClient rejects outright: a '/'
+        in the post-protocol text, an empty explicit port, an empty instance name, or a comma parameter on
+        the admin prefix.
     #>
     param(
         [string]
@@ -930,9 +944,9 @@ function Get-SqlServerDataSourceEndpoint {
 
     $text = ([string]$DataSource).Trim()
 
-    # FIXED text, and deliberately says nothing about the value: a data source can carry credentials in
-    # adjacent keys and this message travels into pre-start diagnostics.
-    $invalidDataSourceMessage = "Invalid SQL Server data source: the endpoint carries an empty explicit port or an empty instance name, which Microsoft.Data.SqlClient rejects rather than treating as omitted. The value is withheld."
+    # FIXED text covering every rejection below, and deliberately says nothing about the value: a data
+    # source can carry credentials in adjacent keys and this message travels into pre-start diagnostics.
+    $invalidDataSourceMessage = "Invalid SQL Server data source: the endpoint is one Microsoft.Data.SqlClient rejects outright - it contains a forward slash, or carries an empty explicit port or an empty instance name, none of which the provider treats as omitted. The value is withheld."
 
     # PopulateProtocol's recognized set. Anything else is not a protocol, so the colon stays with the host.
     $recognizedProtocols = @("tcp", "np", "admin")
@@ -948,11 +962,22 @@ function Get-SqlServerDataSourceEndpoint {
         }
     }
 
-    $isTcp = [string]::IsNullOrEmpty($protocol) -or $protocol -eq "tcp"
+    # SqlClient rejects a post-protocol data source containing '/' before it infers any endpoint from it, so
+    # this precedes both the non-TCP return and the split. Accepting it reported a plausible host and port
+    # for a string the provider refuses, which let the CMS preflight pass a value that cannot connect.
+    if ($endpointText.Contains('/')) {
+        throw $invalidDataSourceMessage
+    }
+
+    # Admin (the DAC prefix) dispatches through CreateTcpHandle, so it IS the TCP transport for endpoint
+    # purposes - only its default port differs. Treating it as non-TCP classified an admin target as
+    # external and skipped the separate-topology authority, even though mssql.yml permits MSSQL_PORT=1434
+    # and the host's published listener then answers exactly the port admin resolves to.
+    $isTcp = [string]::IsNullOrEmpty($protocol) -or $protocol -eq "tcp" -or $protocol -eq "admin"
 
     if (-not $isTcp) {
-        # np / admin: a recognized protocol that is not the published TCP listener. The whole value is
-        # reported as the host so no caller can mistake part of it for a reachable endpoint.
+        # np: named pipes is a genuinely different transport. The whole value is reported as the host so no
+        # caller can mistake part of it for a reachable TCP endpoint.
         return [pscustomobject]@{
             RawValue                   = $text
             Protocol                   = $protocol
@@ -986,6 +1011,13 @@ function Get-SqlServerDataSourceEndpoint {
     $hasExplicitPort = $commaIndex -ge 0
     $portText = ""
     if ($hasExplicitPort) {
+        # SqlClient does not accept comma parameters on the admin prefix, so an authored port there is a
+        # rejected data source rather than a DAC endpoint on that port. Refused instead of quietly
+        # supporting a form the provider does not.
+        if ($protocol -eq "admin") {
+            throw $invalidDataSourceMessage
+        }
+
         $portTokenIndex = if ($backslashIndex -ge 0 -and $commaIndex -gt $backslashIndex) { 2 } else { 1 }
         if ($portTokenIndex -lt $endpointTokens.Count) {
             $portText = $endpointTokens[$portTokenIndex]
@@ -1023,6 +1055,16 @@ function Get-SqlServerDataSourceEndpoint {
         $hostNameWasInferred = $true
     }
 
+    $requiresInstanceResolution =
+        ((-not [string]::IsNullOrEmpty($instanceName)) -and (-not $hasExplicitPort))
+
+    # A portless admin: endpoint resolves to the DAC port, which the provider supplies rather than the
+    # caller authoring it - so the port is reported while HasExplicitPort stays false. An admin endpoint
+    # naming an INSTANCE still needs SSRP, so it gets no default and remains unresolved.
+    if ($protocol -eq "admin" -and (-not $hasExplicitPort) -and (-not $requiresInstanceResolution)) {
+        $portText = "1434"
+    }
+
     return [pscustomobject]@{
         RawValue                   = $text
         Protocol                   = $protocol
@@ -1032,7 +1074,7 @@ function Get-SqlServerDataSourceEndpoint {
         Port                       = $portText
         HasExplicitPort            = $hasExplicitPort
         InstanceName               = $instanceName
-        RequiresInstanceResolution = ((-not [string]::IsNullOrEmpty($instanceName)) -and (-not $hasExplicitPort))
+        RequiresInstanceResolution = $requiresInstanceResolution
     }
 }
 
@@ -1141,9 +1183,14 @@ function Get-EndpointFromResolvedConnectionString {
                             }
                         }
                         else {
+                            # Any port the parser resolved is reported, whether the caller AUTHORED it or the
+                            # provider supplied it: a portless admin: endpoint resolves to the DAC port, and
+                            # gating on HasExplicitPort alone reported it as omitted, so this caller's
+                            # absent-port default replaced 1434 with 1433. An ordinary portless TCP endpoint
+                            # still has no parser port and keeps using that default.
                             [pscustomobject]@{
                                 Host = $parsed.HostName
-                                Port = if ($parsed.HasExplicitPort) { $parsed.Port } else { $null }
+                                Port = if ([string]::IsNullOrWhiteSpace($parsed.Port)) { $null } else { $parsed.Port }
                             }
                         }
                     }
