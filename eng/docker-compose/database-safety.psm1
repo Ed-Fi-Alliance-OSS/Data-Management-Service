@@ -886,12 +886,18 @@ function Get-SqlServerDataSourceEndpoint {
         and carry no endpoint; named pipes, DAC, LocalDB and named-instance discovery are each a distinct
         grammar this phase has no way to verify.
 
-        ENDPOINT SPLIT. The server token ends at the first ',' or '\', whichever comes first. When a
-        comma is present the port token starts after it and ends at the next ',' or '\' - ONE rule that
-        covers every ordering rather than a branch per spelling: "host\inst,1433" and "host,1433\inst"
-        name the same endpoint, and "host,1433,ignored" uses 1433 because SqlClient ignores later comma
-        tokens. With an explicit comma port the instance suffix is irrelevant, so it does not require
-        SSRP resolution.
+        ENDPOINT SPLIT. InferConnectionDetails splits the endpoint on BOTH ',' and '\' and selects by
+        POSITION among the resulting tokens. Token 0 is the server. When a comma is present the port is
+        token 2 if a backslash exists and the comma follows it, and token 1 otherwise. So "host\inst,1433"
+        and "host,1433\inst" name the same endpoint, "host,1433,ignored" uses 1433, and
+        "host\inst\15433,9999" uses 15433 - the token BEFORE the comma, not the text after it. With an
+        explicit comma port the instance suffix is irrelevant, so it does not require SSRP resolution.
+
+        INVALID ENDPOINTS THROW. An empty explicit port ("host,") and an empty instance token ("host\")
+        are not omitted forms - SqlClient rejects them. They are reported as a parse failure with a fixed,
+        credential-free message rather than as blank fields, because every caller defaults an absent port
+        to the engine's expected one; blank fields let a value the provider refuses pass as a valid local
+        endpoint. A genuinely omitted port ("host") stays valid and keeps the caller's default.
 
         WITHOUT an explicit comma port an instance suffix DOES require SSRP, which nothing here can
         resolve. That is reported as RequiresInstanceResolution rather than decided, so callers keep
@@ -923,6 +929,10 @@ function Get-SqlServerDataSourceEndpoint {
     )
 
     $text = ([string]$DataSource).Trim()
+
+    # FIXED text, and deliberately says nothing about the value: a data source can carry credentials in
+    # adjacent keys and this message travels into pre-start diagnostics.
+    $invalidDataSourceMessage = "Invalid SQL Server data source: the endpoint carries an empty explicit port or an empty instance name, which Microsoft.Data.SqlClient rejects rather than treating as omitted. The value is withheld."
 
     # PopulateProtocol's recognized set. Anything else is not a protocol, so the colon stays with the host.
     $recognizedProtocols = @("tcp", "np", "admin")
@@ -959,22 +969,35 @@ function Get-SqlServerDataSourceEndpoint {
     $commaIndex = $endpointText.IndexOf(',')
     $backslashIndex = $endpointText.IndexOf('\')
 
-    # The server token ends at whichever delimiter comes first, or runs to the end when neither appears.
-    $serverEnd = $endpointText.Length
-    foreach ($delimiter in @($commaIndex, $backslashIndex)) {
-        if ($delimiter -ge 0 -and $delimiter -lt $serverEnd) { $serverEnd = $delimiter }
-    }
-    $hostName = $endpointText.Substring(0, $serverEnd).Trim()
+    # InferConnectionDetails splits the endpoint on BOTH delimiters and then selects by POSITION in the
+    # resulting token list, which is not the same as reading the text after the first comma. Token 0 is
+    # always the server. Where the port sits depends on whether the comma follows a backslash: with an
+    # instance segment ahead of it the port is token 2, otherwise token 1. Reading "after the first
+    # comma" agreed with that only for the shapes that happen to have at most one segment before the
+    # port; 'localhost\ignored\15433,9999' selects 15433, not 9999, so the earlier reading produced a
+    # port the provider never connects to - in both directions, since the mirror spelling
+    # 'localhost\ignored\9999,15433' was classified local while SqlClient reaches 9999.
+    # [char[]] is load-bearing: a bare @(',', '\') binds the String[] overload, which returns the value
+    # UNSPLIT and made every explicit port read as empty.
+    $endpointTokens = @($endpointText.Split([char[]]@(',', '\')) | ForEach-Object { $_.Trim() })
+
+    $hostName = $endpointTokens[0]
 
     $hasExplicitPort = $commaIndex -ge 0
     $portText = ""
     if ($hasExplicitPort) {
-        $portStart = $commaIndex + 1
-        $portEnd = $endpointText.Length
-        foreach ($delimiter in @($endpointText.IndexOf(',', $portStart), $endpointText.IndexOf('\', $portStart))) {
-            if ($delimiter -ge 0 -and $delimiter -lt $portEnd) { $portEnd = $delimiter }
+        $portTokenIndex = if ($backslashIndex -ge 0 -and $commaIndex -gt $backslashIndex) { 2 } else { 1 }
+        if ($portTokenIndex -lt $endpointTokens.Count) {
+            $portText = $endpointTokens[$portTokenIndex]
         }
-        $portText = $endpointText.Substring($portStart, $portEnd - $portStart).Trim()
+
+        # SqlClient does not treat an empty explicit port as an omitted one - it rejects the data source.
+        # Reported as a parse failure rather than as blank fields, because every caller defaults an absent
+        # port to the engine's expected one, which would launder an endpoint the provider refuses into an
+        # apparently valid local endpoint.
+        if ([string]::IsNullOrWhiteSpace($portText)) {
+            throw $invalidDataSourceMessage
+        }
     }
 
     # The instance suffix runs from the backslash to the next comma, so it is read the same way whether it
@@ -985,6 +1008,12 @@ function Get-SqlServerDataSourceEndpoint {
         $instanceEnd = $endpointText.IndexOf(',', $instanceStart)
         if ($instanceEnd -lt 0) { $instanceEnd = $endpointText.Length }
         $instanceName = $endpointText.Substring($instanceStart, $instanceEnd - $instanceStart).Trim()
+
+        # An empty instance token is likewise rejected, not read as "no instance". Without this,
+        # 'dms-mssql\' reported exactly what the valid 'dms-mssql' reports and inherited its default port.
+        if ((-not $hasExplicitPort) -and [string]::IsNullOrWhiteSpace($instanceName)) {
+            throw $invalidDataSourceMessage
+        }
     }
 
     # InferLocalServerName: an empty server name is the local server.
