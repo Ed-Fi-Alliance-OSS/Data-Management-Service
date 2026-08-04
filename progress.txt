@@ -257,3 +257,8 @@ Completed administrative-command-runner cleanup follow-up task for reference/des
 Key decisions: runner now materializes/records command result before explicit mutex lease cleanup; cleanup release/dispose failures log sanitized warning and do not replace completed/session-loss classifications.
 Files changed: DocumentCacheAdministrativeCommandRunner.cs; DocumentCacheAdministrativeCommandRunnerTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Verified focused administrative runner/mutex unit filter.
+
+Completed explicit-integrity-scrub follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: every scrub page transaction now reads DocumentCacheState on mutex session with shared lock before provider page DML; mid-page lifecycle/latch mismatch returns existing lifecycle/cache-ahead classifications and keeps mutation accounting from prior pages only.
+Files changed: DocumentCacheExplicitIntegrityScrub.cs; PG/MSSQL ExplicitIntegrityScrub integration tests; tasks.json; progress.txt.
+Blockers/notes: default MSSQL admin env unset; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Dependency-injection follow-up remains open.

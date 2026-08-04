@@ -217,8 +217,9 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
         SourceDocument source = await InsertDocumentAsync(contentVersion: 10);
         await ClearProjectionWorkAsync();
-        var primitives = new BeforeSecondLifecycleReadPrimitives(
+        var primitives = new BeforeNthLifecycleReadPrimitives(
             new MssqlDocumentCacheAdministrativePrimitives(),
+            lifecycleReadNumber: 2,
             () => SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: true)
         );
         RecordingObservationSink observationSink = new();
@@ -260,6 +261,64 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
                 || snapshot.CurrentPhase == DocumentCacheAdministrativeCommandPhase.ScrubScan
             );
         source.DocumentId.Should().BePositive();
+    }
+
+    [Test]
+    public async Task It_stops_before_repairing_a_later_page_when_the_latch_becomes_set_between_pages()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
+        SourceDocument first = await InsertDocumentAsync(contentVersion: 10);
+        SourceDocument second = await InsertDocumentAsync(contentVersion: 20);
+        SourceDocument third = await InsertDocumentAsync(contentVersion: 30);
+        SourceDocument fourth = await InsertDocumentAsync(contentVersion: 40);
+        await ClearProjectionWorkAsync();
+        var primitives = new BeforeNthLifecycleReadPrimitives(
+            new MssqlDocumentCacheAdministrativePrimitives(),
+            lifecycleReadNumber: 4,
+            () => SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: true)
+        );
+        RecordingObservationSink observationSink = new();
+        DocumentCacheExplicitIntegrityScrubCommand command = CreateCommand(
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
+            observationSink,
+            primitives
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
+            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet);
+        result.Mutated.Should().BeTrue();
+        result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Tracking);
+        result.CacheAheadRecoveryRequired.Should().BeTrue();
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.ScrubScan
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.CacheAheadLatchSet
+            );
+
+        primitives.ScrubPageCallCount.Should().Be(1);
+        IReadOnlyDictionary<long, long> workRows = await ReadWorkVersionsByDocumentIdAsync();
+        workRows.Should().Contain(first.DocumentId, 10);
+        workRows.Should().Contain(second.DocumentId, 20);
+        workRows.Should().Contain(third.DocumentId, 30);
+        workRows.Should().NotContainKey(fourth.DocumentId);
+        (await ReadLifecycleAsync())
+            .Should()
+            .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, true));
+        observationSink
+            .AdministrativeCommandSnapshots.Should()
+            .Contain(snapshot =>
+                snapshot.CurrentPhase == DocumentCacheAdministrativeCommandPhase.ScrubScan
+                && snapshot.Mutated
+                && snapshot.CacheAheadRecoveryRequired == true
+            );
     }
 
     [TestCase(DocumentCacheLifecycleState.Disabled, false)]
@@ -680,9 +739,10 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
             _ = executionId;
     }
 
-    private sealed class BeforeSecondLifecycleReadPrimitives(
+    private sealed class BeforeNthLifecycleReadPrimitives(
         IDocumentCacheAdministrativePrimitives inner,
-        Func<Task> beforeSecondLifecycleRead
+        int lifecycleReadNumber,
+        Func<Task> beforeLifecycleRead
     ) : IDocumentCacheAdministrativePrimitives
     {
         private int _captureBoundaryCallCount;
@@ -702,9 +762,9 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
             CancellationToken cancellationToken = default
         )
         {
-            if (Interlocked.Increment(ref _lifecycleReadCount) == 2)
+            if (Interlocked.Increment(ref _lifecycleReadCount) == lifecycleReadNumber)
             {
-                await beforeSecondLifecycleRead().ConfigureAwait(false);
+                await beforeLifecycleRead().ConfigureAwait(false);
             }
 
             return await inner

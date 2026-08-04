@@ -93,14 +93,32 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
         {
             effectiveCancellationToken.ThrowIfCancellationRequested();
 
-            DocumentCacheAdministrativeScrubPageResult page = await ExecuteScrubPageAsync(
-                    context,
-                    boundary.BoundaryDocumentId.Value,
-                    afterDocumentId,
-                    pageSize,
-                    effectiveCancellationToken
-                )
-                .ConfigureAwait(false);
+            DocumentCacheExplicitIntegrityScrubPageExecutionResult pageExecution =
+                await ExecuteScrubPageAsync(
+                        context,
+                        boundary.BoundaryDocumentId.Value,
+                        afterDocumentId,
+                        pageSize,
+                        effectiveCancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+            if (pageExecution.LifecycleReadResult is not null)
+            {
+                DocumentCacheLifecycleReadResult lifecycleReadResult = pageExecution.LifecycleReadResult;
+                if (!lifecycleReadResult.Succeeded)
+                {
+                    return CreateLifecycleReadFailure(context, lifecycleReadResult);
+                }
+
+                DocumentCacheLifecycleObservation lifecycle = lifecycleReadResult.Lifecycle!;
+                context.SetLiveTargetObservation(CreateTargetObservation(context, lifecycle));
+                return CreateLifecycleFailure(context, lifecycle);
+            }
+
+            DocumentCacheAdministrativeScrubPageResult page =
+                pageExecution.Page
+                ?? throw new InvalidOperationException("Explicit integrity scrub page result was missing.");
 
             if (page.Status == DocumentCacheAdministrativeScrubPageStatus.RetryFromLastCommittedKey)
             {
@@ -167,7 +185,7 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
         return boundary;
     }
 
-    private static Task<DocumentCacheAdministrativeScrubPageResult> ExecuteScrubPageAsync(
+    private static Task<DocumentCacheExplicitIntegrityScrubPageExecutionResult> ExecuteScrubPageAsync(
         DocumentCacheAdministrativeCommandExecutionContext context,
         long boundaryDocumentId,
         long afterDocumentId,
@@ -177,20 +195,59 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
         DocumentCacheAdministrativeWorkflow.ExecuteInTransactionAsync(
             context.MutexLease,
             IsolationLevel.Serializable,
-            (session, transactionCancellationToken) =>
-                context.Primitives.ScrubPageAsync(
-                    session,
-                    new DocumentCacheAdministrativeScrubPageRequest(
-                        boundaryDocumentId,
-                        afterDocumentId,
-                        pageSize
-                    ),
-                    transactionCancellationToken
-                ),
+            async (session, transactionCancellationToken) =>
+            {
+                DocumentCacheLifecycleReadResult lifecycleReadResult = await context
+                    .Primitives.ReadLifecycleAsync(
+                        session,
+                        DocumentCacheAdministrativeStateLockMode.Shared,
+                        transactionCancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (!lifecycleReadResult.Succeeded || !IsAdmittedLifecycle(lifecycleReadResult.Lifecycle))
+                {
+                    return DocumentCacheExplicitIntegrityScrubPageExecutionResult.FromLifecycleRead(
+                        lifecycleReadResult
+                    );
+                }
+
+                DocumentCacheAdministrativeScrubPageResult page = await context
+                    .Primitives.ScrubPageAsync(
+                        session,
+                        new DocumentCacheAdministrativeScrubPageRequest(
+                            boundaryDocumentId,
+                            afterDocumentId,
+                            pageSize
+                        ),
+                        transactionCancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                return DocumentCacheExplicitIntegrityScrubPageExecutionResult.FromPage(page);
+            },
             static page =>
-                page.Status != DocumentCacheAdministrativeScrubPageStatus.RetryFromLastCommittedKey,
+                page.Page is null
+                || page.Page.Status != DocumentCacheAdministrativeScrubPageStatus.RetryFromLastCommittedKey,
             cancellationToken
         );
+
+    private static DocumentCacheAdministrativeCommandResult CreateLifecycleReadFailure(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        DocumentCacheLifecycleReadResult lifecycleReadResult
+    ) =>
+        context.Failed(
+            context.Mutated
+                ? DocumentCacheAdministrativeCommandStatus.IncompleteRetryable
+                : DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+            DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
+            DocumentCacheAdministrativeDiagnosticCategory.LifecycleObservationFailure,
+            lifecycleReadResult.Message,
+            retryable: context.Mutated
+        );
+
+    private static bool IsAdmittedLifecycle(DocumentCacheLifecycleObservation? lifecycle) =>
+        lifecycle is { State: DocumentCacheLifecycleState.Tracking, CacheAheadRecoveryRequired: false };
 
     private static async Task<DocumentCacheAdministrativeCommandResult?> VerifyAdmissionAsync(
         DocumentCacheAdministrativeCommandExecutionContext context,
@@ -280,4 +337,26 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
     private static DocumentCacheExplicitIntegrityScrubRequest Request(
         DocumentCacheAdministrativeCommandExecutionContext context
     ) => new(context.Request.TargetKey, context.Request.ExpectedPhysicalSourceFingerprint);
+
+    private sealed record DocumentCacheExplicitIntegrityScrubPageExecutionResult(
+        DocumentCacheAdministrativeScrubPageResult? Page,
+        DocumentCacheLifecycleReadResult? LifecycleReadResult
+    )
+    {
+        public static DocumentCacheExplicitIntegrityScrubPageExecutionResult FromPage(
+            DocumentCacheAdministrativeScrubPageResult page
+        )
+        {
+            ArgumentNullException.ThrowIfNull(page);
+            return new(page, LifecycleReadResult: null);
+        }
+
+        public static DocumentCacheExplicitIntegrityScrubPageExecutionResult FromLifecycleRead(
+            DocumentCacheLifecycleReadResult lifecycleReadResult
+        )
+        {
+            ArgumentNullException.ThrowIfNull(lifecycleReadResult);
+            return new(Page: null, lifecycleReadResult);
+        }
+    }
 }
