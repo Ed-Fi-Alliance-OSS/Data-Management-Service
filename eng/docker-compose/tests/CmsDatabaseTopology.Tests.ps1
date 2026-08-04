@@ -3562,6 +3562,73 @@ Describe "Get-DatabaseNameFromResolvedConnectionString / Get-EndpointFromResolve
         $thrown.Exception.Message | Should -Not -BeLike "*edfi_datamanagementservice*"
     }
 
+    It "recognizes 'Initial Catalog' in every spelling the providers accept: <Case>" -ForEach @(
+        # The providers match the keyword case-insensitively, and the generic parser trims a key's
+        # outer edges before the keyword is looked up. What must not vary is the separator.
+        @{ Case = 'single space'; Key = 'Initial Catalog' }
+        @{ Case = 'uppercase'; Key = 'INITIAL CATALOG' }
+        @{ Case = 'mixed case'; Key = 'iNiTiAl CaTaLoG' }
+        @{ Case = 'outer whitespace, which the parser trims'; Key = '  Initial Catalog  ' }
+    ) {
+        $names = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString "Server=s;$Key=d;" -DatabaseEngine "mssql")
+
+        $names.Count | Should -Be 1
+        $names | Should -Contain 'd'
+    }
+
+    It "refuses a whitespace-mutated 'Initial Catalog' instead of reading it as the keyword: <Case>" -ForEach @(
+        # `^initial\s+catalog$` counted any run of whitespace as the keyword. The generic parser
+        # lowercases a key and trims its outer edges but preserves whatever separates the two words,
+        # so these spellings survive into the key text - while SqlClient looks the keyword up by
+        # exact text and rejects them, meaning the connection could never target the value read out
+        # of them. Refused for BOTH engines: neither provider has a keyword by these spellings.
+        @{ Case = 'double space, mssql'; Engine = 'mssql'; Key = 'Initial  Catalog' }
+        @{ Case = 'triple space, mssql'; Engine = 'mssql'; Key = 'Initial   Catalog' }
+        @{ Case = 'non-breaking space, mssql'; Engine = 'mssql'; Key = "Initial$([char]0x00A0)Catalog" }
+        @{ Case = 'double space, postgresql'; Engine = 'postgresql'; Key = 'Initial  Catalog' }
+        @{ Case = 'non-breaking space, postgresql'; Engine = 'postgresql'; Key = "Initial$([char]0x00A0)Catalog" }
+    ) {
+        $thrown = {
+            Get-DatabaseNameFromResolvedConnectionString `
+                -ConnectionString "Server=s;$Key=edfi_configurationservice;" -DatabaseEngine $Engine
+        } | Should -Throw -PassThru
+
+        $thrown.Exception.Message | Should -BeLike "*separated by other whitespace*"
+        $thrown.Exception.Message |
+            Should -Not -BeLike "*Could not parse*" -Because "a configuration mistake is not a parse failure"
+        $thrown.Exception.Message |
+            Should -Not -BeLike "*edfi_configurationservice*" -Because "diagnostics never render connection-string values"
+    }
+
+    It "refuses a whitespace-mutated 'Initial Catalog' even beside a valid Database sibling: <Engine>" -ForEach @(
+        @{ Engine = 'mssql' }
+        @{ Engine = 'postgresql' }
+    ) {
+        # Silently preferring the valid sibling still hands the provider a connection string it
+        # rejects outright, so there is nothing safe to extract from either key.
+        $thrown = {
+            Get-DatabaseNameFromResolvedConnectionString `
+                -ConnectionString 'Server=s;Database=edfi_datamanagementservice;Initial  Catalog=edfi_configurationservice;' `
+                -DatabaseEngine $Engine
+        } | Should -Throw -PassThru
+
+        $thrown.Exception.Message | Should -BeLike "*separated by other whitespace*"
+        $thrown.Exception.Message | Should -Not -BeLike "*edfi_configurationservice*"
+        $thrown.Exception.Message | Should -Not -BeLike "*edfi_datamanagementservice*"
+    }
+
+    It "keeps the single-space 'Initial Catalog' refusal for PostgreSQL attributed to the other engine" {
+        # The mutated-spelling refusal is checked first, so the correctly-spelled keyword must still
+        # get the foreign-synonym diagnosis rather than being reported as a malformed spelling.
+        $thrown = {
+            Get-DatabaseNameFromResolvedConnectionString `
+                -ConnectionString 'host=h;Initial Catalog=edfi_configurationservice;' -DatabaseEngine "postgresql"
+        } | Should -Throw -PassThru
+
+        $thrown.Exception.Message | Should -BeLike "*belonging to the other engine*"
+        $thrown.Exception.Message | Should -Not -BeLike "*separated by other whitespace*"
+    }
+
     It "splits an MSSQL host,port compound into separate Host and Port fields" {
         $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString "Server=dms-mssql,1433;Database=x;" -DatabaseEngine "mssql")
         $endpoints.Count | Should -Be 1
@@ -3647,6 +3714,54 @@ Describe "Get-DatabaseNameFromResolvedConnectionString / Get-EndpointFromResolve
     It "recognizes Server= for both engines" {
         @(Get-EndpointFromResolvedConnectionString -ConnectionString "Server=some-host;Database=x;" -DatabaseEngine "postgresql").Count | Should -Be 1
         @(Get-EndpointFromResolvedConnectionString -ConnectionString "Server=some-host;Database=x;" -DatabaseEngine "mssql").Count | Should -Be 1
+    }
+}
+
+Describe "Get-DatabaseNameFromConnectionString spells 'Initial Catalog' the same way its sibling does" {
+    # The dedicated-E2E guard reads its protected database names through this extractor, so it
+    # carried the same over-permissive `^initial\s+catalog$` match. A mutated spelling read as the
+    # keyword would have the guard compare against a database the connection never targets.
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "database-safety.psm1") -Force
+    }
+
+    It "reads the value of an accepted spelling: <Case>" -ForEach @(
+        @{ Case = 'single space'; Key = 'Initial Catalog' }
+        @{ Case = 'uppercase'; Key = 'INITIAL CATALOG' }
+        @{ Case = 'outer whitespace, which the parser trims'; Key = '  Initial Catalog  ' }
+    ) {
+        $names = @(Get-DatabaseNameFromConnectionString -ConnectionString "Server=s;$Key=d;" -EnvironmentValues @{})
+
+        $names.Count | Should -Be 1
+        $names | Should -Contain 'd'
+    }
+
+    It "refuses a whitespace-mutated spelling rather than reading its value: <Case>" -ForEach @(
+        @{ Case = 'double space'; ConnectionString = 'Server=s;Initial  Catalog=edfi_configurationservice;' }
+        @{ Case = 'triple space'; ConnectionString = 'Server=s;Initial   Catalog=edfi_configurationservice;' }
+        @{ Case = 'non-breaking space'; ConnectionString = "Server=s;Initial$([char]0x00A0)Catalog=edfi_configurationservice;" }
+        @{ Case = 'beside a valid Database sibling'; ConnectionString = 'Server=s;Database=edfi_datamanagementservice;Initial  Catalog=edfi_configurationservice;' }
+    ) {
+        $thrown = { Get-DatabaseNameFromConnectionString -ConnectionString $ConnectionString -EnvironmentValues @{} } |
+            Should -Throw -PassThru
+
+        $thrown.Exception.Message | Should -BeLike "*separated by other whitespace*"
+        $thrown.Exception.Message |
+            Should -Not -BeLike "*Could not safely parse*" -Because "a configuration mistake is not a parse failure"
+        $thrown.Exception.Message |
+            Should -Not -BeLike "*edfi_configurationservice*" -Because "diagnostics never render connection-string values"
+        $thrown.Exception.Message | Should -Not -BeLike "*edfi_datamanagementservice*"
+    }
+
+    It "still reports a genuinely unparseable connection string as a parse failure" {
+        # The mutated-spelling refusal moved out of the parse try/catch; the wrap it sits next to
+        # must still apply to a real parse error. A key holding a control character is one the
+        # generic parser rejects outright.
+        $thrown = { Get-DatabaseNameFromConnectionString -ConnectionString "Server=s;Initial`tCatalog=d;" -EnvironmentValues @{} } |
+            Should -Throw -PassThru
+
+        $thrown.Exception.Message | Should -BeLike "*Could not safely parse a protected database connection string*"
     }
 }
 
