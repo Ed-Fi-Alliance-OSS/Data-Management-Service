@@ -1,0 +1,91 @@
+---
+jira: DMS-1390
+source_spike: DMS-1349
+epic: DMS-1348
+status: proposed
+---
+
+# Story: Public Contract, Parity, and E2E Suite
+
+## Outcome
+
+Demonstrate through API-level integration, end-to-end scenarios, and static ODS-comparison cases
+that the published cursor and partition contract behaves as approved across routes, tenants,
+profiles, extensions, and descriptors, and that its differences from ODS 7.3.2 are only the approved
+ones.
+
+The ODS comparison is expressed as static expected values, not as a live reference deployment. The
+design doc's worked precedence table records the expected DMS messages, and the epic's ODS
+precedence comparison and approved-difference list record the ODS 7.3.2 behavior. Both were
+established by reading the pinned ODS 7.3.2 sources cited in the epic's `Compatibility Baseline`, so
+those tables are the reference; standing up and automating an ODS 7.3.2 API is explicitly out of
+scope.
+
+## Design References
+
+- [`Public API Contract`](../../design-docs/partitioned-cursor-paging.md#public-api-contract)
+- [`Worked precedence examples`](../../design-docs/partitioned-cursor-paging.md#worked-precedence-examples)
+- [`Consistency Under Writes`](../../design-docs/partitioned-cursor-paging.md#consistency-under-writes)
+- [`ODS Precedence Comparison`](EPIC.md#ods-precedence-comparison) — for the ODS 7.3.2 column
+- [`Approved Intentional ODS Differences`](EPIC.md#approved-intentional-ods-differences)
+- [`Completion Evidence`](EPIC.md#completion-evidence)
+
+## Dependencies
+
+- Hard dependencies: DMS-1386, DMS-1387, and DMS-1388.
+- DMS-1389 covers the authorization matrix and shares its fixtures.
+- DMS-1392 consumes the stable scenarios and fixtures for its final performance gate where useful.
+
+## Implementation Scope
+
+- Add API-level integration coverage for the public parameter, header, body, and status contracts of
+  cursor pages and `/partitions`, including exact validation shells and single-error behavior.
+- Add stable-fixture sequential and parallel partition walks over regular resources, extension
+  resources, and descriptors, with filters and live change-version bounds repeated on each request.
+- Cover route qualifiers, tenant segments, profile routing including the write-only profile outcome,
+  and the published OpenAPI/profile metadata from DMS-1388.
+- Own the ODS-comparison case definitions as static expected values derived from the epic's ODS
+  precedence comparison and approved-difference list, execute them against a DMS target, and assert
+  each case either matches the recorded ODS behavior or maps to a named approved difference. This
+  includes the response-header cases, where ODS gates the header on hydrated body count and DMS
+  gates it on a non-null selected-keyset maximum.
+- Retain the case definitions and results in a machine-readable form carrying the reference-version
+  identity, so a future reviewer can see which ODS version the expectations describe.
+- Add concurrency scenarios that document, rather than overpromise, non-snapshot behavior.
+
+## Acceptance Evidence and Test Expectations
+
+- Stable sequential and parallel walks return every accessible fixture member exactly once with no
+  overlap across ranges on PostgreSQL and representative real SQL Server coverage.
+- Exact validation shells, ODS-compatible cursor precedence and single-error behavior, partition
+  validation ordering, repeated-parameter and case-variant behavior, terminal empty pages, and
+  response headers are asserted through HTTP.
+- Every executed comparison case either matches the recorded ODS behavior or maps to a named
+  approved difference in the epic; an unmapped difference fails the suite.
+- The harness implements every row of the epic's ODS precedence comparison, asserting each listed
+  DMS message and each recorded ODS parity/difference outcome, including exactly one error whenever
+  DMS rejects the request.
+- The comparison cases also cover malformed, blank, and out-of-range `/partitions?number=`, whose
+  recorded ODS outcomes live in the epic's approved-difference list rather than in its cursor-only
+  precedence table.
+- The partition token count never exceeds the requested `number`, and requesting more partitions
+  than the minimum size allows returns fewer tokens rather than an error.
+- Existing traditional paging response bodies, status codes, and `Total-Count` semantics remain
+  unchanged; the additional `Next-Page-Token` header is covered as an intentional contract change.
+
+## Cross-Provider and Authorization Responsibilities
+
+- PostgreSQL receives the complete DMS Docker E2E walk; real SQL Server receives provider
+  integration and API-level coverage for every provider-sensitive behavior.
+- Authorization is exercised only as far as the public contract requires. The supported-strategy
+  matrix belongs to DMS-1389.
+
+## Explicit Exclusions / Not Assigned
+
+- The cross-strategy authorization matrix and forged-range negative cases belong to DMS-1389.
+- Fundamental contract, planner, SQL, execution, and OpenAPI implementation belongs to DMS-1383
+  through DMS-1388.
+- A live or automated ODS 7.3.2 reference deployment is out of scope; the epic's source-derived
+  tables are the reference.
+- Load/latency thresholds and provider plan capture belong to DMS-1392.
+- Snapshot consistency is not asserted.

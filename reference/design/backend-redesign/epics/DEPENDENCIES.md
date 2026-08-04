@@ -3,8 +3,8 @@
 Status: Draft (planning aid derived from `reference/design/backend-redesign/epics/*`).
 
 Scope:
-- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 20 epic files and
-  200 story/support files).
+- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 21 epic files and
+  235 story/support files).
 - Captures *implementation* dependencies implied by acceptance criteria and shared design contracts.
 - Does not attempt to define ownership, sequencing within sprints, or exact delivery dates.
 
@@ -45,6 +45,7 @@ graph TD
   E17["E17 MSSQL implementation and parity gap closure"]
   E18["E18 DocumentCache projection"]
   E19["E19 Relational CDC/Kafka streaming"]
+  E20["E20 Partitioned cursor paging"]
 
   E00 --> E01 --> E02 --> E03 --> E04
 
@@ -85,6 +86,10 @@ graph TD
   E16 --> E19
   E18 --> E19
 
+  E08 --> E20
+  E10 --> E20
+  E15 --> E20
+
   E14
   E17
 ```
@@ -95,6 +100,12 @@ Notes:
 - `E19` connector-template and fixture work can proceed in parallel, but its integrated
   delivery consumes the E18 projection and status outputs. Behavioral ownership is defined
   only by the design documents linked from the two epics.
+- `E20` reuses E08 page selection/hydration and E10 live change-version filters, and extends the E15
+  plan-SQL foundations plus the plan-contract and deterministic-binding artifacts that own
+  `PageDocumentIdSqlCompiler` and `PageDocumentIdSql`, whose canonicalized/golden output must stay
+  stable. E14 row-level authorization planning is a reused upstream foundation and compatibility
+  input for `E20`, not a blocking edge. E12 benchmarks and E13 parity/E2E infrastructure are soft
+  delivery inputs.
 
 ---
 
@@ -122,6 +133,7 @@ Notes:
 | E17 | [Close MSSQL Implementation and Parity Gaps](17-mssql-gap-closure/EPIC.md) | — | SQL Server deployment, runtime-validation, persistence-correctness, and operational-workflow parity |
 | E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Projection schema, runtime, verification, utility, and operator work packages |
 | E19 | [Relational CDC/Kafka Streaming](19-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Provider, connector, bootstrap, verification, E2E, and operator work packages |
+| E20 | [Partitioned Cursor Paging](20-partitioned-cursor-paging/EPIC.md) | E08, E10, E15 | ODS-compatible cursor GET-many paging, authorized partition boundaries, OpenAPI, parity, and performance evidence |
 
 ---
 
@@ -383,6 +395,43 @@ Epic: `15-plan-compilation/EPIC.md`
 | E15-S04b | [`04b-stable-collection-merge-plans.md`](15-plan-compilation/04b-stable-collection-merge-plans.md) | E01-S11, E15-S04 | — | Stable-identity collection merge write-plan retrofit |
 | E15-S05 | [`05-read-plan-compiler-hydration.md`](15-plan-compilation/05-read-plan-compiler-hydration.md) | E15-S03 | — | Full hydration read plans (`SelectByKeysetSql`) for all tables |
 | E15-S06 | [`06-projection-plan-compilers.md`](15-plan-compilation/06-projection-plan-compilers.md) | E15-S05 | E15-S04, E15-S04b | Projection plans (reference identity + descriptor URI) |
+
+### E20 — Partitioned Cursor Paging
+
+Epic: `20-partitioned-cursor-paging/EPIC.md`
+
+The eleven work packages are filed as `DMS-1348` children `DMS-1383` through `DMS-1393`, and each
+file's frontmatter carries its own key. They are the result of consolidation during design: typed
+path operations, provider cursor SQL, and descriptor cursor execution were each folded into a
+sibling package, and a separate ODS reference-deployment package was dropped in favor of the static
+comparison cases owned by DMS-1390. The file-name number prefixes are left at their
+pre-consolidation values and carry no meaning beyond ordering.
+
+DMS-1383 owns the typed contracts, codec, and configuration that DMS-1384's validators consume.
+DMS-1391 owns the harness and pre-change traditional baseline and must complete before DMS-1385
+modifies the shared page-selection compiler; because DMS-1385 keeps traditional page-selection
+output behaviorally and textually unchanged, that baseline is regression insurance over the shared
+compiler rather than a record of an expected change. DMS-1391 has no E20 predecessor, so it should
+run alongside DMS-1383 and DMS-1384 rather than idling DMS-1385. The DMS-1385 dependency makes the
+baseline precede the downstream shared-execution change in DMS-1386, which actually alters shared
+traditional runtime execution. DMS-1387 boundary-compiler and SQL-golden work requires DMS-1383
+through DMS-1385, while route activation additionally requires DMS-1386. DMS-1392 is a separate
+final gate that consumes DMS-1385 through DMS-1391, and DMS-1393 owns independently sequenced
+production telemetry; the graph remains acyclic.
+
+| Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
+| --- | --- | --- | --- | --- |
+| DMS-1383 | [`00a-cursor-contract-primitives.md`](20-partitioned-cursor-paging/00a-cursor-contract-primitives.md) | — | E08-S04, E08-S05, E10, E14, E15-S01, E15-S02 | Typed paging/range contracts, token codec, result-boundary shapes, configuration |
+| DMS-1384 | [`00b-cursor-and-partition-validation.md`](20-partitioned-cursor-paging/00b-cursor-and-partition-validation.md) | DMS-1383 | E08-S04, E08-S05, E10 | Cursor precedence validation, partition validation, ProblemDetails shell, operation-scoped rejection, typed path operations, query canonicalization |
+| DMS-1385 | [`02-shared-candidate-planning.md`](20-partitioned-cursor-paging/02-shared-candidate-planning.md) | DMS-1383, DMS-1391 | E08-S04, E08-S05, E10, E14, E15-S01, E15-S02 | Extended shared page-document-id plan, Core filter sharing, uniqueness assertion, and PostgreSQL/SQL Server cursor SQL goldens |
+| DMS-1386 | [`04-regular-resource-cursor-execution.md`](20-partitioned-cursor-paging/04-regular-resource-cursor-execution.md) | DMS-1383, DMS-1384, DMS-1385 | E08-S00, E08-S04, E08-S05 | Regular-resource and descriptor keyset boundary propagation and the shared response header |
+| DMS-1387 | [`06-partition-pipeline-and-sql.md`](20-partitioned-cursor-paging/06-partition-pipeline-and-sql.md) | DMS-1383, DMS-1384, DMS-1385, plus DMS-1386 for route activation | — | Typed `/partitions` route, dedicated Core partition pipeline, `IPartitionQueryHandler` backend contract, provider boundary CTEs, and typed inclusive ranges |
+| DMS-1388 | [`07-openapi-and-client-contract.md`](20-partitioned-cursor-paging/07-openapi-and-client-contract.md) | DMS-1383, DMS-1386, DMS-1387 | — | Runtime-gated cursor metadata and resource/extension/descriptor/profile partition OpenAPI augmentation plus a separable client-docs slice |
+| DMS-1389 | [`08a-authorization-matrix.md`](20-partitioned-cursor-paging/08a-authorization-matrix.md) | DMS-1386, DMS-1387 | E14, E15 | Cross-strategy accessible-set agreement and forged-range negative cases |
+| DMS-1390 | [`08b-public-contract-parity-and-e2e.md`](20-partitioned-cursor-paging/08b-public-contract-parity-and-e2e.md) | DMS-1386, DMS-1387, DMS-1388 | DMS-1389 | Public contract coverage, static ODS-comparison cases, approved-difference enforcement, and E2E evidence |
+| DMS-1391 | [`09-performance-harness-and-baseline.md`](20-partitioned-cursor-paging/09-performance-harness-and-baseline.md) | — | E12, E13 | Cross-provider harness and three-scenario pre-change traditional baseline |
+| DMS-1392 | [`10-performance-and-observability-final-gate.md`](20-partitioned-cursor-paging/10-performance-and-observability-final-gate.md) | DMS-1385–DMS-1391 | E12, E13 | Narrow reused fixture set, final matrix, plans, and thresholds |
+| DMS-1393 | [`12-bounded-cursor-and-partition-telemetry.md`](20-partitioned-cursor-paging/12-bounded-cursor-and-partition-telemetry.md) | DMS-1386, DMS-1387 | E12 | Bounded production paging/partition telemetry and privacy tests |
 
 ---
 

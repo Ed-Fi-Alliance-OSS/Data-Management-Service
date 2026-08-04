@@ -109,6 +109,7 @@ This redesign is split into focused docs in this directory:
 - Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching): [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Update tracking (stored stamps for `_lastModifiedDate` / `ChangeVersion`, composed `_etag`): [update-tracking.md](update-tracking.md)
 - Change Queries (`/deletes`, `/keyChanges`, `/availableChangeVersions`, `ContentVersion` mirror, `tracked_changes_*` tables): [change-queries.md](change-queries.md)
+- Partitioned cursor paging (`pageToken`/`pageSize`, `Next-Page-Token`, `/partitions`, cursor token contract, range-seek page selection): [partitioned-cursor-paging.md](partitioned-cursor-paging.md)
 - DocumentCache projection and relational CDC (authoritative integration/deployment design):
   [Relational CDC and Document Projection](cdc/cdc-streaming.md). Completeness is
   transactionally tracked in always-provisioned `dms.DocumentProjectionWork`; startup,
