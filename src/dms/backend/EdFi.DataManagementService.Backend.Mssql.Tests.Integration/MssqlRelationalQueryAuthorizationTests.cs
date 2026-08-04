@@ -623,6 +623,73 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
+    /// <summary>
+    /// Seeds an <c>Ed-Fi.EducationContent</c> row — the lightest DS 5.2 resource with a concrete root
+    /// <c>Namespace</c> column, and the one the fixture extends — through the production write path with no
+    /// authorization strategies, so any stored namespace and extension value can be established directly.
+    /// </summary>
+    public async Task<UpsertResult> CreateEducationContentAsync(
+        JsonNode requestBody,
+        DocumentUuid documentUuid
+    )
+    {
+        return await UpsertAsync(
+            "ed-fi",
+            "EducationContent",
+            requestBody,
+            documentUuid,
+            "seed-education-content"
+        );
+    }
+
+    public async Task<UpdateResult> UpdateEducationContentByIdAsync(
+        JsonNode requestBody,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        IReadOnlyList<string>? namespacePrefixes = null,
+        string? ifMatch = null
+    )
+    {
+        return await UpdateAsync(
+            "ed-fi",
+            "EducationContent",
+            requestBody,
+            documentUuid,
+            "put-education-content",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch,
+            namespacePrefixes: namespacePrefixes
+        );
+    }
+
+    /// <summary>
+    /// Snapshots every mapped <c>Ed-Fi.EducationContent</c> table, which includes the generated
+    /// <c>authzext.EducationContentExtension</c> row, so an extension value is inside the unchanged-state
+    /// comparison rather than outside it.
+    /// </summary>
+    public async Task<AuthorizationWriteSideEffectState> ReadEducationContentSideEffectStateAsync(
+        DocumentUuid documentUuid
+    )
+    {
+        var resourceKeyId = GetCompiledResourceKeyId("ed-fi", "EducationContent");
+        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+
+        return new AuthorizationWriteSideEffectState(
+            Document: document,
+            ResourceTables: await ReadResourceTableStatesAsync(
+                "ed-fi",
+                "EducationContent",
+                document.DocumentId
+            ),
+            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
+                document.DocumentId,
+                resourceKeyId
+            )
+        );
+    }
+
     public async Task<UpsertResult> CreateAuthorizationChildOnlyAsync(AuthorizationChildOnlySeed seed)
     {
         return await UpsertAsync(

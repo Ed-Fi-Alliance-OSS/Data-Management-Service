@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -47,6 +49,12 @@ public class Given_A_Mssql_Relational_Namespace_Write_Authorization_With_A_Synth
     private const int AuthorizedSchoolId = (int)RelationshipAuthorizationCrudTestSupport.AuthorizedSchoolId;
     private const string StaleETag = "\"stale-etag\"";
     private const string RootTableName = $"authz.{ResourceName}";
+
+    /// <summary>
+    /// The extension table the fixture's <c>authzext</c> project generates for
+    /// <c>Ed-Fi.EducationContent</c>, whose single scalar column is <c>ExtensionValue</c>.
+    /// </summary>
+    private const string ExtensionTableName = "authzext.EducationContentExtension";
 
     private static readonly IReadOnlyList<string> _configuredPrefixes =
         RelationshipAuthorizationCrudTestSupport.ConfiguredNamespacePrefixes;
@@ -266,6 +274,33 @@ public class Given_A_Mssql_Relational_Namespace_Write_Authorization_With_A_Synth
     }
 
     [Test]
+    public async Task It_returns_403_before_a_stale_if_match_when_the_proposed_namespace_is_unauthorized()
+    {
+        // Companion to the stored-value collision above: the other reachable PUT denial must also beat 412.
+        var existingSeed = await SeedExistingAsync(
+            206,
+            "put-proposed-collision",
+            AuthorizedPrefix + "assessments"
+        );
+        var proposedSeed = existingSeed with
+        {
+            Name = "put-proposed-collision-change",
+            Namespace = UnauthorizedPrefix + "proposed",
+        };
+        var before = await ReadStateAsync(existingSeed);
+        _context.ResetRecorder();
+
+        var result = await UpdateAsync(proposedSeed, existingSeed.DocumentUuid, ifMatch: StaleETag);
+
+        AssertUpdateDenied(
+            result,
+            NamespaceAuthorizationFailureKind.NamespaceMismatch,
+            NamespaceAuthorizationFailureValueSource.Proposed
+        );
+        await AssertStateUnchangedAsync(existingSeed, before);
+    }
+
+    [Test]
     public async Task It_returns_412_for_a_stale_if_match_once_namespace_authorization_passes()
     {
         var existingSeed = await SeedExistingAsync(205, "put-precondition", AuthorizedPrefix + "assessments");
@@ -285,6 +320,74 @@ public class Given_A_Mssql_Relational_Namespace_Write_Authorization_With_A_Synth
                 "the precondition result must survive unchanged once authorization succeeds"
             );
         await AssertStateUnchangedAsync(existingSeed, before);
+    }
+
+    [Test]
+    public async Task It_returns_403_before_a_stale_if_match_and_preserves_a_real_extension_row()
+    {
+        // The synthetic namespace resource has no extension table, so the conditional extension persistence
+        // path is only exercised with real _ext content. Ed-Fi.EducationContent is the lightest DS 5.2 resource
+        // with a concrete root Namespace column, and this fixture extends it with one optional scalar, which
+        // generates authzext.EducationContentExtension.
+        const string ContentIdentifier = "namespace-extension-coverage";
+        const string SeededExtensionValue = "seeded-extension-value";
+        var documentUuid = new DocumentUuid(Guid.Parse("b5b5b5b5-0000-0000-0000-000000000001"));
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateEducationContentAsync(
+                CreateEducationContentBody(
+                    ContentIdentifier,
+                    AuthorizedPrefix + "content",
+                    SeededExtensionValue
+                ),
+                documentUuid
+            )
+        );
+        var before = await _context.ReadEducationContentSideEffectStateAsync(documentUuid);
+
+        // The extension row must exist and carry the seeded value before the request, so the unchanged-state
+        // comparison below cannot pass against an absent or empty extension table.
+        var extensionRowsBefore = before
+            .ResourceTables.Should()
+            .ContainSingle(table => table.TableName == ExtensionTableName)
+            .Subject.Rows;
+        extensionRowsBefore.Should().ContainSingle();
+        extensionRowsBefore[0]["ExtensionValue"].Should().Be(SeededExtensionValue);
+        long.Parse(extensionRowsBefore[0]["DocumentId"]!, CultureInfo.InvariantCulture)
+            .Should()
+            .Be(before.Document.DocumentId, "the extension row must belong to the seeded document");
+
+        _context.ResetRecorder();
+
+        var result = await _context.UpdateEducationContentByIdAsync(
+            CreateEducationContentBody(
+                ContentIdentifier,
+                UnauthorizedPrefix + "content",
+                "changed-extension-value"
+            ),
+            documentUuid,
+            [],
+            _namespaceStrategy,
+            _configuredPrefixes,
+            ifMatch: StaleETag
+        );
+
+        AssertUpdateDenied(
+            result,
+            NamespaceAuthorizationFailureKind.NamespaceMismatch,
+            NamespaceAuthorizationFailureValueSource.Proposed
+        );
+
+        var after = await _context.ReadEducationContentSideEffectStateAsync(documentUuid);
+        after.Should().BeEquivalentTo(before, static options => options.WithStrictOrdering());
+        after
+            .ResourceTables.Single(static table => table.TableName == ExtensionTableName)
+            .Rows.Should()
+            .ContainSingle()
+            .Which["ExtensionValue"]
+            .Should()
+            .Be(SeededExtensionValue, "the denied write must not touch the extension row");
+        _context.AssertNoPersistenceAfterNamespaceAuthorization();
     }
 
     // ── POST-as-update ──────────────────────────────────────────────────
@@ -402,6 +505,62 @@ public class Given_A_Mssql_Relational_Namespace_Write_Authorization_With_A_Synth
         await AssertStateUnchangedAsync(existingSeed, before);
     }
 
+    [Test]
+    public async Task It_returns_403_before_a_stale_post_as_update_if_match_when_the_stored_namespace_is_unauthorized()
+    {
+        var existingSeed = await SeedExistingAsync(
+            305,
+            "upsert-stored-collision",
+            UnauthorizedPrefix + "stored"
+        );
+        var candidateSeed = existingSeed with
+        {
+            DocumentUuid = new DocumentUuid(Guid.Parse("b4b4b4b4-0000-0000-0000-000000000305")),
+            Name = "upsert-stored-collision-change",
+            Namespace = AuthorizedPrefix + "assessments",
+        };
+        var before = await ReadStateAsync(existingSeed);
+        _context.ResetRecorder();
+
+        var result = await UpsertAsync(candidateSeed, ifMatch: StaleETag);
+
+        AssertUpsertDenied(
+            result,
+            NamespaceAuthorizationFailureKind.NamespaceMismatch,
+            NamespaceAuthorizationFailureValueSource.Stored
+        );
+        await AssertStateUnchangedAsync(existingSeed, before);
+        (await _context.CountDocumentRowsAsync(candidateSeed.DocumentUuid)).Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_412_for_a_stale_post_as_update_if_match_once_namespace_authorization_passes()
+    {
+        var existingSeed = await SeedExistingAsync(
+            306,
+            "upsert-precondition",
+            AuthorizedPrefix + "assessments"
+        );
+        var candidateSeed = existingSeed with
+        {
+            DocumentUuid = new DocumentUuid(Guid.Parse("b4b4b4b4-0000-0000-0000-000000000306")),
+            Name = "upsert-precondition-change",
+            Namespace = SecondAuthorizedPrefix + "surveys",
+        };
+        var before = await ReadStateAsync(existingSeed);
+        _context.ResetRecorder();
+
+        var result = await UpsertAsync(candidateSeed, ifMatch: StaleETag);
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>(
+                "the precondition result must survive unchanged once both namespace checks pass"
+            );
+        await AssertStateUnchangedAsync(existingSeed, before);
+        (await _context.CountDocumentRowsAsync(candidateSeed.DocumentUuid)).Should().Be(0);
+    }
+
     // ── DELETE ──────────────────────────────────────────────────────────
 
     [Test]
@@ -497,6 +656,26 @@ public class Given_A_Mssql_Relational_Namespace_Write_Authorization_With_A_Synth
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// An EducationContent body carrying the fixture's one optional extension scalar under
+    /// <c>_ext.authzext</c>. Only the two schema-required fields plus a short description accompany it.
+    /// </summary>
+    private static JsonNode CreateEducationContentBody(
+        string contentIdentifier,
+        string @namespace,
+        string extensionValue
+    ) =>
+        new JsonObject
+        {
+            ["contentIdentifier"] = contentIdentifier,
+            ["namespace"] = @namespace,
+            ["shortDescription"] = "namespace extension coverage",
+            ["_ext"] = new JsonObject
+            {
+                ["authzext"] = new JsonObject { ["extensionValue"] = extensionValue },
+            },
+        };
 
     private static AuthorizationNamespaceSeed NamespaceSeed(
         int authorizationNamespaceId,

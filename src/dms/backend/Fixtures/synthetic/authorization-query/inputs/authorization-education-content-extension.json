@@ -1,0 +1,48 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "abstractResources": {},
+    "caseInsensitiveEndpointNameMapping": {},
+    "description": "Synthetic extension project adding one optional scalar to Ed-Fi.EducationContent, so namespace denial tests can prove a real extension-table row is preserved. EducationContent is the lightest DS 5.2 resource with a concrete root Namespace column: its schema requires only contentIdentifier and namespace.",
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "isExtensionProject": true,
+    "projectEndpointName": "authzext",
+    "projectName": "AuthzExt",
+    "projectVersion": "1.0.0",
+    "resourceNameMapping": {},
+    "resourceSchemas": {
+      "educationContentExtensions": {
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "documentPathsMapping": {},
+        "equalityConstraints": [],
+        "identityJsonPaths": [],
+        "isDescriptor": false,
+        "isResourceExtension": true,
+        "isSchoolYearEnumeration": false,
+        "isSubclass": false,
+        "jsonSchemaForInsert": {
+          "properties": {
+            "_ext": {
+              "properties": {
+                "authzext": {
+                  "properties": {
+                    "extensionValue": {
+                      "maxLength": 60,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "resourceName": "EducationContent"
+      }
+    }
+  }
+}

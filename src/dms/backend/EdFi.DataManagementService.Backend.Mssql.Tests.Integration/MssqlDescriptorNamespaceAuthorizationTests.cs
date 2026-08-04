@@ -254,6 +254,7 @@ public class Given_A_Mssql_Descriptor_Namespace_Authorization_With_The_Authorita
     {
         // Each case pairs one authorized side with one unauthorized side, so a proposed failure is only
         // reachable once the stored check passed — which is what establishes the stored-then-proposed order.
+        // Both run under a stale If-Match, so each reachable denial is also shown to beat the precondition.
         const string CodeValue = "PutDenied";
         var storedNamespace = storedAuthorized ? AuthorizedNamespace : UnauthorizedNamespace;
         var proposedNamespace = storedAuthorized ? UnauthorizedNamespace : AuthorizedNamespace;
@@ -263,7 +264,8 @@ public class Given_A_Mssql_Descriptor_Namespace_Authorization_With_The_Authorita
 
         var result = await UpdateAsync(
             CreateDescriptorBody(CodeValue, proposedNamespace, "Denied short description"),
-            documentUuid
+            documentUuid,
+            ifMatch: StaleETag
         );
 
         AssertNamespaceDenied(
@@ -273,6 +275,28 @@ public class Given_A_Mssql_Descriptor_Namespace_Authorization_With_The_Authorita
                 .Subject.NamespaceFailure,
             expectedValueSource
         );
+        await AssertStateUnchangedAsync(documentUuid, before);
+    }
+
+    [Test]
+    public async Task It_returns_412_for_a_stale_descriptor_put_if_match_once_namespace_authorization_passes()
+    {
+        const string CodeValue = "PutPrecondition";
+        var documentUuid = await SeedDescriptorAsync(CodeValue, AuthorizedNamespace);
+        var before = await ReadStateAsync(documentUuid);
+        _context.ResetRecorder();
+
+        var result = await UpdateAsync(
+            CreateDescriptorBody(CodeValue, AuthorizedNamespace, "Precondition short description"),
+            documentUuid,
+            ifMatch: StaleETag
+        );
+
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>(
+                "the precondition result must survive unchanged once both namespace checks pass"
+            );
         await AssertStateUnchangedAsync(documentUuid, before);
     }
 
@@ -312,7 +336,8 @@ public class Given_A_Mssql_Descriptor_Namespace_Authorization_With_The_Authorita
         // addresses a different descriptor and takes the create path, whose proposed-value denial is covered
         // above. An upsert that resolves to an existing target therefore always carries the stored namespace,
         // which makes attributing this denial to the stored value the ordering proof: had the proposed check
-        // run first, the identical proposed value would have reported Proposed instead.
+        // run first, the identical proposed value would have reported Proposed instead. The stale If-Match
+        // additionally shows the denial beats the precondition.
         const string CodeValue = "UpsertDenied";
         var existingUuid = await SeedDescriptorAsync(CodeValue, UnauthorizedNamespace);
         var candidateUuid = new DocumentUuid(Guid.Parse("c2c2c2c2-0000-0000-0000-000000000002"));
@@ -321,7 +346,8 @@ public class Given_A_Mssql_Descriptor_Namespace_Authorization_With_The_Authorita
 
         var result = await UpsertAsync(
             CreateDescriptorBody(CodeValue, UnauthorizedNamespace, "Denied short description"),
-            candidateUuid
+            candidateUuid,
+            ifMatch: StaleETag
         );
 
         AssertNamespaceDenied(
@@ -331,6 +357,30 @@ public class Given_A_Mssql_Descriptor_Namespace_Authorization_With_The_Authorita
                 .Subject.NamespaceFailure,
             NamespaceAuthorizationFailureValueSource.Stored
         );
+        await AssertStateUnchangedAsync(existingUuid, before);
+        (await _context.CountDocumentRowsAsync(candidateUuid)).Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_412_for_a_stale_descriptor_post_as_update_if_match_once_namespace_authorization_passes()
+    {
+        const string CodeValue = "UpsertPrecondition";
+        var existingUuid = await SeedDescriptorAsync(CodeValue, AuthorizedNamespace);
+        var candidateUuid = new DocumentUuid(Guid.Parse("c2c2c2c2-0000-0000-0000-000000000003"));
+        var before = await ReadStateAsync(existingUuid);
+        _context.ResetRecorder();
+
+        var result = await UpsertAsync(
+            CreateDescriptorBody(CodeValue, AuthorizedNamespace, "Precondition short description"),
+            candidateUuid,
+            ifMatch: StaleETag
+        );
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>(
+                "the precondition result must survive unchanged once both namespace checks pass"
+            );
         await AssertStateUnchangedAsync(existingUuid, before);
         (await _context.CountDocumentRowsAsync(candidateUuid)).Should().Be(0);
     }

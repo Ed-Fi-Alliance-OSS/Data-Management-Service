@@ -47,6 +47,13 @@ public class Given_A_Mssql_Relational_Namespace_Read_Authorization_With_A_Synthe
     private const int UnauthorizedSchoolId = (int)
         RelationshipAuthorizationCrudTestSupport.UnauthorizedSchoolId;
 
+    /// <summary>
+    /// A school reachable only through the inverted relationship branch, so a row referencing it satisfies the
+    /// OR group without the normal branch.
+    /// </summary>
+    private const int InvertedOnlySchoolId = (int)
+        RelationshipAuthorizationCrudTestSupport.SecondAuthorizedSchoolId;
+
     /// <summary>The engine error number SQL Server raises for the compiler's intentional AUTH1 cast failure.</summary>
     private const int ConversionFailedErrorNumber = 245;
 
@@ -56,6 +63,13 @@ public class Given_A_Mssql_Relational_Namespace_Read_Authorization_With_A_Synthe
         RelationshipAuthorizationCrudTestSupport.NamespaceBasedStrategyNames;
     private static readonly IReadOnlyList<string> _namespaceAndEdOrgStrategies =
         RelationshipAuthorizationCrudTestSupport.NamespaceBasedPlusEdOrgOnlyStrategyNames;
+    private static readonly IReadOnlyList<string> _namespaceAndRelationshipOrGroupStrategies =
+        RelationshipAuthorizationCrudTestSupport.NamespaceBasedPlusEdOrgNormalOrInvertedStrategyNames;
+    private static readonly IReadOnlyList<string> _namespaceAndEdOrgInvertedStrategies =
+    [
+        RelationshipAuthorizationCrudTestSupport.NamespaceBased,
+        RelationshipAuthorizationCrudTestSupport.RelationshipsWithEdOrgsOnlyInverted,
+    ];
 
     private static readonly QuerySchoolSeed[] _schoolSeeds =
     [
@@ -69,6 +83,12 @@ public class Given_A_Mssql_Relational_Namespace_Read_Authorization_With_A_Synthe
             UnauthorizedSchoolId,
             "West"
         ),
+        // Reached only by the inverted branch: the seeded edge runs school 200 -> claim, never claim -> 200.
+        new(
+            new DocumentUuid(Guid.Parse("a1a1a1a1-0000-0000-0000-000000000003")),
+            InvertedOnlySchoolId,
+            "South"
+        ),
     ];
 
     private static readonly ClassPeriodSeed _classPeriodSeed = new(
@@ -79,11 +99,17 @@ public class Given_A_Mssql_Relational_Namespace_Read_Authorization_With_A_Synthe
 
     // Seeded in this order, so dms.Document identity order — the GET-many sort order — matches the array
     // order. Authorized-by-namespace rows are indexes 0, 2, and 5.
+    //
+    // The school each row references decides which relationship branch can satisfy it, which is what makes the
+    // composed truth table below reachable:
+    //   school 100 — normal branch only   (edge claim -> 100)
+    //   school 200 — inverted branch only (edge 200 -> claim)
+    //   school 300 — neither branch       (no edge in either direction)
     private static readonly AuthorizationNamespaceSeed[] _seeds =
     [
         NamespaceSeed(1, "first-matching-prefix", AuthorizedPrefix + "assessments", AuthorizedSchoolId),
         NamespaceSeed(2, "second-nonmatching-prefix", UnauthorizedPrefix + "assessments", AuthorizedSchoolId),
-        NamespaceSeed(3, "third-second-prefix", SecondAuthorizedPrefix + "surveys", AuthorizedSchoolId),
+        NamespaceSeed(3, "third-second-prefix", SecondAuthorizedPrefix + "surveys", InvertedOnlySchoolId),
         NamespaceSeed(4, "fourth-null-namespace", null, AuthorizedSchoolId),
         NamespaceSeed(5, "fifth-empty-namespace", string.Empty, AuthorizedSchoolId),
         NamespaceSeed(
@@ -93,6 +119,12 @@ public class Given_A_Mssql_Relational_Namespace_Read_Authorization_With_A_Synthe
             UnauthorizedSchoolId
         ),
         NamespaceSeed(7, "seventh-stale-target", UnauthorizedPrefix + "stale", AuthorizedSchoolId),
+        NamespaceSeed(
+            8,
+            "eighth-nonmatching-inverted-edorg",
+            UnauthorizedPrefix + "surveys",
+            InvertedOnlySchoolId
+        ),
     ];
 
     private static readonly AuthorizationNamespaceSeed _matchingSeed = _seeds[0];
@@ -146,8 +178,15 @@ public class Given_A_Mssql_Relational_Namespace_Read_Authorization_With_A_Synthe
             );
         }
 
+        // One edge per branch, in one direction only, so the normal and inverted strategies are independently
+        // satisfiable and no row can satisfy both. The reverse edges are deleted explicitly because a row that
+        // satisfied both branches would make the OR group indistinguishable from a single strategy.
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, AuthorizedSchoolId);
+        await _context.DeleteAuthEdgeAsync(AuthorizedSchoolId, ClaimEducationOrganizationId);
+        await _context.InsertAuthEdgeAsync(InvertedOnlySchoolId, ClaimEducationOrganizationId);
+        await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, InvertedOnlySchoolId);
         await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, UnauthorizedSchoolId);
+        await _context.DeleteAuthEdgeAsync(UnauthorizedSchoolId, ClaimEducationOrganizationId);
         await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId);
     }
 
@@ -247,6 +286,10 @@ public class Given_A_Mssql_Relational_Namespace_Read_Authorization_With_A_Synthe
             .BeOfType<GetResult.GetFailureNotExists>(
                 "a target that vanished between lookup and authorization must follow the stale-target path"
             );
+
+        // The 404 must come from decoding the stale-target payload, not from an early re-query that never ran
+        // the authorization check: an implementation that skipped the check would record no provider exception.
+        AssertDecodedFromRealSqlException("AUTH1 - ns1|0|s");
     }
 
     [Test]
@@ -338,13 +381,43 @@ public class Given_A_Mssql_Relational_Namespace_Read_Authorization_With_A_Synthe
     [Test]
     public async Task It_ands_namespace_authorization_around_the_relationship_or_group()
     {
-        // Seeds 1 and 3 satisfy both sides. Seed 6 matches a configured prefix but its EdOrg has no
-        // relationship, and seed 2 has an authorized EdOrg but a nonmatching prefix, so both are excluded —
-        // proving NamespaceBased is an AND condition around the relationship OR group rather than an
-        // alternative to it.
-        var result = await QueryAsync(
+        // Namespace AND (normal OR inverted), with both relationship branches independently satisfiable:
+        //
+        //   seed | namespace | normal | inverted | expected
+        //   -----+-----------+--------+----------+---------
+        //      1 | match     | true   | false    | included
+        //      3 | match     | false  | true     | included
+        //      6 | match     | false  | false    | excluded
+        //      2 | mismatch  | true   | false    | excluded
+        //      8 | mismatch  | false  | true     | excluded
+        //
+        // Seeds 1 and 3 prove each relationship branch alone satisfies the OR group. Seed 6 proves the OR group
+        // is still required. Seeds 2 and 8 falsify the two incorrect flattenings: under
+        // (Namespace AND R1) OR R2 seed 8 would be included, and under R1 OR (Namespace AND R2) seed 2 would be.
+        //
+        // The normal and inverted columns are established rather than assumed: composing the namespace check
+        // with one branch at a time must return that branch's row alone.
+        var normalOnlyResult = await QueryAsync(
             claimEducationOrganizationIds: [ClaimEducationOrganizationId],
             strategyNames: _namespaceAndEdOrgStrategies
+        );
+        AssertReturnedDocuments(
+            normalOnlyResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject,
+            _seeds[0]
+        );
+
+        var invertedOnlyResult = await QueryAsync(
+            claimEducationOrganizationIds: [ClaimEducationOrganizationId],
+            strategyNames: _namespaceAndEdOrgInvertedStrategies
+        );
+        AssertReturnedDocuments(
+            invertedOnlyResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject,
+            _seeds[2]
+        );
+
+        var result = await QueryAsync(
+            claimEducationOrganizationIds: [ClaimEducationOrganizationId],
+            strategyNames: _namespaceAndRelationshipOrGroupStrategies
         );
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;

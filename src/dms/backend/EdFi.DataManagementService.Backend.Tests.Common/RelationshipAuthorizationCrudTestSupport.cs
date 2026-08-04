@@ -83,10 +83,19 @@ public static class RelationshipAuthorizationCrudTestSupport
     public static IReadOnlyList<string> NamespaceBasedStrategyNames { get; } = [NamespaceBased];
 
     /// <summary>
-    /// NamespaceBased AND-composed around the relationship OR group, in the order the planner splits them.
+    /// NamespaceBased AND-composed with a single relationship strategy. This is <c>Namespace AND R1</c>, not an
+    /// OR group; use <see cref="NamespaceBasedPlusEdOrgNormalOrInvertedStrategyNames"/> to compose around two
+    /// independently satisfiable relationship strategies.
     /// </summary>
     public static IReadOnlyList<string> NamespaceBasedPlusEdOrgOnlyStrategyNames { get; } =
     [NamespaceBased, RelationshipsWithEdOrgsOnly];
+
+    /// <summary>
+    /// NamespaceBased AND-composed around a genuine relationship OR group: the normal and inverted EdOrg
+    /// strategies are independently satisfiable, so a row may satisfy either branch alone.
+    /// </summary>
+    public static IReadOnlyList<string> NamespaceBasedPlusEdOrgNormalOrInvertedStrategyNames { get; } =
+    [NamespaceBased, RelationshipsWithEdOrgsOnly, RelationshipsWithEdOrgsOnlyInverted];
 
     public static IReadOnlyList<string> ConfiguredNamespacePrefixes { get; } =
     [AuthorizedNamespacePrefix, SecondAuthorizedNamespacePrefix];
