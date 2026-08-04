@@ -707,6 +707,11 @@ function Get-DatabaseNameFromResolvedConnectionString {
         is refused HERE instead, before startup, and refused even when a valid synonym appears
         alongside it: silently preferring the valid one still hands the provider a string it rejects.
 
+        "Initial Catalog" is recognized only in its exact single-space spelling (case-insensitively).
+        The providers look a keyword up by its exact text, so "Initial  Catalog" is not the synonym it
+        resembles - it is a keyword no provider supports. Treating any run of whitespace as equivalent
+        read such a key as a database name the connection would never target.
+
     .PARAMETER ConnectionString
         An already Compose-precedence-resolved connection string.
 
@@ -727,9 +732,9 @@ function Get-DatabaseNameFromResolvedConnectionString {
     }
 
     $recognizedKeyPattern =
-        if ($DatabaseEngine -eq "mssql") { '^(database|initial\s+catalog)$' } else { '^(database|db)$' }
+        if ($DatabaseEngine -eq "mssql") { '^(database|initial catalog)$' } else { '^(database|db)$' }
     $foreignKeyPattern =
-        if ($DatabaseEngine -eq "mssql") { '^db$' } else { '^initial\s+catalog$' }
+        if ($DatabaseEngine -eq "mssql") { '^db$' } else { '^initial catalog$' }
     $recognizedKeyFamily =
         if ($DatabaseEngine -eq "mssql") { "'Database' or 'Initial Catalog'" } else { "'Database' or 'DB'" }
 
@@ -742,8 +747,23 @@ function Get-DatabaseNameFromResolvedConnectionString {
         throw "Could not parse the resolved connection string to extract the database name: $($_.Exception.Message)"
     }
 
-    # Refused OUTSIDE the parse try/catch, so a configuration mistake is not reported as a parse
-    # failure. Names the engine and the allowed family only - never a value or a credential.
+    # Both refusals are made OUTSIDE the parse try/catch, so a configuration mistake is not reported
+    # as a parse failure, and neither renders a value or a credential.
+
+    # Checked before the foreign-synonym refusal, because a whitespace-mutated spelling is the more
+    # specific diagnosis: for either engine it is a keyword the provider does not have at all. Only
+    # the two-word keyword can carry internal whitespace, and only whitespace the generic parser
+    # keeps can reach here - it rejects control characters in a key and trims the outer edges - so
+    # the mutated forms in practice are a multiple space or a non-breaking space. Refused rather
+    # than read as "Initial Catalog", and refused even beside a valid Database sibling, because the
+    # provider rejects the whole connection string either way.
+    $malformedInitialCatalogKeyCount = @(
+        $presentKeys | Where-Object { $_ -imatch '^initial\s+catalog$' -and $_ -inotmatch '^initial catalog$' }
+    ).Count
+    if ($malformedInitialCatalogKeyCount -gt 0) {
+        throw "Connection string configuration error: it carries a database-name keyword spelled like 'Initial Catalog' but separated by other whitespace, which no provider supports. Spell it 'Initial Catalog' with a single space. The value is withheld."
+    }
+
     if (@($presentKeys | Where-Object { $_ -imatch $foreignKeyPattern }).Count -gt 0) {
         throw "Connection string configuration error: it carries a database-name keyword belonging to the other engine, which the '$DatabaseEngine' provider rejects. Use $recognizedKeyFamily for '$DatabaseEngine'. The value is withheld."
     }
@@ -1355,6 +1375,10 @@ function Get-DatabaseNameFromConnectionString {
         but the generic parser stores both as distinct keys - a string carrying both could
         effectively target the later value, so every candidate must be returned rather than only
         the first. Returns an empty array when the string is blank or carries no database keyword.
+        "Initial Catalog" is recognized only in its exact single-space spelling, for the reason given
+        on Get-DatabaseNameFromResolvedConnectionString: a whitespace-mutated spelling is a keyword no
+        provider supports, so reading its value as a protected database name compares this guard
+        against a database the connection would never target.
     #>
     param(
         [string]$ConnectionString,
@@ -1373,11 +1397,27 @@ function Get-DatabaseNameFromConnectionString {
         # `.ConnectionString = ...` as an item named "ConnectionString". PSBase selects the real
         # CLR property and exposes the parsed keys/items.
         $connectionStringBuilder.PSBase.ConnectionString = $ConnectionString
+        $presentKeys = @($connectionStringBuilder.PSBase.Keys | ForEach-Object { [string]$_ })
+    }
+    catch {
+        throw "Could not safely parse a protected database connection string: $($_.Exception.Message)"
+    }
 
+    # Refused OUTSIDE the parse try/catch, so a configuration mistake is not reported as a parse
+    # failure. Refused rather than ignored, and refused even beside a valid Database sibling: a
+    # string this guard cannot read the way its provider will is not a string to provision against.
+    $malformedInitialCatalogKeyCount = @(
+        $presentKeys | Where-Object { $_ -imatch '^initial\s+catalog$' -and $_ -inotmatch '^initial catalog$' }
+    ).Count
+    if ($malformedInitialCatalogKeyCount -gt 0) {
+        throw "Connection string configuration error: it carries a database-name keyword spelled like 'Initial Catalog' but separated by other whitespace, which no provider supports. Spell it 'Initial Catalog' with a single space. The value is withheld."
+    }
+
+    try {
         # Streamed (not comma-wrapped) so the caller's @(...) collects a flat string array.
         return @(
-            foreach ($key in $connectionStringBuilder.PSBase.Keys) {
-                if ([string]$key -imatch '^(database|initial\s+catalog)$') {
+            foreach ($key in $presentKeys) {
+                if ($key -imatch '^(database|initial catalog)$') {
                     Resolve-ComposeEnvRawValue `
                         -EnvironmentValues $EnvironmentValues `
                         -RawValue ([string]$connectionStringBuilder.PSBase.get_Item($key))
