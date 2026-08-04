@@ -400,6 +400,76 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
     }
 
     [Test]
+    public async Task It_fences_lost_session_mutations_after_a_replacement_owner_acquires_the_mutex()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false)
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: async (context, cancellationToken) =>
+            {
+                await CommitLifecycleTransitionAsync(
+                        context,
+                        DocumentCacheAdministrativeCommandPhase.EnterResetting,
+                        DocumentCacheLifecycleState.Tracking,
+                        DocumentCacheLifecycleState.Resetting,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                await context.MutexLease.Connection.CloseAsync().ConfigureAwait(false);
+                await CommitReplacementLifecycleTransitionAsync(
+                        context,
+                        DocumentCacheLifecycleState.Resetting,
+                        DocumentCacheLifecycleState.Rebuilding,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.EnterTracking);
+                await using IRelationalWriteSession staleSession = await context
+                    .MutexLease.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+                    .ConfigureAwait(false);
+
+                DocumentCacheAdministrativeLifecycleTransitionResult staleTransition = await context
+                    .Primitives.TryTransitionLifecycleAsync(
+                        staleSession,
+                        new DocumentCacheAdministrativeLifecycleTransitionRequest(
+                            DocumentCacheLifecycleState.Rebuilding,
+                            expectedCacheAheadRecoveryRequired: false,
+                            DocumentCacheLifecycleState.Tracking,
+                            nextCacheAheadRecoveryRequired: false
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                staleTransition.Mutated.Should().BeTrue();
+
+                await staleSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+                context.MarkMutated(staleTransition.LifecycleReadResult.Lifecycle);
+                context.CompletePhase(DocumentCacheAdministrativeCommandPhase.EnterTracking);
+                return context.Completed();
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            RunnerRequest(),
+            workflow
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.SessionLossAfterMutation);
+        result.Mutated.Should().BeTrue();
+        (await ReadLifecycleAsync())
+            .Should()
+            .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Rebuilding, false));
+    }
+
+    [Test]
     public async Task It_reports_noncurrent_pinned_generation_diagnostics_for_a_running_command()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
@@ -969,6 +1039,40 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
             await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             throw;
         }
+    }
+
+    private static async Task CommitReplacementLifecycleTransitionAsync(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        DocumentCacheLifecycleState expectedLifecycle,
+        DocumentCacheLifecycleState nextLifecycle,
+        CancellationToken cancellationToken
+    )
+    {
+        var replacementMutex = new MssqlDocumentCacheAdministrativeMutex(
+            NullLogger<MssqlDocumentCacheAdministrativeMutex>.Instance
+        );
+        await using IDocumentCacheAdministrativeMutexLease replacementLease = await replacementMutex
+            .AcquireAsync(context.TargetContext.TargetExecutionContext.ConnectionInput, cancellationToken)
+            .ConfigureAwait(false);
+        await using IRelationalWriteSession replacementSession = await replacementLease
+            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            .ConfigureAwait(false);
+
+        DocumentCacheAdministrativeLifecycleTransitionResult transition = await context
+            .Primitives.TryTransitionLifecycleAsync(
+                replacementSession,
+                new DocumentCacheAdministrativeLifecycleTransitionRequest(
+                    expectedLifecycle,
+                    expectedCacheAheadRecoveryRequired: false,
+                    nextLifecycle,
+                    nextCacheAheadRecoveryRequired: false
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        transition.Mutated.Should().BeTrue();
+
+        await replacementSession.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IReadOnlyList<SourceDocument>> InsertProjectedRowsAsync(int documentCount)
