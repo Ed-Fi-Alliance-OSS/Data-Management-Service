@@ -242,7 +242,7 @@ internal sealed class MssqlDocumentCacheWriter(
             // row-locking work, perform cache DML against DocumentCache/source rows, then delete
             // matching work as the final commit gate. Duplicate absent-row writers serialize on
             // the exact-key UPDLOCK,HOLDLOCK cache probe before insert.
-            DocumentCacheWriterCurrentObservation currentObservation = await ReadCurrentObservationAsync(
+            MssqlDocumentCacheWriterCurrentObservation currentObservation = await ReadCurrentObservationAsync(
                     connection,
                     transaction,
                     request.DocumentId,
@@ -255,7 +255,7 @@ internal sealed class MssqlDocumentCacheWriter(
                     new DocumentCacheWriterClassificationRequest(
                         lifecycleReadResult,
                         currentObservation.ToCurrentState(),
-                        DocumentCacheWriterSupport.BuildCandidateObservation(request, currentObservation)
+                        BuildCandidateObservation(request, currentObservation)
                     )
                 );
 
@@ -558,7 +558,7 @@ internal sealed class MssqlDocumentCacheWriter(
                 return lifecycleFence;
             }
 
-            DocumentCacheWriterCurrentObservation currentObservation = await ReadCurrentObservationAsync(
+            MssqlDocumentCacheWriterCurrentObservation currentObservation = await ReadCurrentObservationAsync(
                     connection,
                     transaction,
                     request.DocumentId,
@@ -569,7 +569,7 @@ internal sealed class MssqlDocumentCacheWriter(
                 DocumentCacheWriterCacheAheadIncidentFlow.SelectRecheckDecision(
                     lifecycleReadResult,
                     currentObservation.ToCurrentState(),
-                    DocumentCacheWriterSupport.BuildCandidateObservation(request, currentObservation)
+                    BuildCandidateObservation(request, currentObservation)
                 );
 
             if (recheckDecision.TerminalResult is not null)
@@ -721,7 +721,7 @@ internal sealed class MssqlDocumentCacheWriter(
         }
     }
 
-    private static async Task<DocumentCacheWriterCurrentObservation> ReadCurrentObservationAsync(
+    private static async Task<MssqlDocumentCacheWriterCurrentObservation> ReadCurrentObservationAsync(
         SqlConnection connection,
         SqlTransaction transaction,
         long documentId,
@@ -762,15 +762,15 @@ internal sealed class MssqlDocumentCacheWriter(
             );
         }
 
-        var observation = new DocumentCacheWriterCurrentObservation(
-            DocumentCacheWriterSupport.GetNullableInt64(reader, "SourceContentVersion"),
-            DocumentCacheWriterSupport.GetNullableInt64(reader, "CacheContentVersion"),
-            DocumentCacheWriterSupport.GetNullableInt64(reader, "WorkRequiredContentVersion"),
-            DocumentCacheWriterSupport.GetNullableGuid(reader, "SourceDocumentUuid"),
-            DocumentCacheWriterSupport.GetNullableInt16(reader, "SourceResourceKeyId"),
-            DocumentCacheWriterSupport.GetNullableString(reader, "SourceProjectName"),
-            DocumentCacheWriterSupport.GetNullableString(reader, "SourceResourceName"),
-            DocumentCacheWriterSupport.GetNullableString(reader, "SourceResourceVersion")
+        var observation = new MssqlDocumentCacheWriterCurrentObservation(
+            GetNullableInt64(reader, "SourceContentVersion"),
+            GetNullableInt64(reader, "CacheContentVersion"),
+            GetNullableInt64(reader, "WorkRequiredContentVersion"),
+            GetNullableGuid(reader, "SourceDocumentUuid"),
+            GetNullableInt16(reader, "SourceResourceKeyId"),
+            GetNullableString(reader, "SourceProjectName"),
+            GetNullableString(reader, "SourceResourceName"),
+            GetNullableString(reader, "SourceResourceVersion")
         );
 
         if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -781,6 +781,90 @@ internal sealed class MssqlDocumentCacheWriter(
         }
 
         return observation;
+    }
+
+    private static DocumentCacheWriterCandidateObservation BuildCandidateObservation(
+        DocumentCacheWriterRequest request,
+        MssqlDocumentCacheWriterCurrentObservation currentObservation
+    )
+    {
+        DocumentCacheMaterializationCandidate? candidate = request.Candidate;
+        if (candidate is null)
+        {
+            return DocumentCacheWriterCandidateObservation.Absent;
+        }
+
+        return new DocumentCacheWriterCandidateObservation(
+            candidate,
+            CompareCandidateMetadata(request.TargetContext.MappingSet, candidate, currentObservation)
+        );
+    }
+
+    private static DocumentCacheWriterCandidateMetadataComparison CompareCandidateMetadata(
+        MappingSet mappingSet,
+        DocumentCacheMaterializationCandidate candidate,
+        MssqlDocumentCacheWriterCurrentObservation currentObservation
+    )
+    {
+        if (currentObservation.SourceContentVersion is null)
+        {
+            return DocumentCacheWriterCandidateMetadataComparison.MatchesCurrentSource;
+        }
+
+        if (currentObservation.SourceDocumentUuid != candidate.DocumentUuid.Value)
+        {
+            return DocumentCacheWriterCandidateMetadataComparison.DocumentUuidMismatch;
+        }
+
+        if (
+            !string.Equals(
+                currentObservation.SourceProjectName,
+                candidate.ProjectName,
+                StringComparison.Ordinal
+            )
+            || !string.Equals(
+                currentObservation.SourceResourceName,
+                candidate.ResourceName,
+                StringComparison.Ordinal
+            )
+            || !string.Equals(
+                currentObservation.SourceResourceVersion,
+                candidate.ResourceVersion,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return DocumentCacheWriterCandidateMetadataComparison.ResourceMetadataMismatch;
+        }
+
+        if (
+            currentObservation.SourceResourceKeyId is null
+            || !mappingSet.ResourceKeyById.TryGetValue(
+                currentObservation.SourceResourceKeyId.Value,
+                out ResourceKeyEntry? resourceKey
+            )
+            || resourceKey.ResourceKeyId != currentObservation.SourceResourceKeyId.Value
+            || !string.Equals(
+                resourceKey.Resource.ProjectName,
+                candidate.ProjectName,
+                StringComparison.Ordinal
+            )
+            || !string.Equals(
+                resourceKey.Resource.ResourceName,
+                candidate.ResourceName,
+                StringComparison.Ordinal
+            )
+            || !string.Equals(
+                resourceKey.ResourceVersion,
+                candidate.ResourceVersion,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return DocumentCacheWriterCandidateMetadataComparison.TargetMappingMismatch;
+        }
+
+        return DocumentCacheWriterCandidateMetadataComparison.MatchesCurrentSource;
     }
 
     private static async Task<int> ExecuteCacheWriteAsync(
