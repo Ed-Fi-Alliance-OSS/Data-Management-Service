@@ -86,6 +86,9 @@ internal static class DocumentCacheAdministrativeWorkflow
             .BeginTransactionAsync(isolationLevel, cancellationToken)
             .ConfigureAwait(false);
 
+        // Once an administrative database transaction starts, cancellation is observed at the
+        // workflow/page boundary; the active transaction must commit or roll back under its
+        // provider command timeout rather than being interrupted by caller cancellation.
         CancellationToken activeTransactionCancellationToken = CancellationToken.None;
         try
         {

@@ -200,6 +200,44 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     }
 
     [Test]
+    public async Task It_does_not_duplicate_context_phase_diagnostics_when_preflight_returns_context_failure()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) =>
+                Task.FromResult(
+                    context.Failed(
+                        DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+                        DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
+                        DocumentCacheAdministrativeDiagnosticCategory.BaselineHighWaterBackpressure,
+                        "Preflight stopped after observing baseline high-water backpressure.",
+                        retryable: false,
+                        affectedDocumentIds: [10, 11, 12]
+                    )
+                ),
+            execute: static (_, _) => throw new AssertionException("Command work must not run.")
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex()
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.LifecycleMismatch);
+        DocumentCacheAdministrativePhaseDiagnostic diagnostic = result
+            .PhaseDiagnostics.Should()
+            .ContainSingle()
+            .Subject;
+        diagnostic
+            .DiagnosticCategory.Should()
+            .Be(DocumentCacheAdministrativeDiagnosticCategory.BaselineHighWaterBackpressure);
+        diagnostic.AffectedDocumentIds.Should().Equal(10, 11, 12);
+    }
+
+    [Test]
     public async Task It_carries_accepted_downstream_publication_status_from_preflight_to_execution()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
@@ -900,6 +938,69 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             .NotContain(diagnostic =>
                 diagnostic.DiagnosticCategory
                 == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
+            );
+    }
+
+    [Test]
+    public async Task It_preserves_distinct_identical_phase_diagnostic_occurrences()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex()
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: static (context, _) =>
+            {
+                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.SeedBaseline);
+                context.AddPhaseDiagnostic(
+                    DocumentCacheAdministrativeDiagnosticCategory.BaselineHighWaterBackpressure,
+                    "Backpressure observation repeated.",
+                    retryable: true
+                );
+
+                ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> workflowDiagnostics =
+                [
+                    new(
+                        DocumentCacheAdministrativeCommandPhase.SeedBaseline,
+                        DocumentCacheAdministrativeCommandPhase.Preflight,
+                        retryable: true,
+                        DocumentCacheAdministrativeDiagnosticCategory.BaselineHighWaterBackpressure,
+                        message: "Backpressure observation repeated."
+                    ),
+                ];
+
+                return Task.FromResult(
+                    new DocumentCacheAdministrativeCommandResult(
+                        context.Request.Command,
+                        context.Request.TargetKey,
+                        DocumentCacheAdministrativeCommandStatus.Completed,
+                        DocumentCacheAdministrativeCommandClassification.Succeeded,
+                        context.Mutated,
+                        context.TargetContext.Generation.Value,
+                        context.TargetContext.TargetExecutionContext.PhysicalSourceFingerprint,
+                        context.ObservedLifecycle?.State,
+                        context.ObservedLifecycle?.CacheAheadRecoveryRequired,
+                        workflowDiagnostics,
+                        context.Request.AcceptedOfflineWriterAdmissionConfirmation,
+                        context.ElapsedCommandTime
+                    )
+                );
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result
+            .PhaseDiagnostics.Should()
+            .HaveCount(2)
+            .And.OnlyContain(diagnostic =>
+                diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.BaselineHighWaterBackpressure
+                && diagnostic.Message == "Backpressure observation repeated."
             );
     }
 

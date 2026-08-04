@@ -837,7 +837,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             .ConfigureAwait(false);
         if (preflightResult.Classification != DocumentCacheAdministrativeCommandClassification.Succeeded)
         {
-            return AddRuntimeResultFields(preflightResult, commandContext);
+            return preflightResult;
         }
 
         commandContext.AcceptPreflightResult(preflightResult);
@@ -990,7 +990,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
 
         ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> phaseDiagnostics =
             DocumentCacheProjectionObservationBounds.CapPhaseDiagnostics(
-                result.PhaseDiagnostics.Concat(commandContext.PhaseDiagnostics).Distinct().ToImmutableArray(),
+                MergePhaseDiagnostics(result.PhaseDiagnostics, commandContext),
                 commandContext.PhaseDiagnosticCapacity
             );
 
@@ -1010,6 +1010,34 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             commandContext.Request.AcceptedOfflineWriterAdmissionConfirmation,
             commandContext.ElapsedCommandTime
         );
+    }
+
+    private static ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> MergePhaseDiagnostics(
+        ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> resultDiagnostics,
+        DocumentCacheAdministrativeCommandExecutionContext commandContext
+    )
+    {
+        ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> contextDiagnostics =
+            commandContext.PhaseDiagnostics;
+        ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> normalizedResultDiagnostics =
+            resultDiagnostics.IsDefault ? [] : resultDiagnostics;
+
+        if (contextDiagnostics.IsDefaultOrEmpty)
+        {
+            return normalizedResultDiagnostics;
+        }
+
+        if (normalizedResultDiagnostics.IsDefaultOrEmpty)
+        {
+            return contextDiagnostics;
+        }
+
+        if (normalizedResultDiagnostics.Equals(contextDiagnostics))
+        {
+            return normalizedResultDiagnostics;
+        }
+
+        return normalizedResultDiagnostics.Concat(contextDiagnostics).ToImmutableArray();
     }
 
     private ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> AddNoncurrentGenerationDiagnostic(
