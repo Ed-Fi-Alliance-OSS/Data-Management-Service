@@ -150,7 +150,10 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 inspection = await InspectDatabaseCdcAsync(executor, cancellationToken).ConfigureAwait(false);
             }
 
-            var diagnostics = DatabaseCdcDiagnostics(inspection);
+            var diagnostics = DatabaseCdcDiagnostics(
+                inspection,
+                requireJobsWhenCdcEnabled: wasEnabledAtStart
+            );
             if (diagnostics.Any(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error))
             {
                 state = CdcProviderArtifactState.Mismatched;
@@ -196,7 +199,10 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         try
         {
             var inspection = await InspectDatabaseCdcAsync(executor, cancellationToken).ConfigureAwait(false);
-            return DatabaseCdcMetadataRefreshResult(inspection, DatabaseCdcDiagnostics(inspection));
+            return DatabaseCdcMetadataRefreshResult(
+                inspection,
+                DatabaseCdcDiagnostics(inspection, requireJobsWhenCdcEnabled: false)
+            );
         }
         catch (DbException exception)
         {
@@ -1978,10 +1984,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var captureInstanceCount = isCdcEnabled
             ? await ReadCaptureInstanceCountAsync(executor, cancellationToken).ConfigureAwait(false)
             : 0;
-        var jobHelpRows =
-            isCdcEnabled && captureInstanceCount > 0
-                ? await executor.QueryAsync(CdcHelpJobsSql, cancellationToken).ConfigureAwait(false)
-                : [];
+        var jobHelpRows = isCdcEnabled
+            ? await executor.QueryAsync(CdcHelpJobsSql, cancellationToken).ConfigureAwait(false)
+            : [];
         var jobRuntimeRows = isCdcEnabled
             ? await executor.QueryAsync(CdcJobRuntimeSql, cancellationToken).ConfigureAwait(false)
             : [];
@@ -3848,7 +3853,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     }
 
     private static IReadOnlyList<CdcProviderDiagnostic> DatabaseCdcDiagnostics(
-        DatabaseCdcInspection inspection
+        DatabaseCdcInspection inspection,
+        bool requireJobsWhenCdcEnabled
     )
     {
         List<CdcProviderDiagnostic> diagnostics = [];
@@ -3865,12 +3871,17 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             !inspection.JobsByType.ContainsKey("cleanup")
             && !inspection.JobRuntimeByType.ContainsKey("cleanup");
 
-        if (inspection.CaptureInstanceCount > 0 && (captureJobMissing || cleanupJobMissing))
+        if (
+            (requireJobsWhenCdcEnabled || inspection.CaptureInstanceCount > 0)
+            && (captureJobMissing || cleanupJobMissing)
+        )
         {
             diagnostics.Add(
                 ProviderHistoryUnavailable(
                     "CDC_SQLSERVER_DATABASE_CDC_JOBS_MISSING",
-                    expectedValue: "capture-and-cleanup-jobs-present-after-table-cdc",
+                    expectedValue: requireJobsWhenCdcEnabled
+                        ? "capture-and-cleanup-jobs-present-for-existing-database-cdc"
+                        : "capture-and-cleanup-jobs-present-after-table-cdc",
                     observedValue: $"capture={MissingOrPresent(captureJobMissing)};cleanup={MissingOrPresent(cleanupJobMissing)}"
                 )
             );

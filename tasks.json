@@ -920,5 +920,42 @@
       "With PostgreSQL provider prerequisites available, run or manually inspect a publication created FOR ALL TABLES and confirm setup reports CDC_POSTGRESQL_WORK_TABLE_PUBLICATION_FORBIDDEN without mutating the publication."
     ],
     "completed": true
+  },
+  {
+    "category": "manifest",
+    "description": "Medium: Make the standalone SQL Server CDC provider manifest serialize the physical-source provider token as sqlserver. Keep this as a manifest serialization compatibility fix only: do not rename the cdc-provider.mssql.manifest.json file, ordinary mssql DDL artifact names, source-fingerprint inputs or values, binding artifact names, artifact kinds, connector-template inputs, or Kafka behavior.",
+    "acceptance-criteria": [
+      "CdcProviderManifestEmitter serializes the manifest JSON provider field as postgresql for CdcProvider.Postgresql and sqlserver for CdcProvider.SqlServer.",
+      "CdcProviderManifestEmitter.FileNameFor still returns cdc-provider.pgsql.manifest.json and cdc-provider.mssql.manifest.json, and ordinary mssql DDL artifact naming remains unchanged.",
+      "SQL Server cdc-provider.mssql.manifest.json no longer exposes provider: mssql while source-fingerprint observed metadata still exposes provider_token: sqlserver.",
+      "The source-fingerprint algorithm, fingerprint conformance vectors, provider enum names, artifact-name helper inputs, and artifact-kind tokens are not changed.",
+      "Only unit and integration expectations that asserted the manifest provider field as mssql are updated, with an explicit manifest unit assertion for SQL Server.",
+      "No connector-template, Kafka, binding-state, provider artifact-name, provider artifact-kind, provider DDL, or source-fingerprint value changes are introduced beyond the manifest provider token correction."
+    ],
+    "steps-to-verify": [
+      "Review CdcProviderManifestEmitter.ProviderToken and CdcSourceFingerprintMetadata.ProviderToken for consistent postgresql/sqlserver provider token mapping while FileNameFor keeps pgsql/mssql dialect filenames.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderManifest",
+      "With SQL Server provider prerequisites available, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderArtifacts"
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-provider-history",
+    "description": "Medium: Fail SQL Server provider setup when database CDC was already enabled at provider-setup entry but required capture or cleanup job metadata is missing. Keep this limited to DMS-1320 provider-history validation: inspect job presence, emit ProviderHistoryUnavailable, and stop before later setup steps. Do not add job repair, job tuning, teardown, lifecycle or binding-state mutation, Kafka Connect calls, or a general SQL Server job auditor.",
+    "acceptance-criteria": [
+      "SQL Server database CDC inspection reads or otherwise records capture and cleanup job presence whenever database CDC is enabled, including when the current capture instance count is zero.",
+      "InitialCreateOrExactMatch distinguishes database CDC enabled at the start of the current setup call from database CDC enabled by the current setup call, without persisting new state in DMS-1320.",
+      "When database CDC was enabled at the start of the call and either the capture job or cleanup job is missing, setup returns a ProviderHistoryUnavailable diagnostic and fails before heartbeat, capture-instance, connector-grant, or final metadata-refresh steps run.",
+      "The missing-job path does not execute sys.sp_cdc_enable_table, sys.sp_cdc_add_job, sys.sp_cdc_change_job, sys.sp_start_job, sys.sp_stop_job, or any other job repair command.",
+      "InitialCreateOrExactMatch still supports the new-database path where DMS enables database CDC during the current call; that path does not fail merely because jobs are not observable before the three expected capture instances are created, and final metadata refresh reports SQL Server-created job metadata or diagnostics.",
+      "ValidateOnly behavior remains fail-closed for disabled database CDC and missing expected capture instances, and disabled, stopped, or failed CDC jobs remain warning observations rather than repair triggers.",
+      "No committed connector offset comparison, Kafka Connect polling, binding lifecycle transition, durable source-history latch, or final source-history continuity decision is added in DMS-1320."
+    ],
+    "steps-to-verify": [
+      "Review CdcSqlServerHeartbeatDatabaseProvider.ExecuteDatabaseCdcAsync, InspectDatabaseCdcAsync, and DatabaseCdcDiagnostics for the enabled-at-start missing-job path and absence of new repair/orchestration workflows.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
+      "With ConnectionStrings__MssqlAdmin pointing at a disposable SQL Server 2025 instance, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderArtifacts"
+    ],
+    "completed": true
   }
 ]

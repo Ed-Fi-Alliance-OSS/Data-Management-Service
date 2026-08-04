@@ -89,6 +89,48 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
     }
 
     [Test]
+    public async Task It_should_fail_before_later_steps_when_existing_database_cdc_jobs_are_missing_without_captures()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase();
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_DATABASE_CDC_JOBS_MISSING"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+                && diagnostic.ExpectedValue == "capture-and-cleanup-jobs-present-for-existing-database-cdc"
+                && diagnostic.ObservedValue == "capture=missing;cleanup=missing"
+            );
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["database_cdc_was_enabled_at_start"] == "True"
+                && observation.SafeObservedValues["capture_instance_count"] == "0"
+                && observation.SafeObservedValues["capture_job_present"] == "False"
+                && observation.SafeObservedValues["cleanup_job_present"] == "False"
+            );
+        executor.QueriedSql.Should().Contain(sql => sql.Contains("cdc:sqlserver:help-jobs"));
+        executor.ExecutedSql.Should().BeEmpty();
+        executor
+            .QueriedSql.Should()
+            .NotContain(sql =>
+                sql.Contains("cdc:sqlserver:table-exists")
+                || sql.Contains("cdc:sqlserver:source-inventory")
+                || sql.Contains("cdc:sqlserver:capture-instances")
+                || sql.Contains("cdc:sqlserver:gating-role-pre-capture")
+                || sql.Contains("cdc:sqlserver:connector-principal-access")
+            );
+    }
+
+    [Test]
     public void It_should_create_the_opt_in_heartbeat_table_and_singleton()
     {
         _result
@@ -754,7 +796,10 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     [Test]
     public async Task MssqlCdcCaptureInstances_should_fail_closed_when_capture_instances_are_missing()
     {
-        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase();
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true
+        );
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
 
         var result = await service.SetupAsync(
@@ -814,6 +859,8 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     public async Task MssqlCdcCaptureInstances_should_reject_dirty_existing_gating_role_before_creating_missing_capture_instances()
     {
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
             connectorAccess: new RecordingSqlServerConnectorAccess
             {
                 GatingRoleExists = true,
@@ -860,6 +907,8 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     public async Task MssqlCdcCaptureInstances_should_use_clean_existing_gating_role_to_create_missing_capture_instances()
     {
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
             connectorAccess: new RecordingSqlServerConnectorAccess { GatingRoleExists = true }
         );
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
@@ -883,6 +932,8 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     public async Task MssqlCdcCaptureInstances_should_fail_closed_when_created_capture_instance_post_create_inspection_mismatches()
     {
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
             connectorAccess: new RecordingSqlServerConnectorAccess { GatingRoleExists = true },
             postCreateMismatchedCaptureInstanceKind: CdcSourceTableKind.DocumentCache
         );
