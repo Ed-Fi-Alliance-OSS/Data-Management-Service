@@ -16,6 +16,7 @@ using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -827,12 +828,83 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             .Be(DocumentCacheAdministrativeCommandPhase.AcquireMutex);
     }
 
+    [Test]
+    public async Task It_preserves_completed_result_when_mutex_lease_cleanup_fails_after_workflow_execution()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        var cleanupException = new InvalidOperationException("release failed");
+        var mutex = new RecordingAdministrativeMutex(disposeException: cleanupException);
+        var logger = new CapturingLogger<DocumentCacheAdministrativeCommandRunner>();
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            mutex,
+            logger: logger
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            Request(),
+            SucceedingWorkflow.Instance
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+        result.Mutated.Should().BeFalse();
+        mutex.LastLease.Should().NotBeNull();
+        mutex.LastLease!.DisposeCount.Should().Be(1);
+        logger
+            .Entries.Should()
+            .ContainSingle(entry =>
+                entry.Level == LogLevel.Warning
+                && entry.Exception == cleanupException
+                && entry.Message.Contains("mutex cleanup failed", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_preserves_session_loss_classification_when_mutex_lease_cleanup_also_fails()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        var mutex = new RecordingAdministrativeMutex(
+            disposeException: new InvalidOperationException("release failed")
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            mutex
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: static (context, _) =>
+            {
+                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.DrainWork);
+                context.MarkMutated(
+                    new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Rebuilding, false)
+                );
+                throw new DocumentCacheAdministrativeMutexSessionLostException(
+                    context.MutexLease.ProviderToken
+                );
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.SessionLossAfterMutation);
+        result.Mutated.Should().BeTrue();
+        mutex.LastLease.Should().NotBeNull();
+        mutex.LastLease!.DisposeCount.Should().Be(1);
+    }
+
     private static DocumentCacheAdministrativeCommandRunner CreateRunner(
         IDocumentCacheTargetRegistry registry,
         IDocumentCacheProjectionSupervisor supervisor,
         IDocumentCacheAdministrativeMutex mutex,
         IDocumentCacheProjectionObservationSink? observationSink = null,
-        IDocumentCacheAdministrativePrimitives? primitives = null
+        IDocumentCacheAdministrativePrimitives? primitives = null,
+        ILogger<DocumentCacheAdministrativeCommandRunner>? logger = null
     )
     {
         DocumentCacheProjectionObservationStore defaultObservationStore = new(
@@ -847,7 +919,7 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             primitives ?? new StubAdministrativePrimitives(mutex.ProviderToken),
             sink,
             new FixedTimeProvider(ObservedAt),
-            NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
+            logger ?? NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
         );
     }
 
@@ -1302,11 +1374,14 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         RelationalProviderToken? providerToken = null,
         TimeSpan? acquireDelay = null,
         Exception? acquireException = null,
+        Exception? disposeException = null,
         Func<CancellationToken, Task>? beforeAcquireCompletes = null,
         Func<CancellationToken, Task>? afterAcquireCompletes = null
     ) : IDocumentCacheAdministrativeMutex
     {
         public int AcquireCount { get; private set; }
+
+        public RecordingMutexLease? LastLease { get; private set; }
 
         public RelationalProviderToken ProviderToken { get; } =
             providerToken ?? RelationalProviderToken.Postgresql;
@@ -1338,14 +1413,19 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 await afterAcquireCompletes(cancellationToken).ConfigureAwait(false);
             }
 
-            return new RecordingMutexLease(ProviderToken);
+            LastLease = new RecordingMutexLease(ProviderToken, disposeException);
+            return LastLease;
         }
     }
 
-    private sealed class RecordingMutexLease(RelationalProviderToken providerToken)
-        : IDocumentCacheAdministrativeMutexLease
+    private sealed class RecordingMutexLease(
+        RelationalProviderToken providerToken,
+        Exception? disposeException
+    ) : IDocumentCacheAdministrativeMutexLease
     {
         public RelationalProviderToken ProviderToken { get; } = providerToken;
+
+        public int DisposeCount { get; private set; }
 
         public DbConnection Connection => throw new NotSupportedException();
 
@@ -1356,7 +1436,39 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             CancellationToken cancellationToken = default
         ) => Task.FromResult<IRelationalWriteSession>(new RecordingWriteSession(ProviderToken));
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            if (disposeException is not null)
+            {
+                throw disposeException;
+            }
+
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed record CapturedLogEntry(LogLevel Level, string Message, Exception? Exception);
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<CapturedLogEntry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            Entries.Add(new CapturedLogEntry(logLevel, formatter(state, exception), exception));
+        }
     }
 
     private sealed class RecordingWriteSession(RelationalProviderToken providerToken)

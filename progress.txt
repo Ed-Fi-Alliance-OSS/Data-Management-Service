@@ -252,3 +252,8 @@ Completed configuration-docs task for reference/design/backend-redesign/epics/18
 Key decisions: added Administration:WorkflowTimeout sample as 24:00:00 beside existing DocumentCache projector settings; kept design reference and target/read/projector shapes unchanged; mirrored bootstrap embedded example with actual example file.
 Files changed: appsettings.json; appsettings.Development.json.example; bootstrap-design.md; tasks.json; progress.txt.
 Blockers/notes: none. Verified focused frontend config tests and rg example check.
+
+Completed administrative-command-runner cleanup follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: runner now materializes/records command result before explicit mutex lease cleanup; cleanup release/dispose failures log sanitized warning and do not replace completed/session-loss classifications.
+Files changed: DocumentCacheAdministrativeCommandRunner.cs; DocumentCacheAdministrativeCommandRunnerTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Verified focused administrative runner/mutex unit filter.

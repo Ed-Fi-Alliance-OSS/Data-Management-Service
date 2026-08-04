@@ -882,5 +882,56 @@
       "rg -n 'Administration|WorkflowTimeout' src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings*.json reference/design/backend-redesign/design-docs/bootstrap/appsettings.Development.json.example"
     ],
     "completed": true
+  },
+  {
+    "category": "administrative-command-runner",
+    "description": "Medium: Preserve an already classified administrative command result when mutex release or lease disposal fails after workflow execution. Keep the fix to command-runner cleanup semantics and provider release cleanup; do not add durable command state, reconnect behavior, a new mutex identity, result-shape changes, or a public API change.",
+    "acceptance-criteria": [
+      "A command that has already produced a shared administrative result still returns that result if provider mutex release or lease disposal fails after workflow execution.",
+      "Mutex release failures are logged or recorded through bounded diagnostics/telemetry without exposing connection strings, credentials, physical identifiers, or document payloads.",
+      "The mutex-owning connection is still disposed after a release failure, relying on provider session cleanup rather than reconnecting under presumed ownership.",
+      "Existing session-loss handling during workflow execution remains classified as sessionLossNoMutation or sessionLossAfterMutation and is not hidden by the release cleanup path.",
+      "Focused command-runner or mutex tests cover cleanup-time release/disposal failure without requiring durable command persistence or environment-specific fault injection."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeCommandRunner|FullyQualifiedName~DocumentCacheAdministrativeMutex\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "dependency-injection",
+    "description": "Low: Remove the duplicate default IDocumentCacheDownstreamPublicationHistoryProvider registration from frontend startup and rely on the backend TryAdd default registration. Keep the fix to service-registration composition only; do not change downstream-proof semantics, provider contracts, hosted-service startup, or public configuration.",
+    "acceptance-criteria": [
+      "The production service collection registers DocumentCacheUnknownDownstreamPublicationHistoryProvider as the default IDocumentCacheDownstreamPublicationHistoryProvider in one shared location.",
+      "Frontend startup no longer appends a second singleton registration that can override an earlier custom IDocumentCacheDownstreamPublicationHistoryProvider.",
+      "When no custom provider is registered, the resolved provider remains DocumentCacheUnknownDownstreamPublicationHistoryProvider.",
+      "A custom IDocumentCacheDownstreamPublicationHistoryProvider registered before the shared default is not replaced by frontend startup composition.",
+      "Focused service-registration tests assert the single-registration/default-provider behavior without changing command or downstream-publication workflow logic."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit",
+      "dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~WebApplicationBuilderExtensions|FullyQualifiedName~DocumentCache\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheServiceRegistration\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "explicit-integrity-scrub",
+    "description": "Medium: Prevent explicit integrity scrub from repairing DocumentProjectionWork after another writer sets CacheAheadRecoveryRequired between scrub page transactions. Keep the fix to per-page lifecycle/latch fencing on the mutex-owned session and existing scrub classifications; do not add a new scrub mode, durable scrub cursor, lifecycle state, timeout setting, recovery workflow, or extra full relationship scan.",
+    "acceptance-criteria": [
+      "Every explicit scrub page transaction proves the current DocumentCacheState is Tracking with a clear cache-ahead latch before performing DocumentProjectionWork insert or repair DML.",
+      "If CacheAheadRecoveryRequired becomes set after boundary capture or after an earlier scrub page, the command stops before any later page mutates work, even when that later page contains no cache-ahead document.",
+      "A mid-scrub latch or lifecycle mismatch returns the existing cacheAheadLatchSet or lifecycleMismatch result shape, with mutated true only when the current command already performed a durable latch or work mutation.",
+      "PostgreSQL and SQL Server scrub page SQL preserve the current successful behavior for clear-latch Tracking pages, including setting the latch and stopping when the current page confirms C>S.",
+      "Focused tests cover a latch becoming set between scrub pages and verify that no subsequent page work repair occurs after the latch is observed."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheExplicitIntegrityScrub|FullyQualifiedName~DocumentCacheAdministrativePrimitives\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheExplicitIntegrityScrub\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheExplicitIntegrityScrub\""
+    ],
+    "completed": false
   }
 ]

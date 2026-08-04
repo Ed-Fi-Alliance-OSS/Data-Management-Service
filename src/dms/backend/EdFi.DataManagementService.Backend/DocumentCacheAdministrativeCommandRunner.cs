@@ -545,13 +545,11 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                 );
             }
 
-            await using (mutexLease.ConfigureAwait(false))
-            using (
-                CancellationTokenSource workflowTimeout = CancellationTokenSource.CreateLinkedTokenSource(
-                    cancellationToken
-                )
-            )
+            DocumentCacheAdministrativeCommandResult? classifiedResult = null;
+            try
             {
+                using CancellationTokenSource workflowTimeout =
+                    CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 DateTimeOffset startedAt = timeProvider.GetUtcNow();
                 workflowTimeout.CancelAfter(
                     targetContext.TargetExecutionContext.EffectiveSettings.AdministrationWorkflowTimeout
@@ -598,38 +596,43 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
 
                     if (cancellationToken.IsCancellationRequested)
                     {
-                        return RecordAdministrativeCommandResult(
+                        classifiedResult = RecordAdministrativeCommandResult(
                             CreateCancellationResult(commandContext),
                             commandContext
                         );
+                        return classifiedResult;
                     }
 
                     if (workflowTimeout.IsCancellationRequested)
                     {
-                        return RecordAdministrativeCommandResult(
+                        classifiedResult = RecordAdministrativeCommandResult(
                             CreateWorkflowTimeoutResult(commandContext),
                             commandContext
                         );
+                        return classifiedResult;
                     }
 
-                    return RecordAdministrativeCommandResult(
+                    classifiedResult = RecordAdministrativeCommandResult(
                         AddRuntimeResultFields(result, commandContext),
                         commandContext
                     );
+                    return classifiedResult;
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    return RecordAdministrativeCommandResult(
+                    classifiedResult = RecordAdministrativeCommandResult(
                         CreateCancellationResult(commandContext),
                         commandContext
                     );
+                    return classifiedResult;
                 }
                 catch (OperationCanceledException) when (workflowTimeout.IsCancellationRequested)
                 {
-                    return RecordAdministrativeCommandResult(
+                    classifiedResult = RecordAdministrativeCommandResult(
                         CreateWorkflowTimeoutResult(commandContext),
                         commandContext
                     );
+                    return classifiedResult;
                 }
                 catch (DocumentCacheAdministrativeMutexSessionLostException exception)
                 {
@@ -639,10 +642,11 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         request.Command,
                         request.TargetKey.TargetKey
                     );
-                    return RecordAdministrativeCommandResult(
+                    classifiedResult = RecordAdministrativeCommandResult(
                         CreateSessionLossResult(commandContext),
                         commandContext
                     );
+                    return classifiedResult;
                 }
                 catch (Exception exception) when (IsProviderCommandTimeout(exception))
                 {
@@ -652,10 +656,11 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         request.Command,
                         request.TargetKey.TargetKey
                     );
-                    return RecordAdministrativeCommandResult(
+                    classifiedResult = RecordAdministrativeCommandResult(
                         CreateProviderTimeoutResult(commandContext),
                         commandContext
                     );
+                    return classifiedResult;
                 }
                 catch (Exception exception)
                 {
@@ -665,16 +670,27 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         request.Command,
                         request.TargetKey.TargetKey
                     );
-                    return RecordAdministrativeCommandResult(
+                    classifiedResult = RecordAdministrativeCommandResult(
                         CreateUnexpectedFailureResult(commandContext),
                         commandContext
                     );
+                    return classifiedResult;
                 }
                 finally
                 {
                     activeCommandTracking.Dispose();
                     observationSink.EndAdministrativeCommand(executionId);
                 }
+            }
+            finally
+            {
+                await DisposeMutexLeaseAfterCommandAsync(
+                        mutexLease,
+                        request,
+                        targetContext,
+                        classifiedResult is not null
+                    )
+                    .ConfigureAwait(false);
             }
         }
         finally
@@ -689,6 +705,29 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     .ReleaseRetainedCommandOwnedTargetContextAsync(targetContext, CancellationToken.None)
                     .ConfigureAwait(false);
             }
+        }
+    }
+
+    private async Task DisposeMutexLeaseAfterCommandAsync(
+        IDocumentCacheAdministrativeMutexLease mutexLease,
+        DocumentCacheAdministrativeCommandRunnerRequest request,
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        bool hasClassifiedResult
+    )
+    {
+        try
+        {
+            await mutexLease.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "DocumentCache administrative mutex cleanup failed after command {Command} and target {TargetKey}. ClassifiedResultPreserved: {ClassifiedResultPreserved}.",
+                request.Command,
+                targetContext.TargetKey,
+                hasClassifiedResult
+            );
         }
     }
 
