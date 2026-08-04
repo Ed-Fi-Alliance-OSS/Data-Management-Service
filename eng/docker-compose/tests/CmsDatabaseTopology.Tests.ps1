@@ -1904,8 +1904,9 @@ Describe "reserved-CMS-database collision authorities (one per physical creation
             # (2) SchemaTools then creates the database with a QUOTED identifier
             # (PgsqlDatabaseProvisioner emits `CREATE DATABASE "<name>"`), so nothing folds:
             # edfi_configurationservice and EDFI_ConfigurationService were observed coexisting in
-            # pg_database. Borrowing the unquoted initialized path's case-insensitivity here would
-            # refuse a working configuration.
+            # pg_database. The initialized path quotes its identifier too - createdb does it - so the two
+            # agree on these rows; what still separates them is fact (1), the connection-string round trip
+            # and its trailing-LF collapse.
             Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName $Name |
                 Should -BeFalse
         }

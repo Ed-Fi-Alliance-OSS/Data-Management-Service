@@ -2405,9 +2405,10 @@ function Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase {
 
     .DESCRIPTION
         Models the OTHER creation mechanism, and must not be confused with the local initialization path:
-        -DataStoreDatabaseName never reaches postgresql-init.sh, so the unquoted-identifier folding that
-        governs Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase does not apply and must not
-        be borrowed here.
+        -DataStoreDatabaseName never reaches postgresql-init.sh. Both paths now quote the identifier, so
+        neither folds case or discards whitespace, and this predicate stays separate for one remaining
+        reason - the registered value makes a connection-string round trip first, which can collapse a
+        bare trailing line feed that createdb would preserve.
 
         The value compared is not the raw parameter but
         Get-RegisteredDatastoreDatabaseValue - the database a provider actually receives after the

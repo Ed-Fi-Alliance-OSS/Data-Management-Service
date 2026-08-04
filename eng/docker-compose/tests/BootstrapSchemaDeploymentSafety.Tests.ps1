@@ -4114,8 +4114,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
         }
 
         It "accepts a PostgreSQL case variant, which is a genuinely distinct database there" {
-            # The unquoted-CREATE folding that governs the initialization path must not be borrowed
-            # here: SchemaTools creates the registered name with a quoted identifier.
+            # Both paths quote the identifier - SchemaTools for the registered name, createdb for the
+            # initialized one - so neither folds case, and a case variant is distinct on both. The
+            # registered path differs only through its connection-string round trip, which can collapse a
+            # bare trailing line feed (the preceding test) that createdb would preserve.
             . $script:repo.ConfigureScript
             Reset-GuardTrace
 
