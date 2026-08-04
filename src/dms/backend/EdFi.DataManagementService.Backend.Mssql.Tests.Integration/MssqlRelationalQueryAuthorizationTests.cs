@@ -170,6 +170,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         RelationshipAuthorizationProviderFailure,
         RelationshipAuthorizationProviderFailure
     >? _providerFailureTransform;
+    private readonly Action<DbException>? _providerFailureObserver;
     private static readonly BaseResourceInfo SchoolResource = new(
         new ProjectName("Ed-Fi"),
         new ResourceName("School"),
@@ -196,22 +197,48 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
     public MssqlGeneratedDdlTestDatabase Database { get; private set; } = null!;
 
+    /// <param name="providerFailureTransform">
+    /// Rewrites the extracted provider failure after a real engine exception has been raised, so a test can
+    /// drive malformed/unmappable AUTH1 payloads through the production mapper without changing production
+    /// SQL. Null leaves the default extraction in place.
+    /// </param>
+    /// <param name="providerFailureObserver">
+    /// Observes the actual <see cref="DbException"/> the production authorization path handed to the
+    /// extractor, so a test can assert real <c>Microsoft.Data.SqlClient.SqlException</c> provenance. Null
+    /// leaves the default extraction in place.
+    /// </param>
     public MssqlRelationalQueryAuthorizationTestContext(
         Func<
             RelationshipAuthorizationProviderFailure,
             RelationshipAuthorizationProviderFailure
-        >? providerFailureTransform = null
+        >? providerFailureTransform = null,
+        Action<DbException>? providerFailureObserver = null
     )
     {
         _providerFailureTransform = providerFailureTransform;
+        _providerFailureObserver = providerFailureObserver;
     }
 
+    /// <param name="interceptReadTargetLookup">
+    /// Runs the production GET-by-id target lookup and then invokes the one-shot
+    /// <see cref="AfterNextTargetLookup"/> callback, so a test can delete the resolved target in the window
+    /// between the unlocked lookup and the stored namespace check. Defaults to off.
+    /// </param>
     public async Task InitializeAsync(
         string fixtureRelativePath,
         bool strict,
-        bool replaceReadTargetLookup = true
+        bool replaceReadTargetLookup = true,
+        bool interceptReadTargetLookup = false
     )
     {
+        if (replaceReadTargetLookup && interceptReadTargetLookup)
+        {
+            throw new ArgumentException(
+                "The read target lookup cannot be both replaced with the throwing double and intercepted.",
+                nameof(interceptReadTargetLookup)
+            );
+        }
+
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(fixtureRelativePath, strict);
         IMssqlGeneratedDdlBaselineDatabase baseline = await MssqlBackendBaselineCache.CreateOrGetAsync(
             MssqlBackendBaselineCache.BuildFixtureSignature(fixtureRelativePath, strict),
@@ -219,7 +246,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
         _databaseLease = await baseline.AcquireRestoredDatabaseAsync();
         Database = _databaseLease.Database;
-        _serviceProvider = CreateServiceProvider(replaceReadTargetLookup);
+        _serviceProvider = CreateServiceProvider(replaceReadTargetLookup, interceptReadTargetLookup);
         _recorder = _serviceProvider.GetRequiredService<MssqlRelationalQueryExecutionRecorder>();
         _writeSessionRecorder =
             _serviceProvider.GetRequiredService<MssqlRelationalQueryAuthorizationWriteSessionRecorder>();
@@ -244,6 +271,39 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         _writeSessionRecorder.Reset();
     }
 
+    /// <summary>
+    /// Every command the production write session issued for the last operation, in issue order. Exposed so
+    /// the shared namespace command assertions can prove that a denial issued no persistence DML.
+    /// </summary>
+    public IReadOnlyList<MssqlRelationalQueryAuthorizationRecordedCommand> RecordedWriteCommands =>
+        _writeSessionRecorder.Commands;
+
+    /// <summary>
+    /// Asserts that namespace authorization ran and that no persistence DML followed it. See
+    /// <see cref="MssqlNamespaceAuthorizationCommandAssertions.AssertNoPersistenceAfterNamespaceAuthorization"/>.
+    /// </summary>
+    public void AssertNoPersistenceAfterNamespaceAuthorization() =>
+        MssqlNamespaceAuthorizationCommandAssertions.AssertNoPersistenceAfterNamespaceAuthorization(
+            RecordedWriteCommands
+        );
+
+    /// <summary>
+    /// Asserts that the operation opened no write session command at all, which is how a planner-terminal
+    /// denial (for example the SQL Server namespace prefix cap) must fail closed.
+    /// </summary>
+    public void AssertNoWriteCommandsIssued() =>
+        MssqlNamespaceAuthorizationCommandAssertions.AssertNoCommandsIssued(RecordedWriteCommands);
+
+    /// <summary>
+    /// Runs <paramref name="afterTargetLookupAsync"/> once, immediately after the production GET-by-id target
+    /// lookup resolves and before the stored namespace check executes. Requires
+    /// <c>interceptReadTargetLookup: true</c> on <see cref="InitializeAsync"/>.
+    /// </summary>
+    public void AfterNextTargetLookup(Func<CancellationToken, Task> afterTargetLookupAsync)
+    {
+        _recorder.AfterNextTargetLookupAsync = afterTargetLookupAsync;
+    }
+
     public void AssertDeleteWithIfMatchSharedGuardedSession()
     {
         var commands = _writeSessionRecorder.Commands;
@@ -256,6 +316,30 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         // state-hydration read.
         var lockIndex = FindRequiredCommandIndex(commands, IsMssqlDocumentLockCommand);
         var authorizationIndex = FindRequiredCommandIndex(commands, IsMssqlRelationshipAuthorizationCommand);
+        var deleteIndex = FindRequiredCommandIndex(commands, IsMssqlDocumentDeleteCommand);
+
+        lockIndex.Should().BeLessThan(authorizationIndex);
+        authorizationIndex.Should().BeLessThan(deleteIndex);
+
+        commands.Count(command => IsMssqlDocumentLockCommand(command.CommandText)).Should().Be(1);
+    }
+
+    /// <summary>
+    /// Namespace twin of <see cref="AssertDeleteWithIfMatchSharedGuardedSession"/>: the target is locked
+    /// once, the stored namespace check runs against that locked row, and the delete follows — all inside
+    /// one guarded session, so authorization precedes both the If-Match result and the deletion.
+    /// </summary>
+    public void AssertDeleteWithIfMatchNamespaceOrdering()
+    {
+        var commands = _writeSessionRecorder.Commands;
+
+        commands.Select(static command => command.SessionId).Distinct().Should().ContainSingle();
+
+        var lockIndex = FindRequiredCommandIndex(commands, IsMssqlDocumentLockCommand);
+        var authorizationIndex = FindRequiredCommandIndex(
+            commands,
+            MssqlNamespaceAuthorizationCommandAssertions.IsNamespaceAuthorizationCommand
+        );
         var deleteIndex = FindRequiredCommandIndex(commands, IsMssqlDocumentDeleteCommand);
 
         lockIndex.Should().BeLessThan(authorizationIndex);
@@ -416,6 +500,193 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             strategyNames,
             ifMatch,
             backendProfileWriteContext
+        );
+    }
+
+    /// <summary>
+    /// Seeds an <c>AuthorizationNamespaceResource</c> row through the production write path with no
+    /// authorization strategies configured, so any stored namespace value — including null and empty — can
+    /// be established without first passing namespace authorization.
+    /// </summary>
+    public async Task<UpsertResult> CreateAuthorizationNamespaceAsync(AuthorizationNamespaceSeed seed)
+    {
+        return await UpsertAsync(
+            "authz",
+            RelationshipAuthorizationCrudTestSupport.NamespaceResourceName,
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNamespaceRequestBody(seed),
+            seed.DocumentUuid,
+            $"seed-auth-namespace-{seed.AuthorizationNamespaceId}"
+        );
+    }
+
+    public async Task<UpsertResult> UpsertAuthorizationNamespaceAsync(
+        AuthorizationNamespaceSeed seed,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        IReadOnlyList<string>? namespacePrefixes = null,
+        string? ifMatch = null,
+        JsonNode? requestBody = null
+    )
+    {
+        return await UpsertAsync(
+            "authz",
+            RelationshipAuthorizationCrudTestSupport.NamespaceResourceName,
+            requestBody
+                ?? RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNamespaceRequestBody(seed),
+            seed.DocumentUuid,
+            $"post-auth-namespace-{seed.AuthorizationNamespaceId}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch,
+            namespacePrefixes: namespacePrefixes
+        );
+    }
+
+    public async Task<UpdateResult> UpdateAuthorizationNamespaceByIdAsync(
+        AuthorizationNamespaceSeed seed,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        IReadOnlyList<string>? namespacePrefixes = null,
+        string? ifMatch = null,
+        JsonNode? requestBody = null
+    )
+    {
+        return await UpdateAsync(
+            "authz",
+            RelationshipAuthorizationCrudTestSupport.NamespaceResourceName,
+            requestBody
+                ?? RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNamespaceRequestBody(seed),
+            documentUuid,
+            $"put-auth-namespace-{seed.AuthorizationNamespaceId}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch,
+            namespacePrefixes: namespacePrefixes
+        );
+    }
+
+    /// <summary>
+    /// Issues a descriptor POST through <c>RelationalDocumentStoreRepository.UpsertDocument</c>, which routes
+    /// descriptor resources into the production <c>DescriptorWriteHandler</c> and carries the authorization
+    /// context with it — so the test exercises the real routing seam rather than calling the handler directly.
+    /// </summary>
+    public async Task<UpsertResult> UpsertDescriptorAsync(
+        string projectEndpointName,
+        string resourceName,
+        JsonNode requestBody,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        IReadOnlyList<string>? namespacePrefixes = null,
+        string? ifMatch = null
+    )
+    {
+        return await UpsertAsync(
+            projectEndpointName,
+            resourceName,
+            requestBody,
+            documentUuid,
+            $"post-descriptor-{resourceName}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch,
+            namespacePrefixes: namespacePrefixes
+        );
+    }
+
+    /// <summary>
+    /// Issues a descriptor PUT through <c>RelationalDocumentStoreRepository.UpdateDocumentById</c>, which routes
+    /// descriptor resources into the production <c>DescriptorWriteHandler</c>.
+    /// </summary>
+    public async Task<UpdateResult> UpdateDescriptorByIdAsync(
+        string projectEndpointName,
+        string resourceName,
+        JsonNode requestBody,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        IReadOnlyList<string>? namespacePrefixes = null,
+        string? ifMatch = null
+    )
+    {
+        return await UpdateAsync(
+            projectEndpointName,
+            resourceName,
+            requestBody,
+            documentUuid,
+            $"put-descriptor-{resourceName}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch,
+            namespacePrefixes: namespacePrefixes
+        );
+    }
+
+    /// <summary>
+    /// Seeds an <c>Ed-Fi.EducationContent</c> row — the lightest DS 5.2 resource with a concrete root
+    /// <c>Namespace</c> column, and the one the fixture extends — through the production write path with no
+    /// authorization strategies, so any stored namespace and extension value can be established directly.
+    /// </summary>
+    public async Task<UpsertResult> CreateEducationContentAsync(
+        JsonNode requestBody,
+        DocumentUuid documentUuid
+    )
+    {
+        return await UpsertAsync(
+            "ed-fi",
+            "EducationContent",
+            requestBody,
+            documentUuid,
+            "seed-education-content"
+        );
+    }
+
+    public async Task<UpdateResult> UpdateEducationContentByIdAsync(
+        JsonNode requestBody,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        IReadOnlyList<string>? namespacePrefixes = null,
+        string? ifMatch = null
+    )
+    {
+        return await UpdateAsync(
+            "ed-fi",
+            "EducationContent",
+            requestBody,
+            documentUuid,
+            "put-education-content",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch,
+            namespacePrefixes: namespacePrefixes
+        );
+    }
+
+    /// <summary>
+    /// Snapshots every mapped <c>Ed-Fi.EducationContent</c> table, which includes the generated
+    /// <c>authzext.EducationContentExtension</c> row, so an extension value is inside the unchanged-state
+    /// comparison rather than outside it.
+    /// </summary>
+    public async Task<AuthorizationWriteSideEffectState> ReadEducationContentSideEffectStateAsync(
+        DocumentUuid documentUuid
+    )
+    {
+        var resourceKeyId = GetCompiledResourceKeyId("ed-fi", "EducationContent");
+        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+
+        return new AuthorizationWriteSideEffectState(
+            Document: document,
+            ResourceTables: await ReadResourceTableStatesAsync(
+                "ed-fi",
+                "EducationContent",
+                document.DocumentId
+            ),
+            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
+                document.DocumentId,
+                resourceKeyId
+            )
         );
     }
 
@@ -1061,7 +1332,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         bool totalCount = true,
         IReadOnlyList<QueryElement>? queryElements = null,
         Func<MappingSet, MappingSet>? mappingSetTransform = null,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        IReadOnlyList<string>? namespacePrefixes = null
     )
     {
         ResetRecorder();
@@ -1073,7 +1345,10 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
         var request = new RelationalQueryRequest(
             ResourceInfo: resourceHandle.ResourceInfo,
-            AuthorizationContext: new RelationalAuthorizationContext(claimEducationOrganizationIds),
+            AuthorizationContext: new RelationalAuthorizationContext(
+                claimEducationOrganizationIds,
+                namespacePrefixes ?? []
+            ),
             MappingSet: mappingSet,
             QueryElements: queryElements is null ? [] : [.. queryElements],
             AuthorizationStrategyEvaluators:
@@ -1106,7 +1381,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         IReadOnlyList<long> claimEducationOrganizationIds,
         IReadOnlyList<string> strategyNames,
         string? traceId = null,
-        Func<MappingSet, MappingSet>? mappingSetTransform = null
+        Func<MappingSet, MappingSet>? mappingSetTransform = null,
+        IReadOnlyList<string>? namespacePrefixes = null
     )
     {
         ResetRecorder();
@@ -1131,7 +1407,10 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             TraceId: new TraceId(traceId ?? $"{resourceName}-authorization-get-by-id")
         )
         {
-            AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds),
+            AuthorizationContext = new RelationalAuthorizationContext(
+                claimEducationOrganizationIds,
+                namespacePrefixes ?? []
+            ),
         };
 
         return await scope
@@ -1146,7 +1425,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         IReadOnlyList<long> claimEducationOrganizationIds,
         IReadOnlyList<string> strategyNames,
         string? ifMatch = null,
-        string? traceId = null
+        string? traceId = null,
+        IReadOnlyList<string>? namespacePrefixes = null
     )
     {
         ResetRecorder();
@@ -1163,7 +1443,10 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             MappingSet: MappingSet
         )
         {
-            AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds),
+            AuthorizationContext = new RelationalAuthorizationContext(
+                claimEducationOrganizationIds,
+                namespacePrefixes ?? []
+            ),
             AuthorizationStrategyEvaluators =
             [
                 .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
@@ -1268,6 +1551,57 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 document.DocumentId,
                 resourceKeyId
             )
+        );
+    }
+
+    public async Task<AuthorizationWriteSideEffectState> ReadAuthorizationNamespaceSideEffectStateAsync(
+        DocumentUuid documentUuid
+    )
+    {
+        var resourceKeyId = GetCompiledResourceKeyId(
+            "authz",
+            RelationshipAuthorizationCrudTestSupport.NamespaceResourceName
+        );
+        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+
+        return new AuthorizationWriteSideEffectState(
+            Document: document,
+            ResourceTables: await ReadResourceTableStatesAsync(
+                "authz",
+                RelationshipAuthorizationCrudTestSupport.NamespaceResourceName,
+                document.DocumentId
+            ),
+            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
+                document.DocumentId,
+                resourceKeyId
+            )
+        );
+    }
+
+    public async Task<long> CountReferentialIdentityRowsForAuthorizationNamespaceAsync(
+        AuthorizationNamespaceSeed seed
+    )
+    {
+        var resourceHandle = GetResourceHandle(
+            "authz",
+            RelationshipAuthorizationCrudTestSupport.NamespaceResourceName
+        );
+        var referentialId = RelationalDocumentInfoTestHelper
+            .CreateDocumentInfo(
+                RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNamespaceRequestBody(seed),
+                resourceHandle.ResourceInfo,
+                resourceHandle.ResourceSchema,
+                MappingSet
+            )
+            .ReferentialId;
+
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT COUNT_BIG(*)
+            FROM [dms].[ReferentialIdentity]
+            WHERE [ReferentialId] = @referentialId;
+            """,
+            new SqlParameter("@referentialId", referentialId.Value)
         );
     }
 
@@ -1529,7 +1863,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         IReadOnlyList<long>? claimEducationOrganizationIds = null,
         IReadOnlyList<string>? strategyNames = null,
         string? ifMatch = null,
-        BackendProfileWriteContext? backendProfileWriteContext = null
+        BackendProfileWriteContext? backendProfileWriteContext = null,
+        IReadOnlyList<string>? namespacePrefixes = null
     )
     {
         var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
@@ -1553,7 +1888,10 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             BackendProfileWriteContext: backendProfileWriteContext
         )
         {
-            AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds ?? []),
+            AuthorizationContext = new RelationalAuthorizationContext(
+                claimEducationOrganizationIds ?? [],
+                namespacePrefixes ?? []
+            ),
             AuthorizationStrategyEvaluators =
             [
                 .. (strategyNames ?? []).Select(static strategyName => new AuthorizationStrategyEvaluator(
@@ -1578,7 +1916,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         IReadOnlyList<long>? claimEducationOrganizationIds = null,
         IReadOnlyList<string>? strategyNames = null,
         string? ifMatch = null,
-        BackendProfileWriteContext? backendProfileWriteContext = null
+        BackendProfileWriteContext? backendProfileWriteContext = null,
+        IReadOnlyList<string>? namespacePrefixes = null
     )
     {
         var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
@@ -1602,7 +1941,10 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             BackendProfileWriteContext: backendProfileWriteContext
         )
         {
-            AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds ?? []),
+            AuthorizationContext = new RelationalAuthorizationContext(
+                claimEducationOrganizationIds ?? [],
+                namespacePrefixes ?? []
+            ),
             AuthorizationStrategyEvaluators =
             [
                 .. (strategyNames ?? []).Select(static strategyName => new AuthorizationStrategyEvaluator(
@@ -1842,7 +2184,10 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         return resourceHandle;
     }
 
-    private ServiceProvider CreateServiceProvider(bool replaceReadTargetLookup)
+    private ServiceProvider CreateServiceProvider(
+        bool replaceReadTargetLookup,
+        bool interceptReadTargetLookup
+    )
     {
         ServiceCollection services = [];
 
@@ -1865,12 +2210,13 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             ServiceDescriptor.Scoped<IRelationalReadMaterializer, RecordingRelationalReadMaterializer>()
         );
 
-        if (_providerFailureTransform is not null)
+        if (_providerFailureTransform is not null || _providerFailureObserver is not null)
         {
             services.Replace(
                 ServiceDescriptor.Scoped<IRelationshipAuthorizationProviderFailureExtractor>(
                     _ => new TransformingMssqlRelationshipAuthorizationProviderFailureExtractor(
-                        _providerFailureTransform
+                        _providerFailureTransform,
+                        _providerFailureObserver
                     )
                 )
             );
@@ -1882,6 +2228,15 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 ServiceDescriptor.Scoped<
                     IRelationalReadTargetLookupService,
                     ThrowingRelationalReadTargetLookupService
+                >()
+            );
+        }
+        else if (interceptReadTargetLookup)
+        {
+            services.Replace(
+                ServiceDescriptor.Scoped<
+                    IRelationalReadTargetLookupService,
+                    InterceptingRelationalReadTargetLookupService
                 >()
             );
         }
@@ -2234,15 +2589,25 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         ResourceInfo ResourceInfo
     );
 
+    /// <summary>
+    /// Test-only extractor seam. It observes the real provider exception the production authorization path
+    /// raised (so a test can assert genuine <c>SqlException</c> provenance) and optionally rewrites the
+    /// extracted payload (so a test can drive malformed/unmappable AUTH1 data through the production mapper).
+    /// With both hooks null this type is never registered, so the default extraction stays in place.
+    /// </summary>
     private sealed class TransformingMssqlRelationshipAuthorizationProviderFailureExtractor(
-        Func<RelationshipAuthorizationProviderFailure, RelationshipAuthorizationProviderFailure> transform
+        Func<RelationshipAuthorizationProviderFailure, RelationshipAuthorizationProviderFailure>? transform,
+        Action<DbException>? observer
     ) : IRelationshipAuthorizationProviderFailureExtractor
     {
         public RelationshipAuthorizationProviderFailure Extract(DbException exception)
         {
             ArgumentNullException.ThrowIfNull(exception);
 
-            return transform(new RelationshipAuthorizationProviderFailure(null, exception.Message));
+            observer?.Invoke(exception);
+            var providerFailure = new RelationshipAuthorizationProviderFailure(null, exception.Message);
+
+            return transform is null ? providerFailure : transform(providerFailure);
         }
     }
 

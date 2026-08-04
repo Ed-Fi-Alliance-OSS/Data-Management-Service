@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
@@ -30,6 +31,7 @@ public abstract class ApiIntegrationTestBase
     private FixtureContext? _fixtureContext;
     private string? _startupStatusFilePath;
     private ApiIntegrationQueryRecorder? _queryRecorder;
+    private ApiIntegrationProviderFailureRecorder? _providerFailureRecorder;
 
     protected ApiIntegrationHarness Harness { get; private set; } = null!;
 
@@ -52,6 +54,21 @@ public abstract class ApiIntegrationTestBase
     /// EducationOrganizationIds returned from the fake JWT validation service.
     /// </summary>
     protected virtual IReadOnlyList<long> ClientEducationOrganizationIds => [];
+
+    /// <summary>
+    /// Namespace prefixes returned from the fake JWT validation service, for NamespaceBased scenarios.
+    /// </summary>
+    protected virtual IReadOnlyList<string> ClientNamespacePrefixes => [];
+
+    /// <summary>
+    /// When set, replaces the authorization provider-failure extractor with a recording double that rewrites
+    /// the extracted payload after the production authorization path raised a real provider exception. Used by
+    /// malformed-AUTH1-payload scenarios; null leaves the production extraction in place.
+    /// </summary>
+    protected virtual Func<
+        RelationshipAuthorizationProviderFailure,
+        RelationshipAuthorizationProviderFailure
+    >? ProviderFailureTransform => null;
 
     /// <summary>
     /// Captures compiled page keysets passed into the document hydrator for assertions
@@ -88,11 +105,17 @@ public abstract class ApiIntegrationTestBase
         _leasedConnectionString = await LeaseDatabaseAsync(_fixtureContext);
         _startupStatusFilePath = Path.Combine(Path.GetTempPath(), $"api-int-startup-{Guid.NewGuid():N}.json");
         _queryRecorder = CaptureQueryPlans ? new ApiIntegrationQueryRecorder() : null;
+        var providerFailureTransform = ProviderFailureTransform;
+        _providerFailureRecorder = providerFailureTransform is null
+            ? null
+            : new ApiIntegrationProviderFailureRecorder();
 
         var fixtureContext = _fixtureContext;
         var leasedConnectionString = _leasedConnectionString;
         var startupStatusFilePath = _startupStatusFilePath;
         var queryRecorder = _queryRecorder;
+        var providerFailureRecorder = _providerFailureRecorder;
+        var clientNamespacePrefixes = ClientNamespacePrefixes;
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -122,7 +145,10 @@ public abstract class ApiIntegrationTestBase
                     fixtureContext,
                     leasedConnectionString,
                     CreateClaimSetProvider(fixtureContext),
-                    ClientEducationOrganizationIds
+                    ClientEducationOrganizationIds,
+                    clientNamespacePrefixes,
+                    providerFailureTransform,
+                    providerFailureRecorder
                 );
 
                 if (queryRecorder is not null)
@@ -139,7 +165,8 @@ public abstract class ApiIntegrationTestBase
             httpClient,
             _assertionConnection,
             _fixtureContext,
-            _queryRecorder
+            _queryRecorder,
+            _providerFailureRecorder
         );
     }
 
@@ -174,6 +201,7 @@ public abstract class ApiIntegrationTestBase
 
         _fixtureContext = null;
         _queryRecorder = null;
+        _providerFailureRecorder = null;
 
         if (_startupStatusFilePath is not null && File.Exists(_startupStatusFilePath))
         {

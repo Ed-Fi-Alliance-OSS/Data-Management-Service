@@ -43,6 +43,21 @@ internal sealed record AuthorizationNullableSeed(
     int? NullableSchoolId = null
 );
 
+/// <summary>
+/// Seed for the synthetic <c>AuthorizationNamespaceResource</c>, whose root table carries both a nullable
+/// <c>Namespace</c> securable column and an EdOrg securable column. A <see langword="null"/>
+/// <paramref name="Namespace"/> omits the property from the request body, which is how a write exercises
+/// the missing-proposed-namespace failure and how a stored row is seeded with an uninitialized namespace.
+/// </summary>
+internal sealed record AuthorizationNamespaceSeed(
+    DocumentUuid DocumentUuid,
+    int AuthorizationNamespaceId,
+    string Name,
+    string? Namespace,
+    int SchoolId,
+    IReadOnlyList<ClassPeriodReferenceSeed> ClassPeriods
+);
+
 internal sealed record StudentSeed(
     DocumentUuid DocumentUuid,
     string StudentUniqueId,
@@ -226,6 +241,43 @@ internal static class RelationalQueryAuthorizationRequestBodies
             ["name"] = seed.Name,
             ["classPeriods"] = classPeriods,
         };
+    }
+
+    public static JsonNode CreateAuthorizationNamespaceRequestBody(AuthorizationNamespaceSeed seed)
+    {
+        JsonArray classPeriods = [];
+
+        foreach (var classPeriod in seed.ClassPeriods)
+        {
+            classPeriods.Add(
+                new JsonObject
+                {
+                    ["classPeriodReference"] = new JsonObject
+                    {
+                        ["classPeriodName"] = classPeriod.ClassPeriodName,
+                        ["schoolId"] = (long)classPeriod.SchoolId,
+                    },
+                }
+            );
+        }
+
+        JsonObject requestBody = new()
+        {
+            ["authorizationNamespaceId"] = seed.AuthorizationNamespaceId,
+            ["name"] = seed.Name,
+            ["schoolReference"] = new JsonObject { ["schoolId"] = (long)seed.SchoolId },
+            ["classPeriods"] = classPeriods,
+        };
+
+        // Namespace is optional on this resource, so a null seed value omits the property entirely
+        // (the missing-proposed-namespace case) while an empty string is written through as an
+        // uninitialized stored value.
+        if (seed.Namespace is not null)
+        {
+            requestBody["namespace"] = seed.Namespace;
+        }
+
+        return requestBody;
     }
 
     public static JsonNode CreateAuthorizationNullableRequestBody(AuthorizationNullableSeed seed)
