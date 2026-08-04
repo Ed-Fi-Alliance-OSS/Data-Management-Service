@@ -830,6 +830,11 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
             return;
         }
 
+        if (HasErrorDiagnosticForArtifact(observation.ArtifactKind, observation.SafeArtifactName))
+        {
+            return;
+        }
+
         var category = observation.ArtifactKind switch
         {
             CdcProviderArtifactKind.PostgresqlReplicationSlot
@@ -859,6 +864,16 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
             )
         );
     }
+
+    private bool HasErrorDiagnosticForArtifact(
+        CdcProviderArtifactKind artifactKind,
+        CdcSafeName safeArtifactName
+    ) =>
+        _diagnostics.Exists(diagnostic =>
+            diagnostic.Severity == CdcProviderDiagnosticSeverity.Error
+            && diagnostic.ArtifactKind == artifactKind
+            && diagnostic.SafeName.Equals(safeArtifactName)
+        );
 
     private static string DiagnosticCodeForState(CdcProviderArtifactState state) =>
         state switch

@@ -291,6 +291,48 @@ public class Given_CdcProviderSetupService_Fail_Closed_Validation
             .Which.ProviderErrorClass.Should()
             .Be("InsufficientPrivilege");
     }
+
+    [Test]
+    public async Task It_should_not_add_generic_artifact_state_diagnostic_when_provider_reports_specific_artifact_error()
+    {
+        var slotName = new CdcSafeName("dms_binding_slot");
+        var service = new CdcProviderSetupService([
+            new TestProvider(
+                CdcProvider.Postgresql,
+                [
+                    RecordingStep.Create(
+                        CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                        slotName,
+                        CdcProviderArtifactState.Missing,
+                        diagnostics:
+                        [
+                            new CdcProviderDiagnostic(
+                                Code: "CDC_PROVIDER_HISTORY_LOST",
+                                Category: CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence,
+                                Severity: CdcProviderDiagnosticSeverity.Error,
+                                PrincipalKind: CdcPrincipalKind.None,
+                                ArtifactKind: CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                                SafeName: slotName,
+                                ExpectedValue: "retained-history",
+                                ObservedValue: "lost",
+                                ProviderErrorClass: null,
+                                Classification: CdcProviderRetryContinuityClassification.SourceHistoryLost
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+        ]);
+
+        var result = await service.SetupAsync(CdcProviderSetupContractTestData.BuildPostgresqlRequest());
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "CDC_PROVIDER_HISTORY_LOST")
+            .Which.Classification.Should()
+            .Be(CdcProviderRetryContinuityClassification.SourceHistoryLost);
+    }
 }
 
 [TestFixture]
