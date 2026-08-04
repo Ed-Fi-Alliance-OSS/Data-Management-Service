@@ -814,9 +814,11 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
         $parsedTarget = Get-SqlServerDataSourceEndpoint -DataSource $Target.Host
 
         # Nothing this phase can place on the published TCP listener is ever claimed to be it: a non-TCP
-        # protocol (np:, admin:/DAC) names a different transport, and an instance suffix with no explicit
-        # port needs SSRP to resolve a port, which is exactly the case that must not be treated as the
-        # known Compose listener. Both stay external, as they were before this grammar was shared.
+        # protocol (np:) names a different transport, and an instance suffix with no explicit port needs
+        # SSRP to resolve a port, which is exactly the case that must not be treated as the known Compose
+        # listener. Both stay external. admin:/DAC deliberately does NOT stop here - it shares the TCP
+        # transport and carries its effective DAC port, so it is judged on host and port below like any
+        # other TCP target; what it is excluded from is the Docker-internal translation, not classification.
         if ((-not $parsedTarget.IsTcp) -or $parsedTarget.RequiresInstanceResolution) {
             return $false
         }
@@ -828,9 +830,12 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
         # '.', '(local)' and 'localhost'. Each names the local SQL Server, so on this engine each names the
         # Compose server. Checked HERE rather than in the engine-neutral helper on purpose: these are
         # SqlClient-only tokens and PostgreSQL must not inherit them - Npgsql would treat '(local)' or '.'
-        # as an ordinary hostname. The set is closed: no LocalDB, named pipes, lpc:, admin/DAC,
-        # machine-name discovery, or arbitrary named instance is added to it. The port comparison below
-        # stays load-bearing, so any of these on a different port remains external.
+        # as an ordinary hostname. The set is closed: no LocalDB, named pipes, lpc:, machine-name discovery,
+        # or arbitrary named instance is added to it. An admin:/DAC target is not added either, but it does
+        # not need to be: its host is parsed out of the value, so 'admin:localhost' arrives here as
+        # 'localhost' and matches on its own. The port comparison below stays load-bearing, so any of these
+        # on a different port remains external - which is what keeps admin: local only where the published
+        # port really is the DAC port it resolves to.
         $isSqlClientLocalToken =
             @(".", "(local)", "localhost") -contains $targetHostName.Trim().ToLowerInvariant()
 

@@ -946,7 +946,7 @@ function Get-SqlServerDataSourceEndpoint {
 
     # FIXED text covering every rejection below, and deliberately says nothing about the value: a data
     # source can carry credentials in adjacent keys and this message travels into pre-start diagnostics.
-    $invalidDataSourceMessage = "Invalid SQL Server data source: the endpoint is one Microsoft.Data.SqlClient rejects outright - it contains a forward slash, or carries an empty explicit port or an empty instance name, none of which the provider treats as omitted. The value is withheld."
+    $invalidDataSourceMessage = "Invalid SQL Server data source: the endpoint is one Microsoft.Data.SqlClient rejects outright - it contains a forward slash, carries an empty explicit port or an empty instance name, or puts a comma parameter on the admin prefix, none of which the provider accepts or treats as omitted. The value is withheld."
 
     # PopulateProtocol's recognized set. Anything else is not a protocol, so the colon stays with the host.
     $recognizedProtocols = @("tcp", "np", "admin")
@@ -1171,12 +1171,14 @@ function Get-EndpointFromResolvedConnectionString {
                         # selects the explicit comma port and does not resolve the suffix through SSRP.
                         $parsed = Get-SqlServerDataSourceEndpoint -DataSource $value
                         if ((-not $parsed.IsTcp) -or $parsed.RequiresInstanceResolution) {
-                            # Not an endpoint this phase can name: a non-TCP protocol (np:, admin:/DAC) or a
-                            # named instance whose port only SSRP could supply. Reported as the RAW value
-                            # with no port, deliberately: the caller defaults an absent port to the engine's
-                            # expected one, so reporting a bare host here would turn an unresolved instance
-                            # into an apparently matching endpoint. The raw text can never equal a composed
-                            # service alias, so these keep failing the host comparison exactly as before.
+                            # Not an endpoint this phase can name: a non-TCP protocol (np:) or a named
+                            # instance whose port only SSRP could supply. admin:/DAC is NOT in this branch -
+                            # it shares the TCP transport and reports its effective DAC port, so it is
+                            # compared on host and port like any other TCP endpoint. Reported as the RAW
+                            # value with no port, deliberately: the caller defaults an absent port to the
+                            # engine's expected one, so reporting a bare host here would turn an unresolved
+                            # instance into an apparently matching endpoint. The raw text can never equal a
+                            # composed service alias, so these keep failing the host comparison as before.
                             [pscustomobject]@{
                                 Host = $parsed.RawValue
                                 Port = $null
