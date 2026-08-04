@@ -522,6 +522,122 @@ public class Given_DocumentCacheProjectionSupervisor
     }
 
     [Test]
+    public async Task It_no_ops_refresh_after_shutdown_has_started()
+    {
+        DocumentCacheTargetExecutionContext firstGeneration = ExecutionContext(
+            DocumentCacheTargetKey.Create("TenantA", 7),
+            generation: 1
+        );
+        DocumentCacheTargetExecutionContext replacementGeneration = ExecutionContext(
+            firstGeneration.TargetKey,
+            generation: 2,
+            connectionInput: "connection-b"
+        );
+        RecordingObservationSink observationSink = new();
+        RecordingTargetContextFactory targetContextFactory = new(observationSink);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(firstGeneration)]),
+            RuntimeSnapshot([firstGeneration])
+        );
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(replacementGeneration)]),
+            RuntimeSnapshot([replacementGeneration])
+        );
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationSink,
+            OptionsFor([firstGeneration.TargetKey])
+        );
+
+        await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+        await supervisor.StopAsync(CancellationToken.None);
+        DocumentCacheTargetRegistrySnapshot stoppedRefreshSnapshot = await supervisor.RefreshAsync(
+            DocumentCacheTargetRefreshReason.SupervisorTriggered
+        );
+
+        stoppedRefreshSnapshot
+            .GetTarget(firstGeneration.TargetKey)!
+            .Generation.Should()
+            .Be(firstGeneration.Generation);
+        registry.RefreshReasons.Should().Equal(DocumentCacheTargetRefreshReason.Startup);
+        targetContextFactory.CreateCalls.Should().ContainSingle().Which.Should().BeSameAs(firstGeneration);
+        supervisor.CurrentTargetContexts.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_serializes_shutdown_with_an_in_flight_refresh()
+    {
+        DocumentCacheTargetExecutionContext firstGeneration = ExecutionContext(
+            DocumentCacheTargetKey.Create("TenantA", 7),
+            generation: 1
+        );
+        DocumentCacheTargetExecutionContext replacementGeneration = ExecutionContext(
+            firstGeneration.TargetKey,
+            generation: 2,
+            connectionInput: "connection-b"
+        );
+        RecordingObservationSink observationSink = new();
+        RecordingTargetContextFactory targetContextFactory = new(observationSink);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(firstGeneration)]),
+            RuntimeSnapshot([firstGeneration])
+        );
+        RecordingTargetRegistry.BlockingRefreshControl blockingRefresh = registry.QueueBlockingRefresh(
+            Snapshot([EligibleObservation(replacementGeneration)]),
+            RuntimeSnapshot([replacementGeneration])
+        );
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationSink,
+            OptionsFor([firstGeneration.TargetKey])
+        );
+
+        await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+
+        Task<DocumentCacheTargetRegistrySnapshot> refreshTask = supervisor.RefreshAsync(
+            DocumentCacheTargetRefreshReason.SupervisorTriggered
+        );
+        await blockingRefresh.WaitForStartedAsync();
+
+        Task stopTask = supervisor.StopAsync(CancellationToken.None);
+        Task completedBeforeRefreshReleased = await Task.WhenAny(
+            stopTask,
+            Task.Delay(TimeSpan.FromMilliseconds(100))
+        );
+        completedBeforeRefreshReleased.Should().NotBe(stopTask);
+
+        blockingRefresh.Release();
+        await refreshTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await stopTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        registry
+            .RefreshReasons.Should()
+            .Equal(
+                DocumentCacheTargetRefreshReason.Startup,
+                DocumentCacheTargetRefreshReason.SupervisorTriggered
+            );
+        targetContextFactory.CreateCalls.Should().ContainSingle().Which.Should().BeSameAs(firstGeneration);
+        supervisor.CurrentTargetContexts.Should().BeEmpty();
+        observationSink
+            .EndedTargets.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(
+                new RecordingObservationSink.EndedTarget(
+                    new DocumentCacheProjectionTargetContextKey(
+                        firstGeneration.TargetKey,
+                        firstGeneration.Generation
+                    ),
+                    DocumentCacheProjectionTargetEndReason.Shutdown
+                )
+            );
+    }
+
+    [Test]
     public async Task It_reconsiders_ready_targets_immediately_after_a_page_is_processed()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
@@ -886,10 +1002,7 @@ public class Given_DocumentCacheProjectionSupervisor
 
     private sealed class RecordingTargetRegistry : IDocumentCacheTargetRegistry
     {
-        private readonly Queue<(
-            DocumentCacheTargetRegistrySnapshot Snapshot,
-            DocumentCacheTargetRuntimeSnapshot RuntimeSnapshot
-        )> _refreshes = new();
+        private readonly Queue<QueuedRefresh> _refreshes = new();
 
         public DocumentCacheTargetRegistrySnapshot CurrentSnapshot { get; private set; } =
             new([], ObservedAt);
@@ -902,9 +1015,19 @@ public class Given_DocumentCacheProjectionSupervisor
         public void QueueRefresh(
             DocumentCacheTargetRegistrySnapshot snapshot,
             DocumentCacheTargetRuntimeSnapshot runtimeSnapshot
-        ) => _refreshes.Enqueue((snapshot, runtimeSnapshot));
+        ) => _refreshes.Enqueue(new QueuedRefresh(snapshot, runtimeSnapshot, BlockingControl: null));
 
-        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
+        public BlockingRefreshControl QueueBlockingRefresh(
+            DocumentCacheTargetRegistrySnapshot snapshot,
+            DocumentCacheTargetRuntimeSnapshot runtimeSnapshot
+        )
+        {
+            BlockingRefreshControl blockingControl = new();
+            _refreshes.Enqueue(new QueuedRefresh(snapshot, runtimeSnapshot, blockingControl));
+            return blockingControl;
+        }
+
+        public async Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
             DocumentCacheTargetRefreshReason reason,
             CancellationToken cancellationToken = default
         )
@@ -912,14 +1035,42 @@ public class Given_DocumentCacheProjectionSupervisor
             cancellationToken.ThrowIfCancellationRequested();
             RefreshReasons.Add(reason);
 
-            (
-                DocumentCacheTargetRegistrySnapshot Snapshot,
-                DocumentCacheTargetRuntimeSnapshot RuntimeSnapshot
-            ) = _refreshes.Dequeue();
-            CurrentSnapshot = Snapshot;
-            CurrentRuntimeSnapshot = RuntimeSnapshot;
-            return Task.FromResult(CurrentSnapshot);
+            QueuedRefresh refresh = _refreshes.Dequeue();
+            if (refresh.BlockingControl is not null)
+            {
+                await refresh.BlockingControl.WaitForReleaseAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            CurrentSnapshot = refresh.RegistrySnapshot;
+            CurrentRuntimeSnapshot = refresh.RegistryRuntimeSnapshot;
+            return CurrentSnapshot;
         }
+
+        public sealed class BlockingRefreshControl
+        {
+            private readonly TaskCompletionSource _started = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            private readonly TaskCompletionSource _released = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            public Task WaitForStartedAsync() => _started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            public void Release() => _released.TrySetResult();
+
+            internal async Task WaitForReleaseAsync(CancellationToken cancellationToken)
+            {
+                _started.TrySetResult();
+                await _released.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        private sealed record QueuedRefresh(
+            DocumentCacheTargetRegistrySnapshot RegistrySnapshot,
+            DocumentCacheTargetRuntimeSnapshot RegistryRuntimeSnapshot,
+            BlockingRefreshControl? BlockingControl
+        );
     }
 
     private static DocumentCacheAdministrativeCommandExecutionContext CommandContext(

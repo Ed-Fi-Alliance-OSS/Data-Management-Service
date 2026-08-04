@@ -749,6 +749,7 @@ public sealed class DocumentCacheProjectionSupervisor(
         DocumentCacheProjectionTargetContextKey,
         RetainedTargetContext
     >.Empty;
+    private int _shutdownStarted;
 
     public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts =>
         _targetContexts.Values.ToImmutableArray();
@@ -761,9 +762,19 @@ public sealed class DocumentCacheProjectionSupervisor(
         await _refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (ShutdownStarted())
+            {
+                return targetRegistry.CurrentSnapshot;
+            }
+
             DocumentCacheTargetRegistrySnapshot snapshot = await targetRegistry
                 .RefreshAsync(reason, cancellationToken)
                 .ConfigureAwait(false);
+
+            if (ShutdownStarted())
+            {
+                return snapshot;
+            }
 
             await ReconcileTargetContextsAsync(snapshot, cancellationToken).ConfigureAwait(false);
             return snapshot;
@@ -865,12 +876,24 @@ public sealed class DocumentCacheProjectionSupervisor(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
+        Interlocked.Exchange(ref _shutdownStarted, 1);
+
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
-        await EndAllTargetContextsAsync(DocumentCacheProjectionTargetEndReason.Shutdown)
-            .ConfigureAwait(false);
-        await EndAllRetainedTargetContextsAsync(DocumentCacheProjectionTargetEndReason.Shutdown)
-            .ConfigureAwait(false);
+        await _refreshLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            await EndAllTargetContextsAsync(DocumentCacheProjectionTargetEndReason.Shutdown)
+                .ConfigureAwait(false);
+            await EndAllRetainedTargetContextsAsync(DocumentCacheProjectionTargetEndReason.Shutdown)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
     }
+
+    private bool ShutdownStarted() => Volatile.Read(ref _shutdownStarted) != 0;
 
     public async Task ReleaseRetainedCommandOwnedTargetContextAsync(
         DocumentCacheProjectionTargetRuntimeContext targetContext,
