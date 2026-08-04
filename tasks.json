@@ -994,5 +994,67 @@
       "With ConnectionStrings__MssqlAdmin pointing at a disposable SQL Server 2025 instance, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderAccessRetry"
     ],
     "completed": true
+  },
+  {
+    "category": "cdc-security",
+    "description": "Medium: Narrowly fix CDC connector extra-read and unexpected-capture validation so provider SQL enumerates DMS-owned physical schemas/tables after ordinary DDL identifier shortening instead of recomputing names from ProjectEndpointName or assuming tracked_changes_% remains unshortened. This is a validation-scope correction only: do not change provider grant creation, add a database-wide permission or CDC capture auditor, inspect unrelated schemas, model full permission provenance, add connector polling, or create repair workflows.",
+    "acceptance-criteria": [
+      "PostgreSQL connector-principal validation fails closed for extra SELECT access on DMS-owned generated project/resource or tracked-change tables even when the physical schema name was shortened by the ordinary DDL dialect identifier-shortening pass.",
+      "SQL Server connector-principal validation fails closed for extra SELECT access on DMS-owned generated project/resource or tracked-change tables even when the physical schema name was shortened by the ordinary DDL dialect identifier-shortening pass.",
+      "SQL Server capture-instance inspection fails closed for unexpected captures on DMS-owned generated project/resource or tracked-change tables whose physical schemas were shortened, using the existing capture-validation result and diagnostic paths.",
+      "The validation scope is derived from actual emitted/provisioned DMS-owned physical schema/table metadata, or from current database catalog metadata constrained to those DMS-owned scopes, instead of duplicating only RelationalNameConventions.NormalizeSchemaName or relying on tracked_changes_% pattern matching.",
+      "The fix remains scoped to DMS/provider-managed schemas and tables: dms, auth, generated project/resource schemas, and tracked-change schemas. It does not inspect unrelated application schemas, PostgreSQL or SQL Server system catalogs beyond existing provider metadata needs, Kafka, Kafka Connect, connector offsets, or binding state.",
+      "Provider-created grant SQL remains unchanged and limited to the existing required connector access; this task only changes validation and safe diagnostics for unexpected access or unexpected capture.",
+      "Focused tests cover one generated project/resource schema and one tracked-change schema whose physical names require dialect shortening, proving extra grants or unexpected captures are diagnosed with safe observed values without adding a broad live database audit matrix."
+    ],
+    "steps-to-verify": [
+      "Review CdcPostgresqlHeartbeatPublicationProvider.ConnectorPrincipalAccessSql and CdcSqlServerHeartbeatDatabaseProvider ConnectorPrincipalAccessSql/CaptureInstancesSql for DMS-owned physical-schema enumeration rather than ProjectEndpointName-only recomputation.",
+      "Review the diff to confirm provider grant creation, connector polling, Kafka/Kafka Connect calls, binding-state mutation, and unrelated schema inspection were not added.",
+      "Review the coverage against RelationalNameConventions.NormalizeSchemaName and ApplyDialectIdentifierShorteningPass to confirm shortened project and tracked-change physical schemas are included.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"PostgresqlCdcPrincipalAccess|MssqlCdcPrincipalAccess|MssqlCdcCaptureInstances\"",
+      "With provider prerequisites available, run only the PostgreSQL and SQL Server CdcProviderAccessRetry/CdcProviderArtifacts integration filters that cover shortened-schema grant or capture validation."
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-provider-history",
+    "description": "Medium: Observe SQL Server heartbeat CDC capture visibility from SQL Server CDC metadata instead of reporting it as true whenever the expected heartbeat capture instance exists. Keep this scoped to the DMS-1320 provider setup result/manifest metadata consumed by 19-00 source-position checks; do not implement the 19-00 barrier adapter, connector polling, Kafka checks, binding-state mutation, offset comparison, lifecycle decisions, job repair, capture-instance repair, or teardown.",
+    "acceptance-criteria": [
+      "SQL Server provider-history observations distinguish an existing dms.CdcHeartbeat capture instance from evidence that the heartbeat CDC stream can expose the heartbeat update needed for the source-position barrier.",
+      "The heartbeat_capture_visible observed value is derived from a provider metadata query against the binding-derived heartbeat capture/change stream, or from a clearly named equivalent SQL Server CDC observation, not from definition.TableKind == CdcHeartbeat alone.",
+      "When the heartbeat capture instance exists but heartbeat capture visibility cannot be proven, setup returns a fail-closed provider-history diagnostic with safe artifact names and without mutating CDC jobs, capture instances, connector offsets, Kafka state, binding state, or lifecycle state.",
+      "The exact-match path for a healthy SQL Server provider still reports heartbeat capture visibility and retained LSN metadata for the binding-derived heartbeat capture instance.",
+      "The implementation does not compare committed connector offsets, wait for a new heartbeat barrier, call Kafka Connect, poll Kafka topics, start or stop SQL Server Agent jobs, tune CDC retention, or decide source-history continuity.",
+      "Focused unit coverage proves the false or unavailable heartbeat-visibility case fails closed and that the current exact-match fixture no longer passes by only hard-coding heartbeat_capture_visible to True; live SQL Server coverage, when available, is limited to the existing CdcProviderArtifacts provider metadata fixture."
+    ],
+    "steps-to-verify": [
+      "Review CdcSqlServerHeartbeatDatabaseProvider.CaptureInstanceObservedValues and SQL Server capture-instance inspection to confirm heartbeat_capture_visible is not computed solely from the expected table kind.",
+      "Review the implementation against reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md provider-metadata requirements and cdc-streaming.md SQL Server source-position barrier semantics, confirming that only provider metadata evidence is added.",
+      "Review the diff to confirm there is no connector offset comparison, Kafka/Kafka Connect call, binding lifecycle mutation, SQL Server job repair, capture-instance repair, or teardown workflow.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
+      "With ConnectionStrings__MssqlAdmin pointing at a disposable SQL Server 2025 instance, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderArtifacts"
+    ],
+    "completed": false
+  },
+  {
+    "category": "source-inventory",
+    "description": "Medium: Make CDC provider setup consume a narrow CDC source-table inventory artifact produced by the ordinary DDL emission pipeline instead of rebuilding expected columns through a standalone CdcSourceInventoryBuilder/DmsCoreTableDefinitions path. Keep this as provenance and drift-prevention cleanup for the three fixed CDC source tables only; do not parse emitted SQL text, add a user-facing CDC setup CLI, change ordinary DDL/provision behavior, broaden schema-drift validation, expand the source set, or introduce connector/Kafka behavior.",
+    "acceptance-criteria": [
+      "The ordinary DDL emission pipeline exposes a typed CDC source inventory for dms.Document and dms.DocumentCache, plus the opt-in dms.CdcHeartbeat definition consumed by provider setup, using the same table definitions, quoted physical identifiers, provider data types, nullability, and ordinal column order used to render DDL.",
+      "Production and test request builders pass the emitted typed inventory into CdcProviderSetupRequest; they do not call CdcSourceInventoryBuilder.BuildExpectedSourceInventory as an independent source of truth.",
+      "CdcSourceInventoryBuilder is removed or reduced to a compatibility adapter over the emitted typed DDL metadata so changing emitted core table columns cannot silently drift from CDC capture setup expectations.",
+      "Focused coverage proves source-inventory metadata is tied to the ordinary DDL core table definitions and still excludes dms.DocumentProjectionWork from publication, capture, grants, provider metadata, and manifests.",
+      "Live provider inspection continues to exact-match the provisioned database against the emitted inventory and does not adapt expected capture columns from live database shape.",
+      "Ordinary relational ddl emit/provision still does not create dms.CdcHeartbeat or any CDC provider artifacts unless the explicit opt-in provider setup service is invoked.",
+      "The task does not add SQL text parsing, new manifest surfaces, connector-template generation, Kafka/Kafka Connect calls, database-wide drift validation, support for additional CDC source tables, or a supported user-facing CDC setup command."
+    ],
+    "steps-to-verify": [
+      "Review DdlPipelineHelpers, FullDdlEmitter, CoreDdlEmitter, and CdcSourceInventory code paths to confirm a typed source inventory is produced by the ordinary DDL emission pipeline and then passed into provider setup.",
+      "Review the diff to confirm ordinary ddl emit/provision output and behavior are unchanged except for exposing the typed inventory to internal callers.",
+      "Run rg -n 'CdcSourceInventoryBuilder.BuildExpectedSourceInventory' src/dms and confirm remaining usages are either removed or only wrap emitted DDL metadata.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter 'CdcSourceInventory|CdcProviderSetupContract'",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter CdcSourceInventory"
+    ],
+    "completed": true
   }
 ]

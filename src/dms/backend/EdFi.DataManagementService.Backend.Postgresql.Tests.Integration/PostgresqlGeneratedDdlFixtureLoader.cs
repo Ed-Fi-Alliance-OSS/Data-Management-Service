@@ -18,7 +18,8 @@ internal sealed record PostgresqlGeneratedDdlFixture(
     EffectiveSchemaSet EffectiveSchemaSet,
     DerivedRelationalModelSet ModelSet,
     MappingSet MappingSet,
-    string GeneratedDdl
+    string GeneratedDdl,
+    IReadOnlyList<CdcSourceTableInventory> CdcSourceInventory
 );
 
 /// <summary>
@@ -79,13 +80,20 @@ internal static class PostgresqlGeneratedDdlFixtureLoader
     )
     {
         var effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadEffectiveSchemaSet(descriptor);
-        var (modelSet, generatedDdl) = DdlPipelineHelpers.BuildDdlForDialect(
+        var emission = DdlPipelineHelpers.BuildDdlEmissionForDialect(
             effectiveSchemaSet,
             SqlDialect.Pgsql,
             strict
         );
-        var mappingSet = new MappingSetCompiler().Compile(modelSet);
+        var mappingSet = new MappingSetCompiler().Compile(emission.ModelSet);
 
-        return new(descriptor.FixtureDirectory, effectiveSchemaSet, modelSet, mappingSet, generatedDdl);
+        return new(
+            descriptor.FixtureDirectory,
+            effectiveSchemaSet,
+            emission.ModelSet,
+            mappingSet,
+            emission.CombinedSql,
+            emission.CdcSourceInventory
+        );
     }
 }

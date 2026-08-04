@@ -92,10 +92,11 @@ public class Given_CdcProviderArtifactOutput
                 new CdcSafeName("dms_binding_slot")
             ),
             artifactOutput: artifactOutput,
-            expectedSourceInventory: CdcSourceInventoryBuilder.BuildExpectedSourceInventory(
-                SqlDialectFactory.Create(SqlDialect.Pgsql)
-            )
+            expectedSourceInventory: EmittedCdcSourceInventory(SqlDialect.Pgsql)
         );
+
+    private static IReadOnlyList<CdcSourceTableInventory> EmittedCdcSourceInventory(SqlDialect dialect) =>
+        new CoreDdlEmitter(SqlDialectFactory.Create(dialect)).EmitWithMetadata().CdcSourceInventory;
 
     private sealed class ArtifactOutputTestProvider : ICdcProviderSetupProvider
     {

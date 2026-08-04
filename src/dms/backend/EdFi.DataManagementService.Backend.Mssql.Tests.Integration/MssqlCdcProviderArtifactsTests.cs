@@ -5,7 +5,6 @@
 
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
-using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -220,9 +219,7 @@ public class Given_MssqlCdcProviderArtifacts
                     }
                 ),
                 artifactOutput: artifactOutput,
-                expectedSourceInventory: CdcSourceInventoryBuilder.BuildExpectedSourceInventory(
-                    SqlDialectFactory.Create(SqlDialect.Mssql)
-                ),
+                expectedSourceInventory: _fixture.CdcSourceInventory,
                 databaseExecutor: executor
             )
         );

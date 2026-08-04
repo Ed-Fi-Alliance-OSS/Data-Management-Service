@@ -415,11 +415,12 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
             ),
             artifactOutput: artifactOutput
                 ?? new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
-            expectedSourceInventory: CdcSourceInventoryBuilder.BuildExpectedSourceInventory(
-                SqlDialectFactory.Create(SqlDialect.Pgsql)
-            ),
+            expectedSourceInventory: EmittedCdcSourceInventory(),
             databaseExecutor: databaseExecutor
         );
+
+    private static IReadOnlyList<CdcSourceTableInventory> EmittedCdcSourceInventory() =>
+        new CoreDdlEmitter(SqlDialectFactory.Create(SqlDialect.Pgsql)).EmitWithMetadata().CdcSourceInventory;
 
     private async Task<CdcProviderSetupResult> RunSetupAsync(
         NpgsqlConnection connection,

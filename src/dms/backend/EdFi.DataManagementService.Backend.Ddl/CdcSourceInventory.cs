@@ -10,51 +10,9 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 
 internal static class CdcSourceInventoryBuilder
 {
-    internal static IReadOnlyList<CdcSourceTableInventory> BuildExpectedSourceInventory(ISqlDialect dialect)
-    {
-        ArgumentNullException.ThrowIfNull(dialect);
-
-        return CdcSourceInventoryContract
-            .RequiredSourceTableKinds.Select(kind =>
-                BuildTable(kind, CoreTableDefinition(kind, dialect), dialect)
-            )
-            .ToArray();
-    }
-
-    private static DmsCoreTableDefinition CoreTableDefinition(
-        CdcSourceTableKind tableKind,
+    internal static IReadOnlyList<CdcSourceTableInventory> BuildExpectedSourceInventory(
         ISqlDialect dialect
-    ) =>
-        tableKind switch
-        {
-            CdcSourceTableKind.DocumentCache => DmsCoreTableDefinitions.DocumentCache(dialect),
-            CdcSourceTableKind.Document => DmsCoreTableDefinitions.Document(dialect),
-            CdcSourceTableKind.CdcHeartbeat => DmsCoreTableDefinitions.CdcHeartbeat(dialect),
-            _ => throw new InvalidOperationException("Unsupported CDC source table kind."),
-        };
-
-    private static CdcSourceTableInventory BuildTable(
-        CdcSourceTableKind tableKind,
-        DmsCoreTableDefinition table,
-        ISqlDialect dialect
-    ) =>
-        new(
-            tableKind,
-            table.TableName,
-            dialect.QualifyTable(table.TableName),
-            table
-                .Columns.Select(
-                    (column, index) =>
-                        new CdcSourceColumnInventory(
-                            column.ColumnName,
-                            dialect.QuoteIdentifier(column.ColumnName.Value),
-                            index + 1,
-                            column.SqlType,
-                            column.IsNullable
-                        )
-                )
-                .ToArray()
-        );
+    ) => new CoreDdlEmitter(dialect).EmitWithMetadata().CdcSourceInventory;
 }
 
 internal static class CdcSourceInventoryValidator

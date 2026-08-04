@@ -9,6 +9,12 @@ using EdFi.DataManagementService.Backend.RelationalModel.Build;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
+internal sealed record DdlPipelineEmission(
+    DerivedRelationalModelSet ModelSet,
+    string CombinedSql,
+    IReadOnlyList<CdcSourceTableInventory> CdcSourceInventory
+);
+
 /// <summary>
 /// Shared DDL pipeline helpers used by both the CLI and the fixture test runner.
 /// Extracted here so that both consumers use the same artifact-emitter logic,
@@ -68,6 +74,17 @@ public static class DdlPipelineHelpers
         bool strict = true
     )
     {
+        var emission = BuildDdlEmissionForDialect(effectiveSchemaSet, dialect, strict);
+
+        return (emission.ModelSet, emission.CombinedSql);
+    }
+
+    internal static DdlPipelineEmission BuildDdlEmissionForDialect(
+        EffectiveSchemaSet effectiveSchemaSet,
+        SqlDialect dialect,
+        bool strict = true
+    )
+    {
         var clonedSchemaSet = CloneEffectiveSchemaSet(effectiveSchemaSet);
         var (sqlDialect, dialectRules) = CreateDialect(dialect);
         var passes = strict
@@ -75,8 +92,8 @@ public static class DdlPipelineHelpers
             : RelationalModelSetPasses.CreateDefault();
         var modelSetBuilder = new DerivedRelationalModelSetBuilder(passes);
         var modelSet = modelSetBuilder.Build(clonedSchemaSet, dialect, dialectRules);
-        var combinedSql = FullDdlEmitter.Emit(sqlDialect, modelSet);
+        var emission = FullDdlEmitter.EmitWithMetadata(sqlDialect, modelSet);
 
-        return (modelSet, combinedSql);
+        return new DdlPipelineEmission(modelSet, emission.CombinedSql, emission.CdcSourceInventory);
     }
 }

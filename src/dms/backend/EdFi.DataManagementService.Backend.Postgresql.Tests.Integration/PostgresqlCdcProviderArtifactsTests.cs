@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Ddl;
-using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Npgsql;
@@ -175,9 +174,7 @@ public class Given_PostgresqlCdcProviderArtifacts
                     new CdcSafeName(ReplicationSlotName)
                 ),
                 artifactOutput: artifactOutput,
-                expectedSourceInventory: CdcSourceInventoryBuilder.BuildExpectedSourceInventory(
-                    SqlDialectFactory.Create(SqlDialect.Pgsql)
-                ),
+                expectedSourceInventory: _fixture.CdcSourceInventory,
                 databaseExecutor: executor
             )
         );

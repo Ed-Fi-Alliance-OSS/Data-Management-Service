@@ -343,11 +343,12 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
                 }
             ),
             artifactOutput: new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
-            expectedSourceInventory: CdcSourceInventoryBuilder.BuildExpectedSourceInventory(
-                SqlDialectFactory.Create(SqlDialect.Mssql)
-            ),
+            expectedSourceInventory: EmittedCdcSourceInventory(),
             databaseExecutor: databaseExecutor
         );
+
+    private static IReadOnlyList<CdcSourceTableInventory> EmittedCdcSourceInventory() =>
+        new CoreDdlEmitter(SqlDialectFactory.Create(SqlDialect.Mssql)).EmitWithMetadata().CdcSourceInventory;
 
     private async Task<CdcProviderSetupResult> RunSetupAsync(
         SqlConnection connection,

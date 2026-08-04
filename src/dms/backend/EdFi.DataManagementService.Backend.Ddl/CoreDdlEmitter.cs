@@ -7,6 +7,8 @@ using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
+internal sealed record CoreDdlEmission(string Sql, IReadOnlyList<CdcSourceTableInventory> CdcSourceInventory);
+
 /// <summary>
 /// Emits deterministic DDL for the core <c>dms.*</c> schema objects.
 /// <para>
@@ -160,7 +162,13 @@ public sealed class CoreDdlEmitter
     /// <returns>
     /// A deterministic, canonicalized SQL string containing all core schema objects.
     /// </returns>
-    public string Emit()
+    public string Emit() => EmitWithMetadata().Sql;
+
+    /// <summary>
+    /// Generates the complete core <c>dms.*</c> DDL script and the typed CDC source
+    /// inventory derived from the same core table definitions used by the emitted DDL.
+    /// </summary>
+    internal CoreDdlEmission EmitWithMetadata()
     {
         var writer = new SqlWriter(_dialect);
 
@@ -174,8 +182,44 @@ public sealed class CoreDdlEmitter
         EmitTriggers(writer);
         EmitSecurityAndGrants(writer);
 
-        return writer.ToString();
+        return new CoreDdlEmission(writer.ToString(), BuildCdcSourceInventory());
     }
+
+    private IReadOnlyList<CdcSourceTableInventory> BuildCdcSourceInventory() =>
+        CdcSourceInventoryContract
+            .RequiredSourceTableKinds.Select(kind => BuildCdcSourceTable(kind, CoreTableDefinition(kind)))
+            .ToArray();
+
+    private DmsCoreTableDefinition CoreTableDefinition(CdcSourceTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.DocumentCache => DmsCoreTableDefinitions.DocumentCache(_dialect),
+            CdcSourceTableKind.Document => DmsCoreTableDefinitions.Document(_dialect),
+            CdcSourceTableKind.CdcHeartbeat => DmsCoreTableDefinitions.CdcHeartbeat(_dialect),
+            _ => throw new InvalidOperationException("Unsupported CDC source table kind."),
+        };
+
+    private CdcSourceTableInventory BuildCdcSourceTable(
+        CdcSourceTableKind tableKind,
+        DmsCoreTableDefinition table
+    ) =>
+        new(
+            tableKind,
+            table.TableName,
+            _dialect.QualifyTable(table.TableName),
+            table
+                .Columns.Select(
+                    (column, index) =>
+                        new CdcSourceColumnInventory(
+                            column.ColumnName,
+                            _dialect.QuoteIdentifier(column.ColumnName.Value),
+                            index + 1,
+                            column.SqlType,
+                            column.IsNullable
+                        )
+                )
+                .ToArray()
+        );
 
     // ── Phase 1: Schemas ────────────────────────────────────────────────
 

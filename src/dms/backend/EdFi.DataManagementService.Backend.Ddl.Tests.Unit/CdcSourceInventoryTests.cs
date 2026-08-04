@@ -38,9 +38,7 @@ public class Given_CdcSourceInventoryBuilder(SqlDialect dialect)
     [SetUp]
     public void SetUp()
     {
-        _inventory = CdcSourceInventoryBuilder.BuildExpectedSourceInventory(
-            SqlDialectFactory.Create(dialect)
-        );
+        _inventory = CdcSourceInventoryTestEmission.EmitCoreCdcSourceInventory(dialect);
     }
 
     [Test]
@@ -129,6 +127,39 @@ public class Given_CdcSourceInventoryBuilder(SqlDialect dialect)
     }
 }
 
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_DdlPipelineEmission_For_CdcSourceInventory(SqlDialect dialect)
+{
+    private DdlPipelineEmission _emission = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var effectiveSchemaSet = SmallFixtureEffectiveSchemaSetLoader.Load("minimal");
+        _emission = DdlPipelineHelpers.BuildDdlEmissionForDialect(effectiveSchemaSet, dialect, strict: false);
+    }
+
+    [Test]
+    public void It_should_expose_the_core_ddl_cdc_source_inventory()
+    {
+        _emission
+            .CdcSourceInventory.Should()
+            .BeEquivalentTo(
+                CdcSourceInventoryTestEmission.EmitCoreCdcSourceInventory(dialect),
+                options => options.WithStrictOrdering()
+            );
+    }
+
+    [Test]
+    public void It_should_not_add_opt_in_cdc_objects_to_ordinary_ddl()
+    {
+        _emission.CombinedSql.Should().NotContain("CdcHeartbeat");
+        _emission.CombinedSql.Should().Contain("DocumentCache");
+        _emission.CombinedSql.Should().Contain("DocumentProjectionWork");
+    }
+}
+
 [TestFixture]
 public class Given_CdcSourceInventoryValidator
 {
@@ -137,9 +168,7 @@ public class Given_CdcSourceInventoryValidator
     [SetUp]
     public void SetUp()
     {
-        _expected = CdcSourceInventoryBuilder.BuildExpectedSourceInventory(
-            SqlDialectFactory.Create(SqlDialect.Pgsql)
-        );
+        _expected = CdcSourceInventoryTestEmission.EmitCoreCdcSourceInventory(SqlDialect.Pgsql);
     }
 
     [Test]
@@ -301,4 +330,10 @@ public class Given_CdcSourceInventoryValidator
             providerDataType ?? column.ProviderDataType,
             column.IsNullable
         );
+}
+
+internal static class CdcSourceInventoryTestEmission
+{
+    internal static IReadOnlyList<CdcSourceTableInventory> EmitCoreCdcSourceInventory(SqlDialect dialect) =>
+        new CoreDdlEmitter(SqlDialectFactory.Create(dialect)).EmitWithMetadata().CdcSourceInventory;
 }

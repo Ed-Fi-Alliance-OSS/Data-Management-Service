@@ -153,10 +153,10 @@ internal static class CdcProviderSetupContractTestData
         );
 
     internal static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceInventory() =>
-        CdcSourceInventoryBuilder.BuildExpectedSourceInventory(SqlDialectFactory.Create(SqlDialect.Pgsql));
+        new CoreDdlEmitter(SqlDialectFactory.Create(SqlDialect.Pgsql)).EmitWithMetadata().CdcSourceInventory;
 
     internal static IReadOnlyList<CdcSourceTableInventory> BuildSqlServerRequiredSourceInventory() =>
-        CdcSourceInventoryBuilder.BuildExpectedSourceInventory(SqlDialectFactory.Create(SqlDialect.Mssql));
+        new CoreDdlEmitter(SqlDialectFactory.Create(SqlDialect.Mssql)).EmitWithMetadata().CdcSourceInventory;
 
     internal static CdcPostgresqlInitialReplicationSlotProof BuildPostgresqlInitialSlotProof(
         string replicationSlotName = "dms_binding_slot",
