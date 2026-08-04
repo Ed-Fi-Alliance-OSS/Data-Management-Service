@@ -933,5 +933,56 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheExplicitIntegrityScrub\""
     ],
     "completed": true
+  },
+  {
+    "category": "administrative-diagnostics",
+    "description": "Medium: Add a small deterministic cap to the existing in-memory administrative phase diagnostic list used by long-running commands. The current affected-document id lists are capped, but AddPhaseDiagnostic appends an entry for every repeated high-water/backpressure observation, so a command that waits until WorkflowTimeout can grow active-command observations and final results without a list-level bound. Keep this as a local bounded-list behavior on the existing execution context/result composition path; do not add durable command state, diagnostic aggregation infrastructure, a new timeout, provider-specific behavior, or a new public result shape.",
+    "acceptance-criteria": [
+      "DocumentCacheAdministrativeCommandExecutionContext and administrative observation/result composition enforce one deterministic maximum number of phase diagnostic entries, using Projector:PageSize or another existing bounded administrative setting rather than an unbounded append-only list.",
+      "AffectedDocumentIds on every retained phase diagnostic remain capped to Projector:PageSize.",
+      "When the list is full, retention uses a simple deterministic policy that keeps recent/final diagnostics useful; it does not classify, group, summarize, persist, or deduplicate diagnostics beyond what existing result composition already does.",
+      "Repeated baseline high-water backpressure cycles cannot grow active command observations or final command results beyond the configured diagnostic entry cap.",
+      "The final failure diagnostic for WorkflowTimeout, cancellation, session loss, provider timeout, or unexpected provider failure is still present even when earlier repeated diagnostics have reached the cap.",
+      "Focused command-runner or baseline-seeding tests cover repeated AddPhaseDiagnostic calls and verify bounded observation/result diagnostics without changing command classifications."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeCommandRunner|FullyQualifiedName~DocumentCacheBaselineSeeding\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "administrative-command-runner",
+    "description": "Medium: Preserve a workflow result that has already returned from the administrative drain executor instead of reclassifying it when caller cancellation or WorkflowTimeout is observed immediately after the return. The current post-return token checks can turn a durable completed result into cancellationAfterMutation or workflowTimeout incompleteRetryable if the token fires in that narrow window. Keep this as a narrow ordering/result-preservation fix in the command runner; do not change workflow timeout defaults, command contracts, mutex ownership, active workflow cancellation behavior, transaction cancellation boundaries, or cleanup semantics.",
+    "acceptance-criteria": [
+      "Once RunAdministrativeCommandAsync returns a DocumentCacheAdministrativeCommandResult, the runner records that result with runtime fields instead of overriding it solely because the caller token or workflow timeout token is canceled after the return.",
+      "Cancellation and WorkflowTimeout are still classified through the existing failedNoMutation or incompleteRetryable paths when cancellation is observed before or during workflow execution.",
+      "Commands that complete after durable mutation are not reported as incompleteRetryable unless the workflow itself failed, threw, or was canceled before producing a completed result.",
+      "The fix is limited to removing or moving the post-return token override; it does not suppress OperationCanceledException handling from work that has not produced a result.",
+      "Active command cleanup, observation end, mutex release, and retained context release behavior stay unchanged apart from preserving the returned result.",
+      "Focused command-runner tests cover late caller cancellation and late WorkflowTimeout after a workflow returns a completed result."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeCommandRunner\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "projection-supervisor",
+    "description": "Medium: Prevent continuous ordinary backlog draining from starving the hosted supervisor's Projector:PollInterval refresh and lifecycle/latch observation. The current RunReadyTargetsUntilIdleAsync loop can keep dispatching while every scheduler pass returns PageProcessed, so the outer supervisor loop never reaches the next poll tick under sustained work. Keep this as a local hosted-supervisor loop change that periodically yields back to the existing poll-deadline check; do not add durable work ownership, per-document timers, a second hosted service, a second refresh cadence, new configuration, or changes to scheduler/provider contracts.",
+    "acceptance-criteria": [
+      "The hosted supervisor performs target-registry refresh and lifecycle/latch observation no later than the configured Projector:PollInterval even when at least one target continuously returns PageProcessed.",
+      "Continuous backlog still drains without waiting a full Projector:PollInterval between processed pages, preserving one durable-work page per ready target per global-gate acquisition and stable round-robin target ordering.",
+      "CMS-triggered RefreshAsync remains supported as an external notification path, but the hosted supervisor's own poll fallback is not dependent on the backlog becoming idle.",
+      "The implementation uses the existing TimeProvider, next poll deadline, scheduler state, and RunReadyTargetsOnceAsync path; it does not introduce a new worker, timer subsystem, persisted cursor, lease, or ownership marker.",
+      "The loop does not busy-spin when all targets are blocked, sleeping, command-owned, unresolved, ineligible, paused, or cancellation-pending.",
+      "Focused hosted-supervisor tests use a controllable TimeProvider to prove a poll tick fires during sustained PageProcessed results and that the next drain pass resumes promptly afterward."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionSupervisor|FullyQualifiedName~DocumentCacheProjectionScheduler\""
+    ],
+    "completed": false
   }
 ]

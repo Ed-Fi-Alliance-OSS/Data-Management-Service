@@ -594,24 +594,6 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         )
                         .ConfigureAwait(false);
 
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        classifiedResult = RecordAdministrativeCommandResult(
-                            CreateCancellationResult(commandContext),
-                            commandContext
-                        );
-                        return classifiedResult;
-                    }
-
-                    if (workflowTimeout.IsCancellationRequested)
-                    {
-                        classifiedResult = RecordAdministrativeCommandResult(
-                            CreateWorkflowTimeoutResult(commandContext),
-                            commandContext
-                        );
-                        return classifiedResult;
-                    }
-
                     classifiedResult = RecordAdministrativeCommandResult(
                         AddRuntimeResultFields(result, commandContext),
                         commandContext

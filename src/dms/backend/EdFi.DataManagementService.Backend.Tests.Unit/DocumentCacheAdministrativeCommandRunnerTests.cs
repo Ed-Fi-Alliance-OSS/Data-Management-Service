@@ -323,11 +323,10 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             );
     }
 
-    [TestCase(false, DocumentCacheAdministrativeCommandStatus.FailedNoMutation)]
-    [TestCase(true, DocumentCacheAdministrativeCommandStatus.IncompleteRetryable)]
-    public async Task It_reports_workflow_timeout_after_an_active_transaction_finishes(
-        bool transactionMutates,
-        DocumentCacheAdministrativeCommandStatus expectedStatus
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_preserves_completed_result_returned_after_workflow_timeout_token_is_canceled(
+        bool transactionMutates
     )
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
@@ -380,30 +379,20 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
 
         transactionTokens.Should().ContainSingle().Which.Should().Be(CancellationToken.None);
-        result.Status.Should().Be(expectedStatus);
-        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.WorkflowTimeout);
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
         result.Mutated.Should().Be(transactionMutates);
         result
             .PhaseDiagnostics.Should()
-            .Contain(diagnostic =>
+            .NotContain(diagnostic =>
                 diagnostic.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout
             );
     }
 
-    [TestCase(
-        false,
-        DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
-        DocumentCacheAdministrativeCommandClassification.CancellationBeforeMutation
-    )]
-    [TestCase(
-        true,
-        DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
-        DocumentCacheAdministrativeCommandClassification.CancellationAfterMutation
-    )]
-    public async Task It_reports_caller_cancellation_after_an_active_transaction_finishes(
-        bool transactionMutates,
-        DocumentCacheAdministrativeCommandStatus expectedStatus,
-        DocumentCacheAdministrativeCommandClassification expectedClassification
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_preserves_completed_result_returned_after_caller_cancellation_token_is_canceled(
+        bool transactionMutates
     )
     {
         using CancellationTokenSource cancellationTokenSource = new();
@@ -457,9 +446,73 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         );
 
         transactionTokens.Should().ContainSingle().Which.Should().Be(CancellationToken.None);
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+        result.Mutated.Should().Be(transactionMutates);
+        result
+            .PhaseDiagnostics.Should()
+            .NotContain(diagnostic =>
+                diagnostic.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.Cancellation
+            );
+    }
+
+    [TestCase(
+        false,
+        DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+        DocumentCacheAdministrativeCommandClassification.CancellationBeforeMutation
+    )]
+    [TestCase(
+        true,
+        DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
+        DocumentCacheAdministrativeCommandClassification.CancellationAfterMutation
+    )]
+    public async Task It_classifies_caller_cancellation_observed_before_workflow_returns(
+        bool commandMutates,
+        DocumentCacheAdministrativeCommandStatus expectedStatus,
+        DocumentCacheAdministrativeCommandClassification expectedClassification
+    )
+    {
+        using CancellationTokenSource cancellationTokenSource = new();
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        DocumentCacheProjectionTargetRuntimeContext runtimeContext = RuntimeContext(executionContext);
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([runtimeContext]),
+            new RecordingAdministrativeMutex()
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: async (context, cancellationToken) =>
+            {
+                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.ClearWork);
+                if (commandMutates)
+                {
+                    context.MarkMutated(
+                        new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Resetting, false)
+                    );
+                }
+
+                await cancellationTokenSource.CancelAsync().ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+                return context.Completed();
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            Request(),
+            workflow,
+            cancellationTokenSource.Token
+        );
+
         result.Status.Should().Be(expectedStatus);
         result.Classification.Should().Be(expectedClassification);
-        result.Mutated.Should().Be(transactionMutates);
+        result.Mutated.Should().Be(commandMutates);
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.ClearWork
+                && diagnostic.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.Cancellation
+            );
     }
 
     [TestCaseSource(nameof(ProviderCommandTimeoutCases))]

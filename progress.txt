@@ -267,3 +267,8 @@ Completed dependency-injection follow-up task for reference/design/backend-redes
 Key decisions: removed frontend duplicate downstream-publication-history default; backend TryAdd remains single shared default so pre-registered custom providers are preserved through startup composition.
 Files changed: WebApplicationBuilderExtensions.cs; WebApplicationBuilderExtensionsTests.cs; DocumentCacheServiceRegistrationTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Verified focused frontend DocumentCache/WebApplicationBuilderExtensions and backend DocumentCacheServiceRegistration unit filters.
+
+Completed administrative-command-runner follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: removed post-return caller/workflow cancellation override; runner now records returned workflow result with runtime fields, while pre-result OperationCanceledException paths still classify cancellation/timeout by mutation state.
+Files changed: DocumentCacheAdministrativeCommandRunner.cs; DocumentCacheAdministrativeCommandRunnerTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Verified focused administrative command runner unit filter. Remaining administrative-diagnostics and projection-supervisor follow-ups open.
