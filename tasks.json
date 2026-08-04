@@ -974,7 +974,7 @@
       "Keep any provider-validation-failure coverage focused on preserving existing validation_failed behavior; do not add new artifact-output retry, fallback, or lifecycle scenarios.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"CdcProviderArtifactOutput|CdcProviderManifest\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "sqlserver-security",

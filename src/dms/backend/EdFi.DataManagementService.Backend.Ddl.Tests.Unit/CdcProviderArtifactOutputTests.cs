@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using NUnit.Framework;
@@ -120,6 +121,8 @@ public class Given_CdcProviderArtifactOutput
                 && diagnostic.ProviderErrorClass == nameof(IOException)
             );
         result.ManifestPayload!.Json.Should().Contain("CDC_PROVIDER_ARTIFACT_OUTPUT_FAILED");
+        using var document = JsonDocument.Parse(result.ManifestPayload.Json);
+        document.RootElement.GetProperty("opt_in_status").GetString().Should().Be("validation_failed");
     }
 
     [Test]
@@ -151,6 +154,16 @@ public class Given_CdcProviderArtifactOutput
         result.ManifestPayload!.Json.Should().Contain("CDC_PROVIDER_ARTIFACT_OUTPUT_FAILED");
         result.ManifestPayload.Json.Should().NotContain(_tempRoot);
         result.ManifestPayload.Json.Should().NotContain("invalid");
+        using var document = JsonDocument.Parse(result.ManifestPayload.Json);
+        document.RootElement.GetProperty("outcome").GetString().Should().Be("failed");
+        document.RootElement.GetProperty("opt_in_status").GetString().Should().Be("enabled");
+        document
+            .RootElement.GetProperty("validation_diagnostics")
+            .EnumerateArray()
+            .Should()
+            .Contain(diagnostic =>
+                diagnostic.GetProperty("code").GetString() == "CDC_PROVIDER_ARTIFACT_OUTPUT_FAILED"
+            );
     }
 
     private static CdcProviderSetupStep BuildCompleteObservedProviderStateStep() =>

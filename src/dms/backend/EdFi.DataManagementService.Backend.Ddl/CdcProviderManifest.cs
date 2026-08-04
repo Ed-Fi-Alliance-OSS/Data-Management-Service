@@ -30,13 +30,16 @@ internal static class CdcProviderManifestEmitter
     private const string ManifestVersion = "1";
     private static readonly JsonWriterOptions _writerOptions = new() { Indented = true, NewLine = "\n" };
 
-    public static CdcProviderManifestPayload CreatePayload(CdcProviderSetupResult result)
+    public static CdcProviderManifestPayload CreatePayload(
+        CdcProviderSetupResult result,
+        bool? providerOptInEnabled = null
+    )
     {
         ArgumentNullException.ThrowIfNull(result);
 
         return new CdcProviderManifestPayload(
             new CdcSafeName(FileNameFor(result.Provider)),
-            Emit(BuildManifest(result))
+            Emit(BuildManifest(result, providerOptInEnabled))
         );
     }
 
@@ -52,7 +55,10 @@ internal static class CdcProviderManifestEmitter
             ),
         };
 
-    internal static CdcProviderManifest BuildManifest(CdcProviderSetupResult result)
+    internal static CdcProviderManifest BuildManifest(
+        CdcProviderSetupResult result,
+        bool? providerOptInEnabled = null
+    )
     {
         ArgumentNullException.ThrowIfNull(result);
 
@@ -61,7 +67,7 @@ internal static class CdcProviderManifestEmitter
             Provider: result.Provider,
             Mode: result.Mode,
             Outcome: result.Outcome,
-            OptInEnabled: result.Outcome != CdcProviderSetupOutcome.Failed,
+            OptInEnabled: providerOptInEnabled ?? result.Outcome != CdcProviderSetupOutcome.Failed,
             ObservedSourceFingerprint: result.ObservedSourceFingerprint,
             SourceTableInventory: SortSourceTables(result.SourceTableInventory),
             ProviderArtifacts: SortArtifactObservations(result.ArtifactInventory),

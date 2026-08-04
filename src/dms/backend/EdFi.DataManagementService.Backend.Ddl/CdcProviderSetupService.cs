@@ -347,6 +347,7 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
             return result;
         }
 
+        var providerOptInEnabled = outcome != CdcProviderSetupOutcome.Failed;
         var manifestPayload = CdcProviderManifestEmitter.CreatePayload(result);
         result = result with { ManifestPayload = manifestPayload };
 
@@ -372,7 +373,7 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
 
         return failedResult with
         {
-            ManifestPayload = CdcProviderManifestEmitter.CreatePayload(failedResult),
+            ManifestPayload = CdcProviderManifestEmitter.CreatePayload(failedResult, providerOptInEnabled),
         };
     }
 
