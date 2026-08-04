@@ -15,6 +15,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 [Category("CdcProviderArtifacts")]
 public class Given_MssqlCdcProviderArtifacts
 {

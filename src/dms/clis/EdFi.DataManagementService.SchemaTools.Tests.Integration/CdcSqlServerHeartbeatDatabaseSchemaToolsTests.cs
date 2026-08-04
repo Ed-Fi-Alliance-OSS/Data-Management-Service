@@ -294,7 +294,11 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
         result
             .Diagnostics.Should()
-            .ContainSingle(diagnostic => diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISSING");
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_DATABASE_CDC_MISSING"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.SourceHistoryLost
+            );
         IsDatabaseCdcEnabled(connection).Should().BeFalse();
         TableExists(connection, "CdcHeartbeat").Should().BeFalse();
     }

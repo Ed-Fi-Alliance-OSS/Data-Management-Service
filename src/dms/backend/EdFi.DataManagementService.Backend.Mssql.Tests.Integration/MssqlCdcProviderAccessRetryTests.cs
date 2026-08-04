@@ -16,6 +16,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 [Category("CdcProviderAccessRetry")]
 public class Given_MssqlCdcProviderAccessRetry
 {
