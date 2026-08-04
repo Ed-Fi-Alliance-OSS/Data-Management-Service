@@ -412,7 +412,7 @@ public class Given_MssqlCdcProviderArtifacts
         result.ManifestPayload.Should().NotBeNull();
         result.ManifestPayload!.FileName.Value.Should().Be("cdc-provider.mssql.manifest.json");
         result.ManifestPayload.Json.Should().Be(await File.ReadAllTextAsync(manifestPath));
-        result.ManifestPayload.Json.Should().Contain("\"provider\": \"mssql\"");
+        result.ManifestPayload.Json.Should().Contain("\"provider\": \"sqlserver\"");
         result.ManifestPayload.Json.Should().Contain("\"artifact_kind\": \"sqlserver_gating_role\"");
         result.ManifestPayload.Json.Should().Contain($"\"artifact_name\": \"{GatingRoleName}\"");
         result.ManifestPayload.Json.Should().Contain("\"object_name\": \"role.dms_binding_gate\"");

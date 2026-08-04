@@ -32,6 +32,17 @@ public class Given_CdcProviderManifest_Emitter
     }
 
     [Test]
+    public void It_should_serialize_the_sql_server_manifest_provider_token()
+    {
+        var result = BuildManifestResult() with { Provider = CdcProvider.SqlServer };
+
+        var payload = CdcProviderManifestEmitter.CreatePayload(result);
+
+        using var document = JsonDocument.Parse(payload.Json);
+        document.RootElement.GetProperty("provider").GetString().Should().Be("sqlserver");
+    }
+
+    [Test]
     public void It_should_serialize_observed_provider_metadata()
     {
         var payload = CdcProviderManifestEmitter.CreatePayload(BuildManifestResult());

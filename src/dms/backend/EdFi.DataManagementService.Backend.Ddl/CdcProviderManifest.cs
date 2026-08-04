@@ -389,7 +389,7 @@ internal static class CdcProviderManifestEmitter
         provider switch
         {
             CdcProvider.Postgresql => "postgresql",
-            CdcProvider.SqlServer => "mssql",
+            CdcProvider.SqlServer => "sqlserver",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(provider),
                 provider,

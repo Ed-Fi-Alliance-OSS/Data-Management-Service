@@ -937,7 +937,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderManifest",
       "With SQL Server provider prerequisites available, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderArtifacts"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "sqlserver-provider-history",
