@@ -14,9 +14,9 @@ planning without coupling instrumentation delivery to the large-fixture performa
 
 ## Design References
 
-- [`Bounded Telemetry`](EPIC.md#bounded-telemetry)
+- [`Bounded Telemetry`](../../design-docs/partitioned-cursor-paging.md#bounded-telemetry)
 - [`Performance Invariants and Evidence`](EPIC.md#performance-invariants-and-evidence)
-- [`Risks and Guardrails`](EPIC.md#risks-and-guardrails)
+- [`Risks and Guardrails`](../../design-docs/partitioned-cursor-paging.md#risks-and-guardrails)
 
 ## Dependencies
 

@@ -15,9 +15,10 @@ cannot widen it.
 
 ## Design References
 
-- [`Cursor page selection`](EPIC.md#cursor-page-selection)
-- [`Partition planning`](EPIC.md#partition-planning)
-- [`Cursor Token Contract`](EPIC.md#cursor-token-contract)
+- [`Shared candidate relation`](../../design-docs/partitioned-cursor-paging.md#shared-candidate-relation)
+- [`Provider cursor SQL`](../../design-docs/partitioned-cursor-paging.md#provider-cursor-sql)
+- [`Partition planning`](../../design-docs/partitioned-cursor-paging.md#partition-planning)
+- [`Cursor Token Contract`](../../design-docs/partitioned-cursor-paging.md#cursor-token-contract)
 - [`Test Expectations`](EPIC.md#test-expectations)
 
 ## Dependencies

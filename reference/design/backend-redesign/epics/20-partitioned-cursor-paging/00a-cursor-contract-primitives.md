@@ -11,15 +11,16 @@ status: proposed
 
 Establish the provider-neutral typed paging, range, token, and result-boundary contracts together
 with the configuration they require, so every later story shares one vocabulary before validation,
-routing, planning, or execution work begins. The epic remains the source of truth for bounds,
-terminal-page behavior, and configuration limits.
+routing, planning, or execution work begins. The design doc is the source of truth for bounds,
+terminal-page behavior, and configuration limits; the epic owns work partitioning and the
+acceptance evidence for them.
 
 ## Design References
 
-- [`Public API Contract`](EPIC.md#public-api-contract)
-- [`Cursor Token Contract`](EPIC.md#cursor-token-contract)
-- [`Application Boundaries`](EPIC.md#application-boundaries)
-- [`Configuration`](EPIC.md#configuration)
+- [`Public API Contract`](../../design-docs/partitioned-cursor-paging.md#public-api-contract)
+- [`Cursor Token Contract`](../../design-docs/partitioned-cursor-paging.md#cursor-token-contract)
+- [`Application Boundaries`](../../design-docs/partitioned-cursor-paging.md#application-boundaries)
+- [`Configuration`](../../design-docs/partitioned-cursor-paging.md#configuration)
 
 ## Dependencies
 

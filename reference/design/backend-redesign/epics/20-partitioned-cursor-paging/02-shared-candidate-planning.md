@@ -20,11 +20,13 @@ a dialect compiler emits them.
 
 ## Design References
 
-- [`Cursor page selection`](EPIC.md#cursor-page-selection)
-- [`Partition planning`](EPIC.md#partition-planning)
-- [`Consistency Under Writes`](EPIC.md#consistency-under-writes)
+- [`Paging-mode choice`](../../design-docs/partitioned-cursor-paging.md#paging-mode-choice)
+- [`Shared candidate relation`](../../design-docs/partitioned-cursor-paging.md#shared-candidate-relation)
+- [`Provider cursor SQL`](../../design-docs/partitioned-cursor-paging.md#provider-cursor-sql)
+- [`Partition planning`](../../design-docs/partitioned-cursor-paging.md#partition-planning)
+- [`Consistency Under Writes`](../../design-docs/partitioned-cursor-paging.md#consistency-under-writes)
 - [`Performance Invariants and Evidence`](EPIC.md#performance-invariants-and-evidence)
-- [`Risks and Guardrails`](EPIC.md#risks-and-guardrails)
+- [`Risks and Guardrails`](../../design-docs/partitioned-cursor-paging.md#risks-and-guardrails)
 
 ## Dependencies
 
@@ -51,8 +53,9 @@ a dialect compiler emits them.
   `/partitions`.
 - Preserve regular-resource root-table behavior and descriptor `dms.Descriptor` plus
   `ResourceKeyId` behavior.
-- Add an explicit one-row-per-`DocumentId` assertion for every consumer and supported
-  authorization strategy.
+- Add explicit test assertions that every consumer and every supported authorization strategy
+  yields one row per `DocumentId`. This is test coverage, not a per-request runtime uniqueness
+  check.
 - Compile PostgreSQL range predicates plus `LIMIT @pageSize` with no offset/count SQL.
 - Compile SQL Server range predicates plus `TOP (@pageSize)` with no `OFFSET`/count SQL.
 - Preserve existing traditional PostgreSQL `LIMIT/OFFSET` and SQL Server `OFFSET/FETCH`
@@ -74,8 +77,10 @@ a dialect compiler emits them.
   roles.
 - Negative assertions prove cursor plans contain no offset, row-number skip, or total-count SQL.
 - Existing traditional page-selection SQL goldens remain unchanged and demonstrate no semantic
-  regression; traditional latency is compared against the E20-S09 baseline artifacts before this
-  story is accepted.
+  regression.
+- The E20-S09 baseline artifacts exist and identify a commit at or before this story, so the
+  pre-change baseline is genuinely pre-change. Comparing traditional latency against that baseline
+  is E20-S10's acceptance gate, not this story's.
 - Edge cases cover inverted and extreme `Int64` ranges and page sizes 0, 1, and maximum.
 - Focused PostgreSQL and real SQL Server integration probes prove the generated SQL executes.
 

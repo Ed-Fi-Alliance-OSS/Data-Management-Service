@@ -20,10 +20,11 @@ half a hidden dependency of the regular-resource half.
 
 ## Design References
 
-- [`GET-many cursor paging`](EPIC.md#get-many-cursor-paging)
-- [`Cursor Token Contract`](EPIC.md#cursor-token-contract)
-- [`Cursor page selection`](EPIC.md#cursor-page-selection)
-- [`Consistency Under Writes`](EPIC.md#consistency-under-writes)
+- [`GET-many cursor paging`](../../design-docs/partitioned-cursor-paging.md#get-many-cursor-paging)
+- [`Cursor Token Contract`](../../design-docs/partitioned-cursor-paging.md#cursor-token-contract)
+- [`Carrying the selected-keyset boundary`](../../design-docs/partitioned-cursor-paging.md#carrying-the-selected-keyset-boundary)
+- [`Provider cursor SQL`](../../design-docs/partitioned-cursor-paging.md#provider-cursor-sql)
+- [`Consistency Under Writes`](../../design-docs/partitioned-cursor-paging.md#consistency-under-writes)
 - [`Test Expectations`](EPIC.md#test-expectations)
 
 ## Dependencies

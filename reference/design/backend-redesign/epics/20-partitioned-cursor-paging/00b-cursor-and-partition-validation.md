@@ -12,8 +12,9 @@ status: proposed
 Own the cursor and partition request boundary end to end: ODS-precedence single-error cursor
 validation, the separately phase-gated partition validator, the shared parameter-validation
 ProblemDetails shell, operation-scoped cursor parameter recognition, typed collection/by-id/partition
-path operations, and parameter canonicalization. The epic remains the source of truth for exact
-messages, phase gating, and within-phase tie-breakers.
+path operations, and parameter canonicalization. The design doc is the source of truth for exact
+messages, phase gating, and within-phase tie-breakers; the epic owns work partitioning, the ODS
+comparison, and the acceptance evidence.
 
 Validation and canonicalization are one story because phase selection turns on query-key presence,
 and which keys are present is exactly what canonicalization decides. Splitting them would let one
@@ -21,10 +22,13 @@ story assert a presence semantic the other owns.
 
 ## Design References
 
-- [`Cursor validation and ProblemDetails`](EPIC.md#cursor-validation-and-problemdetails)
-- [`Worked precedence examples`](EPIC.md#worked-precedence-examples)
-- [`/partitions`](EPIC.md#partitions)
-- [`Application Boundaries`](EPIC.md#application-boundaries)
+- [`Cursor validation and ProblemDetails`](../../design-docs/partitioned-cursor-paging.md#cursor-validation-and-problemdetails)
+- [`Worked precedence examples`](../../design-docs/partitioned-cursor-paging.md#worked-precedence-examples)
+- [`Query-parameter name canonicalization`](../../design-docs/partitioned-cursor-paging.md#query-parameter-name-canonicalization)
+- [`Operation scoping`](../../design-docs/partitioned-cursor-paging.md#operation-scoping)
+- [`/partitions`](../../design-docs/partitioned-cursor-paging.md#partitions)
+- [`Application Boundaries`](../../design-docs/partitioned-cursor-paging.md#application-boundaries)
+- [`ODS Precedence Comparison`](EPIC.md#ods-precedence-comparison) — for the ODS 7.3.2 column
 - [`Approved Intentional ODS Differences`](EPIC.md#approved-intentional-ods-differences)
 
 ## Dependencies
@@ -65,8 +69,9 @@ story assert a presence semantic the other owns.
 - Cursor validator tests prove token-decode, mixed-mode, required-relationship, and syntax/range
   precedence, exactly one error, and exact messages, including the ODS
   `Use limit instead of pageSize...` case.
-- Tests implement every row of the epic's worked precedence table, including the blank `pageSize`
-  and non-numeric `pageSize` rows recorded as approved intentional ODS differences.
+- Tests implement every row of the design doc's worked precedence table, including the blank
+  `pageSize` and non-numeric `pageSize` rows recorded as approved intentional ODS differences in the
+  epic.
 - Partition validator tests preserve `number` precedence and canonical unsupported-parameter
   ordering, and cover several reserved parameters in one request.
 - Traditional-only pagination failures retain their current response shell and messages, and the

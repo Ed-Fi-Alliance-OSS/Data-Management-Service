@@ -14,10 +14,12 @@ balanced cursor ranges in one identifiers-only database command.
 
 ## Design References
 
-- [`/partitions`](EPIC.md#partitions)
-- [`Partition planning`](EPIC.md#partition-planning)
-- [`Application Boundaries`](EPIC.md#application-boundaries)
-- [`Consistency Under Writes`](EPIC.md#consistency-under-writes)
+- [`/partitions`](../../design-docs/partitioned-cursor-paging.md#partitions)
+- [`Partition validation`](../../design-docs/partitioned-cursor-paging.md#partition-validation)
+- [`Partition sizing`](../../design-docs/partitioned-cursor-paging.md#partition-sizing)
+- [`Partition planning`](../../design-docs/partitioned-cursor-paging.md#partition-planning)
+- [`Application Boundaries`](../../design-docs/partitioned-cursor-paging.md#application-boundaries)
+- [`Consistency Under Writes`](../../design-docs/partitioned-cursor-paging.md#consistency-under-writes)
 
 ## Dependencies
 

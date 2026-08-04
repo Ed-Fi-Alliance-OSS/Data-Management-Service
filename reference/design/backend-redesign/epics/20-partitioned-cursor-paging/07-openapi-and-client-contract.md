@@ -14,10 +14,11 @@ core, extension, descriptor, and profile OpenAPI documents without per-resource 
 
 ## Design References
 
-- [`Public API Contract`](EPIC.md#public-api-contract)
-- [`OpenAPI assembly`](EPIC.md#openapi-assembly)
-- [`Configuration`](EPIC.md#configuration)
-- [`Non-Goals`](EPIC.md#non-goals)
+- [`Public API Contract`](../../design-docs/partitioned-cursor-paging.md#public-api-contract)
+- [`OpenAPI Assembly`](../../design-docs/partitioned-cursor-paging.md#openapi-assembly)
+- [`Configuration`](../../design-docs/partitioned-cursor-paging.md#configuration)
+- [`Requirements and Non-Goals`](../../design-docs/partitioned-cursor-paging.md#requirements-and-non-goals)
+- [`OpenAPI Publication Gating`](EPIC.md#openapi-publication-gating) — for the story-level gates
 
 ## Dependencies
 

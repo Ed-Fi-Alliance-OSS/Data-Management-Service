@@ -217,4 +217,4 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1326` — Add CDC setup, monitoring, recovery, and security runbooks — `reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md`
 
 - `DMS-1348` — Partitioned Cursor Paging — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/EPIC.md`
-  - `DMS-1349` — Design Partitioned Cursor Paging — source spike recorded in `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/EPIC.md`
+  - `DMS-1349` — Design Partitioned Cursor Paging — `reference/design/backend-redesign/design-docs/partitioned-cursor-paging.md`

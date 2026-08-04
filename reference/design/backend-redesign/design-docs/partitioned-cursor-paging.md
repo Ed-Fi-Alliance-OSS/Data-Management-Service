@@ -460,8 +460,12 @@ cursor pages would silently skip or duplicate documents, and nothing in the resp
 `DocumentId`. Duplicate candidate rows would corrupt `ROW_NUMBER()`, the candidate count, and
 therefore every partition boundary. Authorization strategies MUST preserve uniqueness by
 construction, normally through `EXISTS`. Do not add an unconditional `DISTINCT` to conceal a
-duplicate-producing authorization plan — that hides the defect and adds a sort. Add an explicit
-one-row-per-`DocumentId` assertion for each consumer and each supported authorization strategy.
+duplicate-producing authorization plan — that hides the defect and adds a sort.
+
+Prove the invariant with test coverage, not with a runtime guard: assert one row per `DocumentId`
+in an explicit test for each consumer and each supported authorization strategy. A per-request
+uniqueness check would add cost to every query for the same reason an unconditional `DISTINCT`
+would, and it would report the defect in production rather than in the build.
 
 ### Provider cursor SQL
 

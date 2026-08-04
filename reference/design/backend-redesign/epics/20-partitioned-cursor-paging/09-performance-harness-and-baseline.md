@@ -16,7 +16,7 @@ before its downstream story mutates shared traditional collection execution.
 ## Design References
 
 - [`Performance Invariants and Evidence`](EPIC.md#performance-invariants-and-evidence)
-- [`Risks and Guardrails`](EPIC.md#risks-and-guardrails)
+- [`Risks and Guardrails`](../../design-docs/partitioned-cursor-paging.md#risks-and-guardrails)
 - [`Completion Evidence`](EPIC.md#completion-evidence)
 
 ## Dependencies

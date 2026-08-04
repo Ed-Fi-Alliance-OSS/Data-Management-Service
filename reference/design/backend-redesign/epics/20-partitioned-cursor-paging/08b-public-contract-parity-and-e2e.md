@@ -15,14 +15,18 @@ profiles, extensions, and descriptors, and that its differences from ODS 7.3.2 a
 ones.
 
 The ODS comparison is expressed as static expected values, not as a live reference deployment. The
-epic's worked precedence table and approved-difference list were established by reading the pinned
-ODS 7.3.2 sources cited in its `Compatibility Baseline`, so those tables are the reference; standing
-up and automating an ODS 7.3.2 API is explicitly out of scope.
+design doc's worked precedence table records the expected DMS messages, and the epic's ODS
+precedence comparison and approved-difference list record the ODS 7.3.2 behavior. Both were
+established by reading the pinned ODS 7.3.2 sources cited in the epic's `Compatibility Baseline`, so
+those tables are the reference; standing up and automating an ODS 7.3.2 API is explicitly out of
+scope.
 
 ## Design References
 
-- [`Public API Contract`](EPIC.md#public-api-contract)
-- [`Consistency Under Writes`](EPIC.md#consistency-under-writes)
+- [`Public API Contract`](../../design-docs/partitioned-cursor-paging.md#public-api-contract)
+- [`Worked precedence examples`](../../design-docs/partitioned-cursor-paging.md#worked-precedence-examples)
+- [`Consistency Under Writes`](../../design-docs/partitioned-cursor-paging.md#consistency-under-writes)
+- [`ODS Precedence Comparison`](EPIC.md#ods-precedence-comparison) — for the ODS 7.3.2 column
 - [`Approved Intentional ODS Differences`](EPIC.md#approved-intentional-ods-differences)
 - [`Completion Evidence`](EPIC.md#completion-evidence)
 
@@ -40,11 +44,11 @@ up and automating an ODS 7.3.2 API is explicitly out of scope.
   resources, and descriptors, with filters and live change-version bounds repeated on each request.
 - Cover route qualifiers, tenant segments, profile routing including the write-only profile outcome,
   and the published OpenAPI/profile metadata from E20-S07.
-- Own the ODS-comparison case definitions as static expected values derived from the epic's worked
-  precedence table and approved-difference list, execute them against a DMS target, and assert each
-  case either matches the recorded ODS behavior or maps to a named approved difference. This includes
-  the response-header cases, where ODS gates the header on hydrated body count and DMS gates it on a
-  non-null selected-keyset maximum.
+- Own the ODS-comparison case definitions as static expected values derived from the epic's ODS
+  precedence comparison and approved-difference list, execute them against a DMS target, and assert
+  each case either matches the recorded ODS behavior or maps to a named approved difference. This
+  includes the response-header cases, where ODS gates the header on hydrated body count and DMS
+  gates it on a non-null selected-keyset maximum.
 - Retain the case definitions and results in a machine-readable form carrying the reference-version
   identity, so a future reviewer can see which ODS version the expectations describe.
 - Add concurrency scenarios that document, rather than overpromise, non-snapshot behavior.
@@ -58,9 +62,9 @@ up and automating an ODS 7.3.2 API is explicitly out of scope.
   response headers are asserted through HTTP.
 - Every executed comparison case either matches the recorded ODS behavior or maps to a named
   approved difference in the epic; an unmapped difference fails the suite.
-- The harness implements every row of the epic's worked precedence table, asserting each listed DMS
-  message and each recorded ODS parity/difference outcome, including exactly one error whenever DMS
-  rejects the request.
+- The harness implements every row of the epic's ODS precedence comparison, asserting each listed
+  DMS message and each recorded ODS parity/difference outcome, including exactly one error whenever
+  DMS rejects the request.
 - The partition token count never exceeds the requested `number`, and requesting more partitions
   than the minimum size allows returns fewer tokens rather than an error.
 - Existing traditional paging response bodies, status codes, and `Total-Count` semantics remain
