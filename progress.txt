@@ -272,3 +272,8 @@ Completed administrative-command-runner follow-up task for reference/design/back
 Key decisions: removed post-return caller/workflow cancellation override; runner now records returned workflow result with runtime fields, while pre-result OperationCanceledException paths still classify cancellation/timeout by mutation state.
 Files changed: DocumentCacheAdministrativeCommandRunner.cs; DocumentCacheAdministrativeCommandRunnerTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Verified focused administrative command runner unit filter. Remaining administrative-diagnostics and projection-supervisor follow-ups open.
+
+Completed projection-supervisor starvation follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: bounded RunReadyTargetsUntilIdleAsync by next poll tick so sustained PageProcessed dispatch returns to existing poll refresh/lifecycle path; restart drain immediately after poll without new timer/config/scheduler contracts.
+Files changed: DocumentCacheProjectionSupervisor.cs; DocumentCacheProjectionSupervisorTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Verified focused supervisor/scheduler unit filter. Administrative-diagnostics remains open.

@@ -567,6 +567,84 @@ public class Given_DocumentCacheProjectionSupervisor
     }
 
     [Test]
+    [NonParallelizable]
+    public async Task It_refreshes_at_the_poll_interval_during_sustained_page_processing()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            DocumentCacheTargetKey.Create("TenantA", 7),
+            generation: 1
+        );
+        RecordingObservationSink observationSink = new();
+        RecordingTargetContextFactory targetContextFactory = new(observationSink);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(executionContext)]),
+            RuntimeSnapshot([executionContext])
+        );
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(executionContext)]),
+            RuntimeSnapshot([executionContext])
+        );
+        ControlledTimeProvider timeProvider = new(ObservedAt);
+        RecordingDocumentCacheLifecycleReader lifecycleReader = new();
+        RecordingProjectionScheduler scheduler = new(
+            contexts =>
+            {
+                timeProvider.Advance(TimeSpan.FromSeconds(2));
+                return DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.PageProcessed(3));
+            },
+            contexts =>
+            {
+                timeProvider.Advance(TimeSpan.FromSeconds(2));
+                return DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.PageProcessed(3));
+            },
+            contexts =>
+            {
+                timeProvider.Advance(TimeSpan.FromSeconds(1));
+                return DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.PageProcessed(3));
+            },
+            contexts => DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.PageProcessed(3)),
+            contexts => DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.NoEligibleWork)
+        );
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationSink,
+            OptionsFor([executionContext.TargetKey]),
+            scheduler,
+            timeProvider,
+            lifecycleReader
+        );
+
+        try
+        {
+            await supervisor.StartAsync(CancellationToken.None);
+            await scheduler.WaitForCallCountAsync(4);
+
+            DocumentCacheProjectionTargetContextKey expectedContextKey = targetContextFactory
+                .CreatedContexts.Should()
+                .ContainSingle()
+                .Subject.ContextKey;
+            scheduler
+                .CallBatches.Take(4)
+                .Should()
+                .AllSatisfy(batch => batch.Should().Equal(expectedContextKey));
+            registry
+                .RefreshReasons.Should()
+                .Equal(
+                    DocumentCacheTargetRefreshReason.Startup,
+                    DocumentCacheTargetRefreshReason.SupervisorTriggered
+                );
+            lifecycleReader.ReadCount.Should().Be(2);
+            timeProvider.GetUtcNow().Should().Be(ObservedAt.AddSeconds(5));
+        }
+        finally
+        {
+            await supervisor.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Test]
     public async Task It_waits_for_the_poll_interval_after_all_ready_targets_report_no_work()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
@@ -703,7 +781,8 @@ public class Given_DocumentCacheProjectionSupervisor
         IDocumentCacheProjectionObservationSink observationSink,
         IOptions<DocumentCacheOptions> options,
         IDocumentCacheProjectionScheduler? scheduler = null,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        IDocumentCacheLifecycleReader? lifecycleReader = null
     ) =>
         new(
             registry,
@@ -711,7 +790,7 @@ public class Given_DocumentCacheProjectionSupervisor
             observationSink,
             options,
             scheduler ?? new NoOpDocumentCacheProjectionScheduler(),
-            new StubDocumentCacheLifecycleReader(),
+            lifecycleReader ?? new StubDocumentCacheLifecycleReader(),
             timeProvider ?? new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheProjectionSupervisor>.Instance
         );
@@ -1245,6 +1324,23 @@ public class Given_DocumentCacheProjectionSupervisor
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(DocumentCacheLifecycleReadResult.Success(TrackingLifecycle));
+        }
+    }
+
+    private sealed class RecordingDocumentCacheLifecycleReader : IDocumentCacheLifecycleReader
+    {
+        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+
+        public int ReadCount { get; private set; }
+
+        public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
+            string connectionString,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ReadCount++;
             return Task.FromResult(DocumentCacheLifecycleReadResult.Success(TrackingLifecycle));
         }
     }

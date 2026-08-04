@@ -715,11 +715,11 @@ public sealed class DocumentCacheProjectionSupervisor(
             return;
         }
 
-        await RefreshAsync(DocumentCacheTargetRefreshReason.Startup, stoppingToken).ConfigureAwait(false);
-        await RunReadyTargetsUntilIdleAsync(stoppingToken).ConfigureAwait(false);
-
         TimeSpan pollInterval = options.Value.Projector.PollInterval;
+        await RefreshAsync(DocumentCacheTargetRefreshReason.Startup, stoppingToken).ConfigureAwait(false);
         DateTimeOffset nextPollTickAt = timeProvider.GetUtcNow() + pollInterval;
+        await RunReadyTargetsUntilIdleAsync(nextPollTickAt, stoppingToken).ConfigureAwait(false);
+
         while (true)
         {
             DateTimeOffset now = timeProvider.GetUtcNow();
@@ -738,7 +738,7 @@ public sealed class DocumentCacheProjectionSupervisor(
                 nextPollTickAt = timeProvider.GetUtcNow() + pollInterval;
             }
 
-            await RunReadyTargetsUntilIdleAsync(stoppingToken).ConfigureAwait(false);
+            await RunReadyTargetsUntilIdleAsync(nextPollTickAt, stoppingToken).ConfigureAwait(false);
         }
     }
 
@@ -760,11 +760,19 @@ public sealed class DocumentCacheProjectionSupervisor(
             : nextPollTickAt;
     }
 
-    private async Task RunReadyTargetsUntilIdleAsync(CancellationToken stoppingToken)
+    private async Task RunReadyTargetsUntilIdleAsync(
+        DateTimeOffset nextPollTickAt,
+        CancellationToken stoppingToken
+    )
     {
         while (true)
         {
             stoppingToken.ThrowIfCancellationRequested();
+            if (timeProvider.GetUtcNow() >= nextPollTickAt)
+            {
+                return;
+            }
+
             ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult> results = await scheduler
                 .RunReadyTargetsOnceAsync(CurrentTargetContexts, stoppingToken)
                 .ConfigureAwait(false);
