@@ -11,6 +11,7 @@ using Microsoft.Data.SqlClient;
 namespace EdFi.DataManagementService.SchemaTools.Tests.Integration;
 
 [TestFixture]
+[Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [Category("MssqlCdcArtifacts")]
 public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup

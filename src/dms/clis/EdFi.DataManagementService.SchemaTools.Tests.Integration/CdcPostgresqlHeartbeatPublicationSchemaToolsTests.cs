@@ -11,6 +11,7 @@ using Npgsql;
 namespace EdFi.DataManagementService.SchemaTools.Tests.Integration;
 
 [TestFixture]
+[Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
 public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
 {
