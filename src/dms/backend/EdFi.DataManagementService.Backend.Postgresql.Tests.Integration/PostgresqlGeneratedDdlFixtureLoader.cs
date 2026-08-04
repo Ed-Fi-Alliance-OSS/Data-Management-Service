@@ -19,7 +19,8 @@ internal sealed record PostgresqlGeneratedDdlFixture(
     DerivedRelationalModelSet ModelSet,
     MappingSet MappingSet,
     string GeneratedDdl,
-    IReadOnlyList<CdcSourceTableInventory> CdcSourceInventory
+    IReadOnlyList<CdcSourceTableInventory> CdcSourceInventory,
+    IReadOnlyList<CdcDmsManagedTableInventory> CdcDmsManagedTableInventory
 );
 
 /// <summary>
@@ -93,7 +94,8 @@ internal static class PostgresqlGeneratedDdlFixtureLoader
             emission.ModelSet,
             mappingSet,
             emission.CombinedSql,
-            emission.CdcSourceInventory
+            emission.CdcSourceInventory,
+            emission.CdcDmsManagedTableInventory
         );
     }
 }

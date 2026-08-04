@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -834,9 +835,61 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
         var connectorAccessSql = executor.QueriedSql.Single(sql =>
             sql.Contains("cdc:postgresql:connector-principal-access")
         );
-        connectorAccessSql.Should().Contain("\"dms\".\"SchemaComponent\"");
-        connectorAccessSql.Should().Contain("table_info.table_schema = 'auth'");
-        connectorAccessSql.Should().Contain("tracked\\_changes\\_%");
+        connectorAccessSql.Should().Contain("dms_managed_table_inventory");
+        connectorAccessSql
+            .Should()
+            .Contain("('auth', 'EducationOrganizationIdToEducationOrganizationId', 'authorization')");
+        connectorAccessSql.Should().Contain("('edfi', 'School', 'resource')");
+        connectorAccessSql.Should().Contain("('tracked_changes_edfi', 'School', 'tracked_change')");
+        connectorAccessSql.Should().NotContain("ProjectEndpointName");
+        connectorAccessSql.Should().NotContain("tracked\\_changes\\_%");
+    }
+
+    [Test]
+    public async Task It_should_use_caller_supplied_shortened_dms_managed_table_inventory_for_extra_select_validation()
+    {
+        var rawPhysicalSchema = $"p{new string('a', 80)}";
+        var shortenedPhysicalSchema = new PgsqlDialectRules().ShortenIdentifier(rawPhysicalSchema);
+        var rawTrackedChangeSchema = $"tracked_changes_{rawPhysicalSchema}";
+        var shortenedTrackedChangeSchema = new PgsqlDialectRules().ShortenIdentifier(rawTrackedChangeSchema);
+        shortenedPhysicalSchema.Should().NotBe(rawPhysicalSchema);
+        shortenedTrackedChangeSchema.Should().NotBe(rawTrackedChangeSchema);
+
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var managedTableInventory = CdcProviderSetupContractTestData.BuildDmsManagedTableInventory(
+            dialect,
+            new DbTableName(new DbSchemaName(shortenedPhysicalSchema), "School"),
+            new DbTableName(new DbSchemaName(shortenedTrackedChangeSchema), "School")
+        );
+        var extraSelectTables = $"{shortenedPhysicalSchema}.School,{shortenedTrackedChangeSchema}.School";
+        var executor = ExistingArtifactsWithConnectorAccess(connectorExtraDmsSelectTables: extraSelectTables);
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                dmsManagedTableInventory: managedTableInventory,
+                databaseExecutor: executor,
+                postgresqlInitialReplicationSlotProof: CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof()
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH"
+                && diagnostic.ObservedValue == extraSelectTables
+            );
+
+        var connectorAccessSql = executor.QueriedSql.Single(sql =>
+            sql.Contains("cdc:postgresql:connector-principal-access")
+        );
+        connectorAccessSql.Should().Contain($"('{shortenedPhysicalSchema}', 'School', 'resource')");
+        connectorAccessSql
+            .Should()
+            .Contain($"('{shortenedTrackedChangeSchema}', 'School', 'tracked_change')");
+        connectorAccessSql.Should().NotContain(rawPhysicalSchema);
+        connectorAccessSql.Should().NotContain(rawTrackedChangeSchema);
     }
 
     [TestCase("INSERT", "", "INSERT")]

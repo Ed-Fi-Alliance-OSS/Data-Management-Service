@@ -1021,6 +1021,7 @@ public class Given_MssqlCdcProviderAccessRetry
                 ),
                 artifactOutput: new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
                 expectedSourceInventory: _fixture.CdcSourceInventory,
+                dmsManagedTableInventory: _fixture.CdcDmsManagedTableInventory,
                 connectorPrincipalProbeFactory: connectorPrincipalProbeFactory,
                 databaseExecutor: executor
             )

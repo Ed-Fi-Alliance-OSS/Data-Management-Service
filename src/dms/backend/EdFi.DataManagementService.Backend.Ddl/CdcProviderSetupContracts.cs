@@ -500,6 +500,39 @@ internal sealed record CdcSourceTableInventory(
     }
 }
 
+internal enum CdcDmsManagedTableKind
+{
+    Core,
+    Authorization,
+    Resource,
+    TrackedChange,
+}
+
+internal sealed record CdcDmsManagedTableInventory(
+    CdcDmsManagedTableKind TableKind,
+    DbTableName TableName,
+    string EmittedQuotedTableName
+)
+{
+    public string EmittedQuotedTableName { get; } =
+        ValidateSafeText(EmittedQuotedTableName, nameof(EmittedQuotedTableName));
+
+    private static string ValidateSafeText(string value, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("Value must be supplied.", parameterName);
+        }
+
+        if (value.Any(char.IsControl))
+        {
+            throw new ArgumentException("Value must not contain control characters.", parameterName);
+        }
+
+        return value;
+    }
+}
+
 internal sealed record CdcProviderSetupRequest
 {
     public CdcProviderSetupRequest(
@@ -511,6 +544,7 @@ internal sealed record CdcProviderSetupRequest
         CdcProviderArtifactNames artifactNames,
         CdcProviderArtifactOutputRequest artifactOutput,
         IReadOnlyList<CdcSourceTableInventory> expectedSourceInventory,
+        IReadOnlyList<CdcDmsManagedTableInventory> dmsManagedTableInventory,
         CdcPostgresqlInitialReplicationSlotProof? postgresqlInitialReplicationSlotProof = null,
         ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null,
         ICdcProviderDatabaseExecutor? databaseExecutor = null
@@ -542,6 +576,10 @@ internal sealed record CdcProviderSetupRequest
             expectedSourceInventory,
             nameof(expectedSourceInventory)
         );
+        DmsManagedTableInventory = CdcDmsManagedTableInventoryContract.Normalize(
+            dmsManagedTableInventory,
+            nameof(dmsManagedTableInventory)
+        );
         PostgresqlInitialReplicationSlotProof = postgresqlInitialReplicationSlotProof;
         ConnectorPrincipalProbeFactory = connectorPrincipalProbeFactory;
         DatabaseExecutor = databaseExecutor;
@@ -555,6 +593,7 @@ internal sealed record CdcProviderSetupRequest
     public CdcProviderArtifactNames ArtifactNames { get; }
     public CdcProviderArtifactOutputRequest ArtifactOutput { get; }
     public IReadOnlyList<CdcSourceTableInventory> ExpectedSourceInventory { get; }
+    public IReadOnlyList<CdcDmsManagedTableInventory> DmsManagedTableInventory { get; }
     public CdcPostgresqlInitialReplicationSlotProof? PostgresqlInitialReplicationSlotProof { get; }
 
     [JsonIgnore]
@@ -705,5 +744,44 @@ internal static class CdcSourceInventoryContract
             "CDC expected source table columns must be supplied in table-ordinal order starting at 1.",
             parameterName
         );
+    }
+}
+
+internal static class CdcDmsManagedTableInventoryContract
+{
+    public static IReadOnlyList<CdcDmsManagedTableInventory> Normalize(
+        IReadOnlyList<CdcDmsManagedTableInventory> tables,
+        string parameterName
+    )
+    {
+        ArgumentNullException.ThrowIfNull(tables);
+
+        if (tables.Count == 0)
+        {
+            throw new ArgumentException(
+                "CDC DMS-managed table inventory must be supplied by the ordinary DDL metadata layer.",
+                parameterName
+            );
+        }
+
+        var duplicateTables = tables
+            .GroupBy(table => table.TableName)
+            .Where(group => group.Count() > 1)
+            .Select(group => $"{group.Key.Schema.Value}.{group.Key.Name}")
+            .ToArray();
+
+        if (duplicateTables.Length > 0)
+        {
+            throw new ArgumentException(
+                "CDC DMS-managed table inventory must not contain duplicate physical tables.",
+                parameterName
+            );
+        }
+
+        return tables
+            .OrderBy(table => table.TableName.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(table => table.TableName.Name, StringComparer.Ordinal)
+            .ThenBy(table => table.TableKind)
+            .ToArray();
     }
 }

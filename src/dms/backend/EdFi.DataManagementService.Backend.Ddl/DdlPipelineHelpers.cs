@@ -12,7 +12,8 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 internal sealed record DdlPipelineEmission(
     DerivedRelationalModelSet ModelSet,
     string CombinedSql,
-    IReadOnlyList<CdcSourceTableInventory> CdcSourceInventory
+    IReadOnlyList<CdcSourceTableInventory> CdcSourceInventory,
+    IReadOnlyList<CdcDmsManagedTableInventory> CdcDmsManagedTableInventory
 );
 
 /// <summary>
@@ -94,6 +95,11 @@ public static class DdlPipelineHelpers
         var modelSet = modelSetBuilder.Build(clonedSchemaSet, dialect, dialectRules);
         var emission = FullDdlEmitter.EmitWithMetadata(sqlDialect, modelSet);
 
-        return new DdlPipelineEmission(modelSet, emission.CombinedSql, emission.CdcSourceInventory);
+        return new DdlPipelineEmission(
+            modelSet,
+            emission.CombinedSql,
+            emission.CdcSourceInventory,
+            emission.CdcDmsManagedTableInventory
+        );
     }
 }

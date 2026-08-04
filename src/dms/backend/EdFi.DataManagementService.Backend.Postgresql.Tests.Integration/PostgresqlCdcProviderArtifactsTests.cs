@@ -175,6 +175,7 @@ public class Given_PostgresqlCdcProviderArtifacts
                 ),
                 artifactOutput: artifactOutput,
                 expectedSourceInventory: _fixture.CdcSourceInventory,
+                dmsManagedTableInventory: _fixture.CdcDmsManagedTableInventory,
                 databaseExecutor: executor
             )
         );

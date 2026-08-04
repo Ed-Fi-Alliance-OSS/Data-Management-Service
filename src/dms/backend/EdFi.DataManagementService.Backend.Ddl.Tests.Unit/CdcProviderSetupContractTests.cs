@@ -37,6 +37,7 @@ internal static class CdcProviderSetupContractTestData
 
     internal static CdcProviderSetupRequest BuildPostgresqlRequest(
         IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
+        IReadOnlyList<CdcDmsManagedTableInventory>? dmsManagedTableInventory = null,
         CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
         CdcProviderArtifactOutputRequest? artifactOutput = null,
         CdcProviderArtifactNames? artifactNames = null,
@@ -54,6 +55,7 @@ internal static class CdcProviderSetupContractTestData
             artifactOutput: artifactOutput
                 ?? new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
             expectedSourceInventory: sourceInventory ?? BuildRequiredSourceInventory(),
+            dmsManagedTableInventory: dmsManagedTableInventory ?? BuildPostgresqlDmsManagedTableInventory(),
             postgresqlInitialReplicationSlotProof: postgresqlInitialReplicationSlotProof,
             connectorPrincipalProbeFactory: connectorPrincipalProbeFactory
                 ?? new TestConnectorPrincipalProbeFactory(),
@@ -62,6 +64,7 @@ internal static class CdcProviderSetupContractTestData
 
     internal static CdcProviderSetupRequest BuildSqlServerRequest(
         IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
+        IReadOnlyList<CdcDmsManagedTableInventory>? dmsManagedTableInventory = null,
         CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
         CdcProviderArtifactOutputRequest? artifactOutput = null,
         CdcProviderArtifactNames? artifactNames = null,
@@ -78,6 +81,7 @@ internal static class CdcProviderSetupContractTestData
             artifactOutput: artifactOutput
                 ?? new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
             expectedSourceInventory: sourceInventory ?? BuildSqlServerRequiredSourceInventory(),
+            dmsManagedTableInventory: dmsManagedTableInventory ?? BuildSqlServerDmsManagedTableInventory(),
             connectorPrincipalProbeFactory: connectorPrincipalProbeFactory
                 ?? new TestConnectorPrincipalProbeFactory(),
             databaseExecutor: databaseExecutor
@@ -157,6 +161,88 @@ internal static class CdcProviderSetupContractTestData
 
     internal static IReadOnlyList<CdcSourceTableInventory> BuildSqlServerRequiredSourceInventory() =>
         new CoreDdlEmitter(SqlDialectFactory.Create(SqlDialect.Mssql)).EmitWithMetadata().CdcSourceInventory;
+
+    internal static IReadOnlyList<CdcDmsManagedTableInventory> BuildPostgresqlDmsManagedTableInventory()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+
+        return BuildDmsManagedTableInventory(dialect);
+    }
+
+    internal static IReadOnlyList<CdcDmsManagedTableInventory> BuildSqlServerDmsManagedTableInventory()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+
+        return BuildDmsManagedTableInventory(dialect);
+    }
+
+    internal static IReadOnlyList<CdcDmsManagedTableInventory> BuildDmsManagedTableInventory(
+        ISqlDialect dialect,
+        DbTableName? resourceTable = null,
+        DbTableName? trackedChangeTable = null
+    )
+    {
+        DbTableName resolvedResourceTable =
+            resourceTable ?? new DbTableName(new DbSchemaName("edfi"), "School");
+        DbTableName resolvedTrackedChangeTable =
+            trackedChangeTable ?? new DbTableName(new DbSchemaName("tracked_changes_edfi"), "School");
+
+        return CdcDmsManagedTableInventoryContract.Normalize(
+            [
+                new(
+                    CdcDmsManagedTableKind.Core,
+                    DmsTableNames.DataStoreIdentity,
+                    dialect.QualifyTable(DmsTableNames.DataStoreIdentity)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Core,
+                    DmsTableNames.CdcHeartbeat,
+                    dialect.QualifyTable(DmsTableNames.CdcHeartbeat)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Core,
+                    DmsTableNames.Descriptor,
+                    dialect.QualifyTable(DmsTableNames.Descriptor)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Core,
+                    DmsTableNames.Document,
+                    dialect.QualifyTable(DmsTableNames.Document)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Core,
+                    DmsTableNames.DocumentCache,
+                    dialect.QualifyTable(DmsTableNames.DocumentCache)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Core,
+                    DmsTableNames.DocumentProjectionWork,
+                    dialect.QualifyTable(DmsTableNames.DocumentProjectionWork)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Core,
+                    DmsTableNames.ResourceKey,
+                    dialect.QualifyTable(DmsTableNames.ResourceKey)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Authorization,
+                    AuthObjectDefinitions.AuthEdOrgTable.Table,
+                    dialect.QualifyTable(AuthObjectDefinitions.AuthEdOrgTable.Table)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Resource,
+                    resolvedResourceTable,
+                    dialect.QualifyTable(resolvedResourceTable)
+                ),
+                new(
+                    CdcDmsManagedTableKind.TrackedChange,
+                    resolvedTrackedChangeTable,
+                    dialect.QualifyTable(resolvedTrackedChangeTable)
+                ),
+            ],
+            "dmsManagedTableInventory"
+        );
+    }
 
     internal static CdcPostgresqlInitialReplicationSlotProof BuildPostgresqlInitialSlotProof(
         string replicationSlotName = "dms_binding_slot",
@@ -256,6 +342,18 @@ public class Given_CdcProviderSetupContract_Request
                 CdcSourceTableKind.DocumentCache,
                 CdcSourceTableKind.CdcHeartbeat,
             ]);
+    }
+
+    [Test]
+    public void It_should_require_caller_supplied_dms_managed_table_inventory()
+    {
+        Action action = () =>
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(dmsManagedTableInventory: []);
+
+        action
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*DMS-managed table inventory must be supplied*");
     }
 
     [Test]

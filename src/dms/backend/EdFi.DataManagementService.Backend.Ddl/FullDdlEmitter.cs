@@ -10,7 +10,8 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 
 internal sealed record FullDdlEmission(
     string CombinedSql,
-    IReadOnlyList<CdcSourceTableInventory> CdcSourceInventory
+    IReadOnlyList<CdcSourceTableInventory> CdcSourceInventory,
+    IReadOnlyList<CdcDmsManagedTableInventory> CdcDmsManagedTableInventory
 );
 
 /// <summary>
@@ -44,10 +45,16 @@ public static class FullDdlEmitter
         var coreEmission = new CoreDdlEmitter(dialect, sharedDescriptorTrackedChangeTable).EmitWithMetadata();
         string relationalDdl = new RelationalModelDdlEmitter(dialect).Emit(modelSet);
         string seedDml = seedEmitter.EmitForFullDdl(modelSet.EffectiveSchema);
+        var cdcDmsManagedTableInventory = CdcDmsManagedTableInventoryBuilder.Build(
+            dialect,
+            modelSet,
+            coreEmission.CdcSourceInventory
+        );
 
         return new FullDdlEmission(
             JoinSegments(preflightDdl, coreEmission.Sql, relationalDdl, seedDml),
-            coreEmission.CdcSourceInventory
+            coreEmission.CdcSourceInventory,
+            cdcDmsManagedTableInventory
         );
     }
 

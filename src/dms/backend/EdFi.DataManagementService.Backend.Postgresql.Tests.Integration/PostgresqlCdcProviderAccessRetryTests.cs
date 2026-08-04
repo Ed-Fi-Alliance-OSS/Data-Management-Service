@@ -575,6 +575,7 @@ public class Given_PostgresqlCdcProviderAccessRetry
                 ),
                 artifactOutput: new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
                 expectedSourceInventory: _fixture.CdcSourceInventory,
+                dmsManagedTableInventory: _fixture.CdcDmsManagedTableInventory,
                 postgresqlInitialReplicationSlotProof: postgresqlInitialReplicationSlotProof,
                 connectorPrincipalProbeFactory: connectorPrincipalProbeFactory,
                 databaseExecutor: executor

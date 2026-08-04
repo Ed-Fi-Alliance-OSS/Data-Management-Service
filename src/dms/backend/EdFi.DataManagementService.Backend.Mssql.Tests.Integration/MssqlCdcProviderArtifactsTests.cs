@@ -220,6 +220,7 @@ public class Given_MssqlCdcProviderArtifacts
                 ),
                 artifactOutput: artifactOutput,
                 expectedSourceInventory: _fixture.CdcSourceInventory,
+                dmsManagedTableInventory: _fixture.CdcDmsManagedTableInventory,
                 databaseExecutor: executor
             )
         );

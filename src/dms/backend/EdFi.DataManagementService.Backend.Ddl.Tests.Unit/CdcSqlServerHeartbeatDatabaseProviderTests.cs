@@ -1299,6 +1299,68 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
         result.ManifestPayload.Json.Should().NotContain("external_school_cdc");
         executor.ExecutedSql.Should().BeEmpty();
     }
+
+    [Test]
+    public async Task MssqlCdcCaptureInstances_should_fail_closed_for_shortened_dms_owned_capture_instances()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances: SqlServerCaptureInstanceTestData
+                .Expected()
+                .Append(
+                    RecordingSqlServerCaptureInstance.UnexpectedDmsTable(
+                        ShortenedSqlServerManagedTableTestData.ResourceTable,
+                        "shortened_resource_school_cdc"
+                    )
+                )
+                .Append(
+                    RecordingSqlServerCaptureInstance.UnexpectedDmsTable(
+                        ShortenedSqlServerManagedTableTestData.TrackedChangeTable,
+                        "shortened_tracked_school_cdc"
+                    )
+                )
+                .ToArray()
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                dmsManagedTableInventory: ShortenedSqlServerManagedTableTestData.ManagedTableInventory,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_UNEXPECTED_DMS_CAPTURE_INSTANCE"
+                && diagnostic.SafeName.Value == "shortened_resource_school_cdc"
+                && diagnostic.ObservedValue
+                    == $"{ShortenedSqlServerManagedTableTestData.ResourceSchema}.School_capture_shortened_resource_school_cdc"
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_UNEXPECTED_DMS_CAPTURE_INSTANCE"
+                && diagnostic.SafeName.Value == "shortened_tracked_school_cdc"
+                && diagnostic.ObservedValue
+                    == $"{ShortenedSqlServerManagedTableTestData.TrackedChangeSchema}.School_capture_shortened_tracked_school_cdc"
+            );
+
+        var captureSql = executor.QueriedSql.Single(sql => sql.Contains("cdc:sqlserver:capture-instances"));
+        captureSql
+            .Should()
+            .Contain($"(N'{ShortenedSqlServerManagedTableTestData.ResourceSchema}', N'School', N'resource')");
+        captureSql
+            .Should()
+            .Contain(
+                $"(N'{ShortenedSqlServerManagedTableTestData.TrackedChangeSchema}', N'School', N'tracked_change')"
+            );
+        captureSql.Should().NotContain(ShortenedSqlServerManagedTableTestData.RawPhysicalSchema);
+        captureSql.Should().NotContain(ShortenedSqlServerManagedTableTestData.RawTrackedChangeSchema);
+        executor.ExecutedSql.Should().BeEmpty();
+    }
 }
 
 [TestFixture]
@@ -1930,9 +1992,75 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
         var connectorAccessSql = executor.QueriedSql.Single(sql =>
             sql.Contains("cdc:sqlserver:connector-principal-access")
         );
-        connectorAccessSql.Should().Contain("[dms].[SchemaComponent]");
-        connectorAccessSql.Should().Contain("schema_info.name = N'auth'");
-        connectorAccessSql.Should().Contain("tracked[_]changes[_]%");
+        connectorAccessSql.Should().Contain("dms_managed_table_inventory");
+        connectorAccessSql
+            .Should()
+            .Contain("(N'auth', N'EducationOrganizationIdToEducationOrganizationId', N'authorization')");
+        connectorAccessSql.Should().Contain("(N'edfi', N'School', N'resource')");
+        connectorAccessSql.Should().Contain("(N'tracked_changes_edfi', N'School', N'tracked_change')");
+        connectorAccessSql.Should().NotContain("ProjectEndpointName");
+        connectorAccessSql.Should().NotContain("tracked[_]changes[_]%");
+    }
+
+    [Test]
+    public async Task It_should_use_caller_supplied_shortened_dms_managed_table_inventory_for_extra_select_validation()
+    {
+        ShortenedSqlServerManagedTableTestData
+            .ResourceSchema.Should()
+            .NotBe(ShortenedSqlServerManagedTableTestData.RawPhysicalSchema);
+        ShortenedSqlServerManagedTableTestData
+            .TrackedChangeSchema.Should()
+            .NotBe(ShortenedSqlServerManagedTableTestData.RawTrackedChangeSchema);
+
+        var extraSelectTables = new[]
+        {
+            $"{ShortenedSqlServerManagedTableTestData.ResourceSchema}.School.via.role.custom_reader",
+            $"{ShortenedSqlServerManagedTableTestData.TrackedChangeSchema}.School.via.public",
+        };
+        var executor = ExistingArtifactsWithConnectorAccess(
+            new RecordingSqlServerConnectorAccess
+            {
+                GatingRoleExists = true,
+                GatingRoleDirectMembers = ["connector_principal"],
+                DatabaseConnect = true,
+                DocumentSelect = true,
+                DocumentCacheSelect = true,
+                HeartbeatSelect = true,
+                HeartbeatSequenceUpdate = true,
+                HeartbeatAtUpdate = true,
+                ExtraDmsSelectTables = extraSelectTables,
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                dmsManagedTableInventory: ShortenedSqlServerManagedTableTestData.ManagedTableInventory,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH"
+                && diagnostic.ObservedValue == string.Join(",", extraSelectTables)
+            );
+
+        var connectorAccessSql = executor.QueriedSql.Single(sql =>
+            sql.Contains("cdc:sqlserver:connector-principal-access")
+        );
+        connectorAccessSql
+            .Should()
+            .Contain($"(N'{ShortenedSqlServerManagedTableTestData.ResourceSchema}', N'School', N'resource')");
+        connectorAccessSql
+            .Should()
+            .Contain(
+                $"(N'{ShortenedSqlServerManagedTableTestData.TrackedChangeSchema}', N'School', N'tracked_change')"
+            );
+        connectorAccessSql.Should().NotContain(ShortenedSqlServerManagedTableTestData.RawPhysicalSchema);
+        connectorAccessSql.Should().NotContain(ShortenedSqlServerManagedTableTestData.RawTrackedChangeSchema);
     }
 
     [Test]
@@ -2070,6 +2198,31 @@ internal sealed class FailingSqlServerConnectorPrincipalProbeFactory : ICdcConne
                     ),
                 ]
             )
+        );
+}
+
+internal static class ShortenedSqlServerManagedTableTestData
+{
+    internal static string RawPhysicalSchema { get; } = $"p{new string('a', 160)}";
+
+    internal static string RawTrackedChangeSchema { get; } = $"tracked_changes_{RawPhysicalSchema}";
+
+    internal static string ResourceSchema { get; } =
+        new MssqlDialectRules().ShortenIdentifier(RawPhysicalSchema);
+
+    internal static string TrackedChangeSchema { get; } =
+        new MssqlDialectRules().ShortenIdentifier(RawTrackedChangeSchema);
+
+    internal static DbTableName ResourceTable { get; } = new(new DbSchemaName(ResourceSchema), "School");
+
+    internal static DbTableName TrackedChangeTable { get; } =
+        new(new DbSchemaName(TrackedChangeSchema), "School");
+
+    internal static IReadOnlyList<CdcDmsManagedTableInventory> ManagedTableInventory { get; } =
+        CdcProviderSetupContractTestData.BuildDmsManagedTableInventory(
+            SqlDialectFactory.Create(SqlDialect.Mssql),
+            ResourceTable,
+            TrackedChangeTable
         );
 }
 
@@ -2727,6 +2880,16 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             || string.Equals(sourceSchema, DmsTableNames.DmsSchema.Value, StringComparison.Ordinal)
             || string.Equals(sourceSchema, AuthNames.AuthSchema.Value, StringComparison.Ordinal)
             || sourceSchema.StartsWith("tracked_changes_", StringComparison.Ordinal)
+            || string.Equals(
+                sourceSchema,
+                ShortenedSqlServerManagedTableTestData.ResourceSchema,
+                StringComparison.Ordinal
+            )
+            || string.Equals(
+                sourceSchema,
+                ShortenedSqlServerManagedTableTestData.TrackedChangeSchema,
+                StringComparison.Ordinal
+            )
             || sourceSchema is "edfi" or "sample";
     }
 
@@ -2838,6 +3001,18 @@ internal sealed record RecordingSqlServerCaptureInstance(
             "unexpected",
             new DbTableName(new DbSchemaName("edfi"), "School"),
             new CdcSafeName("edfi_school_cdc"),
+            new CdcSafeName("other_cdc_gate"),
+            ["SchoolId", "NameOfInstitution"]
+        );
+
+    public static RecordingSqlServerCaptureInstance UnexpectedDmsTable(
+        DbTableName sourceTable,
+        string captureInstanceName
+    ) =>
+        new(
+            "unexpected",
+            sourceTable,
+            new CdcSafeName(captureInstanceName),
             new CdcSafeName("other_cdc_gate"),
             ["SchoolId", "NameOfInstitution"]
         );

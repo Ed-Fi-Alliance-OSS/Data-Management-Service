@@ -960,14 +960,13 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             SourceTable(request, CdcSourceTableKind.CdcHeartbeat).TableName
         );
         var workTableObjectName = ObjectIdName(DmsTableNames.DocumentProjectionWork);
-        var dmsSchema = EscapeSqlLiteral(DmsTableNames.DmsSchema.Value);
-        var authSchema = EscapeSqlLiteral(AuthNames.AuthSchema.Value);
         var expectedCaptureInstances = string.Join(
             ",\n            ",
             CaptureTableOrder.Select(kind =>
                 $"(N'{EscapeSqlLiteral(request.ArtifactNames.SqlServer.CaptureInstanceNames[kind].Value)}')"
             )
         );
+        var dmsManagedTableInventoryValues = SqlServerDmsManagedTableInventoryValues(request);
 
         return $"""
             /* cdc:sqlserver:connector-principal-access */
@@ -1140,51 +1139,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     ON permission_info.grantee_principal_id = connector.principal_id
                     AND permission_info.state IN (N'G', N'W')
             ),
-            character_positions(position) AS (
-                SELECT TOP (128) ROW_NUMBER() OVER (ORDER BY (SELECT NULL))
-                FROM sys.all_objects
-            ),
-            active_project_endpoints(project_endpoint_name) AS (
-                SELECT schema_component.[ProjectEndpointName]
-                FROM [dms].[SchemaComponent] schema_component
-                INNER JOIN [dms].[EffectiveSchema] effective_schema
-                    ON effective_schema.[EffectiveSchemaHash] = schema_component.[EffectiveSchemaHash]
-                WHERE effective_schema.[EffectiveSchemaSingletonId] = 1
-            ),
-            project_schemas(schema_name) AS (
-                SELECT
-                    CASE
-                        WHEN normalized_schema_name = N''
-                            OR UNICODE(LEFT(normalized_schema_name, 1)) NOT BETWEEN 97 AND 122
-                            THEN N'p' + normalized_schema_name
-                        ELSE normalized_schema_name
-                    END
-                FROM active_project_endpoints project_endpoint
-                CROSS APPLY (
-                    SELECT
-                        COALESCE(
-                            (
-                                SELECT LOWER(endpoint_character.character)
-                                FROM character_positions character_position
-                                CROSS APPLY (
-                                    SELECT SUBSTRING(
-                                        project_endpoint.project_endpoint_name,
-                                        character_position.position,
-                                        1
-                                    ) AS character
-                                ) endpoint_character
-                                WHERE character_position.position <= LEN(project_endpoint.project_endpoint_name)
-                                AND (
-                                    UNICODE(endpoint_character.character) BETWEEN 48 AND 57
-                                    OR UNICODE(endpoint_character.character) BETWEEN 65 AND 90
-                                    OR UNICODE(endpoint_character.character) BETWEEN 97 AND 122
-                                )
-                                ORDER BY character_position.position
-                                FOR XML PATH(N''), TYPE
-                            ).value(N'.', N'nvarchar(128)'),
-                            N''
-                        ) AS normalized_schema_name
-                ) normalized
+            dms_managed_table_inventory(schema_name, object_name, table_kind) AS (
+                {dmsManagedTableInventoryValues}
             ),
             dms_managed_base_tables AS (
                 SELECT
@@ -1192,20 +1148,13 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     schema_info.name COLLATE DATABASE_DEFAULT AS schema_name,
                     object_info.name COLLATE DATABASE_DEFAULT AS object_name,
                     object_info.schema_id
-                FROM sys.objects object_info
+                FROM dms_managed_table_inventory managed_table
                 INNER JOIN sys.schemas schema_info
-                    ON schema_info.schema_id = object_info.schema_id
-                WHERE object_info.type = N'U'
-                AND (
-                    schema_info.name = N'{dmsSchema}'
-                    OR schema_info.name = N'{authSchema}'
-                    OR schema_info.name LIKE N'tracked[_]changes[_]%'
-                    OR EXISTS (
-                        SELECT 1
-                        FROM project_schemas project_schema
-                        WHERE project_schema.schema_name = schema_info.name
-                    )
-                )
+                    ON schema_info.name = managed_table.schema_name
+                INNER JOIN sys.objects object_info
+                    ON object_info.schema_id = schema_info.schema_id
+                    AND object_info.name = managed_table.object_name
+                    AND object_info.type = N'U'
             ),
             dms_table_columns AS (
                 SELECT
@@ -1750,6 +1699,31 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     SELECT STRING_AGG(denial_info.denial_token, N',') WITHIN GROUP (ORDER BY denial_info.denial_token)
                     FROM required_source_select_denials denial_info
                 ), N'') AS source_select_denials;
+            """;
+    }
+
+    private static string SqlServerDmsManagedTableInventoryValues(CdcProviderSetupRequest request)
+    {
+        if (request.DmsManagedTableInventory.Count == 0)
+        {
+            return """
+                SELECT CAST(NULL AS sysname), CAST(NULL AS sysname), CAST(NULL AS nvarchar(32))
+                WHERE 1 = 0
+                """;
+        }
+
+        var values = string.Join(
+            ",\n                ",
+            request.DmsManagedTableInventory.Select(table =>
+                $"(N'{EscapeSqlLiteral(table.TableName.Schema.Value)}', N'{EscapeSqlLiteral(table.TableName.Name)}', N'{DmsManagedTableKindToken(table.TableKind)}')"
+            )
+        );
+
+        return $"""
+            SELECT *
+            FROM (VALUES
+                {values}
+            ) AS managed(schema_name, object_name, table_kind)
             """;
     }
 
@@ -2445,11 +2419,10 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 }
             )
         );
-        var dmsSchema = EscapeSqlLiteral(DmsTableNames.DmsSchema.Value);
-        var authSchema = EscapeSqlLiteral(AuthNames.AuthSchema.Value);
         var gatingRoleName = EscapeSqlLiteral(request.ArtifactNames.SqlServer!.GatingRoleName.Value);
         var workTableSchema = EscapeSqlLiteral(DmsTableNames.DocumentProjectionWork.Schema.Value);
         var workTableName = EscapeSqlLiteral(DmsTableNames.DocumentProjectionWork.Name);
+        var dmsManagedTableInventoryValues = SqlServerDmsManagedTableInventoryValues(request);
 
         return $"""
             /* cdc:sqlserver:capture-instances */
@@ -2480,51 +2453,19 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             END
             ELSE
             BEGIN
-                WITH character_positions(position) AS (
-                    SELECT TOP (128) ROW_NUMBER() OVER (ORDER BY (SELECT NULL))
-                    FROM sys.all_objects
+                WITH dms_managed_table_inventory(schema_name, object_name, table_kind) AS (
+                    {dmsManagedTableInventoryValues}
                 ),
-                active_project_endpoints(project_endpoint_name) AS (
-                    SELECT schema_component.[ProjectEndpointName]
-                    FROM [dms].[SchemaComponent] schema_component
-                    INNER JOIN [dms].[EffectiveSchema] effective_schema
-                        ON effective_schema.[EffectiveSchemaHash] = schema_component.[EffectiveSchemaHash]
-                    WHERE effective_schema.[EffectiveSchemaSingletonId] = 1
-                ),
-                project_schemas(schema_name) AS (
+                dms_managed_base_tables AS (
                     SELECT
-                        CASE
-                            WHEN normalized_schema_name = N''
-                                OR UNICODE(LEFT(normalized_schema_name, 1)) NOT BETWEEN 97 AND 122
-                                THEN N'p' + normalized_schema_name
-                            ELSE normalized_schema_name
-                        END
-                    FROM active_project_endpoints project_endpoint
-                    CROSS APPLY (
-                        SELECT
-                            COALESCE(
-                                (
-                                    SELECT LOWER(endpoint_character.character)
-                                    FROM character_positions character_position
-                                    CROSS APPLY (
-                                        SELECT SUBSTRING(
-                                            project_endpoint.project_endpoint_name,
-                                            character_position.position,
-                                            1
-                                        ) AS character
-                                    ) endpoint_character
-                                    WHERE character_position.position <= LEN(project_endpoint.project_endpoint_name)
-                                    AND (
-                                        UNICODE(endpoint_character.character) BETWEEN 48 AND 57
-                                        OR UNICODE(endpoint_character.character) BETWEEN 65 AND 90
-                                        OR UNICODE(endpoint_character.character) BETWEEN 97 AND 122
-                                    )
-                                    ORDER BY character_position.position
-                                    FOR XML PATH(N''), TYPE
-                                ).value(N'.', N'nvarchar(128)'),
-                                N''
-                            ) AS normalized_schema_name
-                    ) normalized
+                        object_info.object_id
+                    FROM dms_managed_table_inventory managed_table
+                    INNER JOIN sys.schemas schema_info
+                        ON schema_info.name = managed_table.schema_name
+                    INNER JOIN sys.objects object_info
+                        ON object_info.schema_id = schema_info.schema_id
+                        AND object_info.name = managed_table.object_name
+                        AND object_info.type = N'U'
                 ),
                 dms_document_owned_sources(source_object_id) AS (
                     SELECT DISTINCT foreign_key.parent_object_id
@@ -2592,13 +2533,10 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 WHERE expected_by_instance.capture_instance IS NOT NULL
                 OR expected_by_source.capture_instance IS NOT NULL
                 OR capture_info.role_name = N'{gatingRoleName}'
-                OR source_schema.name = N'{dmsSchema}'
-                OR source_schema.name = N'{authSchema}'
-                OR source_schema.name LIKE N'tracked[_]changes[_]%'
                 OR EXISTS (
                     SELECT 1
-                    FROM project_schemas project_schema
-                    WHERE project_schema.schema_name = source_schema.name
+                    FROM dms_managed_base_tables dms_managed_table
+                    WHERE dms_managed_table.object_id = source_table.object_id
                 )
                 OR EXISTS (
                     SELECT 1
@@ -3035,6 +2973,20 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 nameof(tableKind),
                 tableKind,
                 "Unsupported CDC source table kind."
+            ),
+        };
+
+    private static string DmsManagedTableKindToken(CdcDmsManagedTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcDmsManagedTableKind.Core => "core",
+            CdcDmsManagedTableKind.Authorization => "authorization",
+            CdcDmsManagedTableKind.Resource => "resource",
+            CdcDmsManagedTableKind.TrackedChange => "tracked_change",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC DMS-managed table kind."
             ),
         };
 

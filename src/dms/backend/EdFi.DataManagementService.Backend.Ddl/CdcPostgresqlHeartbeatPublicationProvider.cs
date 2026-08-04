@@ -1477,6 +1477,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         );
         var workTable = EscapeSqlLiteral(_dialect.QualifyTable(DmsTableNames.DocumentProjectionWork));
         var publicationName = EscapeSqlLiteral(request.ArtifactNames.Postgresql!.PublicationName.Value);
+        var dmsManagedTableInventoryValues = PostgresqlDmsManagedTableInventoryValues(request);
 
         return $"""
             /* cdc:postgresql:connector-principal-access */
@@ -1492,47 +1493,19 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 FROM pg_catalog.pg_roles role_info
                 WHERE role_info.rolname = '{connectorPrincipal}'
             ),
-            active_project_endpoints AS (
-                SELECT schema_component."ProjectEndpointName" AS project_endpoint_name
-                FROM "dms"."SchemaComponent" schema_component
-                INNER JOIN "dms"."EffectiveSchema" effective_schema
-                    ON effective_schema."EffectiveSchemaHash" = schema_component."EffectiveSchemaHash"
-                WHERE effective_schema."EffectiveSchemaSingletonId" = 1
-            ),
-            project_schemas AS (
-                SELECT
-                    CASE
-                        WHEN normalized_schema_name = ''
-                            OR substring(normalized_schema_name from 1 for 1) !~ '^[a-z]$'
-                            THEN 'p' || normalized_schema_name
-                        ELSE normalized_schema_name
-                    END AS schema_name
-                FROM active_project_endpoints project_endpoint
-                CROSS JOIN LATERAL (
-                    SELECT pg_catalog.regexp_replace(
-                        lower(project_endpoint.project_endpoint_name),
-                        '[^a-z0-9]',
-                        '',
-                        'g'
-                    ) AS normalized_schema_name
-                ) normalized
+            dms_managed_table_inventory(table_schema, table_name, table_kind) AS (
+                {dmsManagedTableInventoryValues}
             ),
             dms_managed_tables AS (
                 SELECT
                     table_info.table_schema,
                     table_info.table_name
-                FROM information_schema.tables table_info
-                WHERE table_info.table_type = 'BASE TABLE'
-                AND (
-                    table_info.table_schema = 'dms'
-                    OR table_info.table_schema = 'auth'
-                    OR table_info.table_schema LIKE 'tracked\_changes\_%' ESCAPE '\'
-                    OR EXISTS (
-                        SELECT 1
-                        FROM project_schemas project_schema
-                        WHERE project_schema.schema_name = table_info.table_schema
-                    )
-                )
+                FROM dms_managed_table_inventory managed_table
+                INNER JOIN information_schema.tables table_info
+                    ON table_info.table_catalog = current_database()
+                    AND table_info.table_schema = managed_table.table_schema
+                    AND table_info.table_name = managed_table.table_name
+                    AND table_info.table_type = 'BASE TABLE'
             )
             SELECT
                 EXISTS (SELECT 1 FROM connector)::text AS role_exists,
@@ -1684,6 +1657,25 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                     ''
                 ) AS extra_dms_select_tables;
             """;
+    }
+
+    private static string PostgresqlDmsManagedTableInventoryValues(CdcProviderSetupRequest request)
+    {
+        if (request.DmsManagedTableInventory.Count == 0)
+        {
+            return """
+                SELECT CAST(NULL AS text), CAST(NULL AS text), CAST(NULL AS text)
+                WHERE false
+                """;
+        }
+
+        return "VALUES\n                "
+            + string.Join(
+                ",\n                ",
+                request.DmsManagedTableInventory.Select(table =>
+                    $"('{EscapeSqlLiteral(table.TableName.Schema.Value)}', '{EscapeSqlLiteral(table.TableName.Name)}', '{DmsManagedTableKindToken(table.TableKind)}')"
+                )
+            );
     }
 
     private static string GrantConnectorPrivilegesSql(CdcProviderSetupRequest request)
@@ -2563,6 +2555,20 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
 
     private static string CsvOrNone(IReadOnlyList<string> values) =>
         values.Count == 0 ? "none" : string.Join(",", values);
+
+    private static string DmsManagedTableKindToken(CdcDmsManagedTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcDmsManagedTableKind.Core => "core",
+            CdcDmsManagedTableKind.Authorization => "authorization",
+            CdcDmsManagedTableKind.Resource => "resource",
+            CdcDmsManagedTableKind.TrackedChange => "tracked_change",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC DMS-managed table kind."
+            ),
+        };
 
     private static string EscapeSqlLiteral(string value) => value.Replace("'", "''");
 

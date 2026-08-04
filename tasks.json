@@ -1014,7 +1014,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"PostgresqlCdcPrincipalAccess|MssqlCdcPrincipalAccess|MssqlCdcCaptureInstances\"",
       "With provider prerequisites available, run only the PostgreSQL and SQL Server CdcProviderAccessRetry/CdcProviderArtifacts integration filters that cover shortened-schema grant or capture validation."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "sqlserver-provider-history",
