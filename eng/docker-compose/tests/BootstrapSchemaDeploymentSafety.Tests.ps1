@@ -4877,6 +4877,85 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
         }
 
+        It "reaches the MSSQL authority for 'localhost\ignored\15433,9999', whose SqlClient port is the local 15433" {
+            # End to end, because the defect was a parse the classifier then trusted: SqlClient selects the
+            # token BEFORE the comma here, so this reaches the local Compose listener. The old reading took
+            # 9999, called the target external, and skipped the authority entirely - which is how DMS DDL
+            # could land in edfi_configurationservice.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:provisionAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:provisionAuthorityCalled = $true
+                    throw "CMS database topology mismatch: SQL Server reports that the datastore name resolved from '$RegisteredDatastoreDatabaseSourceKey' denotes the SAME physical database as the dedicated 'edfi_configurationservice'."
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 733
+                            name = "TokenSelectedLocalPort"
+                            connectionString = 'Server=localhost\ignored\15433,9999;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                { Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardMssqlEnvFile) `
+                    -DataStoreId @(733) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase } |
+                    Should -Throw "*SAME physical database*"
+
+                $script:provisionAuthorityCalled |
+                    Should -BeTrue -Because "the token SqlClient selects is the configured local port, so the authority must be consulted"
+                Test-Path -LiteralPath $capturePath |
+                    Should -BeFalse -Because "the refusal must precede any SchemaTools invocation, so no DDL is attempted"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
+        It "keeps 'localhost\ignored\9999,15433' external, because SqlClient selects 9999 there" {
+            # The control that makes the row above discriminating rather than merely passing: the same
+            # delimiter shape with the tokens swapped names a port this environment does not publish.
+            $capturePath = Initialize-ProvisionGuardWorkspace
+            try {
+                . $script:repo.ProvisionScript
+
+                $script:provisionAuthorityCalled = $false
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    param($EnvironmentFile, $ContainerName, $SaPassword, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:provisionAuthorityCalled = $true
+                    throw "the local instance must not be asked about a target on a port it does not publish"
+                }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 734
+                            name = "TokenSelectedForeignPort"
+                            connectionString = 'Server=localhost\ignored\9999,15433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                Invoke-ProvisionDmsSchema `
+                    -EnvironmentFile (New-ProvisionGuardMssqlEnvFile) `
+                    -DataStoreId @(734) `
+                    -DatabaseEngine mssql `
+                    -SeparateConfigDatabase *>&1 | Out-Null
+
+                $script:provisionAuthorityCalled | Should -BeFalse
+                @(Get-Content -LiteralPath $capturePath) | Should -Contain "mssql"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
         It "leaves a no-explicit-port named instance on the Docker-internal host untranslated and external" {
             # Sharing one grammar made the host of 'dms-mssql\SQLEXPRESS' parse as 'dms-mssql', which
             # the Docker-internal translation would otherwise have rewritten to the published host-side
@@ -4991,6 +5070,58 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
             $parsed.HostName | Should -BeExactly $ExpectedHost
             $parsed.Port | Should -BeExactly $ExpectedPort
             $parsed.RequiresInstanceResolution | Should -Be $Ssrp
+        }
+
+        It "selects the port token SqlClient selects for '<DataSource>'" -ForEach @(
+            # InferConnectionDetails splits on BOTH delimiters and selects the port by POSITION: token 2
+            # when a backslash exists and the comma follows it, token 1 otherwise. Reading the text after
+            # the first comma matched that only where at most one segment precedes the port, so
+            # 'localhost\ignored\15433,9999' yielded 9999 - a port the provider never connects to.
+            @{ DataSource = 'localhost\ignored\15433,9999'; ExpectedPort = '15433' }
+            @{ DataSource = 'localhost\ignored,15433'; ExpectedPort = '15433' }
+            @{ DataSource = 'localhost,15433\ignored'; ExpectedPort = '15433' }
+            @{ DataSource = 'localhost,15433,9999'; ExpectedPort = '15433' }
+            # The discriminating mirror: here SqlClient selects 9999, so the parser must too. Without this
+            # row a parser that simply preferred the numerically-local-looking token would pass.
+            @{ DataSource = 'localhost\ignored\9999,15433'; ExpectedPort = '9999' }
+        ) {
+            $parser = Get-StagedEndpointParser
+            $parsed = & $parser -DataSource $DataSource
+
+            $parsed.HostName | Should -BeExactly 'localhost'
+            $parsed.Port | Should -BeExactly $ExpectedPort
+            $parsed.HasExplicitPort | Should -BeTrue
+            $parsed.RequiresInstanceResolution |
+                Should -BeFalse -Because "an explicit comma port makes the instance suffix irrelevant"
+        }
+
+        It "refuses '<DataSource>', which SqlClient rejects rather than treating as omitted (<Why>)" -ForEach @(
+            @{ DataSource = 'dms-mssql,'; Why = 'an empty explicit port' }
+            @{ DataSource = 'tcp:dms-mssql,'; Why = 'an empty explicit port behind a protocol' }
+            @{ DataSource = 'dms-mssql\'; Why = 'an empty instance token' }
+            @{ DataSource = 'dms-mssql\   '; Why = 'a whitespace-only instance token' }
+        ) {
+            # Reported as a parse failure, not as blank fields: every caller defaults an absent port to the
+            # engine's expected one, so blank fields turned a data source the provider refuses into an
+            # apparently valid endpoint on exactly the port being validated against.
+            $parser = Get-StagedEndpointParser
+
+            $thrown = { & $parser -DataSource $DataSource } | Should -Throw -PassThru
+            $thrown.Exception.Message | Should -BeLike "*Invalid SQL Server data source*"
+            $thrown.Exception.Message |
+                Should -Not -BeLike "*dms-mssql*" -Because "the diagnostic is fixed text and never echoes the caller's value"
+        }
+
+        It "keeps a genuinely omitted port valid: '<DataSource>'" -ForEach @(
+            @{ DataSource = 'dms-mssql' }
+            @{ DataSource = 'dms-mssql\SQLEXPRESS' }
+        ) {
+            # The distinction the throw above must not blur: no delimiter at all, and a NAMED instance, are
+            # both legitimate. Only the empty tokens are invalid.
+            $parser = Get-StagedEndpointParser
+
+            { & $parser -DataSource $DataSource } | Should -Not -Throw
+            (& $parser -DataSource $DataSource).HasExplicitPort | Should -BeFalse
         }
 
         It "reports an inferred host as inferred, and a written host as written" {

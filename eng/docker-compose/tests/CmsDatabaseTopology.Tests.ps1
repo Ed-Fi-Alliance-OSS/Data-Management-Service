@@ -1177,6 +1177,10 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             @{ Name = "spaced protocol token in separate topology"; Server = 'tcp : dms-mssql,1433'; Separate = $true }
             @{ Name = "spaced protocol token with an instance suffix"; Server = 'tcp : dms-mssql\ignored,1433'; Separate = $false }
             @{ Name = "the compose service-key alias with a suffix"; Server = 'db\ignored,1433'; Separate = $false }
+            # A genuinely omitted port stays valid and keeps defaulting to the engine's expected 1433. This
+            # is the control for the invalid-endpoint rejections below: only an EMPTY token is invalid.
+            @{ Name = "no comma and no backslash at all: the port is omitted, not empty"; Server = 'dms-mssql'; Separate = $false }
+            @{ Name = "omitted port in separate topology"; Server = 'dms-mssql'; Separate = $true }
         ) {
             # With an explicit comma port SqlClient uses that port and does not resolve the instance
             # suffix through SSRP, so the suffix cannot change which endpoint is named.
@@ -1207,6 +1211,13 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             @{ Name = "a later comma token cannot rescue a wrong port"; Server = 'dms-mssql,14330,1433'; Expected = "*targets port*" }
             @{ Name = "an instance suffix cannot rescue a wrong port"; Server = 'dms-mssql\ignored,14330'; Expected = "*targets port*" }
             @{ Name = "a doubled tcp: prefix leaves a bad host"; Server = 'tcp:tcp:dms-mssql,1433'; Expected = "*targets host*" }
+            # SqlClient rejects an empty explicit port and an empty instance token outright. Reported as
+            # blank fields these inherited this caller's absent-port default and PASSED validation naming
+            # exactly the composed service on exactly the expected port - a connection string that cannot
+            # connect. The parser now refuses them, so the pre-start check fails closed.
+            @{ Name = "an empty explicit port"; Server = 'dms-mssql,'; Expected = "*Invalid SQL Server data source*" }
+            @{ Name = "an empty instance token"; Server = 'dms-mssql\'; Expected = "*Invalid SQL Server data source*" }
+            @{ Name = "an empty explicit port behind tcp:"; Server = 'tcp:dms-mssql,'; Expected = "*Invalid SQL Server data source*" }
         ) {
             # Exactly ONE tcp: prefix is removed, and no other protocol is. This connection string is the
             # CMS container's, so a host-side name would mask a genuinely wrong endpoint.
