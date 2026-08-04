@@ -914,7 +914,7 @@
       "dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~WebApplicationBuilderExtensions|FullyQualifiedName~DocumentCache\"",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheServiceRegistration\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "explicit-integrity-scrub",

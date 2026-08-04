@@ -5,6 +5,8 @@
 
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -28,6 +30,10 @@ public class Given_DocumentCacheServiceRegistration
             services
         );
         AssertSingleton<IDocumentCacheProjectionTelemetry, DocumentCacheProjectionTelemetry>(services);
+        AssertSingleton<
+            IDocumentCacheDownstreamPublicationHistoryProvider,
+            DocumentCacheUnknownDownstreamPublicationHistoryProvider
+        >(services);
         AssertSingletonFactory<IDocumentCacheProjectionObservationProvider>(services);
         AssertSingletonFactory<IDocumentCacheProjectionObservationSink>(services);
         AssertSingleton<
@@ -66,6 +72,23 @@ public class Given_DocumentCacheServiceRegistration
         AssertSingleton<IDocumentCacheAdministrativeDrainer, DocumentCacheAdministrativeDrainer>(services);
         AssertScoped<IDocumentCacheWriterRetryAdapter, DocumentCacheWriterRetryAdapter>(services);
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IHostedService));
+    }
+
+    [Test]
+    public void It_preserves_a_custom_downstream_publication_history_provider()
+    {
+        IServiceCollection services = new ServiceCollection();
+        services.AddSingleton<
+            IDocumentCacheDownstreamPublicationHistoryProvider,
+            CustomDocumentCacheDownstreamPublicationHistoryProvider
+        >();
+
+        services.AddPostgresqlReferenceResolver();
+
+        AssertSingleton<
+            IDocumentCacheDownstreamPublicationHistoryProvider,
+            CustomDocumentCacheDownstreamPublicationHistoryProvider
+        >(services);
     }
 
     [Test]
@@ -153,5 +176,15 @@ public class Given_DocumentCacheServiceRegistration
             .Should()
             .ContainSingle(descriptor => descriptor.ServiceType == typeof(TService))
             .Subject;
+    }
+
+    private sealed class CustomDocumentCacheDownstreamPublicationHistoryProvider
+        : IDocumentCacheDownstreamPublicationHistoryProvider
+    {
+        public Task<DocumentCacheDownstreamPublicationHistoryObservation> ObserveAsync(
+            DocumentCacheTargetKey targetKey,
+            DocumentCachePhysicalSourceFingerprint? currentPhysicalSourceFingerprint,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
     }
 }

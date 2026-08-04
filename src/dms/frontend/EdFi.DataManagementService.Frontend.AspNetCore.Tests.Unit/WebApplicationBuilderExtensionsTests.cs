@@ -29,7 +29,8 @@ public class WebApplicationBuilderExtensionsTests
 {
     private static IServiceCollection CreateServiceCollection(
         string datastore,
-        Dictionary<string, string?>? additionalConfiguration = null
+        Dictionary<string, string?>? additionalConfiguration = null,
+        Action<IServiceCollection>? configureServicesBeforeAddServices = null
     )
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Test" });
@@ -60,6 +61,7 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         builder.Configuration.AddInMemoryCollection(configuration);
+        configureServicesBeforeAddServices?.Invoke(builder.Services);
 
         builder.AddServices();
 
@@ -86,6 +88,24 @@ public class WebApplicationBuilderExtensionsTests
 
         descriptor.Lifetime.Should().Be(ServiceLifetime.Scoped);
         descriptor.ImplementationType.Should().Be(typeof(RelationalDocumentStoreRepository));
+        descriptor.ImplementationFactory.Should().BeNull();
+        descriptor.ImplementationInstance.Should().BeNull();
+    }
+
+    private static void AssertSingleDownstreamPublicationHistoryProvider<TImplementation>(
+        IServiceCollection services
+    )
+        where TImplementation : class, IDocumentCacheDownstreamPublicationHistoryProvider
+    {
+        ServiceDescriptor descriptor = services
+            .Should()
+            .ContainSingle(descriptor =>
+                descriptor.ServiceType == typeof(IDocumentCacheDownstreamPublicationHistoryProvider)
+            )
+            .Subject;
+
+        descriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
+        descriptor.ImplementationType.Should().Be(typeof(TImplementation));
         descriptor.ImplementationFactory.Should().BeNull();
         descriptor.ImplementationInstance.Should().BeNull();
     }
@@ -341,12 +361,41 @@ public class WebApplicationBuilderExtensionsTests
         [Category("DownstreamPublicationHistory")]
         public void It_resolves_the_default_DocumentCache_downstream_publication_history_provider_with_postgresql_provider()
         {
-            using var serviceProvider = CreateServices("postgresql");
+            IServiceCollection services = CreateServiceCollection("postgresql");
+            AssertSingleDownstreamPublicationHistoryProvider<DocumentCacheUnknownDownstreamPublicationHistoryProvider>(
+                services
+            );
+
+            using ServiceProvider serviceProvider = services.BuildServiceProvider();
 
             serviceProvider
                 .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
                 .Should()
                 .BeOfType<DocumentCacheUnknownDownstreamPublicationHistoryProvider>();
+        }
+
+        [Test]
+        [Category("DownstreamPublicationHistory")]
+        public void It_preserves_a_custom_DocumentCache_downstream_publication_history_provider_registered_before_startup()
+        {
+            IServiceCollection services = CreateServiceCollection(
+                "postgresql",
+                configureServicesBeforeAddServices: serviceCollection =>
+                    serviceCollection.AddSingleton<
+                        IDocumentCacheDownstreamPublicationHistoryProvider,
+                        CustomDocumentCacheDownstreamPublicationHistoryProvider
+                    >()
+            );
+            AssertSingleDownstreamPublicationHistoryProvider<CustomDocumentCacheDownstreamPublicationHistoryProvider>(
+                services
+            );
+
+            using ServiceProvider serviceProvider = services.BuildServiceProvider();
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
+                .Should()
+                .BeOfType<CustomDocumentCacheDownstreamPublicationHistoryProvider>();
         }
 
         [Test]
@@ -603,7 +652,12 @@ public class WebApplicationBuilderExtensionsTests
         [Category("DownstreamPublicationHistory")]
         public void It_resolves_the_default_DocumentCache_downstream_publication_history_provider_with_sqlserver_provider()
         {
-            using var serviceProvider = CreateServices("mssql");
+            IServiceCollection services = CreateServiceCollection("mssql");
+            AssertSingleDownstreamPublicationHistoryProvider<DocumentCacheUnknownDownstreamPublicationHistoryProvider>(
+                services
+            );
+
+            using ServiceProvider serviceProvider = services.BuildServiceProvider();
 
             serviceProvider
                 .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
@@ -789,5 +843,15 @@ public class WebApplicationBuilderExtensionsTests
                 .Which.Should()
                 .BeOfType<RelationalBackendMappingInitializer>();
         }
+    }
+
+    private sealed class CustomDocumentCacheDownstreamPublicationHistoryProvider
+        : IDocumentCacheDownstreamPublicationHistoryProvider
+    {
+        public Task<DocumentCacheDownstreamPublicationHistoryObservation> ObserveAsync(
+            DocumentCacheTargetKey targetKey,
+            DocumentCachePhysicalSourceFingerprint? currentPhysicalSourceFingerprint,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
     }
 }

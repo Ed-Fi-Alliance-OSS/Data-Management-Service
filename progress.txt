@@ -262,3 +262,8 @@ Completed explicit-integrity-scrub follow-up task for reference/design/backend-r
 Key decisions: every scrub page transaction now reads DocumentCacheState on mutex session with shared lock before provider page DML; mid-page lifecycle/latch mismatch returns existing lifecycle/cache-ahead classifications and keeps mutation accounting from prior pages only.
 Files changed: DocumentCacheExplicitIntegrityScrub.cs; PG/MSSQL ExplicitIntegrityScrub integration tests; tasks.json; progress.txt.
 Blockers/notes: default MSSQL admin env unset; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Dependency-injection follow-up remains open.
+
+Completed dependency-injection follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: removed frontend duplicate downstream-publication-history default; backend TryAdd remains single shared default so pre-registered custom providers are preserved through startup composition.
+Files changed: WebApplicationBuilderExtensions.cs; WebApplicationBuilderExtensionsTests.cs; DocumentCacheServiceRegistrationTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Verified focused frontend DocumentCache/WebApplicationBuilderExtensions and backend DocumentCacheServiceRegistration unit filters.
