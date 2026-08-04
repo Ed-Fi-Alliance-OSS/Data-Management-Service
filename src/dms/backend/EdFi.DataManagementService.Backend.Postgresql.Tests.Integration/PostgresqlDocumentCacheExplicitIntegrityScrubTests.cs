@@ -177,7 +177,9 @@ public class Given_A_Postgresql_DocumentCacheExplicitIntegrityScrub_Command
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
-        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet);
         result.Mutated.Should().BeTrue();
         result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Tracking);
         result.CacheAheadRecoveryRequired.Should().BeTrue();

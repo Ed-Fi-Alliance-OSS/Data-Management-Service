@@ -195,9 +195,32 @@ public class Given_A_Postgresql_DocumentCacheAdministrativeMutex
 
     private static string AliasConnectionString(string connectionString, string applicationName)
     {
-        NpgsqlConnectionStringBuilder builder = new(connectionString) { ApplicationName = applicationName };
+        NpgsqlConnectionStringBuilder builder = new(connectionString)
+        {
+            Host = LoopbackHostAlias(new NpgsqlConnectionStringBuilder(connectionString).Host),
+            ApplicationName = applicationName,
+        };
 
         return builder.ConnectionString;
+    }
+
+    private static string LoopbackHostAlias(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            throw new InconclusiveException(
+                "The PostgreSQL administrative mutex alias test requires a configured localhost or 127.0.0.1 host."
+            );
+        }
+
+        return host.ToLowerInvariant() switch
+        {
+            "localhost" => "127.0.0.1",
+            "127.0.0.1" => "localhost",
+            _ => throw new InconclusiveException(
+                "The PostgreSQL administrative mutex alias test requires a localhost or 127.0.0.1 host."
+            ),
+        };
     }
 
     private static async Task ExecuteSessionNonQueryAsync(IRelationalWriteSession session, string commandText)

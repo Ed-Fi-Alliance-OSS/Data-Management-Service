@@ -72,14 +72,8 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
         using DocumentCacheAdministrativeWorkflowCancellationScope cancellationScope =
             DocumentCacheAdministrativeWorkflow.CreateCancellationScope(context, cancellationToken);
         CancellationToken effectiveCancellationToken = cancellationScope.Token;
-
-        DocumentCacheDownstreamPublicationHistoryProofResult downstreamProof =
-            await ObserveAcceptedDownstreamProofAsync(context, effectiveCancellationToken)
-                .ConfigureAwait(false);
-        if (!downstreamProof.IsAccepted)
-        {
-            return CreateDownstreamProofFailure(context, downstreamProof);
-        }
+        DocumentCacheDownstreamPublicationStatus downstreamPublicationStatus =
+            context.RequireAcceptedDownstreamPublicationStatus();
 
         DocumentCacheLifecycleState lifecycle = CurrentLifecycle(context);
 
@@ -113,7 +107,7 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
 
         DocumentCacheAdministrativeWorkClearance clearance = DocumentCacheAdministrativeWorkClearance.Require(
             context.Request.Command,
-            downstreamProof.DownstreamPublicationStatus,
+            downstreamPublicationStatus,
             context.Request.AcceptedOfflineWriterAdmissionConfirmation
         );
 
@@ -367,37 +361,6 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
 
         context.CompletePhase(phase);
         return null;
-    }
-
-    private async Task<DocumentCacheDownstreamPublicationHistoryProofResult> ObserveAcceptedDownstreamProofAsync(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        CancellationToken cancellationToken
-    )
-    {
-        DocumentCacheDownstreamPublicationHistoryObservation observation =
-            await downstreamPublicationHistoryProvider
-                .ObserveAsync(
-                    context.TargetContext.TargetKey,
-                    context.TargetContext.TargetExecutionContext.PhysicalSourceFingerprint,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-        return DocumentCacheDownstreamPublicationHistoryProofEvaluator.Evaluate(
-            context.TargetContext.TargetKey,
-            context.TargetContext.TargetExecutionContext.PhysicalSourceFingerprint,
-            observation,
-            context.Request.ExpectedPhysicalSourceFingerprint
-        );
-    }
-
-    private static DocumentCacheAdministrativeCommandResult CreateDownstreamProofFailure(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        DocumentCacheDownstreamPublicationHistoryProofResult proof
-    )
-    {
-        DocumentCacheAdministrativeDiagnostic diagnostic = proof.Diagnostics[0];
-        return CreateLifecycleFailure(context, proof.Classification, diagnostic.Category, diagnostic.Message);
     }
 
     private static DocumentCacheAdministrativeCommandResult CreateTransitionFailure(

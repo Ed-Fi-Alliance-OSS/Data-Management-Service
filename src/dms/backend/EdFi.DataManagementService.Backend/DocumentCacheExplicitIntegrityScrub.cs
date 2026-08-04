@@ -143,7 +143,7 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
                     page.AffectedDocumentIds
                 );
                 context.CompletePhase(DocumentCacheAdministrativeCommandPhase.SetCacheAheadLatch);
-                return context.Completed();
+                return CompletedWithCacheAheadLatchSet(context);
             }
         }
 
@@ -289,6 +289,28 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
         return lifecycle is { State: DocumentCacheLifecycleState.Tracking, CacheAheadRecoveryRequired: false }
             ? null
             : CreateLifecycleFailure(context, lifecycle);
+    }
+
+    private static DocumentCacheAdministrativeCommandResult CompletedWithCacheAheadLatchSet(
+        DocumentCacheAdministrativeCommandExecutionContext context
+    )
+    {
+        context.CompletePhase(DocumentCacheAdministrativeCommandPhase.Complete);
+
+        return new(
+            context.Request.Command,
+            context.Request.TargetKey,
+            DocumentCacheAdministrativeCommandStatus.Completed,
+            DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet,
+            context.Mutated,
+            context.TargetContext.Generation.Value,
+            context.TargetContext.TargetExecutionContext.PhysicalSourceFingerprint,
+            context.ObservedLifecycle?.State,
+            context.ObservedLifecycle?.CacheAheadRecoveryRequired,
+            context.PhaseDiagnostics,
+            context.Request.AcceptedOfflineWriterAdmissionConfirmation,
+            context.ElapsedCommandTime
+        );
     }
 
     private static DocumentCacheAdministrativeCommandResult CreateLifecycleFailure(

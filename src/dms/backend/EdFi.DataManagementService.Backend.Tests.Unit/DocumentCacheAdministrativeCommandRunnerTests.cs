@@ -199,6 +199,35 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         mutex.AcquireCount.Should().Be(1);
     }
 
+    [Test]
+    public async Task It_carries_accepted_downstream_publication_status_from_preflight_to_execution()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        DocumentCacheDownstreamPublicationStatus? observedStatus = null;
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) =>
+                Task.FromResult(
+                    context.EligiblePreflightResult(DocumentCacheDownstreamPublicationStatus.InternalOnly)
+                ),
+            execute: (context, _) =>
+            {
+                observedStatus = context.RequireAcceptedDownstreamPublicationStatus();
+                return Task.FromResult(context.Completed());
+            }
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex()
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+        observedStatus.Should().Be(DocumentCacheDownstreamPublicationStatus.InternalOnly);
+    }
+
     [TestCase(
         DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed,
         DocumentCacheAdministrativeCommandClassification.ProviderPrerequisiteFailed
@@ -1463,6 +1492,59 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             DocumentCacheAdministrativeCommandPhase.SeedBaseline,
             DocumentCacheAdministrativeCommandPhase.CaptureBoundary
         );
+    }
+
+    [Test]
+    public async Task It_classifies_completed_explicit_scrub_latch_set_as_cache_ahead_latch_set()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        var primitives = new StubAdministrativePrimitives(
+            lifecycleReads:
+            [
+                DocumentCacheLifecycleReadResult.Success(TrackingLifecycle),
+                DocumentCacheLifecycleReadResult.Success(TrackingLifecycle),
+                DocumentCacheLifecycleReadResult.Success(TrackingLifecycle),
+            ],
+            baselineBoundary: new DocumentCacheAdministrativeBaselineBoundaryResult(1, "boundary"),
+            scrubPages:
+            [
+                ScrubPage(
+                    DocumentCacheAdministrativeScrubPageStatus.CacheAheadLatched,
+                    new DocumentCacheAdministrativeScrubbedDocument(
+                        1,
+                        sourceContentVersion: 10,
+                        cacheContentVersion: 8,
+                        previousRequiredContentVersion: null,
+                        DocumentCacheAdministrativeScrubMutationKind.CacheAheadLatchSet
+                    )
+                ),
+            ]
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(),
+            primitives: primitives
+        );
+        var command = new DocumentCacheExplicitIntegrityScrubCommand(runner);
+
+        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
+            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet);
+        result.Mutated.Should().BeTrue();
+        result.CacheAheadRecoveryRequired.Should().BeTrue();
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.SetCacheAheadLatch
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.CacheAheadLatchSet
+            );
     }
 
     [Test]

@@ -160,6 +160,7 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
     private readonly IDocumentCacheProjectionTelemetry _telemetry;
     private readonly TimeProvider _timeProvider;
     private ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> _phaseDiagnostics = [];
+    private DocumentCacheDownstreamPublicationStatus? _acceptedDownstreamPublicationStatus;
 
     internal DocumentCacheAdministrativeCommandExecutionContext(
         DocumentCacheAdministrativeCommandExecutionId executionId,
@@ -262,6 +263,40 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
             TargetContext.TargetExecutionContext.ProviderToken
         );
     }
+
+    public void AcceptPreflightResult(DocumentCacheAdministrativeCommandResult preflightResult)
+    {
+        ArgumentNullException.ThrowIfNull(preflightResult);
+
+        if (preflightResult.Command != Request.Command)
+        {
+            throw new InvalidOperationException(
+                "Administrative command preflight returned a result for another command."
+            );
+        }
+
+        if (!preflightResult.TargetKey.TargetKey.Equals(TargetContext.TargetKey))
+        {
+            throw new InvalidOperationException(
+                "Administrative command preflight returned a result for another target."
+            );
+        }
+
+        if (preflightResult.Classification != DocumentCacheAdministrativeCommandClassification.Succeeded)
+        {
+            throw new InvalidOperationException(
+                "Administrative command execution requires a successful preflight result."
+            );
+        }
+
+        _acceptedDownstreamPublicationStatus = preflightResult.DownstreamPublicationStatus;
+    }
+
+    public DocumentCacheDownstreamPublicationStatus RequireAcceptedDownstreamPublicationStatus() =>
+        _acceptedDownstreamPublicationStatus
+        ?? throw new InvalidOperationException(
+            "Administrative command execution requires successful downstream-publication preflight proof."
+        );
 
     public void AddPhaseDiagnostic(
         DocumentCacheAdministrativeDiagnosticCategory diagnosticCategory,
@@ -805,6 +840,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             return AddRuntimeResultFields(preflightResult, commandContext);
         }
 
+        commandContext.AcceptPreflightResult(preflightResult);
         commandContext.CompletePhase(DocumentCacheAdministrativeCommandPhase.Preflight);
 
         return await workflow.ExecuteAsync(commandContext, cancellationToken).ConfigureAwait(false);

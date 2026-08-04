@@ -103,9 +103,6 @@ public sealed record DocumentCacheAdministrativeDrainFailure
             );
         }
 
-        Status = status;
-        Classification = classification;
-        DiagnosticCategory = diagnosticCategory;
         Message = string.IsNullOrWhiteSpace(message) ? diagnosticCategory.ToString() : message;
         Retryable = retryable;
         AffectedDocumentIds = affectedDocumentIds.IsDefault ? [] : affectedDocumentIds;

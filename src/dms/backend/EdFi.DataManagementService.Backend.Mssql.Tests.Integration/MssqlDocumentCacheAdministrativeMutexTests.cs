@@ -25,6 +25,7 @@ public class Given_A_Mssql_DocumentCacheAdministrativeMutex
 {
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private MssqlDocumentCacheAdministrativeMutex _mutex = null!;
+    private readonly List<string> _createdLoginNames = [];
 
     [SetUp]
     public async Task SetUp()
@@ -37,11 +38,18 @@ public class Given_A_Mssql_DocumentCacheAdministrativeMutex
         _mutex = new MssqlDocumentCacheAdministrativeMutex(
             NullLogger<MssqlDocumentCacheAdministrativeMutex>.Instance
         );
+        _createdLoginNames.Clear();
     }
 
     [TearDown]
     public async Task TearDown()
     {
+        SqlConnection.ClearAllPools();
+        foreach (string loginName in _createdLoginNames)
+        {
+            await DropLoginIfExistsAsync(loginName);
+        }
+
         if (_database is not null)
         {
             await _database.DisposeAsync();
@@ -96,6 +104,59 @@ public class Given_A_Mssql_DocumentCacheAdministrativeMutex
                 TimeSpan.FromSeconds(5)
             );
             secondLease.IsSessionOpen.Should().BeTrue();
+        }
+        finally
+        {
+            if (firstLease is not null)
+            {
+                await firstLease.DisposeAsync();
+            }
+        }
+    }
+
+    [Test]
+    public async Task It_serializes_public_session_application_lock_across_database_principals()
+    {
+        string firstLoginName = CreatePrincipalName("dc_mutex_a");
+        string secondLoginName = CreatePrincipalName("dc_mutex_b");
+        string firstPassword = CreatePrincipalPassword();
+        string secondPassword = CreatePrincipalPassword();
+        await CreateLoginAndUserAsync(firstLoginName, firstPassword);
+        await CreateLoginAndUserAsync(secondLoginName, secondPassword);
+
+        IDocumentCacheAdministrativeMutexLease? firstLease = await _mutex.AcquireAsync(
+            ConnectionInput(PrincipalConnectionString(firstLoginName, firstPassword))
+        );
+        try
+        {
+            string firstUserName = await ExecuteScalarAsync<string>(
+                firstLease.Connection,
+                "SELECT USER_NAME();"
+            );
+            firstUserName.Should().Be(firstLoginName);
+
+            Task<IDocumentCacheAdministrativeMutexLease> blockedAcquire = _mutex.AcquireAsync(
+                ConnectionInput(PrincipalConnectionString(secondLoginName, secondPassword))
+            );
+
+            Task completedTask = await Task.WhenAny(
+                blockedAcquire,
+                Task.Delay(TimeSpan.FromMilliseconds(250))
+            );
+            completedTask.Should().NotBe(blockedAcquire);
+
+            await firstLease.DisposeAsync();
+            firstLease = null;
+
+            await using IDocumentCacheAdministrativeMutexLease secondLease = await blockedAcquire.WaitAsync(
+                TimeSpan.FromSeconds(5)
+            );
+            secondLease.IsSessionOpen.Should().BeTrue();
+            string secondUserName = await ExecuteScalarAsync<string>(
+                secondLease.Connection,
+                "SELECT USER_NAME();"
+            );
+            secondUserName.Should().Be(secondLoginName);
         }
         finally
         {
@@ -180,10 +241,90 @@ public class Given_A_Mssql_DocumentCacheAdministrativeMutex
 
     private static string AliasConnectionString(string connectionString, string applicationName)
     {
-        SqlConnectionStringBuilder builder = new(connectionString) { ApplicationName = applicationName };
+        SqlConnectionStringBuilder builder = new(connectionString)
+        {
+            DataSource = LoopbackDataSourceAlias(new SqlConnectionStringBuilder(connectionString).DataSource),
+            ApplicationName = applicationName,
+        };
 
         return builder.ConnectionString;
     }
+
+    private static string LoopbackDataSourceAlias(string dataSource)
+    {
+        if (dataSource.StartsWith("tcp:localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"tcp:127.0.0.1{dataSource["tcp:localhost".Length..]}";
+        }
+
+        if (dataSource.StartsWith("localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"127.0.0.1{dataSource["localhost".Length..]}";
+        }
+
+        if (dataSource.StartsWith("tcp:127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"tcp:localhost{dataSource["tcp:127.0.0.1".Length..]}";
+        }
+
+        if (dataSource.StartsWith("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"localhost{dataSource["127.0.0.1".Length..]}";
+        }
+
+        throw new InconclusiveException(
+            "The SQL Server administrative mutex alias test requires a localhost or 127.0.0.1 data source."
+        );
+    }
+
+    private async Task CreateLoginAndUserAsync(string loginName, string password)
+    {
+        string quotedDatabaseName = MssqlTestDatabaseHelper.QuoteIdentifier(_database.DatabaseName);
+        string quotedLoginName = MssqlTestDatabaseHelper.QuoteIdentifier(loginName);
+        string escapedPassword = MssqlTestDatabaseHelper.EscapeSqlLiteral(password);
+
+        _createdLoginNames.Add(loginName);
+        await MssqlTestDatabaseHelper.ExecuteAdminNonQueryAsync(
+            $"""
+            CREATE LOGIN {quotedLoginName}
+                WITH PASSWORD = N'{escapedPassword}', CHECK_POLICY = OFF;
+
+            USE {quotedDatabaseName};
+            CREATE USER {quotedLoginName} FOR LOGIN {quotedLoginName};
+            GRANT CONNECT TO {quotedLoginName};
+            """
+        );
+    }
+
+    private static async Task DropLoginIfExistsAsync(string loginName)
+    {
+        string escapedLoginName = MssqlTestDatabaseHelper.EscapeSqlLiteral(loginName);
+        string quotedLoginName = MssqlTestDatabaseHelper.QuoteIdentifier(loginName);
+
+        await MssqlTestDatabaseHelper.ExecuteAdminNonQueryAsync(
+            $"""
+            IF EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'{escapedLoginName}')
+            BEGIN
+                DROP LOGIN {quotedLoginName};
+            END
+            """
+        );
+    }
+
+    private string PrincipalConnectionString(string loginName, string password)
+    {
+        SqlConnectionStringBuilder builder = new(_database.ConnectionString)
+        {
+            UserID = loginName,
+            Password = password,
+        };
+
+        return builder.ConnectionString;
+    }
+
+    private static string CreatePrincipalName(string prefix) => $"{prefix}_{Guid.NewGuid():N}"[..24];
+
+    private static string CreatePrincipalPassword() => $"EdFi_Dms1!{Guid.NewGuid():N}";
 
     private static async Task ExecuteSessionNonQueryAsync(IRelationalWriteSession session, string commandText)
     {
