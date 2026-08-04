@@ -420,6 +420,13 @@ function ReadValuesFromEnvFile {
             $split = $_.Split('=', 2)
             if ($split.Length -eq 2) {
                 $key = $split[0].Trim()
+                # Compose accepts an optional `export ` prefix on an assignment - the same spelling
+                # Get-DotenvAssignment already parses - so the key is stored WITHOUT it. Keeping the prefix
+                # stored the value under "export <KEY>", which no consumer looks up, so an exported
+                # declaration read back as unset even though topology validation had accepted it. Exported
+                # and ordinary spellings therefore collapse onto one key, and because lines are processed in
+                # file order the last declaration still wins.
+                $key = [regex]::Replace($key, '^export[ \t]+', '')
                 $value = $split[1].Trim()
                 $envFile[$key] = $value
             }
@@ -2276,23 +2283,6 @@ function Get-DotenvDependencyClosure {
     return @($closure)
 }
 
-# The characters PostgreSQL's SQL lexer discards around an UNQUOTED identifier, and nothing more.
-# Measured against postgres:16 by running postgresql-init.sh's own statement form,
-# `CREATE DATABASE ${POSTGRES_DB_NAME};`, and reading pg_database back:
-#
-#   space (0x20), tab (0x09), LF (0x0A), CR (0x0D), FF (0x0C) - discarded, leading or trailing, so
-#     the identifier folds to edfi_configurationservice and the datastore lands in the database the
-#     separate topology reserves for CMS;
-#   vertical tab (0x0B) - NOT lexer whitespace: the statement fails with `syntax error at or near ""`;
-#   no-break space (0xA0) - an identifier character: it creates a genuinely DIFFERENT database
-#     (datname hex ends c2a0).
-#
-# The set is therefore passed to Trim explicitly, and String.Trim() with no argument is wrong here:
-# .NET counts both 0x0B and 0xA0 as whitespace, and trimming either would report a collision for a
-# name that in fact fails outright or names another database.
-$script:PostgresUnquotedIdentifierTrimCharacter = [char[]]@(
-    [char]0x20, [char]0x09, [char]0x0A, [char]0x0D, [char]0x0C
-)
 
 function Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase {
     <#
@@ -2307,14 +2297,18 @@ function Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase {
         and it is NOT the authority for -DataStoreDatabaseName - that value never reaches this mechanism
         and has its own predicate, Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase.
 
-        PostgreSQL only, on purpose: postgresql-init.sh runs `CREATE DATABASE ${POSTGRES_DB_NAME};` with
-        the identifier NOT SQL-quoted. PostgreSQL folds an unquoted identifier to lower case AND its lexer
-        discards the whitespace around it, so POSTGRES_DB_NAME=EDFI_ConfigurationService and
-        POSTGRES_DB_NAME='EDFI_ConfigurationService ' both create edfi_configurationservice. The comparison
-        therefore trims the measured lexer-whitespace set - see
-        $script:PostgresUnquotedIdentifierTrimCharacter for exactly what was measured, and for the two
-        characters deliberately excluded - and then ignores case. An offline verdict is sound here
-        because the rule is an exact model of that one lexer.
+        PostgreSQL only, on purpose: postgresql-init.sh creates the database with `createdb`, passing
+        POSTGRES_DB_NAME as ONE quoted command argument. createdb quotes the identifier, so the database
+        it creates is named the LITERAL value - case preserved, surrounding whitespace preserved, and no
+        authored character interpreted as SQL syntax. The comparison is therefore exact and ordinal.
+
+        That is a change of model, not a tightening of one. While the script interpolated the name into
+        `CREATE DATABASE ${POSTGRES_DB_NAME};`, the name was subject to PostgreSQL's unquoted-identifier
+        rules AND to its SQL lexer, so a case variant or a trailing space folded onto the reserved name -
+        and 'edfi_configurationservice--comment' created the reserved database outright, because
+        '--comment' is a SQL comment. Those spellings are no longer collisions because they no longer
+        create that database: they create databases literally named that way. An offline verdict stays
+        sound because the identifier now travels verbatim.
 
         SQL Server has NO offline verdict, here or anywhere: database names inherit the INSTANCE
         collation, and the equivalence class differs between instances (measured: a case variant that
@@ -2342,10 +2336,12 @@ function Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase {
 
     if ([string]::IsNullOrWhiteSpace($DatastoreDatabaseName)) { return $false }
 
+    # Ordinal, untrimmed, case-sensitive: createdb quotes the identifier, so only the exact reserved
+    # literal names the reserved database.
     return [string]::Equals(
-        $DatastoreDatabaseName.Trim($script:PostgresUnquotedIdentifierTrimCharacter),
+        $DatastoreDatabaseName,
         "edfi_configurationservice",
-        [System.StringComparison]::OrdinalIgnoreCase)
+        [System.StringComparison]::Ordinal)
 }
 
 function Get-RegisteredDatastoreDatabaseValue {
@@ -2859,7 +2855,7 @@ function Assert-MssqlTopologyPhysicalConsistency {
     if ([string]::IsNullOrWhiteSpace($cmsConnectionString)) {
         throw "Assert-MssqlTopologyPhysicalConsistency: DMS_CONFIG_DATABASE_CONNECTION_STRING is required for MSSQL and cannot be entirely absent; the .env.mssql overlay normally supplies it."
     }
-    $segmentNames = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $cmsConnectionString)
+    $segmentNames = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $cmsConnectionString -DatabaseEngine "mssql")
     if ($segmentNames.Count -eq 0) {
         throw "Assert-MssqlTopologyPhysicalConsistency: DMS_CONFIG_DATABASE_CONNECTION_STRING must include a Database or Initial Catalog segment."
     }
@@ -3555,9 +3551,9 @@ function Confirm-CmsDatabaseTopologyAgreement {
             Get-SequentialEffectiveValue -Evaluation $sequential -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING" -DefaultValue $defaultConnectionString
         }
 
-    $actualDatabaseNames = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $actualConnectionString)
+    $actualDatabaseNames = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $actualConnectionString -DatabaseEngine $DatabaseEngine)
     if ($actualDatabaseNames.Count -eq 0) {
-        throw "Confirm-CmsDatabaseTopologyAgreement: DMS_CONFIG_DATABASE_CONNECTION_STRING must include Database or Initial Catalog and target '$expectedDatabaseName'."
+        throw "Confirm-CmsDatabaseTopologyAgreement: DMS_CONFIG_DATABASE_CONNECTION_STRING must include a database-name keyword recognized for '$DatabaseEngine' and target '$expectedDatabaseName'."
     }
     # Database-NAME agreement is engine-split. PostgreSQL: the parsed segments are literal
     # provider values (nothing folds), so exact ordinal agreement is the correct final rule and

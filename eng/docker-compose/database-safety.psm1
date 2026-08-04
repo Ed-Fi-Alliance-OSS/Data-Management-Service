@@ -694,37 +694,67 @@ function Get-DatabaseNameFromResolvedConnectionString {
         entirely-ambient connection string that happens to contain literal, un-interpolated
         "${...}"-shaped text - which Compose itself never reinterpolates for a value it already
         took verbatim from the shell - is returned as-is rather than incorrectly resolved a second
-        time. Database and Initial Catalog are provider synonyms; every candidate present is
-        returned so a caller can require all of them to agree rather than guessing which one wins
-        (DbConnectionStringBuilder does not preserve which alias appeared later in the source
-        text). Returns an empty array when the string is blank or carries no database keyword.
+        time. Every database-name candidate present is returned so a caller can require all of them
+        to agree rather than guessing which one wins (DbConnectionStringBuilder does not preserve
+        which alias appeared later in the source text). Returns an empty array when the string is
+        blank or carries no database keyword for the given engine.
+
+        The recognized synonyms are ENGINE-SPECIFIC, because the two providers do not share this
+        keyword family: PostgreSQL/Npgsql recognizes Database and DB, while SQL Server recognizes
+        Database and Initial Catalog. One union applied to both accepted "Initial Catalog" for a
+        PostgreSQL connection string during preflight - a keyword Npgsql then rejects at connect
+        time, so the failure surfaced only after containers had started. The other engine's synonym
+        is refused HERE instead, before startup, and refused even when a valid synonym appears
+        alongside it: silently preferring the valid one still hands the provider a string it rejects.
 
     .PARAMETER ConnectionString
         An already Compose-precedence-resolved connection string.
+
+    .PARAMETER DatabaseEngine
+        "postgresql" or "mssql". Selects which database-name synonyms are recognized, and which
+        belong to the other engine and are therefore refused.
     #>
     param(
-        [string]$ConnectionString
+        [string]$ConnectionString,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine
     )
 
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
         return @()
     }
 
+    $recognizedKeyPattern =
+        if ($DatabaseEngine -eq "mssql") { '^(database|initial\s+catalog)$' } else { '^(database|db)$' }
+    $foreignKeyPattern =
+        if ($DatabaseEngine -eq "mssql") { '^db$' } else { '^initial\s+catalog$' }
+    $recognizedKeyFamily =
+        if ($DatabaseEngine -eq "mssql") { "'Database' or 'Initial Catalog'" } else { "'Database' or 'DB'" }
+
     try {
         $connectionStringBuilder = [System.Data.Common.DbConnectionStringBuilder]::new()
         $connectionStringBuilder.PSBase.ConnectionString = $ConnectionString
-
-        return @(
-            foreach ($key in $connectionStringBuilder.PSBase.Keys) {
-                if ([string]$key -imatch '^(database|initial\s+catalog)$') {
-                    [string]$connectionStringBuilder.PSBase.get_Item($key)
-                }
-            }
-        )
+        $presentKeys = @($connectionStringBuilder.PSBase.Keys | ForEach-Object { [string]$_ })
     }
     catch {
         throw "Could not parse the resolved connection string to extract the database name: $($_.Exception.Message)"
     }
+
+    # Refused OUTSIDE the parse try/catch, so a configuration mistake is not reported as a parse
+    # failure. Names the engine and the allowed family only - never a value or a credential.
+    if (@($presentKeys | Where-Object { $_ -imatch $foreignKeyPattern }).Count -gt 0) {
+        throw "Connection string configuration error: it carries a database-name keyword belonging to the other engine, which the '$DatabaseEngine' provider rejects. Use $recognizedKeyFamily for '$DatabaseEngine'. The value is withheld."
+    }
+
+    return @(
+        foreach ($key in $presentKeys) {
+            if ($key -imatch $recognizedKeyPattern) {
+                [string]$connectionStringBuilder.PSBase.get_Item($key)
+            }
+        }
+    )
 }
 
 function Test-PortNumberEquivalent {
