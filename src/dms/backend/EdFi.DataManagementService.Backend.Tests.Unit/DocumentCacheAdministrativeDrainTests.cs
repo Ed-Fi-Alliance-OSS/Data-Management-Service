@@ -210,6 +210,62 @@ public class Given_DocumentCacheAdministrativeDrain
     }
 
     [Test]
+    public async Task It_marks_command_mutated_before_session_bound_writer_reports_session_loss()
+    {
+        var pager = new RecordingWorkPager(
+            new DocumentProjectionWorkPage([WorkItem(101, requiredContentVersion: 10)], pageSize: 3)
+        );
+        var materializer = new RecordingDocumentCacheMaterializer();
+        var ordinaryWriter = new RecordingDocumentCacheWriter();
+        var sessionBoundWriter = new SessionLosingAfterMutationWriter();
+        DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext(
+            materializer,
+            ordinaryWriter,
+            sessionBoundWriter
+        );
+        DocumentCacheAdministrativeCommandExecutionContext context = CreateCommandContext(
+            new RecordingAdministrativePrimitives(),
+            new RecordingMutexLease(),
+            targetContext
+        );
+        DocumentCacheProjectionScheduler scheduler = CreateRealScheduler(
+            new DocumentCacheProjectionDrainPageProcessor(
+                pager,
+                new DocumentCacheProjectionItemProcessor(
+                    new MutableTimeProvider(ObservedAt),
+                    NullLogger<DocumentCacheProjectionItemProcessor>.Instance
+                ),
+                NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+                new MutableTimeProvider(ObservedAt)
+            )
+        );
+        DocumentCacheAdministrativeDrainer drainer = CreateDrainer(
+            scheduler,
+            new RecordingDrainDelay(new MutableTimeProvider(ObservedAt))
+        );
+
+        DocumentCacheAdministrativeDrainToEmptyResult result =
+            await targetContext.DrainExecutor.RunAdministrativeCommandAsync(async cancellationToken =>
+            {
+                using IDisposable binding = targetContext.BindAdministrativeCommand(context);
+                return await drainer.DrainToEmptyAsync(context, cancellationToken).ConfigureAwait(false);
+            });
+
+        result.Completed.Should().BeFalse();
+        result
+            .FailureResult!.Status.Should()
+            .Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
+        result
+            .FailureResult.Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.SessionLossAfterMutation);
+        result.FailureResult.Mutated.Should().BeTrue();
+        context.Mutated.Should().BeTrue();
+        sessionBoundWriter.Calls.Should().ContainSingle();
+        ordinaryWriter.Calls.Should().BeEmpty();
+        materializer.Calls.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_fails_immediately_when_session_bound_writer_delete_race_retry_is_exhausted()
     {
         var pager = new RecordingWorkPager(
@@ -729,6 +785,25 @@ public class Given_DocumentCacheAdministrativeDrain
         {
             Calls.Add(request);
             return Task.FromResult(_results.Dequeue());
+        }
+    }
+
+    private sealed class SessionLosingAfterMutationWriter : IDocumentCacheSessionBoundWriter
+    {
+        public List<DocumentCacheSessionBoundWriterRequest> Calls { get; } = [];
+
+        public Task<DocumentCacheSessionBoundWriterResult> WriteAsync(
+            DocumentCacheSessionBoundWriterRequest request
+        )
+        {
+            Calls.Add(request);
+            request.MarkMutationBeforeCommit?.Invoke();
+            return Task.FromResult(
+                DocumentCacheSessionBoundWriterResult.SessionLoss(
+                    request.CommandExecutionMutated,
+                    "Administrative mutex session closed during writer commit."
+                )
+            );
         }
     }
 

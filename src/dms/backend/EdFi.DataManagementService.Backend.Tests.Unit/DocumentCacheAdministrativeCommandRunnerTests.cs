@@ -1272,6 +1272,251 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         mutex.LastLease!.DisposeCount.Should().Be(1);
     }
 
+    [Test]
+    public async Task It_classifies_bounded_clear_commit_session_loss_after_marking_the_command_mutated()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        RecordingMutexLease lease = LeaseWith(NormalSession(), SessionLosingCommit());
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(lease: lease)
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: async (context, cancellationToken) =>
+            {
+                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.ClearCache);
+                await DocumentCacheAdministrativeWorkflow
+                    .ExecuteInTransactionAsync(
+                        context.MutexLease,
+                        IsolationLevel.ReadCommitted,
+                        static (_, _) =>
+                            Task.FromResult(
+                                new DocumentCacheAdministrativeClearBatchResult(
+                                    DocumentCacheAdministrativeClearTarget.DocumentCache,
+                                    pageSize: 3,
+                                    clearedDocumentIds: [101],
+                                    "cleared"
+                                )
+                            ),
+                        commit: true,
+                        cancellationToken,
+                        beforeCommit: batch =>
+                        {
+                            if (batch.Mutated)
+                            {
+                                context.MarkMutated();
+                            }
+                        }
+                    )
+                    .ConfigureAwait(false);
+
+                return context.Completed();
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        AssertSessionLossAfterMutation(result, DocumentCacheAdministrativeCommandPhase.ClearCache);
+    }
+
+    [Test]
+    public async Task It_classifies_read_only_commit_session_loss_before_mutation()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        RecordingMutexLease lease = LeaseWith(NormalSession(), SessionLosingCommit());
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(lease: lease)
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: async (context, cancellationToken) =>
+            {
+                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.CaptureBoundary);
+                await DocumentCacheAdministrativeWorkflow
+                    .ExecuteInTransactionAsync(
+                        context.MutexLease,
+                        IsolationLevel.ReadCommitted,
+                        static (_, _) => Task.FromResult(true),
+                        commit: true,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                return context.Completed();
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        AssertSessionLossNoMutation(result, DocumentCacheAdministrativeCommandPhase.CaptureBoundary);
+    }
+
+    [Test]
+    public async Task It_classifies_baseline_seed_commit_session_loss_after_work_mutation()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        var primitives = new StubAdministrativePrimitives(
+            baselineBoundary: new DocumentCacheAdministrativeBaselineBoundaryResult(1, "boundary"),
+            highWaterObservations: [HighWaterBelow()],
+            seedPages:
+            [
+                BaselineSeedPage(
+                    DocumentCacheAdministrativeBaselineSeedPageStatus.PageSeeded,
+                    new DocumentCacheAdministrativeBaselineSeededDocument(
+                        1,
+                        sourceContentVersion: 10,
+                        previousRequiredContentVersion: null,
+                        DocumentCacheAdministrativeBaselineWorkMutationKind.Inserted
+                    )
+                ),
+            ]
+        );
+        RecordingMutexLease lease = LeaseWith(
+            NormalSession(),
+            NormalSession(),
+            NormalSession(),
+            SessionLosingCommit()
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(lease: lease),
+            primitives: primitives
+        );
+        var seeder = new DocumentCacheBaselineSeeder(
+            new DocumentCacheBaselineSeedDelay(),
+            new FixedTimeProvider(ObservedAt),
+            NullLogger<DocumentCacheBaselineSeeder>.Instance
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: async (context, cancellationToken) =>
+            {
+                await seeder.SeedAsync(context, cancellationToken).ConfigureAwait(false);
+                return context.Completed();
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        AssertSessionLossAfterMutation(
+            result,
+            DocumentCacheAdministrativeCommandPhase.SeedBaseline,
+            DocumentCacheAdministrativeCommandPhase.CaptureBoundary
+        );
+    }
+
+    [Test]
+    public async Task It_does_not_mark_seed_retry_rollback_session_loss_as_mutated()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        var primitives = new StubAdministrativePrimitives(
+            baselineBoundary: new DocumentCacheAdministrativeBaselineBoundaryResult(1, "boundary"),
+            highWaterObservations: [HighWaterBelow()],
+            seedPages:
+            [
+                BaselineSeedPage(
+                    DocumentCacheAdministrativeBaselineSeedPageStatus.RetryFromLastCommittedKey,
+                    new DocumentCacheAdministrativeBaselineSeededDocument(
+                        1,
+                        sourceContentVersion: 10,
+                        previousRequiredContentVersion: 9,
+                        DocumentCacheAdministrativeBaselineWorkMutationKind.Retry
+                    )
+                ),
+            ]
+        );
+        RecordingMutexLease lease = LeaseWith(
+            NormalSession(),
+            NormalSession(),
+            NormalSession(),
+            SessionLosingRollback()
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(lease: lease),
+            primitives: primitives
+        );
+        var seeder = new DocumentCacheBaselineSeeder(
+            new DocumentCacheBaselineSeedDelay(),
+            new FixedTimeProvider(ObservedAt),
+            NullLogger<DocumentCacheBaselineSeeder>.Instance
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: async (context, cancellationToken) =>
+            {
+                await seeder.SeedAsync(context, cancellationToken).ConfigureAwait(false);
+                return context.Completed();
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        AssertSessionLossNoMutation(
+            result,
+            DocumentCacheAdministrativeCommandPhase.SeedBaseline,
+            DocumentCacheAdministrativeCommandPhase.CaptureBoundary
+        );
+    }
+
+    [Test]
+    public async Task It_classifies_explicit_scrub_latch_commit_session_loss_after_mutation()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        var primitives = new StubAdministrativePrimitives(
+            lifecycleReads:
+            [
+                DocumentCacheLifecycleReadResult.Success(TrackingLifecycle),
+                DocumentCacheLifecycleReadResult.Success(TrackingLifecycle),
+                DocumentCacheLifecycleReadResult.Success(TrackingLifecycle),
+            ],
+            baselineBoundary: new DocumentCacheAdministrativeBaselineBoundaryResult(1, "boundary"),
+            scrubPages:
+            [
+                ScrubPage(
+                    DocumentCacheAdministrativeScrubPageStatus.CacheAheadLatched,
+                    new DocumentCacheAdministrativeScrubbedDocument(
+                        1,
+                        sourceContentVersion: 10,
+                        cacheContentVersion: 8,
+                        previousRequiredContentVersion: null,
+                        DocumentCacheAdministrativeScrubMutationKind.CacheAheadLatchSet
+                    )
+                ),
+            ]
+        );
+        RecordingMutexLease lease = LeaseWith(
+            NormalSession(),
+            NormalSession(),
+            NormalSession(),
+            SessionLosingCommit()
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(lease: lease),
+            primitives: primitives
+        );
+        var command = new DocumentCacheExplicitIntegrityScrubCommand(runner);
+
+        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
+            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+        );
+
+        AssertSessionLossAfterMutation(
+            result,
+            DocumentCacheAdministrativeCommandPhase.ScrubScan,
+            DocumentCacheAdministrativeCommandPhase.CaptureBoundary
+        );
+        result.CacheAheadRecoveryRequired.Should().BeTrue();
+    }
+
     private static DocumentCacheAdministrativeCommandRunner CreateRunner(
         IDocumentCacheTargetRegistry registry,
         IDocumentCacheProjectionSupervisor supervisor,
@@ -1343,6 +1588,88 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             AdministrativeTargetKey,
             expectedPhysicalSourceFingerprint: Fingerprint
         );
+
+    private static void AssertSessionLossAfterMutation(
+        DocumentCacheAdministrativeCommandResult result,
+        DocumentCacheAdministrativeCommandPhase expectedPhase,
+        DocumentCacheAdministrativeCommandPhase expectedLastCompletedPhase =
+            DocumentCacheAdministrativeCommandPhase.Preflight
+    )
+    {
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.SessionLossAfterMutation);
+        result.Mutated.Should().BeTrue();
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == expectedPhase
+                && diagnostic.LastCompletedPhase == expectedLastCompletedPhase
+                && diagnostic.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.SessionLoss
+                && diagnostic.Retryable
+            );
+    }
+
+    private static void AssertSessionLossNoMutation(
+        DocumentCacheAdministrativeCommandResult result,
+        DocumentCacheAdministrativeCommandPhase expectedPhase,
+        DocumentCacheAdministrativeCommandPhase expectedLastCompletedPhase =
+            DocumentCacheAdministrativeCommandPhase.Preflight
+    )
+    {
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.SessionLossNoMutation);
+        result.Mutated.Should().BeFalse();
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == expectedPhase
+                && diagnostic.LastCompletedPhase == expectedLastCompletedPhase
+                && diagnostic.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.SessionLoss
+                && !diagnostic.Retryable
+            );
+    }
+
+    private static RecordingMutexLease LeaseWith(params RecordingWriteSession[] sessions) =>
+        new(RelationalProviderToken.Postgresql, null, sessions);
+
+    private static RecordingWriteSession NormalSession() => new(RelationalProviderToken.Postgresql);
+
+    private static RecordingWriteSession SessionLosingCommit() =>
+        new(
+            RelationalProviderToken.Postgresql,
+            commitAsync: static (session, _) =>
+            {
+                session.LoseMutexSession();
+                throw new InvalidOperationException("Administrative mutex session closed during commit.");
+            }
+        );
+
+    private static RecordingWriteSession SessionLosingRollback() =>
+        new(
+            RelationalProviderToken.Postgresql,
+            rollbackAsync: static (session, _) =>
+            {
+                session.LoseMutexSession();
+                throw new InvalidOperationException("Administrative mutex session closed during rollback.");
+            }
+        );
+
+    private static DocumentCacheAdministrativeWorkHighWaterObservationResult HighWaterBelow() =>
+        new(highWaterMark: 1000, observedWorkRows: 0, diagnosticDocumentIds: [], "below high-water");
+
+    private static DocumentCacheAdministrativeBaselineSeedPageResult BaselineSeedPage(
+        DocumentCacheAdministrativeBaselineSeedPageStatus status,
+        params DocumentCacheAdministrativeBaselineSeededDocument[] documents
+    ) => new(status, boundaryDocumentId: 1, afterDocumentId: 0, pageSize: 3, [.. documents], "seed page");
+
+    private static DocumentCacheAdministrativeScrubPageResult ScrubPage(
+        DocumentCacheAdministrativeScrubPageStatus status,
+        params DocumentCacheAdministrativeScrubbedDocument[] documents
+    ) => new(status, boundaryDocumentId: 1, afterDocumentId: 0, pageSize: 3, [.. documents], "scrub page");
 
     private static IEnumerable<TestCaseData> InvalidOfflineWriterAdmissionRequests()
     {
@@ -1767,7 +2094,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         Exception? acquireException = null,
         Exception? disposeException = null,
         Func<CancellationToken, Task>? beforeAcquireCompletes = null,
-        Func<CancellationToken, Task>? afterAcquireCompletes = null
+        Func<CancellationToken, Task>? afterAcquireCompletes = null,
+        RecordingMutexLease? lease = null
     ) : IDocumentCacheAdministrativeMutex
     {
         public int AcquireCount { get; private set; }
@@ -1804,28 +2132,47 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 await afterAcquireCompletes(cancellationToken).ConfigureAwait(false);
             }
 
-            LastLease = new RecordingMutexLease(ProviderToken, disposeException);
+            LastLease = lease ?? new RecordingMutexLease(ProviderToken, disposeException);
             return LastLease;
         }
     }
 
     private sealed class RecordingMutexLease(
         RelationalProviderToken providerToken,
-        Exception? disposeException
+        Exception? disposeException = null,
+        params RecordingWriteSession[] sessions
     ) : IDocumentCacheAdministrativeMutexLease
     {
+        private readonly Queue<RecordingWriteSession> _sessions = new(sessions);
+        private bool _sessionOpen = true;
+
         public RelationalProviderToken ProviderToken { get; } = providerToken;
 
         public int DisposeCount { get; private set; }
 
         public DbConnection Connection => throw new NotSupportedException();
 
-        public bool IsSessionOpen => true;
+        public bool IsSessionOpen => _sessionOpen;
+
+        public void LoseSession() => _sessionOpen = false;
 
         public Task<IRelationalWriteSession> BeginTransactionAsync(
             IsolationLevel isolationLevel = IsolationLevel.ReadCommitted,
             CancellationToken cancellationToken = default
-        ) => Task.FromResult<IRelationalWriteSession>(new RecordingWriteSession(ProviderToken));
+        )
+        {
+            if (!IsSessionOpen)
+            {
+                throw new DocumentCacheAdministrativeMutexSessionLostException(ProviderToken);
+            }
+
+            RecordingWriteSession session =
+                _sessions.Count > 0
+                    ? _sessions.Dequeue()
+                    : new RecordingWriteSession(ProviderToken, isolationLevel);
+            session.Attach(this);
+            return Task.FromResult<IRelationalWriteSession>(session);
+        }
 
         public ValueTask DisposeAsync()
         {
@@ -1862,10 +2209,18 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         }
     }
 
-    private sealed class RecordingWriteSession(RelationalProviderToken providerToken)
-        : IRelationalWriteSession
+    private sealed class RecordingWriteSession(
+        RelationalProviderToken providerToken,
+        IsolationLevel isolationLevel = IsolationLevel.ReadCommitted,
+        Func<RecordingWriteSession, CancellationToken, Task>? commitAsync = null,
+        Func<RecordingWriteSession, CancellationToken, Task>? rollbackAsync = null
+    ) : IRelationalWriteSession
     {
+        private RecordingMutexLease? _lease;
+
         public RelationalProviderToken ProviderToken { get; } = providerToken;
+
+        public IsolationLevel IsolationLevel { get; } = isolationLevel;
 
         public DbConnection Connection => throw new NotSupportedException();
 
@@ -1873,9 +2228,18 @@ public class Given_DocumentCacheAdministrativeCommandRunner
 
         public DbCommand CreateCommand(RelationalCommand command) => throw new NotSupportedException();
 
-        public Task CommitAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void Attach(RecordingMutexLease lease) => _lease = lease;
 
-        public Task RollbackAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void LoseMutexSession() =>
+            (
+                _lease ?? throw new InvalidOperationException("Session was not attached to a lease.")
+            ).LoseSession();
+
+        public Task CommitAsync(CancellationToken cancellationToken = default) =>
+            commitAsync?.Invoke(this, cancellationToken) ?? Task.CompletedTask;
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default) =>
+            rollbackAsync?.Invoke(this, cancellationToken) ?? Task.CompletedTask;
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
@@ -1887,11 +2251,24 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         Exception? transitionLifecycleException = null,
         Exception? activationPrerequisiteException = null,
         DocumentCacheAdministrativeBaselineBoundaryResult? baselineBoundary = null,
-        DocumentCacheGuardedNewEmptyActivationState? guardedNewEmptyActivationState = null
+        DocumentCacheGuardedNewEmptyActivationState? guardedNewEmptyActivationState = null,
+        IReadOnlyList<DocumentCacheAdministrativeWorkHighWaterObservationResult>? highWaterObservations =
+            null,
+        IReadOnlyList<DocumentCacheAdministrativeBaselineSeedPageResult>? seedPages = null,
+        IReadOnlyList<DocumentCacheAdministrativeScrubPageResult>? scrubPages = null
     ) : IDocumentCacheAdministrativePrimitives
     {
         private readonly Queue<object> _lifecycleReads = new(
             lifecycleReads ?? [DocumentCacheLifecycleReadResult.Success(TrackingLifecycle)]
+        );
+        private readonly Queue<DocumentCacheAdministrativeWorkHighWaterObservationResult> _highWater = new(
+            highWaterObservations ?? []
+        );
+        private readonly Queue<DocumentCacheAdministrativeBaselineSeedPageResult> _seedPages = new(
+            seedPages ?? []
+        );
+        private readonly Queue<DocumentCacheAdministrativeScrubPageResult> _scrubPages = new(
+            scrubPages ?? []
         );
 
         public RelationalProviderToken ProviderToken { get; } =
@@ -2032,19 +2409,37 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             IRelationalWriteSession mutexSession,
             DocumentCacheAdministrativeWorkHighWaterObservationRequest request,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            _ = mutexSession;
+            _ = request;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(_highWater.Dequeue());
+        }
 
         public Task<DocumentCacheAdministrativeBaselineSeedPageResult> SeedBaselinePageAsync(
             IRelationalWriteSession mutexSession,
             DocumentCacheAdministrativeBaselineSeedPageRequest request,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            _ = mutexSession;
+            _ = request;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(_seedPages.Dequeue());
+        }
 
         public Task<DocumentCacheAdministrativeScrubPageResult> ScrubPageAsync(
             IRelationalWriteSession mutexSession,
             DocumentCacheAdministrativeScrubPageRequest request,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            _ = mutexSession;
+            _ = request;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(_scrubPages.Dequeue());
+        }
     }
 
     private sealed class ThrowingDocumentCacheMaterializer : IDocumentCacheMaterializer

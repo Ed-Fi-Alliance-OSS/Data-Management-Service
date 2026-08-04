@@ -287,3 +287,8 @@ Completed administrative-timeouts task for reference/design/backend-redesign/epi
 Key decisions: extracted shared structural provider command-timeout classifier; administrative lifecycle and SQL Server activation-prerequisite primitive catch blocks rethrow provider timeouts while preserving unreadable DTO behavior for non-timeout failures; runner keeps existing mutation-aware providerCommandTimeout envelope.
 Files changed: DocumentCacheProviderCommandTimeoutClassifier.cs; DocumentCacheAdministrativeCommandRunner.cs; DocumentCacheAdministrativePrimitives.cs; focused administrative runner/primitives tests; tasks.json; progress.txt.
 Blockers/notes: none. Verified focused administrative runner/primitives/explicit scrub unit filter.
+
+Completed administrative-command-runner session-loss follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: shared mutex transaction helper now marks mutating clear/seed/scrub results before commit and maps closed-session commit/rollback failures to sessionLoss while preserving provider timeout/cancellation; session-bound writer can mark command mutation before writer commit and reads live mutation state for drain failures.
+Files changed: DocumentCacheAdministrativeWorkflow.cs; DocumentCacheAdministrativeCommandRunner.cs; clear/seed/scrub workflows; session-bound writer/provider writers/item processor; focused unit and PG/MSSQL admin integration tests; tasks.json; progress.txt.
+Blockers/notes: default MSSQL admin env unset/unreachable; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. All tasks in tasks.json now complete.

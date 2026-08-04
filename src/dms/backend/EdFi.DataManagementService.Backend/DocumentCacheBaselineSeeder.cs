@@ -261,11 +261,6 @@ internal sealed class DocumentCacheBaselineSeeder(
             workMutationCount += page.WorkMutationCount;
             afterDocumentId = page.LastVisitedDocumentId!.Value;
             lastAffectedDocumentIds = page.AffectedDocumentIds.Take(pageSize).ToImmutableArray();
-
-            if (page.Mutated)
-            {
-                context.MarkMutated();
-            }
         }
 
         context.CompletePhase(DocumentCacheAdministrativeCommandPhase.SeedBaseline);
@@ -348,6 +343,13 @@ internal sealed class DocumentCacheBaselineSeeder(
                 ),
             static page =>
                 page.Status != DocumentCacheAdministrativeBaselineSeedPageStatus.RetryFromLastCommittedKey,
-            cancellationToken
+            cancellationToken,
+            beforeCommit: page =>
+            {
+                if (page.Mutated)
+                {
+                    context.MarkMutated();
+                }
+            }
         );
 }

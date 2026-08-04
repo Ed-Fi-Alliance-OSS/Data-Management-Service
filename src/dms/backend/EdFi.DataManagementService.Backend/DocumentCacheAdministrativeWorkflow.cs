@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Data.Common;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -56,15 +57,25 @@ internal static class DocumentCacheAdministrativeWorkflow
         IsolationLevel isolationLevel,
         Func<IRelationalWriteSession, CancellationToken, Task<TResult>> executeAsync,
         bool commit,
-        CancellationToken cancellationToken
-    ) => ExecuteInTransactionAsync(mutexLease, isolationLevel, executeAsync, _ => commit, cancellationToken);
+        CancellationToken cancellationToken,
+        Action<TResult>? beforeCommit = null
+    ) =>
+        ExecuteInTransactionAsync(
+            mutexLease,
+            isolationLevel,
+            executeAsync,
+            _ => commit,
+            cancellationToken,
+            beforeCommit
+        );
 
     public static async Task<TResult> ExecuteInTransactionAsync<TResult>(
         IDocumentCacheAdministrativeMutexLease mutexLease,
         IsolationLevel isolationLevel,
         Func<IRelationalWriteSession, CancellationToken, Task<TResult>> executeAsync,
         Func<TResult, bool> shouldCommit,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action<TResult>? beforeCommit = null
     )
     {
         ArgumentNullException.ThrowIfNull(mutexLease);
@@ -80,7 +91,16 @@ internal static class DocumentCacheAdministrativeWorkflow
         {
             TResult result = await executeAsync(session, activeTransactionCancellationToken)
                 .ConfigureAwait(false);
-            if (shouldCommit(result))
+            bool commitTransaction = shouldCommit(result);
+
+            if (commitTransaction)
+            {
+                beforeCommit?.Invoke(result);
+            }
+
+            ThrowIfSessionLost(mutexLease);
+
+            if (commitTransaction)
             {
                 await session.CommitAsync(activeTransactionCancellationToken).ConfigureAwait(false);
             }
@@ -91,10 +111,59 @@ internal static class DocumentCacheAdministrativeWorkflow
 
             return result;
         }
-        catch
+        catch (Exception exception) when (IsSessionLoss(mutexLease, exception))
         {
-            await session.RollbackAsync(activeTransactionCancellationToken).ConfigureAwait(false);
+            throw CreateSessionLostException(mutexLease);
+        }
+        catch (Exception exception)
+        {
+            try
+            {
+                await session.RollbackAsync(activeTransactionCancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception rollbackException)
+                when (ShouldClassifyRollbackFailureAsSessionLoss(mutexLease, exception, rollbackException))
+            {
+                throw CreateSessionLostException(mutexLease);
+            }
+
             throw;
         }
     }
+
+    internal static bool IsSessionLoss(IDocumentCacheAdministrativeMutexLease mutexLease, Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(mutexLease);
+        ArgumentNullException.ThrowIfNull(exception);
+
+        return exception is DocumentCacheAdministrativeMutexSessionLostException
+            || (
+                !mutexLease.IsSessionOpen
+                && exception is DbException or InvalidOperationException or ObjectDisposedException
+            );
+    }
+
+    private static void ThrowIfSessionLost(IDocumentCacheAdministrativeMutexLease mutexLease)
+    {
+        if (!mutexLease.IsSessionOpen)
+        {
+            throw CreateSessionLostException(mutexLease);
+        }
+    }
+
+    private static bool ShouldClassifyRollbackFailureAsSessionLoss(
+        IDocumentCacheAdministrativeMutexLease mutexLease,
+        Exception originalException,
+        Exception rollbackException
+    ) =>
+        !ShouldPreserveOriginalClassification(originalException)
+        && IsSessionLoss(mutexLease, rollbackException);
+
+    private static bool ShouldPreserveOriginalClassification(Exception exception) =>
+        exception is OperationCanceledException
+        || DocumentCacheProviderCommandTimeoutClassifier.IsProviderCommandTimeout(exception);
+
+    private static DocumentCacheAdministrativeMutexSessionLostException CreateSessionLostException(
+        IDocumentCacheAdministrativeMutexLease mutexLease
+    ) => new(mutexLease.ProviderToken);
 }

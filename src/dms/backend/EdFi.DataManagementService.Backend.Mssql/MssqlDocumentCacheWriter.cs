@@ -119,7 +119,8 @@ internal sealed class MssqlDocumentCacheWriter(
                                     request.MutexLease,
                                     attemptCancellationToken
                                 ),
-                            cancellationToken
+                            cancellationToken,
+                            request.MarkMutationBeforeCommit
                         )
                 )
                 .ConfigureAwait(false);
@@ -197,7 +198,8 @@ internal sealed class MssqlDocumentCacheWriter(
     private async Task<DocumentCacheWriterResult> ExecuteAttemptAsync(
         DocumentCacheWriterRequest request,
         Func<CancellationToken, Task<MssqlDocumentCacheWriterTransaction>> beginTransactionAsync,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action? markMutationBeforeCommit = null
     )
     {
         await using MssqlDocumentCacheWriterTransaction transactionScope = await beginTransactionAsync(
@@ -288,7 +290,12 @@ internal sealed class MssqlDocumentCacheWriter(
                             DocumentCacheWriterCacheAheadIncidentFlow.DefaultIncidentTimeout
                         ),
                         incidentCancellationToken =>
-                            ConfirmCacheAheadAsync(request, beginTransactionAsync, incidentCancellationToken),
+                            ConfirmCacheAheadAsync(
+                                request,
+                                beginTransactionAsync,
+                                incidentCancellationToken,
+                                markMutationBeforeCommit
+                            ),
                         _logger
                     )
                     .ConfigureAwait(false);
@@ -301,7 +308,8 @@ internal sealed class MssqlDocumentCacheWriter(
                         request,
                         lifecycleReadResult,
                         selection,
-                        activeTransactionCancellationToken
+                        activeTransactionCancellationToken,
+                        markMutationBeforeCommit
                     )
                     .ConfigureAwait(false)
                 : await AcknowledgeAlreadyCurrentAsync(
@@ -311,7 +319,8 @@ internal sealed class MssqlDocumentCacheWriter(
                         lifecycleReadResult,
                         request.DocumentId,
                         selection.ExpectedContentVersion!.Value,
-                        activeTransactionCancellationToken
+                        activeTransactionCancellationToken,
+                        markMutationBeforeCommit
                     )
                     .ConfigureAwait(false);
 
@@ -360,7 +369,8 @@ internal sealed class MssqlDocumentCacheWriter(
         DocumentCacheWriterRequest request,
         DocumentCacheLifecycleReadResult lifecycleReadResult,
         DocumentCacheWriterClassificationSelection selection,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action? markMutationBeforeCommit
     )
     {
         DocumentCacheMaterializationCandidate candidate = selection.Candidate!;
@@ -426,6 +436,8 @@ internal sealed class MssqlDocumentCacheWriter(
 
         if (acknowledgedRows == 1)
         {
+            markMutationBeforeCommit?.Invoke();
+
             await ObserveFaultInjectionAsync(
                     DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit,
                     request,
@@ -458,7 +470,8 @@ internal sealed class MssqlDocumentCacheWriter(
         DocumentCacheLifecycleReadResult lifecycleReadResult,
         long documentId,
         long expectedContentVersion,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action? markMutationBeforeCommit
     )
     {
         long acknowledgementStartTimestamp = Stopwatch.GetTimestamp();
@@ -483,6 +496,8 @@ internal sealed class MssqlDocumentCacheWriter(
 
         if (acknowledgedRows == 1)
         {
+            markMutationBeforeCommit?.Invoke();
+
             await ObserveFaultInjectionAsync(
                     DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit,
                     request,
@@ -506,7 +521,8 @@ internal sealed class MssqlDocumentCacheWriter(
     private async Task<DocumentCacheWriterResult> ConfirmCacheAheadAsync(
         DocumentCacheWriterRequest request,
         Func<CancellationToken, Task<MssqlDocumentCacheWriterTransaction>> beginTransactionAsync,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action? markMutationBeforeCommit = null
     )
     {
         await using MssqlDocumentCacheWriterTransaction transactionScope = await beginTransactionAsync(
@@ -574,6 +590,8 @@ internal sealed class MssqlDocumentCacheWriter(
 
             if (latchUpdateResult.Outcome == DocumentCacheWriterCacheAheadLatchUpdateOutcome.LatchSet)
             {
+                markMutationBeforeCommit?.Invoke();
+
                 await ObserveFaultInjectionAsync(
                         DocumentCacheWriterFaultInjectionHook.AfterCacheAheadLatchUpdateBeforeIncidentCommit,
                         request,

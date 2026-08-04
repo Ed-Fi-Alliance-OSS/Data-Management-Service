@@ -194,7 +194,8 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
             new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
             workflowTimeout: TimeSpan.FromMilliseconds(250),
             projectorBaselineHighWaterMark: 1,
-            baselineSeedDelay: new CancellationOnlyBaselineSeedDelay()
+            baselineSeedDelay: new CancellationOnlyBaselineSeedDelay(),
+            baselineSeedDrainer: NoBackpressureReliefDrainer.Instance
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
@@ -684,13 +685,14 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
         DocumentCacheLifecycleObservation lifecycle,
         TimeSpan? workflowTimeout = null,
         int projectorBaselineHighWaterMark = 1000,
-        IDocumentCacheBaselineSeedDelay? baselineSeedDelay = null
+        IDocumentCacheBaselineSeedDelay? baselineSeedDelay = null,
+        IDocumentCacheAdministrativeDrainer? baselineSeedDrainer = null
     )
     {
         DocumentCacheAdministrativeDrainer drainer = CreateDrainer(new RecordingObservationSink());
         return new(
             CreateRunner(lifecycle, workflowTimeout, projectorBaselineHighWaterMark),
-            CreateBaselineSeeder(baselineSeedDelay, drainer),
+            CreateBaselineSeeder(baselineSeedDelay, baselineSeedDrainer ?? drainer),
             drainer
         );
     }
@@ -1156,6 +1158,29 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
             TimeProvider timeProvider,
             CancellationToken cancellationToken
         ) => Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+    }
+
+    private sealed class NoBackpressureReliefDrainer : IDocumentCacheAdministrativeDrainer
+    {
+        public static NoBackpressureReliefDrainer Instance { get; } = new();
+
+        public Task<DocumentCacheAdministrativeDrainSliceResult> DrainBackpressureReliefSliceAsync(
+            DocumentCacheAdministrativeCommandExecutionContext context,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(
+                DocumentCacheAdministrativeDrainSliceResult.Succeeded(
+                    DocumentCacheProjectionDrainPageResult.NoEligibleWork
+                )
+            );
+        }
+
+        public Task<DocumentCacheAdministrativeDrainToEmptyResult> DrainToEmptyAsync(
+            DocumentCacheAdministrativeCommandExecutionContext context,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
     }
 
     private sealed class StubProjectionSupervisor(

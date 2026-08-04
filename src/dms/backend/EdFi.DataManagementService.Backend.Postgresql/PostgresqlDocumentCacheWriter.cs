@@ -117,7 +117,8 @@ internal sealed class PostgresqlDocumentCacheWriter(
                                     request.MutexLease,
                                     attemptCancellationToken
                                 ),
-                            cancellationToken
+                            cancellationToken,
+                            request.MarkMutationBeforeCommit
                         )
                 )
                 .ConfigureAwait(false);
@@ -195,7 +196,8 @@ internal sealed class PostgresqlDocumentCacheWriter(
     private async Task<DocumentCacheWriterResult> ExecuteAttemptAsync(
         DocumentCacheWriterRequest request,
         Func<CancellationToken, Task<PostgresqlDocumentCacheWriterTransaction>> beginTransactionAsync,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action? markMutationBeforeCommit = null
     )
     {
         await using PostgresqlDocumentCacheWriterTransaction transactionScope = await beginTransactionAsync(
@@ -287,7 +289,12 @@ internal sealed class PostgresqlDocumentCacheWriter(
                             DocumentCacheWriterCacheAheadIncidentFlow.DefaultIncidentTimeout
                         ),
                         incidentCancellationToken =>
-                            ConfirmCacheAheadAsync(request, beginTransactionAsync, incidentCancellationToken),
+                            ConfirmCacheAheadAsync(
+                                request,
+                                beginTransactionAsync,
+                                incidentCancellationToken,
+                                markMutationBeforeCommit
+                            ),
                         _logger
                     )
                     .ConfigureAwait(false);
@@ -300,7 +307,8 @@ internal sealed class PostgresqlDocumentCacheWriter(
                         request,
                         lifecycleReadResult,
                         selection,
-                        activeTransactionCancellationToken
+                        activeTransactionCancellationToken,
+                        markMutationBeforeCommit
                     )
                     .ConfigureAwait(false)
                 : await AcknowledgeAlreadyCurrentAsync(
@@ -310,7 +318,8 @@ internal sealed class PostgresqlDocumentCacheWriter(
                         lifecycleReadResult,
                         request.DocumentId,
                         selection.ExpectedContentVersion!.Value,
-                        activeTransactionCancellationToken
+                        activeTransactionCancellationToken,
+                        markMutationBeforeCommit
                     )
                     .ConfigureAwait(false);
 
@@ -358,7 +367,8 @@ internal sealed class PostgresqlDocumentCacheWriter(
         DocumentCacheWriterRequest request,
         DocumentCacheLifecycleReadResult lifecycleReadResult,
         DocumentCacheWriterClassificationSelection selection,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action? markMutationBeforeCommit
     )
     {
         DocumentCacheMaterializationCandidate candidate = selection.Candidate!;
@@ -424,6 +434,8 @@ internal sealed class PostgresqlDocumentCacheWriter(
 
         if (acknowledgedRows == 1)
         {
+            markMutationBeforeCommit?.Invoke();
+
             await ObserveFaultInjectionAsync(
                     DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit,
                     request,
@@ -456,7 +468,8 @@ internal sealed class PostgresqlDocumentCacheWriter(
         DocumentCacheLifecycleReadResult lifecycleReadResult,
         long documentId,
         long expectedContentVersion,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action? markMutationBeforeCommit
     )
     {
         long acknowledgementStartTimestamp = Stopwatch.GetTimestamp();
@@ -481,6 +494,8 @@ internal sealed class PostgresqlDocumentCacheWriter(
 
         if (acknowledgedRows == 1)
         {
+            markMutationBeforeCommit?.Invoke();
+
             await ObserveFaultInjectionAsync(
                     DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit,
                     request,
@@ -504,7 +519,8 @@ internal sealed class PostgresqlDocumentCacheWriter(
     private async Task<DocumentCacheWriterResult> ConfirmCacheAheadAsync(
         DocumentCacheWriterRequest request,
         Func<CancellationToken, Task<PostgresqlDocumentCacheWriterTransaction>> beginTransactionAsync,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action? markMutationBeforeCommit = null
     )
     {
         await using PostgresqlDocumentCacheWriterTransaction transactionScope = await beginTransactionAsync(
@@ -573,6 +589,8 @@ internal sealed class PostgresqlDocumentCacheWriter(
 
             if (latchUpdateResult.Outcome == DocumentCacheWriterCacheAheadLatchUpdateOutcome.LatchSet)
             {
+                markMutationBeforeCommit?.Invoke();
+
                 await ObserveFaultInjectionAsync(
                         DocumentCacheWriterFaultInjectionHook.AfterCacheAheadLatchUpdateBeforeIncidentCommit,
                         request,

@@ -635,7 +635,15 @@ internal sealed class DocumentCacheProjectionItemProcessor(
                 new DocumentCacheSessionBoundWriterRequest(
                     commandContext.MutexLease,
                     writerRequest,
-                    commandContext.Mutated
+                    commandContext.Mutated,
+                    markMutationBeforeCommit: () =>
+                    {
+                        if (!commandContext.Mutated)
+                        {
+                            commandContext.MarkMutated();
+                        }
+                    },
+                    commandExecutionMutatedProvider: () => commandContext.Mutated
                 )
             )
             .ConfigureAwait(false);

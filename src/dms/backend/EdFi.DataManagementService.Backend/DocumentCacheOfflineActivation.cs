@@ -218,14 +218,16 @@ internal sealed class DocumentCacheOfflineActivationCommand(
                             transactionCancellationToken
                         ),
                     commit: true,
-                    cancellationToken
+                    cancellationToken,
+                    beforeCommit: batch =>
+                    {
+                        if (batch.Mutated)
+                        {
+                            context.MarkMutated();
+                        }
+                    }
                 )
                 .ConfigureAwait(false);
-
-            if (batch.Mutated)
-            {
-                context.MarkMutated();
-            }
 
             if (!batch.FilledBatch)
             {
@@ -262,14 +264,16 @@ internal sealed class DocumentCacheOfflineActivationCommand(
                             transactionCancellationToken
                         ),
                     commit: true,
-                    cancellationToken
+                    cancellationToken,
+                    beforeCommit: batch =>
+                    {
+                        if (batch.Mutated)
+                        {
+                            context.MarkMutated();
+                        }
+                    }
                 )
                 .ConfigureAwait(false);
-
-            if (batch.Mutated)
-            {
-                context.MarkMutated();
-            }
 
             if (!batch.FilledBatch)
             {

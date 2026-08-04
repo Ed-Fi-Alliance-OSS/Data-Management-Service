@@ -1002,5 +1002,25 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeCommandRunner|FullyQualifiedName~DocumentCacheAdministrativePrimitives|FullyQualifiedName~DocumentCacheExplicitIntegrityScrub\""
     ],
     "completed": true
+  },
+  {
+    "category": "administrative-command-runner",
+    "description": "High: Preserve mutation and session-loss classification when a mutex-owned administrative transaction performs or may have performed clear, seed, scrub, cache, work, or latch DML but fails during commit, rollback, or a physical session loss. Keep the fix to command runner/workflow mutation accounting and session-loss classification; do not add durable command history, reconnect behavior, schema changes, a new mutex identity, or a new public result shape.",
+    "acceptance-criteria": [
+      "Bounded clear, baseline seed, explicit scrub, and command-owned drain paths mark the current administrative execution as mutated before a commit/cleanup failure can hide DML that the transaction attempted or may have committed.",
+      "Invalidated seed or scrub pages that intentionally roll back with RetryFromLastCommittedKey do not mark the command mutated solely from observed rows.",
+      "A closed or lost mutex-owning physical session during any mutex-owned primitive transaction, including commit or rollback cleanup, reaches the runner's sessionLossNoMutation or sessionLossAfterMutation classification instead of unexpectedProviderFailure, lifecycleObservationFailure, or a generic no-mutation failure.",
+      "Session loss after any current-execution lifecycle, latch, cache, work, or acknowledgement mutation returns incompleteRetryable with mutated true and existing operator guidance to reissue the same explicit command.",
+      "Session loss before any current-execution durable mutation continues to return failedNoMutation with mutated false.",
+      "Provider command timeout, caller cancellation, and WorkflowTimeout classifications remain distinct and continue to use the current command execution's mutation state.",
+      "Focused tests cover commit or session-loss failures after bounded clear mutation, baseline seed work mutation, explicit scrub work or latch mutation, and read-only no-mutation administrative work."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeCommandRunner|FullyQualifiedName~DocumentCacheAdministrativeWorkflow|FullyQualifiedName~DocumentCacheBaselineSeeding|FullyQualifiedName~DocumentCacheExplicitIntegrityScrub|FullyQualifiedName~DocumentCacheAdministrativeDrain\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheOfflineActivation|FullyQualifiedName~DocumentCacheOnlineCacheRebuild|FullyQualifiedName~DocumentCacheExplicitIntegrityScrub|FullyQualifiedName~DocumentCacheAdministration\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheOfflineActivation|FullyQualifiedName~DocumentCacheOnlineCacheRebuild|FullyQualifiedName~DocumentCacheExplicitIntegrityScrub|FullyQualifiedName~DocumentCacheAdministration\""
+    ],
+    "completed": true
   }
 ]

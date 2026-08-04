@@ -130,18 +130,6 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
                 break;
             }
 
-            if (page.Mutated)
-            {
-                context.MarkMutated(
-                    page.LatchSet
-                        ? new DocumentCacheLifecycleObservation(
-                            DocumentCacheLifecycleState.Tracking,
-                            CacheAheadRecoveryRequired: true
-                        )
-                        : null
-                );
-            }
-
             afterDocumentId = page.LastVisitedDocumentId!.Value;
 
             if (page.LatchSet)
@@ -229,7 +217,22 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
             static page =>
                 page.Page is null
                 || page.Page.Status != DocumentCacheAdministrativeScrubPageStatus.RetryFromLastCommittedKey,
-            cancellationToken
+            cancellationToken,
+            beforeCommit: pageExecution =>
+            {
+                DocumentCacheAdministrativeScrubPageResult? page = pageExecution.Page;
+                if (page is not null && page.Mutated)
+                {
+                    context.MarkMutated(
+                        page.LatchSet
+                            ? new DocumentCacheLifecycleObservation(
+                                DocumentCacheLifecycleState.Tracking,
+                                CacheAheadRecoveryRequired: true
+                            )
+                            : null
+                    );
+                }
+            }
         );
 
     private static DocumentCacheAdministrativeCommandResult CreateLifecycleReadFailure(

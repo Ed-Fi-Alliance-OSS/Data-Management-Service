@@ -12,19 +12,26 @@ internal sealed record DocumentCacheSessionBoundWriterRequest
     public DocumentCacheSessionBoundWriterRequest(
         IDocumentCacheAdministrativeMutexLease mutexLease,
         DocumentCacheWriterRequest writerRequest,
-        bool commandExecutionMutated
+        bool commandExecutionMutated,
+        Action? markMutationBeforeCommit = null,
+        Func<bool>? commandExecutionMutatedProvider = null
     )
     {
         MutexLease = mutexLease ?? throw new ArgumentNullException(nameof(mutexLease));
         WriterRequest = writerRequest ?? throw new ArgumentNullException(nameof(writerRequest));
-        CommandExecutionMutated = commandExecutionMutated;
+        MarkMutationBeforeCommit = markMutationBeforeCommit;
+        CommandExecutionMutatedProvider = commandExecutionMutatedProvider ?? (() => commandExecutionMutated);
     }
 
     public IDocumentCacheAdministrativeMutexLease MutexLease { get; }
 
     public DocumentCacheWriterRequest WriterRequest { get; }
 
-    public bool CommandExecutionMutated { get; }
+    public bool CommandExecutionMutated => CommandExecutionMutatedProvider();
+
+    public Action? MarkMutationBeforeCommit { get; }
+
+    private Func<bool> CommandExecutionMutatedProvider { get; }
 }
 
 internal sealed record DocumentCacheSessionBoundWriterResult
@@ -164,7 +171,7 @@ internal sealed record DocumentCacheSessionBoundWriterResult
     private static string Sanitize(string? message) =>
         string.IsNullOrWhiteSpace(message) ? "DocumentCache session-bound writer diagnostic." : message;
 
-    private static bool WriterResultMutated(DocumentCacheWriterResult writerResult) =>
+    public static bool WriterResultMutated(DocumentCacheWriterResult writerResult) =>
         writerResult
             is DocumentCacheWriterResult.AlreadyCurrentAcknowledged
                 or DocumentCacheWriterResult.CandidateWrittenAcknowledged

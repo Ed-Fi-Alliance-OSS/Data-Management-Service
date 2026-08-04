@@ -644,6 +644,25 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     return classifiedResult;
                 }
                 catch (Exception exception)
+                    when (DocumentCacheAdministrativeWorkflow.IsSessionLoss(
+                            commandContext.MutexLease,
+                            exception
+                        )
+                    )
+                {
+                    logger.LogWarning(
+                        exception,
+                        "DocumentCache administrative mutex session was lost for command {Command} and target {TargetKey}.",
+                        request.Command,
+                        request.TargetKey.TargetKey
+                    );
+                    classifiedResult = RecordAdministrativeCommandResult(
+                        CreateSessionLossResult(commandContext),
+                        commandContext
+                    );
+                    return classifiedResult;
+                }
+                catch (Exception exception)
                 {
                     logger.LogError(
                         exception,
@@ -795,10 +814,17 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
         CancellationToken cancellationToken
     )
     {
-        DocumentCacheLifecycleReadResult lifecycleReadResult = await primitives
-            .ReadLifecycleAsync(
-                commandContext.MutexLease.BeginTransactionAsync,
-                DocumentCacheAdministrativeStateLockMode.Shared,
+        DocumentCacheLifecycleReadResult lifecycleReadResult = await DocumentCacheAdministrativeWorkflow
+            .ExecuteInTransactionAsync(
+                commandContext.MutexLease,
+                System.Data.IsolationLevel.ReadCommitted,
+                (session, transactionCancellationToken) =>
+                    primitives.ReadLifecycleAsync(
+                        session,
+                        DocumentCacheAdministrativeStateLockMode.Shared,
+                        transactionCancellationToken
+                    ),
+                commit: true,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -1343,44 +1369,5 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
 
         public static PinnedTargetResolution Rejected(DocumentCacheAdministrativeCommandResult result) =>
             new(TargetContext: null, result);
-    }
-}
-
-file static class DocumentCacheAdministrativeCommandPrimitiveExtensions
-{
-    public static async Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
-        this IDocumentCacheAdministrativePrimitives primitives,
-        Func<
-            System.Data.IsolationLevel,
-            CancellationToken,
-            Task<IRelationalWriteSession>
-        > beginTransactionAsync,
-        DocumentCacheAdministrativeStateLockMode lockMode,
-        CancellationToken cancellationToken
-    )
-    {
-        ArgumentNullException.ThrowIfNull(primitives);
-        ArgumentNullException.ThrowIfNull(beginTransactionAsync);
-
-        await using IRelationalWriteSession session = await beginTransactionAsync(
-                System.Data.IsolationLevel.ReadCommitted,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        CancellationToken activeTransactionCancellationToken = CancellationToken.None;
-        try
-        {
-            DocumentCacheLifecycleReadResult result = await primitives
-                .ReadLifecycleAsync(session, lockMode, activeTransactionCancellationToken)
-                .ConfigureAwait(false);
-            await session.CommitAsync(activeTransactionCancellationToken).ConfigureAwait(false);
-            return result;
-        }
-        catch
-        {
-            await session.RollbackAsync(activeTransactionCancellationToken).ConfigureAwait(false);
-            throw;
-        }
     }
 }
