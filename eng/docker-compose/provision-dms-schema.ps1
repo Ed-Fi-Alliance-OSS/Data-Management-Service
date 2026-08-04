@@ -503,71 +503,6 @@ function Get-MssqlEffectiveConnectionStringValue {
     return [string]$provider.$ProviderPropertyName
 }
 
-function Split-MssqlServerEndpoint {
-    <#
-    .SYNOPSIS
-    Splits a SqlClient data-source value into its host and its comma-delimited port, removing one
-    leading "tcp:" protocol prefix so endpoint decisions see the host itself.
-
-    .DESCRIPTION
-    "Server=tcp:localhost,<port>" is documented SqlClient syntax
-    (learn.microsoft.com/troubleshoot/sql/connect/use-server-name-parameter-connection-string) and
-    reaches the same server "localhost,<port>" does. Comparing the raw value instead leaves the
-    prefixed spelling looking like a hostname of its own: it escapes the Docker-internal translation
-    (tcp:dms-mssql,1433 stays untranslated) and it reads as an external server to the separate-topology
-    guard, which is the whole point of the guard.
-
-    The comma/backslash rule follows SqlClient's own TCP server-name parsing
-    (github.com/dotnet/SqlClient/blob/v6.1.4/src/Microsoft.Data.SqlClient/src/Microsoft/Data/SqlClient/ManagedSni/SniProxy.netcore.cs):
-    when an EXPLICIT comma port is present the provider uses that port and does not resolve an instance
-    suffix through SSRP, so the effective endpoint is the text before the first comma or backslash. That
-    is why 'tcp:localhost\ignored,<port>' reaches the same listener 'tcp:localhost,<port>' does; reading
-    the whole 'localhost\ignored' as the host name classified it external.
-
-    With NO explicit comma port the instance semantics are left exactly as they were: the suffix stays
-    attached, so 'localhost\ignored' is not silently treated as the local Compose listener. No SSRP, no
-    named-instance resolution, no LocalDB, no named pipes, no lpc:, no admin/DAC - each is a distinct
-    endpoint grammar this phase has no way to verify.
-    #>
-    param(
-        [string]
-        $DataSource
-    )
-
-    $text = ([string]$DataSource).Trim()
-    if ($text.StartsWith("tcp:", [System.StringComparison]::OrdinalIgnoreCase)) {
-        $text = $text.Substring(4).Trim()
-    }
-
-    $commaIndex = $text.IndexOf(',')
-    if ($commaIndex -lt 0) {
-        # No explicit port: existing semantics, instance suffix and all.
-        return [pscustomobject]@{
-            HostName = $text
-            Port = ""
-        }
-    }
-
-    # Explicit port wins, and the server name ends at whichever of ',' or '\' comes first.
-    $backslashIndex = $text.IndexOf('\')
-    $hostEnd = if ($backslashIndex -ge 0 -and $backslashIndex -lt $commaIndex) { $backslashIndex } else { $commaIndex }
-
-    # The instance suffix can appear on EITHER side of the port, and an explicit port makes it irrelevant
-    # both ways: 'host\instance,1433' and 'host,1433\instance' name the same endpoint. So the port text
-    # ends at a backslash that follows the comma - taking everything after the comma yielded the port
-    # '1433\instance', which is not a port at all, and the target read as external.
-    $portStart = $commaIndex + 1
-    $portEnd = $text.IndexOf('\', $portStart)
-    $portText =
-        if ($portEnd -ge 0) { $text.Substring($portStart, $portEnd - $portStart) }
-        else { $text.Substring($portStart) }
-
-    return [pscustomobject]@{
-        HostName = $text.Substring(0, $hostEnd).Trim()
-        Port = $portText.Trim()
-    }
-}
-
 function Set-ConnectionStringFamilyValue {
     <#
     .SYNOPSIS
@@ -868,13 +803,25 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
     # target classified as EXTERNAL that the provider would nonetheless connect to on the local port.
 
     if ($Target.Dialect -eq "mssql") {
-        # SQL Server carries host and port in one value ("host,port") and may carry a "tcp:" protocol
-        # prefix; Split-MssqlServerEndpoint yields the host part alone from either spelling, so
-        # "tcp:localhost,<port>" is recognized as the same server "localhost,<port>" is rather than read
-        # as a hostname of its own. One endpoint per target - SqlClient's failover partner is a separate
-        # keyword this phase does not interpret - judged by the SAME loopback rule PostgreSQL uses, so a
-        # spelling like 127.1 or localhost. cannot be local on one engine and external on the other.
-        $targetHostName = (Split-MssqlServerEndpoint -DataSource $Target.Host).HostName
+        # SQL Server carries host, port, protocol and instance in one data-source value, read by the ONE
+        # shared SqlClient grammar (Get-SqlServerDataSourceEndpoint in database-safety.psm1) that the CMS
+        # endpoint boundary also uses. So "tcp:localhost,<port>", "tcp : localhost,<port>",
+        # ",<port>" and "localhost,<port>,ignored" are all recognized as the same server
+        # "localhost,<port>" is, rather than read as hostnames of their own. One endpoint per target -
+        # SqlClient's failover partner is a separate keyword this phase does not interpret - judged by the
+        # SAME loopback rule PostgreSQL uses, so a spelling like 127.1 or localhost. cannot be local on one
+        # engine and external on the other.
+        $parsedTarget = Get-SqlServerDataSourceEndpoint -DataSource $Target.Host
+
+        # Nothing this phase can place on the published TCP listener is ever claimed to be it: a non-TCP
+        # protocol (np:, admin:/DAC) names a different transport, and an instance suffix with no explicit
+        # port needs SSRP to resolve a port, which is exactly the case that must not be treated as the
+        # known Compose listener. Both stay external, as they were before this grammar was shared.
+        if ((-not $parsedTarget.IsTcp) -or $parsedTarget.RequiresInstanceResolution) {
+            return $false
+        }
+
+        $targetHostName = $parsedTarget.HostName
 
         # SqlClient's CLOSED set of local server tokens, per its IsLocalHost check
         # (github.com/dotnet/SqlClient/blob/v6.1.4/src/Microsoft.Data.SqlClient/src/Microsoft/Data/SqlClient/ManagedSni/SniProxy.netcore.cs):
@@ -993,12 +940,20 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
         throw "CMS data store connection string is missing the user id key."
     }
 
-    # The prefix-stripped host decides the Docker-internal translation, so "tcp:dms-mssql,1433"
-    # translates exactly as "dms-mssql,1433" does instead of surviving as an untranslatable hostname.
-    $endpoint = Split-MssqlServerEndpoint -DataSource $server
+    # The parsed host decides the Docker-internal translation, so "tcp:dms-mssql,1433" translates exactly
+    # as "dms-mssql,1433" does instead of surviving as an untranslatable hostname. Through the ONE shared
+    # SqlClient grammar, so the value translated here and the value classified later are read identically.
+    $endpoint = Get-SqlServerDataSourceEndpoint -DataSource $server
 
+    # Translation is as tightly gated as classification, and for the same reason: it REWRITES the target
+    # to the published host-side listener. A non-TCP protocol names a different transport, and an instance
+    # suffix with no explicit port is a port only SSRP could supply - rewriting either to
+    # "127.0.0.1,<published-port>" would turn an endpoint this phase cannot resolve INTO the Compose
+    # listener. So "dms-mssql\SQLEXPRESS" is left exactly as authored and stays external.
     $effectiveServer = $server
-    if ($endpoint.HostName.Equals("dms-mssql", [System.StringComparison]::OrdinalIgnoreCase)) {
+    if ($endpoint.IsTcp -and
+        (-not $endpoint.RequiresInstanceResolution) -and
+        $endpoint.HostName.Equals("dms-mssql", [System.StringComparison]::OrdinalIgnoreCase)) {
         $effectiveServer = (Get-LocalComposeDatabaseHostSideEndpoint -Dialect "mssql" -EnvValues $EnvValues).Host
     }
 
@@ -1014,8 +969,9 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
 
     $hostConnectionString = $Builder.get_ConnectionString()
 
-    # The port is encoded inside the server value for SQL Server; surface it for the summary.
-    $effectiveEndpoint = Split-MssqlServerEndpoint -DataSource $effectiveServer
+    # The port is encoded inside the server value for SQL Server; surface it for the summary. Same shared
+    # grammar again, so the reported port is the one SqlClient would select.
+    $effectiveEndpoint = Get-SqlServerDataSourceEndpoint -DataSource $effectiveServer
     $effectivePort =
         if (-not [string]::IsNullOrWhiteSpace($effectiveEndpoint.Port)) { $effectiveEndpoint.Port }
         else { "1433" }

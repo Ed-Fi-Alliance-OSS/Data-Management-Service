@@ -849,12 +849,171 @@ function Get-PostgresHostCandidateEndpoint {
     )
 }
 
+function Get-SqlServerDataSourceEndpoint {
+    <#
+    .SYNOPSIS
+        The ONE parser for SqlClient's data-source (Server=) grammar: protocol, host, explicit port and
+        instance suffix, as Microsoft.Data.SqlClient itself decides them.
+
+    .DESCRIPTION
+        Every MSSQL endpoint decision in this repository goes through here - the provisioning phase's
+        local-target classification and host-side translation, and the CMS pre-start endpoint agreement.
+        There were previously two independent readings of this one grammar, and they were not merely
+        duplicated but UNEQUAL, so each review round found a spelling one of them mishandled. A single
+        provider-derived grammar is what stops that: a form is either in the grammar or it is not, and
+        both subsystems get the same answer.
+
+        The decision follows Microsoft.Data.SqlClient 6.1.4's managed SNI implementation
+        (github.com/dotnet/SqlClient/blob/v6.1.4/src/Microsoft.Data.SqlClient/src/Microsoft/Data/SqlClient/ManagedSni/SniProxy.netcore.cs)
+        - DataSource.PopulateProtocol for the protocol token, DataSource.InferConnectionDetails for the
+        endpoint split, and DataSource.InferLocalServerName for an empty server name. Managed SNI is the
+        deliberate choice of contract: it is what runs in Linux containers and CI, and where it and the
+        Windows native SNI library disagree it is the MORE PERMISSIVE of the two, so a target it can
+        reach is a target this classification must be prepared to guard. Measured difference: managed SNI
+        connects for "Server=,<port>" while native SNI refuses it outright.
+
+        PROTOCOL. The token is the text before the FIRST colon, trimmed, compared case-insensitively
+        against PopulateProtocol's recognized set - tcp, np and admin. So "tcp:host" and "tcp : host" are
+        both the TCP path. A token OUTSIDE that set means no protocol was specified at all and the colon
+        belongs to the host text, which is what keeps an IPv6 address whole: for "::1" the token is empty
+        and for "[::1],1433" it is "[", neither of which is a protocol. That same rule is why "lpc:" is
+        not stripped - it is not in managed SNI's set - so an lpc value stays whole as its host name and
+        can never equal a local token or a composed service alias. It is nonmatching because of what its
+        host name is, not because this parser claims lpc is a recognized protocol.
+
+        No protocol is SqlClient's default TCP path, so IsTcp covers both. np and admin (DAC) are
+        recognized but are NOT the TCP listener these environments publish, so they report IsTcp false
+        and carry no endpoint; named pipes, DAC, LocalDB and named-instance discovery are each a distinct
+        grammar this phase has no way to verify.
+
+        ENDPOINT SPLIT. The server token ends at the first ',' or '\', whichever comes first. When a
+        comma is present the port token starts after it and ends at the next ',' or '\' - ONE rule that
+        covers every ordering rather than a branch per spelling: "host\inst,1433" and "host,1433\inst"
+        name the same endpoint, and "host,1433,ignored" uses 1433 because SqlClient ignores later comma
+        tokens. With an explicit comma port the instance suffix is irrelevant, so it does not require
+        SSRP resolution.
+
+        WITHOUT an explicit comma port an instance suffix DOES require SSRP, which nothing here can
+        resolve. That is reported as RequiresInstanceResolution rather than decided, so callers keep
+        their existing safety policy: an unresolved named instance is never claimed to be a known
+        listener. This is also what keeps "(localdb)\MSSQLLocalDB" nonmatching.
+
+        EMPTY SERVER. An empty server token becomes "localhost", per InferLocalServerName. Reported with
+        HostNameWasInferred so a caller can tell an inferred host from a written one.
+
+        CONTEXT-NEUTRAL BY CONSTRUCTION. This function decides what SqlClient would parse, never whether
+        the result is acceptable. Accepted-host policy differs by caller and stays with the caller: the
+        provisioning phase may recognize host-side "localhost" as the published Compose listener, while
+        CMS validation must REJECT container-side "localhost" because that connection string has to name
+        the composed database service. Baking either policy in here would recreate the divergence this
+        function exists to remove.
+
+    .PARAMETER DataSource
+        A SqlClient data-source value - the Server / Data Source / Addr / Address / Network Address value
+        already resolved from a connection string. Never rendered in diagnostics by this function.
+
+    .OUTPUTS
+        A [pscustomobject] carrying RawValue, Protocol ("" when none was specified), IsTcp, HostName,
+        HostNameWasInferred, Port ("" when no explicit comma port), HasExplicitPort, InstanceName ("" when
+        none) and RequiresInstanceResolution - enough for every caller to decide without reparsing text.
+    #>
+    param(
+        [string]
+        $DataSource
+    )
+
+    $text = ([string]$DataSource).Trim()
+
+    # PopulateProtocol's recognized set. Anything else is not a protocol, so the colon stays with the host.
+    $recognizedProtocols = @("tcp", "np", "admin")
+
+    $protocol = ""
+    $endpointText = $text
+    $colonIndex = $text.IndexOf(':')
+    if ($colonIndex -ge 0) {
+        $token = $text.Substring(0, $colonIndex).Trim().ToLowerInvariant()
+        if ($recognizedProtocols -contains $token) {
+            $protocol = $token
+            $endpointText = $text.Substring($colonIndex + 1).Trim()
+        }
+    }
+
+    $isTcp = [string]::IsNullOrEmpty($protocol) -or $protocol -eq "tcp"
+
+    if (-not $isTcp) {
+        # np / admin: a recognized protocol that is not the published TCP listener. The whole value is
+        # reported as the host so no caller can mistake part of it for a reachable endpoint.
+        return [pscustomobject]@{
+            RawValue                   = $text
+            Protocol                   = $protocol
+            IsTcp                      = $false
+            HostName                   = $text
+            HostNameWasInferred        = $false
+            Port                       = ""
+            HasExplicitPort            = $false
+            InstanceName               = ""
+            RequiresInstanceResolution = $false
+        }
+    }
+
+    $commaIndex = $endpointText.IndexOf(',')
+    $backslashIndex = $endpointText.IndexOf('\')
+
+    # The server token ends at whichever delimiter comes first, or runs to the end when neither appears.
+    $serverEnd = $endpointText.Length
+    foreach ($delimiter in @($commaIndex, $backslashIndex)) {
+        if ($delimiter -ge 0 -and $delimiter -lt $serverEnd) { $serverEnd = $delimiter }
+    }
+    $hostName = $endpointText.Substring(0, $serverEnd).Trim()
+
+    $hasExplicitPort = $commaIndex -ge 0
+    $portText = ""
+    if ($hasExplicitPort) {
+        $portStart = $commaIndex + 1
+        $portEnd = $endpointText.Length
+        foreach ($delimiter in @($endpointText.IndexOf(',', $portStart), $endpointText.IndexOf('\', $portStart))) {
+            if ($delimiter -ge 0 -and $delimiter -lt $portEnd) { $portEnd = $delimiter }
+        }
+        $portText = $endpointText.Substring($portStart, $portEnd - $portStart).Trim()
+    }
+
+    # The instance suffix runs from the backslash to the next comma, so it is read the same way whether it
+    # precedes or follows the port.
+    $instanceName = ""
+    if ($backslashIndex -ge 0) {
+        $instanceStart = $backslashIndex + 1
+        $instanceEnd = $endpointText.IndexOf(',', $instanceStart)
+        if ($instanceEnd -lt 0) { $instanceEnd = $endpointText.Length }
+        $instanceName = $endpointText.Substring($instanceStart, $instanceEnd - $instanceStart).Trim()
+    }
+
+    # InferLocalServerName: an empty server name is the local server.
+    $hostNameWasInferred = $false
+    if ([string]::IsNullOrEmpty($hostName)) {
+        $hostName = "localhost"
+        $hostNameWasInferred = $true
+    }
+
+    return [pscustomobject]@{
+        RawValue                   = $text
+        Protocol                   = $protocol
+        IsTcp                      = $true
+        HostName                   = $hostName
+        HostNameWasInferred        = $hostNameWasInferred
+        Port                       = $portText
+        HasExplicitPort            = $hasExplicitPort
+        InstanceName               = $instanceName
+        RequiresInstanceResolution = ((-not [string]::IsNullOrEmpty($instanceName)) -and (-not $hasExplicitPort))
+    }
+}
+
 function Get-EndpointFromResolvedConnectionString {
     <#
     .SYNOPSIS
-        Parses every host/server value out of an already-fully-resolved ADO.NET connection string,
-        splitting a "host,port" compound (the MSSQL Server=host,port shape) into separate Host/Port
-        fields. No further ${VAR} resolution is performed, matching
+        Parses every host/server value out of an already-fully-resolved ADO.NET connection string into
+        separate Host/Port fields, delegating each engine's grammar to its one shared parser
+        (Get-SqlServerDataSourceEndpoint for MSSQL, Get-PostgresHostCandidateEndpoint for PostgreSQL).
+        No further ${VAR} resolution is performed, matching
         Get-DatabaseNameFromResolvedConnectionString's contract. Returns an empty array when the
         string is blank or carries no recognized host keyword for the given engine.
 
@@ -868,9 +1027,11 @@ function Get-EndpointFromResolvedConnectionString {
 
         Port parsing is also engine-specific, because the two grammars genuinely differ:
 
-          - MSSQL encodes host and port together in one "host,port" value (optionally behind a "tcp:"
-            protocol prefix), and does not recognize a standalone Port keyword at all, so honoring one
-            there would accept a keyword the real provider rejects. One endpoint per host key.
+          - MSSQL encodes host and port together in one data-source value and does not recognize a
+            standalone Port keyword at all, so honoring one there would accept a keyword the real
+            provider rejects. That value is read by the shared SqlClient grammar
+            (Get-SqlServerDataSourceEndpoint), which owns the protocol token, the comma/backslash
+            ordering, later comma tokens and the empty-server-name inference. One endpoint per host key.
           - PostgreSQL carries port as a standalone Port key AND accepts a comma-separated candidate
             list whose entries may each carry their own "host:port"
             (npgsql.org/doc/failover-and-load-balancing.html). So a comma there is a candidate
@@ -931,22 +1092,30 @@ function Get-EndpointFromResolvedConnectionString {
                 if ([string]$key -imatch $hostKeyPattern) {
                     $value = [string]$connectionStringBuilder.PSBase.get_Item($key)
                     if ($DatabaseEngine -eq "mssql") {
-                        $parts = $value.Split(',', 2)
-                        # "tcp:host,port" is documented SqlClient syntax
-                        # (learn.microsoft.com/troubleshoot/sql/connect/use-server-name-parameter-connection-string)
-                        # naming the same server "host,port" does, so exactly one leading "tcp:" is removed
-                        # case-insensitively before the host is reported. Without this the caller compared
-                        # "tcp:dms-mssql" against the Compose service aliases and rejected a valid CMS
-                        # connection string. Reporting only - the caller's connection string is never
-                        # rewritten - and no other protocol prefix is stripped, so np:, lpc: and the rest
-                        # still fail the alias comparison as they must.
-                        $mssqlHost = $parts[0].Trim()
-                        if ($mssqlHost.StartsWith("tcp:", [System.StringComparison]::OrdinalIgnoreCase)) {
-                            $mssqlHost = $mssqlHost.Substring(4).Trim()
+                        # The ONE SqlClient data-source grammar (Get-SqlServerDataSourceEndpoint), the same
+                        # one the provisioning phase classifies with, so a spelling cannot be a valid
+                        # endpoint on one boundary and malformed on the other. A comma-only reading here
+                        # rejected connection strings naming exactly the composed service: it took
+                        # "dms-mssql\ignored" as a host name and "1433\ignored" as a port, when SqlClient
+                        # selects the explicit comma port and does not resolve the suffix through SSRP.
+                        $parsed = Get-SqlServerDataSourceEndpoint -DataSource $value
+                        if ((-not $parsed.IsTcp) -or $parsed.RequiresInstanceResolution) {
+                            # Not an endpoint this phase can name: a non-TCP protocol (np:, admin:/DAC) or a
+                            # named instance whose port only SSRP could supply. Reported as the RAW value
+                            # with no port, deliberately: the caller defaults an absent port to the engine's
+                            # expected one, so reporting a bare host here would turn an unresolved instance
+                            # into an apparently matching endpoint. The raw text can never equal a composed
+                            # service alias, so these keep failing the host comparison exactly as before.
+                            [pscustomobject]@{
+                                Host = $parsed.RawValue
+                                Port = $null
+                            }
                         }
-                        [pscustomobject]@{
-                            Host = $mssqlHost
-                            Port = if ($parts.Count -gt 1) { $parts[1].Trim() } else { $null }
+                        else {
+                            [pscustomobject]@{
+                                Host = $parsed.HostName
+                                Port = if ($parsed.HasExplicitPort) { $parsed.Port } else { $null }
+                            }
                         }
                     }
                     else {
@@ -1220,6 +1389,7 @@ Export-ModuleMember -Function `
     Get-DatabaseNameFromConnectionString, `
     Get-DatabaseNameFromResolvedConnectionString, `
     Get-EndpointFromResolvedConnectionString, `
+    Get-SqlServerDataSourceEndpoint, `
     Get-PostgresHostCandidateEndpoint, `
     Test-PortNumberEquivalent, `
     Get-CmsDatabaseTopologyDefaultConnectionString, `
