@@ -566,6 +566,63 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
+    /// <summary>
+    /// Issues a descriptor POST through <c>RelationalDocumentStoreRepository.UpsertDocument</c>, which routes
+    /// descriptor resources into the production <c>DescriptorWriteHandler</c> and carries the authorization
+    /// context with it — so the test exercises the real routing seam rather than calling the handler directly.
+    /// </summary>
+    public async Task<UpsertResult> UpsertDescriptorAsync(
+        string projectEndpointName,
+        string resourceName,
+        JsonNode requestBody,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        IReadOnlyList<string>? namespacePrefixes = null,
+        string? ifMatch = null
+    )
+    {
+        return await UpsertAsync(
+            projectEndpointName,
+            resourceName,
+            requestBody,
+            documentUuid,
+            $"post-descriptor-{resourceName}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch,
+            namespacePrefixes: namespacePrefixes
+        );
+    }
+
+    /// <summary>
+    /// Issues a descriptor PUT through <c>RelationalDocumentStoreRepository.UpdateDocumentById</c>, which routes
+    /// descriptor resources into the production <c>DescriptorWriteHandler</c>.
+    /// </summary>
+    public async Task<UpdateResult> UpdateDescriptorByIdAsync(
+        string projectEndpointName,
+        string resourceName,
+        JsonNode requestBody,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        IReadOnlyList<string>? namespacePrefixes = null,
+        string? ifMatch = null
+    )
+    {
+        return await UpdateAsync(
+            projectEndpointName,
+            resourceName,
+            requestBody,
+            documentUuid,
+            $"put-descriptor-{resourceName}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch,
+            namespacePrefixes: namespacePrefixes
+        );
+    }
+
     public async Task<UpsertResult> CreateAuthorizationChildOnlyAsync(AuthorizationChildOnlySeed seed)
     {
         return await UpsertAsync(
