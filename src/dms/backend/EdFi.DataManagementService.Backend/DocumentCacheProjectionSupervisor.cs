@@ -392,6 +392,7 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
     private readonly Func<ValueTask>? _disposeScopeAsync;
     private readonly IDocumentCacheSessionBoundWriter? _sessionBoundWriter;
     private TaskCompletionSource? _ordinaryDispatchLeasesReleased;
+    private TaskCompletionSource? _administrativeCommandReleased;
     private int _ordinaryDispatchLeaseCount;
     private int _cancelled;
     private bool _disposeStarted;
@@ -470,11 +471,28 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
     internal DocumentCacheAdministrativeCommandExecutionContext? AdministrativeCommandContext =>
         Volatile.Read(ref _administrativeCommandContext);
 
-    internal bool HasActiveAdministrativeCommand =>
-        Volatile.Read(ref _activeAdministrativeCommandContext) is not null;
+    internal bool HasActiveAdministrativeCommand
+    {
+        get
+        {
+            lock (_lifetimeSync)
+            {
+                return _activeAdministrativeCommandContext is not null;
+            }
+        }
+    }
 
-    internal bool HasAdministrativeCommandRetention =>
-        HasActiveAdministrativeCommand || Volatile.Read(ref _administrativeCommandRetentions) > 0;
+    internal bool HasAdministrativeCommandRetention
+    {
+        get
+        {
+            lock (_lifetimeSync)
+            {
+                return _activeAdministrativeCommandContext is not null
+                    || _administrativeCommandRetentions > 0;
+            }
+        }
+    }
 
     public DocumentCacheMaterializationTargetContext MaterializationTargetContext =>
         ProviderAdapters.MaterializationTargetContext;
@@ -545,6 +563,11 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
                 return null;
             }
 
+            if (_ordinaryDispatchLeaseCount == 0)
+            {
+                _ordinaryDispatchLeasesReleased = null;
+            }
+
             _ordinaryDispatchLeaseCount++;
             return new OrdinaryDispatchLease(this);
         }
@@ -552,7 +575,16 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
 
     internal IDisposable RetainForAdministrativeCommand()
     {
-        Interlocked.Increment(ref _administrativeCommandRetentions);
+        lock (_lifetimeSync)
+        {
+            if (_administrativeCommandRetentions == 0 && _activeAdministrativeCommandContext is null)
+            {
+                _administrativeCommandReleased = null;
+            }
+
+            _administrativeCommandRetentions++;
+        }
+
         return new AdministrativeCommandRetention(this);
     }
 
@@ -569,14 +601,21 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
             );
         }
 
-        if (
-            Interlocked.CompareExchange(ref _activeAdministrativeCommandContext, commandContext, null)
-            is not null
-        )
+        lock (_lifetimeSync)
         {
-            throw new InvalidOperationException(
-                "DocumentCache target context already has an active administrative command."
-            );
+            if (_activeAdministrativeCommandContext is not null)
+            {
+                throw new InvalidOperationException(
+                    "DocumentCache target context already has an active administrative command."
+                );
+            }
+
+            if (_administrativeCommandRetentions == 0)
+            {
+                _administrativeCommandReleased = null;
+            }
+
+            _activeAdministrativeCommandContext = commandContext;
         }
 
         return new ActiveAdministrativeCommandTracking(this, commandContext);
@@ -662,6 +701,34 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
         }
     }
 
+    internal async Task WaitForRetainedOwnershipReleasedAsync(CancellationToken cancellationToken = default)
+    {
+        while (true)
+        {
+            Task administrativeCommandReleased = WaitForAdministrativeCommandReleasedAsync(cancellationToken);
+            Task ordinaryDispatchLeasesReleased = WaitForOrdinaryDispatchLeasesReleasedAsync(
+                cancellationToken
+            );
+            Task drainOwnershipReleased = DrainExecutor.WaitForOwnershipReleasedAsync(cancellationToken);
+
+            if (
+                administrativeCommandReleased.IsCompletedSuccessfully
+                && ordinaryDispatchLeasesReleased.IsCompletedSuccessfully
+                && drainOwnershipReleased.IsCompletedSuccessfully
+            )
+            {
+                return;
+            }
+
+            await Task.WhenAll(
+                    administrativeCommandReleased,
+                    ordinaryDispatchLeasesReleased,
+                    drainOwnershipReleased
+                )
+                .ConfigureAwait(false);
+        }
+    }
+
     private void ReleaseOrdinaryDispatchLease()
     {
         TaskCompletionSource? ordinaryDispatchLeasesReleased = null;
@@ -673,13 +740,95 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
             }
 
             _ordinaryDispatchLeaseCount--;
-            if (_disposeStarted && _ordinaryDispatchLeaseCount == 0)
+            if (_ordinaryDispatchLeaseCount == 0)
             {
                 ordinaryDispatchLeasesReleased = _ordinaryDispatchLeasesReleased;
+                if (!_disposeStarted)
+                {
+                    _ordinaryDispatchLeasesReleased = null;
+                }
             }
         }
 
         ordinaryDispatchLeasesReleased?.TrySetResult();
+    }
+
+    private Task WaitForOrdinaryDispatchLeasesReleasedAsync(CancellationToken cancellationToken)
+    {
+        lock (_lifetimeSync)
+        {
+            if (_ordinaryDispatchLeaseCount == 0)
+            {
+                return Task.CompletedTask;
+            }
+
+            _ordinaryDispatchLeasesReleased ??= new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            return _ordinaryDispatchLeasesReleased.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    private Task WaitForAdministrativeCommandReleasedAsync(CancellationToken cancellationToken)
+    {
+        lock (_lifetimeSync)
+        {
+            if (_activeAdministrativeCommandContext is null && _administrativeCommandRetentions == 0)
+            {
+                return Task.CompletedTask;
+            }
+
+            _administrativeCommandReleased ??= new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            return _administrativeCommandReleased.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    private void ReleaseAdministrativeCommandRetention()
+    {
+        TaskCompletionSource? administrativeCommandReleased = null;
+        lock (_lifetimeSync)
+        {
+            if (_administrativeCommandRetentions <= 0)
+            {
+                return;
+            }
+
+            _administrativeCommandRetentions--;
+            administrativeCommandReleased = SignalAdministrativeCommandReleasedIfIdleNoLock();
+        }
+
+        administrativeCommandReleased?.TrySetResult();
+    }
+
+    private void ReleaseActiveAdministrativeCommand(
+        DocumentCacheAdministrativeCommandExecutionContext commandContext
+    )
+    {
+        TaskCompletionSource? administrativeCommandReleased = null;
+        lock (_lifetimeSync)
+        {
+            if (ReferenceEquals(_activeAdministrativeCommandContext, commandContext))
+            {
+                _activeAdministrativeCommandContext = null;
+                administrativeCommandReleased = SignalAdministrativeCommandReleasedIfIdleNoLock();
+            }
+        }
+
+        administrativeCommandReleased?.TrySetResult();
+    }
+
+    private TaskCompletionSource? SignalAdministrativeCommandReleasedIfIdleNoLock()
+    {
+        if (_activeAdministrativeCommandContext is not null || _administrativeCommandRetentions > 0)
+        {
+            return null;
+        }
+
+        TaskCompletionSource? administrativeCommandReleased = _administrativeCommandReleased;
+        _administrativeCommandReleased = null;
+        return administrativeCommandReleased;
     }
 
     private sealed class AdministrativeCommandBinding(
@@ -704,11 +853,7 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
     {
         public void Dispose()
         {
-            Interlocked.CompareExchange(
-                ref targetContext._activeAdministrativeCommandContext,
-                null,
-                commandContext
-            );
+            targetContext.ReleaseActiveAdministrativeCommand(commandContext);
         }
     }
 
@@ -725,7 +870,7 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
                 return;
             }
 
-            Interlocked.Decrement(ref targetContext._administrativeCommandRetentions);
+            targetContext.ReleaseAdministrativeCommandRetention();
         }
     }
 
@@ -1020,8 +1165,7 @@ public sealed class DocumentCacheProjectionSupervisor(
         {
             await EndAllTargetContextsAsync(DocumentCacheProjectionTargetEndReason.Shutdown)
                 .ConfigureAwait(false);
-            await EndAllRetainedTargetContextsAsync(DocumentCacheProjectionTargetEndReason.Shutdown)
-                .ConfigureAwait(false);
+            await EndAllRetainedTargetContextsAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -1171,31 +1315,53 @@ public sealed class DocumentCacheProjectionSupervisor(
 
         foreach (DocumentCacheProjectionTargetRuntimeContext context in contexts.Values)
         {
-            await EndTargetContextAsync(context, endReason).ConfigureAwait(false);
+            await EndOrRetainTargetContextAsync(context, endReason).ConfigureAwait(false);
         }
     }
 
-    private async Task EndAllRetainedTargetContextsAsync(DocumentCacheProjectionTargetEndReason endReason)
+    private async Task EndAllRetainedTargetContextsAsync(CancellationToken cancellationToken)
     {
-        ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> contexts =
-            _retainedCommandOwnedTargetContexts
-                .Values.Select(context => context.TargetContext)
-                .Concat(_retainedOrdinaryDrainTargetContexts.Values.Select(context => context.TargetContext))
-                .Distinct()
-                .ToImmutableArray();
-        _retainedCommandOwnedTargetContexts = ImmutableDictionary<
-            DocumentCacheProjectionTargetContextKey,
-            RetainedTargetContext
-        >.Empty;
-        _retainedOrdinaryDrainTargetContexts = ImmutableDictionary<
-            DocumentCacheProjectionTargetContextKey,
-            RetainedTargetContext
-        >.Empty;
-
-        foreach (DocumentCacheProjectionTargetRuntimeContext context in contexts)
+        while (true)
         {
-            await EndTargetContextAsync(context, endReason).ConfigureAwait(false);
+            await EndCompletedRetainedTargetContextsNoLockAsync().ConfigureAwait(false);
+
+            ImmutableArray<RetainedTargetContext> activeRetainedContexts = _retainedCommandOwnedTargetContexts
+                .Values.Concat(_retainedOrdinaryDrainTargetContexts.Values)
+                .GroupBy(retainedContext => retainedContext.TargetContext.ContextKey)
+                .Select(group => group.First())
+                .ToImmutableArray();
+            if (activeRetainedContexts.IsEmpty)
+            {
+                return;
+            }
+
+            await Task.WhenAll(
+                    activeRetainedContexts.Select(retainedContext =>
+                        retainedContext.TargetContext.WaitForRetainedOwnershipReleasedAsync(cancellationToken)
+                    )
+                )
+                .ConfigureAwait(false);
         }
+    }
+
+    private async Task EndOrRetainTargetContextAsync(
+        DocumentCacheProjectionTargetRuntimeContext context,
+        DocumentCacheProjectionTargetEndReason endReason
+    )
+    {
+        if (IsCommandOwned(context))
+        {
+            RetainCommandOwnedTargetContext(context, endReason);
+            return;
+        }
+
+        if (IsOrdinaryDrainOwned(context))
+        {
+            RetainOrdinaryDrainTargetContext(context, endReason);
+            return;
+        }
+
+        await EndTargetContextAsync(context, endReason).ConfigureAwait(false);
     }
 
     private async Task EndTargetContextAsync(

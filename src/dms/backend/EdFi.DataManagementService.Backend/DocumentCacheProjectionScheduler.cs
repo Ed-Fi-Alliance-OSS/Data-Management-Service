@@ -463,7 +463,9 @@ public sealed class DocumentCacheProjectionTargetDrainExecutor
     private static readonly AsyncLocal<object?> CurrentAdministrativeOwner = new();
 
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _ownerSync = new();
     private readonly object _administrativeOwnerToken = new();
+    private TaskCompletionSource? _ownershipReleased;
     private int _owner;
 
     public DocumentCacheProjectionDrainInvocationKind? CurrentOwner =>
@@ -484,6 +486,22 @@ public sealed class DocumentCacheProjectionTargetDrainExecutor
     public bool IsOwnedByCurrentAdministrativeFlow =>
         ReferenceEquals(CurrentAdministrativeOwner.Value, _administrativeOwnerToken);
 
+    public Task WaitForOwnershipReleasedAsync(CancellationToken cancellationToken = default)
+    {
+        lock (_ownerSync)
+        {
+            if (Volatile.Read(ref _owner) == 0)
+            {
+                return Task.CompletedTask;
+            }
+
+            _ownershipReleased ??= new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            return _ownershipReleased.Task.WaitAsync(cancellationToken);
+        }
+    }
+
     public async Task<DocumentCacheProjectionDrainPageResult?> TryRunOrdinaryDrainSliceAsync(
         Func<CancellationToken, Task<DocumentCacheProjectionDrainPageResult>> drainSlice,
         CancellationToken cancellationToken = default
@@ -495,14 +513,14 @@ public sealed class DocumentCacheProjectionTargetDrainExecutor
             return null;
         }
 
-        Volatile.Write(ref _owner, (int)DocumentCacheProjectionDrainInvocationKind.Ordinary);
+        SetOwner(DocumentCacheProjectionDrainInvocationKind.Ordinary);
         try
         {
             return await drainSlice(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
-            Volatile.Write(ref _owner, 0);
+            ClearOwner();
             _gate.Release();
         }
     }
@@ -528,7 +546,7 @@ public sealed class DocumentCacheProjectionTargetDrainExecutor
         ArgumentNullException.ThrowIfNull(command);
 
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        Volatile.Write(ref _owner, (int)DocumentCacheProjectionDrainInvocationKind.Administrative);
+        SetOwner(DocumentCacheProjectionDrainInvocationKind.Administrative);
         object? previousAdministrativeOwner = CurrentAdministrativeOwner.Value;
         CurrentAdministrativeOwner.Value = _administrativeOwnerToken;
         try
@@ -538,9 +556,31 @@ public sealed class DocumentCacheProjectionTargetDrainExecutor
         finally
         {
             CurrentAdministrativeOwner.Value = previousAdministrativeOwner;
-            Volatile.Write(ref _owner, 0);
+            ClearOwner();
             _gate.Release();
         }
+    }
+
+    private void SetOwner(DocumentCacheProjectionDrainInvocationKind owner)
+    {
+        lock (_ownerSync)
+        {
+            _ownershipReleased = null;
+            Volatile.Write(ref _owner, (int)owner);
+        }
+    }
+
+    private void ClearOwner()
+    {
+        TaskCompletionSource? ownershipReleased;
+        lock (_ownerSync)
+        {
+            Volatile.Write(ref _owner, 0);
+            ownershipReleased = _ownershipReleased;
+            _ownershipReleased = null;
+        }
+
+        ownershipReleased?.TrySetResult();
     }
 }
 

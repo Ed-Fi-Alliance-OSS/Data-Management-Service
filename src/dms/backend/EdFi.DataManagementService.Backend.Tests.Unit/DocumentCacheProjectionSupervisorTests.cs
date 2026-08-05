@@ -706,6 +706,180 @@ public class Given_DocumentCacheProjectionSupervisor
     }
 
     [Test]
+    public async Task It_retains_an_active_ordinary_drain_until_shutdown_ownership_releases()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            DocumentCacheTargetKey.Create("TenantA", 7),
+            generation: 1
+        );
+        RecordingObservationSink observationSink = new();
+        RecordingTargetContextFactory targetContextFactory = new(observationSink);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(executionContext)]),
+            RuntimeSnapshot([executionContext])
+        );
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationSink,
+            OptionsFor([executionContext.TargetKey])
+        );
+        TaskCompletionSource drainStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource releaseDrain = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+        DocumentCacheProjectionTargetRuntimeContext activeContext = targetContextFactory
+            .CreatedContexts.Should()
+            .ContainSingle()
+            .Subject;
+        Task<DocumentCacheProjectionDrainPageResult?> drainTask =
+            activeContext.DrainExecutor.TryRunOrdinaryDrainSliceAsync(async _ =>
+            {
+                drainStarted.SetResult();
+                await releaseDrain.Task.ConfigureAwait(false);
+                return DocumentCacheProjectionDrainPageResult.NoEligibleWork;
+            });
+        await drainStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Task? stopTask = null;
+        try
+        {
+            stopTask = supervisor.StopAsync(CancellationToken.None);
+            Task completedBeforeDrainReleased = await Task.WhenAny(
+                stopTask,
+                Task.Delay(TimeSpan.FromMilliseconds(100))
+            );
+
+            completedBeforeDrainReleased.Should().NotBe(stopTask);
+            activeContext.CancellationRequested.Should().BeTrue();
+            targetContextFactory.DisposedContexts.Should().NotContain(activeContext.ContextKey);
+            observationSink.EndedTargets.Should().BeEmpty();
+            supervisor.CurrentTargetContexts.Should().BeEmpty();
+
+            releaseDrain.SetResult();
+            (await drainTask.WaitAsync(TimeSpan.FromSeconds(5))).Should().NotBeNull();
+            await stopTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+            targetContextFactory
+                .DisposedContexts.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(activeContext.ContextKey);
+            observationSink
+                .EndedTargets.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(
+                    new RecordingObservationSink.EndedTarget(
+                        activeContext.ContextKey,
+                        DocumentCacheProjectionTargetEndReason.Shutdown
+                    )
+                );
+        }
+        finally
+        {
+            releaseDrain.TrySetResult();
+            if (stopTask is not null)
+            {
+                await stopTask.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+    }
+
+    [Test]
+    public async Task It_retains_an_active_administrative_command_until_shutdown_ownership_releases()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            DocumentCacheTargetKey.Create("TenantA", 7),
+            generation: 1
+        );
+        RecordingObservationSink observationSink = new();
+        RecordingTargetContextFactory targetContextFactory = new(observationSink);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(executionContext)]),
+            RuntimeSnapshot([executionContext])
+        );
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationSink,
+            OptionsFor([executionContext.TargetKey])
+        );
+        TaskCompletionSource commandStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource releaseCommand = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+        DocumentCacheProjectionTargetRuntimeContext activeContext = targetContextFactory
+            .CreatedContexts.Should()
+            .ContainSingle()
+            .Subject;
+        IDisposable? commandRetention = activeContext.RetainForAdministrativeCommand();
+        Task<int> commandTask = activeContext.DrainExecutor.RunAdministrativeCommandAsync(async _ =>
+        {
+            commandStarted.SetResult();
+            await releaseCommand.Task.ConfigureAwait(false);
+            return 1;
+        });
+        await commandStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Task? stopTask = null;
+        try
+        {
+            stopTask = supervisor.StopAsync(CancellationToken.None);
+            Task completedBeforeCommandReleased = await Task.WhenAny(
+                stopTask,
+                Task.Delay(TimeSpan.FromMilliseconds(100))
+            );
+
+            completedBeforeCommandReleased.Should().NotBe(stopTask);
+            activeContext.CancellationRequested.Should().BeFalse();
+            targetContextFactory.DisposedContexts.Should().NotContain(activeContext.ContextKey);
+            observationSink.EndedTargets.Should().BeEmpty();
+            supervisor.CurrentTargetContexts.Should().BeEmpty();
+
+            releaseCommand.SetResult();
+            (await commandTask.WaitAsync(TimeSpan.FromSeconds(5))).Should().Be(1);
+            Task completedBeforeRetentionReleased = await Task.WhenAny(
+                stopTask,
+                Task.Delay(TimeSpan.FromMilliseconds(100))
+            );
+            completedBeforeRetentionReleased.Should().NotBe(stopTask);
+
+            commandRetention.Dispose();
+            commandRetention = null;
+            await stopTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+            activeContext.CancellationRequested.Should().BeTrue();
+            targetContextFactory
+                .DisposedContexts.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(activeContext.ContextKey);
+            observationSink
+                .EndedTargets.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(
+                    new RecordingObservationSink.EndedTarget(
+                        activeContext.ContextKey,
+                        DocumentCacheProjectionTargetEndReason.Shutdown
+                    )
+                );
+        }
+        finally
+        {
+            releaseCommand.TrySetResult();
+            commandRetention?.Dispose();
+            if (stopTask is not null)
+            {
+                await stopTask.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+    }
+
+    [Test]
     public async Task It_reconsiders_ready_targets_immediately_after_a_page_is_processed()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
