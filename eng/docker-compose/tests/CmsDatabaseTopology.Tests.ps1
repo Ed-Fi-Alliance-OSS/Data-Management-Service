@@ -4229,12 +4229,17 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
         # Writes a base env file under a unique leaf name and returns its path. Extra lines are
         # appended after the shared minimum.
         function script:New-WiringEnvFile {
-            param([string[]]$AdditionalLines = @())
+            # PostgresDbName is a parameter rather than an extra AdditionalLines entry because a second
+            # POSTGRES_DB_NAME declaration is itself rejected earlier, by the duplicate-declaration rule.
+            param(
+                [string[]]$AdditionalLines = @(),
+                [string]$PostgresDbName = 'edfi_datamanagementservice'
+            )
 
             $path = Join-Path $script:work ".env.wiring-$([Guid]::NewGuid().ToString('N'))"
             $lines = @(
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                "POSTGRES_DB_NAME=$PostgresDbName",
                 'DMS_CONFIG_IDENTITY_PROVIDER=self-contained'
             ) + $AdditionalLines
             Set-Content -LiteralPath $path -NoNewline -Value ($lines -join "`n")
@@ -4655,6 +4660,58 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName must be provably distinct*" -Because "the parsed value of the LF-bearing name IS the reserved literal on the registered transport"
             $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName*"
             $run.ErrorMessage | Should -Not -BeLike "*$lineFeedName*" -Because "the raw caller-authored text must not be echoed"
+        }
+
+        It "refuses an exact reserved POSTGRES_DB_NAME with -DataStoreDatabaseName omitted, at the initialized-path authority" {
+            # With the parameter omitted the effective datastore name IS POSTGRES_DB_NAME, and that value
+            # also reaches postgresql-init.sh's createdb - so it is Confirm-CmsDatabaseTopologyAgreement's
+            # initialized-path authority that refuses it, earlier than this script's registered-transport
+            # guard. Pinning WHICH authority fires is the point: it is why the omitted-parameter shape
+            # never had an unguarded colliding value, and the registered-transport guard's load-bearing
+            # case remains the explicit -DataStoreDatabaseName trailing-LF row above.
+            $envFile = New-WiringEnvFile -PostgresDbName 'edfi_configurationservice'
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine postgresql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*CMS database topology mismatch*"
+            $run.ErrorMessage | Should -BeLike "*POSTGRES_DB_NAME*"
+            $run.ErrorMessage |
+                Should -Not -BeLike "*must be provably distinct*" -Because "the initialized-path authority owns this shape, not the registered-transport guard"
+            $run.ComposeCommand | Should -BeNullOrEmpty -Because "the run must stop before any docker activity"
+        }
+
+        It "resolves the effective PostgreSQL datastore name once and registers that same variable" {
+            # Structural pin for the anti-drift property, which no behavioural row can reach: the guard
+            # and the registration must read ONE variable. Two independent derivations of the same
+            # decision are what allowed them to disagree about which name was being judged.
+            $source = Get-Content -LiteralPath "$script:dockerComposeRoot/start-published-dms.ps1" -Raw
+
+            $source |
+                Should -Match 'Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase[^\r\n]*-DatastoreDatabaseName\s+\$effectivePostgresDataStoreName' -Because "the guard must judge the effective registered name"
+            $source |
+                Should -Match '\$postgresDbName\s*=\s*\$effectivePostgresDataStoreName' -Because "the registration must reuse the guarded variable, not re-derive it"
+            $source |
+                Should -Not -Match 'Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase[^\r\n]*-DatastoreDatabaseName\s+\$DataStoreDatabaseName' -Because "judging the raw parameter is the drift this removed"
+        }
+
+        It "proceeds to the docker boundary when the omitted-parameter fallback resolves to a distinct database" {
+            # Control for the two rows above: the same omitted-parameter path with a safe datastore name
+            # must reach the recording docker boundary and still declare separate mode, proving the guard
+            # was live on this shape and simply had nothing to reject.
+            $envFile = New-WiringEnvFile
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine postgresql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
+            }
+
+            $run.ErrorMessage | Should -Not -BeLike "*must be provably distinct*"
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must reach the compose invocation instead of stopping at the guard"
+            $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "this is a real separate-mode run, so the guard was on the executed path"
+
+            $values = ReadDerivedTopologyFile -Name $run.TopologyFile
+            $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "true"
         }
 
         It "does not reject a colliding -DataStoreDatabaseName in a shape that never consumes it" {
