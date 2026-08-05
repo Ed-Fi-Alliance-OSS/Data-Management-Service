@@ -935,4 +935,32 @@ public static class AspNetCoreFrontend
             dmsPath
         );
     }
+
+    /// <summary>
+    /// ASP.NET Core entry point for data-route requests whose HTTP method is not one of the
+    /// supported verbs. Core decides between 404 (unknown resource) and 405 (unsupported method),
+    /// and ToResult carries Core's Allow header and content type to the response.
+    /// </summary>
+    public static async Task<IResult> MethodNotAllowed(
+        HttpContext httpContext,
+        IApiService apiService,
+        string dmsPath,
+        IOptions<AppSettings> appSettings
+    )
+    {
+        return ToResult(
+            await apiService.MethodNotAllowed(
+                await FromRequest(
+                    httpContext.Request,
+                    dmsPath,
+                    appSettings,
+                    includeBody: false,
+                    includeForm: false
+                ),
+                httpContext.Request.Method
+            ),
+            httpContext,
+            dmsPath
+        );
+    }
 }

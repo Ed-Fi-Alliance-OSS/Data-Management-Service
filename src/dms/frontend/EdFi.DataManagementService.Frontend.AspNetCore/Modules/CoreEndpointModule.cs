@@ -23,6 +23,17 @@ public class CoreEndpointModule(IOptions<AppSettings> appSettings) : IEndpointMo
         endpoints.MapGet(routePattern, Get);
         endpoints.MapPut(routePattern, UpdateById);
         endpoints.MapDelete(routePattern, DeleteById);
+
+        // Terminal for data-route requests whose method is not one of the four above. Core decides
+        // 404-vs-405 (unknown resource vs unsupported method), matching ODS/API's ordering.
+        //
+        // This shares the verb endpoints' exact route template, so Order and precedence both tie and
+        // EndpointComparer falls through to HttpMethodMatcherPolicy's metadata comparer, which ranks
+        // method-constrained endpoints ahead of method-less ones. The four verbs therefore win on
+        // their own merits and this terminal picks up everything else. WithOrder(1) is defensive,
+        // not load-bearing: it keeps the terminal demoted if the template is ever narrowed. Any
+        // order below MapFallback's int.MaxValue works.
+        endpoints.Map(routePattern, MethodNotAllowed).WithOrder(1);
     }
 
     /// <summary>

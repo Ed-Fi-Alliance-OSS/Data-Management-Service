@@ -203,8 +203,9 @@ Feature: OWASP critical attack path protections
              Then it should respond with 200 or 204
               And the response header "Access-Control-Allow-Origin" is not present
 
-        # Note: the bearer token is included by the step helper; TRACE rejection (404/405) is
-        # enforced at the routing layer regardless of auth state.
+        # Note: the bearer token is included by the step helper, so this verifies AUTHENTICATED TRACE
+        # rejection. TRACE enters Core, where JWT authentication runs before the method-not-allowed
+        # terminal, so an unauthenticated TRACE would be 401 rather than 404/405.
         @e2e-ci-shard-3
         Scenario: 13 Unsupported TRACE method is not enabled
              When an "TRACE" request is made to "/ed-fi/schools" with headers

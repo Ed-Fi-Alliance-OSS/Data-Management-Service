@@ -634,3 +634,89 @@ Feature: Validation of the structure of the URLs
                         "Content-Type": "application/problem+json"
                     }
                   """
+
+        @DMS-1281
+        @e2e-ci-shard-4
+        Scenario: 23 Ensure clients get 405 for an unsupported method on a resource collection
+             When an "PATCH" request is made to "/ed-fi/schools" with headers
+                  | Key    | Value |
+                  | Accept | */*   |
+             Then it should respond with 405
+              And the response body is
+                  """
+                  {
+                      "detail": "The request construction was invalid.",
+                      "type": "urn:ed-fi:api:method-not-allowed",
+                      "title": "Method Not Allowed",
+                      "status": 405,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": [
+                          "The endpoint of the request does not support the 'PATCH' method."
+                      ]
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Allow": "GET, POST",
+                        "Content-Type": "application/json; charset=utf-8"
+                    }
+                  """
+
+        @DMS-1281
+        @e2e-ci-shard-4
+        Scenario: 24 Ensure clients get 405 for an unsupported method on a resource item
+             When an "PATCH" request is made to "/ed-fi/schools/00000000-0000-4000-a000-000000000000" with headers
+                  | Key    | Value |
+                  | Accept | */*   |
+             Then it should respond with 405
+              And the response body is
+                  """
+                  {
+                      "detail": "The request construction was invalid.",
+                      "type": "urn:ed-fi:api:method-not-allowed",
+                      "title": "Method Not Allowed",
+                      "status": 405,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": [
+                          "The endpoint of the request does not support the 'PATCH' method."
+                      ]
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Allow": "GET, PUT, DELETE",
+                        "Content-Type": "application/json; charset=utf-8"
+                    }
+                  """
+
+        # ODS/API parity: an unsupported method on a resource that does not exist is a 404, not a
+        # 405, because existence is resolved before the method is rejected.
+        @DMS-1281
+        @e2e-ci-shard-4
+        Scenario: 25 Ensure clients get 404 for an unsupported method on an unknown Ed-Fi resource
+             When an "PATCH" request is made to "/ed-fi/notaresource" with headers
+                  | Key    | Value |
+                  | Accept | */*   |
+             Then it should respond with 404
+              And the response body is
+                  """
+                  {
+                      "detail": "The specified data could not be found.",
+                      "type": "urn:ed-fi:api:not-found",
+                      "title": "Not Found",
+                      "status": 404,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
+                  """

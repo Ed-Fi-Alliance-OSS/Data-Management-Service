@@ -3,8 +3,18 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
+using System.Net.Http;
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
+using FakeItEasy;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
@@ -131,6 +141,365 @@ public class CoreEndpointModuleTests
             {
                 _result.Should().Be("/{tenant}/{districtId}/{schoolYear}/data/{**dmsPath}");
             }
+        }
+    }
+
+    private const string ItemUuid = "0192ac2c-8f7f-7c2a-9c1d-3f4b5a6c7d8e";
+
+    private static IFrontendResponse FakeCoreMethodNotAllowedResponse()
+    {
+        JsonObject body = new() { ["source"] = "core" };
+
+        var response = A.Fake<IFrontendResponse>();
+        A.CallTo(() => response.StatusCode).Returns(405);
+        A.CallTo(() => response.Body).Returns(body);
+        A.CallTo(() => response.Headers).Returns(new Dictionary<string, string> { ["Allow"] = "GET, POST" });
+        A.CallTo(() => response.ContentType).Returns("application/json; charset=utf-8");
+        return response;
+    }
+
+    private static IFrontendResponse FakeCoreOkResponse()
+    {
+        JsonObject body = new() { ["source"] = "core" };
+
+        var response = A.Fake<IFrontendResponse>();
+        A.CallTo(() => response.StatusCode).Returns(200);
+        A.CallTo(() => response.Body).Returns(body);
+        A.CallTo(() => response.Headers).Returns(new Dictionary<string, string>());
+        A.CallTo(() => response.ContentType).Returns("application/json");
+        return response;
+    }
+
+    /// <summary>
+    /// A fake whose every request entry point answers 200, so a test can assert which entry point
+    /// the router selected without any of them failing for want of a configured response.
+    /// </summary>
+    private static IApiService FakeApiServiceAnsweringEveryVerb()
+    {
+        var apiService = A.Fake<IApiService>();
+        A.CallTo(() => apiService.Get(A<FrontendRequest>._)).Returns(Task.FromResult(FakeCoreOkResponse()));
+        A.CallTo(() => apiService.Upsert(A<FrontendRequest>._))
+            .Returns(Task.FromResult(FakeCoreOkResponse()));
+        A.CallTo(() => apiService.UpdateById(A<FrontendRequest>._))
+            .Returns(Task.FromResult(FakeCoreOkResponse()));
+        A.CallTo(() => apiService.DeleteById(A<FrontendRequest>._))
+            .Returns(Task.FromResult(FakeCoreOkResponse()));
+        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._))
+            .Returns(Task.FromResult(FakeCoreOkResponse()));
+        A.CallTo(() => apiService.MethodNotAllowed(A<FrontendRequest>._, A<string>._))
+            .Returns(Task.FromResult(FakeCoreMethodNotAllowedResponse()));
+        return apiService;
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory(
+        IApiService apiService,
+        Dictionary<string, string?>? configuration = null
+    )
+    {
+        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            if (configuration is not null)
+            {
+                builder.ConfigureAppConfiguration(
+                    (context, configurationBuilder) =>
+                        configurationBuilder.AddInMemoryCollection(configuration)
+                );
+            }
+            builder.ConfigureServices(collection =>
+            {
+                TestMockHelper.AddEssentialMocks(collection);
+                collection.AddTransient(x => apiService);
+            });
+        });
+    }
+
+    /// <summary>
+    /// Exercises the real Program.cs route table with a faked IApiService, so these tests prove how
+    /// the request is routed rather than what the response body says - the fake, not Core, supplies
+    /// the response here.
+    /// </summary>
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_A_Data_Route_Request_With_An_Unsupported_Method
+    {
+        [TestCase("/data/ed-fi/schools", "/ed-fi/schools", TestName = "Collection route")]
+        [TestCase($"/data/ed-fi/schools/{ItemUuid}", $"/ed-fi/schools/{ItemUuid}", TestName = "Item route")]
+        public async Task It_hands_the_request_to_core_with_the_real_method_name(
+            string requestUrl,
+            string expectedDmsPath
+        )
+        {
+            var apiService = A.Fake<IApiService>();
+            FrontendRequest? capturedRequest = null;
+            string? capturedMethodName = null;
+            A.CallTo(() => apiService.MethodNotAllowed(A<FrontendRequest>._, A<string>._))
+                .Invokes(
+                    (FrontendRequest request, string methodName) =>
+                    {
+                        capturedRequest = request;
+                        capturedMethodName = methodName;
+                    }
+                )
+                .Returns(Task.FromResult(FakeCoreMethodNotAllowedResponse()));
+
+            await using var factory = CreateFactory(apiService);
+            using var client = factory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Patch, requestUrl);
+
+            await client.SendAsync(request);
+
+            A.CallTo(() => apiService.MethodNotAllowed(A<FrontendRequest>._, A<string>._))
+                .MustHaveHappenedOnceExactly();
+            capturedRequest.Should().NotBeNull();
+            capturedRequest!.Path.Should().Be(expectedDmsPath);
+            capturedMethodName.Should().Be("PATCH");
+        }
+
+        [Test]
+        public async Task It_returns_the_core_response_allow_header_and_body_unmodified()
+        {
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.MethodNotAllowed(A<FrontendRequest>._, A<string>._))
+                .Returns(Task.FromResult(FakeCoreMethodNotAllowedResponse()));
+
+            await using var factory = CreateFactory(apiService);
+            using var client = factory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Patch, "/data/ed-fi/schools");
+
+            var response = await client.SendAsync(request);
+            var content = await response.Content.ReadAsStringAsync();
+
+            // ToResult is what carries Core's headers and content type to the wire; Core, not the
+            // frontend, is the single authority for the Allow value.
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            // Allow is a well-known header, so HttpClient parses the single "GET, POST" line Core
+            // set into separate tokens; rejoining them recovers the value that went over the wire.
+            string.Join(", ", response.Content.Headers.GetValues("Allow")).Should().Be("GET, POST");
+            response.Content.Headers.ContentType!.ToString().Should().Be("application/json; charset=utf-8");
+            JsonNode.Parse(content)!["source"]!.GetValue<string>().Should().Be("core");
+        }
+    }
+
+    /// <summary>
+    /// The regression guard for the terminal added to CoreEndpointModule: adding a method-less
+    /// endpoint on the verb endpoints' own route template must not divert any supported verb.
+    /// </summary>
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_A_Data_Route_Request_With_A_Supported_Method
+    {
+        [TestCase("GET", "/data/ed-fi/schools")]
+        [TestCase("POST", "/data/ed-fi/schools")]
+        [TestCase("PUT", "/data/ed-fi/schools")]
+        [TestCase("DELETE", "/data/ed-fi/schools")]
+        [TestCase("GET", $"/data/ed-fi/schools/{ItemUuid}")]
+        [TestCase("PUT", $"/data/ed-fi/schools/{ItemUuid}")]
+        [TestCase("DELETE", $"/data/ed-fi/schools/{ItemUuid}")]
+        public async Task It_still_reaches_its_original_api_service_method(string verb, string requestUrl)
+        {
+            var apiService = FakeApiServiceAnsweringEveryVerb();
+
+            await using var factory = CreateFactory(apiService);
+            using var client = factory.CreateClient();
+            using var request = new HttpRequestMessage(new HttpMethod(verb), requestUrl);
+
+            var response = await client.SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertVerbReachedItsHandler(apiService, verb);
+            A.CallTo(() => apiService.MethodNotAllowed(A<FrontendRequest>._, A<string>._))
+                .MustNotHaveHappened();
+        }
+    }
+
+    /// <summary>
+    /// The regression guard for the terminals added to TrackedChangesEndpointModule, and the
+    /// highest-value test in this set. Those terminals sit on literal templates that outrank the
+    /// data catch-all on precedence, so at Order 0 they intercept POST, PUT and DELETE on these
+    /// routes - verbs that today fall through to the catch-all verb endpoints and into Core.
+    /// </summary>
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_A_Tracked_Change_Route_Request_With_A_Supported_Method
+    {
+        [TestCase("deletes", "GET")]
+        [TestCase("deletes", "POST")]
+        [TestCase("deletes", "PUT")]
+        [TestCase("deletes", "DELETE")]
+        [TestCase("keyChanges", "GET")]
+        [TestCase("keyChanges", "POST")]
+        [TestCase("keyChanges", "PUT")]
+        [TestCase("keyChanges", "DELETE")]
+        public async Task It_still_reaches_its_original_api_service_method(
+            string trackedChangeSegment,
+            string verb
+        )
+        {
+            var apiService = FakeApiServiceAnsweringEveryVerb();
+
+            await using var factory = CreateFactory(apiService);
+            using var client = factory.CreateClient();
+            using var request = new HttpRequestMessage(
+                new HttpMethod(verb),
+                $"/data/ed-fi/schools/{trackedChangeSegment}"
+            );
+
+            var response = await client.SendAsync(request);
+
+            // A 405 here means a tracked terminal answered a verb it must not own.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            if (verb == "GET")
+            {
+                A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._))
+                    .MustHaveHappenedOnceExactly();
+            }
+            else
+            {
+                AssertVerbReachedItsHandler(apiService, verb);
+                A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._)).MustNotHaveHappened();
+            }
+        }
+    }
+
+    /// <summary>
+    /// These routes are newly returning 405 where they returned 404, so the response is a new wire
+    /// contract. Unlike the tests above this asserts the real wire response, because here the
+    /// frontend - not a faked Core - authors the body. The asserted members are deliberately the
+    /// same ones the Core terminal's own unit test asserts, so the two 405 producers cannot drift.
+    /// </summary>
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_A_Tracked_Change_Route_Request_With_An_Unsupported_Method
+    {
+        private const string CorrelationIdHeader = "correlationid";
+        private const string SentCorrelationId = "tracked-change-correlation-id";
+
+        [TestCase("deletes")]
+        [TestCase("keyChanges")]
+        public async Task It_answers_405_with_the_same_ed_fi_body_the_core_terminal_produces(
+            string trackedChangeSegment
+        )
+        {
+            var apiService = FakeApiServiceAnsweringEveryVerb();
+
+            // CorrelationIdHeader is empty by default, which would make ExtractTraceIdFrom fall back
+            // to TraceIdentifier and leave the correlationId assertion below unable to tell the two
+            // apart. Configuring the header is what gives that assertion its meaning.
+            await using var factory = CreateFactory(
+                apiService,
+                new Dictionary<string, string?> { ["AppSettings:CorrelationIdHeader"] = CorrelationIdHeader }
+            );
+            using var client = factory.CreateClient();
+            using var request = new HttpRequestMessage(
+                HttpMethod.Patch,
+                $"/data/ed-fi/schools/{trackedChangeSegment}"
+            );
+            request.Headers.Add(CorrelationIdHeader, SentCorrelationId);
+
+            var response = await client.SendAsync(request);
+            var content = await response.Content.ReadAsStringAsync();
+            JsonNode body = JsonNode.Parse(content)!;
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            response.Content.Headers.GetValues("Allow").Should().Equal("GET");
+            response.Content.Headers.ContentType!.ToString().Should().Be("application/json; charset=utf-8");
+
+            body["detail"]!.GetValue<string>().Should().Be("The request construction was invalid.");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:method-not-allowed");
+            body["title"]!.GetValue<string>().Should().Be("Method Not Allowed");
+            body["status"]!.GetValue<int>().Should().Be(405);
+            body["validationErrors"]!.AsObject().Should().BeEmpty();
+            body["errors"]!
+                .AsArray()
+                .Select(error => error!.GetValue<string>())
+                .Should()
+                .Equal("The endpoint of the request does not support the 'PATCH' method.");
+            body["correlationId"]!.GetValue<string>().Should().Be(SentCorrelationId);
+
+            // The terminal answers locally; it must not reach Core at all.
+            A.CallTo(apiService).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_Other_Unmapped_Requests
+    {
+        [Test]
+        public async Task It_answers_head_on_a_data_route_from_the_method_not_allowed_terminal()
+        {
+            var apiService = FakeApiServiceAnsweringEveryVerb();
+
+            await using var factory = CreateFactory(apiService);
+            using var client = factory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Head, "/data/ed-fi/schools");
+
+            var response = await client.SendAsync(request);
+
+            // Status and Allow only, deliberately: TestServer does not implement Kestrel's HEAD
+            // body suppression, so any wire-body assertion here would describe the test host rather
+            // than the product.
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            string.Join(", ", response.Content.Headers.GetValues("Allow")).Should().Be("GET, POST");
+            A.CallTo(() => apiService.MethodNotAllowed(A<FrontendRequest>._, A<string>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public async Task It_still_answers_a_non_data_path_from_the_fallback()
+        {
+            var apiService = FakeApiServiceAnsweringEveryVerb();
+
+            await using var factory = CreateFactory(apiService);
+            using var client = factory.CreateClient();
+
+            var response = await client.GetAsync("/nope");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            A.CallTo(() => apiService.MethodNotAllowed(A<FrontendRequest>._, A<string>._))
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_still_answers_a_cors_preflight_before_reaching_the_terminal()
+        {
+            var apiService = FakeApiServiceAnsweringEveryVerb();
+
+            await using var factory = CreateFactory(apiService);
+            using var client = factory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Options, "/data/ed-fi/schools");
+            request.Headers.Add("Origin", "http://localhost:8082");
+            request.Headers.Add("Access-Control-Request-Method", "GET");
+
+            var response = await client.SendAsync(request);
+
+            // A plain OPTIONS now reaches the terminal and answers 405, but the CORS middleware
+            // short-circuits a preflight ahead of endpoint execution.
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            A.CallTo(() => apiService.MethodNotAllowed(A<FrontendRequest>._, A<string>._))
+                .MustNotHaveHappened();
+        }
+    }
+
+    private static void AssertVerbReachedItsHandler(IApiService apiService, string verb)
+    {
+        switch (verb)
+        {
+            case "GET":
+                A.CallTo(() => apiService.Get(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();
+                break;
+            case "POST":
+                A.CallTo(() => apiService.Upsert(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();
+                break;
+            case "PUT":
+                A.CallTo(() => apiService.UpdateById(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();
+                break;
+            case "DELETE":
+                A.CallTo(() => apiService.DeleteById(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(verb), verb, "Unhandled verb");
         }
     }
 }
