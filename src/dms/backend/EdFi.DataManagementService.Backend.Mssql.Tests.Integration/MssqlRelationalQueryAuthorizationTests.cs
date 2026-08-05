@@ -332,7 +332,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     /// <summary>
     /// Namespace twin of <see cref="AssertDeleteWithIfMatchSharedGuardedSession"/>: the target is locked
     /// once, the stored namespace check runs against that locked row, and the delete follows — all inside
-    /// one guarded session, so authorization precedes both the If-Match result and the deletion.
+    /// one guarded session, so authorization precedes both the If-Match result and the deletion. The lock
+    /// and the check share the opening command, so the ordering they must hold is textual within it.
     /// </summary>
     public void AssertDeleteWithIfMatchNamespaceOrdering()
     {
@@ -340,16 +341,21 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
         commands.Select(static command => command.SessionId).Distinct().Should().ContainSingle();
 
-        var lockIndex = FindRequiredCommandIndex(commands, IsMssqlDocumentLockCommand);
-        var authorizationIndex = FindRequiredCommandIndex(
-            commands,
-            MssqlNamespaceAuthorizationCommandAssertions.IsNamespaceAuthorizationCommand
-        );
-        var deleteIndex = FindRequiredCommandIndex(commands, IsMssqlDocumentDeleteCommand);
+        commands.Should().HaveCount(2);
 
-        lockIndex.Should().BeLessThan(authorizationIndex);
-        authorizationIndex.Should().BeLessThan(deleteIndex);
+        var openingCommandText = commands[0].CommandText;
+        IsMssqlDocumentLockCommand(openingCommandText).Should().BeTrue();
+        MssqlNamespaceAuthorizationCommandAssertions
+            .IsNamespaceAuthorizationCommand(openingCommandText)
+            .Should()
+            .BeTrue();
+        openingCommandText
+            .IndexOf("UPDLOCK", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(openingCommandText.IndexOf("AUTH1", StringComparison.Ordinal));
+        IsMssqlDocumentDeleteCommand(openingCommandText).Should().BeFalse();
 
+        IsMssqlDocumentDeleteCommand(commands[1].CommandText).Should().BeTrue();
         commands.Count(command => IsMssqlDocumentLockCommand(command.CommandText)).Should().Be(1);
     }
 

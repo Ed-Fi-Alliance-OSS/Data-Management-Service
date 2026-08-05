@@ -190,10 +190,8 @@ public class Given_DocumentCacheWriterFaultInjection
 
         public IReferenceResolverAdapter CreateAdapter() => new TestReferenceResolverAdapter();
 
-        public IReferenceResolverAdapter CreateSessionAdapter(
-            DbConnection connection,
-            DbTransaction transaction
-        ) => new TestReferenceResolverAdapter();
+        public IReferenceResolverAdapter CreateSessionAdapter(IRelationalCommandExecutor commandExecutor) =>
+            new TestReferenceResolverAdapter();
     }
 
     private sealed class TestReferenceResolverAdapter : IReferenceResolverAdapter
@@ -245,8 +243,7 @@ public class Given_DocumentCacheWriterFaultInjection
     private sealed class TestSessionDocumentHydrator : ISessionDocumentHydrator
     {
         public Task<HydratedPage> HydrateAsync(
-            DbConnection connection,
-            DbTransaction transaction,
+            IRelationalWriteSession writeSession,
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
             HydrationExecutionOptions executionOptions,
