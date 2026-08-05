@@ -3521,6 +3521,18 @@ Describe "Get-DatabaseNameFromResolvedConnectionString / Get-EndpointFromResolve
         $names | Should -Contain "B"
     }
 
+    It "returns every present PostgreSQL database-name candidate too, not only the first" {
+        # The multi-candidate contract is per-engine: Npgsql's Database and DB are synonyms just as
+        # SqlClient's Database and Initial Catalog are, so a PostgreSQL string carrying both must
+        # surface both rather than let the second spelling go unexamined.
+        $names = @(Get-DatabaseNameFromResolvedConnectionString `
+            -ConnectionString "host=h;Database=edfi_datamanagementservice;DB=edfi_configurationservice;" `
+            -DatabaseEngine "postgresql")
+        $names.Count | Should -Be 2
+        $names | Should -Contain "edfi_datamanagementservice"
+        $names | Should -Contain "edfi_configurationservice"
+    }
+
     It "does not re-resolve a ${...}-shaped literal already present in an already-resolved string" {
         # Simulates the opaque-ambient case: the caller already resolved the whole connection
         # string (e.g. via Get-ComposeResolvedEnvValue), so a literal, un-interpolated ${...}

@@ -3341,6 +3341,22 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
             } | Should -Throw "*DATABASE_CONNECTION_STRING_ADMIN*"
         }
 
+        It "extracts the database name from a PostgreSQL DB segment hidden behind a Database decoy" {
+            # Npgsql declares DB a synonym for Database, so this string targets protected_name while
+            # naming safe_name first. Recognizing only Database returned the decoy as the sole
+            # candidate and the guard permitted a reset that would have dropped protected_name.
+            # No POSTGRES_DB_NAME/MSSQL_DB_NAME is supplied, so the DB candidate is the only thing
+            # that can make this throw.
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        DATABASE_CONNECTION_STRING_ADMIN = "Host=h;Database=safe_name;DB=protected_name"
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "protected_name"
+            } | Should -Throw "*must stay separate*DATABASE_CONNECTION_STRING_ADMIN*"
+        }
+
         It "rejects a Compose-quoted connection string that targets the E2E database" {
             {
                 Assert-E2EDatabaseIsDedicated `
