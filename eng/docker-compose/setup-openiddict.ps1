@@ -373,7 +373,15 @@ function Invoke-DbQuery {
     param(
         [string]$Sql,
         [switch]$Debug,
-        [switch]$UseMasterDatabase
+        [switch]$UseMasterDatabase,
+
+        # Tolerates SQL Server error 1801 ("database already exists") for the guarded MSSQL
+        # database-create statement only: the IF DB_ID(...) IS NULL CREATE DATABASE guard is a
+        # check-then-act statement, not truly atomic, so two concurrent invocations can both pass
+        # the DB_ID check before either creates the database, and the loser's CREATE DATABASE can
+        # still fail with 1801. Every other caller (schema/table DDL, key inserts) leaves this off
+        # and keeps today's hard-throw-on-any-failure behavior unchanged.
+        [switch]$TolerateMssqlDuplicateCreate
     )
 
     if ($Debug) {
@@ -433,6 +441,10 @@ function Invoke-DbQuery {
         # -I sets QUOTED_IDENTIFIER ON, required by XML data type methods.
         $output = docker exec -e "SQLCMDPASSWORD=$password" $MssqlContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U $user -d $db -C -b -I -h -1 -W -Q $Sql 2>&1
         if ($LASTEXITCODE -ne 0) {
+            if ($TolerateMssqlDuplicateCreate -and (Test-MssqlDuplicateDatabaseError -CapturedOutput ($output | Out-String))) {
+                Write-Host "Database already existed (created by a concurrent process racing the same check-then-act guard); continuing."
+                return $output
+            }
             throw "sqlcmd failed (exit $LASTEXITCODE): $output"
         }
         return $output
@@ -520,6 +532,109 @@ function New-MssqlCreateDatabaseStatement {
     return "IF DB_ID(N'$quotedLiteral') IS NULL CREATE DATABASE [$quotedIdentifier];"
 }
 
+function New-PostgresCreateDatabaseScript {
+    <#
+    .SYNOPSIS
+        Returns the guarded create-if-absent script for the identity-store database on PostgreSQL.
+    .DESCRIPTION
+        PostgreSQL has no "CREATE DATABASE IF NOT EXISTS", and CREATE DATABASE cannot run inside a
+        transaction or a plpgsql block, so the guard is expressed as a SELECT that generates the
+        statement text and psql's \gexec, which executes whatever the previous query returned.
+
+        The script is a constant: the database name never appears in it. It arrives as a psql
+        variable (-v dbName=...) and is referenced as :'dbName', so psql performs the quoting for
+        the string comparison, while format('CREATE DATABASE %I', ...) applies PostgreSQL's own
+        identifier quoting to build the statement. A name carrying a quote or other delimiter
+        therefore cannot terminate a literal or an identifier and escape into executable text - the
+        same property New-MssqlCreateDatabaseStatement gets from doubling delimiters, obtained here
+        without any string building on our side.
+
+        Callers must also pass -v ON_ERROR_STOP=1: without it psql reports exit 0 even when the
+        \gexec-generated CREATE DATABASE itself fails, which would make a real failure look
+        successful.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pure script-text factory despite the New- verb; it creates no system state, so -WhatIf/-Confirm semantics add no value.')]
+    param()
+
+    return "SELECT format('CREATE DATABASE %I', :'dbName') WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'dbName') \gexec"
+}
+
+function Invoke-PostgresGuardedDatabaseCreate {
+    <#
+    .SYNOPSIS
+        Creates the identity-store database on PostgreSQL if absent, tolerating only the benign
+        concurrent-creation race, and proves afterwards that the database exists.
+    .DESCRIPTION
+        Two independent races exist here. The script's own WHERE NOT EXISTS guard is check-then-act,
+        and PostgreSQL's CREATE DATABASE has its own internal check-then-insert, so a concurrent
+        creator can surface as 42P04 or 23505 on the losing side. Either is treated as possibly
+        benign, but never as success on its own: the postcondition query below must confirm the
+        database now exists, so a benign SQLSTATE with a failed postcondition still propagates.
+
+        Transport is `docker exec -i`, not plain `docker exec`: without -i the piped script never
+        reaches psql's stdin, and psql reads an empty program and silently does nothing.
+
+        This helper builds its own psql invocation rather than routing through Invoke-DbQuery. That
+        function passes SQL as a `-c` argument, which cannot carry the `-v` variable bindings or the
+        `\gexec` metacommand this path depends on, and it always connects to the target database -
+        impossible here, since the database does not exist yet. Both connections below therefore
+        target the "postgres" maintenance database directly.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper invoked non-interactively against a local setup database.')]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$User,
+
+        [string]$DbHost,
+
+        [string]$Port
+    )
+
+    $createScript = New-PostgresCreateDatabaseScript
+    $existsScript = "SELECT 1 FROM pg_database WHERE datname = :'dbName';"
+
+    $runPsql = {
+        param([string]$Script, [string[]]$ExtraArgs)
+
+        if (-not [string]::IsNullOrEmpty($script:PostgresContainerName)) {
+            return $Script | & docker exec -i $script:PostgresContainerName psql `
+                -v dbName="$DatabaseName" -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate `
+                @ExtraArgs -U $User -d postgres -f - 2>&1
+        }
+
+        $hostArgs = @("-h", $DbHost)
+        if ($Port) { $hostArgs += @("-p", $Port) }
+        return $Script | & psql -v dbName="$DatabaseName" -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate `
+            @hostArgs @ExtraArgs -U $User -d postgres -f - 2>&1
+    }
+
+    $output = & $runPsql $createScript @()
+    if ($LASTEXITCODE -ne 0) {
+        if (Test-PostgresDuplicateDatabaseError -CapturedOutput ($output | Out-String)) {
+            Write-Host "Database already existed (created by a concurrent process racing the same check-then-act guard); continuing."
+        }
+        else {
+            throw "psql failed to create database '$DatabaseName' (exit $LASTEXITCODE): $output"
+        }
+    }
+
+    # Postcondition, run unconditionally rather than only on the racy path, so a create that
+    # silently no-ops for any other reason is caught here instead of surfacing later as a confusing
+    # failure in the schema/table statements. -tA keeps the result a bare value with no row-count or
+    # alignment decoration to parse around.
+    $existsOutput = & $runPsql $existsScript @("-tA")
+    if ($LASTEXITCODE -ne 0) {
+        throw "psql failed to confirm database '$DatabaseName' exists (exit $LASTEXITCODE): $existsOutput"
+    }
+    $existsFirstLine = @($existsOutput | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)
+    if (($existsFirstLine | Out-String).Trim() -ne "1") {
+        throw "Database '$DatabaseName' does not exist after the guarded create-if-absent script ran."
+    }
+}
+
 # Main logic
 function Invoke-InitDbScripts {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function runs a sequence of database initialization scripts.')]
@@ -530,7 +645,24 @@ function Invoke-InitDbScripts {
     if ($DbType -eq "MSSQL") {
         Write-Host "Create database if not exists"
         $dbName = Resolve-EnvValue $DbName
-        Invoke-DbQuery -UseMasterDatabase (New-MssqlCreateDatabaseStatement -DatabaseName $dbName)
+        Invoke-DbQuery -UseMasterDatabase -TolerateMssqlDuplicateCreate (New-MssqlCreateDatabaseStatement -DatabaseName $dbName)
+
+        # Postcondition: a benign concurrent-creation race (SQL Server error 1801, tolerated above)
+        # is only actually benign if the database provably exists now - the error code alone is not
+        # proof of success. Checked unconditionally, not just on the racy path, so a create that
+        # silently no-ops for any other reason is also caught here rather than surfacing later as a
+        # confusing failure in the schema/table statements that follow.
+        #
+        # SET NOCOUNT ON is required, not cosmetic: sqlcmd's -h -1 suppresses column headers but not
+        # row-count messages, so without it the output carries a trailing "(1 rows affected)" line
+        # and no whole-output comparison against "1" can ever match. Reading the first non-blank
+        # line rather than the whole output keeps the check robust against any further trailing
+        # server messages. Matches the same existence check in eng/DatabaseTemplates.
+        $existsResult = Invoke-DbQuery -UseMasterDatabase "SET NOCOUNT ON; SELECT CASE WHEN DB_ID(N'$($dbName.Replace("'", "''"))') IS NOT NULL THEN 1 ELSE 0 END;"
+        $existsFirstLine = @($existsResult | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)
+        if (($existsFirstLine | Out-String).Trim() -ne "1") {
+            throw "Database '$dbName' does not exist after the guarded create-if-absent statement ran."
+        }
 
         Write-Host "Create schema if not exists: dmscs"
         Invoke-DbQuery "IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'dmscs') EXEC('CREATE SCHEMA dmscs');"
@@ -563,6 +695,26 @@ END;
         Write-Host "Database initialization scripts completed."
         return
     }
+
+    # Create the database before connecting to it. In shared mode this is a no-op: the datastore
+    # database already exists (postgresql-init.sh creates POSTGRES_DB_NAME at container init). In
+    # separate mode the dedicated CMS database does not exist yet, and every statement below would
+    # otherwise fail to connect. Mirrors the SQL Server branch above.
+    Write-Host "Create database if not exists"
+    $pgDbName = Resolve-EnvValue $script:DbName
+    $pgConnection = Get-EffectiveConnectionString -ConnectionString $script:ConnectionString -DbType $script:DbType -DbHost $script:DbHost -DbPort $script:DbPort -DbName $script:DbName -DbUser $script:DbUser
+    $pgParams = @{}
+    foreach ($pair in $pgConnection -split ';') {
+        if ($pair -match '=') {
+            $kv = $pair -split '=', 2
+            $pgParams[$kv[0].Trim()] = $kv[1].Trim()
+        }
+    }
+    Invoke-PostgresGuardedDatabaseCreate `
+        -DatabaseName $pgDbName `
+        -User $pgParams['Username'] `
+        -DbHost $pgParams['Host'] `
+        -Port $pgParams['Port']
 
     # Run embedded SQL script contents
     Write-Host "Create schema if not exists: dmscs"

@@ -121,7 +121,17 @@ param (
     # Resolve-DatabaseEngineEnvironmentFile.
     [ValidateSet("postgresql", "mssql")]
     [string]
-    $DatabaseEngine = "postgresql"
+    $DatabaseEngine = "postgresql",
+
+    # Redirects the CMS (Configuration Service) database to a dedicated edfi_configurationservice
+    # database instead of sharing the DMS datastore database. Applies only when CMS actually
+    # participates (the default/-InfraOnly shape); has no effect with -DmsOnly/-DbOnly/-d, where
+    # CMS does not start. Also adds published-config.yml to the managed compose set even when no
+    # other condition would (e.g. -IdentityProvider keycloak without -EnableConfig/-InfraOnly),
+    # since CMS must actually run to create the separate database. Supported on both database
+    # engines.
+    [Switch]
+    $SeparateConfigDatabase
 )
 
 $databaseOnlyStartup = $DbOnly -and -not $d
@@ -171,7 +181,48 @@ $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $Dat
 # path (Resolve-DatabaseEngineEnvironmentFile detects the overlay is already composed via
 # DMS_DATASTORE=mssql and returns the file unchanged, avoiding a derived-of-derived file).
 # DbOnly and teardown skip the CMS/OpenIddict invariant because neither initializes identity data.
-$EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d)
+#
+# Whether published-config.yml joins the managed compose set, i.e. whether the Configuration
+# Service actually runs. Unlike local-config.yml (unconditional in start-local-dms.ps1), the
+# published stack includes CMS only on an explicit request, for self-contained identity, for the
+# bootstrap claims mount, or - this story's own addition - for -SeparateConfigDatabase, since CMS
+# must run to create the dedicated database. Computed once here and consumed both by the
+# CMS-participation gate below and by the compose-file-set construction later, so the two can
+# never drift apart.
+$cmsIncludedInComposeSet = $EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode -or $SeparateConfigDatabase
+
+# CMS participates only when it is both a forward-starting non-DMS-only shape AND actually present
+# in the compose set - not -DmsOnly (CMS doesn't start), -DbOnly, or teardown (-d), and not a bare
+# published Keycloak start that omits published-config.yml entirely. Non-participating shapes get
+# structural validation only; every participating MSSQL shape is verified physically on the
+# running server after readiness (Assert-MssqlTopologyPhysicalConsistency), in shared and
+# separate mode alike. Validating a CMS endpoint for a CMS that never starts would reject an
+# irrelevant customized value, so the compose-set conjunct is load-bearing, not cosmetic.
+$cmsParticipates = (-not ($databaseOnlyStartup -or $d -or $DmsOnly)) -and $cmsIncludedInComposeSet
+
+if ($cmsParticipates) {
+    $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:$true
+
+    # Both engines run the same topology-write sequence, so shared and separate mode are symmetric
+    # across PostgreSQL and SQL Server. The profile files and both .yml inline fallbacks carry the
+    # topology seam in their database segment; the fallbacks' host, port, and credentials stay
+    # PostgreSQL-shaped because Compose interpolation cannot branch on the engine, which is why an
+    # MSSQL run must supply DMS_CONFIG_DATABASE_CONNECTION_STRING explicitly (the .env.mssql overlay
+    # always does).
+    $EnvironmentFile = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase -DockerComposeRoot $PSScriptRoot
+    Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine
+}
+else {
+    # CMS does not participate in this shape, so the topology sequence above does not run and this
+    # path composes the engine overlay only - structural validation, no database-NAME verdict. A
+    # SQL Server name relationship is the running instance's collation's call, and this shape never
+    # starts a server to ask, so a documented "accepted, gated no-op" continuation like
+    # `-DmsOnly -SeparateConfigDatabase` against the original -EnvironmentFile proceeds regardless
+    # of which database its CMS connection string names.
+    # -SkipMssqlCmsDatabaseValidation is retained at this call site for compatibility and is a
+    # documented no-op; the switch value is preserved so the argument still records the intent.
+    $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d -or $SeparateConfigDatabase)
+}
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 if (-not $databaseOnlyStartup) {
     # Identity/CMS/DMS settings are application concerns. Keeping them outside DbOnly means an
@@ -216,6 +267,73 @@ if (-not $d) {
 
     if ($NoDataStore -and -not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
         throw "Parameters -NoDataStore and -SchoolYearRange are mutually exclusive. Use -NoDataStore for manual data store creation, or use -SchoolYearRange to auto-create data stores."
+    }
+
+    # The DMS datastore database registered in the CMS data-store record is chosen AFTER topology
+    # validation has already run - so it could silently reintroduce the very sharing
+    # -SeparateConfigDatabase exists to remove. On PostgreSQL distinctness is enforced here, at
+    # the same fail-fast boundary as the other parameter rules, but deliberately AFTER them: this check
+    # is new, and an invalid parameter shape must keep reporting the established diagnostic that
+    # describes it. Placed first, it masked "-NoDataStore and -SchoolYearRange are mutually exclusive"
+    # for a caller who had made that mistake and happened to also pass the reserved database name.
+    #
+    # The guard judges the EFFECTIVE name that will actually be registered, not just the parameter:
+    # -DataStoreDatabaseName when supplied, and otherwise the Compose-resolved POSTGRES_DB_NAME
+    # fallback the registration itself computes. That is anti-drift hardening, NOT a hole this closes:
+    # when the parameter is omitted the effective name IS POSTGRES_DB_NAME, and every colliding value
+    # reachable that way is already refused earlier by Confirm-CmsDatabaseTopologyAgreement's
+    # initialized-path authority (Compose value semantics trim a declaration's trailing whitespace, so
+    # an env-file name arrives as the exact reserved literal, which that authority rejects). The one
+    # input where the two authorities disagree - a bare trailing line feed, which this registered
+    # transport collapses and createdb preserves - can only arrive through -DataStoreDatabaseName,
+    # which bypasses Compose resolution, and that remains the load-bearing case for this guard.
+    # Resolving the effective name into one variable that the registration below reuses means the
+    # guarded value and the registered value cannot drift apart if either ordering or the set of value
+    # sources changes later.
+    #
+    # It applies only to a shape that actually reaches the data-store registration below: -InfraOnly,
+    # -DmsOnly, and -DbOnly all return before it, and -NoDataStore skips it. Because -NoDataStore and
+    # -SchoolYearRange are mutually exclusive - rejected immediately above - -NoDataStore always means the
+    # registration is skipped, so the parameter is inert in that shape too and the switch combination
+    # stays a no-op, matching continuation behavior.
+    #
+    # WHETHER a name collides is decided by Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase,
+    # and that is deliberately NOT the predicate Confirm-CmsDatabaseTopologyAgreement uses. The two ask
+    # about different physical creation mechanisms, and this call site asks only about the REGISTERED
+    # transport: whichever name is effective, it is
+    # serialized into the datastore connection string registered in CMS below, parsed back by the
+    # provider, and SchemaTools creates the database with a QUOTED identifier - so on PostgreSQL nothing
+    # folds on either path: only a name the provider parses back AS the reserved name collides (the exact
+    # name, or - the measured exception, and now the one input where the two mechanisms still differ - one
+    # whose bare trailing line feed this transport collapses while createdb preserves it), and a
+    # mixed-case name is a genuinely distinct database. Sharing one engine-neutral
+    # predicate across both call sites is what made this script reject that distinct PostgreSQL database
+    # while the validator accepted a colliding one. The INITIALIZED path is not re-judged here: when the
+    # effective name comes from POSTGRES_DB_NAME that value also reaches postgresql-init.sh's createdb,
+    # and Confirm-CmsDatabaseTopologyAgreement owns that mechanism - which is why the omitted-parameter
+    # shape is already refused there rather than here.
+    #
+    # PostgreSQL only: that offline verdict is sound because it models the exact provider transport.
+    # SQL Server renders NO offline verdict - database names inherit the INSTANCE collation, so MSSQL
+    # distinctness (for this parameter too, as the PARSED value the provider receives) is decided by
+    # the server-backed authority against the running instance, after the database container starts
+    # and before the registration below runs.
+    $dataStoreRegistrationRuns = -not ($InfraOnly -or $DmsOnly -or $DbOnly -or $NoDataStore)
+    # The single source of truth for the PostgreSQL datastore database this run will register. The
+    # registration below reuses this exact variable, so the guarded value is the registered value.
+    # Every path that reaches the registration passes through here first: the registration lives in the
+    # else branch of `if ($d)`, which this block precedes.
+    $effectivePostgresDataStoreName =
+        if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
+            Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_DB_NAME" -DefaultValue "edfi_datamanagementservice"
+        }
+        else {
+            $DataStoreDatabaseName
+        }
+    if ($SeparateConfigDatabase -and $dataStoreRegistrationRuns -and $DatabaseEngine -eq "postgresql" -and
+        (Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine $DatabaseEngine -DatastoreDatabaseName $effectivePostgresDataStoreName)) {
+        # Names the parameter and the reserved literal only - never the caller's own value.
+        throw "-DataStoreDatabaseName must be provably distinct from 'edfi_configurationservice' with -SeparateConfigDatabase: that is the dedicated Configuration Service database, and pointing the DMS datastore at it would reintroduce the shared topology the switch opts out of. On PostgreSQL the name is compared as the provider parses it - SchemaTools creates it with a quoted identifier, so nothing folds; only a name that parses back to that reserved name collides, and the measured non-exact case is a trailing line feed, which connection-string parsing removes."
     }
 
     # Resolved once with Compose precedence and reused by the data-store creation below, so the
@@ -288,9 +406,12 @@ if (-not $databaseOnlyStartup) {
         $files += @("-f", "kafka-ui.yml")
     }
 
-    # Include Configuration Service when requested, when needed for self-contained identity,
-    # or when bootstrap mode activates the staged claims workspace mount.
-    if ($EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode) {
+    # Include Configuration Service when requested, when needed for self-contained identity, when
+    # bootstrap mode activates the staged claims workspace mount, or when -SeparateConfigDatabase is
+    # requested: CMS must actually run to create the dedicated database, regardless of identity
+    # provider (e.g. keycloak without -EnableConfig/-InfraOnly would otherwise omit it). The
+    # condition itself is computed once, well above, and shared with the CMS-participation gate.
+    if ($cmsIncludedInComposeSet) {
         $files += @("-f", "published-config.yml")
     }
 
@@ -513,20 +634,50 @@ else {
         # poll before the phase commands need it. Default matches mssql.yml's compose default.
         $mssqlSaPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
         Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
+
+        if ($cmsParticipates) {
+            # The live topology check for EVERY CMS-participating MSSQL start: the RUNNING SQL
+            # Server - the only authority on its own database-name semantics - verifies that the
+            # CMS targets (the seam and every connection-string segment) are physically the
+            # database the effective topology expects, and in separate mode that the datastore
+            # candidates stay physically distinct from the dedicated Configuration Service
+            # database. The authority reads the effective file's own topology marker (raw) to
+            # select the mode; on this participating path the topology resolver above just
+            # recomputed the topology from the switch, so the marker in the file it RETURNED is
+            # the current declaration.
+            # Placed hard against readiness so a violated relation, or any inability to verify
+            # (it fails closed), stops the start after the database container exists but before
+            # OpenIddict, CMS, DMS, or the data-store registration below touches it. The
+            # registered candidate joins
+            # only when that registration will actually run, and as the value a provider
+            # RECEIVES - never the raw parameter text, which the connection-string transport
+            # can differ from (a bare trailing line feed is removed by it); the authority
+            # applies it only where it participates (the separate mode's distinctness rule).
+            $registeredDatastoreDatabaseValue = ""
+            if ($dataStoreRegistrationRuns -and -not [string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
+                $registeredDatastoreDatabaseValue = Get-RegisteredDatastoreDatabaseValue -DatastoreDatabaseName $DataStoreDatabaseName
+            }
+            Assert-MssqlTopologyPhysicalConsistency `
+                -EnvironmentFile $EnvironmentFile `
+                -ContainerName "dms-mssql" `
+                -SaPassword $mssqlSaPassword `
+                -RegisteredDatastoreDatabaseName $registeredDatastoreDatabaseValue
+        }
     }
 
-    # Engine-aware database parameters for the setup-openiddict.ps1 calls below (mirrors
-    # start-local-config.ps1). On SQL Server the OpenIddict stores live in the shared DMS
-    # datastore database (MSSQL_DB_NAME), which CMS also uses now that the two share one
-    # database; -InitDb creates it (and the dmscs schema) when missing, ahead of the CMS
-    # startup deploy. On PostgreSQL the script defaults apply unchanged (shared
-    # POSTGRES_DB_NAME database).
+    # Engine-aware database parameters for the setup-openiddict.ps1 calls below. On both engines the
+    # OpenIddict stores live in whichever database CMS itself targets - DMS_CONFIG_DATABASE_NAME,
+    # the CMS database topology seam (DMS-1270): the shared DMS datastore database by default, or
+    # the dedicated edfi_configurationservice database when -SeparateConfigDatabase redirects CMS
+    # there. -InitDb creates that database (and the dmscs schema) when missing, ahead of the CMS
+    # startup deploy. Only the connection details differ per engine; the database name is resolved
+    # from the same seam either way, so the two modes stay symmetric across engines.
     $identityDbParams =
         if ($DatabaseEngine -eq "mssql") {
-            @{ DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:MSSQL_DB_NAME" }
+            @{ DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:DMS_CONFIG_DATABASE_NAME" }
         }
         else {
-            @{}
+            @{ DbName = "ENV:DMS_CONFIG_DATABASE_NAME" }
         }
 
     Start-Sleep 20
@@ -596,6 +747,19 @@ else {
 
 
     Write-Output "Starting published DMS"
+
+    # Published-ordering fix (DMS-1270): -InitDb must run before the compose set that includes CMS
+    # is started, closing a genuine, pre-existing latent race in the shared-mode published
+    # self-contained flow - CMS deploying its dmscs schema before OpenIddict's database/keys exist.
+    # The "db" service was already started and confirmed ready earlier in this script, so -InitDb
+    # (which needs only the database) can safely run here, ahead of "up $upArgs" starting CMS/DMS.
+    # Not gated by -DatabaseEngine: this structural fix applies to both engines equally.
+    if($IdentityProvider -eq "self-contained")
+    {
+        Write-Output "Init db public and private keys for OpenIddict..."
+        ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile @identityDbParams
+    }
+
     if ($bootstrapManifestPresent) {
         Write-Output "Bootstrap manifest detected; starting published DMS."
         docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs
@@ -610,13 +774,6 @@ else {
     }
 
     Start-Sleep 20
-
-    if($IdentityProvider -eq "self-contained")
-    {
-        Write-Output "Init db public and private keys for OpenIddict..."
-        ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile @identityDbParams
-    }
-
     Start-Sleep 10
 
     if($IdentityProvider -eq "self-contained")
@@ -671,13 +828,9 @@ else {
             # compose-file ${VAR:-default} fallbacks, so the registered data store targets exactly
             # the database/credentials the containers received.
             $tenant = $configServiceTenant
-            $postgresDbName =
-                if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
-                    Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_DB_NAME" -DefaultValue "edfi_datamanagementservice"
-                }
-                else {
-                    $DataStoreDatabaseName
-                }
+            # The same value the separate-mode collision guard above judged, not a second resolution of
+            # it: re-deriving it here is what let the guard and the registration disagree.
+            $postgresDbName = $effectivePostgresDataStoreName
             $postgresUser = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
             $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_PASSWORD")
 

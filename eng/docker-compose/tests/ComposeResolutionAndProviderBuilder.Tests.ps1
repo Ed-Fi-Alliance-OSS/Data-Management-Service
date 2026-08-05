@@ -67,6 +67,367 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
         }
     }
 
+    Context "Compose default-value and nested interpolation (DMS-1270)" {
+        # Ground truth for every expectation here was captured from a real `docker compose config`
+        # render (Compose v2, 2026-07-28) over an env file defining CPI270_EMPTY= (set-but-empty),
+        # CPI270_SET=set-value, CPI270_NESTED=nested-value, and leaving CPI270_UNSET undefined:
+        # ':-' substitutes when unset OR empty, '-' only when unset; ':+' substitutes when set AND
+        # non-empty, '+' whenever set (even empty); '?' errors only when unset while ':?' also errors
+        # when empty; defaults interpolate recursively, including the nested ${A:-${B}} form, and an
+        # escaped '$$' inside an operator word stays literal. Docker documents these operators for
+        # .env interpolation, and a caller-authored connection string using them must resolve here
+        # exactly as Compose renders it, or a valid configuration is rejected by validation.
+        BeforeAll {
+            $script:interpolationValues = @{
+                CPI270_EMPTY  = ''
+                CPI270_SET    = 'set-value'
+                CPI270_NESTED = 'nested-value'
+            }
+        }
+
+        It "resolves <_.v> to '<_.e>'" -ForEach @(
+            @{ v = '${CPI270_UNSET:-def}'; e = 'def' }
+            @{ v = '${CPI270_EMPTY:-def}'; e = 'def' }
+            @{ v = '${CPI270_SET:-def}'; e = 'set-value' }
+            @{ v = '${CPI270_UNSET-def}'; e = 'def' }
+            @{ v = '${CPI270_EMPTY-def}'; e = '' }
+            @{ v = '${CPI270_SET-def}'; e = 'set-value' }
+            @{ v = '${CPI270_EMPTY:+alt}'; e = '' }
+            @{ v = '${CPI270_SET:+alt}'; e = 'alt' }
+            @{ v = '${CPI270_UNSET:+alt}'; e = '' }
+            @{ v = '${CPI270_EMPTY+alt}'; e = 'alt' }
+            @{ v = '${CPI270_UNSET+alt}'; e = '' }
+            @{ v = '${CPI270_UNSET:-${CPI270_NESTED}}'; e = 'nested-value' }
+            @{ v = '${CPI270_UNSET:-pre${CPI270_NESTED}post}'; e = 'prenested-valuepost' }
+            @{ v = 'database=${CPI270_UNSET:-${CPI270_NESTED}}'; e = 'database=nested-value' }
+            @{ v = '$${CPI270_NESTED}'; e = '${CPI270_NESTED}' }
+            @{ v = '${1BAD}'; e = '${1BAD}' }
+            @{ v = '${CPI270_SET|x}'; e = '${CPI270_SET|x}' }
+            # Every remaining set/empty/unset branch of the two "error" and two "alternate"
+            # operators, so a mutation in any one of them is observable. '?' errors only on UNSET
+            # (a set-but-empty value passes through); ':?' also errors on empty; '+' substitutes
+            # for any set value; ':+' requires non-empty. Both error branches are asserted below.
+            @{ v = '${CPI270_SET?boom}'; e = 'set-value' }
+            @{ v = '${CPI270_EMPTY?boom}'; e = '' }
+            @{ v = '${CPI270_SET:?boom}'; e = 'set-value' }
+            @{ v = '${CPI270_SET+alt}'; e = 'alt' }
+            # Escaped interpolation INSIDE an operator word stays literal, braces and all: Compose
+            # pairs every '{' with a '}' while finding the expression's end, so the escaped
+            # reference's own closing brace does not terminate the outer expression. Verified live -
+            # ${CPI270_UNSET:-pre$${X}post} rendered the literal pre${X}post. A scanner that counted
+            # only '$'-prefixed opens would close early here and corrupt the result, which for a
+            # connection-string default means silently connecting with the wrong value.
+            @{ v = '${CPI270_UNSET:-pre$${CPI270_NESTED}post}'; e = 'pre${CPI270_NESTED}post' }
+            @{ v = '${CPI270_UNSET:-a$$b}'; e = 'a$b' }
+            # A brace pair with no '$' is ordinary literal text inside the word.
+            @{ v = '${CPI270_UNSET:-{x}}'; e = '{x}' }
+        ) {
+            Resolve-ComposeEnvReference -EnvironmentValues $script:interpolationValues -Value $_.v |
+                Should -BeExactly $_.e
+        }
+
+        It "resolves operators inside an env-file value reached through a plain reference" {
+            # Compose interpolates the env file's own values with the same operators; verified live
+            # (CHAIN=`${A:-`${B}} in the env file rendered the nested default).
+            $values = $script:interpolationValues.Clone()
+            $values['CPI270_CHAIN'] = '${CPI270_UNSET:-${CPI270_NESTED}}'
+            Resolve-ComposeEnvReference -EnvironmentValues $values -Value '${CPI270_CHAIN}' |
+                Should -BeExactly 'nested-value'
+        }
+
+        It "surfaces the :? and ? required-variable errors instead of resolving to empty" {
+            # Both error operators, on both of the states that must raise: ':?' on unset AND on
+            # set-but-empty, '?' on unset only. The passing states are in the matrix above.
+            { Resolve-ComposeEnvReference -EnvironmentValues $script:interpolationValues -Value '${CPI270_UNSET:?var is required}' } |
+                Should -Throw "*required variable 'CPI270_UNSET'*var is required*"
+            { Resolve-ComposeEnvReference -EnvironmentValues $script:interpolationValues -Value '${CPI270_EMPTY:?must be non-empty}' } |
+                Should -Throw "*required variable 'CPI270_EMPTY'*"
+            { Resolve-ComposeEnvReference -EnvironmentValues $script:interpolationValues -Value '${CPI270_UNSET?plain form}' } |
+                Should -Throw "*required variable 'CPI270_UNSET'*plain form*"
+            # '?' (without ':') accepts a set-but-empty value.
+            Resolve-ComposeEnvReference -EnvironmentValues $script:interpolationValues -Value '${CPI270_EMPTY?msg}' |
+                Should -BeExactly ''
+        }
+    }
+
+    # Docker Compose resolves an --env-file sequentially, and a hashtable-based resolution cannot
+    # express that. Every expectation in this Context was captured from a real `docker compose config`
+    # render before the code was written; the comments name the captured value so a future reader can
+    # tell a pinned observation from an assumption.
+    Context "Sequential dotenv evaluation (DMS-1270)" {
+        BeforeAll {
+            # These fixtures resolve names that must not be inherited from the developer's shell.
+            $script:seqNames = @('A', 'AMB_ONLY', 'NAME', 'DUP', 'PASSWORD', 'LATE_SECRET', 'CONN')
+            $script:seqSnapshot = @{}
+            foreach ($name in $script:seqNames) {
+                $script:seqSnapshot[$name] = [System.Environment]::GetEnvironmentVariable($name)
+                Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue
+            }
+            $script:seqWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-seq-eval-$([Guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $script:seqWork -Force | Out-Null
+        }
+
+        AfterAll {
+            foreach ($name in $script:seqNames) {
+                if ($null -eq $script:seqSnapshot[$name]) {
+                    Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue
+                }
+                else {
+                    [System.Environment]::SetEnvironmentVariable($name, $script:seqSnapshot[$name])
+                }
+            }
+            if (Test-Path -LiteralPath $script:seqWork) {
+                Remove-Item -LiteralPath $script:seqWork -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "freezes each line against only what precedes it, and keeps the last declaration as effective" {
+            # Captured: this exact file rendered CONN as host=h;db=first-value;pw=; while ${DUP} at the
+            # compose-file level rendered second-value. One duplicated key, two effective values.
+            $evaluation = Resolve-DotenvFileSequentially -Line @(
+                'DUP=first-value'
+                'PASSWORD=${LATE_SECRET}'
+                'CONN=host=h;db=${DUP};pw=${PASSWORD};'
+                'LATE_SECRET=late'
+                'DUP=second-value'
+            )
+
+            ($evaluation.Declarations | Where-Object { $_.Key -eq 'CONN' }).ResolvedValue |
+                Should -BeExactly 'host=h;db=first-value;pw=;' -Because "Compose froze the first DUP and an as-yet-undeclared PASSWORD"
+            ($evaluation.Declarations | Where-Object { $_.Key -eq 'PASSWORD' }).ResolvedValue |
+                Should -BeExactly '' -Because "LATE_SECRET is declared after PASSWORD, so Compose froze it empty"
+            $evaluation.Effective['DUP'] | Should -BeExactly 'second-value' -Because "the compose file sees the last declaration"
+            $evaluation.DuplicateKeys | Should -Be @('DUP')
+        }
+
+        It "records the names each declaration actually evaluated" {
+            $evaluation = Resolve-DotenvFileSequentially -Line @(
+                'DUP=x'
+                'PASSWORD=y'
+                'CONN=host=h;db=${DUP};pw=${PASSWORD};'
+            )
+            ($evaluation.Declarations | Where-Object { $_.Key -eq 'CONN' }).References |
+                Should -Be @('DUP', 'PASSWORD')
+        }
+
+        It "treats an already-resolved value as terminal and never re-expands it" {
+            # Captured: with NAME=secret, A_ESCAPED=$${NAME} rendered the literal ${NAME}, and
+            # B_REFS_A=${A_ESCAPED} rendered that SAME literal - not "secret". Same for a single-quoted
+            # source value, and a literal '$' in a resolved value is not reinterpreted either. A model
+            # that fed accumulated values back through raw-value resolution would leak "secret" here.
+            $evaluation = Resolve-DotenvFileSequentially -Line @(
+                'NAME=secret'
+                'A_ESCAPED=$${NAME}'
+                'B_REFS_A=${A_ESCAPED}'
+                "S_SQUOTED='`${NAME}'"
+                'T_REFS_S=${S_SQUOTED}'
+                'D_DQUOTED="${NAME}"'
+                'E_REFS_D=${D_DQUOTED}'
+                'F_LITERAL=pa$$word'
+                'G_REFS_F=${F_LITERAL}'
+            )
+
+            $evaluation.Effective['A_ESCAPED'] | Should -BeExactly '${NAME}'
+            $evaluation.Effective['B_REFS_A'] | Should -BeExactly '${NAME}' -Because "a resolved value is terminal"
+            $evaluation.Effective['S_SQUOTED'] | Should -BeExactly '${NAME}'
+            $evaluation.Effective['T_REFS_S'] | Should -BeExactly '${NAME}' -Because "a single-quoted literal stays literal through a reference"
+            $evaluation.Effective['D_DQUOTED'] | Should -BeExactly 'secret' -Because "double quotes do interpolate"
+            $evaluation.Effective['E_REFS_D'] | Should -BeExactly 'secret'
+            $evaluation.Effective['F_LITERAL'] | Should -BeExactly 'pa$word'
+            $evaluation.Effective['G_REFS_F'] | Should -BeExactly 'pa$word' -Because "the literal '$' must not be reinterpreted"
+        }
+
+        It "gives an ambient value precedence even over an earlier declaration in the same file" {
+            # Captured: with ambient A=ambient-a, B=${A} rendered ambient-a even though the file
+            # declares A=file-a on the preceding line.
+            [System.Environment]::SetEnvironmentVariable('A', 'ambient-a')
+            [System.Environment]::SetEnvironmentVariable('AMB_ONLY', 'ambient-only')
+            try {
+                $evaluation = Resolve-DotenvFileSequentially -Line @('A=file-a', 'B=${A}', 'C=${AMB_ONLY}')
+                $evaluation.Effective['B'] | Should -BeExactly 'ambient-a'
+                $evaluation.Effective['C'] | Should -BeExactly 'ambient-only'
+            }
+            finally {
+                Remove-Item Env:\A -ErrorAction SilentlyContinue
+                Remove-Item Env:\AMB_ONLY -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "accepts the whole assignment grammar Compose accepts" {
+            # Captured per line: value trimmed; 'KEY = value' valid with the key trimmed; leading indent
+            # valid; 'export KEY=value' valid with the prefix stripped; inline comment stripped; an
+            # empty value after whitespace is still a declaration.
+            $evaluation = Resolve-DotenvFileSequentially -Line @(
+                'LEAD=   trimmed-value'
+                'SPACED_KEY = spaced'
+                '  INDENTED=indented'
+                'export EXPORTED=exported'
+                'INLINE=value # comment'
+                'EMPTY_SP ='
+                '# COMMENTED=ignored'
+                'not an assignment'
+            )
+
+            $evaluation.Effective['LEAD'] | Should -BeExactly 'trimmed-value'
+            $evaluation.Effective['SPACED_KEY'] | Should -BeExactly 'spaced'
+            $evaluation.Effective['INDENTED'] | Should -BeExactly 'indented'
+            $evaluation.Effective['EXPORTED'] | Should -BeExactly 'exported'
+            $evaluation.Effective['INLINE'] | Should -BeExactly 'value'
+            $evaluation.Effective['EMPTY_SP'] | Should -BeExactly ''
+            $evaluation.Effective.ContainsKey('export EXPORTED') | Should -BeFalse -Because "the export prefix is not part of the key"
+            $evaluation.Effective.ContainsKey('COMMENTED') | Should -BeFalse
+        }
+
+        It "parses '<line>' as key '<key>'" -ForEach @(
+            @{ line = 'K=v'; key = 'K' }
+            @{ line = '  K=v'; key = 'K' }
+            @{ line = 'K = v'; key = 'K' }
+            @{ line = 'export K=v'; key = 'K' }
+        ) {
+            (Get-DotenvAssignment -Line $_.line).Key | Should -BeExactly $_.key
+        }
+
+        It "does not parse '<_>' as an assignment" -ForEach @(
+            '# K=v', '', '   ', 'no-equals-here', '1BAD=v', '=novalue'
+        ) {
+            Get-DotenvAssignment -Line $_ | Should -BeNullOrEmpty
+        }
+
+        It "treats dotenv identifiers as case-sensitive, the way Compose does on Linux" {
+            # Captured in a Linux container (the CI and runtime path): with only UPPER_NAME declared,
+            # ${upper_name} renders UNSET, and with only lower_name declared, ${LOWER_NAME} renders
+            # UNSET. Windows Docker Desktop normalizes case and resolves both, so a Windows-only oracle
+            # cannot see this. Case-insensitive storage would let a lowercase typo satisfy an uppercase
+            # lookup in the preflight while Compose leaves the real reference unset.
+            $evaluation = Resolve-DotenvFileSequentially -Line @(
+                'postgres_db_name=typo_value'
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}'
+            )
+
+            $evaluation.Effective.ContainsKey('postgres_db_name') | Should -BeTrue
+            $evaluation.Effective.ContainsKey('POSTGRES_DB_NAME') | Should -BeFalse -Because "the two spellings are distinct identifiers"
+            $evaluation.Effective['DMS_CONFIG_DATABASE_NAME'] | Should -BeExactly '' -Because "Compose leaves the uppercase reference unset"
+        }
+
+        It "keeps two case-variant declarations of the same-looking key separate" {
+            $evaluation = Resolve-DotenvFileSequentially -Line @('KEY=upper', 'key=lower')
+
+            $evaluation.Effective['KEY'] | Should -BeExactly 'upper'
+            $evaluation.Effective['key'] | Should -BeExactly 'lower'
+            $evaluation.DuplicateKeys.Count | Should -Be 0 -Because "different spellings are not duplicates of each other"
+        }
+
+        It "evaluates a file that declares exactly one key" {
+            # PowerShell unwraps a single-element array argument to a scalar, and under Set-StrictMode a
+            # scalar string has no .Count - so the line loop ran zero times and a one-line file produced
+            # an empty evaluation. Covered for both input forms because ReadAllLines has the same shape.
+            $fromLines = Resolve-DotenvFileSequentially -Line @('ONE=single')
+            $fromLines.Declarations.Count | Should -Be 1
+            $fromLines.Effective['ONE'] | Should -BeExactly 'single'
+
+            $path = Join-Path $script:seqWork "one-line.env"
+            Set-Content -LiteralPath $path -Value 'ONLY=fromfile' -NoNewline
+            $fromPath = Resolve-DotenvFileSequentially -Path $path
+            $fromPath.Declarations.Count | Should -Be 1
+            $fromPath.Effective['ONLY'] | Should -BeExactly 'fromfile'
+        }
+
+        It "matches an assignment line to a key ordinally" {
+            # Replacement and movement both key off this. A case-insensitive match would let a lowercase
+            # decoy declaration be relocated or rewritten in place of the real uppercase key.
+            Test-DotenvAssignmentLine -Line 'POSTGRES_PASSWORD=v' -Key 'POSTGRES_PASSWORD' | Should -BeTrue
+            Test-DotenvAssignmentLine -Line 'export POSTGRES_PASSWORD = v' -Key 'POSTGRES_PASSWORD' | Should -BeTrue
+            Test-DotenvAssignmentLine -Line 'postgres_password=decoy' -Key 'POSTGRES_PASSWORD' | Should -BeFalse
+        }
+
+        It "trims a whitespace-only unquoted value to empty but preserves quoted whitespace" {
+            # Captured on both platforms: WS_UNQUOTED=<spaces> renders as empty, while "<spaces>" and
+            # '<spaces>' keep their spaces. Returning the spaces verbatim let a value pass preflight
+            # that Compose renders differently.
+            $evaluation = Resolve-DotenvFileSequentially -Line @(
+                'WS_UNQUOTED=   '
+                'WS_DQUOTED="   "'
+                "WS_SQUOTED='   '"
+            )
+
+            $evaluation.Effective['WS_UNQUOTED'] | Should -BeExactly ''
+            $evaluation.Effective['WS_DQUOTED'] | Should -BeExactly '   '
+            $evaluation.Effective['WS_SQUOTED'] | Should -BeExactly '   '
+        }
+    }
+
+    Context "Resolution-time reference reporting (DMS-1270)" {
+        # An operator word is evaluated only in the branch that fires - captured live:
+        # ${SET:-${MISSING:?boom}} rendered the set value with no error. So the names a value depends
+        # on are a function of the environment state, not of the text, and a lexical scan over-reports.
+        BeforeAll {
+            $script:refValues = @{ SEQ_SET = 'set'; SEQ_EMPTY = ''; SEQ_W = 'word' }
+        }
+
+        It "reports only the names an unfired operator actually needed" {
+            $trace = [System.Collections.Generic.List[string]]::new()
+            $value = Resolve-ComposeEnvReference -EnvironmentValues $script:refValues -Value '${SEQ_SET:-${SEQ_W}}' -ReferenceTrace $trace
+
+            $value | Should -BeExactly 'set'
+            $trace | Should -Be @('SEQ_SET') -Because "the ':-' word was never evaluated, so SEQ_W is not a dependency"
+        }
+
+        It "reports nothing for escaped dollars, which are literals and not references" {
+            $trace = [System.Collections.Generic.List[string]]::new()
+            $value = Resolve-ComposeEnvReference -EnvironmentValues @{} -Value 'pa$$word and $${NAME}' -ReferenceTrace $trace
+
+            $value | Should -BeExactly 'pa$word and ${NAME}'
+            $trace.Count | Should -Be 0
+        }
+
+        It "reports '<v>' as depending on '<expected>'" -ForEach @(
+            @{ v = '${SEQ_SET:-${SEQ_W}}';    expected = 'SEQ_SET' }
+            @{ v = '${SEQ_EMPTY:-${SEQ_W}}';  expected = 'SEQ_EMPTY,SEQ_W' }
+            @{ v = '${SEQ_MISSING:-${SEQ_W}}'; expected = 'SEQ_MISSING,SEQ_W' }
+            @{ v = '${SEQ_SET-${SEQ_W}}';     expected = 'SEQ_SET' }
+            @{ v = '${SEQ_EMPTY-${SEQ_W}}';   expected = 'SEQ_EMPTY' }
+            @{ v = '${SEQ_MISSING-${SEQ_W}}'; expected = 'SEQ_MISSING,SEQ_W' }
+            @{ v = '${SEQ_SET:+${SEQ_W}}';    expected = 'SEQ_SET,SEQ_W' }
+            @{ v = '${SEQ_EMPTY:+${SEQ_W}}';  expected = 'SEQ_EMPTY' }
+            @{ v = '${SEQ_MISSING:+${SEQ_W}}'; expected = 'SEQ_MISSING' }
+            @{ v = '${SEQ_SET+${SEQ_W}}';     expected = 'SEQ_SET,SEQ_W' }
+            @{ v = '${SEQ_EMPTY+${SEQ_W}}';   expected = 'SEQ_EMPTY,SEQ_W' }
+            @{ v = '${SEQ_MISSING+${SEQ_W}}'; expected = 'SEQ_MISSING' }
+        ) {
+            $trace = [System.Collections.Generic.List[string]]::new()
+            $null = Resolve-ComposeEnvReference -EnvironmentValues $script:refValues -Value $_.v -ReferenceTrace $trace
+            ($trace -join ',') | Should -BeExactly $_.expected
+        }
+    }
+
+    Context "Terminal-value lookup delegate (DMS-1270)" {
+        It "uses the delegate's value verbatim, without resolving it again" {
+            $lookup = { param($n) if ($n -eq 'FROZEN') { return '${INNER}' } ; return 'should-not-be-used' }
+            Resolve-ComposeEnvReference -Value '${FROZEN}' -NameLookup $lookup |
+                Should -BeExactly '${INNER}' -Because "an already-resolved value is terminal"
+        }
+
+        It "preserves unset versus set-but-empty across every operator" {
+            # The delegate returns '' for EMPTY and $null for anything else, so this pins the one
+            # distinction the ':-'/'-' and ':+'/'+' pairs key on.
+            $lookup = { param($n) if ($n -eq 'EMPTY') { return '' } ; return $null }
+
+            Resolve-ComposeEnvReference -Value '${EMPTY:-def}' -NameLookup $lookup | Should -BeExactly 'def'
+            Resolve-ComposeEnvReference -Value '${EMPTY-def}' -NameLookup $lookup | Should -BeExactly ''
+            Resolve-ComposeEnvReference -Value '${GONE-def}' -NameLookup $lookup | Should -BeExactly 'def'
+            Resolve-ComposeEnvReference -Value '${EMPTY:+alt}' -NameLookup $lookup | Should -BeExactly ''
+            Resolve-ComposeEnvReference -Value '${EMPTY+alt}' -NameLookup $lookup | Should -BeExactly 'alt'
+            Resolve-ComposeEnvReference -Value '${GONE+alt}' -NameLookup $lookup | Should -BeExactly ''
+        }
+
+        It "leaves existing raw-map callers on recursive resolution when no delegate is supplied" {
+            Resolve-ComposeEnvReference -EnvironmentValues @{ TOP = '${INNER}'; INNER = 'deep' } -Value '${TOP}' |
+                Should -BeExactly 'deep'
+            Get-ComposeResolvedEnvValue -EnvironmentValues @{ TOP = '${S}'; S = "'`${OTHER}'"; OTHER = 'x' } -Name 'TOP' |
+                Should -BeExactly '${OTHER}'
+        }
+    }
+
     Context "Get-RequiredComposeResolvedEnvValue" {
         It "returns the resolved value when present" {
             Get-RequiredComposeResolvedEnvValue -EnvironmentValues @{ K = "value" } -Name "K" | Should -Be "value"

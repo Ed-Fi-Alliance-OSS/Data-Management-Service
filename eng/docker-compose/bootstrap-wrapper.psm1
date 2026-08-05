@@ -540,6 +540,16 @@ function Invoke-BootstrapWrapper {
         [ValidateSet("postgresql", "mssql")]
         [string]$DatabaseEngine = "postgresql",
 
+        # Redirects the CMS (Configuration Service) database to a dedicated
+        # edfi_configurationservice database instead of sharing the DMS datastore database.
+        # Forwarded to the start-script invocations below and to both datastore phases, because
+        # each owns a different half of the same rule that the DMS datastore may not land in the
+        # dedicated Configuration Service database: configure-local-data-store.ps1 judges a name it
+        # is about to register, and provision-dms-schema.ps1 judges the database each selected
+        # target actually resolves to - the only place a REUSED data store's stored connection
+        # string is known. Supported on both database engines.
+        [Switch]$SeparateConfigDatabase,
+
         # Data standard version for the local-bootstrap package surface. For
         # start-local-dms.ps1 the .env.bootstrap.<token> overlay is always composed onto the
         # base env file (DS 5.2, the default: core + TPDM; DS 6.1: core only) before any phase
@@ -660,6 +670,11 @@ function Invoke-BootstrapWrapper {
     Push-Location $PSScriptRoot
     try {
         $baseEnvFile = Resolve-WrapperEnvironmentFilePath -BaseEnvironmentFile $EnvironmentFile
+        # The caller-supplied (or default-resolved) file this run composes FROM, kept because
+        # $baseEnvFile is reassigned to a derived path by each overlay step below. A printed
+        # continuation that recomposes the same overlays must start here; handing it a derived file
+        # would stack a second generation of them on top.
+        $callerEnvFile = $baseEnvFile
 
         # Data-standard selection: compose the LOCAL-BOOTSTRAP overlay (.env.bootstrap.<token>,
         # default DS 5.2) onto the base env before anything reads it, so identity resolution,
@@ -703,12 +718,18 @@ function Invoke-BootstrapWrapper {
         # the isolated wrapper-argument Pester fixtures, which sandbox the wrapper without the
         # env-utility sibling module.
         $envUtilityPathForEngineOverlay = Join-Path $PSScriptRoot "env-utility.psm1"
-        if ($DatabaseEngine -eq "mssql" -and (Test-Path -LiteralPath $envUtilityPathForEngineOverlay)) {
+        if (Test-Path -LiteralPath $envUtilityPathForEngineOverlay) {
             Import-Module $envUtilityPathForEngineOverlay -Force
+
+            # Composing the engine overlay is a SQL Server concern only, but the function returns the
+            # base file unchanged for postgresql, so calling it either way keeps this to one path.
+            # -SkipMssqlCmsDatabaseValidation is retained here for compatibility and is a documented
+            # no-op: composition renders no database-NAME verdict on either engine.
             $baseEnvFile = Resolve-DatabaseEngineEnvironmentFile `
                 -DatabaseEngine $DatabaseEngine `
                 -BaseEnvironmentFile $baseEnvFile `
-                -DockerComposeRoot $PSScriptRoot
+                -DockerComposeRoot $PSScriptRoot `
+                -SkipMssqlCmsDatabaseValidation:$true
         }
 
         # Resolve identity provider once and forward the same value to both phases. This runs before
@@ -722,6 +743,22 @@ function Invoke-BootstrapWrapper {
             -ExplicitProvider $IdentityProvider `
             -ExplicitProviderSupplied:($PSBoundParameters.ContainsKey('IdentityProvider')) `
             -EffectiveEnvironmentFile $baseEnvFile
+
+        # The wrapper's own pre-resolution chain always represents a CMS-participating context (its
+        # initial infra-start invocation below always includes CMS), so this story's own
+        # topology-write sequence and validator run unconditionally here, for both engines. On SQL
+        # Server they establish the topology the start script then verifies physically against the
+        # running instance after readiness. Deliberately sequenced after identity resolution: that
+        # check is the wrapper's documented earliest failure, and a topology error raised ahead of
+        # it would mask an unsupported identity provider behind a database-name complaint.
+        if (Test-Path -LiteralPath $envUtilityPathForEngineOverlay) {
+            $baseEnvFile = Resolve-CmsDatabaseTopologyEnvironmentFile `
+                -BaseEnvironmentFile $baseEnvFile `
+                -DatabaseEngine $DatabaseEngine `
+                -SeparateConfigDatabase:$SeparateConfigDatabase `
+                -DockerComposeRoot $PSScriptRoot
+            Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $baseEnvFile -DatabaseEngine $DatabaseEngine
+        }
 
         # Resolve the effective env file. When seed loading is requested, materialize a derived env
         # with the bootstrap profile so the circuit breaker tolerates the bulk-load failure ratio.
@@ -828,7 +865,19 @@ function Invoke-BootstrapWrapper {
         if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
         $startArgs.DatabaseEngine = $DatabaseEngine
+        if ($SeparateConfigDatabase) { $startArgs.SeparateConfigDatabase = $true }
         $startArgs.EnvironmentFile = $effectiveEnvFile
+        # This invocation is -InfraOnly without -DmsBaseUrl, so the start script reaches its terminal
+        # guidance and would print its own "run a fresh bootstrap-local-dms.ps1" hint. It cannot build a
+        # correct one here: the -EnvironmentFile above is already derived, and -DataStandardVersion is
+        # deliberately not forwarded (it would recompose the shared data-standard overlay over this run's
+        # bootstrap-scoped one). This run owns that hint and prints it from $callerEnvFile and its own
+        # $DataStandardVersion, so the start script's copy is suppressed rather than left to contradict
+        # it. Guarded on the start script that has the parameter: only start-local-dms.ps1 emits the
+        # hint, and start-published-dms.ps1 does not declare the switch.
+        if ($StartScriptName -eq "start-local-dms.ps1") {
+            $startArgs.SuppressWrapperContinuationGuidance = $true
+        }
 
         # Reset the native exit-code sentinel so the check below reflects only this start invocation and
         # not a stale value left by an earlier command. The start scripts signal failure by throwing;
@@ -871,6 +920,10 @@ function Invoke-BootstrapWrapper {
         if ($AddSmokeTestCredentials) { $configureArgs.AddSmokeTestCredentials = $true }
         if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) { $configureArgs.SchoolYearRange = $SchoolYearRange }
         $configureArgs.DatabaseEngine = $DatabaseEngine
+        # The configure phase registers the DMS datastore, so it needs the same topology
+        # declaration the start phase got: in separate mode the datastore must not land in the
+        # dedicated Configuration Service database. Forwarded exactly as the start args are.
+        if ($SeparateConfigDatabase) { $configureArgs.SeparateConfigDatabase = $true }
 
         # configure-local-data-store.ps1 throws on failure (no exit code); clear any stale native exit code first.
         $global:LASTEXITCODE = 0
@@ -889,7 +942,12 @@ function Invoke-BootstrapWrapper {
         $provisionArgs = @{
             EnvironmentFile = $effectiveEnvFile
             DataStoreId = $configuredDataStoreIds
+            DatabaseEngine = $DatabaseEngine
         }
+        # The provision phase is the boundary where a REUSED data store's stored connection string
+        # becomes the real target database, so it needs the same topology declaration the configure
+        # and start phases got. Forwarded exactly as the configure args are.
+        if ($SeparateConfigDatabase) { $provisionArgs.SeparateConfigDatabase = $true }
 
         # provision-dms-schema.ps1 throws on failure (no exit code); clear any stale native exit code first.
         $global:LASTEXITCODE = 0
@@ -923,7 +981,31 @@ function Invoke-BootstrapWrapper {
                 Write-Information "Optional seed delivery once your IDE-hosted DMS is healthy:" -InformationAction Continue
                 Write-Information "  load-dms-seed-data.ps1 -DmsBaseUrl <url> [...]" -InformationAction Continue
                 Write-Information "For a wrapper-managed health-wait and seed (fresh wrapper run; -NoDataStore reuses the data store this run created):" -InformationAction Continue
-                Write-Information "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore [-LoadSeedData ...]" -InformationAction Continue
+                # The fresh run recomposes the environment from its own switches, so every part of this
+                # run's execution state that composition depends on has to travel with the hint. The
+                # topology declaration: without it the continuation would start a SHARED-mode stack over
+                # a separate-mode one and undo the operator's selection. The engine: without it the
+                # continuation defaults to PostgreSQL. The environment file: $callerEnvFile, the
+                # caller-supplied (or default-resolved) base this run composed FROM - neither
+                # $effectiveEnvFile nor the by-then-overlaid $baseEnvFile, both of which are derived paths
+                # the fresh run would compose a second generation of overlays over. The data standard,
+                # only when this run actually composed an overlay: the fresh run always recomposes one for
+                # a local bootstrap and would otherwise fall back to the default version. The identity
+                # provider, as RESOLVED here: an explicit provider outranks the environment file's own
+                # DMS_CONFIG_IDENTITY_PROVIDER, so a keycloak run over a self-contained environment would
+                # otherwise advertise a continuation that silently switches providers.
+                #
+                # Emitted as a single-quoted PowerShell literal so a path with spaces stays one argument
+                # and an embedded apostrophe is doubled instead of ending the quote.
+                $continuationArgument = "-NoDataStore -DatabaseEngine $DatabaseEngine -EnvironmentFile '" + $callerEnvFile.Replace("'", "''") + "'"
+                if ($composeDataStandardOverlay) {
+                    $continuationArgument += " -DataStandardVersion $DataStandardVersion"
+                }
+                $continuationArgument += " -IdentityProvider $resolvedIdentityProvider"
+                if ($SeparateConfigDatabase) {
+                    $continuationArgument += " -SeparateConfigDatabase"
+                }
+                Write-Information "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> $continuationArgument [-LoadSeedData ...]" -InformationAction Continue
                 Write-Information "  Note: -NoDataStore supports exactly one route-unqualified data store. If this run used" -InformationAction Continue
                 Write-Information "  -SchoolYearRange (or created route-qualified data stores), do NOT re-run the wrapper:" -InformationAction Continue
                 Write-Information "  re-supplying -SchoolYearRange creates a NEW set of data stores instead of selecting these." -InformationAction Continue
@@ -946,6 +1028,7 @@ function Invoke-BootstrapWrapper {
             if ($EnableSwaggerUI) { $healthWaitArgs.EnableSwaggerUI = $true }
             if ($AddExtensionSecurityMetadata) { $healthWaitArgs.AddExtensionSecurityMetadata = $true }
             $healthWaitArgs.DatabaseEngine = $DatabaseEngine
+            if ($SeparateConfigDatabase) { $healthWaitArgs.SeparateConfigDatabase = $true }
 
             & "$PSScriptRoot/$StartScriptName" @healthWaitArgs
             if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
@@ -985,6 +1068,7 @@ function Invoke-BootstrapWrapper {
         if ($EnableSwaggerUI) { $dmsStartArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $dmsStartArgs.AddExtensionSecurityMetadata = $true }
         $dmsStartArgs.DatabaseEngine = $DatabaseEngine
+        if ($SeparateConfigDatabase) { $dmsStartArgs.SeparateConfigDatabase = $true }
 
         & "$PSScriptRoot/$StartScriptName" @dmsStartArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {

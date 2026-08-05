@@ -765,7 +765,9 @@ function Get-CurrentSchoolYear {
     The database user.
 
 .PARAMETER Password
-    The database password.
+    The database password. May be empty for postgresql, where a passwordless (trust-authenticated)
+    server is a real configuration and the value serializes as an explicit empty password= segment;
+    must be non-empty for mssql.
 
 .PARAMETER DatabaseName
     The target database name.
@@ -798,7 +800,7 @@ function New-DataStoreConnectionString {
         [string]$Username,
 
         [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
+        [AllowEmptyString()]
         [string]$Password,
 
         [Parameter(Mandatory)]
@@ -817,6 +819,15 @@ function New-DataStoreConnectionString {
     $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
 
     if ($DatabaseEngine -eq "mssql") {
+        # SQL Server auth in this stack is sa + MSSQL_SA_PASSWORD, which the container itself
+        # requires to be non-empty, so an empty password is a configuration error - named here, at
+        # the same serialization boundary that previously rejected it by parameter binding.
+        # PostgreSQL differs on purpose: a passwordless (trust-authenticated) server is a real
+        # configuration, so an empty password serializes as an explicit empty password= value there.
+        if ([string]::IsNullOrEmpty($Password)) {
+            throw "New-DataStoreConnectionString: an empty password is not supported for the mssql engine. Provide a non-empty password (MSSQL_SA_PASSWORD)."
+        }
+
         $builder["Server"] = "$DbHost,$Port"
         $builder["Database"] = $DatabaseName
         $builder["User Id"] = $Username
@@ -1049,12 +1060,35 @@ function Add-DataStore {
         [string]$Tenant = ""
     )
 
-    # Build the PostgreSQL connection string from the credential and individual parameters
-    # unless a pre-built connection string (e.g. MSSQL) was supplied.
+    # Build the PostgreSQL connection string from the credential and individual parameters unless a
+    # pre-built connection string (e.g. MSSQL) was supplied.
+    #
+    # Built through New-DataStoreConnectionString rather than string interpolation. Interpolation placed
+    # every value into the string unescaped, but this value is later PARSED - SchemaTools reads the
+    # database back out with NpgsqlConnectionStringBuilder before quoting it into CREATE DATABASE - and
+    # the parser does not return unescaped text verbatim. Measured: a database name registered as
+    # 'edfi_configurationservice ' parsed back as 'edfi_configurationservice', so the datastore reached
+    # the dedicated Configuration Service database while the registered text said otherwise; and a name
+    # containing ';' introduced a whole second Database segment, which won. DbConnectionStringBuilder
+    # quotes exactly those values, and the parsed database is then the registered name for every
+    # measured shape except one: a bare trailing LINE FEED stays unquoted and the parser removes it, so
+    # such a name reaches the provider as the bare name. The registered-name collision guard therefore
+    # compares the provider-parsed value, never the parameter text, and follows that exception instead
+    # of missing it.
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
-        $postgresUser = $PostgresCredential.UserName
+        # ConvertTo-PostgresCredential deliberately accepts an empty secret, and the serializer
+        # accepts one for PostgreSQL: a passwordless (trust-authenticated) server is a real
+        # configuration, and the registered string then carries an explicit empty password= value -
+        # the same wire shape the interpolated build always produced.
         $postgresPassword = $PostgresCredential.GetNetworkCredential().Password
-        $ConnectionString = "host=$PostgresHost;port=$PostgresPort;username=$postgresUser;password=$postgresPassword;database=$PostgresDbName;"
+
+        $ConnectionString = New-DataStoreConnectionString `
+            -DatabaseEngine "postgresql" `
+            -DbHost $PostgresHost `
+            -Port $PostgresPort `
+            -Username $PostgresCredential.UserName `
+            -Password $postgresPassword `
+            -DatabaseName $PostgresDbName
     }
 
     $dataStoreData = @{

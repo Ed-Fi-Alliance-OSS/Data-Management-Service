@@ -7,6 +7,23 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Pester stubs intentionally shadow production plural-noun helpers.')]
 param()
 
+# Exact workspace ownership, recorded at creation. Fixtures below stage copies of repository
+# scripts and modules inside temp workspaces this run creates, and EXECUTING a staged script
+# imports env-utility (and siblings) from the staged path - module-table instances that outlive
+# the deleted workspace and break any later suite in the same session that binds -ModuleName
+# mocks. The file-level cleanup at the bottom may unload ONLY module instances rooted beneath a
+# workspace this same run created and recorded through this registrar. Nothing else establishes
+# ownership: not a directory-name prefix, not a module name, not living under the system temp
+# directory - a caller-owned module beneath a lookalike-named directory is not this file's to
+# touch, and the whole-file lifecycle tests at the bottom pin exactly that.
+BeforeAll {
+    $script:ownedWorkspaceRoot = [System.Collections.Generic.List[string]]::new()
+    function script:Register-OwnedWorkspaceRoot {
+        param([Parameter(Mandatory)] [string]$Path)
+        $script:ownedWorkspaceRoot.Add([System.IO.Path]::GetFullPath($Path))
+    }
+}
+
 Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
     BeforeAll {
         $script:sourceRepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
@@ -34,6 +51,9 @@ Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
         function script:New-TestDirectory {
             $path = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1153-$([Guid]::NewGuid().ToString('N'))"
             New-Item -ItemType Directory -Path $path -Force | Out-Null
+            # Recorded before any staged code can import from it: this exact root is what the
+            # file-level cleanup is allowed to unload module instances from.
+            Register-OwnedWorkspaceRoot -Path $path
             return $path
         }
 
@@ -64,7 +84,10 @@ Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
                 # import the shared Compose-equivalent resolver from this module.
                 "database-safety.psm1",
                 ".env.bootstrap.ds52",
-                ".env.bootstrap.ds61"
+                ".env.bootstrap.ds61",
+                # A -DatabaseEngine mssql wrapper run composes this engine overlay onto the base
+                # env before any phase command, so the fixture needs it to reach the phase scripts.
+                ".env.mssql"
             )) {
                 Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
             }
@@ -135,10 +158,21 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 [string]$Directory,
 
                 [Parameter(Mandatory)]
-                [string]$CallLogPath
+                [string]$CallLogPath,
+
+                # When supplied, each invocation also records the forwarded engine and
+                # -SeparateConfigDatabase state to this separate file. Deliberately not the shared
+                # call log: several tests assert that log's exact line count and ordering.
+                [string]$ForwardLogPath
             )
 
             $scriptPath = Join-Path $Directory "start-local-dms.ps1"
+            $forwardRecording = if ([string]::IsNullOrWhiteSpace($ForwardLogPath)) {
+                ""
+            }
+            else {
+                "Add-Content -LiteralPath '$ForwardLogPath' -Value `"`$label engine=`$DatabaseEngine separate=`$(`$SeparateConfigDatabase.IsPresent)`""
+            }
             @"
 param(
     [switch] `$InfraOnly,
@@ -147,6 +181,8 @@ param(
     [string] `$EnvironmentFile,
     [string] `$IdentityProvider,
     [string] `$DmsBaseUrl,
+    [string] `$DatabaseEngine,
+    [switch] `$SeparateConfigDatabase,
     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
 )
 `$hasDmsBaseUrl = `$PSBoundParameters.ContainsKey('DmsBaseUrl') -and -not [string]::IsNullOrWhiteSpace(`$DmsBaseUrl)
@@ -155,6 +191,7 @@ param(
           elseif (`$DmsOnly)  { "start-dms" }
           else                { "start-legacy" }
 Add-Content -LiteralPath '$CallLogPath' -Value "`$label DmsBaseUrl=`$DmsBaseUrl"
+$forwardRecording
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
         }
@@ -199,17 +236,42 @@ Add-Content -LiteralPath '$CallLogPath' -Value "configure smoke=`$AddSmokeTestCr
                 [string]$Directory,
 
                 [Parameter(Mandatory)]
-                [string]$CallLogPath
+                [string]$CallLogPath,
+
+                # When supplied, the bound -DatabaseEngine is recorded to this separate file.
+                # Deliberately not the shared call log: several tests assert that log's exact line
+                # count and ordering, so adding a line there would break them.
+                [string]$EngineLogPath,
+
+                # When supplied, the bound -SeparateConfigDatabase state is recorded to this separate
+                # file, for the same reason the engine log is kept out of the shared call log.
+                [string]$ForwardLogPath
             )
 
             $scriptPath = Join-Path $Directory "provision-dms-schema.ps1"
+            $engineRecording = if ([string]::IsNullOrWhiteSpace($EngineLogPath)) {
+                ""
+            }
+            else {
+                "Add-Content -LiteralPath '$EngineLogPath' -Value `"provision-engine=`$DatabaseEngine`""
+            }
+            $forwardRecording = if ([string]::IsNullOrWhiteSpace($ForwardLogPath)) {
+                ""
+            }
+            else {
+                "Add-Content -LiteralPath '$ForwardLogPath' -Value `"provision separate=`$(`$SeparateConfigDatabase.IsPresent)`""
+            }
             @"
 param(
     [string] `$EnvironmentFile,
     [long[]] `$DataStoreId,
+    [string] `$DatabaseEngine,
+    [switch] `$SeparateConfigDatabase,
     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
 )
 Add-Content -LiteralPath '$CallLogPath' -Value "provision"
+$engineRecording
+$forwardRecording
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
         }
@@ -532,6 +594,125 @@ $failureStatement
     # R4 - Wrapper -InfraOnly shape: configure + provision, no -DmsOnly, IDE guidance
     # =========================================================================
     Context "wrapper -InfraOnly pre-DMS terminal shape" {
+        BeforeAll {
+            # The start script's continuation-fragment builder, lifted from the real file so the rows
+            # below exercise production text rather than a copy. Dot-sourcing start-local-dms.ps1 is not
+            # an option - it is a straight-line script that would start Docker - so the single function
+            # is extracted, the same way this suite reaches other in-script helpers.
+            function script:Get-ScriptFunctionText {
+                param(
+                    [Parameter(Mandatory)] [string]$ScriptPath,
+                    [Parameter(Mandatory)] [string]$FunctionName
+                )
+
+                $tokens = $null
+                $parseErrors = $null
+                $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+                if ($parseErrors.Count -gt 0) { throw "Failed to parse $ScriptPath" }
+                $functionAst = $ast.FindAll(
+                    { param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName },
+                    $true) | Select-Object -First 1
+                if ($null -eq $functionAst) { throw "Function '$FunctionName' was not found in '$ScriptPath'." }
+                return $functionAst.Extent.Text
+            }
+
+            . ([scriptblock]::Create((Get-ScriptFunctionText `
+                -ScriptPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") `
+                -FunctionName "Get-ContinuationCommandArgument")))
+            Set-Alias -Name Get-StartScriptContinuationArgument -Value Get-ContinuationCommandArgument -Scope Script
+
+            # The whole terminal guidance block, also lifted from the real file, so every command it would
+            # print can be collected. Reaching it by actually running the script is not possible in a unit
+            # test: the -InfraOnly path first waits on SQL Server readiness through a native docker exec
+            # and then on a real CMS /health endpoint, both from inside the script itself.
+            . ([scriptblock]::Create((Get-ScriptFunctionText `
+                -ScriptPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") `
+                -FunctionName "Get-InfraOnlyTerminalGuidance")))
+
+            # Every bootstrap-local-dms.ps1 continuation command in a block of guidance lines, reduced to
+            # the bindable argument text: everything after the "-DmsBaseUrl <url>" placeholder and before
+            # the "[-LoadSeedData ...]" decoration, both illustrative rather than bindable.
+            function script:Get-PrintedWrapperContinuationArgumentList {
+                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the collection of continuation arguments found; the plural noun reflects the return shape.')]
+                # Guidance blocks contain blank spacer lines, which a [string[]] parameter rejects by
+                # default; both allowances are needed to pass a block through verbatim.
+                param([Parameter(Mandatory)] [AllowEmptyCollection()] [AllowEmptyString()] [string[]]$Line)
+
+                return @(
+                    foreach ($candidate in $Line) {
+                        if ($candidate -match 'bootstrap-local-dms\.ps1\s+-InfraOnly\s+-DmsBaseUrl\s+<url>') {
+                            $afterPlaceholder = ($candidate -split '-DmsBaseUrl\s+<url>\s*', 2)[1]
+                            ($afterPlaceholder -replace '\[\-LoadSeedData[^\]]*\]\s*$', '').Trim()
+                        }
+                    }
+                )
+            }
+
+            # A parameter block standing in for the continuation targets, so an emitted fragment is
+            # proven to BIND - one argument per value, original characters intact - instead of merely
+            # appearing in the text. The parameter names and types mirror the real scripts'; a separate
+            # row asserts those scripts actually declare them.
+            function script:New-ContinuationArgumentRecorder {
+                param([Parameter(Mandatory)] [string]$Directory)
+
+                $path = Join-Path $Directory "continuation-argument-recorder.ps1"
+                @'
+param(
+    [ValidateSet("postgresql", "mssql")]
+    [string]$DatabaseEngine = "postgresql",
+    [string]$EnvironmentFile = "",
+    [string]$DataStandardVersion = "",
+    [string]$IdentityProvider = "",
+    [Switch]$NoDataStore,
+    [Switch]$SeparateConfigDatabase
+)
+
+[pscustomobject]@{
+    DatabaseEngine = $DatabaseEngine
+    EnvironmentFile = $EnvironmentFile
+    DataStandardVersion = $DataStandardVersion
+    IdentityProvider = $IdentityProvider
+    NoDataStore = $NoDataStore.IsPresent
+    SeparateConfigDatabase = $SeparateConfigDatabase.IsPresent
+} | ConvertTo-Json -Compress
+'@ | Set-Content -LiteralPath $path -Encoding utf8
+                return $path
+            }
+
+            function script:Invoke-BoundContinuationArgument {
+                param(
+                    [Parameter(Mandatory)] [string]$RecorderPath,
+                    [Parameter(Mandatory)] [string]$ArgumentText
+                )
+
+                # The fragment is parsed and bound by PowerShell itself, which is the whole point: a path
+                # that lost its quoting would bind as two arguments (or fail) here rather than pass.
+                $quotedRecorder = "'" + $RecorderPath.Replace("'", "''") + "'"
+                return & ([scriptblock]::Create("& $quotedRecorder $ArgumentText")) | ConvertFrom-Json
+            }
+
+            function script:Get-PrintedWrapperContinuationArgument {
+                <#
+                .SYNOPSIS
+                The single fresh-run continuation command the supplied output must contain, reduced to its
+                bindable argument text. Throws when the output carries none, or more than one - two
+                continuation commands in one transcript is itself the defect, since they can disagree
+                about the environment to compose from.
+                #>
+                param([Parameter(Mandatory)] [string]$Output)
+
+                $arguments = @(Get-PrintedWrapperContinuationArgumentList -Line ($Output -split "`r?`n"))
+                if ($arguments.Count -eq 0) {
+                    throw "The output printed no fresh-run continuation command."
+                }
+                if ($arguments.Count -gt 1) {
+                    throw "The output printed $($arguments.Count) fresh-run continuation commands; exactly one may appear. Found: $($arguments -join ' || ')"
+                }
+
+                return $arguments[0]
+            }
+        }
+
         It "runs configure and provision, does not invoke -DmsOnly start, and prints IDE guidance" {
             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
             $callLog = Join-Path $script:repo.RepoRoot "call-log.txt"
@@ -567,6 +748,488 @@ $failureStatement
             # The follow-up wrapper hint must carry -NoDataStore: the terminal run already created
             # the data store, and a plain wrapper re-run creates a duplicate (verified live).
             $output | Should -Match "bootstrap-local-dms\.ps1\s+-InfraOnly\s+-DmsBaseUrl\s+<url>\s+-NoDataStore" -Because "the continuation hint must reuse the data store the terminal run created, not duplicate it"
+
+            # Shared mode must not advertise a topology switch it was not started with.
+            $output | Should -Not -Match "-NoDataStore\s+-SeparateConfigDatabase" -Because "the hint records the topology this run actually used"
+        }
+
+        It "carries -SeparateConfigDatabase on the continuation hint when the run is separate-topology" {
+            # A fresh wrapper run recomposes the environment from its own switches, so a hint that
+            # drops the declaration continues a separate-mode stack in SHARED mode and undoes the
+            # operator's selection.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-sep-guidance.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $output = & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                -SeparateConfigDatabase `
+                *>&1 | Out-String
+
+            $output | Should -Match "bootstrap-local-dms\.ps1\s+-InfraOnly\s+-DmsBaseUrl\s+<url>\s+-NoDataStore\b[^\r\n]*\s-SeparateConfigDatabase" -Because "the continuation must reuse the data store AND keep the topology the stack was started with"
+        }
+
+        It "forwards -DatabaseEngine to the provision phase (DMS-1270 Phase 1b)" {
+            # Invoke-BootstrapWrapper builds $provisionArgs by hand rather than splatting
+            # $PSBoundParameters, and originally omitted DatabaseEngine - so an mssql wrapper run
+            # provisioned the DMS relational schema with the provision script's postgresql default.
+            # Asserted through the recording stub's own parameter binding, so the value has to
+            # survive the whole wrapper -> phase-script boundary rather than merely appear in a
+            # hashtable.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-engine.txt"
+            $engineLog = Join-Path $script:repo.RepoRoot "engine-log.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -EngineLogPath $engineLog | Out-Null
+
+            & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                -DatabaseEngine mssql `
+                *>&1 | Out-Null
+
+            @(Get-Content -LiteralPath $callLog) | Should -Contain "provision"
+            @(Get-Content -LiteralPath $engineLog) | Should -Contain "provision-engine=mssql" -Because "the provision phase must receive the engine the wrapper was invoked with, not its own default"
+        }
+
+        It "forwards the default -DatabaseEngine to the provision phase" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-engine-default.txt"
+            $engineLog = Join-Path $script:repo.RepoRoot "engine-log-default.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -EngineLogPath $engineLog | Out-Null
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -InfraOnly *>&1 | Out-Null
+
+            @(Get-Content -LiteralPath $engineLog) | Should -Contain "provision-engine=postgresql"
+        }
+
+        # DMS-1270 Phase 3: -SeparateConfigDatabase is forwarded unchanged from the public wrapper to
+        # the start script, on both engines. Asserted through the recording stub's own parameter
+        # binding, so the switch has to survive the wrapper -> start-script boundary rather than
+        # merely appear in a hashtable.
+        It "forwards -SeparateConfigDatabase to the start script for <_>" -ForEach @('postgresql', 'mssql') {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-sep-$_.txt"
+            $forwardLog = Join-Path $script:repo.RepoRoot "forward-log-sep-$_.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -ForwardLogPath $forwardLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                -DatabaseEngine $_ `
+                -SeparateConfigDatabase `
+                *>&1 | Out-Null
+
+            $forwarded = @(Get-Content -LiteralPath $forwardLog)
+            $forwarded | Should -Contain "start-infra engine=$_ separate=True" -Because "the start script must receive both the engine and the topology switch the wrapper was invoked with"
+        }
+
+        It "does not forward -SeparateConfigDatabase when it was not requested, for <_>" -ForEach @('postgresql', 'mssql') {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-nosep-$_.txt"
+            $forwardLog = Join-Path $script:repo.RepoRoot "forward-log-nosep-$_.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -ForwardLogPath $forwardLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                -DatabaseEngine $_ `
+                *>&1 | Out-Null
+
+            @(Get-Content -LiteralPath $forwardLog) | Should -Contain "start-infra engine=$_ separate=False" -Because "shared mode must remain the default all the way through the wrapper"
+        }
+
+        It "runs configure and provision to completion with -SeparateConfigDatabase requested" {
+            # Both datastore phases receive the switch, because each enforces one half of the same
+            # rule: configure judges a name it is about to register (that forwarding is pinned in
+            # BootstrapSchemaDeploymentSafety.Tests.ps1, whose stub binds the switch by name), and
+            # provision judges the database each selected target resolves to - the only place a
+            # REUSED data store's stored connection string is known. What this row adds is that the
+            # whole -InfraOnly chain still completes with the switch requested, reaching both phases.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-sep-phases.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -InfraOnly -SeparateConfigDatabase *>&1 | Out-Null } |
+                Should -Not -Throw
+
+            $log = @(Get-Content -LiteralPath $callLog)
+            $log | Should -Contain "configure smoke=False"
+            $log | Should -Contain "provision"
+        }
+
+        It "forwards -SeparateConfigDatabase to the provision phase for <_>" -ForEach @('postgresql', 'mssql') {
+            # Asserted through the recording stub's own parameter binding, so the switch has to
+            # survive the wrapper -> provision-script boundary rather than merely appear in a
+            # hashtable. Without it the phase cannot judge a REUSED data store's stored target and
+            # would deploy the DMS schema into the dedicated Configuration Service database.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-prov-sep-$_.txt"
+            $forwardLog = Join-Path $script:repo.RepoRoot "forward-log-prov-sep-$_.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -ForwardLogPath $forwardLog | Out-Null
+
+            & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                -DatabaseEngine $_ `
+                -SeparateConfigDatabase `
+                *>&1 | Out-Null
+
+            @(Get-Content -LiteralPath $forwardLog) | Should -Contain "provision separate=True"
+        }
+
+        It "does not forward -SeparateConfigDatabase to the provision phase when it was not requested, for <_>" -ForEach @('postgresql', 'mssql') {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-prov-nosep-$_.txt"
+            $forwardLog = Join-Path $script:repo.RepoRoot "forward-log-prov-nosep-$_.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -ForwardLogPath $forwardLog | Out-Null
+
+            & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                -DatabaseEngine $_ `
+                *>&1 | Out-Null
+
+            @(Get-Content -LiteralPath $forwardLog) | Should -Contain "provision separate=False" -Because "shared mode must remain the default all the way through the wrapper"
+        }
+
+        It "start-local-dms.ps1 -InfraOnly guidance builds every command it emits from a continuation argument fragment" {
+            # The manual continuation is where this run's state cannot be inferred: the topology marker
+            # lives in the derived file this start wrote, and the engine and environment file are pure
+            # invocation state. Printing part of it on some commands and not others leaves the rest
+            # unable to refuse the dedicated Configuration Service database, or continuing on the
+            # PostgreSQL default and the default environment. Each emitted command therefore
+            # interpolates a fragment rather than carrying its own hand-written switch list, which is
+            # what keeps the separate-mode and shared-mode wording from drifting apart; what the
+            # fragment actually resolves to is bound, not matched, in the rows below.
+            $startContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
+
+            $startContent | Should -Match '\$lines\.Add\("  1\. configure-local-data-store\.ps1 \$phaseContinuationArgument'
+            $startContent | Should -Match '\$lines\.Add\("  2\. provision-dms-schema\.ps1 \$phaseContinuationArgument'
+            $startContent | Should -Match '\$lines\.Add\("  bootstrap-local-dms\.ps1 -InfraOnly -DmsBaseUrl <url> \$wrapperContinuationArgument'
+            $startContent | Should -Not -Match '(configure-local-data-store|provision-dms-schema|bootstrap-local-dms)\.ps1[^"\n]* -SeparateConfigDatabase' -Because "no emitted command may hand-write the topology switch alongside the fragment that already carries it"
+        }
+
+        It "the start script's own terminal guidance carries this run's full state on every command it emits" {
+            # The real production function, lifted from the real file. The phase commands must continue from
+            # the COMPOSED environment while the fresh-wrapper command must name the operator's BASE file -
+            # the distinction that was wrong when a wrapper-supplied derived path was printed as a base one.
+            $recorder = New-ContinuationArgumentRecorder -Directory $script:repo.RepoRoot
+            $guidance = @(Get-InfraOnlyTerminalGuidance `
+                -DatabaseEngine "mssql" `
+                -EffectiveEnvironmentFile "/repo/eng/docker-compose/.derived/.env.custom.mssql.topology" `
+                -BaseEnvironmentFile "/repo/eng/docker-compose/.env.custom" `
+                -DataStandardVersion "6.1" `
+                -SeparateConfigDatabase)
+
+            foreach ($scriptName in @("configure-local-data-store.ps1", "provision-dms-schema.ps1")) {
+                $line = @($guidance | Where-Object { $_ -match [regex]::Escape($scriptName) }) | Select-Object -First 1
+                $line | Should -Not -BeNullOrEmpty
+                $argumentText = ($line -split [regex]::Escape($scriptName), 2)[1] -replace '\(.*\)\s*$', ''
+                $bound = Invoke-BoundContinuationArgument -RecorderPath $recorder -ArgumentText $argumentText.Trim()
+
+                $bound.DatabaseEngine | Should -Be "mssql"
+                $bound.EnvironmentFile | Should -Be "/repo/eng/docker-compose/.derived/.env.custom.mssql.topology" -Because "$scriptName continues from the environment this run already composed"
+                $bound.SeparateConfigDatabase | Should -BeTrue
+            }
+
+            $wrapperArguments = @(Get-PrintedWrapperContinuationArgumentList -Line $guidance)
+            $wrapperArguments.Count | Should -Be 1 -Because "exactly one fresh-wrapper command may be advertised"
+            $boundWrapper = Invoke-BoundContinuationArgument -RecorderPath $recorder -ArgumentText $wrapperArguments[0]
+            $boundWrapper.DatabaseEngine | Should -Be "mssql"
+            $boundWrapper.EnvironmentFile | Should -Be "/repo/eng/docker-compose/.env.custom" -Because "a fresh wrapper run recomposes its overlays from the operator's base file"
+            $boundWrapper.DataStandardVersion | Should -Be "6.1" -Because "the wrapper always recomposes a data-standard overlay and would otherwise fall back to the default"
+            $boundWrapper.SeparateConfigDatabase | Should -BeTrue
+        }
+
+        It "the start-script fresh-wrapper command carries the RESOLVED identity provider, and the phase commands do not: <Name>" -ForEach @(
+            @{ Name = "separate topology, explicit keycloak over a self-contained environment"; Provider = "keycloak"; Separate = $true }
+            @{ Name = "shared topology, explicit keycloak over a self-contained environment"; Provider = "keycloak"; Separate = $false }
+            @{ Name = "shared topology, resolved self-contained"; Provider = "self-contained"; Separate = $false }
+        ) {
+            # An explicit -IdentityProvider outranks the environment file's own
+            # DMS_CONFIG_IDENTITY_PROVIDER, so a keycloak run whose environment says self-contained would
+            # advertise a continuation that silently switches providers. The environment file named here
+            # deliberately represents the self-contained value, so the provider can only have come from
+            # this run's resolution.
+            $recorder = New-ContinuationArgumentRecorder -Directory $script:repo.RepoRoot
+            $guidance = @(Get-InfraOnlyTerminalGuidance `
+                -DatabaseEngine "mssql" `
+                -EffectiveEnvironmentFile "/repo/eng/docker-compose/.derived/.env.self-contained.mssql" `
+                -BaseEnvironmentFile "/repo/eng/docker-compose/.env.self-contained" `
+                -DataStandardVersion "6.1" `
+                -IdentityProvider $Provider `
+                -SeparateConfigDatabase:$Separate)
+
+            $wrapperArguments = @(Get-PrintedWrapperContinuationArgumentList -Line $guidance)
+            $wrapperArguments.Count | Should -Be 1 -Because "exactly one fresh-wrapper command may be advertised"
+            ([regex]::Matches($wrapperArguments[0], '-IdentityProvider\b')).Count |
+                Should -Be 1 -Because "the resolved provider appears exactly once, not zero times and not duplicated"
+
+            $bound = Invoke-BoundContinuationArgument -RecorderPath $recorder -ArgumentText $wrapperArguments[0]
+            $bound.IdentityProvider | Should -Be $Provider -Because "following the hint must keep the provider this run resolved"
+            $bound.DatabaseEngine | Should -Be "mssql" -Because "the other preserved state is unaffected"
+            $bound.EnvironmentFile | Should -Be "/repo/eng/docker-compose/.env.self-contained"
+            $bound.DataStandardVersion | Should -Be "6.1"
+            $bound.SeparateConfigDatabase | Should -Be $Separate
+
+            # configure-local-data-store.ps1 and provision-dms-schema.ps1 do not declare the parameter,
+            # so a hint that offered it would not bind at all.
+            foreach ($scriptName in @("configure-local-data-store.ps1", "provision-dms-schema.ps1")) {
+                $line = @($guidance | Where-Object { $_ -match [regex]::Escape($scriptName) }) | Select-Object -First 1
+                $line | Should -Not -BeNullOrEmpty
+                $line | Should -Not -Match '-IdentityProvider' -Because "$scriptName does not accept -IdentityProvider"
+            }
+        }
+
+        It "neither phase script declares -IdentityProvider, so the phase commands must never offer it" {
+            # The reason the previous row's negative assertion matters, stated against the real parameter
+            # surfaces rather than assumed.
+            foreach ($scriptName in @("configure-local-data-store.ps1", "provision-dms-schema.ps1")) {
+                (Get-DeclaredScriptParameters -Path (Join-Path $script:sourceDockerComposeRoot $scriptName)) |
+                    Should -Not -Contain "IdentityProvider" -Because "$scriptName has no such parameter to bind"
+            }
+            # And the command that DOES receive it accepts it.
+            (Get-DeclaredScriptParameters -Path (Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1")) |
+                Should -Contain "IdentityProvider"
+        }
+
+        It "the wrapper's own terminal continuation carries the resolved identity provider exactly once" {
+            # The wrapper-owned half: an explicit -IdentityProvider is resolved by the wrapper and must
+            # travel on the single hint it prints, over an environment file whose own value differs.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-identity-hint.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            # The fixture env declares self-contained; the run explicitly requests keycloak.
+            $customEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.custom-identity-hint"
+            Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $customEnvFile -Encoding utf8
+            @(Get-Content -LiteralPath $customEnvFile) |
+                Should -Contain "DMS_CONFIG_IDENTITY_PROVIDER=self-contained" -Because "the conflict this row is about must actually exist in the environment"
+
+            $output = & $script:repo.WrapperScript `
+                -EnvironmentFile $customEnvFile `
+                -InfraOnly `
+                -DatabaseEngine mssql `
+                -IdentityProvider keycloak `
+                -SeparateConfigDatabase `
+                *>&1 | Out-String
+
+            $argumentText = Get-PrintedWrapperContinuationArgument -Output $output
+            ([regex]::Matches($argumentText, '-IdentityProvider\b')).Count | Should -Be 1
+
+            $recorder = New-ContinuationArgumentRecorder -Directory $script:repo.RepoRoot
+            $bound = Invoke-BoundContinuationArgument -RecorderPath $recorder -ArgumentText $argumentText
+            $bound.IdentityProvider | Should -Be "keycloak" -Because "the wrapper resolved keycloak, not the environment file's self-contained"
+            $bound.DatabaseEngine | Should -Be "mssql"
+            $bound.EnvironmentFile | Should -Be $customEnvFile
+            $bound.SeparateConfigDatabase | Should -BeTrue
+            $bound.NoDataStore | Should -BeTrue
+        }
+
+        It "the wrapper's terminal continuation carries the environment-derived provider when none is explicit" {
+            # Shared-topology control with no explicit provider: the hint still names what the run
+            # resolved, so following it cannot drift to a different default.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-identity-hint-default.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $output = & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                *>&1 | Out-String
+
+            $recorder = New-ContinuationArgumentRecorder -Directory $script:repo.RepoRoot
+            $bound = Invoke-BoundContinuationArgument `
+                -RecorderPath $recorder `
+                -ArgumentText (Get-PrintedWrapperContinuationArgument -Output $output)
+
+            $bound.IdentityProvider | Should -Be "self-contained" -Because "the environment file's own value is what this run resolved"
+            $bound.SeparateConfigDatabase | Should -BeFalse
+        }
+
+        It "the start script emits NO fresh-wrapper command when the wrapper owns the workflow, but keeps the phase commands" {
+            # Inside a wrapper-owned run this script is handed an already-derived -EnvironmentFile and is
+            # deliberately not given the wrapper's -DataStandardVersion, so it cannot describe the input a
+            # fresh wrapper run would compose from. The wrapper prints that command instead.
+            $guidance = @(Get-InfraOnlyTerminalGuidance `
+                -DatabaseEngine "mssql" `
+                -EffectiveEnvironmentFile "/repo/eng/docker-compose/.derived/.env.custom.mssql.topology" `
+                -BaseEnvironmentFile "/repo/eng/docker-compose/.derived/.env.custom.mssql.topology" `
+                -SeparateConfigDatabase `
+                -SuppressWrapperContinuationGuidance)
+
+            @(Get-PrintedWrapperContinuationArgumentList -Line $guidance).Count |
+                Should -Be 0 -Because "the wrapper owns this hint and holds the state needed to build it"
+            $guidance -join "`n" | Should -Not -Match "wrapper-managed health-wait" -Because "the preamble must go with the command it introduces"
+            $guidance -join "`n" | Should -Match "configure-local-data-store\.ps1" -Because "the manual phase next-steps are unaffected"
+            $guidance -join "`n" | Should -Match "provision-dms-schema\.ps1"
+        }
+
+        It "a wrapper run with a custom base env, a non-default data standard, MSSQL and separate topology advertises exactly one continuation, bound to that state" {
+            # End to end over the pair that produced the contradiction: the wrapper suppresses the start
+            # script's hint (recorded from the real forwarded argument) and prints its own, and the whole
+            # transcript is then searched for EVERY bootstrap-local-dms.ps1 continuation. More than one, or
+            # one that binds to a derived path / the default data standard, fails here.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-single-hint.txt"
+            $suppressLog = Join-Path $script:repo.RepoRoot "suppress-log.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            # The recording start script accepts remaining arguments; record whether the suppression switch
+            # actually arrived, so the wrapper's half of the contract is asserted and not assumed.
+            $startScriptPath = Join-Path $script:repo.DockerComposeRoot "start-local-dms.ps1"
+            Add-Content -LiteralPath $startScriptPath -Value "Add-Content -LiteralPath '$suppressLog' -Value `"suppress=`$(`$Rest -contains '-SuppressWrapperContinuationGuidance')`""
+
+            $customEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.custom-single-hint"
+            Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $customEnvFile -Encoding utf8
+
+            $output = & $script:repo.WrapperScript `
+                -EnvironmentFile $customEnvFile `
+                -InfraOnly `
+                -DatabaseEngine mssql `
+                -DataStandardVersion "6.1" `
+                -SeparateConfigDatabase `
+                *>&1 | Out-String
+
+            @(Get-Content -LiteralPath $suppressLog) |
+                Should -Contain "suppress=True" -Because "the wrapper must tell the start script it owns the fresh-wrapper hint"
+
+            $recorder = New-ContinuationArgumentRecorder -Directory $script:repo.RepoRoot
+            # Throws when the transcript carries zero or more than one continuation command.
+            $bound = Invoke-BoundContinuationArgument `
+                -RecorderPath $recorder `
+                -ArgumentText (Get-PrintedWrapperContinuationArgument -Output $output)
+
+            $bound.DatabaseEngine | Should -Be "mssql"
+            $bound.EnvironmentFile | Should -Be $customEnvFile -Because "the surviving hint names the caller-supplied base file, not a derived one"
+            $bound.DataStandardVersion | Should -Be "6.1" -Because "the selected data standard must survive into the continuation"
+            $bound.SeparateConfigDatabase | Should -BeTrue
+            $bound.NoDataStore | Should -BeTrue -Because "the terminal run already created the data store"
+        }
+
+        It "the emitted continuation fragment BINDS to this run's engine, environment file, and topology: <Name>" -ForEach @(
+            @{ Name = "MSSQL + custom environment + separate topology"; Engine = "mssql"; Separate = $true;  EnvPath = "/tmp/custom/.env.mssql-sep" }
+            @{ Name = "MSSQL + custom environment + shared topology";   Engine = "mssql"; Separate = $false; EnvPath = "/tmp/custom/.env.mssql-shared" }
+            @{ Name = "PostgreSQL + custom environment";                Engine = "postgresql"; Separate = $false; EnvPath = "/tmp/custom/.env.pg" }
+            @{ Name = "environment path containing spaces";             Engine = "mssql"; Separate = $true;  EnvPath = "/tmp/my custom dir/.env file" }
+            @{ Name = "environment path containing an apostrophe";      Engine = "mssql"; Separate = $true;  EnvPath = "/tmp/o'brien's env/.env" }
+        ) {
+            # Substring matching cannot tell a quoted path that survives argument binding from one that
+            # splits into two arguments or terminates its own quote, so the fragment is EXECUTED against a
+            # parameter block and the bound values are what is asserted.
+            $recorder = New-ContinuationArgumentRecorder -Directory $script:repo.RepoRoot
+            $argumentText = Get-StartScriptContinuationArgument `
+                -DatabaseEngine $Engine `
+                -EnvironmentFile $EnvPath `
+                -SeparateConfigDatabase:$Separate
+
+            $bound = Invoke-BoundContinuationArgument -RecorderPath $recorder -ArgumentText $argumentText
+
+            $bound.DatabaseEngine | Should -Be $Engine -Because "the continuation must run on the engine this run used, not the postgresql default"
+            $bound.EnvironmentFile | Should -Be $EnvPath -Because "the path must arrive as ONE argument with its original characters"
+            $bound.SeparateConfigDatabase | Should -Be $Separate -Because "the topology declaration travels only when this run declared it"
+        }
+
+        It "every parameter the start-script continuation fragment emits exists on both phase scripts it is printed for" {
+            # A fragment that binds against a stand-in proves nothing if the real phase scripts do not
+            # accept those parameters. Both phases are checked, since the same fragment is printed for
+            # each.
+            $argumentText = Get-StartScriptContinuationArgument `
+                -DatabaseEngine "mssql" `
+                -EnvironmentFile "/tmp/.env" `
+                -SeparateConfigDatabase
+
+            $emittedParameters = @(
+                [regex]::Matches($argumentText, '(?<=\s|^)-(?<Name>[A-Za-z][A-Za-z0-9]*)') |
+                    ForEach-Object { $_.Groups["Name"].Value }
+            )
+            $emittedParameters | Should -Not -BeNullOrEmpty
+
+            foreach ($scriptName in @("configure-local-data-store.ps1", "provision-dms-schema.ps1")) {
+                $declared = Get-DeclaredScriptParameters -Path (Join-Path $script:sourceDockerComposeRoot $scriptName)
+                foreach ($parameterName in $emittedParameters) {
+                    $declared | Should -Contain $parameterName -Because "$scriptName must be able to bind -$parameterName as printed"
+                }
+            }
+        }
+
+        It "the wrapper continuation hint it actually prints BINDS to the run's engine and base environment file, for <_>" -ForEach @('postgresql', 'mssql') {
+            # The real emitted line, not a reconstruction: the wrapper is run against a custom
+            # environment file and the printed command is lifted out of its own output and bound.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-hint-bind-$_.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $customEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.custom-hint-$_"
+            Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $customEnvFile -Encoding utf8
+
+            $output = & $script:repo.WrapperScript `
+                -EnvironmentFile $customEnvFile `
+                -InfraOnly `
+                -DatabaseEngine $_ `
+                -SeparateConfigDatabase `
+                *>&1 | Out-String
+
+            $recorder = New-ContinuationArgumentRecorder -Directory $script:repo.RepoRoot
+            $bound = Invoke-BoundContinuationArgument `
+                -RecorderPath $recorder `
+                -ArgumentText (Get-PrintedWrapperContinuationArgument -Output $output)
+
+            $bound.DatabaseEngine | Should -Be $_ -Because "following the hint must recompose the engine this run used"
+            $bound.EnvironmentFile | Should -Be $customEnvFile -Because "the fresh run recomposes its overlays from the BASE file this run composed from, not a derived one and not the default"
+            $bound.NoDataStore | Should -BeTrue -Because "the terminal run already created the data store"
+            $bound.SeparateConfigDatabase | Should -BeTrue
+        }
+
+        It "the wrapper continuation hint does not advertise -SeparateConfigDatabase for a shared-mode run, but still binds engine and environment" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-hint-bind-shared.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $customEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.custom-hint-shared"
+            Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $customEnvFile -Encoding utf8
+
+            $output = & $script:repo.WrapperScript `
+                -EnvironmentFile $customEnvFile `
+                -InfraOnly `
+                -DatabaseEngine mssql `
+                *>&1 | Out-String
+
+            $recorder = New-ContinuationArgumentRecorder -Directory $script:repo.RepoRoot
+            $bound = Invoke-BoundContinuationArgument `
+                -RecorderPath $recorder `
+                -ArgumentText (Get-PrintedWrapperContinuationArgument -Output $output)
+
+            $bound.SeparateConfigDatabase | Should -BeFalse -Because "the hint records the topology this run actually used"
+            $bound.DatabaseEngine | Should -Be "mssql" -Because "shared mode carries the engine too"
+            $bound.EnvironmentFile | Should -Be $customEnvFile
         }
 
         It "start-local-dms.ps1 terminal guidance block does not print a second start run as a resume mechanism" {
@@ -796,8 +1459,13 @@ $failureStatement
                 Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             ) -Raw
 
-            $publishedConfigGuardPattern = 'if \(\$EnableConfig -or \$InfraOnly -or \$IdentityProvider -eq "self-contained" -or \$bootstrapMode\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
-            $startScript | Should -Match $publishedConfigGuardPattern -Because "published bootstrap starts must include the Configuration Service compose file so staged claims mount with DMS ApiSchema"
+            # The condition is computed once into $cmsIncludedInComposeSet and shared with the
+            # CMS-participation gate, so the two cannot drift; assert the inclusion is gated on that
+            # single source and that the source's definition still carries $bootstrapMode. Behavioral
+            # coverage of each disjunct lives in CmsDatabaseTopology.Tests.ps1, which runs the script
+            # and inspects the compose file set it actually builds.
+            $startScript | Should -Match '(?s)if \(\$cmsIncludedInComposeSet\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)' -Because "published bootstrap starts must include the Configuration Service compose file so staged claims mount with DMS ApiSchema"
+            $startScript | Should -Match '\$cmsIncludedInComposeSet = [^\r\n]*\$bootstrapMode'
         }
 
         It "start-published-dms.ps1 keeps non-bootstrap keycloak published-config.yml opt-in behavior" {
@@ -805,14 +1473,14 @@ $failureStatement
                 Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             ) -Raw
 
-            $guardMatch = [regex]::Match(
+            $definitionMatch = [regex]::Match(
                 $startScript,
-                'if \((?<condition>[^\r\n]+)\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
+                '\$cmsIncludedInComposeSet = (?<condition>[^\r\n]+)'
             )
-            $guardMatch.Success | Should -BeTrue
+            $definitionMatch.Success | Should -BeTrue
 
-            $condition = $guardMatch.Groups["condition"].Value
-            $condition | Should -Be '$EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode'
+            $condition = $definitionMatch.Groups["condition"].Value
+            $condition | Should -Be '$EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode -or $SeparateConfigDatabase'
             $condition | Should -Not -Match "keycloak" -Because "non-bootstrap keycloak published starts remain opt-in through -EnableConfig"
         }
     }
@@ -868,10 +1536,12 @@ $failureStatement
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            # On SQL Server the OpenIddict stores live in the shared DMS datastore database
-            # (created by -InitDb when missing, now that CMS shares it too); every invocation
-            # must splat the shared engine-aware parameters.
-            $startScript | Should -Match 'DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:MSSQL_DB_NAME"'
+            # On SQL Server the OpenIddict stores live in the CMS database (the shared DMS
+            # datastore in shared mode, or the dedicated Configuration Service database in
+            # separate mode; created by -InitDb when missing); every invocation must splat the
+            # shared engine-aware parameters, tracking the CMS topology seam via
+            # DMS_CONFIG_DATABASE_NAME rather than always targeting the DMS datastore.
+            $startScript | Should -Match 'DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:DMS_CONFIG_DATABASE_NAME"'
             $openiddictCalls = [regex]::Matches($startScript, '(?m)^.*\./setup-openiddict\.ps1 .*$')
             $openiddictCalls.Count | Should -BeGreaterThan 0
             foreach ($call in $openiddictCalls) {
@@ -1040,6 +1710,8 @@ $failureStatement
                     "bootstrap-wrapper.psm1",
                     $WrapperEntryScriptName,
                     "env-utility.psm1",
+                    # env-utility.psm1 imports this at module load, so any isolated copy needs it too.
+                    "database-safety.psm1",
                     ".env.bootstrap.ds52",
                     ".env.bootstrap.ds61"
                 )) {
@@ -1083,7 +1755,11 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $script:compositionProbeRepo = $null
         }
 
-        It "bootstrap-local-dms.ps1 composes the overlay by default, overriding a custom base SCHEMA_PACKAGES" {
+        # ModuleOwnershipProbe: the whole-file ownership children run exactly this test, because
+        # it provably exercises the staged-import lifecycle - New-CompositionProbeRepo creates a
+        # recorded workspace, stages env-utility.psm1/database-safety.psm1/bootstrap-wrapper.psm1
+        # into it, and executing the staged wrapper imports those modules FROM the staged path.
+        It "bootstrap-local-dms.ps1 composes the overlay by default, overriding a custom base SCHEMA_PACKAGES" -Tag "ModuleOwnershipProbe" {
             $script:compositionProbeRepo = New-CompositionProbeRepo `
                 -WrapperEntryScriptName "bootstrap-local-dms.ps1" `
                 -BaseSchemaPackagesValue '[{"name":"Custom.Base.Package","version":"9.9.9"}]'
@@ -1138,6 +1814,8 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                     "bootstrap-wrapper.psm1",
                     "bootstrap-local-dms.ps1",
                     "env-utility.psm1",
+                    # env-utility.psm1 imports this at module load, so any isolated copy needs it too.
+                    "database-safety.psm1",
                     ".env.bootstrap.ds52",
                     ".env.bootstrap.ds61",
                     ".env.mssql"
@@ -1353,7 +2031,12 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $excluded = @(
                 'LoadSeedData', 'SeedTemplate', 'SeedDataPath', 'AdditionalNamespacePrefix',
                 'SchoolYearRange', 'DataStandardVersion', 'InfraOnly', 'DmsBaseUrl',
-                'EnableConfig', 'AddExtensionSecurityMetadata', 'NoDataStore', 'AddSmokeTestCredentials'
+                'EnableConfig', 'AddExtensionSecurityMetadata', 'NoDataStore', 'AddSmokeTestCredentials',
+                # -SeparateConfigDatabase changes which database CMS targets, never which compose
+                # files a teardown must cover: local-config.yml is unconditional in
+                # start-local-dms.ps1's compose set. So it is excluded, like the other
+                # non-compose-shaping options.
+                'SeparateConfigDatabase'
             )
 
             # Completeness guard: every parameter the entry script declares must be classified here
@@ -1382,6 +2065,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 -AddExtensionSecurityMetadata `
                 -NoDataStore `
                 -AddSmokeTestCredentials `
+                -SeparateConfigDatabase `
                 -d
 
             $log = @(Get-Content -LiteralPath $callLog)
@@ -1541,6 +2225,8 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                     "bootstrap-wrapper.psm1",
                     $WrapperEntryScriptName,
                     "env-utility.psm1",
+                    # env-utility.psm1 imports this at module load, so any isolated copy needs it too.
+                    "database-safety.psm1",
                     ".env.bootstrap.ds52",
                     ".env.bootstrap.ds61",
                     ".env.mssql"
@@ -1646,7 +2332,16 @@ Add-Content -LiteralPath '$callLog' -Value "start DatabaseEngine=`$DatabaseEngin
                 param(
                     [Parameter(Mandatory)]
                     [ValidateSet("start-local-dms.ps1", "start-published-dms.ps1")]
-                    [string]$StartScriptName
+                    [string]$StartScriptName,
+
+                    # The -DbOnly guards are reached with the default fixture because database-only
+                    # startup deliberately bypasses bootstrap activation and identity parsing, so the
+                    # malformed manifest and invalid identity values below prove that bypass. Shape
+                    # guards that do NOT involve -DbOnly (e.g. -InfraOnly with -DmsOnly) sit after
+                    # manifest processing and identity resolution, so reaching them needs a fixture
+                    # where both succeed: this switch supplies valid identity settings and stages no
+                    # bootstrap workspace at all. Every Docker invocation still lies beyond the guard.
+                    [switch]$AllowApplicationStartup
                 )
 
                 $repoRoot = New-TestDirectory
@@ -1665,7 +2360,19 @@ Add-Content -LiteralPath '$callLog' -Value "start DatabaseEngine=`$DatabaseEngin
                 }
 
                 $envFile = Join-Path $dockerComposeRoot ".env.guard"
-                @"
+                if ($AllowApplicationStartup) {
+                    @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+                }
+                else {
+                    @"
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
@@ -1678,9 +2385,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
-                $bootstrapRoot = Join-Path $dockerComposeRoot ".bootstrap"
-                New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
-                Set-Content -LiteralPath (Join-Path $bootstrapRoot "bootstrap-manifest.json") -Value '{ malformed' -NoNewline
+                    $bootstrapRoot = Join-Path $dockerComposeRoot ".bootstrap"
+                    New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+                    Set-Content -LiteralPath (Join-Path $bootstrapRoot "bootstrap-manifest.json") -Value '{ malformed' -NoNewline
+                }
 
                 return [pscustomobject]@{
                     RepoRoot    = $repoRoot
@@ -1709,7 +2417,7 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                 $source | Should -Match '(?s)if \(-not \$databaseOnlyStartup\) \{.*?Import-Module .*?bootstrap-manifest\.psm1.*?bootstrap-claims-gate\.psm1'
                 $source | Should -Match '(?s)\$bootstrapMode\s*=\s*\$false.*?\$bootstrapManifestPresent\s*=\s*\$false.*?if \(-not \$databaseOnlyStartup\) \{.*?Invoke-BootstrapStartupConfiguration.*?Get-BootstrapRoot'
                 $source | Should -Match '(?s)\$envValues\s*=\s*ReadValuesFromEnvFile.*?if \(-not \$databaseOnlyStartup\) \{.*?Resolve-IdentityClientSecretConfiguration'
-                $source | Should -Match 'Resolve-DatabaseEngineEnvironmentFile[^\r\n]*-SkipMssqlCmsDatabaseValidation:\(\$databaseOnlyStartup -or \$d\)' -Because "DbOnly and teardown must not parse application-only CMS database settings"
+                $source | Should -Match 'Resolve-DatabaseEngineEnvironmentFile[^\r\n]*-SkipMssqlCmsDatabaseValidation:\(\$databaseOnlyStartup -or \$d -or \$SeparateConfigDatabase\)' -Because "the non-participating call site keeps recording which shapes declined the CMS seam, even though the switch is now a documented no-op"
             }
         }
 
@@ -1746,6 +2454,12 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                     {
                         & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -DbOnly -InfraOnly
                     } | Should -Throw "*-DbOnly is mutually exclusive with -InfraOnly and -DmsOnly*"
+
+                    # DMS-1270: introducing -SeparateConfigDatabase must not weaken or reorder the
+                    # existing diagnostic for an invalid shape combination.
+                    {
+                        & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -DbOnly -InfraOnly -SeparateConfigDatabase
+                    } | Should -Throw "*-DbOnly is mutually exclusive with -InfraOnly and -DmsOnly*"
                 }
                 finally {
                     Remove-Item -LiteralPath $guardRepo.RepoRoot -Recurse -Force
@@ -1760,9 +2474,63 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                     {
                         & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -DbOnly -DmsOnly
                     } | Should -Throw "*-DbOnly is mutually exclusive with -InfraOnly and -DmsOnly*"
+
+                    # DMS-1270: same diagnostic with the topology switch present.
+                    {
+                        & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -DbOnly -DmsOnly -SeparateConfigDatabase
+                    } | Should -Throw "*-DbOnly is mutually exclusive with -InfraOnly and -DmsOnly*"
                 }
                 finally {
                     Remove-Item -LiteralPath $guardRepo.RepoRoot -Recurse -Force
+                }
+            }
+        }
+
+        It "start-local-dms.ps1 and start-published-dms.ps1 both reject -InfraOnly with -DmsOnly, with and without -SeparateConfigDatabase" {
+            # This combination's guard sits after bootstrap activation and identity resolution, so it
+            # needs the fixture variant where both succeed. Introducing -SeparateConfigDatabase must
+            # not weaken, reorder, or re-word the existing diagnostic for an invalid shape - the switch
+            # widens the CMS compose set, which is exactly the kind of change that could plausibly
+            # short-circuit ahead of a shape check.
+            #
+            # Reaching this guard means the identity block above it has already run, and that block
+            # publishes identity settings into the AMBIENT process environment for Compose to
+            # interpolate. Left behind, those values would silently change the outcome of any later
+            # Compose-precedence-sensitive test in the same session, so the whole environment is
+            # snapshotted and restored around these invocations. Added variables are removed with
+            # Remove-Item rather than set to $null, which on some platforms leaves an empty variable
+            # rather than truly unsetting it.
+            $environmentBefore = @{}
+            foreach ($entry in [System.Environment]::GetEnvironmentVariables().GetEnumerator()) {
+                $environmentBefore[[string]$entry.Key] = [string]$entry.Value
+            }
+            try {
+                foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
+                    $guardRepo = New-StartScriptGuardRepo -StartScriptName $name -AllowApplicationStartup
+                    try {
+                        {
+                            & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -InfraOnly -DmsOnly
+                        } | Should -Throw "*-InfraOnly and -DmsOnly are mutually exclusive*"
+
+                        {
+                            & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -InfraOnly -DmsOnly -SeparateConfigDatabase
+                        } | Should -Throw "*-InfraOnly and -DmsOnly are mutually exclusive*"
+                    }
+                    finally {
+                        Remove-Item -LiteralPath $guardRepo.RepoRoot -Recurse -Force
+                    }
+                }
+            }
+            finally {
+                foreach ($currentName in @([System.Environment]::GetEnvironmentVariables().Keys | ForEach-Object { [string]$_ })) {
+                    if (-not $environmentBefore.ContainsKey($currentName)) {
+                        Remove-Item -LiteralPath "Env:\$currentName" -ErrorAction SilentlyContinue
+                    }
+                }
+                foreach ($entry in $environmentBefore.GetEnumerator()) {
+                    if ([System.Environment]::GetEnvironmentVariable($entry.Key) -ne $entry.Value) {
+                        [System.Environment]::SetEnvironmentVariable($entry.Key, $entry.Value)
+                    }
                 }
             }
         }
@@ -1815,7 +2583,15 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                 Join-Path $script:sourceRepoRoot "build-dms.ps1"
             ) -Raw
 
-            $buildScript | Should -Match 'StartEnvironment \{ Invoke-Step \{ Start-BootstrapDockerEnvironment -UsePublishedImage:\$UsePublishedImage -SkipDockerBuild:\$SkipDockerBuild -LoadSeedData:\$LoadSeedData -DatabaseEngine \$DatabaseEngine -IdentityProvider \$IdentityProvider -DataStandardVersion \$DataStandardVersion -DataStandardVersionSupplied:\$dataStandardVersionSupplied \} \}'
+            $buildScript | Should -Match 'StartEnvironment \{ Invoke-Step \{ Start-BootstrapDockerEnvironment -UsePublishedImage:\$UsePublishedImage -SkipDockerBuild:\$SkipDockerBuild -LoadSeedData:\$LoadSeedData -DatabaseEngine \$DatabaseEngine -SeparateConfigDatabase:\$SeparateConfigDatabase -IdentityProvider \$IdentityProvider -DataStandardVersion \$DataStandardVersion -DataStandardVersionSupplied:\$dataStandardVersionSupplied \} \}'
+        }
+
+        It "Start-BootstrapDockerEnvironment forwards -SeparateConfigDatabase to the bootstrap wrapper only when requested" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $buildScript | Should -Match '(?s)if \(\$SeparateConfigDatabase\) \{\s*\$bootstrapArgs\.SeparateConfigDatabase = \$true\s*\}'
         }
 
         It "Start-BootstrapDockerEnvironment forwards -DatabaseEngine to the bootstrap wrapper only when supplied" {
@@ -1845,5 +2621,231 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
 
             $buildScript | Should -Match '(?s)if \(\$DataStandardVersionSupplied\) \{\s*\$bootstrapArgs\.DataStandardVersion = \$DataStandardVersion\s*\}'
         }
+    }
+
+    Context "public entry-point -SeparateConfigDatabase surface and published-wrapper forwarding (DMS-1270 Phase 3)" {
+        BeforeAll {
+            # Isolated published-wrapper fixture, modeled on New-CompositionProbeRepo: only the
+            # published entry script, the shared wrapper module, and the composition prerequisites
+            # are staged, so the wrapper's isolated-fixture degrade path returns right after the
+            # single start invocation. The stubbed start-published-dms.ps1 records the engine and
+            # -SeparateConfigDatabase state it was bound with, so these tests prove the switch
+            # survives the public-wrapper -> start-script boundary rather than merely appearing in
+            # a hashtable.
+            function script:New-PublishedForwardProbeRepo {
+                $repoRoot = New-TestDirectory
+                $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
+                New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
+
+                foreach ($fileName in @(
+                    "bootstrap-wrapper.psm1",
+                    "bootstrap-published-dms.ps1",
+                    "env-utility.psm1",
+                    "database-safety.psm1",
+                    ".env.bootstrap.ds52",
+                    ".env.bootstrap.ds61",
+                    # A -DatabaseEngine mssql wrapper run composes this engine overlay onto the base
+                    # env before any phase command, so the fixture needs it to reach the start stub.
+                    ".env.mssql"
+                )) {
+                    Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
+                }
+
+                $envFile = Join-Path $dockerComposeRoot ".env.example"
+                @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+SCHEMA_PACKAGES='[{"name":"Custom.Base.Package","version":"9.9.9"}]'
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                $forwardLogPath = Join-Path $repoRoot "forward.log"
+                @"
+param(
+    [string] `$EnvironmentFile,
+    [string] `$IdentityProvider,
+    [string] `$DatabaseEngine,
+    [switch] `$SeparateConfigDatabase,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+Add-Content -LiteralPath '$forwardLogPath' -Value "engine=`$DatabaseEngine separate=`$(`$SeparateConfigDatabase.IsPresent)"
+"@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot "start-published-dms.ps1") -Encoding utf8
+
+                return [pscustomobject]@{
+                    RepoRoot       = $repoRoot
+                    WrapperScript  = Join-Path $dockerComposeRoot "bootstrap-published-dms.ps1"
+                    ForwardLogPath = $forwardLogPath
+                }
+            }
+        }
+
+        AfterEach {
+            if ($null -ne $script:publishedForwardRepo -and (Test-Path -LiteralPath $script:publishedForwardRepo.RepoRoot)) {
+                Remove-Item -LiteralPath $script:publishedForwardRepo.RepoRoot -Recurse -Force
+            }
+            $script:publishedForwardRepo = $null
+        }
+
+        # The load-bearing surface check for all three public entry points: parses each script's
+        # top-level param block from the AST, so removing the public declaration fails here even if
+        # internal references to the variable remain (which the text-matching forwarding tests
+        # elsewhere would not notice).
+        It "declares -SeparateConfigDatabase on its public parameter surface: <_>" -ForEach @(
+            'eng/docker-compose/bootstrap-local-dms.ps1',
+            'eng/docker-compose/bootstrap-published-dms.ps1',
+            'build-dms.ps1'
+        ) {
+            $params = Get-DeclaredScriptParameters -Path (Join-Path $script:sourceRepoRoot $_)
+            $params | Should -Contain "SeparateConfigDatabase" -Because "the switch is part of this entry point's public contract (DMS-1270 Phase 3)"
+        }
+
+        It "bootstrap-published-dms.ps1 forwards -SeparateConfigDatabase to the start script for <_>" -ForEach @('postgresql', 'mssql') {
+            $script:publishedForwardRepo = New-PublishedForwardProbeRepo
+
+            & $script:publishedForwardRepo.WrapperScript -DatabaseEngine $_ -SeparateConfigDatabase *>&1 | Out-Null
+
+            @(Get-Content -LiteralPath $script:publishedForwardRepo.ForwardLogPath) |
+                Should -Contain "engine=$_ separate=True" -Because "the start script must receive both the engine and the topology switch the public wrapper was invoked with"
+        }
+
+        It "bootstrap-published-dms.ps1 does not forward -SeparateConfigDatabase when it was not requested, for <_>" -ForEach @('postgresql', 'mssql') {
+            $script:publishedForwardRepo = New-PublishedForwardProbeRepo
+
+            & $script:publishedForwardRepo.WrapperScript -DatabaseEngine $_ *>&1 | Out-Null
+
+            @(Get-Content -LiteralPath $script:publishedForwardRepo.ForwardLogPath) |
+                Should -Contain "engine=$_ separate=False" -Because "shared mode must remain the default all the way through the public wrapper"
+        }
+    }
+}
+
+# Unload exactly the module instances staged under the workspaces THIS run created and
+# recorded - the roots in $script:ownedWorkspaceRoot - and nothing else. Containment respects
+# directory boundaries (exact root, or root plus a separator), so a lookalike sibling such as
+# '<owned-root>-other' or a caller's own 'dms-1153-*' directory never matches. The staged
+# instances are usually NESTED inside a staged wrapper module, so enumeration must be
+# Get-Module -All. Cleanup failure is loud: owned residue fails this suite with the surviving
+# paths named, because later suites that bind -ModuleName mocks would otherwise fail on state
+# this file left behind.
+AfterAll {
+    $ownedRoots = @($script:ownedWorkspaceRoot | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    # Windows paths compare case-insensitively; elsewhere they do not.
+    $pathComparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+    function Test-PathWithinOwnedRoot {
+        param([string]$CandidatePath)
+        if ([string]::IsNullOrEmpty($CandidatePath) -or -not [System.IO.Path]::IsPathRooted($CandidatePath)) { return $false }
+        $canonical = [System.IO.Path]::GetFullPath($CandidatePath)
+        foreach ($root in $ownedRoots) {
+            if ([string]::Equals($canonical, $root, $pathComparison)) { return $true }
+            if ($canonical.StartsWith($root + [System.IO.Path]::DirectorySeparatorChar, $pathComparison)) { return $true }
+        }
+        return $false
+    }
+    foreach ($module in @(Get-Module -All)) {
+        if (Test-PathWithinOwnedRoot -CandidatePath ([string]$module.Path)) {
+            $module | Remove-Module -Force -ErrorAction SilentlyContinue
+        }
+    }
+    $ownedResidue = @(Get-Module -All | Where-Object { Test-PathWithinOwnedRoot -CandidatePath ([string]$_.Path) })
+    if ($ownedResidue.Count -gt 0) {
+        $residueList = @($ownedResidue | ForEach-Object { "'$($_.Path)'" }) -join ", "
+        throw "BootstrapEntryPointWorkflow.Tests.ps1 cleanup: module instances staged under this run's own recorded workspaces survived removal ($residueList). Refusing to hand the session back dirty."
+    }
+}
+
+Describe "whole-file module-table ownership (post-Invoke-Pester, isolated children)" {
+    # Both halves of the exact-ownership invariant, proven AFTER Invoke-Pester returns: owned
+    # staged instances are gone, and a caller-owned module beneath a LOOKALIKE-named directory
+    # survives untouched. The children exclude this tag, so there is no recursion; launches go
+    # through [Environment]::ProcessPath, never a literal executable name.
+
+    BeforeAll {
+        $script:ownershipChildWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1153-ownership-child-$([Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $script:ownershipChildWork -Force | Out-Null
+    }
+
+    AfterAll {
+        Remove-Item -LiteralPath $script:ownershipChildWork -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It "a caller-owned module beneath a lookalike dms-1153-* directory survives the complete file lifecycle" -Tag "WholeFileModuleOwnership" {
+        # The review-measured regression this pins: a cleanup that inferred ownership from the
+        # directory-name prefix deleted exactly this module while the suite stayed green.
+        $childScript = Join-Path $script:ownershipChildWork "lookalike-survival.ps1"
+        @(
+            "`$callerRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('dms-1153-callerowned-' + [Guid]::NewGuid().ToString('N'))",
+            "New-Item -ItemType Directory -Path `$callerRoot -Force | Out-Null",
+            "`$callerModulePath = Join-Path `$callerRoot 'CallerOwned.psm1'",
+            "Set-Content -LiteralPath `$callerModulePath -Value 'function Get-CallerOwnedSentinel { ''caller-owned'' }'",
+            "Import-Module `$callerModulePath -Force",
+            "try {",
+            "    `$result = Invoke-Pester -Path '$PSCommandPath' -TagFilter 'ModuleOwnershipProbe' -ExcludeTagFilter 'WholeFileModuleOwnership' -Output None -PassThru",
+            "    `$survivor = @(Get-Module -Name CallerOwned -All)",
+            "    `$command = Get-Command Get-CallerOwnedSentinel -ErrorAction SilentlyContinue",
+            "    [pscustomobject]@{",
+            "        Failed = `$result.FailedCount",
+            "        PassedCount = `$result.PassedCount",
+            "        PassedName = @(`$result.Passed | ForEach-Object { `$_.ExpandedPath }) -join ';'",
+            "        SurvivorCount = `$survivor.Count",
+            "        SurvivorPath = @(`$survivor | ForEach-Object { `$_.Path }) -join ';'",
+            "        ExpectedPath = `$callerModulePath",
+            "        ExportsSentinel = (`$survivor.Count -eq 1 -and `$survivor[0].ExportedCommands.ContainsKey('Get-CallerOwnedSentinel'))",
+            "        SentinelOutput = if (`$command) { Get-CallerOwnedSentinel } else { 'command-gone' }",
+            "    } | ConvertTo-Json -Compress",
+            "}",
+            "finally { Remove-Item -LiteralPath `$callerRoot -Recurse -Force -ErrorAction SilentlyContinue }"
+        ) -join "`n" | Set-Content -LiteralPath $childScript
+
+        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        # Execution proof first: the probe must have RUN and PASSED - discovery counts prove
+        # nothing, and a probe that never reached its staged import would make survival vacuous.
+        $childState.Failed | Should -Be 0 -Because "the staged-import probe must complete cleanly around the caller's module"
+        $childState.PassedCount | Should -Be 1 -Because "exactly the one tagged staged-import probe runs in the child"
+        $childState.PassedName | Should -BeLike "*composes the overlay by default, overriding a custom base SCHEMA_PACKAGES*" -Because "the passing test must be the staged-import probe itself"
+        $childState.SurvivorCount | Should -Be 1 -Because "a lookalike directory name establishes no ownership; the caller's module is not this file's to remove"
+        $childState.SurvivorPath | Should -Be $childState.ExpectedPath -Because "the surviving instance must be the caller's own, at its own path"
+        $childState.ExportsSentinel | Should -BeTrue
+        $childState.SentinelOutput | Should -Be 'caller-owned'
+    }
+
+    It "removes every module instance beneath the exact roots this run created" -Tag "WholeFileModuleOwnership" {
+        # The other half: after the run, no NEW module instance rooted under the temp root -
+        # where every workspace this run creates lives - may survive. New instances elsewhere
+        # (repository modules, engine modules the run loads lazily) are legitimate. The temp
+        # filter is a DETECTION oracle in a controlled clean child, never an ownership rule,
+        # and the before/after set difference makes this fail even if the in-file cleanup
+        # postcondition is deleted outright.
+        $childScript = Join-Path $script:ownershipChildWork "own-removal.ps1"
+        @(
+            "`$before = @{}",
+            "foreach (`$m in @(Get-Module -All)) { if (`$m.Path) { `$before[[string]`$m.Path] = `$true } }",
+            "`$result = Invoke-Pester -Path '$PSCommandPath' -TagFilter 'ModuleOwnershipProbe' -ExcludeTagFilter 'WholeFileModuleOwnership' -Output None -PassThru",
+            "`$comparison = if (`$IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }",
+            "`$tempRoot = [System.IO.Path]::GetTempPath()",
+            "`$newResidue = @(Get-Module -All | Where-Object {",
+            "    `$p = [string]`$_.Path",
+            "    `$p -and [System.IO.Path]::IsPathRooted(`$p) -and -not `$before.ContainsKey(`$p) -and",
+            "    ([System.IO.Path]::GetFullPath(`$p)).StartsWith(`$tempRoot, `$comparison)",
+            "})",
+            "[pscustomobject]@{",
+            "    Failed = `$result.FailedCount",
+            "    PassedCount = `$result.PassedCount",
+            "    PassedName = @(`$result.Passed | ForEach-Object { `$_.ExpandedPath }) -join ';'",
+            "    ResidueCount = `$newResidue.Count",
+            "    ResiduePath = @(`$newResidue | ForEach-Object { `$_.Path }) -join ';'",
+            "} | ConvertTo-Json -Compress"
+        ) -join "`n" | Set-Content -LiteralPath $childScript
+
+        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        # Execution proof first: the residue check is meaningful only if the staged-import probe
+        # really ran and passed - a run that never imported a staged module has nothing to clean.
+        $childState.Failed | Should -Be 0 -Because "the staged-import probe must complete cleanly"
+        $childState.PassedCount | Should -Be 1 -Because "exactly the one tagged staged-import probe runs in the child"
+        $childState.PassedName | Should -BeLike "*composes the overlay by default, overriding a custom base SCHEMA_PACKAGES*" -Because "the passing test must be the staged-import probe itself"
+        $childState.ResidueCount | Should -Be 0 -Because "every instance staged under this run's recorded workspaces must be unloaded before the file hands the session back (residue: $($childState.ResiduePath))"
     }
 }
