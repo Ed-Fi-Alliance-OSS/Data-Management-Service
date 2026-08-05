@@ -62,6 +62,20 @@ public interface IApiService
     Task<IFrontendResponse> MethodNotAllowed(FrontendRequest frontendRequest, string requestMethodName);
 
     /// <summary>
+    /// DMS entry point for a tracked-change route request (/deletes, /keyChanges) whose HTTP
+    /// method is not one of the supported verbs. Separate from MethodNotAllowed because the two
+    /// paths parse differently: a tracked-change path carries an operation suffix where a data
+    /// path carries a document id. Core determines the response here too, so authentication,
+    /// tenant validation and resource existence all precede the 405.
+    /// </summary>
+    /// <param name="frontendRequest">The request to be processed</param>
+    /// <param name="requestMethodName">The actual HTTP method name of the request, e.g. "PATCH"</param>
+    Task<IFrontendResponse> MethodNotAllowedForTrackedChange(
+        FrontendRequest frontendRequest,
+        string requestMethodName
+    );
+
+    /// <summary>
     /// DMS entry point for data model information from ApiSchema.json
     /// </summary>
     IList<IDataModelInfo> GetDataModelInfo();

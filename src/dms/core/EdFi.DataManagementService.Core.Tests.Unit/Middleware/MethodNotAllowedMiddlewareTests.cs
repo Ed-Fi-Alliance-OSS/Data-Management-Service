@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -147,6 +148,41 @@ public class MethodNotAllowedMiddlewareTests
         public void It_returns_the_ed_fi_method_not_allowed_body()
         {
             AssertMethodNotAllowedProblemDetails(_requestInfo.FrontendResponse, "PATCH");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Unsupported_Method_On_A_Tracked_Change_Route : MethodNotAllowedMiddlewareTests
+    {
+        /// <summary>
+        /// Mirrors what ParseTrackedChangePathMiddleware leaves behind for a /deletes or
+        /// /keyChanges request: the operation set, and no document uuid segment.
+        /// </summary>
+        private static RequestInfo TrackedChangeRequestInfoFor(
+            string unsupportedMethodName,
+            ChangeQueryEndpointOperation operation
+        )
+        {
+            RequestInfo requestInfo = RequestInfoFor(unsupportedMethodName, hasDocumentUuidSegment: false);
+            requestInfo.ChangeQueryOperation = operation;
+            return requestInfo;
+        }
+
+        [TestCase(ChangeQueryEndpointOperation.Deletes)]
+        [TestCase(ChangeQueryEndpointOperation.KeyChanges)]
+        public async Task It_returns_405_allowing_get_only(ChangeQueryEndpointOperation operation)
+        {
+            RequestInfo requestInfo = TrackedChangeRequestInfoFor("PATCH", operation);
+
+            await Middleware().Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(405);
+            // A tracked-change path leaves HasDocumentUuidSegment false, so without the
+            // ChangeQueryOperation check this would advertise the collection methods.
+            requestInfo.FrontendResponse.Headers.Should().Contain("Allow", "GET");
+            requestInfo.FrontendResponse.ContentType.Should().Be("application/json; charset=utf-8");
+            AssertMethodNotAllowedProblemDetails(requestInfo.FrontendResponse, "PATCH");
         }
     }
 

@@ -26,6 +26,11 @@ internal class MethodNotAllowedMiddleware(ILogger _logger) : IPipelineStep
 
     private const string ItemMethods = "GET, PUT, DELETE";
 
+    /// <summary>
+    /// Tracked-change routes are read-only: TrackedChangesEndpointModule maps GET alone.
+    /// </summary>
+    private const string TrackedChangeMethods = "GET";
+
     public Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
@@ -33,7 +38,18 @@ internal class MethodNotAllowedMiddleware(ILogger _logger) : IPipelineStep
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        string allowed = requestInfo.PathComponents.HasDocumentUuidSegment ? ItemMethods : CollectionMethods;
+        // ChangeQueryOperation is set only by ParseTrackedChangePathMiddleware, so it is what
+        // distinguishes a /deletes or /keyChanges route from a data route here. Both parse steps
+        // leave HasDocumentUuidSegment false, so that flag alone cannot tell them apart.
+        string allowed = (
+            requestInfo.ChangeQueryOperation is not null,
+            requestInfo.PathComponents.HasDocumentUuidSegment
+        ) switch
+        {
+            (true, _) => TrackedChangeMethods,
+            (false, true) => ItemMethods,
+            (false, false) => CollectionMethods,
+        };
 
         requestInfo.FrontendResponse = new FrontendResponse(
             StatusCode: 405,

@@ -963,4 +963,33 @@ public static class AspNetCoreFrontend
             dmsPath
         );
     }
+
+    /// <summary>
+    /// ASP.NET Core entry point for tracked-change route requests (/deletes, /keyChanges) whose
+    /// HTTP method is not one of the supported verbs. Goes through Core for the same reason the
+    /// data-route entry point does: authentication, tenant validation and resource existence must
+    /// all precede the 405.
+    /// </summary>
+    public static async Task<IResult> MethodNotAllowedForTrackedChange(
+        HttpContext httpContext,
+        IApiService apiService,
+        string dmsPath,
+        IOptions<AppSettings> appSettings
+    )
+    {
+        return ToResult(
+            await apiService.MethodNotAllowedForTrackedChange(
+                await FromRequest(
+                    httpContext.Request,
+                    dmsPath,
+                    appSettings,
+                    includeBody: false,
+                    includeForm: false
+                ),
+                httpContext.Request.Method
+            ),
+            httpContext,
+            dmsPath
+        );
+    }
 }

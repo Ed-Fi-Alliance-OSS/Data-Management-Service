@@ -146,14 +146,14 @@ public class CoreEndpointModuleTests
 
     private const string ItemUuid = "0192ac2c-8f7f-7c2a-9c1d-3f4b5a6c7d8e";
 
-    private static IFrontendResponse FakeCoreMethodNotAllowedResponse()
+    private static IFrontendResponse FakeCoreMethodNotAllowedResponse(string allow = "GET, POST")
     {
         JsonObject body = new() { ["source"] = "core" };
 
         var response = A.Fake<IFrontendResponse>();
         A.CallTo(() => response.StatusCode).Returns(405);
         A.CallTo(() => response.Body).Returns(body);
-        A.CallTo(() => response.Headers).Returns(new Dictionary<string, string> { ["Allow"] = "GET, POST" });
+        A.CallTo(() => response.Headers).Returns(new Dictionary<string, string> { ["Allow"] = allow });
         A.CallTo(() => response.ContentType).Returns("application/json; charset=utf-8");
         return response;
     }
@@ -188,6 +188,8 @@ public class CoreEndpointModuleTests
             .Returns(Task.FromResult(FakeCoreOkResponse()));
         A.CallTo(() => apiService.MethodNotAllowed(A<FrontendRequest>._, A<string>._))
             .Returns(Task.FromResult(FakeCoreMethodNotAllowedResponse()));
+        A.CallTo(() => apiService.MethodNotAllowedForTrackedChange(A<FrontendRequest>._, A<string>._))
+            .Returns(Task.FromResult(FakeCoreMethodNotAllowedResponse(allow: "GET")));
         return apiService;
     }
 
@@ -359,66 +361,121 @@ public class CoreEndpointModuleTests
                 AssertVerbReachedItsHandler(apiService, verb);
                 A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._)).MustNotHaveHappened();
             }
+
+            A.CallTo(() => apiService.MethodNotAllowedForTrackedChange(A<FrontendRequest>._, A<string>._))
+                .MustNotHaveHappened();
         }
     }
 
     /// <summary>
-    /// These routes are newly returning 405 where they returned 404, so the response is a new wire
-    /// contract. Unlike the tests above this asserts the real wire response, because here the
-    /// frontend - not a faked Core - authors the body. The asserted members are deliberately the
-    /// same ones the Core terminal's own unit test asserts, so the two 405 producers cannot drift.
+    /// Like the data-route terminal, these hand the request to Core rather than answering locally,
+    /// so authentication, tenant validation and resource existence precede the 405. That makes this
+    /// a routing test: the response body comes from the fake, and the Core terminal's own unit test
+    /// owns the Ed-Fi problem-details contract.
     /// </summary>
     [TestFixture]
     [NonParallelizable]
     public class Given_A_Tracked_Change_Route_Request_With_An_Unsupported_Method
     {
-        private const string CorrelationIdHeader = "correlationid";
-        private const string SentCorrelationId = "tracked-change-correlation-id";
+        /// <summary>
+        /// Stands in for what JwtAuthenticationMiddleware produces at the head of the Core
+        /// pipeline, so a routing test can prove the frontend surfaces it instead of answering
+        /// 405 itself.
+        /// </summary>
+        private static IFrontendResponse FakeCoreUnauthorizedResponse()
+        {
+            var response = A.Fake<IFrontendResponse>();
+            A.CallTo(() => response.StatusCode).Returns(401);
+            A.CallTo(() => response.Body).Returns(new JsonObject { ["source"] = "core" });
+            A.CallTo(() => response.Headers).Returns(new Dictionary<string, string>());
+            A.CallTo(() => response.ContentType).Returns("application/json");
+            return response;
+        }
 
         [TestCase("deletes")]
         [TestCase("keyChanges")]
-        public async Task It_answers_405_with_the_same_ed_fi_body_the_core_terminal_produces(
+        public async Task It_hands_the_request_to_core_with_the_operation_suffix_and_method_name(
             string trackedChangeSegment
         )
         {
-            var apiService = FakeApiServiceAnsweringEveryVerb();
+            var apiService = A.Fake<IApiService>();
+            FrontendRequest? capturedRequest = null;
+            string? capturedMethodName = null;
+            A.CallTo(() => apiService.MethodNotAllowedForTrackedChange(A<FrontendRequest>._, A<string>._))
+                .Invokes(
+                    (FrontendRequest request, string methodName) =>
+                    {
+                        capturedRequest = request;
+                        capturedMethodName = methodName;
+                    }
+                )
+                .Returns(Task.FromResult(FakeCoreMethodNotAllowedResponse(allow: "GET")));
 
-            // CorrelationIdHeader is empty by default, which would make ExtractTraceIdFrom fall back
-            // to TraceIdentifier and leave the correlationId assertion below unable to tell the two
-            // apart. Configuring the header is what gives that assertion its meaning.
-            await using var factory = CreateFactory(
-                apiService,
-                new Dictionary<string, string?> { ["AppSettings:CorrelationIdHeader"] = CorrelationIdHeader }
-            );
+            await using var factory = CreateFactory(apiService);
             using var client = factory.CreateClient();
             using var request = new HttpRequestMessage(
                 HttpMethod.Patch,
                 $"/data/ed-fi/schools/{trackedChangeSegment}"
             );
-            request.Headers.Add(CorrelationIdHeader, SentCorrelationId);
+
+            await client.SendAsync(request);
+
+            A.CallTo(() => apiService.MethodNotAllowedForTrackedChange(A<FrontendRequest>._, A<string>._))
+                .MustHaveHappenedOnceExactly();
+            capturedRequest.Should().NotBeNull();
+            // The suffix has to survive into the path, because ParseTrackedChangePathMiddleware
+            // parses the operation back out of it.
+            capturedRequest!.Path.Should().Be($"/ed-fi/schools/{trackedChangeSegment}");
+            capturedMethodName.Should().Be("PATCH");
+        }
+
+        [Test]
+        public async Task It_returns_the_core_response_allow_header_and_body_unmodified()
+        {
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.MethodNotAllowedForTrackedChange(A<FrontendRequest>._, A<string>._))
+                .Returns(Task.FromResult(FakeCoreMethodNotAllowedResponse(allow: "GET")));
+
+            await using var factory = CreateFactory(apiService);
+            using var client = factory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Patch, "/data/ed-fi/schools/deletes");
 
             var response = await client.SendAsync(request);
             var content = await response.Content.ReadAsStringAsync();
-            JsonNode body = JsonNode.Parse(content)!;
 
+            // Core, not the frontend, is the single authority for the Allow value here too.
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
             response.Content.Headers.GetValues("Allow").Should().Equal("GET");
             response.Content.Headers.ContentType!.ToString().Should().Be("application/json; charset=utf-8");
+            JsonNode.Parse(content)!["source"]!.GetValue<string>().Should().Be("core");
+        }
 
-            body["detail"]!.GetValue<string>().Should().Be("The request construction was invalid.");
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:method-not-allowed");
-            body["title"]!.GetValue<string>().Should().Be("Method Not Allowed");
-            body["status"]!.GetValue<int>().Should().Be(405);
-            body["validationErrors"]!.AsObject().Should().BeEmpty();
-            body["errors"]!
-                .AsArray()
-                .Select(error => error!.GetValue<string>())
-                .Should()
-                .Equal("The endpoint of the request does not support the 'PATCH' method.");
-            body["correlationId"]!.GetValue<string>().Should().Be(SentCorrelationId);
+        /// <summary>
+        /// The regression guard for the defect this routing replaced: answering in the frontend
+        /// skipped JwtAuthenticationMiddleware, so an unauthenticated caller received a 405 where
+        /// every other data path requires a token. Nothing but reaching Core can restore that.
+        /// </summary>
+        [TestCase("deletes")]
+        [TestCase("keyChanges")]
+        public async Task It_lets_core_answer_rather_than_responding_before_authentication(
+            string trackedChangeSegment
+        )
+        {
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.MethodNotAllowedForTrackedChange(A<FrontendRequest>._, A<string>._))
+                .Returns(Task.FromResult(FakeCoreUnauthorizedResponse()));
 
-            // The terminal answers locally; it must not reach Core at all.
-            A.CallTo(apiService).MustNotHaveHappened();
+            await using var factory = CreateFactory(apiService);
+            using var client = factory.CreateClient();
+            using var request = new HttpRequestMessage(
+                HttpMethod.Patch,
+                $"/data/ed-fi/schools/{trackedChangeSegment}"
+            );
+
+            var response = await client.SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            response.Content.Headers.Contains("Allow").Should().BeFalse();
         }
     }
 

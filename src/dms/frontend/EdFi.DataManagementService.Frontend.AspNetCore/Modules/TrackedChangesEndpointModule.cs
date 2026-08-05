@@ -3,11 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Interface;
-using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using Microsoft.Extensions.Options;
 using static EdFi.DataManagementService.Frontend.AspNetCore.AspNetCoreFrontend;
@@ -27,7 +23,9 @@ public class TrackedChangesEndpointModule(IOptions<AppSettings> appSettings) : I
             GetKeyChanges
         );
 
-        // Terminals for tracked-change routes reached with an unsupported method.
+        // Terminals for tracked-change routes reached with an unsupported method. They hand the
+        // request to Core rather than answering here, so that authentication, tenant validation and
+        // resource existence all run first - the same ordering the data-route terminal gets.
         //
         // Here WithOrder(1) IS load-bearing, unlike the terminal in CoreEndpointModule. These
         // templates are literal and therefore more specific than /data/{**dmsPath}, and
@@ -39,47 +37,15 @@ public class TrackedChangesEndpointModule(IOptions<AppSettings> appSettings) : I
         endpoints
             .Map(
                 BuildRoutePattern(routeQualifierSegments, multiTenancy, "deletes"),
-                MethodNotAllowedForTrackedChange
+                MethodNotAllowedForDeletes
             )
             .WithOrder(1);
         endpoints
             .Map(
                 BuildRoutePattern(routeQualifierSegments, multiTenancy, "keyChanges"),
-                MethodNotAllowedForTrackedChange
+                MethodNotAllowedForKeyChanges
             )
             .WithOrder(1);
-    }
-
-    /// <summary>
-    /// Answers 405 for a tracked-change route reached with an unsupported method. Answered here
-    /// rather than in Core because ParsePathMiddleware parses the deletes/keyChanges suffix as the
-    /// document id segment and rejects it as a malformed UUID with a 400, and
-    /// ParseTrackedChangePathMiddleware 404s any other suffix so it cannot sit in a shared pipeline.
-    ///
-    /// The body, content type and correlation id are deliberately identical to what
-    /// MethodNotAllowedMiddleware emits, from the same FailureResponse factory; only the Allow value
-    /// differs. ToResult cannot be reused here because it is private and takes IFrontendResponse,
-    /// whose only implementation is internal to Core, so the Results.Content call below reproduces
-    /// ToResult's own tail.
-    /// </summary>
-    private static IResult MethodNotAllowedForTrackedChange(
-        HttpContext httpContext,
-        IOptions<AppSettings> appSettings
-    )
-    {
-        httpContext.Response.Headers.Append("Allow", "GET");
-
-        JsonNode body = FailureResponse.ForMethodNotAllowed(
-            [$"The endpoint of the request does not support the '{httpContext.Request.Method}' method."],
-            ExtractTraceIdFrom(httpContext.Request, appSettings)
-        );
-
-        return Results.Content(
-            statusCode: StatusCodes.Status405MethodNotAllowed,
-            content: JsonSerializer.Serialize(body, SharedSerializerOptions),
-            contentType: "application/json; charset=utf-8",
-            contentEncoding: Encoding.UTF8
-        );
     }
 
     internal static string BuildRoutePattern(
@@ -116,6 +82,36 @@ public class TrackedChangesEndpointModule(IOptions<AppSettings> appSettings) : I
         IOptions<AppSettings> appSettings
     ) =>
         GetTrackedChanges(
+            httpContext,
+            apiService,
+            $"{projectNamespace}/{endpointName}/keyChanges",
+            appSettings
+        );
+
+    // These rebuild the dmsPath from the route's literal suffix exactly as GetDeletes and
+    // GetKeyChanges do, because Core parses the operation back out of the path.
+    private static Task<IResult> MethodNotAllowedForDeletes(
+        HttpContext httpContext,
+        IApiService apiService,
+        string projectNamespace,
+        string endpointName,
+        IOptions<AppSettings> appSettings
+    ) =>
+        MethodNotAllowedForTrackedChange(
+            httpContext,
+            apiService,
+            $"{projectNamespace}/{endpointName}/deletes",
+            appSettings
+        );
+
+    private static Task<IResult> MethodNotAllowedForKeyChanges(
+        HttpContext httpContext,
+        IApiService apiService,
+        string projectNamespace,
+        string endpointName,
+        IOptions<AppSettings> appSettings
+    ) =>
+        MethodNotAllowedForTrackedChange(
             httpContext,
             apiService,
             $"{projectNamespace}/{endpointName}/keyChanges",

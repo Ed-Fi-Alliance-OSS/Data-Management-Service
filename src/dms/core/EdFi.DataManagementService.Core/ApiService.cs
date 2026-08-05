@@ -95,6 +95,12 @@ internal class ApiService : IApiService
     private readonly Lazy<PipelineProvider> _methodNotAllowedSteps;
 
     /// <summary>
+    /// The pipeline steps to satisfy a tracked-change route request made with an unsupported
+    /// HTTP method
+    /// </summary>
+    private readonly Lazy<PipelineProvider> _trackedChangeMethodNotAllowedSteps;
+
+    /// <summary>
     /// The OpenAPI specification derived from core and extension ApiSchemas
     /// </summary>
     private readonly Lazy<JsonNode> _resourceOpenApiSpecification;
@@ -159,6 +165,9 @@ internal class ApiService : IApiService
         );
         _getTrackedChangesSteps = new Lazy<PipelineProvider>(CreateGetTrackedChangesPipeline);
         _methodNotAllowedSteps = new Lazy<PipelineProvider>(CreateMethodNotAllowedPipeline);
+        _trackedChangeMethodNotAllowedSteps = new Lazy<PipelineProvider>(
+            CreateTrackedChangeMethodNotAllowedPipeline
+        );
         _resourceOpenApiSpecification = new Lazy<JsonNode>(CreateResourceOpenApiSpecification);
         _descriptorOpenApiSpecification = new Lazy<JsonNode>(CreateDescriptorOpenApiSpecification);
         _changeQueriesOpenApiSpecification = new Lazy<JsonNode?>(CreateChangeQueriesOpenApiSpecification);
@@ -433,6 +442,27 @@ internal class ApiService : IApiService
         return new PipelineProvider(steps);
     }
 
+    private PipelineProvider CreateTrackedChangeMethodNotAllowedPipeline()
+    {
+        // The tracked-change twin of CreateMethodNotAllowedPipeline. It differs only in the path
+        // step: ParseTrackedChangePathMiddleware reads the /deletes or /keyChanges suffix as an
+        // operation, where ParsePathMiddleware would read it as a document id and reject it as a
+        // malformed UUID. Everything else - and the reason for coming through Core at all - is the
+        // same: the common steps authenticate and validate the tenant, and ValidateEndpointMiddleware
+        // answers 404 for an unknown project namespace or resource, so the terminal's 405 is reached
+        // only once the endpoint is known to exist.
+        var steps = GetCommonInitialSteps();
+        steps.AddRange([
+            new ParseTrackedChangePathMiddleware(_logger),
+            new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
+            new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
+            new ValidateEndpointMiddleware(_logger),
+            new MethodNotAllowedMiddleware(_logger),
+        ]);
+
+        return new PipelineProvider(steps);
+    }
+
     /// <summary>
     /// Parses the excluded domains configuration setting into an array of domain names
     /// </summary>
@@ -618,6 +648,23 @@ internal class ApiService : IApiService
             UnsupportedMethodName = requestMethodName,
         };
         await _methodNotAllowedSteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
+    }
+
+    /// <summary>
+    /// DMS entry point for a tracked-change route request made with an unsupported HTTP method
+    /// </summary>
+    public async Task<IFrontendResponse> MethodNotAllowedForTrackedChange(
+        FrontendRequest frontendRequest,
+        string requestMethodName
+    )
+    {
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.UNSUPPORTED, scope.ServiceProvider)
+        {
+            UnsupportedMethodName = requestMethodName,
+        };
+        await _trackedChangeMethodNotAllowedSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
 
