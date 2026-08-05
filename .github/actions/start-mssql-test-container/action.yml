@@ -51,6 +51,7 @@ runs:
           --tmpfs "/var/opt/mssql:rw,size=$($env:MSSQL_TMPFS_SIZE),mode=1777" `
           --env ACCEPT_EULA=Y `
           --env MSSQL_SA_PASSWORD=$mssqlPassword `
+          --env MSSQL_AGENT_ENABLED=true `
           --env "MSSQL_MEMORY_LIMIT_MB=$env:MSSQL_SQL_MEMORY_LIMIT_MB" `
           --env MSSQL_PID=Developer `
           --publish "$($env:HOST_PORT):1433" `
