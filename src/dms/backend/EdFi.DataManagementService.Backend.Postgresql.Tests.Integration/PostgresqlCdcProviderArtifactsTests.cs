@@ -151,6 +151,29 @@ public class Given_PostgresqlCdcProviderArtifacts
         }
     }
 
+    [Test]
+    public async Task It_should_emit_raw_pgoutput_only_for_provider_source_records()
+    {
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        var documentId = await InsertDocumentBeforeProviderSlotAsync(connection);
+
+        var result = await RunSetupAsync(connection, new CdcProviderArtifactOutputRequest(false));
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        result.Diagnostics.Should().BeEmpty();
+
+        await ExecuteProjectionWorkDmlAsync(connection, documentId);
+        (await CountPeekedPgoutputChangesAsync(connection))
+            .Should()
+            .Be(0, "DocumentProjectionWork is not in the provider publication");
+
+        await ExecuteNonQueryAsync(connection, result.HeartbeatActionQuery!.Sql);
+        (await CountPeekedPgoutputChangesAsync(connection))
+            .Should()
+            .BeGreaterThan(0, "the same provider slot should still observe published heartbeat changes");
+    }
+
     private async Task<CdcProviderSetupResult> RunSetupAsync(
         NpgsqlConnection connection,
         CdcProviderArtifactOutputRequest artifactOutput
@@ -518,6 +541,68 @@ public class Given_PostgresqlCdcProviderArtifacts
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<long> InsertDocumentBeforeProviderSlotAsync(NpgsqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
+            VALUES (@document_uuid, 1)
+            RETURNING "DocumentId";
+            """;
+        command.Parameters.AddWithValue("document_uuid", Guid.NewGuid());
+
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task ExecuteProjectionWorkDmlAsync(NpgsqlConnection connection, long documentId)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM dms."DocumentProjectionWork"
+            WHERE "DocumentId" = @document_id;
+
+            INSERT INTO dms."DocumentProjectionWork" (
+                "DocumentId",
+                "RequiredContentVersion",
+                "FirstEnqueuedAt",
+                "LastEnqueuedAt"
+            )
+            VALUES (@document_id, 1, now(), now());
+
+            UPDATE dms."DocumentProjectionWork"
+            SET "RequiredContentVersion" = "RequiredContentVersion" + 1,
+                "LastEnqueuedAt" = now()
+            WHERE "DocumentId" = @document_id;
+
+            DELETE FROM dms."DocumentProjectionWork"
+            WHERE "DocumentId" = @document_id;
+            """;
+        command.Parameters.AddWithValue("document_id", documentId);
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<long> CountPeekedPgoutputChangesAsync(NpgsqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM pg_catalog.pg_logical_slot_peek_binary_changes(
+                CAST(@slot_name AS name),
+                NULL::pg_lsn,
+                NULL::integer,
+                'proto_version',
+                '1',
+                'publication_names',
+                CAST(@publication_name AS text)
+            );
+            """;
+        command.Parameters.AddWithValue("slot_name", ReplicationSlotName);
+        command.Parameters.AddWithValue("publication_name", PublicationName);
+
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 
     private static string QuoteIdentifier(string identifier) => $"\"{identifier.Replace("\"", "\"\"")}\"";

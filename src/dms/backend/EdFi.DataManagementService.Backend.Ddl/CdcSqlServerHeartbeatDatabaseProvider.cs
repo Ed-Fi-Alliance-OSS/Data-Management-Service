@@ -28,6 +28,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         _ =
             request.ArtifactNames.SqlServer
             ?? throw new InvalidOperationException("SQL Server artifact names were not supplied.");
+        var heartbeatTable = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
 
         return
         [
@@ -45,7 +46,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ),
             new CdcProviderSetupStep(
                 CdcProviderArtifactKind.HeartbeatTable,
-                SafeName(DmsTableNames.CdcHeartbeat),
+                SafeName(heartbeatTable.TableName),
                 canCreateInInitialSetup: true,
                 ExecuteHeartbeatTableAsync
             ),
@@ -233,9 +234,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         try
         {
+            var heartbeat = SourceTable(context.Request, CdcSourceTableKind.CdcHeartbeat);
+            var heartbeatSafeName = SafeName(heartbeat.TableName);
             var heartbeatTableExists = await TableExistsAsync(
                     executor,
-                    DmsTableNames.CdcHeartbeat,
+                    heartbeat.TableName,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -247,7 +250,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 {
                     return ArtifactOnly(
                         CdcProviderArtifactKind.HeartbeatTable,
-                        SafeName(DmsTableNames.CdcHeartbeat),
+                        heartbeatSafeName,
                         CdcProviderArtifactState.Missing,
                         new Dictionary<string, string> { ["table"] = "missing" }
                     );
@@ -259,19 +262,19 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 state = CdcProviderArtifactState.Created;
             }
 
-            var shape = await InspectHeartbeatTableShapeAsync(executor, cancellationToken)
+            var shape = await InspectHeartbeatTableShapeAsync(executor, context.Request, cancellationToken)
                 .ConfigureAwait(false);
             if (!shape.IsExactMatch)
             {
                 return ArtifactOnly(
                     CdcProviderArtifactKind.HeartbeatTable,
-                    SafeName(DmsTableNames.CdcHeartbeat),
+                    heartbeatSafeName,
                     CdcProviderArtifactState.Mismatched,
                     shape.ObservedValues
                 );
             }
 
-            var singleton = await InspectHeartbeatSingletonAsync(executor, cancellationToken)
+            var singleton = await InspectHeartbeatSingletonAsync(executor, context.Request, cancellationToken)
                 .ConfigureAwait(false);
             if (
                 singleton.SingletonRowCount == 0
@@ -282,7 +285,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     .ExecuteNonQueryAsync(InsertHeartbeatSingletonSql(context.Request), cancellationToken)
                     .ConfigureAwait(false);
                 state = CdcProviderArtifactState.Created;
-                singleton = await InspectHeartbeatSingletonAsync(executor, cancellationToken)
+                singleton = await InspectHeartbeatSingletonAsync(executor, context.Request, cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -290,7 +293,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             {
                 return ArtifactOnly(
                     CdcProviderArtifactKind.HeartbeatTable,
-                    SafeName(DmsTableNames.CdcHeartbeat),
+                    heartbeatSafeName,
                     CdcProviderArtifactState.Mismatched,
                     shape
                         .ObservedValues.Concat(singleton.ObservedValues)
@@ -303,7 +306,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 [
                     new CdcProviderArtifactObservation(
                         CdcProviderArtifactKind.HeartbeatTable,
-                        SafeName(DmsTableNames.CdcHeartbeat),
+                        heartbeatSafeName,
                         state,
                         shape
                             .ObservedValues.Concat(singleton.ObservedValues)
@@ -317,7 +320,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         {
             return SetupPrincipalFailure(
                 CdcProviderArtifactKind.HeartbeatTable,
-                SafeName(DmsTableNames.CdcHeartbeat),
+                SafeName(SourceTable(context.Request, CdcSourceTableKind.CdcHeartbeat).TableName),
                 exception
             );
         }
@@ -325,7 +328,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         {
             return SetupPrincipalFailure(
                 CdcProviderArtifactKind.HeartbeatTable,
-                SafeName(DmsTableNames.CdcHeartbeat),
+                SafeName(SourceTable(context.Request, CdcSourceTableKind.CdcHeartbeat).TableName),
                 exception
             );
         }
@@ -352,7 +355,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
             return new CdcProviderSetupStepResult(
                 sourceTableInventory: liveInventory,
-                expectedMessageKeyColumns: ExpectedMessageKeyColumns()
+                expectedMessageKeyColumns: ExpectedMessageKeyColumns(context.Request)
             );
         }
         catch (DbException exception)
@@ -758,14 +761,18 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var ownership = ReadCsv(row, "ownership");
         var hasDatabaseConnect = ReadBool(row, "database_connect");
         var sourceSelectDenials = ReadCsv(row, "source_select_denials");
+        var documentName = SafeName(SourceTable(request, CdcSourceTableKind.Document).TableName).Value;
+        var documentCacheName = SafeName(
+            SourceTable(request, CdcSourceTableKind.DocumentCache).TableName
+        ).Value;
+        var heartbeatName = SafeName(SourceTable(request, CdcSourceTableKind.CdcHeartbeat).TableName).Value;
         var hasDocumentSelect =
-            ReadBool(row, "document_select") && !HasSourceSelectDenial(sourceSelectDenials, "dms.Document");
+            ReadBool(row, "document_select") && !HasSourceSelectDenial(sourceSelectDenials, documentName);
         var hasDocumentCacheSelect =
             ReadBool(row, "document_cache_select")
-            && !HasSourceSelectDenial(sourceSelectDenials, "dms.DocumentCache");
+            && !HasSourceSelectDenial(sourceSelectDenials, documentCacheName);
         var hasHeartbeatSelect =
-            ReadBool(row, "heartbeat_select")
-            && !HasSourceSelectDenial(sourceSelectDenials, "dms.CdcHeartbeat");
+            ReadBool(row, "heartbeat_select") && !HasSourceSelectDenial(sourceSelectDenials, heartbeatName);
         var hasHeartbeatSequenceUpdate = ReadBool(row, "heartbeat_sequence_update");
         var hasHeartbeatAtUpdate = ReadBool(row, "heartbeat_at_update");
         var hasHeartbeatIdUpdate = ReadBool(row, "heartbeat_id_update");
@@ -779,6 +786,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var connectorPrincipal = request.ConnectorPrincipal.SafePrincipalName;
         var gatingRoleName = request.ArtifactNames.SqlServer!.GatingRoleName;
         var missingRequiredPrivileges = MissingRequiredSqlServerConnectorPrivileges(
+            request,
             hasDatabaseConnect,
             gatingRoleExists,
             gatingRoleMember,
@@ -898,6 +906,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         };
 
         var diagnostics = ConnectorPrincipalAccessDiagnostics(
+            request,
             connectorPrincipal,
             gatingRoleName,
             connectorExists,
@@ -961,9 +970,13 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var documentCacheObjectName = ObjectIdName(
             SourceTable(request, CdcSourceTableKind.DocumentCache).TableName
         );
-        var heartbeatObjectName = ObjectIdName(
-            SourceTable(request, CdcSourceTableKind.CdcHeartbeat).TableName
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var heartbeatObjectName = ObjectIdName(heartbeat.TableName);
+        var heartbeatSequenceColumn = EscapeSqlLiteral(
+            SourceColumn(heartbeat, "HeartbeatSequence").ColumnName.Value
         );
+        var heartbeatAtColumn = EscapeSqlLiteral(SourceColumn(heartbeat, "HeartbeatAt").ColumnName.Value);
+        var heartbeatIdColumn = EscapeSqlLiteral(SourceColumn(heartbeat, "HeartbeatId").ColumnName.Value);
         var workTableObjectName = ObjectIdName(DmsTableNames.DocumentProjectionWork);
         var expectedCaptureInstances = string.Join(
             ",\n            ",
@@ -981,9 +994,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             DECLARE @document_cache_object_id int = OBJECT_ID(N'{documentCacheObjectName}', N'U');
             DECLARE @heartbeat_object_id int = OBJECT_ID(N'{heartbeatObjectName}', N'U');
             DECLARE @work_table_object_id int = OBJECT_ID(N'{workTableObjectName}', N'U');
-            DECLARE @heartbeat_sequence_column_id int = COLUMNPROPERTY(@heartbeat_object_id, N'HeartbeatSequence', N'ColumnId');
-            DECLARE @heartbeat_at_column_id int = COLUMNPROPERTY(@heartbeat_object_id, N'HeartbeatAt', N'ColumnId');
-            DECLARE @heartbeat_id_column_id int = COLUMNPROPERTY(@heartbeat_object_id, N'HeartbeatId', N'ColumnId');
+            DECLARE @heartbeat_sequence_column_id int = COLUMNPROPERTY(@heartbeat_object_id, N'{heartbeatSequenceColumn}', N'ColumnId');
+            DECLARE @heartbeat_at_column_id int = COLUMNPROPERTY(@heartbeat_object_id, N'{heartbeatAtColumn}', N'ColumnId');
+            DECLARE @heartbeat_id_column_id int = COLUMNPROPERTY(@heartbeat_object_id, N'{heartbeatIdColumn}', N'ColumnId');
 
             WITH expected_capture_instances(capture_instance) AS (
                 SELECT *
@@ -2188,7 +2201,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         return $"""
             /* cdc:sqlserver:create-heartbeat-table */
-            IF OBJECT_ID(N'{ObjectIdName(DmsTableNames.CdcHeartbeat)}', N'U') IS NULL
+            IF OBJECT_ID(N'{ObjectIdName(heartbeat.TableName)}', N'U') IS NULL
             BEGIN
                 CREATE TABLE {heartbeat.EmittedQuotedTableName}
                 (
@@ -2431,7 +2444,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 .Select(group => group.Value)
         )
         {
-            var unexpected = ReadUnexpectedCaptureInstance(unexpectedRows);
+            var unexpected = ReadUnexpectedCaptureInstance(request, unexpectedRows);
             unexpectedArtifacts.Add(unexpected.Artifact);
             diagnostics.AddRange(unexpected.Diagnostics);
         }
@@ -2478,6 +2491,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             SourceColumn(heartbeat, "HeartbeatSequence").ColumnName.Value
         );
         var heartbeatAtColumn = EscapeSqlLiteral(SourceColumn(heartbeat, "HeartbeatAt").ColumnName.Value);
+        var documentObjectName = ObjectIdName(SourceTable(request, CdcSourceTableKind.Document).TableName);
 
         return $"""
             /* cdc:sqlserver:capture-instances */
@@ -2534,7 +2548,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 dms_document_owned_sources(source_object_id) AS (
                     SELECT DISTINCT foreign_key.parent_object_id
                     FROM sys.foreign_keys foreign_key
-                    WHERE foreign_key.referenced_object_id = OBJECT_ID(N'dms.Document', N'U')
+                    WHERE foreign_key.referenced_object_id = OBJECT_ID(N'{documentObjectName}', N'U')
                 ),
                 expected_capture_instances(table_order, table_kind, source_schema, source_name, capture_instance) AS (
                     SELECT *
@@ -2854,6 +2868,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     }
 
     private static UnexpectedSqlServerCaptureInstance ReadUnexpectedCaptureInstance(
+        CdcProviderSetupRequest request,
         IReadOnlyList<IReadOnlyDictionary<string, string?>> rows
     )
     {
@@ -2901,7 +2916,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         PrincipalKind: CdcPrincipalKind.None,
                         ArtifactKind: CdcProviderArtifactKind.SqlServerCaptureInstance,
                         SafeName: safeName,
-                        ExpectedValue: "only-dms.DocumentCache-dms.Document-dms.CdcHeartbeat-captured",
+                        ExpectedValue: $"only-{string.Join("-", CaptureTableOrder.Select(kind => SafeName(SourceTable(request, kind).TableName).Value))}-captured",
                         ObservedValue: SafeText($"{sourceSchema}.{sourceName}:capture:{captureInstanceName}"),
                         ProviderErrorClass: null,
                         Classification: CdcProviderRetryContinuityClassification.FailClosed
@@ -3234,10 +3249,13 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
     private static async Task<HeartbeatTableShapeInspection> InspectHeartbeatTableShapeAsync(
         ICdcProviderDatabaseExecutor executor,
+        CdcProviderSetupRequest request,
         CancellationToken cancellationToken
     )
     {
-        var rows = await executor.QueryAsync(HeartbeatTableShapeSql, cancellationToken).ConfigureAwait(false);
+        var rows = await executor
+            .QueryAsync(HeartbeatTableShapeSql(request), cancellationToken)
+            .ConfigureAwait(false);
         if (rows.Count == 0)
         {
             return new HeartbeatTableShapeInspection(
@@ -3262,83 +3280,95 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         );
     }
 
-    private const string HeartbeatTableShapeSql = """
-        /* cdc:sqlserver:heartbeat-shape */
-        ;WITH normalized_check_constraints AS (
-            SELECT
-                constraint_info.name,
-                REPLACE(
+    private static string HeartbeatTableShapeSql(CdcProviderSetupRequest request)
+    {
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var heartbeatId = SourceColumn(heartbeat, "HeartbeatId");
+        var heartbeatSequence = SourceColumn(heartbeat, "HeartbeatSequence");
+        var singletonCheckExpression = EscapeSqlLiteral($"({heartbeatId.EmittedQuotedColumnName}=(1))");
+        var sequenceCheckExpression = EscapeSqlLiteral($"({heartbeatSequence.EmittedQuotedColumnName}>=(0))");
+
+        return $"""
+            /* cdc:sqlserver:heartbeat-shape */
+            ;WITH normalized_check_constraints AS (
+                SELECT
+                    constraint_info.name,
                     REPLACE(
                         REPLACE(
-                            REPLACE(constraint_info.definition, N' ', N''),
-                            NCHAR(9),
+                            REPLACE(
+                                REPLACE(constraint_info.definition, N' ', N''),
+                                NCHAR(9),
+                                N''
+                            ),
+                            NCHAR(10),
                             N''
                         ),
-                        NCHAR(10),
+                        NCHAR(13),
                         N''
-                    ),
-                    NCHAR(13),
-                    N''
-                ) AS normalized_definition,
-                constraint_info.is_disabled,
-                constraint_info.is_not_trusted,
-                constraint_info.is_not_for_replication
-            FROM sys.check_constraints constraint_info
-            INNER JOIN sys.tables table_info
-                ON table_info.object_id = constraint_info.parent_object_id
-            INNER JOIN sys.schemas schema_info
-                ON schema_info.schema_id = table_info.schema_id
-            WHERE schema_info.name = N'dms'
-            AND table_info.name = N'CdcHeartbeat'
-        )
-        SELECT
-            CONVERT(nvarchar(5), CASE WHEN EXISTS (
-                SELECT 1
-                FROM sys.key_constraints constraint_info
+                    ) AS normalized_definition,
+                    constraint_info.is_disabled,
+                    constraint_info.is_not_trusted,
+                    constraint_info.is_not_for_replication
+                FROM sys.check_constraints constraint_info
                 INNER JOIN sys.tables table_info
                     ON table_info.object_id = constraint_info.parent_object_id
                 INNER JOIN sys.schemas schema_info
                     ON schema_info.schema_id = table_info.schema_id
-                WHERE schema_info.name = N'dms'
-                AND table_info.name = N'CdcHeartbeat'
-                AND constraint_info.name = N'PK_CdcHeartbeat'
-                AND constraint_info.type = N'PK'
-                AND (
-                    SELECT STRING_AGG(column_info.name, N',') WITHIN GROUP (ORDER BY index_column.key_ordinal)
-                    FROM sys.index_columns index_column
-                    INNER JOIN sys.columns column_info
-                        ON column_info.object_id = index_column.object_id
-                        AND column_info.column_id = index_column.column_id
-                    WHERE index_column.object_id = constraint_info.parent_object_id
-                    AND index_column.index_id = constraint_info.unique_index_id
-                ) = N'HeartbeatId'
-            ) THEN 1 ELSE 0 END) AS primary_key_matches,
-            CONVERT(nvarchar(5), CASE WHEN EXISTS (
-                SELECT 1
-                FROM normalized_check_constraints constraint_info
-                WHERE constraint_info.name = N'CK_CdcHeartbeat_Singleton'
-                AND constraint_info.normalized_definition = N'([HeartbeatId]=(1))'
-                AND constraint_info.is_disabled = 0
-                AND constraint_info.is_not_trusted = 0
-                AND constraint_info.is_not_for_replication = 0
-            ) THEN 1 ELSE 0 END) AS singleton_check_matches,
-            CONVERT(nvarchar(5), CASE WHEN EXISTS (
-                SELECT 1
-                FROM normalized_check_constraints constraint_info
-                WHERE constraint_info.name = N'CK_CdcHeartbeat_Sequence'
-                AND constraint_info.normalized_definition = N'([HeartbeatSequence]>=(0))'
-                AND constraint_info.is_disabled = 0
-                AND constraint_info.is_not_trusted = 0
-                AND constraint_info.is_not_for_replication = 0
-            ) THEN 1 ELSE 0 END) AS sequence_check_matches;
-        """;
+                WHERE schema_info.name = N'{EscapeSqlLiteral(heartbeat.TableName.Schema.Value)}'
+                AND table_info.name = N'{EscapeSqlLiteral(heartbeat.TableName.Name)}'
+            )
+            SELECT
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM sys.key_constraints constraint_info
+                    INNER JOIN sys.tables table_info
+                        ON table_info.object_id = constraint_info.parent_object_id
+                    INNER JOIN sys.schemas schema_info
+                        ON schema_info.schema_id = table_info.schema_id
+                    WHERE schema_info.name = N'{EscapeSqlLiteral(heartbeat.TableName.Schema.Value)}'
+                    AND table_info.name = N'{EscapeSqlLiteral(heartbeat.TableName.Name)}'
+                    AND constraint_info.name = N'PK_CdcHeartbeat'
+                    AND constraint_info.type = N'PK'
+                    AND (
+                        SELECT STRING_AGG(column_info.name, N',') WITHIN GROUP (ORDER BY index_column.key_ordinal)
+                        FROM sys.index_columns index_column
+                        INNER JOIN sys.columns column_info
+                            ON column_info.object_id = index_column.object_id
+                            AND column_info.column_id = index_column.column_id
+                        WHERE index_column.object_id = constraint_info.parent_object_id
+                        AND index_column.index_id = constraint_info.unique_index_id
+                    ) = N'{EscapeSqlLiteral(heartbeatId.ColumnName.Value)}'
+                ) THEN 1 ELSE 0 END) AS primary_key_matches,
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM normalized_check_constraints constraint_info
+                    WHERE constraint_info.name = N'CK_CdcHeartbeat_Singleton'
+                    AND constraint_info.normalized_definition = N'{singletonCheckExpression}'
+                    AND constraint_info.is_disabled = 0
+                    AND constraint_info.is_not_trusted = 0
+                    AND constraint_info.is_not_for_replication = 0
+                ) THEN 1 ELSE 0 END) AS singleton_check_matches,
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM normalized_check_constraints constraint_info
+                    WHERE constraint_info.name = N'CK_CdcHeartbeat_Sequence'
+                    AND constraint_info.normalized_definition = N'{sequenceCheckExpression}'
+                    AND constraint_info.is_disabled = 0
+                    AND constraint_info.is_not_trusted = 0
+                    AND constraint_info.is_not_for_replication = 0
+                ) THEN 1 ELSE 0 END) AS sequence_check_matches;
+            """;
+    }
 
     private static async Task<HeartbeatSingletonInspection> InspectHeartbeatSingletonAsync(
         ICdcProviderDatabaseExecutor executor,
+        CdcProviderSetupRequest request,
         CancellationToken cancellationToken
     )
     {
-        var rows = await executor.QueryAsync(HeartbeatSingletonSql, cancellationToken).ConfigureAwait(false);
+        var rows = await executor
+            .QueryAsync(HeartbeatSingletonSql(request), cancellationToken)
+            .ConfigureAwait(false);
         if (rows.Count == 0)
         {
             return new HeartbeatSingletonInspection(
@@ -3369,22 +3399,39 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         );
     }
 
-    private const string HeartbeatSingletonSql = """
-        /* cdc:sqlserver:heartbeat-singleton */
-        SELECT
-            CONVERT(nvarchar(20), COUNT_BIG(*)) AS row_count,
-            CONVERT(nvarchar(20), COALESCE(SUM(CASE WHEN [HeartbeatId] = 1 THEN 1 ELSE 0 END), 0)) AS singleton_row_count,
-            CONVERT(nvarchar(20), COALESCE(SUM(CASE WHEN [HeartbeatId] <> 1 THEN 1 ELSE 0 END), 0)) AS extra_row_count,
-            CONVERT(nvarchar(20), COALESCE(MAX(CASE WHEN [HeartbeatId] = 1 THEN [HeartbeatSequence] END), -1)) AS heartbeat_sequence
-        FROM [dms].[CdcHeartbeat];
-        """;
+    private static string HeartbeatSingletonSql(CdcProviderSetupRequest request)
+    {
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var heartbeatId = SourceColumn(heartbeat, "HeartbeatId");
+        var heartbeatSequence = SourceColumn(heartbeat, "HeartbeatSequence");
 
-    private static IReadOnlyList<CdcExpectedMessageKeyColumns> ExpectedMessageKeyColumns() =>
+        return $"""
+            /* cdc:sqlserver:heartbeat-singleton */
+            SELECT
+                CONVERT(nvarchar(20), COUNT_BIG(*)) AS row_count,
+                CONVERT(nvarchar(20), COALESCE(SUM(CASE WHEN {heartbeatId.EmittedQuotedColumnName} = 1 THEN 1 ELSE 0 END), 0)) AS singleton_row_count,
+                CONVERT(nvarchar(20), COALESCE(SUM(CASE WHEN {heartbeatId.EmittedQuotedColumnName} <> 1 THEN 1 ELSE 0 END), 0)) AS extra_row_count,
+                CONVERT(nvarchar(20), COALESCE(MAX(CASE WHEN {heartbeatId.EmittedQuotedColumnName} = 1 THEN {heartbeatSequence.EmittedQuotedColumnName} END), -1)) AS heartbeat_sequence
+            FROM {heartbeat.EmittedQuotedTableName};
+            """;
+    }
+
+    private static IReadOnlyList<CdcExpectedMessageKeyColumns> ExpectedMessageKeyColumns(
+        CdcProviderSetupRequest request
+    ) =>
         [
-            new CdcExpectedMessageKeyColumns(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]),
+            new CdcExpectedMessageKeyColumns(
+                CdcSourceTableKind.Document,
+                [SourceColumn(SourceTable(request, CdcSourceTableKind.Document), "DocumentUuid").ColumnName]
+            ),
             new CdcExpectedMessageKeyColumns(
                 CdcSourceTableKind.DocumentCache,
-                [new DbColumnName("DocumentUuid")]
+                [
+                    SourceColumn(
+                        SourceTable(request, CdcSourceTableKind.DocumentCache),
+                        "DocumentUuid"
+                    ).ColumnName,
+                ]
             ),
         ];
 
@@ -3433,6 +3480,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     }
 
     private static IReadOnlyList<string> MissingRequiredSqlServerConnectorPrivileges(
+        CdcProviderSetupRequest request,
         bool hasDatabaseConnect,
         bool gatingRoleExists,
         bool gatingRoleMember,
@@ -3462,27 +3510,39 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         if (!hasDocumentSelect)
         {
-            missing.Add("SELECT:dms.Document");
+            missing.Add(
+                $"SELECT:{SafeName(SourceTable(request, CdcSourceTableKind.Document).TableName).Value}"
+            );
         }
 
         if (!hasDocumentCacheSelect)
         {
-            missing.Add("SELECT:dms.DocumentCache");
+            missing.Add(
+                $"SELECT:{SafeName(SourceTable(request, CdcSourceTableKind.DocumentCache).TableName).Value}"
+            );
         }
 
         if (!hasHeartbeatSelect)
         {
-            missing.Add("SELECT:dms.CdcHeartbeat");
+            missing.Add(
+                $"SELECT:{SafeName(SourceTable(request, CdcSourceTableKind.CdcHeartbeat).TableName).Value}"
+            );
         }
 
         if (!hasHeartbeatSequenceUpdate)
         {
-            missing.Add("UPDATE:dms.CdcHeartbeat.HeartbeatSequence");
+            var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+            missing.Add(
+                $"UPDATE:{SafeName(heartbeat.TableName).Value}.{SafeText(SourceColumn(heartbeat, "HeartbeatSequence").ColumnName.Value)}"
+            );
         }
 
         if (!hasHeartbeatAtUpdate)
         {
-            missing.Add("UPDATE:dms.CdcHeartbeat.HeartbeatAt");
+            var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+            missing.Add(
+                $"UPDATE:{SafeName(heartbeat.TableName).Value}.{SafeText(SourceColumn(heartbeat, "HeartbeatAt").ColumnName.Value)}"
+            );
         }
 
         return missing;
@@ -3495,6 +3555,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         sourceSelectDenials.Any(denial => denial.StartsWith($"{sourceTableName}.", StringComparison.Ordinal));
 
     private static IReadOnlyList<CdcProviderDiagnostic> ConnectorPrincipalAccessDiagnostics(
+        CdcProviderSetupRequest request,
         CdcSafeName connectorPrincipal,
         CdcSafeName gatingRoleName,
         bool connectorExists,
@@ -3524,6 +3585,16 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     )
     {
         List<CdcProviderDiagnostic> diagnostics = [];
+        var documentName = SafeName(SourceTable(request, CdcSourceTableKind.Document).TableName).Value;
+        var documentCacheName = SafeName(
+            SourceTable(request, CdcSourceTableKind.DocumentCache).TableName
+        ).Value;
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var heartbeatName = SafeName(heartbeat.TableName).Value;
+        var heartbeatIdName = SafeText(SourceColumn(heartbeat, "HeartbeatId").ColumnName.Value);
+        var heartbeatSequenceName = SafeText(SourceColumn(heartbeat, "HeartbeatSequence").ColumnName.Value);
+        var heartbeatAtName = SafeText(SourceColumn(heartbeat, "HeartbeatAt").ColumnName.Value);
+        var heartbeatUpdateColumnNames = $"{heartbeatSequenceName},{heartbeatAtName}";
 
         if (!connectorExists || !connectorIsDatabasePrincipal)
         {
@@ -3647,8 +3718,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 ConnectorPrincipalPrivilegeFailure(
                     connectorPrincipal,
                     "CDC_SQLSERVER_CONNECTOR_SOURCE_WRITE_GRANT_MISMATCH",
-                    expectedValue: "no-write-on-dms.Document-or-dms.DocumentCache",
-                    observedValue: $"Document={CsvOrNone(documentWritePrivileges)};DocumentCache={CsvOrNone(documentCacheWritePrivileges)}"
+                    expectedValue: $"no-write-on-{documentName}-or-{documentCacheName}",
+                    observedValue: $"{documentName}={CsvOrNone(documentWritePrivileges)};{documentCacheName}={CsvOrNone(documentCacheWritePrivileges)}"
                 )
             );
         }
@@ -3659,9 +3730,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 ConnectorPrincipalPrivilegeFailure(
                     connectorPrincipal,
                     "CDC_SQLSERVER_CONNECTOR_HEARTBEAT_UPDATE_GRANT_MISMATCH",
-                    expectedValue: "UPDATE-only-HeartbeatSequence-and-HeartbeatAt",
+                    expectedValue: $"UPDATE-only-{heartbeatUpdateColumnNames}-on-{heartbeatName}",
                     observedValue: heartbeatWritePrivileges.Count == 0
-                        ? "HeartbeatId"
+                        ? heartbeatIdName
                         : CsvOrNone(heartbeatWritePrivileges)
                 )
             );
@@ -3673,7 +3744,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 ConnectorPrincipalPrivilegeFailure(
                     connectorPrincipal,
                     "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH",
-                    expectedValue: "SELECT-only-Document-DocumentCache-CdcHeartbeat",
+                    expectedValue: $"SELECT-only-{documentName}-{documentCacheName}-{heartbeatName}",
                     observedValue: CsvOrNone(extraDmsSelectTables)
                 )
             );
@@ -3768,6 +3839,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     {
         var connector = request.ConnectorPrincipal.SafePrincipalName;
         List<CdcGrantObservation> grants = [];
+        var document = SourceTable(request, CdcSourceTableKind.Document);
+        var documentCache = SourceTable(request, CdcSourceTableKind.DocumentCache);
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
 
         if (hasDatabaseConnect)
         {
@@ -3792,7 +3866,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             grants.Add(
                 GrantObservation(
                     connector,
-                    SafeName(DmsTableNames.Document),
+                    SafeName(document.TableName),
                     Privileges(hasDocumentSelect, documentWritePrivileges)
                 )
             );
@@ -3803,7 +3877,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             grants.Add(
                 GrantObservation(
                     connector,
-                    SafeName(DmsTableNames.DocumentCache),
+                    SafeName(documentCache.TableName),
                     Privileges(hasDocumentCacheSelect, documentCacheWritePrivileges)
                 )
             );
@@ -3812,25 +3886,23 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         List<DbColumnName> heartbeatUpdateColumns = [];
         if (hasHeartbeatSequenceUpdate)
         {
-            heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatSequence"));
+            heartbeatUpdateColumns.Add(SourceColumn(heartbeat, "HeartbeatSequence").ColumnName);
         }
 
         if (hasHeartbeatAtUpdate)
         {
-            heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatAt"));
+            heartbeatUpdateColumns.Add(SourceColumn(heartbeat, "HeartbeatAt").ColumnName);
         }
 
         if (hasHeartbeatIdUpdate)
         {
-            heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatId"));
+            heartbeatUpdateColumns.Add(SourceColumn(heartbeat, "HeartbeatId").ColumnName);
         }
 
         var heartbeatPrivileges = Privileges(hasHeartbeatSelect, heartbeatWritePrivileges);
         if (heartbeatPrivileges.Count > 0)
         {
-            grants.Add(
-                GrantObservation(connector, SafeName(DmsTableNames.CdcHeartbeat), heartbeatPrivileges)
-            );
+            grants.Add(GrantObservation(connector, SafeName(heartbeat.TableName), heartbeatPrivileges));
         }
 
         if (heartbeatUpdateColumns.Count > 0)
@@ -3840,7 +3912,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     CdcPrincipalKind.ConnectorPrincipal,
                     connector,
                     CdcProviderArtifactKind.Grant,
-                    SafeName(DmsTableNames.CdcHeartbeat),
+                    SafeName(heartbeat.TableName),
                     ["UPDATE"],
                     heartbeatUpdateColumns
                 )

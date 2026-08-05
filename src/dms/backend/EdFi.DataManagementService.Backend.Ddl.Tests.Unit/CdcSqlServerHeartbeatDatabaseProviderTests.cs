@@ -237,6 +237,48 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
     }
 
     [Test]
+    public async Task It_should_use_emitted_source_inventory_for_heartbeat_and_capture_validation_queries()
+    {
+        var sourceInventory = CdcProviderSetupContractTestData.BuildRenamedSourceInventory(
+            CdcProviderSetupContractTestData.BuildSqlServerRequiredSourceInventory(),
+            SqlDialectFactory.Create(SqlDialect.Mssql)
+        );
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            sourceInventory: sourceInventory
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                sourceInventory: sourceInventory,
+                databaseExecutor: executor
+            )
+        );
+
+        result
+            .Diagnostics.Should()
+            .NotContain(diagnostic =>
+                diagnostic.Category == CdcProviderDiagnosticCategory.SetupPrincipalFailure
+            );
+        executor
+            .QueriedSql.Single(sql => sql.Contains("cdc:sqlserver:table-exists"))
+            .Should()
+            .Contain("OBJECT_ID(N'cdc_source.HeartbeatSource', N'U')");
+        executor
+            .QueriedSql.Single(sql => sql.Contains("cdc:sqlserver:heartbeat-shape"))
+            .Should()
+            .Contain("schema_info.name = N'cdc_source'")
+            .And.Contain("table_info.name = N'HeartbeatSource'")
+            .And.Contain("constraint_info.normalized_definition = N'([HeartbeatSequence]>=(0))'");
+        executor
+            .QueriedSql.Last(sql => sql.Contains("cdc:sqlserver:capture-instances"))
+            .Should()
+            .Contain("OBJECT_ID(N'cdc_source.DocumentSource', N'U')");
+    }
+
+    [Test]
     public void MssqlCdcCaptureInstances_should_create_binding_derived_capture_instances_for_the_three_fixed_sources()
     {
         var enableCaptureSql = _executor
@@ -2500,6 +2542,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     private readonly Dictionary<string, RecordingSqlServerCaptureInstance> _captureInstances;
     private readonly RecordingSqlServerConnectorAccess _connectorAccess;
     private readonly string _sourceIdentity;
+    private readonly IReadOnlyList<CdcSourceTableInventory>? _sourceInventory;
     private readonly CdcSourceTableKind? _omittedSourceInventoryTableKind;
     private readonly string _omittedSourceInventoryColumnName;
     private readonly CdcSourceTableKind? _postCreateMismatchedCaptureInstanceKind;
@@ -2527,6 +2570,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null,
         RecordingSqlServerConnectorAccess? connectorAccess = null,
         string sourceIdentity = CdcProviderSetupContractTestData.SourceIdentity,
+        IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
         CdcSourceTableKind? omittedSourceInventoryTableKind = null,
         string omittedSourceInventoryColumnName = "",
         CdcSourceTableKind? postCreateMismatchedCaptureInstanceKind = null
@@ -2556,6 +2600,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         _dropJobsDuringFinalProviderMetadataRefresh = dropJobsDuringFinalProviderMetadataRefresh;
         _connectorAccess = connectorAccess ?? RecordingSqlServerConnectorAccess.MissingGrants();
         _sourceIdentity = sourceIdentity;
+        _sourceInventory = sourceInventory;
         _omittedSourceInventoryTableKind = omittedSourceInventoryTableKind;
         _omittedSourceInventoryColumnName = omittedSourceInventoryColumnName;
         _postCreateMismatchedCaptureInstanceKind = postCreateMismatchedCaptureInstanceKind;
@@ -2583,6 +2628,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         RecordingSqlServerConnectorAccess? connectorAccess = null,
         string heartbeatSingletonCheckDefinition = ExpectedHeartbeatSingletonCheckDefinition,
         string heartbeatSequenceCheckDefinition = ExpectedHeartbeatSequenceCheckDefinition,
+        IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
         CdcSourceTableKind? postCreateMismatchedCaptureInstanceKind = null
     ) =>
         new(
@@ -2606,6 +2652,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             dropJobsDuringFinalProviderMetadataRefresh: dropJobsDuringFinalProviderMetadataRefresh,
             captureInstances: captureInstances,
             connectorAccess: connectorAccess ?? RecordingSqlServerConnectorAccess.Exact(),
+            sourceInventory: sourceInventory,
             postCreateMismatchedCaptureInstanceKind: postCreateMismatchedCaptureInstanceKind
         );
 
@@ -2964,7 +3011,10 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     private IReadOnlyList<IReadOnlyDictionary<string, string?>> SourceInventoryRows()
     {
         List<IReadOnlyDictionary<string, string?>> rows = [];
-        foreach (var table in CdcProviderSetupContractTestData.BuildSqlServerRequiredSourceInventory())
+        foreach (
+            var table in _sourceInventory
+                ?? CdcProviderSetupContractTestData.BuildSqlServerRequiredSourceInventory()
+        )
         {
             if (table.TableKind == CdcSourceTableKind.CdcHeartbeat && !_heartbeatTableExists)
             {
@@ -3270,21 +3320,43 @@ internal sealed record RecordingSqlServerCaptureInstance(
 
     public static RecordingSqlServerCaptureInstance FromEnableSql(string sql)
     {
-        var tableKind = sql switch
+        var captureInstanceName = ExtractSqlLiteral(sql, "@capture_instance = N'");
+        var tableKind = captureInstanceName switch
         {
-            var text when text.Contains("@source_name = N'DocumentCache'") =>
-                CdcSourceTableKind.DocumentCache,
-            var text when text.Contains("@source_name = N'Document'") => CdcSourceTableKind.Document,
-            var text when text.Contains("@source_name = N'CdcHeartbeat'") => CdcSourceTableKind.CdcHeartbeat,
-            _ => throw new InvalidOperationException($"Could not identify CDC source table from SQL: {sql}"),
+            "dms_binding_document_cache" => CdcSourceTableKind.DocumentCache,
+            "dms_binding_document" => CdcSourceTableKind.Document,
+            "dms_binding_cdc_heartbeat" => CdcSourceTableKind.CdcHeartbeat,
+            _ => sql switch
+            {
+                var text when text.Contains("@source_name = N'DocumentCache'") =>
+                    CdcSourceTableKind.DocumentCache,
+                var text when text.Contains("@source_name = N'Document'") => CdcSourceTableKind.Document,
+                var text when text.Contains("@source_name = N'CdcHeartbeat'") =>
+                    CdcSourceTableKind.CdcHeartbeat,
+                _ => throw new InvalidOperationException(
+                    $"Could not identify CDC source table from SQL: {sql}"
+                ),
+            },
         };
+        var capturedColumns = ExtractSqlLiteral(sql, "@captured_column_list = N'")
+            .Split(", ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(column => column.TrimStart('[').TrimEnd(']'))
+            .ToArray();
 
-        return Expected(
-            tableKind,
-            ExtractSqlLiteral(sql, "@capture_instance = N'"),
-            ExtractSqlLiteral(sql, "@role_name = N'"),
-            indexName: DefaultPrimaryKeyName(tableKind),
-            partitionSwitch: true
+        return new RecordingSqlServerCaptureInstance(
+            SourceTableKindToken(tableKind),
+            new DbTableName(
+                new DbSchemaName(ExtractSqlLiteral(sql, "@source_schema = N'")),
+                ExtractSqlLiteral(sql, "@source_name = N'")
+            ),
+            new CdcSafeName(captureInstanceName),
+            new CdcSafeName(ExtractSqlLiteral(sql, "@role_name = N'")),
+            capturedColumns,
+            IndexName: DefaultPrimaryKeyName(tableKind),
+            SourcePrimaryKeyName: DefaultPrimaryKeyName(tableKind),
+            PartitionSwitch: true,
+            RetainedMinLsn: DefaultRetainedMinLsn(tableKind),
+            RetainedMaxLsn: "0x00000000000000000010"
         );
     }
 

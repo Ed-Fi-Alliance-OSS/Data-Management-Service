@@ -162,6 +162,32 @@ internal static class CdcProviderSetupContractTestData
     internal static IReadOnlyList<CdcSourceTableInventory> BuildSqlServerRequiredSourceInventory() =>
         new CoreDdlEmitter(SqlDialectFactory.Create(SqlDialect.Mssql)).EmitWithMetadata().CdcSourceInventory;
 
+    internal static IReadOnlyList<CdcSourceTableInventory> BuildRenamedSourceInventory(
+        IReadOnlyList<CdcSourceTableInventory> sourceInventory,
+        ISqlDialect dialect
+    )
+    {
+        var tableNamesByKind = new Dictionary<CdcSourceTableKind, DbTableName>
+        {
+            [CdcSourceTableKind.DocumentCache] = new(new DbSchemaName("cdc_source"), "DocumentCacheSource"),
+            [CdcSourceTableKind.Document] = new(new DbSchemaName("cdc_source"), "DocumentSource"),
+            [CdcSourceTableKind.CdcHeartbeat] = new(new DbSchemaName("cdc_source"), "HeartbeatSource"),
+        };
+
+        return sourceInventory
+            .Select(table =>
+            {
+                var tableName = tableNamesByKind[table.TableKind];
+                return new CdcSourceTableInventory(
+                    table.TableKind,
+                    tableName,
+                    dialect.QualifyTable(tableName),
+                    table.Columns
+                );
+            })
+            .ToArray();
+    }
+
     internal static IReadOnlyList<CdcDmsManagedTableInventory> BuildPostgresqlDmsManagedTableInventory()
     {
         var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
@@ -411,6 +437,38 @@ public class Given_CdcProviderSetupContract_Request
     }
 
     [Test]
+    public void It_should_reject_source_inventory_missing_required_contract_columns()
+    {
+        var missingDocumentUuid = SourceInventoryWithoutColumn(
+            CdcProviderSetupContractTestData.BuildRequiredSourceInventory(),
+            CdcSourceTableKind.Document,
+            "DocumentUuid"
+        );
+
+        Action action = () =>
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(sourceInventory: missingDocumentUuid);
+
+        action.Should().Throw<ArgumentException>().WithMessage("*Document.DocumentUuid*");
+    }
+
+    [Test]
+    public void It_should_reject_heartbeat_inventory_missing_required_contract_columns()
+    {
+        var missingHeartbeatSequence = SourceInventoryWithoutColumn(
+            CdcProviderSetupContractTestData.BuildRequiredSourceInventory(),
+            CdcSourceTableKind.CdcHeartbeat,
+            "HeartbeatSequence"
+        );
+
+        Action action = () =>
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                sourceInventory: missingHeartbeatSequence
+            );
+
+        action.Should().Throw<ArgumentException>().WithMessage("*CdcHeartbeat.HeartbeatSequence*");
+    }
+
+    [Test]
     public void It_should_not_accept_a_free_form_heartbeat_action_query()
     {
         typeof(CdcProviderSetupRequest)
@@ -419,6 +477,38 @@ public class Given_CdcProviderSetupContract_Request
             .Should()
             .NotContain("HeartbeatActionQuery");
     }
+
+    private static IReadOnlyList<CdcSourceTableInventory> SourceInventoryWithoutColumn(
+        IReadOnlyList<CdcSourceTableInventory> sourceInventory,
+        CdcSourceTableKind tableKind,
+        string columnName
+    ) =>
+        sourceInventory
+            .Select(table =>
+                table.TableKind == tableKind
+                    ? new CdcSourceTableInventory(
+                        table.TableKind,
+                        table.TableName,
+                        table.EmittedQuotedTableName,
+                        table
+                            .Columns.Where(column =>
+                                !string.Equals(column.ColumnName.Value, columnName, StringComparison.Ordinal)
+                            )
+                            .Select(
+                                (column, index) =>
+                                    new CdcSourceColumnInventory(
+                                        column.ColumnName,
+                                        column.EmittedQuotedColumnName,
+                                        index + 1,
+                                        column.ProviderDataType,
+                                        column.IsNullable
+                                    )
+                            )
+                            .ToArray()
+                    )
+                    : table
+            )
+            .ToArray();
 }
 
 [TestFixture]

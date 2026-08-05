@@ -191,6 +191,39 @@ public class Given_MssqlCdcProviderArtifacts
         }
     }
 
+    [Test]
+    public async Task It_should_emit_raw_sqlserver_cdc_records_only_for_provider_sources()
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        var documentId = await InsertDocumentBeforeProviderCaptureAsync(connection);
+
+        var result = await RunSetupAsync(connection, new CdcProviderArtifactOutputRequest(false));
+
+        result
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.CreatedOrMatched, DescribeDiagnostics(result.Diagnostics));
+        result
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+
+        await AssertNoProjectionWorkCaptureInstanceAsync(connection);
+        await ExecuteProjectionWorkDmlAsync(connection, documentId);
+        await ExecuteNonQueryAsync(connection, result.HeartbeatActionQuery!.Sql);
+
+        var heartbeatRecords = await WaitForHeartbeatCdcRecordsAsync(connection);
+        heartbeatRecords
+            .Should()
+            .Contain(record =>
+                record.Operation == 4 && record.HeartbeatId == 1 && record.HeartbeatSequence == 1
+            );
+
+        var sourceChangeCounts = await ReadRawSqlServerCdcChangeCountsAsync(connection);
+        sourceChangeCounts[DocumentCaptureInstanceName].Should().Be(0);
+        sourceChangeCounts[DocumentCacheCaptureInstanceName].Should().Be(0);
+        sourceChangeCounts[HeartbeatCaptureInstanceName].Should().BeGreaterThan(0);
+    }
+
     private async Task<CdcProviderSetupResult> RunSetupAsync(
         SqlConnection connection,
         CdcProviderArtifactOutputRequest artifactOutput,
@@ -520,6 +553,72 @@ public class Given_MssqlCdcProviderArtifacts
         return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 
+    private static async Task<long> InsertDocumentBeforeProviderCaptureAsync(SqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DECLARE @Inserted TABLE ([DocumentId] bigint NOT NULL);
+
+            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
+            OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
+            VALUES (@documentUuid, 1);
+
+            SELECT [DocumentId]
+            FROM @Inserted;
+            """;
+        command.Parameters.AddWithValue("documentUuid", Guid.NewGuid());
+
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task ExecuteProjectionWorkDmlAsync(SqlConnection connection, long documentId)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM [dms].[DocumentProjectionWork]
+            WHERE [DocumentId] = @documentId;
+
+            INSERT INTO [dms].[DocumentProjectionWork] (
+                [DocumentId],
+                [RequiredContentVersion],
+                [FirstEnqueuedAt],
+                [LastEnqueuedAt]
+            )
+            VALUES (@documentId, 1, SYSUTCDATETIME(), SYSUTCDATETIME());
+
+            UPDATE [dms].[DocumentProjectionWork]
+            SET [RequiredContentVersion] = [RequiredContentVersion] + 1,
+                [LastEnqueuedAt] = SYSUTCDATETIME()
+            WHERE [DocumentId] = @documentId;
+
+            DELETE FROM [dms].[DocumentProjectionWork]
+            WHERE [DocumentId] = @documentId;
+            """;
+        command.Parameters.AddWithValue("documentId", documentId);
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task AssertNoProjectionWorkCaptureInstanceAsync(SqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT_BIG(*)
+            FROM cdc.change_tables capture_info
+            INNER JOIN sys.tables source_table
+                ON source_table.object_id = capture_info.source_object_id
+            INNER JOIN sys.schemas source_schema
+                ON source_schema.schema_id = source_table.schema_id
+            WHERE source_schema.name = N'dms'
+            AND source_table.name = N'DocumentProjectionWork';
+            """;
+
+        Convert
+            .ToInt64(await command.ExecuteScalarAsync())
+            .Should()
+            .Be(0, "DocumentProjectionWork must not have a CDC capture instance or raw CDC function");
+    }
+
     private async Task<bool> HasConnectorObjectPermissionAsync(
         SqlConnection connection,
         string objectName,
@@ -742,6 +841,129 @@ public class Given_MssqlCdcProviderArtifacts
         await command.ExecuteNonQueryAsync();
     }
 
+    private static async Task<IReadOnlyList<SqlServerHeartbeatCdcRecord>> WaitForHeartbeatCdcRecordsAsync(
+        SqlConnection connection
+    )
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(45);
+        IReadOnlyList<SqlServerHeartbeatCdcRecord> records = [];
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            records = await ReadRawSqlServerHeartbeatCdcRecordsAsync(connection);
+            if (
+                records.Any(record =>
+                    record.Operation == 4 && record.HeartbeatId == 1 && record.HeartbeatSequence == 1
+                )
+            )
+            {
+                return records;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+
+        records
+            .Should()
+            .Contain(
+                record => record.Operation == 4 && record.HeartbeatId == 1 && record.HeartbeatSequence == 1,
+                "SQL Server CDC should capture the heartbeat update after provider setup"
+            );
+        return records;
+    }
+
+    private static async Task<
+        IReadOnlyList<SqlServerHeartbeatCdcRecord>
+    > ReadRawSqlServerHeartbeatCdcRecordsAsync(SqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            DECLARE @from_lsn binary(10) = sys.fn_cdc_get_min_lsn(N'{HeartbeatCaptureInstanceName}');
+            DECLARE @to_lsn binary(10) = sys.fn_cdc_get_max_lsn();
+
+            IF @from_lsn IS NOT NULL
+                AND @to_lsn IS NOT NULL
+                AND @from_lsn <> 0x00000000000000000000
+                AND @to_lsn >= @from_lsn
+            BEGIN
+                SELECT
+                    CONVERT(int, [__$operation]) AS [Operation],
+                    CONVERT(smallint, [HeartbeatId]) AS [HeartbeatId],
+                    CONVERT(bigint, [HeartbeatSequence]) AS [HeartbeatSequence]
+                FROM cdc.fn_cdc_get_all_changes_{HeartbeatCaptureInstanceName}(@from_lsn, @to_lsn, N'all')
+                ORDER BY [__$start_lsn], [__$seqval];
+            END;
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync();
+        List<SqlServerHeartbeatCdcRecord> records = [];
+        while (await reader.ReadAsync())
+        {
+            records.Add(
+                new SqlServerHeartbeatCdcRecord(reader.GetInt32(0), reader.GetInt16(1), reader.GetInt64(2))
+            );
+        }
+
+        return records;
+    }
+
+    private static async Task<IReadOnlyDictionary<string, long>> ReadRawSqlServerCdcChangeCountsAsync(
+        SqlConnection connection
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            DECLARE @changes TABLE ([CaptureInstance] nvarchar(128) NOT NULL, [ChangeCount] bigint NOT NULL);
+            DECLARE @to_lsn binary(10) = sys.fn_cdc_get_max_lsn();
+
+            DECLARE @document_from_lsn binary(10) = sys.fn_cdc_get_min_lsn(N'{DocumentCaptureInstanceName}');
+            IF @document_from_lsn IS NULL
+                OR @to_lsn IS NULL
+                OR @document_from_lsn = 0x00000000000000000000
+                OR @to_lsn < @document_from_lsn
+                INSERT INTO @changes VALUES (N'{DocumentCaptureInstanceName}', 0);
+            ELSE
+                INSERT INTO @changes
+                SELECT N'{DocumentCaptureInstanceName}', COUNT_BIG(*)
+                FROM cdc.fn_cdc_get_all_changes_{DocumentCaptureInstanceName}(@document_from_lsn, @to_lsn, N'all');
+
+            DECLARE @document_cache_from_lsn binary(10) = sys.fn_cdc_get_min_lsn(N'{DocumentCacheCaptureInstanceName}');
+            IF @document_cache_from_lsn IS NULL
+                OR @to_lsn IS NULL
+                OR @document_cache_from_lsn = 0x00000000000000000000
+                OR @to_lsn < @document_cache_from_lsn
+                INSERT INTO @changes VALUES (N'{DocumentCacheCaptureInstanceName}', 0);
+            ELSE
+                INSERT INTO @changes
+                SELECT N'{DocumentCacheCaptureInstanceName}', COUNT_BIG(*)
+                FROM cdc.fn_cdc_get_all_changes_{DocumentCacheCaptureInstanceName}(@document_cache_from_lsn, @to_lsn, N'all');
+
+            DECLARE @heartbeat_from_lsn binary(10) = sys.fn_cdc_get_min_lsn(N'{HeartbeatCaptureInstanceName}');
+            IF @heartbeat_from_lsn IS NULL
+                OR @to_lsn IS NULL
+                OR @heartbeat_from_lsn = 0x00000000000000000000
+                OR @to_lsn < @heartbeat_from_lsn
+                INSERT INTO @changes VALUES (N'{HeartbeatCaptureInstanceName}', 0);
+            ELSE
+                INSERT INTO @changes
+                SELECT N'{HeartbeatCaptureInstanceName}', COUNT_BIG(*)
+                FROM cdc.fn_cdc_get_all_changes_{HeartbeatCaptureInstanceName}(@heartbeat_from_lsn, @to_lsn, N'all');
+
+            SELECT [CaptureInstance], [ChangeCount]
+            FROM @changes
+            ORDER BY [CaptureInstance];
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync();
+        Dictionary<string, long> changes = [];
+        while (await reader.ReadAsync())
+        {
+            changes.Add(reader.GetString(0), reader.GetInt64(1));
+        }
+
+        return changes;
+    }
+
     private static void CreateConnectorLoginAndUser(string databaseName, string connectorPrincipalName)
     {
         using var connection = new SqlConnection(BaselineDatabaseConfiguration.MssqlAdminConnectionString!);
@@ -802,6 +1024,12 @@ public class Given_MssqlCdcProviderArtifacts
     private sealed record HeartbeatColumn(string Name, string DataType, bool IsNullable, byte Scale);
 
     private sealed record HeartbeatSnapshot(short HeartbeatId, long HeartbeatSequence);
+
+    private sealed record SqlServerHeartbeatCdcRecord(
+        int Operation,
+        short HeartbeatId,
+        long HeartbeatSequence
+    );
 
     private sealed record CaptureColumn(
         string CaptureInstance,

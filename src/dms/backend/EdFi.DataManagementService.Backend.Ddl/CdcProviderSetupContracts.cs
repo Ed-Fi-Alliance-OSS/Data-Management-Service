@@ -690,6 +690,16 @@ internal static class CdcSourceInventoryContract
     public static IReadOnlyList<CdcSourceTableKind> RequiredSourceTableKinds { get; } =
     [CdcSourceTableKind.DocumentCache, CdcSourceTableKind.Document, CdcSourceTableKind.CdcHeartbeat];
 
+    private static readonly IReadOnlyDictionary<
+        CdcSourceTableKind,
+        IReadOnlyList<string>
+    > _requiredColumnNamesByKind = new Dictionary<CdcSourceTableKind, IReadOnlyList<string>>
+    {
+        [CdcSourceTableKind.DocumentCache] = ["DocumentUuid"],
+        [CdcSourceTableKind.Document] = ["DocumentUuid"],
+        [CdcSourceTableKind.CdcHeartbeat] = ["HeartbeatId", "HeartbeatSequence", "HeartbeatAt"],
+    };
+
     private static readonly IReadOnlyDictionary<CdcSourceTableKind, int> _requiredSourceTableOrdinalByKind =
         RequiredSourceTableKinds
             .Select((kind, ordinal) => (kind, ordinal))
@@ -726,6 +736,7 @@ internal static class CdcSourceInventoryContract
         foreach (var table in sourceInventory)
         {
             ValidateExpectedColumnOrdinals(table, parameterName);
+            ValidateRequiredColumnNames(table, parameterName);
         }
 
         return sourceInventory;
@@ -741,6 +752,32 @@ internal static class CdcSourceInventoryContract
 
         throw new ArgumentException(
             "CDC expected source table columns must be supplied in table-ordinal order starting at 1.",
+            parameterName
+        );
+    }
+
+    private static void ValidateRequiredColumnNames(CdcSourceTableInventory table, string parameterName)
+    {
+        if (!_requiredColumnNamesByKind.TryGetValue(table.TableKind, out var requiredColumnNames))
+        {
+            return;
+        }
+
+        var observedColumnNames = table
+            .Columns.Select(column => column.ColumnName.Value)
+            .ToHashSet(StringComparer.Ordinal);
+        var missingColumnNames = requiredColumnNames
+            .Where(columnName => !observedColumnNames.Contains(columnName))
+            .Select(columnName => $"{table.TableKind}.{columnName}")
+            .ToArray();
+
+        if (missingColumnNames.Length == 0)
+        {
+            return;
+        }
+
+        throw new ArgumentException(
+            $"CDC source inventory is missing required contract columns: {string.Join(", ", missingColumnNames)}.",
             parameterName
         );
     }

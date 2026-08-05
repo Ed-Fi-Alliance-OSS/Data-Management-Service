@@ -161,6 +161,42 @@ public class Given_PostgresqlCdcHeartbeatPublication_Initial_Setup
             );
         executor.ExecutedSql.Should().NotContain(sql => sql.Contains("CREATE PUBLICATION"));
     }
+
+    [Test]
+    public async Task It_should_use_emitted_heartbeat_inventory_for_validation_queries()
+    {
+        var sourceInventory = CdcProviderSetupContractTestData.BuildRenamedSourceInventory(
+            CdcProviderSetupContractTestData.BuildRequiredSourceInventory(),
+            SqlDialectFactory.Create(SqlDialect.Pgsql)
+        );
+        var executor = new RecordingPostgresqlCdcExecutor(
+            heartbeatTableExists: true,
+            heartbeatSingletonExists: true
+        );
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                sourceInventory: sourceInventory,
+                databaseExecutor: executor
+            )
+        );
+
+        executor
+            .QueriedSql.Single(sql => sql.Contains("cdc:postgresql:table-exists"))
+            .Should()
+            .Contain(@"""cdc_source"".""HeartbeatSource""");
+        executor
+            .QueriedSql.Single(sql => sql.Contains("cdc:postgresql:heartbeat-shape"))
+            .Should()
+            .Contain("namespace_info.nspname = 'cdc_source'")
+            .And.Contain("table_info.relname = 'HeartbeatSource'")
+            .And.Contain("""= '("HeartbeatId" = 1)'""");
+        executor
+            .QueriedSql.Single(sql => sql.Contains("cdc:postgresql:heartbeat-singleton"))
+            .Should()
+            .Contain(@"FROM ""cdc_source"".""HeartbeatSource""");
+    }
 }
 
 [TestFixture]

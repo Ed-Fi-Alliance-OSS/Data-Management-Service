@@ -524,8 +524,8 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
     {
         var sourceTableNames = new[]
         {
-            SafeObjectName(DmsTableNames.Document),
-            SafeObjectName(DmsTableNames.DocumentCache),
+            SourceTableSafeNameValue(CdcSourceTableKind.Document),
+            SourceTableSafeNameValue(CdcSourceTableKind.DocumentCache),
         };
 
         if (!sourceTableNames.Contains(grant.SafeObjectName.Value))
@@ -559,17 +559,21 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
 
     private void AddDiagnosticsForHeartbeatGrantMismatch(CdcGrantObservation grant)
     {
-        if (!string.Equals(grant.SafeObjectName.Value, SafeObjectName(DmsTableNames.CdcHeartbeat)))
+        if (
+            !string.Equals(
+                grant.SafeObjectName.Value,
+                SourceTableSafeNameValue(CdcSourceTableKind.CdcHeartbeat),
+                StringComparison.Ordinal
+            )
+        )
         {
             return;
         }
 
+        var expectedUpdateColumns = HeartbeatUpdateColumnNames();
         var unexpectedUpdateColumns = grant
             .Columns.Select(column => column.Value)
-            .Where(column =>
-                !string.Equals(column, "HeartbeatSequence", StringComparison.Ordinal)
-                && !string.Equals(column, "HeartbeatAt", StringComparison.Ordinal)
-            )
+            .Where(column => !expectedUpdateColumns.Contains(column))
             .ToArray();
         if (unexpectedUpdateColumns.Length == 0)
         {
@@ -584,7 +588,7 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
                 PrincipalKind: CdcPrincipalKind.ConnectorPrincipal,
                 ArtifactKind: CdcProviderArtifactKind.Grant,
                 SafeName: grant.SafeObjectName,
-                ExpectedValue: "HeartbeatSequence,HeartbeatAt",
+                ExpectedValue: Csv(expectedUpdateColumns),
                 ObservedValue: Csv(unexpectedUpdateColumns),
                 ProviderErrorClass: null,
                 Classification: CdcProviderRetryContinuityClassification.FailClosed
@@ -747,7 +751,7 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
 
     private void AddDiagnosticsForHeartbeatMetadata()
     {
-        var heartbeatName = SafeObjectName(DmsTableNames.CdcHeartbeat);
+        var heartbeatName = SourceTableSafeNameValue(CdcSourceTableKind.CdcHeartbeat);
         var heartbeatObserved = _artifactInventory.Exists(observation =>
             observation.ArtifactKind == CdcProviderArtifactKind.HeartbeatTable
             && string.Equals(observation.SafeArtifactName.Value, heartbeatName, StringComparison.Ordinal)
@@ -929,6 +933,24 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
         return table is null
             ? new CdcSafeName(tableKind.ToString())
             : new CdcSafeName(SafeObjectName(table.TableName));
+    }
+
+    private string SourceTableSafeNameValue(CdcSourceTableKind tableKind) =>
+        SourceTableSafeName(tableKind).Value;
+
+    private IReadOnlySet<string> HeartbeatUpdateColumnNames()
+    {
+        var heartbeat = request.ExpectedSourceInventory.Single(table =>
+            table.TableKind == CdcSourceTableKind.CdcHeartbeat
+        );
+
+        return heartbeat
+            .Columns.Where(column =>
+                string.Equals(column.ColumnName.Value, "HeartbeatSequence", StringComparison.Ordinal)
+                || string.Equals(column.ColumnName.Value, "HeartbeatAt", StringComparison.Ordinal)
+            )
+            .Select(column => column.ColumnName.Value)
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     private static string SafeObjectName(DbTableName table) =>

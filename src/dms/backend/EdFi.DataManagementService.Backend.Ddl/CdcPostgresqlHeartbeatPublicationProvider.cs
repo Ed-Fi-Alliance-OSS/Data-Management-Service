@@ -24,6 +24,8 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         var postgresqlNames =
             request.ArtifactNames.Postgresql
             ?? throw new InvalidOperationException("PostgreSQL artifact names were not supplied.");
+        var heartbeatTable = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var documentTable = SourceTable(request, CdcSourceTableKind.Document);
 
         return
         [
@@ -35,7 +37,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             ),
             new CdcProviderSetupStep(
                 CdcProviderArtifactKind.HeartbeatTable,
-                SafeName(DmsTableNames.CdcHeartbeat),
+                SafeName(heartbeatTable.TableName),
                 canCreateInInitialSetup: true,
                 ExecuteHeartbeatTableAsync
             ),
@@ -47,7 +49,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             ),
             new CdcProviderSetupStep(
                 CdcProviderArtifactKind.PostgresqlReplicaIdentity,
-                SafeName(DmsTableNames.Document),
+                SafeName(documentTable.TableName),
                 canCreateInInitialSetup: true,
                 ExecuteReplicaIdentityAsync
             ),
@@ -91,9 +93,11 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
 
         try
         {
+            var heartbeat = SourceTable(context.Request, CdcSourceTableKind.CdcHeartbeat);
+            var heartbeatSafeName = SafeName(heartbeat.TableName);
             var heartbeatTableExists = await TableExistsAsync(
                     executor,
-                    DmsTableNames.CdcHeartbeat,
+                    heartbeat.TableName,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -105,7 +109,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 {
                     return ArtifactOnly(
                         CdcProviderArtifactKind.HeartbeatTable,
-                        SafeName(DmsTableNames.CdcHeartbeat),
+                        heartbeatSafeName,
                         CdcProviderArtifactState.Missing,
                         new Dictionary<string, string> { ["table"] = "missing" }
                     );
@@ -117,19 +121,19 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 state = CdcProviderArtifactState.Created;
             }
 
-            var shape = await InspectHeartbeatTableShapeAsync(executor, cancellationToken)
+            var shape = await InspectHeartbeatTableShapeAsync(executor, context.Request, cancellationToken)
                 .ConfigureAwait(false);
             if (!shape.IsExactMatch)
             {
                 return ArtifactOnly(
                     CdcProviderArtifactKind.HeartbeatTable,
-                    SafeName(DmsTableNames.CdcHeartbeat),
+                    heartbeatSafeName,
                     CdcProviderArtifactState.Mismatched,
                     shape.ObservedValues
                 );
             }
 
-            var singleton = await InspectHeartbeatSingletonAsync(executor, cancellationToken)
+            var singleton = await InspectHeartbeatSingletonAsync(executor, context.Request, cancellationToken)
                 .ConfigureAwait(false);
             if (
                 singleton.SingletonRowCount == 0
@@ -140,7 +144,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                     .ExecuteNonQueryAsync(InsertHeartbeatSingletonSql(context.Request), cancellationToken)
                     .ConfigureAwait(false);
                 state = CdcProviderArtifactState.Created;
-                singleton = await InspectHeartbeatSingletonAsync(executor, cancellationToken)
+                singleton = await InspectHeartbeatSingletonAsync(executor, context.Request, cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -148,7 +152,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             {
                 return ArtifactOnly(
                     CdcProviderArtifactKind.HeartbeatTable,
-                    SafeName(DmsTableNames.CdcHeartbeat),
+                    heartbeatSafeName,
                     CdcProviderArtifactState.Mismatched,
                     shape
                         .ObservedValues.Concat(singleton.ObservedValues)
@@ -163,7 +167,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 [
                     new CdcProviderArtifactObservation(
                         CdcProviderArtifactKind.HeartbeatTable,
-                        SafeName(DmsTableNames.CdcHeartbeat),
+                        heartbeatSafeName,
                         state,
                         shape
                             .ObservedValues.Concat(singleton.ObservedValues)
@@ -177,7 +181,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         {
             return SetupPrincipalFailure(
                 CdcProviderArtifactKind.HeartbeatTable,
-                SafeName(DmsTableNames.CdcHeartbeat),
+                SafeName(SourceTable(context.Request, CdcSourceTableKind.CdcHeartbeat).TableName),
                 exception
             );
         }
@@ -185,7 +189,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         {
             return SetupPrincipalFailure(
                 CdcProviderArtifactKind.HeartbeatTable,
-                SafeName(DmsTableNames.CdcHeartbeat),
+                SafeName(SourceTable(context.Request, CdcSourceTableKind.CdcHeartbeat).TableName),
                 exception
             );
         }
@@ -271,14 +275,20 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
 
         try
         {
-            var relReplicaIdentity = await ReadDocumentReplicaIdentityAsync(executor, cancellationToken)
+            var document = SourceTable(context.Request, CdcSourceTableKind.Document);
+            var documentSafeName = SafeName(document.TableName);
+            var relReplicaIdentity = await ReadDocumentReplicaIdentityAsync(
+                    executor,
+                    context.Request,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             if (relReplicaIdentity is null)
             {
                 return ArtifactOnly(
                     CdcProviderArtifactKind.PostgresqlReplicaIdentity,
-                    SafeName(DmsTableNames.Document),
+                    documentSafeName,
                     CdcProviderArtifactState.Missing,
                     new Dictionary<string, string> { ["replica_identity"] = "missing" }
                 );
@@ -288,7 +298,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             {
                 return ArtifactOnly(
                     CdcProviderArtifactKind.PostgresqlReplicaIdentity,
-                    SafeName(DmsTableNames.Document),
+                    documentSafeName,
                     CdcProviderArtifactState.Matched,
                     ReplicaIdentityObservedValues(relReplicaIdentity)
                 );
@@ -298,7 +308,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             {
                 return ArtifactOnly(
                     CdcProviderArtifactKind.PostgresqlReplicaIdentity,
-                    SafeName(DmsTableNames.Document),
+                    documentSafeName,
                     CdcProviderArtifactState.Mismatched,
                     ReplicaIdentityObservedValues(relReplicaIdentity)
                 );
@@ -306,17 +316,21 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
 
             await executor
                 .ExecuteNonQueryAsync(
-                    $"ALTER TABLE {_dialect.QualifyTable(DmsTableNames.Document)} REPLICA IDENTITY FULL;",
+                    $"ALTER TABLE {document.EmittedQuotedTableName} REPLICA IDENTITY FULL;",
                     cancellationToken
                 )
                 .ConfigureAwait(false);
 
-            relReplicaIdentity = await ReadDocumentReplicaIdentityAsync(executor, cancellationToken)
+            relReplicaIdentity = await ReadDocumentReplicaIdentityAsync(
+                    executor,
+                    context.Request,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             return ArtifactOnly(
                 CdcProviderArtifactKind.PostgresqlReplicaIdentity,
-                SafeName(DmsTableNames.Document),
+                documentSafeName,
                 relReplicaIdentity == "f"
                     ? CdcProviderArtifactState.Created
                     : CdcProviderArtifactState.Mismatched,
@@ -327,7 +341,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         {
             return SetupPrincipalFailure(
                 CdcProviderArtifactKind.PostgresqlReplicaIdentity,
-                SafeName(DmsTableNames.Document),
+                SafeName(SourceTable(context.Request, CdcSourceTableKind.Document).TableName),
                 exception
             );
         }
@@ -335,7 +349,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         {
             return SetupPrincipalFailure(
                 CdcProviderArtifactKind.PostgresqlReplicaIdentity,
-                SafeName(DmsTableNames.Document),
+                SafeName(SourceTable(context.Request, CdcSourceTableKind.Document).TableName),
                 exception
             );
         }
@@ -882,10 +896,13 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
 
     private static async Task<HeartbeatTableShapeInspection> InspectHeartbeatTableShapeAsync(
         ICdcProviderDatabaseExecutor executor,
+        CdcProviderSetupRequest request,
         CancellationToken cancellationToken
     )
     {
-        var rows = await executor.QueryAsync(HeartbeatTableShapeSql, cancellationToken).ConfigureAwait(false);
+        var rows = await executor
+            .QueryAsync(HeartbeatTableShapeSql(request), cancellationToken)
+            .ConfigureAwait(false);
         if (rows.Count == 0)
         {
             return new HeartbeatTableShapeInspection(
@@ -910,68 +927,80 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         );
     }
 
-    private const string HeartbeatTableShapeSql = """
-        /* cdc:postgresql:heartbeat-shape */
-        SELECT
-            EXISTS (
-                SELECT 1
-                FROM pg_catalog.pg_constraint constraint_info
-                INNER JOIN pg_catalog.pg_class table_info
-                    ON table_info.oid = constraint_info.conrelid
-                INNER JOIN pg_catalog.pg_namespace namespace_info
-                    ON namespace_info.oid = table_info.relnamespace
-                WHERE namespace_info.nspname = 'dms'
-                AND table_info.relname = 'CdcHeartbeat'
-                AND constraint_info.conname = 'PK_CdcHeartbeat'
-                AND constraint_info.contype = 'p'
-                AND (
-                    SELECT pg_catalog.array_agg(attribute_info.attname::text ORDER BY key_column.ordinality)
-                    FROM pg_catalog.unnest(constraint_info.conkey) WITH ORDINALITY AS key_column(attnum, ordinality)
-                    INNER JOIN pg_catalog.pg_attribute attribute_info
-                        ON attribute_info.attrelid = table_info.oid
-                        AND attribute_info.attnum = key_column.attnum
-                ) = ARRAY['HeartbeatId']
-            )::text AS primary_key_matches,
-            EXISTS (
-                SELECT 1
-                FROM pg_catalog.pg_constraint constraint_info
-                INNER JOIN pg_catalog.pg_class table_info
-                    ON table_info.oid = constraint_info.conrelid
-                INNER JOIN pg_catalog.pg_namespace namespace_info
-                    ON namespace_info.oid = table_info.relnamespace
-                WHERE namespace_info.nspname = 'dms'
-                AND table_info.relname = 'CdcHeartbeat'
-                AND constraint_info.conname = 'CK_CdcHeartbeat_Singleton'
-                AND constraint_info.contype = 'c'
-                AND constraint_info.convalidated
-                AND COALESCE((to_jsonb(constraint_info)->>'conenforced')::boolean, true)
-                AND pg_catalog.pg_get_expr(constraint_info.conbin, constraint_info.conrelid)
-                    = '("HeartbeatId" = 1)'
-            )::text AS singleton_check_matches,
-            EXISTS (
-                SELECT 1
-                FROM pg_catalog.pg_constraint constraint_info
-                INNER JOIN pg_catalog.pg_class table_info
-                    ON table_info.oid = constraint_info.conrelid
-                INNER JOIN pg_catalog.pg_namespace namespace_info
-                    ON namespace_info.oid = table_info.relnamespace
-                WHERE namespace_info.nspname = 'dms'
-                AND table_info.relname = 'CdcHeartbeat'
-                AND constraint_info.conname = 'CK_CdcHeartbeat_Sequence'
-                AND constraint_info.contype = 'c'
-                AND constraint_info.convalidated
-                AND COALESCE((to_jsonb(constraint_info)->>'conenforced')::boolean, true)
-                AND pg_catalog.pg_get_expr(constraint_info.conbin, constraint_info.conrelid)
-                    = '("HeartbeatSequence" >= 0)'
-            )::text AS sequence_check_matches;
-        """;
+    private static string HeartbeatTableShapeSql(CdcProviderSetupRequest request)
+    {
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var heartbeatId = SourceColumn(heartbeat, "HeartbeatId");
+        var heartbeatSequence = SourceColumn(heartbeat, "HeartbeatSequence");
+        var singletonCheckExpression = EscapeSqlLiteral($"({heartbeatId.EmittedQuotedColumnName} = 1)");
+        var sequenceCheckExpression = EscapeSqlLiteral($"({heartbeatSequence.EmittedQuotedColumnName} >= 0)");
+
+        return $"""
+            /* cdc:postgresql:heartbeat-shape */
+            SELECT
+                EXISTS (
+                    SELECT 1
+                    FROM pg_catalog.pg_constraint constraint_info
+                    INNER JOIN pg_catalog.pg_class table_info
+                        ON table_info.oid = constraint_info.conrelid
+                    INNER JOIN pg_catalog.pg_namespace namespace_info
+                        ON namespace_info.oid = table_info.relnamespace
+                    WHERE namespace_info.nspname = '{EscapeSqlLiteral(heartbeat.TableName.Schema.Value)}'
+                    AND table_info.relname = '{EscapeSqlLiteral(heartbeat.TableName.Name)}'
+                    AND constraint_info.conname = 'PK_CdcHeartbeat'
+                    AND constraint_info.contype = 'p'
+                    AND (
+                        SELECT pg_catalog.array_agg(attribute_info.attname::text ORDER BY key_column.ordinality)
+                        FROM pg_catalog.unnest(constraint_info.conkey) WITH ORDINALITY AS key_column(attnum, ordinality)
+                        INNER JOIN pg_catalog.pg_attribute attribute_info
+                            ON attribute_info.attrelid = table_info.oid
+                            AND attribute_info.attnum = key_column.attnum
+                    ) = ARRAY['{EscapeSqlLiteral(heartbeatId.ColumnName.Value)}']
+                )::text AS primary_key_matches,
+                EXISTS (
+                    SELECT 1
+                    FROM pg_catalog.pg_constraint constraint_info
+                    INNER JOIN pg_catalog.pg_class table_info
+                        ON table_info.oid = constraint_info.conrelid
+                    INNER JOIN pg_catalog.pg_namespace namespace_info
+                        ON namespace_info.oid = table_info.relnamespace
+                    WHERE namespace_info.nspname = '{EscapeSqlLiteral(heartbeat.TableName.Schema.Value)}'
+                    AND table_info.relname = '{EscapeSqlLiteral(heartbeat.TableName.Name)}'
+                    AND constraint_info.conname = 'CK_CdcHeartbeat_Singleton'
+                    AND constraint_info.contype = 'c'
+                    AND constraint_info.convalidated
+                    AND COALESCE((to_jsonb(constraint_info)->>'conenforced')::boolean, true)
+                    AND pg_catalog.pg_get_expr(constraint_info.conbin, constraint_info.conrelid)
+                        = '{singletonCheckExpression}'
+                )::text AS singleton_check_matches,
+                EXISTS (
+                    SELECT 1
+                    FROM pg_catalog.pg_constraint constraint_info
+                    INNER JOIN pg_catalog.pg_class table_info
+                        ON table_info.oid = constraint_info.conrelid
+                    INNER JOIN pg_catalog.pg_namespace namespace_info
+                        ON namespace_info.oid = table_info.relnamespace
+                    WHERE namespace_info.nspname = '{EscapeSqlLiteral(heartbeat.TableName.Schema.Value)}'
+                    AND table_info.relname = '{EscapeSqlLiteral(heartbeat.TableName.Name)}'
+                    AND constraint_info.conname = 'CK_CdcHeartbeat_Sequence'
+                    AND constraint_info.contype = 'c'
+                    AND constraint_info.convalidated
+                    AND COALESCE((to_jsonb(constraint_info)->>'conenforced')::boolean, true)
+                    AND pg_catalog.pg_get_expr(constraint_info.conbin, constraint_info.conrelid)
+                        = '{sequenceCheckExpression}'
+                )::text AS sequence_check_matches;
+            """;
+    }
 
     private static async Task<HeartbeatSingletonInspection> InspectHeartbeatSingletonAsync(
         ICdcProviderDatabaseExecutor executor,
+        CdcProviderSetupRequest request,
         CancellationToken cancellationToken
     )
     {
-        var rows = await executor.QueryAsync(HeartbeatSingletonSql, cancellationToken).ConfigureAwait(false);
+        var rows = await executor
+            .QueryAsync(HeartbeatSingletonSql(request), cancellationToken)
+            .ConfigureAwait(false);
         if (rows.Count == 0)
         {
             return new HeartbeatSingletonInspection(
@@ -1002,36 +1031,49 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         );
     }
 
-    private const string HeartbeatSingletonSql = """
-        /* cdc:postgresql:heartbeat-singleton */
-        SELECT
-            COUNT(*)::text AS row_count,
-            COUNT(*) FILTER (WHERE "HeartbeatId" = 1)::text AS singleton_row_count,
-            COUNT(*) FILTER (WHERE "HeartbeatId" <> 1)::text AS extra_row_count,
-            COALESCE(MAX("HeartbeatSequence") FILTER (WHERE "HeartbeatId" = 1), -1)::text AS heartbeat_sequence
-        FROM "dms"."CdcHeartbeat";
-        """;
+    private static string HeartbeatSingletonSql(CdcProviderSetupRequest request)
+    {
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var heartbeatId = SourceColumn(heartbeat, "HeartbeatId");
+        var heartbeatSequence = SourceColumn(heartbeat, "HeartbeatSequence");
+
+        return $"""
+            /* cdc:postgresql:heartbeat-singleton */
+            SELECT
+                COUNT(*)::text AS row_count,
+                COUNT(*) FILTER (WHERE {heartbeatId.EmittedQuotedColumnName} = 1)::text AS singleton_row_count,
+                COUNT(*) FILTER (WHERE {heartbeatId.EmittedQuotedColumnName} <> 1)::text AS extra_row_count,
+                COALESCE(MAX({heartbeatSequence.EmittedQuotedColumnName}) FILTER (WHERE {heartbeatId.EmittedQuotedColumnName} = 1), -1)::text AS heartbeat_sequence
+            FROM {heartbeat.EmittedQuotedTableName};
+            """;
+    }
 
     private static async Task<string?> ReadDocumentReplicaIdentityAsync(
         ICdcProviderDatabaseExecutor executor,
+        CdcProviderSetupRequest request,
         CancellationToken cancellationToken
     )
     {
         var rows = await executor
-            .QueryAsync(DocumentReplicaIdentitySql, cancellationToken)
+            .QueryAsync(DocumentReplicaIdentitySql(request), cancellationToken)
             .ConfigureAwait(false);
         return rows.Count == 0 ? null : ReadRequired(rows[0], "relreplident");
     }
 
-    private const string DocumentReplicaIdentitySql = """
-        /* cdc:postgresql:document-replica-identity */
-        SELECT table_info.relreplident::text AS relreplident
-        FROM pg_catalog.pg_class table_info
-        INNER JOIN pg_catalog.pg_namespace namespace_info
-            ON namespace_info.oid = table_info.relnamespace
-        WHERE namespace_info.nspname = 'dms'
-        AND table_info.relname = 'Document';
-        """;
+    private static string DocumentReplicaIdentitySql(CdcProviderSetupRequest request)
+    {
+        var document = SourceTable(request, CdcSourceTableKind.Document);
+
+        return $"""
+            /* cdc:postgresql:document-replica-identity */
+            SELECT table_info.relreplident::text AS relreplident
+            FROM pg_catalog.pg_class table_info
+            INNER JOIN pg_catalog.pg_namespace namespace_info
+                ON namespace_info.oid = table_info.relnamespace
+            WHERE namespace_info.nspname = '{EscapeSqlLiteral(document.TableName.Schema.Value)}'
+            AND table_info.relname = '{EscapeSqlLiteral(document.TableName.Name)}';
+            """;
+    }
 
     private static async Task<bool> SupportsPublishViaPartitionRootAsync(
         ICdcProviderDatabaseExecutor executor,
@@ -1371,6 +1413,8 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         var hasHeartbeatAtUpdate = ReadBool(row, "heartbeat_at_update");
         var heartbeatForbiddenTablePrivileges = ReadCsv(row, "heartbeat_forbidden_table_privileges");
         var heartbeatUnexpectedUpdateColumns = ReadCsv(row, "heartbeat_unexpected_update_columns");
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var heartbeatIdColumn = SourceColumn(heartbeat, "HeartbeatId").ColumnName.Value;
         var heartbeatForbiddenPrivileges = HeartbeatForbiddenPrivileges(
             heartbeatForbiddenTablePrivileges,
             heartbeatUnexpectedUpdateColumns
@@ -1382,6 +1426,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         var extraDmsForbiddenPrivileges = ReadCsv(row, "extra_dms_forbidden_privileges");
 
         var missingRequiredPrivileges = MissingRequiredConnectorPrivileges(
+            request,
             hasDatabaseConnect,
             hasSchemaUsage,
             hasDocumentSelect,
@@ -1419,7 +1464,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             ["document_write_privileges"] = CsvOrNone(documentWritePrivileges),
             ["document_cache_write_privileges"] = CsvOrNone(documentCacheWritePrivileges),
             ["heartbeat_id_update"] = heartbeatUnexpectedUpdateColumns
-                .Contains("HeartbeatId", StringComparer.Ordinal)
+                .Contains(heartbeatIdColumn, StringComparer.Ordinal)
                 .ToString(),
             ["heartbeat_forbidden_privileges"] = CsvOrNone(heartbeatForbiddenPrivileges),
             ["work_table_privileges"] = CsvOrNone(workTablePrivileges),
@@ -1428,6 +1473,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         };
 
         var diagnostics = ConnectorPrincipalAccessDiagnostics(
+            request,
             request.ConnectorPrincipal.SafePrincipalName,
             roleExists,
             canLogin,
@@ -1477,12 +1523,28 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         var documentCacheTable = EscapeSqlLiteral(
             SourceTable(request, CdcSourceTableKind.DocumentCache).EmittedQuotedTableName
         );
-        var heartbeatTable = EscapeSqlLiteral(
-            SourceTable(request, CdcSourceTableKind.CdcHeartbeat).EmittedQuotedTableName
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var heartbeatTable = EscapeSqlLiteral(heartbeat.EmittedQuotedTableName);
+        var heartbeatTableSchema = EscapeSqlLiteral(heartbeat.TableName.Schema.Value);
+        var heartbeatTableName = EscapeSqlLiteral(heartbeat.TableName.Name);
+        var heartbeatSequenceColumn = EscapeSqlLiteral(
+            SourceColumn(heartbeat, "HeartbeatSequence").ColumnName.Value
         );
+        var heartbeatAtColumn = EscapeSqlLiteral(SourceColumn(heartbeat, "HeartbeatAt").ColumnName.Value);
         var workTable = EscapeSqlLiteral(_dialect.QualifyTable(DmsTableNames.DocumentProjectionWork));
         var publicationName = EscapeSqlLiteral(request.ArtifactNames.Postgresql!.PublicationName.Value);
         var dmsManagedTableInventoryValues = PostgresqlDmsManagedTableInventoryValues(request);
+        var sourceSchemaUsageChecks = string.Join(
+            "\n                        AND ",
+            SourceSchemaNames(request)
+                .Select(schema =>
+                    $"pg_catalog.has_schema_privilege(oid, '{EscapeSqlLiteral(schema)}', 'USAGE')"
+                )
+        );
+        var allowedGrantInventoryPredicate = PostgresqlAllowedGrantInventoryPredicate(
+            request,
+            "dms_managed_tables"
+        );
 
         return $"""
             /* cdc:postgresql:connector-principal-access */
@@ -1569,12 +1631,14 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                     ''
                 ) AS ownership,
                 COALESCE((SELECT pg_catalog.has_database_privilege(oid, current_database(), 'CONNECT')::text FROM connector), 'false') AS database_connect,
-                COALESCE((SELECT pg_catalog.has_schema_privilege(oid, 'dms', 'USAGE')::text FROM connector), 'false') AS schema_usage,
+                COALESCE((SELECT (
+                        {sourceSchemaUsageChecks}
+                    )::text FROM connector), 'false') AS schema_usage,
                 COALESCE((SELECT pg_catalog.has_table_privilege(oid, '{documentTable}', 'SELECT')::text FROM connector), 'false') AS document_select,
                 COALESCE((SELECT pg_catalog.has_table_privilege(oid, '{documentCacheTable}', 'SELECT')::text FROM connector), 'false') AS document_cache_select,
                 COALESCE((SELECT pg_catalog.has_table_privilege(oid, '{heartbeatTable}', 'SELECT')::text FROM connector), 'false') AS heartbeat_select,
-                COALESCE((SELECT pg_catalog.has_column_privilege(oid, '{heartbeatTable}', 'HeartbeatSequence', 'UPDATE')::text FROM connector), 'false') AS heartbeat_sequence_update,
-                COALESCE((SELECT pg_catalog.has_column_privilege(oid, '{heartbeatTable}', 'HeartbeatAt', 'UPDATE')::text FROM connector), 'false') AS heartbeat_at_update,
+                COALESCE((SELECT pg_catalog.has_column_privilege(oid, '{heartbeatTable}', '{heartbeatSequenceColumn}', 'UPDATE')::text FROM connector), 'false') AS heartbeat_sequence_update,
+                COALESCE((SELECT pg_catalog.has_column_privilege(oid, '{heartbeatTable}', '{heartbeatAtColumn}', 'UPDATE')::text FROM connector), 'false') AS heartbeat_at_update,
                 COALESCE(
                     (
                         SELECT string_agg(privilege_name, ',' ORDER BY privilege_name)
@@ -1594,9 +1658,9 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                         SELECT string_agg(column_info.column_name, ',' ORDER BY column_info.ordinal_position)
                         FROM connector
                         CROSS JOIN information_schema.columns column_info
-                        WHERE column_info.table_schema = 'dms'
-                        AND column_info.table_name = 'CdcHeartbeat'
-                        AND column_info.column_name NOT IN ('HeartbeatSequence', 'HeartbeatAt')
+                        WHERE column_info.table_schema = '{heartbeatTableSchema}'
+                        AND column_info.table_name = '{heartbeatTableName}'
+                        AND column_info.column_name NOT IN ('{heartbeatSequenceColumn}', '{heartbeatAtColumn}')
                         AND pg_catalog.has_column_privilege(connector.oid, '{heartbeatTable}', column_info.column_name, 'UPDATE')
                     ),
                     ''
@@ -1650,8 +1714,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                         FROM connector
                         CROSS JOIN dms_managed_tables
                         WHERE NOT (
-                            dms_managed_tables.table_schema = 'dms'
-                            AND dms_managed_tables.table_name IN ('Document', 'DocumentCache', 'CdcHeartbeat', 'DocumentProjectionWork')
+                            {allowedGrantInventoryPredicate}
                         )
                         AND pg_catalog.has_table_privilege(
                             connector.oid,
@@ -1680,8 +1743,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                                 ('TRIGGER', 6)
                         ) forbidden_privilege(privilege_name, privilege_order)
                         WHERE NOT (
-                            dms_managed_tables.table_schema = 'dms'
-                            AND dms_managed_tables.table_name IN ('Document', 'DocumentCache', 'CdcHeartbeat', 'DocumentProjectionWork')
+                            {allowedGrantInventoryPredicate}
                         )
                         AND (
                             pg_catalog.has_table_privilege(
@@ -1715,11 +1777,40 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             );
     }
 
+    private static string PostgresqlAllowedGrantInventoryPredicate(
+        CdcProviderSetupRequest request,
+        string tableAlias
+    )
+    {
+        var allowedTables = request
+            .ExpectedSourceInventory.Select(table => table.TableName)
+            .Append(DmsTableNames.DocumentProjectionWork);
+
+        return string.Join(
+            "\n                            OR ",
+            allowedTables.Select(table =>
+                $"""
+                (
+                                {tableAlias}.table_schema = '{EscapeSqlLiteral(table.Schema.Value)}'
+                                AND {tableAlias}.table_name = '{EscapeSqlLiteral(table.Name)}'
+                            )
+                """
+            )
+        );
+    }
+
     private static string GrantConnectorPrivilegesSql(CdcProviderSetupRequest request)
     {
         var connectorPrincipalLiteral = EscapeSqlLiteral(request.ConnectorPrincipal.SafePrincipalName.Value);
         var connectorPrincipalIdentifier = _dialect.QuoteIdentifier(
             request.ConnectorPrincipal.SafePrincipalName.Value
+        );
+        var schemaUsageGrants = string.Join(
+            "\n",
+            SourceSchemaNames(request)
+                .Select(schema =>
+                    $"GRANT USAGE ON SCHEMA {_dialect.QuoteIdentifier(schema)} TO {connectorPrincipalIdentifier};"
+                )
         );
         var document = SourceTable(request, CdcSourceTableKind.Document);
         var documentCache = SourceTable(request, CdcSourceTableKind.DocumentCache);
@@ -1737,9 +1828,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             END;
             $cdc$;
 
-            GRANT USAGE ON SCHEMA {_dialect.QuoteIdentifier(
-                DmsTableNames.DmsSchema.Value
-            )} TO {connectorPrincipalIdentifier};
+            {schemaUsageGrants}
             GRANT SELECT ON TABLE {document.EmittedQuotedTableName}, {documentCache.EmittedQuotedTableName}, {heartbeat.EmittedQuotedTableName} TO {connectorPrincipalIdentifier};
             GRANT UPDATE ({heartbeatSequence.EmittedQuotedColumnName}, {heartbeatAt.EmittedQuotedColumnName}) ON TABLE {heartbeat.EmittedQuotedTableName} TO {connectorPrincipalIdentifier};
             """;
@@ -1765,6 +1854,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         );
 
     private static IReadOnlyList<string> MissingRequiredConnectorPrivileges(
+        CdcProviderSetupRequest request,
         bool hasDatabaseConnect,
         bool hasSchemaUsage,
         bool hasDocumentSelect,
@@ -1783,38 +1873,51 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
 
         if (!hasSchemaUsage)
         {
-            missing.Add("USAGE:dms");
+            missing.AddRange(SourceSchemaSafeNames(request).Select(schema => $"USAGE:{schema.Value}"));
         }
 
         if (!hasDocumentSelect)
         {
-            missing.Add("SELECT:dms.Document");
+            missing.Add(
+                $"SELECT:{SafeName(SourceTable(request, CdcSourceTableKind.Document).TableName).Value}"
+            );
         }
 
         if (!hasDocumentCacheSelect)
         {
-            missing.Add("SELECT:dms.DocumentCache");
+            missing.Add(
+                $"SELECT:{SafeName(SourceTable(request, CdcSourceTableKind.DocumentCache).TableName).Value}"
+            );
         }
 
         if (!hasHeartbeatSelect)
         {
-            missing.Add("SELECT:dms.CdcHeartbeat");
+            missing.Add(
+                $"SELECT:{SafeName(SourceTable(request, CdcSourceTableKind.CdcHeartbeat).TableName).Value}"
+            );
         }
 
         if (!hasHeartbeatSequenceUpdate)
         {
-            missing.Add("UPDATE:dms.CdcHeartbeat.HeartbeatSequence");
+            var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+            missing.Add(
+                $"UPDATE:{SafeName(heartbeat.TableName).Value}.{SafeText(SourceColumn(heartbeat, "HeartbeatSequence").ColumnName.Value)}"
+            );
         }
 
         if (!hasHeartbeatAtUpdate)
         {
-            missing.Add("UPDATE:dms.CdcHeartbeat.HeartbeatAt");
+            var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+            missing.Add(
+                $"UPDATE:{SafeName(heartbeat.TableName).Value}.{SafeText(SourceColumn(heartbeat, "HeartbeatAt").ColumnName.Value)}"
+            );
         }
 
         return missing;
     }
 
     private static IReadOnlyList<CdcProviderDiagnostic> ConnectorPrincipalAccessDiagnostics(
+        CdcProviderSetupRequest request,
         CdcSafeName connectorPrincipal,
         bool roleExists,
         bool canLogin,
@@ -1832,6 +1935,15 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
     )
     {
         List<CdcProviderDiagnostic> diagnostics = [];
+        var documentName = SafeName(SourceTable(request, CdcSourceTableKind.Document).TableName).Value;
+        var documentCacheName = SafeName(
+            SourceTable(request, CdcSourceTableKind.DocumentCache).TableName
+        ).Value;
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var heartbeatName = SafeName(heartbeat.TableName).Value;
+        var heartbeatSequenceName = SafeText(SourceColumn(heartbeat, "HeartbeatSequence").ColumnName.Value);
+        var heartbeatAtName = SafeText(SourceColumn(heartbeat, "HeartbeatAt").ColumnName.Value);
+        var heartbeatUpdateColumnNames = $"{heartbeatSequenceName},{heartbeatAtName}";
 
         if (!roleExists)
         {
@@ -1897,8 +2009,8 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 ConnectorPrincipalPrivilegeFailure(
                     connectorPrincipal,
                     "CDC_POSTGRESQL_CONNECTOR_SOURCE_WRITE_GRANT_MISMATCH",
-                    expectedValue: "no-write-on-dms.Document-or-dms.DocumentCache",
-                    observedValue: $"Document={CsvOrNone(documentWritePrivileges)};DocumentCache={CsvOrNone(documentCacheWritePrivileges)}"
+                    expectedValue: $"no-write-on-{documentName}-or-{documentCacheName}",
+                    observedValue: $"{documentName}={CsvOrNone(documentWritePrivileges)};{documentCacheName}={CsvOrNone(documentCacheWritePrivileges)}"
                 )
             );
         }
@@ -1909,7 +2021,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 ConnectorPrincipalPrivilegeFailure(
                     connectorPrincipal,
                     "CDC_POSTGRESQL_CONNECTOR_HEARTBEAT_GRANT_MISMATCH",
-                    expectedValue: "SELECT-and-UPDATE-only-HeartbeatSequence-and-HeartbeatAt",
+                    expectedValue: $"SELECT-and-UPDATE-only-{heartbeatUpdateColumnNames}-on-{heartbeatName}",
                     observedValue: CsvOrNone(heartbeatForbiddenTablePrivileges)
                 )
             );
@@ -1921,7 +2033,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 ConnectorPrincipalPrivilegeFailure(
                     connectorPrincipal,
                     "CDC_POSTGRESQL_CONNECTOR_HEARTBEAT_UPDATE_GRANT_MISMATCH",
-                    expectedValue: "UPDATE-only-HeartbeatSequence-and-HeartbeatAt",
+                    expectedValue: $"UPDATE-only-{heartbeatUpdateColumnNames}",
                     observedValue: CsvOrNone(heartbeatUnexpectedUpdateColumns)
                 )
             );
@@ -1933,7 +2045,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 ConnectorPrincipalPrivilegeFailure(
                     connectorPrincipal,
                     "CDC_POSTGRESQL_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH",
-                    expectedValue: "SELECT-only-Document-DocumentCache-CdcHeartbeat",
+                    expectedValue: $"SELECT-only-{documentName}-{documentCacheName}-{heartbeatName}",
                     observedValue: CsvOrNone(extraDmsSelectTables)
                 )
             );
@@ -2018,15 +2130,22 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
 
         if (hasSchemaUsage)
         {
-            grants.Add(GrantObservation(connector, new CdcSafeName("dms"), ["USAGE"]));
+            grants.AddRange(
+                SourceSchemaSafeNames(request)
+                    .Select(schema => GrantObservation(connector, schema, ["USAGE"]))
+            );
         }
+
+        var document = SourceTable(request, CdcSourceTableKind.Document);
+        var documentCache = SourceTable(request, CdcSourceTableKind.DocumentCache);
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
 
         if (hasDocumentSelect || documentWritePrivileges.Count > 0)
         {
             grants.Add(
                 GrantObservation(
                     connector,
-                    SafeName(DmsTableNames.Document),
+                    SafeName(document.TableName),
                     Privileges(hasDocumentSelect, documentWritePrivileges)
                 )
             );
@@ -2037,7 +2156,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             grants.Add(
                 GrantObservation(
                     connector,
-                    SafeName(DmsTableNames.DocumentCache),
+                    SafeName(documentCache.TableName),
                     Privileges(hasDocumentCacheSelect, documentCacheWritePrivileges)
                 )
             );
@@ -2048,7 +2167,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             grants.Add(
                 GrantObservation(
                     connector,
-                    SafeName(DmsTableNames.CdcHeartbeat),
+                    SafeName(heartbeat.TableName),
                     Privileges(hasHeartbeatSelect, heartbeatForbiddenTablePrivileges)
                 )
             );
@@ -2059,12 +2178,12 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             List<DbColumnName> heartbeatUpdateColumns = [];
             if (hasHeartbeatSequenceUpdate)
             {
-                heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatSequence"));
+                heartbeatUpdateColumns.Add(SourceColumn(heartbeat, "HeartbeatSequence").ColumnName);
             }
 
             if (hasHeartbeatAtUpdate)
             {
-                heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatAt"));
+                heartbeatUpdateColumns.Add(SourceColumn(heartbeat, "HeartbeatAt").ColumnName);
             }
 
             heartbeatUpdateColumns.AddRange(
@@ -2076,7 +2195,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                     CdcPrincipalKind.ConnectorPrincipal,
                     connector,
                     CdcProviderArtifactKind.Grant,
-                    SafeName(DmsTableNames.CdcHeartbeat),
+                    SafeName(heartbeat.TableName),
                     ["UPDATE"],
                     heartbeatUpdateColumns
                 )
@@ -2614,6 +2733,16 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
 
     private static CdcSourceColumnInventory SourceColumn(CdcSourceTableInventory table, string columnName) =>
         table.Columns.Single(column => column.ColumnName.Value == columnName);
+
+    private static IReadOnlyList<string> SourceSchemaNames(CdcProviderSetupRequest request) =>
+        request
+            .ExpectedSourceInventory.Select(table => table.TableName.Schema.Value)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+    private static IReadOnlyList<CdcSafeName> SourceSchemaSafeNames(CdcProviderSetupRequest request) =>
+        SourceSchemaNames(request).Select(schema => new CdcSafeName(SafeText(schema))).ToArray();
 
     private static CdcSafeName SafeName(DbTableName table) =>
         new($"{SafeText(table.Schema.Value)}.{SafeText(table.Name)}");

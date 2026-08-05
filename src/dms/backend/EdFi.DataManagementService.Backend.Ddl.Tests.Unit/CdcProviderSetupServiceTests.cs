@@ -552,6 +552,66 @@ public class Given_CdcBindingAwareValidation
                 diagnostic.Category == CdcProviderDiagnosticCategory.WorkTableGrantViolation
             );
     }
+
+    [Test]
+    public async Task It_should_validate_source_and_heartbeat_grants_against_emitted_source_inventory()
+    {
+        var sourceInventory = CdcProviderSetupContractTestData.BuildRenamedSourceInventory(
+            CdcProviderSetupContractTestData.BuildRequiredSourceInventory(),
+            SqlDialectFactory.Create(SqlDialect.Pgsql)
+        );
+        var service = new CdcProviderSetupService([
+            new TestProvider(
+                CdcProvider.Postgresql,
+                [
+                    RecordingStep.Create(
+                        CdcProviderArtifactKind.SourceFingerprint,
+                        CdcSourceFingerprintMetadata.SafeArtifactName,
+                        canCreateInInitialSetup: false,
+                        observedSourceFingerprint: CdcProviderSetupContractTestData.PostgresqlSourceFingerprint,
+                        grantInventory:
+                        [
+                            new CdcGrantObservation(
+                                CdcPrincipalKind.ConnectorPrincipal,
+                                new CdcSafeName("connector_principal"),
+                                CdcProviderArtifactKind.Grant,
+                                new CdcSafeName("cdc_source.DocumentSource"),
+                                ["SELECT", "UPDATE"],
+                                []
+                            ),
+                            new CdcGrantObservation(
+                                CdcPrincipalKind.ConnectorPrincipal,
+                                new CdcSafeName("connector_principal"),
+                                CdcProviderArtifactKind.Grant,
+                                new CdcSafeName("cdc_source.HeartbeatSource"),
+                                ["UPDATE"],
+                                [new DbColumnName("HeartbeatId")]
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+        ]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(sourceInventory: sourceInventory)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_BINDING_SOURCE_TABLE_GRANT_MISMATCH"
+                && diagnostic.SafeName.Value == "cdc_source.DocumentSource"
+            );
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_BINDING_HEARTBEAT_GRANT_MISMATCH"
+                && diagnostic.SafeName.Value == "cdc_source.HeartbeatSource"
+                && diagnostic.ObservedValue == "HeartbeatId"
+            );
+    }
 }
 
 [TestFixture]
