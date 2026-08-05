@@ -31,7 +31,7 @@
       "Run: dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CoreDdlEmitter",
       "Run: dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Ddl"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "CDC provider SQL cleanup",

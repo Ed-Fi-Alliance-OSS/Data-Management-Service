@@ -576,7 +576,7 @@ public sealed class CoreDdlEmitter
         EmitCoreTableDefinition(
             writer,
             DmsCoreTableDefinitions.DocumentProjectionWork(_dialect),
-            "PK_DocumentProjectionWork"
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkConstraints.PrimaryKey
         );
     }
 

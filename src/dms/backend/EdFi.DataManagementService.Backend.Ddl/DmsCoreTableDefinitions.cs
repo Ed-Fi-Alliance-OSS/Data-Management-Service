@@ -94,7 +94,7 @@ internal static class DmsCoreTableDefinitions
                     Col("ComputedAt"),
                     DateTimeType(dialect),
                     IsNullable: false,
-                    "DF_DocumentCache_ComputedAt",
+                    DocumentCacheInventoryDefinition.DocumentCacheConstraints.ComputedAtDefault,
                     dialect.CurrentTimestampDefaultExpression
                 ),
             ],
