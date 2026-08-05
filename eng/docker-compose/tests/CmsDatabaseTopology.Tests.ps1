@@ -1572,6 +1572,81 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
 
             (Get-Content -LiteralPath $result -Raw) | Should -Not -Match "DMS_CONFIG_DATABASE_CONNECTION_STRING='"
         }
+
+        It "migrates a PostgreSQL DB= segment, the provider's other database-name synonym" {
+            # Npgsql recognizes DB as a synonym for Database, so a template authored this way is a
+            # supported shape. The scanner recognized only Database, so this file was left unmigrated
+            # and then failed topology agreement - the no-hand-editing migration path did not apply.
+            $basePath = Join-Path $script:work ".env.base"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};DB=${POSTGRES_DB_NAME};'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
+
+            $values = ReadValuesFromEnvFile $result
+            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};DB=${DMS_CONFIG_DATABASE_NAME};' -Because "only the DB segment's token changes; every other segment is preserved byte for byte"
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $result -DatabaseEngine "postgresql" } | Should -Not -Throw
+        }
+
+        It "migrates an exact MSSQL Initial Catalog= segment and the derived file still validates" {
+            $basePath = Join-Path $script:work ".env.base"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'MSSQL_DB_NAME=edfi_datamanagementservice',
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Initial Catalog=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "mssql" -SeparateConfigDatabase -DockerComposeRoot $script:work
+
+            $values = ReadValuesFromEnvFile $result
+            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'Server=dms-mssql,1433;Initial Catalog=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $result -DatabaseEngine "mssql" } | Should -Not -Throw
+        }
+
+        It "leaves the authored connection string untouched when the database key is not the engine's own: <Case>" -ForEach @(
+            # Migration REWRITES caller-authored text, so only the selected provider's exact key family
+            # is a migration signature. A whitespace-mutated spelling is a keyword no provider supports,
+            # and a cross-engine spelling is one this provider does not honor; editing either would
+            # rewrite a string on a signature that was never real. These rows assert the scanner's
+            # decision only - downstream refusal of such strings is owned by existing tests.
+            @{
+                Case = 'mssql InitialCatalog (no space)'
+                Engine = 'mssql'
+                Lines = @('MSSQL_DB_NAME=edfi_datamanagementservice', 'MSSQL_SA_PASSWORD=abcdefgh1!')
+                ConnectionString = 'Server=dms-mssql,1433;InitialCatalog=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};'
+            }
+            @{
+                Case = 'mssql Initial  Catalog (double space)'
+                Engine = 'mssql'
+                Lines = @('MSSQL_DB_NAME=edfi_datamanagementservice', 'MSSQL_SA_PASSWORD=abcdefgh1!')
+                ConnectionString = 'Server=dms-mssql,1433;Initial  Catalog=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};'
+            }
+            @{
+                Case = 'postgresql Initial Catalog (the other engine''s key)'
+                Engine = 'postgresql'
+                Lines = @('POSTGRES_DB_NAME=edfi_datamanagementservice', 'POSTGRES_PASSWORD=abcdefgh1!')
+                ConnectionString = 'host=dms-postgresql;port=5432;username=postgres;Initial Catalog=${POSTGRES_DB_NAME};'
+            }
+            @{
+                Case = 'mssql DB (the other engine''s key)'
+                Engine = 'mssql'
+                Lines = @('MSSQL_DB_NAME=edfi_datamanagementservice', 'MSSQL_SA_PASSWORD=abcdefgh1!')
+                ConnectionString = 'Server=dms-mssql,1433;DB=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};'
+            }
+        ) {
+            $basePath = Join-Path $script:work ".env.base"
+            Set-Content -LiteralPath $basePath -Value (@(
+                $Lines + "DMS_CONFIG_DATABASE_CONNECTION_STRING=$ConnectionString"
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine $Engine -SeparateConfigDatabase -DockerComposeRoot $script:work
+
+            $values = ReadValuesFromEnvFile $result
+            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be $ConnectionString -Because "the authored string is preserved exactly; no token was rewritten"
+        }
     }
 
     Context "idempotency and mode transitions" {
