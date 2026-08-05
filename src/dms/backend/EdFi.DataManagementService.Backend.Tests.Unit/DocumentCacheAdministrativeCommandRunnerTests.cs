@@ -308,6 +308,38 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         mutex.AcquireCount.Should().Be(0);
     }
 
+    [Test]
+    public async Task It_rejects_unexpected_target_observation_failures_before_acquiring_the_mutex()
+    {
+        DocumentCacheTargetObservation targetObservation = IneligibleUnexpectedProviderFailureObservation();
+        var mutex = new RecordingAdministrativeMutex();
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            new MutableTargetRegistry(Snapshot([targetObservation]), RuntimeSnapshot([])),
+            new StubProjectionSupervisor([]),
+            mutex
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            Request(),
+            SucceedingWorkflow.Instance
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure);
+        result.Mutated.Should().BeFalse();
+        result.ElapsedCommandTime.Should().BeNull();
+        result
+            .PhaseDiagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.Preflight
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.UnexpectedProviderFailure
+            );
+        mutex.AcquireCount.Should().Be(0);
+    }
+
     [TestCaseSource(nameof(InvalidOfflineWriterAdmissionRequests))]
     public async Task It_rejects_invalid_offline_writer_admission_before_acquiring_the_mutex(
         DocumentCacheAdministrativeCommand command,
@@ -2309,6 +2341,36 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             [diagnostic]
         );
     }
+
+    private static DocumentCacheTargetObservation IneligibleUnexpectedProviderFailureObservation() =>
+        DocumentCacheTargetObservation.ResolvedIneligible(
+            TargetKey,
+            EffectiveSettings(TimeSpan.FromHours(24)),
+            new DocumentCacheTargetContextGeneration(1),
+            RelationalProviderToken.Postgresql,
+            physicalSourceFingerprint: null,
+            lifecycle: null,
+            inventory: null,
+            enqueueTrigger: null,
+            sqlServerPrerequisites: null,
+            retryState: null,
+            [
+                new DocumentCacheTargetDiagnostic(
+                    TargetKey,
+                    DocumentCacheTargetResolutionState.Resolved,
+                    RelationalProviderToken.Postgresql,
+                    new DocumentCacheTargetContextGeneration(1),
+                    physicalSourceFingerprint: null,
+                    lifecycle: null,
+                    inventory: null,
+                    enqueueTrigger: null,
+                    sqlServerPrerequisites: null,
+                    retryState: null,
+                    DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure,
+                    "Resolved target failed for an unexpected provider reason."
+                ),
+            ]
+        );
 
     private static DocumentCacheSqlServerPrerequisiteDetails FailedSqlServerPrerequisites() =>
         new(

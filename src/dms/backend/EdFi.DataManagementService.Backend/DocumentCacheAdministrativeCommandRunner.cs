@@ -1311,13 +1311,11 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
     private static DocumentCacheAdministrativeCommandResult CreateTargetNotConfiguredResult(
         DocumentCacheAdministrativeCommandRunnerRequest request
     ) =>
-        CreatePreMutexRejectedResult(
-            request,
-            targetObservation: null,
-            DocumentCacheAdministrativeCommandClassification.TargetNotConfigured,
-            DocumentCacheAdministrativeDiagnosticCategory.TargetNotConfigured,
-            "DocumentCache target is not configured in the current process."
-        );
+        DocumentCachePreflightClassifier.ClassifyTargetObservationFailure(
+            request.Command,
+            request.TargetKey,
+            targetObservation: null
+        ) ?? throw new InvalidOperationException("Target-not-configured classification is required.");
 
     private static DocumentCacheAdministrativeCommandResult CreateTargetNotCurrentResult(
         DocumentCacheAdministrativeCommandRunnerRequest request,
@@ -1375,31 +1373,12 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
     private static DocumentCacheAdministrativeCommandResult CreateTargetObservationRejection(
         DocumentCacheAdministrativeCommandRunnerRequest request,
         DocumentCacheTargetObservation targetObservation
-    )
-    {
-        (
-            DocumentCacheAdministrativeCommandClassification classification,
-            DocumentCacheAdministrativeDiagnosticCategory category,
-            string message
-        ) = ClassifyTargetObservation(targetObservation);
-
-        ImmutableArray<DocumentCacheAdministrativeDiagnostic> diagnostics = targetObservation
-            .Diagnostics.Select(diagnostic => new DocumentCacheAdministrativeDiagnostic(
-                diagnostic.Category,
-                diagnostic.Message
-            ))
-            .ToImmutableArray();
-
-        return CreatePreMutexRejectedResult(
-            request,
-            targetObservation,
-            classification,
-            category,
-            message,
-            targetContext: null,
-            diagnostics
-        );
-    }
+    ) =>
+        DocumentCachePreflightClassifier.ClassifyTargetObservationFailure(
+            request.Command,
+            request.TargetKey,
+            targetObservation
+        ) ?? throw new InvalidOperationException("Ineligible target-observation classification is required.");
 
     private static DocumentCacheAdministrativeCommandResult CreatePreMutexRejectedResult(
         DocumentCacheAdministrativeCommandRunnerRequest request,
@@ -1428,110 +1407,6 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             targetObservation?.Generation?.Value ?? executionContext?.Generation.Value,
             downstreamPublicationStatus: null,
             resultDiagnostics
-        );
-    }
-
-    private static (
-        DocumentCacheAdministrativeCommandClassification Classification,
-        DocumentCacheAdministrativeDiagnosticCategory Category,
-        string Message
-    ) ClassifyTargetObservation(DocumentCacheTargetObservation targetObservation)
-    {
-        if (
-            targetObservation.ResolutionState
-            is DocumentCacheTargetResolutionState.Configured
-                or DocumentCacheTargetResolutionState.Unresolved
-        )
-        {
-            return (
-                DocumentCacheAdministrativeCommandClassification.TargetUnresolved,
-                DocumentCacheAdministrativeDiagnosticCategory.TargetUnresolved,
-                "DocumentCache target is not resolved."
-            );
-        }
-
-        ImmutableHashSet<DocumentCacheTargetDiagnosticCategory> categories = targetObservation
-            .Diagnostics.Select(diagnostic => diagnostic.Category)
-            .ToImmutableHashSet();
-
-        if (categories.Contains(DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident))
-        {
-            return (
-                DocumentCacheAdministrativeCommandClassification.UnsupportedPrerequisiteIncident,
-                DocumentCacheAdministrativeDiagnosticCategory.UnsupportedPrerequisiteIncident,
-                "Provider prerequisite failure was observed outside the supported lifecycle."
-            );
-        }
-
-        if (categories.Contains(DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed))
-        {
-            return (
-                DocumentCacheAdministrativeCommandClassification.ProviderPrerequisiteFailed,
-                DocumentCacheAdministrativeDiagnosticCategory.ProviderPrerequisiteFailed,
-                "Provider prerequisite failed for the target context."
-            );
-        }
-
-        if (categories.Contains(DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing))
-        {
-            return (
-                DocumentCacheAdministrativeCommandClassification.ProviderMetadataMissing,
-                DocumentCacheAdministrativeDiagnosticCategory.ProviderMetadataMissing,
-                "DocumentCache target is missing relational provider metadata."
-            );
-        }
-
-        if (categories.Contains(DocumentCacheTargetDiagnosticCategory.ProviderMetadataUnknown))
-        {
-            return (
-                DocumentCacheAdministrativeCommandClassification.ProviderMetadataUnknown,
-                DocumentCacheAdministrativeDiagnosticCategory.ProviderMetadataUnknown,
-                "DocumentCache target has unknown relational provider metadata."
-            );
-        }
-
-        if (categories.Contains(DocumentCacheTargetDiagnosticCategory.ProviderMismatch))
-        {
-            return (
-                DocumentCacheAdministrativeCommandClassification.ProviderMismatch,
-                DocumentCacheAdministrativeDiagnosticCategory.ProviderMismatch,
-                "DocumentCache target provider does not match this DMS process provider."
-            );
-        }
-
-        if (categories.Contains(DocumentCacheTargetDiagnosticCategory.ConnectionInputMissing))
-        {
-            return (
-                DocumentCacheAdministrativeCommandClassification.ConnectionInputMissing,
-                DocumentCacheAdministrativeDiagnosticCategory.ConnectionInputMissing,
-                "DocumentCache target has no usable connection input."
-            );
-        }
-
-        if (
-            categories.Overlaps([
-                DocumentCacheTargetDiagnosticCategory.PhysicalSourceFingerprintFailure,
-                DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure,
-                DocumentCacheTargetDiagnosticCategory.InventoryFailure,
-                DocumentCacheTargetDiagnosticCategory.EnqueueTriggerFailure,
-            ])
-            || targetObservation.Inventory?.Status is not null and not DocumentCacheInventoryStatus.Satisfied
-            || targetObservation.EnqueueTrigger?.Status
-                is not null
-                    and not DocumentCacheEnqueueTriggerStatus.Satisfied
-        )
-        {
-            return (
-                DocumentCacheAdministrativeCommandClassification.MissingOrInvalidInventory,
-                DocumentCacheAdministrativeDiagnosticCategory.InventoryFailure,
-                "DocumentCache target inventory is missing or invalid."
-            );
-        }
-
-        return (
-            DocumentCacheAdministrativeCommandClassification.ProviderIneligible,
-            DocumentCacheAdministrativeDiagnosticCategory.ProviderIneligible,
-            "DocumentCache target is not eligible for administrative command execution."
         );
     }
 

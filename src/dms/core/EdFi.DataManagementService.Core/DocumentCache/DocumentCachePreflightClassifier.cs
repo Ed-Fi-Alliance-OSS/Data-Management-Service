@@ -668,6 +668,23 @@ public static class DocumentCachePreflightClassifier
         return null;
     }
 
+    public static DocumentCacheAdministrativeCommandResult? ClassifyTargetObservationFailure(
+        DocumentCacheAdministrativeCommand command,
+        DocumentCacheAdministrativeTargetKey targetKey,
+        DocumentCacheTargetObservation? targetObservation
+    )
+    {
+        ArgumentNullException.ThrowIfNull(targetKey);
+
+        return ClassifyCommonTargetState(
+            command,
+            targetKey,
+            targetObservation,
+            expectedTargetContextGeneration: null,
+            unexpectedProviderFailureMessage: null
+        );
+    }
+
     public static DocumentCacheOfflineWriterAdmissionConfirmation? AcceptedOfflineWriterAdmissionConfirmation(
         DocumentCacheAdministrativeCommand command,
         DocumentCacheOfflineWriterAdmission? offlineWriterAdmission

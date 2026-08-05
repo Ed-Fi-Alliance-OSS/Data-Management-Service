@@ -1061,6 +1061,59 @@ public class DocumentCachePreflightClassifierTests
         }
 
         [Test]
+        public void It_should_classify_target_observation_failures_without_command_specific_facts()
+        {
+            DocumentCacheAdministrativeCommandResult? result =
+                DocumentCachePreflightClassifier.ClassifyTargetObservationFailure(
+                    DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+                    _administrativeTargetKey,
+                    IneligibleTargetContextObservation(
+                        DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing
+                    )
+                );
+
+            result.Should().NotBeNull();
+            AssertRejected(
+                result!,
+                DocumentCacheAdministrativeCommandClassification.ProviderMetadataMissing,
+                DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing,
+                expectedObservedLifecycle: null
+            );
+        }
+
+        [Test]
+        public void It_should_not_reject_eligible_target_observations_without_command_specific_facts()
+        {
+            DocumentCacheAdministrativeCommandResult? result =
+                DocumentCachePreflightClassifier.ClassifyTargetObservationFailure(
+                    DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+                    _administrativeTargetKey,
+                    EligibleObservation(DocumentCacheLifecycleState.Tracking)
+                );
+
+            result.Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_classify_unmapped_ineligible_target_context_as_unexpected_provider_failure()
+        {
+            DocumentCacheAdministrativeCommandResult? result =
+                DocumentCachePreflightClassifier.ClassifyTargetObservationFailure(
+                    DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+                    _administrativeTargetKey,
+                    IneligibleUnexpectedProviderFailureObservation()
+                );
+
+            result.Should().NotBeNull();
+            AssertRejected(
+                result!,
+                DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
+                DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure,
+                expectedObservedLifecycle: null
+            );
+        }
+
+        [Test]
         public void It_should_reject_unexpected_provider_failures_without_leaking_physical_details()
         {
             DocumentCacheAdministrativeCommandResult result =
@@ -1441,6 +1494,36 @@ public class DocumentCachePreflightClassifierTests
             ]
         );
     }
+
+    protected static DocumentCacheTargetObservation IneligibleUnexpectedProviderFailureObservation() =>
+        DocumentCacheTargetObservation.ResolvedIneligible(
+            _targetKey,
+            _settings,
+            _generation,
+            RelationalProviderToken.Postgresql,
+            physicalSourceFingerprint: null,
+            lifecycle: null,
+            inventory: null,
+            enqueueTrigger: null,
+            sqlServerPrerequisites: null,
+            retryState: null,
+            [
+                new DocumentCacheTargetDiagnostic(
+                    _targetKey,
+                    DocumentCacheTargetResolutionState.Resolved,
+                    RelationalProviderToken.Postgresql,
+                    _generation,
+                    physicalSourceFingerprint: null,
+                    lifecycle: null,
+                    inventory: null,
+                    enqueueTrigger: null,
+                    sqlServerPrerequisites: null,
+                    retryState: null,
+                    DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure,
+                    "Resolved target failed for an unexpected provider reason."
+                ),
+            ]
+        );
 
     protected static DocumentCacheProviderPrerequisiteValidationResult SatisfiedActivationPrerequisites() =>
         DocumentCacheProviderPrerequisiteValidationResult.ActivationPreflight(
