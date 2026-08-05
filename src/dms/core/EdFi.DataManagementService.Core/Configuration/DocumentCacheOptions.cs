@@ -256,7 +256,7 @@ public sealed class DocumentCacheOptionsValidator : IValidateOptions<DocumentCac
             $"{nameof(DocumentCacheOptions.Projector)}:{nameof(DocumentCacheProjectorOptions.FailureBackoff)}",
             failures
         );
-        AddFailureIfNonPositive(
+        AddFailureIfInvalidBaselineHighWaterMark(
             projector.BaselineHighWaterMark,
             $"{nameof(DocumentCacheOptions.Projector)}:{nameof(DocumentCacheProjectorOptions.BaselineHighWaterMark)}",
             failures
@@ -308,6 +308,26 @@ public sealed class DocumentCacheOptionsValidator : IValidateOptions<DocumentCac
         if (value <= 0)
         {
             failures.Add($"{settingName} must be positive.");
+        }
+    }
+
+    private static void AddFailureIfInvalidBaselineHighWaterMark(
+        int value,
+        string settingName,
+        List<string> failures
+    )
+    {
+        if (value <= 0)
+        {
+            failures.Add($"{settingName} must be positive.");
+            return;
+        }
+
+        if (value == int.MaxValue)
+        {
+            failures.Add(
+                $"{settingName} must be less than int.MaxValue to leave room for high-water-plus-one observation."
+            );
         }
     }
 }

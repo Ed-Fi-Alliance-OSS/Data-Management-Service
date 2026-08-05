@@ -299,6 +299,67 @@ public class DocumentCacheOptionsTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Too_Large_BaselineHighWaterMark : DocumentCacheOptionsTests
+    {
+        private ValidateOptionsResult _validationResult = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            DocumentCacheOptions options = BindOptions(
+                new Dictionary<string, string?>
+                {
+                    ["DataManagement:DocumentCache:Projector:BaselineHighWaterMark"] =
+                        int.MaxValue.ToString(),
+                }
+            );
+
+            _validationResult = Validate(options);
+        }
+
+        [Test]
+        public void It_should_fail_validation()
+        {
+            _validationResult.Failed.Should().BeTrue();
+            _validationResult
+                .Failures.Should()
+                .ContainSingle(failure =>
+                    failure.Contains("Projector:BaselineHighWaterMark")
+                    && failure.Contains("high-water-plus-one")
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Maximum_Supported_BaselineHighWaterMark : DocumentCacheOptionsTests
+    {
+        private ValidateOptionsResult _validationResult = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            DocumentCacheOptions options = BindOptions(
+                new Dictionary<string, string?>
+                {
+                    ["DataManagement:DocumentCache:Projector:BaselineHighWaterMark"] = (
+                        int.MaxValue - 1
+                    ).ToString(),
+                }
+            );
+
+            _validationResult = Validate(options);
+        }
+
+        [Test]
+        public void It_should_validate_successfully()
+        {
+            _validationResult.Succeeded.Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Null_DocumentCache_Option_Groups : DocumentCacheOptionsTests
     {
         [Test]
