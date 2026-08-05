@@ -7,6 +7,7 @@ using System.Reflection;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,15 +16,15 @@ using Microsoft.Extensions.Options;
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
 /// <summary>
-/// TokenCleanupService loops on a PeriodicTimer whose period is the configured
-/// (clamped-to-at-least-one-minute) interval; there is no injectable clock/timer seam.
-/// Waiting for a real timer tick would make these tests take a minute or more, so the
-/// "sweep runs" and "resilience" fixtures below invoke the service's private RunSweepAsync
-/// method directly via reflection -- the same method the timer loop calls on every tick --
-/// rather than waiting on the real PeriodicTimer. The PeriodicTimer scheduling/cadence
-/// itself is therefore not covered by a fast unit test; the disabled-flag and
-/// interval-clamping fixtures do exercise the real ExecuteAsync/StartAsync/StopAsync path,
-/// since those branches complete (or fault) before any timer tick is required.
+/// TokenCleanupService sweeps once at startup and then loops on a PeriodicTimer whose
+/// period is the configured (range-clamped) interval; there is no injectable clock/timer
+/// seam. Waiting for a real timer tick would make these tests take a minute or more, so
+/// the "resilience" fixture below invokes the service's private RunSweepAsync method
+/// directly via reflection -- the same method the timer loop calls on every tick --
+/// rather than waiting on the real PeriodicTimer. The PeriodicTimer tick cadence itself
+/// is therefore not covered by a fast unit test; the disabled-flag, startup-sweep, and
+/// interval-clamping fixtures all exercise the real ExecuteAsync/StartAsync/StopAsync
+/// path, since those branches complete (or fault) before any timer tick is required.
 /// </summary>
 [TestFixture]
 public class TokenCleanupServiceTests
@@ -100,9 +101,57 @@ public class TokenCleanupServiceTests
         }
 
         [Test]
-        public void It_passes_a_timestamp_within_a_sane_window_of_utc_now()
+        public void It_passes_a_timestamp_one_clock_skew_behind_utc_now()
         {
-            _capturedExpiredBefore.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(5));
+            _capturedExpiredBefore
+                .Should()
+                .BeCloseTo(
+                    DateTimeOffset.UtcNow - JwtTokenValidator.TokenValidationClockSkew,
+                    TimeSpan.FromMinutes(1)
+                );
+        }
+    }
+
+    [TestFixture]
+    public class Given_TokenCleanupIsEnabled_WhenTheServiceStarts
+    {
+        private IOpenIddictTokenRepository _tokenRepository = null!;
+        private TokenCleanupService _service = null!;
+        private readonly TaskCompletionSource _sweepObserved = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        [SetUp]
+        public async Task Act()
+        {
+            _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+            A.CallTo(() => _tokenRepository.DeleteExpiredTokensAsync(A<DateTimeOffset>._))
+                .Invokes(() => _sweepObserved.TrySetResult())
+                .Returns(0);
+
+            _service = new TokenCleanupService(
+                Options.Create(
+                    new IdentityOptions { TokenCleanupEnabled = true, TokenCleanupIntervalMinutes = 30 }
+                ),
+                NullLogger<TokenCleanupService>.Instance,
+                _tokenRepository
+            );
+
+            await _service.StartAsync(CancellationToken.None);
+            // The startup sweep happens before the first timer tick (30 minutes away),
+            // so observing the repository call at all proves it was the startup sweep.
+            await _sweepObserved.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await _service.StopAsync(CancellationToken.None);
+        }
+
+        [TearDown]
+        public void TearDown() => _service.Dispose();
+
+        [Test]
+        public void It_sweeps_once_at_startup_without_waiting_for_a_tick()
+        {
+            A.CallTo(() => _tokenRepository.DeleteExpiredTokensAsync(A<DateTimeOffset>._))
+                .MustHaveHappenedOnceExactly();
         }
     }
 
@@ -193,6 +242,52 @@ public class TokenCleanupServiceTests
                 // A PeriodicTimer constructed with a non-positive period throws
                 // synchronously, which would surface here if the invalid interval were
                 // not clamped to the documented default before the timer is created.
+                await service.StartAsync(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _startException = ex;
+            }
+            finally
+            {
+                await service.StopAsync(CancellationToken.None);
+            }
+        }
+
+        [Test]
+        public void It_starts_without_throwing_by_falling_back_to_the_default_interval()
+        {
+            _startException.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    public class Given_TheConfiguredIntervalIsAboveTheMaximum
+    {
+        private Exception? _startException;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+
+            var service = new TokenCleanupService(
+                Options.Create(
+                    new IdentityOptions
+                    {
+                        TokenCleanupEnabled = true,
+                        TokenCleanupIntervalMinutes = int.MaxValue,
+                    }
+                ),
+                NullLogger<TokenCleanupService>.Instance,
+                tokenRepository
+            );
+
+            try
+            {
+                // A PeriodicTimer constructed with a period above uint.MaxValue - 1
+                // milliseconds throws synchronously, which would fault StartAsync and stop
+                // the whole host if the oversized interval were not clamped to the default.
                 await service.StartAsync(CancellationToken.None);
             }
             catch (Exception ex)

@@ -5,6 +5,7 @@
 
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -22,6 +23,11 @@ public class TokenCleanupService(
 {
     private const int DefaultIntervalMinutes = 30;
 
+    // PeriodicTimer rejects periods above uint.MaxValue - 1 milliseconds; an interval past
+    // this bound would throw in the constructor and fault the whole host at startup.
+    private static readonly int MaxIntervalMinutes = (int)
+        TimeSpan.FromMilliseconds(uint.MaxValue - 1).TotalMinutes;
+
     private readonly IOptions<IdentityOptions> _identityOptions = identityOptions;
     private readonly ILogger<TokenCleanupService> _logger = logger;
     private readonly IOpenIddictTokenRepository _tokenRepository = tokenRepository;
@@ -35,10 +41,11 @@ public class TokenCleanupService(
         }
 
         int intervalMinutes = _identityOptions.Value.TokenCleanupIntervalMinutes;
-        if (intervalMinutes < 1)
+        if (intervalMinutes < 1 || intervalMinutes > MaxIntervalMinutes)
         {
             _logger.LogWarning(
-                "IdentitySettings:TokenCleanupIntervalMinutes must be at least 1; using default of {DefaultIntervalMinutes}.",
+                "IdentitySettings:TokenCleanupIntervalMinutes must be between 1 and {MaxIntervalMinutes}; using default of {DefaultIntervalMinutes}.",
+                MaxIntervalMinutes,
                 DefaultIntervalMinutes
             );
             intervalMinutes = DefaultIntervalMinutes;
@@ -47,6 +54,10 @@ public class TokenCleanupService(
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(intervalMinutes));
         try
         {
+            // Sweep once at startup so a pre-existing backlog does not wait a full interval,
+            // and so instances restarting more often than the interval still clean up.
+            await RunSweepAsync();
+
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 await RunSweepAsync();
@@ -62,7 +73,12 @@ public class TokenCleanupService(
     {
         try
         {
-            int deletedCount = await _tokenRepository.DeleteExpiredTokensAsync(DateTimeOffset.UtcNow);
+            // The validator still accepts tokens for TokenValidationClockSkew past their
+            // expiration; rows in that window must survive or those tokens would fail
+            // their status lookup.
+            int deletedCount = await _tokenRepository.DeleteExpiredTokensAsync(
+                DateTimeOffset.UtcNow - JwtTokenValidator.TokenValidationClockSkew
+            );
             if (deletedCount > 0)
             {
                 _logger.LogInformation("Deleted {DeletedCount} expired OpenIddict tokens.", deletedCount);

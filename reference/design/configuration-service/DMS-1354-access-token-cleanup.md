@@ -47,9 +47,12 @@ Ten rows had all been expired since 2026-07-31, and every one of them still carr
 A single `POST /connect/token` grant, issued the same way an end user would obtain one, grew
 the table from ten rows to eleven.
 
-Deleting expired rows is provably behavior-neutral.
+Deleting swept rows is behavior-neutral.
 `ValidateTokenAsync` checks the JWT's own lifetime first (`OpenIddictTokenManager.cs:365-378`)
 and only looks up the row's status by `jti` afterward (`OpenIddictTokenManager.cs:381-385`).
+That lifetime check accepts tokens up to five minutes past expiration
+(`JwtTokenValidator.TokenValidationClockSkew`), so the sweep deletes only rows expired for
+longer than that skew; every row the validator could still accept survives.
 An already-expired row is therefore unreachable by the only production read path.
 The DMS data API never reads the table at all: there are zero `OpenIddictToken` references
 anywhere under `src/dms`, because the data API validates bearer tokens statelessly via JWKS.
@@ -61,8 +64,9 @@ A deletion predicate is already index-supported on both engines: `IX_OpenIddictT
 exists in both engines' DDL, in `0016_Create_openiddict_Token_Table.sql`.
 
 Growth was unbounded by default.
-The default token lifetime is 30 minutes (`IdentityOptions.cs:26`), so a single steadily active
-client can accrue up to 48 rows per day.
+The default token lifetime is 30 minutes (`IdentityOptions.cs:26`), so a client that requests
+one token per lifetime accrues about 48 rows per day, and nothing limits how many grants a
+client may request.
 Nothing in the schema or code imposes a ceiling other than the cleanup mechanism described below.
 
 ### Keycloak Mode
@@ -101,7 +105,10 @@ DMS-1354 adds an in-process, config-gated periodic cleanup job to CMS, implement
 (`src/config/backend/EdFi.DmsConfigurationService.Backend.OpenIddict/Services/TokenCleanupService.cs`).
 No scheduler library such as Quartz is used.
 
-The deletion predicate is `ExpirationDate <= UTC now`, and it applies regardless of `Status`.
+The deletion predicate is `ExpirationDate <=` UTC now minus the validator's five-minute clock
+skew (`JwtTokenValidator.TokenValidationClockSkew`), and it applies regardless of `Status`.
+Subtracting the skew keeps every row the JWT validator could still accept, preserving the
+behavior-neutrality argued in Current State.
 Rows already marked `revoked` are deleted once they are also expired, exactly like rows still
 marked `valid`; `Status` plays no part in the predicate.
 Both engines run the same predicate against `dmscs.OpenIddictToken`: PostgreSQL executes
@@ -129,9 +136,12 @@ The Docker Compose stacks (`eng/docker-compose/local-config.yml` and
 
 `TokenCleanupService.ExecuteAsync` checks `TokenCleanupEnabled` first; when it is `false`, the
 service logs that the sweep is disabled and returns without scheduling anything.
-Otherwise it builds a `PeriodicTimer` from `TokenCleanupIntervalMinutes`, falling back to a
-30-minute default if that value is configured below `1`, and calls
-`DeleteExpiredTokensAsync(DateTimeOffset.UtcNow)` on each tick.
+Otherwise it builds a `PeriodicTimer` from `TokenCleanupIntervalMinutes`, falling back to the
+30-minute default when the configured value is below `1` or above the `PeriodicTimer` maximum
+of 71,582 minutes (either extreme would otherwise fault the host at startup).
+It sweeps once at startup, so a pre-existing backlog does not wait a full interval and
+instances restarting more often than the interval still clean up, then sweeps on every tick,
+each time calling `DeleteExpiredTokensAsync` with UTC now minus the validation clock skew.
 A failed sweep logs an error and does not crash the host; the next interval retries.
 
 `WebApplicationBuilderExtensions.ConfigureIdentityProvider`
@@ -194,10 +204,12 @@ sufficient to run it.
   default lifetime); this is consistent with the bounded-staleness stance the
   [ownership-token operational-lifecycle record](../backend-redesign/design-docs/ownership-token-operational-lifecycle.md)
   adopted.
-- Integration test coverage for `DeleteExpiredTokensAsync` exists for PostgreSQL
-  (`EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/OpenIddictDataRepositoryTests.cs`,
-  covering both a mix of expired and unexpired rows and a row at the exact expiration boundary),
-  but the SQL Server integration test project has no equivalent cases as of this writing.
+- Integration test coverage for `DeleteExpiredTokensAsync` exists for both engines, in each
+  project's `OpenIddictDataRepositoryTests.cs`
+  (`EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration` and
+  `EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration`), covering a mix of expired
+  and unexpired rows and a row at the exact expiration boundary; the SQL Server cases skip
+  locally when no SQL Server connection is configured and run in CI.
 
 ## Evidence Baseline
 
