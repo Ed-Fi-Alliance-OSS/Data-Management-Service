@@ -98,6 +98,33 @@ public class Given_DocumentCacheAdministrativePrimitives
     }
 
     [Test]
+    public async Task It_rejects_numeric_lifecycle_text_through_the_mutex_session_executor()
+    {
+        var executor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    RelationalAccessTestData.CreateRow(
+                        ("ProjectionLifecycleState", "0"),
+                        ("CacheAheadRecoveryRequired", false)
+                    )
+                ),
+            ]),
+        ]);
+        var session = new InMemoryAdministrativeSession(executor);
+
+        DocumentCacheLifecycleReadResult result =
+            await DocumentCacheAdministrativePrimitivesSupport.ReadLifecycleAsync(
+                session,
+                DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Pgsql),
+                DocumentCacheAdministrativeStateLockMode.Shared
+            );
+
+        result.Status.Should().Be(DocumentCacheLifecycleReadStatus.Invalid);
+        result.Lifecycle.Should().BeNull();
+        executor.Commands.Should().ContainSingle();
+    }
+
+    [Test]
     public async Task It_propagates_provider_command_timeout_from_lifecycle_read()
     {
         var exception = new TimeoutException("provider command timed out");

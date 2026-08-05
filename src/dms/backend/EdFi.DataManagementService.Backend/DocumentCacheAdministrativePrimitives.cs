@@ -1948,8 +1948,10 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
         if (
             lifecycleText is null
             || cacheAheadRecoveryRequired is null
-            || !Enum.TryParse(lifecycleText, ignoreCase: false, out DocumentCacheLifecycleState lifecycle)
-            || !Enum.IsDefined(lifecycle)
+            || !DocumentCacheLifecycleTokenParser.TryParse(
+                lifecycleText,
+                out DocumentCacheLifecycleState lifecycle
+            )
         )
         {
             return DocumentCacheLifecycleReadResult.Failure(
