@@ -56,6 +56,15 @@ internal static class CursorRequestValidator
     internal const string OffsetParameter = "offset";
     internal const string TotalCountParameter = "totalCount";
 
+    /// <summary>
+    /// The parameters that select cursor paging, in the canonical order they are reported when an
+    /// operation does not support them.
+    /// </summary>
+    /// <remarks>
+    /// One definition, so the names an operation recognizes and the names it rejects cannot diverge.
+    /// </remarks>
+    internal static readonly string[] CursorParameters = [PageTokenParameter, PageSizeParameter];
+
     internal const string InvalidPageToken = "The page token provided was invalid.";
 
     internal const string OffsetWithPageToken =

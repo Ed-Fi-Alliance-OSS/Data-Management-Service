@@ -24,9 +24,28 @@ public class ValidateQueryMiddlewareTests
 {
     private static readonly int _maxPageSize = 500;
 
+    /// <summary>
+    /// The live GET-many composition, which recognizes the cursor parameters.
+    /// </summary>
     internal static IPipelineStep Middleware()
     {
-        return new ValidateQueryMiddleware(NullLogger.Instance, _maxPageSize);
+        return new ValidateQueryMiddleware(
+            NullLogger.Instance,
+            _maxPageSize,
+            _cursorParametersRecognized: true
+        );
+    }
+
+    /// <summary>
+    /// The Change Query composition, which does not recognize the cursor parameters.
+    /// </summary>
+    internal static IPipelineStep MiddlewareWithoutCursorRecognition()
+    {
+        return new ValidateQueryMiddleware(
+            NullLogger.Instance,
+            _maxPageSize,
+            _cursorParametersRecognized: false
+        );
     }
 
     [TestFixture]

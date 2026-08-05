@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.ChangeQueries;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
@@ -16,7 +17,20 @@ using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : IPipelineStep
+/// <summary>
+/// Validates the paging, change-version, and resource-filter query parameters of a request.
+/// </summary>
+/// <param name="_cursorParametersRecognized">
+/// Whether this pipeline's operation supports cursor paging. True for live GET-many, false for
+/// Change Query endpoints, which must reject the cursor parameters rather than acquire them.
+/// Recognition is a property of pipeline composition rather than something inferred at run time, so
+/// a reader can see at the composition site which operations page by cursor.
+/// </param>
+internal class ValidateQueryMiddleware(
+    ILogger _logger,
+    int _maximumPageSize,
+    bool _cursorParametersRecognized
+) : IPipelineStep
 {
     private static readonly string[] _paginationQueryParameters = ["limit", "offset", "totalCount"];
 
@@ -151,26 +165,66 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        List<string> errors = SetPaginationParametersOn(requestInfo, _maximumPageSize);
+        // A request that supplied either cursor parameter is validated by the cursor precedence and
+        // answered with the parameter-validation shell. Everything else keeps the traditional
+        // parsing, its generic bad-request shell, and its existing messages.
+        CursorValidationResult cursorResult = _cursorParametersRecognized
+            ? CursorRequestValidator.Validate(requestInfo.FrontendRequest.QueryParameters, _maximumPageSize)
+            : CursorValidationResult.NotCursorRequest.Instance;
 
-        if (errors.Count > 0)
+        if (cursorResult is CursorValidationResult.Invalid invalidCursorRequest)
         {
-            JsonNode failureResponse = FailureResponse.ForBadRequest(
-                "The request could not be processed. See 'errors' for details.",
-                requestInfo.FrontendRequest.TraceId,
-                [],
-                errors.ToArray()
-            );
-
             _logger.LogDebug(
-                "'{Status}'.'{EndpointName}' - {TraceId}",
-                "400",
-                requestInfo.PathComponents.EndpointName,
+                "Cursor parameter validation error - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestInfo.FrontendResponse = new FrontendResponse(StatusCode: 400, Body: failureResponse, []);
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 400,
+                Body: ForParameterValidation(
+                    [invalidCursorRequest.Error],
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
+            );
             return;
+        }
+
+        if (cursorResult is CursorValidationResult.Valid validCursorRequest)
+        {
+            // Only reached after the cursor parameters validated, so a rejected request never leaves
+            // partially applied paging behind.
+            requestInfo.CollectionPaging = validCursorRequest.Paging;
+        }
+        else
+        {
+            List<string> errors = SetPaginationParametersOn(requestInfo, _maximumPageSize);
+
+            if (errors.Count > 0)
+            {
+                JsonNode failureResponse = FailureResponse.ForBadRequest(
+                    "The request could not be processed. See 'errors' for details.",
+                    requestInfo.FrontendRequest.TraceId,
+                    [],
+                    errors.ToArray()
+                );
+
+                _logger.LogDebug(
+                    "'{Status}'.'{EndpointName}' - {TraceId}",
+                    "400",
+                    requestInfo.PathComponents.EndpointName,
+                    requestInfo.FrontendRequest.TraceId.Value
+                );
+
+                requestInfo.FrontendResponse = new FrontendResponse(
+                    StatusCode: 400,
+                    Body: failureResponse,
+                    []
+                );
+                return;
+            }
+
+            requestInfo.CollectionPaging = new CollectionPaging.Traditional(requestInfo.PaginationParameters);
         }
 
         ChangeVersionValidationResult changeVersionResult = ChangeVersionParameterValidator.Validate(
@@ -200,8 +254,15 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
         // Pagination parameters are matched case-sensitively, consistent with how they are
         // parsed above; change-version parameters are matched case-insensitively, consistent
         // with how the validator looks them up.
+        //
+        // The cursor parameters are excluded in both modes, for different reasons. Where they are
+        // recognized, the cursor validation above has already consumed them. Where they are not,
+        // excluding them here is what lets the Change Query step reject them by name instead of this
+        // loop answering first with the resource-field wording. Excluding a name is not accepting
+        // it: an operation that does not recognize these rejects them in the step that follows.
         IEnumerable<KeyValuePair<string, string>> nonPaginationQueryTerms = requestInfo
             .FrontendRequest.QueryParameters.ExceptBy(_paginationQueryParameters, (term) => term.Key)
+            .ExceptBy(CursorRequestValidator.CursorParameters, (term) => term.Key)
             .ExceptBy(
                 ChangeVersionParameterValidator.ReservedParameterNames,
                 (term) => term.Key,

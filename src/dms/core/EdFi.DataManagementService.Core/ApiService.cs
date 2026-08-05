@@ -264,7 +264,11 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
-            new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
+            new ValidateQueryMiddleware(
+                _logger,
+                _appSettings.Value.MaximumPageSize,
+                _cursorParametersRecognized: true
+            ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new QueryRequestHandler(_logger, _resiliencePipeline),
@@ -385,7 +389,11 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
-            new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
+            new ValidateQueryMiddleware(
+                _logger,
+                _appSettings.Value.MaximumPageSize,
+                _cursorParametersRecognized: false
+            ),
             new ValidateTrackedChangeQueryMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
