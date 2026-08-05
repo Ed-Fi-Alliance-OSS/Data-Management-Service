@@ -16,9 +16,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category(MssqlCiShards.Shard3)]
 public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
 {
-    // Keeps strict BeAfter assertions deterministic without depending on SQL Server clock advancement.
-    private static readonly DateTime SeedContentLastModifiedAt = new(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-
     private static readonly string FixtureRelativePath = Path.Combine(
         "src",
         "dms",
@@ -91,13 +88,12 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
 
         return await _database.ExecuteScalarAsync<long>(
             """
-            INSERT INTO [dms].[Document] (DocumentUuid, ResourceKeyId, ContentLastModifiedAt)
-            VALUES (@uuid, @resourceKeyId, @contentLastModifiedAt);
+            INSERT INTO [dms].[Document] (DocumentUuid, ResourceKeyId)
+            VALUES (@uuid, @resourceKeyId);
             SELECT SCOPE_IDENTITY();
             """,
             new SqlParameter("@uuid", Guid.NewGuid()),
-            new SqlParameter("@resourceKeyId", resourceKeyId),
-            new SqlParameter("@contentLastModifiedAt", SeedContentLastModifiedAt)
+            new SqlParameter("@resourceKeyId", resourceKeyId)
         );
     }
 
@@ -178,6 +174,14 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         return await _database.ExecuteScalarAsync<long>("SELECT [dms].[GetMaxChangeVersion]();");
     }
 
+    private async Task DelayForDistinctTimestampsAsync()
+    {
+        // Server-side delay so the post-write ContentLastModifiedAt is strictly greater
+        // than the seed stamp, letting assertions use BeAfter instead of the weaker
+        // BeOnOrAfter (which cannot catch a stamp that never moved).
+        await _database.ExecuteNonQueryAsync("WAITFOR DELAY '00:00:00.050';");
+    }
+
     private sealed record StampPair(StampValues Document, StampValues Mirror);
 
     private sealed record StampValues(long ContentVersion, DateTime ContentLastModifiedAt);
@@ -203,6 +207,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     {
         var seed = await SeedAsync();
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        await DelayForDistinctTimestampsAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -226,6 +231,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     {
         var seed = await SeedAsync();
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        await DelayForDistinctTimestampsAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
