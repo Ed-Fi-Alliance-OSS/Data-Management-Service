@@ -44,7 +44,8 @@ public class TokenCleanupService(
         if (intervalMinutes < 1 || intervalMinutes > MaxIntervalMinutes)
         {
             _logger.LogWarning(
-                "IdentitySettings:TokenCleanupIntervalMinutes must be between 1 and {MaxIntervalMinutes}; using default of {DefaultIntervalMinutes}.",
+                "IdentitySettings:TokenCleanupIntervalMinutes is {ConfiguredIntervalMinutes} but must be between 1 and {MaxIntervalMinutes}; using default of {DefaultIntervalMinutes}.",
+                intervalMinutes,
                 MaxIntervalMinutes,
                 DefaultIntervalMinutes
             );

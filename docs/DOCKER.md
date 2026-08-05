@@ -114,6 +114,8 @@ These will be replaced with the corresponding keycloak or self-contained values 
 | `IdentityProvider`                 | Selects the identity provider                                    | `keycloak`                                           | `self-contained`                              |
 | `Authority`                        | URL of the identity provider's authority (issuer)                | `http://dms-keycloak:8080/realms/edfi`              | `http://ed-fi-api-config:8081`              |
 | `EncryptionKey`                    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
+| `TokenCleanupEnabled`              | Enables the expired-token cleanup sweep (self-contained only)    | _(not used)_                                         | `true`                                        |
+| `TokenCleanupIntervalMinutes`      | Minutes between expired-token cleanup sweeps (self-contained only) | _(not used)_                                       | `30`                                          |
 
 **JwtAuthentication parameters in `appsettings.json` (dms):**
 

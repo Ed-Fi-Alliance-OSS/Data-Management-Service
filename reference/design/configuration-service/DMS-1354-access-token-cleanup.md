@@ -53,13 +53,18 @@ and only looks up the row's status by `jti` afterward (`OpenIddictTokenManager.c
 That lifetime check accepts tokens up to five minutes past expiration
 (`JwtTokenValidator.TokenValidationClockSkew`), so the sweep deletes only rows expired for
 longer than that skew; every row the validator could still accept survives.
-An already-expired row is therefore unreachable by the only production read path.
+A row expired beyond that skew is therefore unreachable by the only production read path.
 The DMS data API never reads the table at all: there are zero `OpenIddictToken` references
 anywhere under `src/dms`, because the data API validates bearer tokens statelessly via JWKS.
 
 Timestamps are UTC wall-clock values, stored as `timestamp without time zone` on PostgreSQL and
 `DATETIME2` on SQL Server.
 Any deletion predicate must therefore compare against UTC "now", never local time.
+On PostgreSQL the UTC-wall-clock property holds because writes pass `DateTimeOffset` values that
+Npgsql sends as `timestamptz`, which the server converts through the session time zone; the
+shipped containers run UTC, and the sweep's bound takes the identical conversion path as the
+pre-existing insert, so the two stay consistent under any single session time zone (see the
+latent observation below).
 A deletion predicate is already index-supported on both engines: `IX_OpenIddictToken_ExpirationDate`
 exists in both engines' DDL, in `0016_Create_openiddict_Token_Table.sql`.
 
@@ -200,10 +205,21 @@ sufficient to run it.
   because the JWT lifetime check runs first, and the gap is now moot: an expired row is deleted
   by the sweep before it could ever be read as stale.
 - The DMS data API validates bearer tokens statelessly and never consults revocation status, so a
-  token revoked through CMS remains usable at DMS until its JWT expires (at most the 30-minute
-  default lifetime); this is consistent with the bounded-staleness stance the
+  token revoked through CMS remains usable at DMS until its JWT expires (the configured token
+  lifetime, 30 minutes by default, plus the data API's configured validation clock skew); this is
+  consistent with the bounded-staleness stance the
   [ownership-token operational-lifecycle record](../backend-redesign/design-docs/ownership-token-operational-lifecycle.md)
   adopted.
+- The PostgreSQL storage of these timestamps carries a latent time-zone dependence: both the
+  pre-existing insert and the sweep's bound convert through the session time zone, so they stay
+  mutually consistent, but a server configured with a DST-observing time zone would interpret
+  wall-clock values near transitions up to an hour off, which could delete a row while the
+  validator still accepts its token.
+  The shipped containers run UTC, so this has never bitten; any fix must change the insert path,
+  the sweep bound, and possibly the column type (`timestamptz`) together, and is therefore
+  recorded here rather than folded into this change.
+  The SQL Server implementation compares `DATETIME2` against a UTC `DateTime` and has no such
+  dependence.
 - Integration test coverage for `DeleteExpiredTokensAsync` exists for both engines, in each
   project's `OpenIddictDataRepositoryTests.cs`
   (`EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration` and
