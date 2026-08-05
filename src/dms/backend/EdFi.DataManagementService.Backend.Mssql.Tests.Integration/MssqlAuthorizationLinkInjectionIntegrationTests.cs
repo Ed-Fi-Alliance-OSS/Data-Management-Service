@@ -352,11 +352,13 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
             MappingSet: _mappingSet,
             QueryElements: [],
             AuthorizationStrategyEvaluators: [],
-            PaginationParameters: new PaginationParameters(
-                Limit: 25,
-                Offset: 0,
-                TotalCount: false,
-                MaximumPageSize: MaximumPageSize
+            Paging: new CollectionPaging.Traditional(
+                new PaginationParameters(
+                    Limit: 25,
+                    Offset: 0,
+                    TotalCount: false,
+                    MaximumPageSize: MaximumPageSize
+                )
             ),
             TraceId: new TraceId("mssql-32-query-academicweek")
         );

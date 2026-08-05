@@ -310,11 +310,13 @@ public class Given_A_Mssql_ParentResource_With_Collection_Aligned_Extension_Spon
             MappingSet: _mappingSet,
             QueryElements: [],
             AuthorizationStrategyEvaluators: [],
-            PaginationParameters: new PaginationParameters(
-                Limit: 25,
-                Offset: 0,
-                TotalCount: false,
-                MaximumPageSize: MaximumPageSize
+            Paging: new CollectionPaging.Traditional(
+                new PaginationParameters(
+                    Limit: 25,
+                    Offset: 0,
+                    TotalCount: false,
+                    MaximumPageSize: MaximumPageSize
+                )
             ),
             TraceId: new TraceId("mssql-29d-query-parentresource")
         );

@@ -340,11 +340,13 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             MappingSet: _mappingSet,
             QueryElements: [],
             AuthorizationStrategyEvaluators: [],
-            PaginationParameters: new PaginationParameters(
-                Limit: 25,
-                Offset: 0,
-                TotalCount: false,
-                MaximumPageSize: MaximumPageSize
+            Paging: new CollectionPaging.Traditional(
+                new PaginationParameters(
+                    Limit: 25,
+                    Offset: 0,
+                    TotalCount: false,
+                    MaximumPageSize: MaximumPageSize
+                )
             ),
             TraceId: new TraceId("pg-29b-query-course")
         );

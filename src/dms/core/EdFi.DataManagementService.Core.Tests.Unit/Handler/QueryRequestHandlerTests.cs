@@ -809,7 +809,11 @@ public class QueryRequestHandlerTests
                 .Equal("uri://sample-a.org", "uri://sample-b.org");
             _repository.CapturedRequest.ResourceInfo.Should().BeSameAs(_requestInfo.ResourceInfo);
             _repository.CapturedRequest.QueryElements.Should().BeSameAs(_queryElements);
-            _repository.CapturedRequest.PaginationParameters.Should().BeSameAs(_paginationParameters);
+            _repository
+                .CapturedRequest.Paging.Should()
+                .BeOfType<CollectionPaging.Traditional>()
+                .Which.Parameters.Should()
+                .BeSameAs(_paginationParameters);
             _repository
                 .CapturedRequest.AuthorizationStrategyEvaluators.Should()
                 .BeSameAs(_authorizationStrategyEvaluators);

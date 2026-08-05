@@ -24,7 +24,7 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// <param name="AuthorizationStrategyEvaluators">
 /// Collection of authorization strategy filters, each specifying collection of filters and filter operator.
 /// </param>
-/// <param name="PaginationParameters">The pagination parameters for this query.</param>
+/// <param name="Paging">The paging mode and its inputs for this query.</param>
 /// <param name="TraceId">The request TraceId.</param>
 /// <param name="ReadableProfileProjectionContext">
 /// Optional readable-profile projection inputs when a readable profile applies to the request.
@@ -39,7 +39,7 @@ internal sealed record RelationalQueryRequest(
     MappingSet MappingSet,
     QueryElement[] QueryElements,
     AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators,
-    PaginationParameters PaginationParameters,
+    CollectionPaging Paging,
     TraceId TraceId,
     ReadableProfileProjectionContext? ReadableProfileProjectionContext = null,
     ChangeVersionRange? ChangeVersionRange = null,

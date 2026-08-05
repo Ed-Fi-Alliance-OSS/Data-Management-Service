@@ -394,11 +394,13 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
             MappingSet: _mappingSet,
             QueryElements: [],
             AuthorizationStrategyEvaluators: [],
-            PaginationParameters: new PaginationParameters(
-                Limit: 25,
-                Offset: 0,
-                TotalCount: false,
-                MaximumPageSize: MaximumPageSize
+            Paging: new CollectionPaging.Traditional(
+                new PaginationParameters(
+                    Limit: 25,
+                    Offset: 0,
+                    TotalCount: false,
+                    MaximumPageSize: MaximumPageSize
+                )
             ),
             TraceId: new TraceId("pg-31-query-academicweek")
         );

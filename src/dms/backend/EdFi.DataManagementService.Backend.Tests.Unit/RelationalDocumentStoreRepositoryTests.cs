@@ -2653,7 +2653,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         capturedRequest.MappingSet.Should().BeSameAs(mappingSet);
         capturedRequest.Resource.Should().Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
         capturedRequest.QueryElements.Should().BeSameAs(queryElements);
-        capturedRequest.PaginationParameters.Should().Be(queryRequest.PaginationParameters);
+        capturedRequest
+            .PaginationParameters.Should()
+            .Be(((CollectionPaging.Traditional)queryRequest.Paging).Parameters);
         capturedRequest.AuthorizationStrategyEvaluators.Should().BeSameAs(authorizationStrategyEvaluators);
         capturedRequest.ReadableProfileProjectionContext.Should().BeSameAs(projectionContext);
         capturedRequest.TraceId.Value.Should().Be("query-trace");
@@ -2675,6 +2677,46 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
             .MustNotHaveHappened();
         A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_declines_a_cursor_paged_query_until_cursor_page_selection_is_implemented()
+    {
+        var queryRequest = A.Fake<IQueryRequest>();
+        A.CallTo(() => queryRequest.Paging)
+            .Returns(new CollectionPaging.Cursor(new CursorRange(10, 2509), new PageSize(100)));
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result
+            .Should()
+            .BeOfType<QueryResult.QueryFailureNotImplemented>()
+            .Which.FailureMessage.Should()
+            .Be("Cursor paging is not yet supported for relational queries.");
+    }
+
+    [Test]
+    public async Task It_declines_a_cursor_paged_query_before_resolving_any_read_dependency()
+    {
+        var queryRequest = A.Fake<IQueryRequest>();
+        A.CallTo(() => queryRequest.Paging)
+            .Returns(new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(25)));
+
+        await _sut.QueryDocuments(queryRequest);
+
+        A.CallTo(() =>
+                _descriptorReadHandler.HandleQueryAsync(A<DescriptorQueryRequest>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .MustNotHaveHappened();
     }
 
@@ -11241,9 +11283,16 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 new RelationalAuthorizationContext(claimEducationOrganizationIds, namespacePrefixes ?? [])
             );
         A.CallTo(() => queryRequest.AuthorizationStrategyEvaluators).Returns(authorizationStrategyEvaluators);
-        A.CallTo(() => queryRequest.PaginationParameters)
+        A.CallTo(() => queryRequest.Paging)
             .Returns(
-                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: totalCount, MaximumPageSize: 500)
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(
+                        Limit: 25,
+                        Offset: 0,
+                        TotalCount: totalCount,
+                        MaximumPageSize: 500
+                    )
+                )
             );
         A.CallTo(() => queryRequest.TraceId).Returns(new TraceId("query-trace"));
         A.CallTo(() => queryRequest.ReadableProfileProjectionContext)

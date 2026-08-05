@@ -687,11 +687,13 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
             MappingSet: _mappingSet,
             QueryElements: queryElements,
             AuthorizationStrategyEvaluators: [],
-            PaginationParameters: new PaginationParameters(
-                Limit: limit,
-                Offset: offset,
-                TotalCount: totalCount,
-                MaximumPageSize: MaximumPageSize
+            Paging: new CollectionPaging.Traditional(
+                new PaginationParameters(
+                    Limit: limit,
+                    Offset: offset,
+                    TotalCount: totalCount,
+                    MaximumPageSize: MaximumPageSize
+                )
             ),
             TraceId: new TraceId(traceId),
             ChangeVersionRange: changeVersionRange
