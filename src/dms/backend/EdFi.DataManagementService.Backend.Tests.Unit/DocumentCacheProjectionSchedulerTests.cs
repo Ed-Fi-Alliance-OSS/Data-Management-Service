@@ -475,6 +475,69 @@ public class Given_DocumentCacheProjectionScheduler
     }
 
     [Test]
+    public async Task It_returns_cancellation_pending_when_a_target_is_disposed_before_dispatch_token_linking_and_peer_targets_continue()
+    {
+        RecordingDrainPageProcessor drainPageProcessor = new(_ =>
+            DocumentCacheProjectionDrainPageResult.PageProcessed(1)
+        );
+        DocumentCacheProjectionTargetRuntimeContext? disposedDuringDispatch = null;
+        int disposalRequested = 0;
+        RecordingObservationSink observationSink = new(snapshot =>
+        {
+            if (
+                disposedDuringDispatch is null
+                || snapshot.ContextKey != disposedDuringDispatch.ContextKey
+                || !snapshot.ExecutionState.IsWaitingForWorkerGate
+                || Interlocked.Exchange(ref disposalRequested, 1) != 0
+            )
+            {
+                return;
+            }
+
+            disposedDuringDispatch.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5)).Should().BeTrue();
+        });
+        DocumentCacheProjectionScheduler scheduler = CreateScheduler(
+            drainPageProcessor,
+            observationSink,
+            maxConcurrentTargets: 2
+        );
+        disposedDuringDispatch = RuntimeContext(
+            DocumentCacheTargetKey.Create("Tenant-A", 1),
+            generation: 1,
+            observationSink
+        );
+        DocumentCacheProjectionTargetRuntimeContext peerTarget = RuntimeContext(
+            DocumentCacheTargetKey.Create("Tenant-B", 1),
+            generation: 1,
+            observationSink
+        );
+
+        ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult> results = await scheduler
+            .RunReadyTargetsOnceAsync([disposedDuringDispatch, peerTarget])
+            .WaitAsync(TimeSpan.FromSeconds(5));
+
+        results.Should().HaveCount(2);
+        results
+            .Should()
+            .ContainSingle(result => result.ContextKey == disposedDuringDispatch.ContextKey)
+            .Which.Should()
+            .Match<DocumentCacheProjectionSchedulerDispatchResult>(result =>
+                result.Status == DocumentCacheProjectionSchedulerDispatchStatus.Skipped
+                && result.BlockReason == DocumentCacheProjectionTargetReadinessBlockReason.CancellationPending
+            );
+        results
+            .Should()
+            .ContainSingle(result => result.ContextKey == peerTarget.ContextKey)
+            .Which.Status.Should()
+            .Be(DocumentCacheProjectionSchedulerDispatchStatus.Dispatched);
+        drainPageProcessor.Calls.Should().ContainSingle().Which.Context.Should().BeSameAs(peerTarget);
+        observationSink
+            .LastSnapshotFor(disposedDuringDispatch.ContextKey)
+            .ExecutionState.IsWaitingForWorkerGate.Should()
+            .BeFalse();
+    }
+
+    [Test]
     public async Task It_clears_administrative_worker_gate_waiting_snapshot_when_cancelled_before_active_processing()
     {
         using CancellationTokenSource administrativeCancellation = new();

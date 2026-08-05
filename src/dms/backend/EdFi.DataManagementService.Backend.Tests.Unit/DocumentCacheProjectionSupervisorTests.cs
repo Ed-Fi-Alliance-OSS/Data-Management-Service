@@ -439,6 +439,74 @@ public class Given_DocumentCacheProjectionSupervisor
     }
 
     [Test]
+    public async Task It_retains_a_generation_replaced_after_dispatch_acquires_the_target_before_drain_ownership()
+    {
+        DocumentCacheTargetKey targetKey = DocumentCacheTargetKey.Create("TenantA", 7);
+        DocumentCacheTargetExecutionContext firstGeneration = ExecutionContext(targetKey, generation: 1);
+        DocumentCacheTargetExecutionContext replacementGeneration = ExecutionContext(
+            targetKey,
+            generation: 2,
+            connectionInput: "connection-b"
+        );
+        DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+        RecordingTargetContextFactory targetContextFactory = new(observationStore);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(firstGeneration)]),
+            RuntimeSnapshot([firstGeneration])
+        );
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(replacementGeneration)]),
+            RuntimeSnapshot([replacementGeneration])
+        );
+        BlockingOrdinaryDispatchLeaseScheduler scheduler = new();
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationStore,
+            OptionsFor([targetKey]),
+            scheduler
+        );
+
+        try
+        {
+            await supervisor.StartAsync(CancellationToken.None);
+            await scheduler.WaitForDispatchAcquiredAsync();
+            DocumentCacheProjectionTargetRuntimeContext oldContext =
+                targetContextFactory.CreatedContexts.Single();
+            oldContext.HasOrdinaryDispatchLease.Should().BeTrue();
+            oldContext.DrainExecutor.CurrentOwner.Should().BeNull();
+
+            await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.SupervisorTriggered);
+
+            oldContext.CancellationRequested.Should().BeTrue();
+            targetContextFactory.DisposedContexts.Should().NotContain(oldContext.ContextKey);
+            supervisor.CurrentTargetContexts.Should().ContainSingle().Which.Generation.Value.Should().Be(2);
+            observationStore.CurrentSnapshot.GetCurrentTarget(oldContext.ContextKey).Should().BeNull();
+            observationStore.CurrentSnapshot.GetCurrentTarget(targetKey)!.Generation.Value.Should().Be(2);
+            observationStore.CurrentSnapshot.LastEndedTargetDiagnostics.Should().BeEmpty();
+
+            scheduler.ReleaseDispatch();
+            await scheduler.WaitForDispatchReleasedAsync();
+            await targetContextFactory.WaitForDisposedContextAsync(oldContext.ContextKey);
+
+            observationStore
+                .CurrentSnapshot.LastEndedTargetDiagnostics.Values.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<DocumentCacheProjectionTargetEndedDiagnosticSnapshot>(diagnostic =>
+                    diagnostic.ContextKey == oldContext.ContextKey
+                    && diagnostic.EndReason == DocumentCacheProjectionTargetEndReason.Replaced
+                );
+        }
+        finally
+        {
+            scheduler.ReleaseDispatch();
+            await supervisor.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Test]
     public async Task It_marks_only_the_ineligible_target_generation_ended()
     {
         DocumentCacheTargetExecutionContext firstTarget = ExecutionContext(
@@ -1363,6 +1431,100 @@ public class Given_DocumentCacheProjectionSupervisor
         }
 
         private sealed record Waiter(int CallCount, TaskCompletionSource Completion);
+    }
+
+    private sealed class BlockingOrdinaryDispatchLeaseScheduler : IDocumentCacheProjectionScheduler
+    {
+        private readonly object _sync = new();
+        private readonly TaskCompletionSource _dispatchAcquired = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _releaseDispatch = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _dispatchReleased = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private int _callCount;
+
+        public List<ImmutableArray<DocumentCacheProjectionTargetContextKey>> CallBatches { get; } = [];
+
+        public Task<ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>> RunReadyTargetsOnceAsync(
+            IEnumerable<DocumentCacheProjectionTargetRuntimeContext> targetContexts,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> contexts =
+                targetContexts.ToImmutableArray();
+
+            lock (_sync)
+            {
+                CallBatches.Add(contexts.Select(context => context.ContextKey).ToImmutableArray());
+            }
+
+            if (Interlocked.Increment(ref _callCount) != 1 || contexts.IsEmpty)
+            {
+                return Task.FromResult(
+                    DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.NoEligibleWork)
+                );
+            }
+
+            return RunBlockingDispatchAcquisitionAsync(contexts[0]);
+        }
+
+        public Task<DocumentCacheProjectionSchedulerDispatchResult> RunAdministrativeDrainSliceAsync(
+            DocumentCacheProjectionTargetRuntimeContext targetContext,
+            CancellationToken cancellationToken = default
+        ) => throw new NotImplementedException();
+
+        public Task WaitForDispatchAcquiredAsync() =>
+            _dispatchAcquired.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        public Task WaitForDispatchReleasedAsync() =>
+            _dispatchReleased.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        public void ReleaseDispatch() => _releaseDispatch.TrySetResult();
+
+        private async Task<
+            ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>
+        > RunBlockingDispatchAcquisitionAsync(DocumentCacheProjectionTargetRuntimeContext context)
+        {
+            IDisposable? lease = context.TryAcquireOrdinaryDispatchLease();
+            if (lease is null)
+            {
+                _dispatchReleased.TrySetResult();
+                return
+                [
+                    DocumentCacheProjectionSchedulerDispatchResult.Skipped(
+                        context,
+                        DocumentCacheProjectionTargetReadinessBlockReason.CancellationPending,
+                        ObservedAt
+                    ),
+                ];
+            }
+
+            try
+            {
+                _dispatchAcquired.TrySetResult();
+                await _releaseDispatch.Task.ConfigureAwait(false);
+                return
+                [
+                    DocumentCacheProjectionSchedulerDispatchResult.Skipped(
+                        context,
+                        context.CancellationRequested
+                            ? DocumentCacheProjectionTargetReadinessBlockReason.CancellationPending
+                            : DocumentCacheProjectionTargetReadinessBlockReason.LocalDrainActive,
+                        ObservedAt
+                    ),
+                ];
+            }
+            finally
+            {
+                lease.Dispose();
+                _dispatchReleased.TrySetResult();
+            }
+        }
     }
 
     private sealed class BlockingOrdinaryDrainScheduler : IDocumentCacheProjectionScheduler

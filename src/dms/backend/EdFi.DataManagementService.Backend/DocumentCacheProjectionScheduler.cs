@@ -1101,11 +1101,41 @@ public sealed class DocumentCacheProjectionScheduler(
             )
         );
 
-        using CancellationTokenSource dispatchCancellationSource =
-            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, context.CancellationToken);
+        IDisposable? ordinaryDispatchLease = null;
         bool workerGateHeld = false;
         try
         {
+            ordinaryDispatchLease = context.TryAcquireOrdinaryDispatchLease();
+            if (ordinaryDispatchLease is null)
+            {
+                DateTimeOffset cancelledAt = timeProvider.GetUtcNow();
+                ObserveTarget(
+                    context,
+                    new DocumentCacheProjectionExecutionStateSnapshot(
+                        isRunning: true,
+                        isActivelyProcessing: false,
+                        isWaitingForWorkerGate: false,
+                        isInBackoff: false,
+                        backoffUntil: null,
+                        cancellationRequested: true,
+                        cancellationObservedAt: cancelledAt
+                    )
+                );
+
+                return RecordDispatchResult(
+                    context,
+                    DocumentCacheProjectionSchedulerDispatchResult.Skipped(
+                        context,
+                        DocumentCacheProjectionTargetReadinessBlockReason.CancellationPending,
+                        cancelledAt
+                    ),
+                    DocumentCacheProjectionDrainInvocationKind.Ordinary
+                );
+            }
+
+            using CancellationTokenSource dispatchCancellationSource =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, context.CancellationToken);
+
             await _workerGate.WaitAsync(dispatchCancellationSource.Token).ConfigureAwait(false);
             workerGateHeld = true;
 
@@ -1273,6 +1303,8 @@ public sealed class DocumentCacheProjectionScheduler(
             {
                 _workerGate.Release();
             }
+
+            ordinaryDispatchLease?.Dispose();
         }
     }
 

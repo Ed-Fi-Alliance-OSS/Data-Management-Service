@@ -387,10 +387,15 @@ public sealed record DocumentCacheProjectionCursorPassCompletion(
 
 public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposable
 {
+    private readonly object _lifetimeSync = new();
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly Func<ValueTask>? _disposeScopeAsync;
     private readonly IDocumentCacheSessionBoundWriter? _sessionBoundWriter;
+    private TaskCompletionSource? _ordinaryDispatchLeasesReleased;
+    private int _ordinaryDispatchLeaseCount;
     private int _cancelled;
+    private bool _disposeStarted;
+    private bool _disposed;
     private int _administrativeCommandRetentions;
     private DocumentCacheAdministrativeCommandExecutionContext? _activeAdministrativeCommandContext;
     private DocumentCacheAdministrativeCommandExecutionContext? _administrativeCommandContext;
@@ -484,15 +489,64 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
 
     public DocumentCacheProjectionTargetDrainExecutor DrainExecutor { get; }
 
-    public CancellationToken CancellationToken => _cancellationTokenSource.Token;
+    public CancellationToken CancellationToken
+    {
+        get
+        {
+            lock (_lifetimeSync)
+            {
+                return _disposed ? new CancellationToken(canceled: true) : _cancellationTokenSource.Token;
+            }
+        }
+    }
 
-    public bool CancellationRequested => _cancellationTokenSource.IsCancellationRequested;
+    public bool CancellationRequested
+    {
+        get
+        {
+            lock (_lifetimeSync)
+            {
+                return _disposed || _cancellationTokenSource.IsCancellationRequested;
+            }
+        }
+    }
+
+    internal bool HasOrdinaryDispatchLease
+    {
+        get
+        {
+            lock (_lifetimeSync)
+            {
+                return _ordinaryDispatchLeaseCount > 0;
+            }
+        }
+    }
 
     public void Cancel()
     {
         if (Interlocked.Exchange(ref _cancelled, 1) == 0)
         {
-            _cancellationTokenSource.Cancel();
+            lock (_lifetimeSync)
+            {
+                if (!_disposed)
+                {
+                    _cancellationTokenSource.Cancel();
+                }
+            }
+        }
+    }
+
+    internal IDisposable? TryAcquireOrdinaryDispatchLease()
+    {
+        lock (_lifetimeSync)
+        {
+            if (_disposeStarted || _disposed || _cancellationTokenSource.IsCancellationRequested)
+            {
+                return null;
+            }
+
+            _ordinaryDispatchLeaseCount++;
+            return new OrdinaryDispatchLease(this);
         }
     }
 
@@ -554,12 +608,78 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
     public async ValueTask DisposeAsync()
     {
         Cancel();
+
+        Task? ordinaryDispatchLeasesReleased = null;
+        bool shouldDisposeResources = false;
+        lock (_lifetimeSync)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposeStarted = true;
+            if (_ordinaryDispatchLeaseCount > 0)
+            {
+                _ordinaryDispatchLeasesReleased ??= new TaskCompletionSource(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                ordinaryDispatchLeasesReleased = _ordinaryDispatchLeasesReleased.Task;
+            }
+            else
+            {
+                _disposed = true;
+                shouldDisposeResources = true;
+            }
+        }
+
+        if (ordinaryDispatchLeasesReleased is not null)
+        {
+            await ordinaryDispatchLeasesReleased.ConfigureAwait(false);
+
+            lock (_lifetimeSync)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+                shouldDisposeResources = true;
+            }
+        }
+
+        if (!shouldDisposeResources)
+        {
+            return;
+        }
+
         _cancellationTokenSource.Dispose();
 
         if (_disposeScopeAsync is not null)
         {
             await _disposeScopeAsync().ConfigureAwait(false);
         }
+    }
+
+    private void ReleaseOrdinaryDispatchLease()
+    {
+        TaskCompletionSource? ordinaryDispatchLeasesReleased = null;
+        lock (_lifetimeSync)
+        {
+            if (_ordinaryDispatchLeaseCount <= 0)
+            {
+                return;
+            }
+
+            _ordinaryDispatchLeaseCount--;
+            if (_disposeStarted && _ordinaryDispatchLeaseCount == 0)
+            {
+                ordinaryDispatchLeasesReleased = _ordinaryDispatchLeasesReleased;
+            }
+        }
+
+        ordinaryDispatchLeasesReleased?.TrySetResult();
     }
 
     private sealed class AdministrativeCommandBinding(
@@ -606,6 +726,22 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
             }
 
             Interlocked.Decrement(ref targetContext._administrativeCommandRetentions);
+        }
+    }
+
+    private sealed class OrdinaryDispatchLease(DocumentCacheProjectionTargetRuntimeContext targetContext)
+        : IDisposable
+    {
+        private int _disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            targetContext.ReleaseOrdinaryDispatchLease();
         }
     }
 }
@@ -1159,7 +1295,8 @@ public sealed class DocumentCacheProjectionSupervisor(
         context.HasAdministrativeCommandRetention || context.DrainExecutor.IsCommandOwned;
 
     private static bool IsOrdinaryDrainOwned(DocumentCacheProjectionTargetRuntimeContext context) =>
-        context.DrainExecutor.CurrentOwner == DocumentCacheProjectionDrainInvocationKind.Ordinary;
+        context.HasOrdinaryDispatchLease
+        || context.DrainExecutor.CurrentOwner == DocumentCacheProjectionDrainInvocationKind.Ordinary;
 
     private static bool IsRetainedCommandOwnedTargetContextActive(
         DocumentCacheProjectionTargetRuntimeContext context
@@ -1167,7 +1304,10 @@ public sealed class DocumentCacheProjectionSupervisor(
 
     private static bool IsRetainedOrdinaryDrainTargetContextComplete(
         DocumentCacheProjectionTargetRuntimeContext context
-    ) => !context.DrainExecutor.IsOwned && !context.HasAdministrativeCommandRetention;
+    ) =>
+        !context.HasOrdinaryDispatchLease
+        && !context.DrainExecutor.IsOwned
+        && !context.HasAdministrativeCommandRetention;
 
     private static DocumentCacheProjectionTargetEndReason DetermineEndReason(
         DocumentCacheProjectionTargetRuntimeContext currentContext,
