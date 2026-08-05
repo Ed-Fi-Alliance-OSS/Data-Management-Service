@@ -305,8 +305,8 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
             context.Mutated,
             context.TargetContext.Generation.Value,
             context.TargetContext.TargetExecutionContext.PhysicalSourceFingerprint,
-            context.ObservedLifecycle?.State,
-            context.ObservedLifecycle?.CacheAheadRecoveryRequired,
+            context.LifecycleObservation?.State,
+            context.LifecycleObservation?.CacheAheadRecoveryRequired,
             context.PhaseDiagnostics,
             context.Request.AcceptedOfflineWriterAdmissionConfirmation,
             context.ElapsedCommandTime

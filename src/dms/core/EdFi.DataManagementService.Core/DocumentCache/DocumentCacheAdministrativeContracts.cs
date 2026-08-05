@@ -636,12 +636,6 @@ public sealed record DocumentCacheAdministrativeCommandResult
     public TimeSpan? ElapsedCommandTime { get; }
 
     [JsonIgnore]
-    public DocumentCacheLifecycleState? ObservedLifecycle => Lifecycle;
-
-    [JsonIgnore]
-    public long? TargetContextGeneration => TargetGeneration;
-
-    [JsonIgnore]
     public DocumentCacheDownstreamPublicationStatus? DownstreamPublicationStatus { get; }
 
     [JsonIgnore]

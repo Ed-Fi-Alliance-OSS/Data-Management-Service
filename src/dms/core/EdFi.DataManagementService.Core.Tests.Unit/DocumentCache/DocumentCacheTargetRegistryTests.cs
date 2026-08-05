@@ -630,7 +630,7 @@ public class DocumentCacheTargetRegistryTests
             result
                 .Classification.Should()
                 .NotBe(DocumentCacheAdministrativeCommandClassification.TargetReplacedBeforeExecution);
-            result.TargetContextGeneration.Should().Be(1);
+            result.TargetGeneration.Should().Be(1);
         }
 
         [Test]

@@ -66,7 +66,6 @@ public class Given_DocumentCacheAdministrativeDrain
             .DrainToEmptyAsync(context);
 
         result.Completed.Should().BeTrue();
-        result.DurableWorkEmpty.Should().BeTrue();
         result.DrainSliceCount.Should().Be(2);
         primitives.EmptinessReadCount.Should().Be(2);
         delay.Delays.Should().Equal(TimeSpan.FromSeconds(5));

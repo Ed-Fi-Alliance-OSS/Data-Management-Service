@@ -290,7 +290,7 @@ internal sealed class DocumentCacheOnlineCacheRebuildCommand(
     ) =>
         (
             context.LiveTargetObservation?.Lifecycle
-            ?? context.ObservedLifecycle
+            ?? context.LifecycleObservation
             ?? throw new InvalidOperationException(
                 "Online cache rebuild requires a live lifecycle observation."
             )

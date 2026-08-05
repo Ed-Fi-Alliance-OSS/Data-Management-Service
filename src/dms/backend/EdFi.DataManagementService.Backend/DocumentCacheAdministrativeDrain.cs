@@ -42,7 +42,6 @@ internal sealed record DocumentCacheAdministrativeDrainToEmptyResult
 {
     private DocumentCacheAdministrativeDrainToEmptyResult(
         bool completed,
-        bool durableWorkEmpty,
         int drainSliceCount,
         int processedItemCount,
         int acknowledgedOrRemovedItemCount,
@@ -63,7 +62,6 @@ internal sealed record DocumentCacheAdministrativeDrainToEmptyResult
         }
 
         Completed = completed;
-        DurableWorkEmpty = durableWorkEmpty;
         DrainSliceCount = RequireNonNegative(drainSliceCount, nameof(drainSliceCount));
         ProcessedItemCount = RequireNonNegative(processedItemCount, nameof(processedItemCount));
         AcknowledgedOrRemovedItemCount = RequireNonNegative(
@@ -78,8 +76,6 @@ internal sealed record DocumentCacheAdministrativeDrainToEmptyResult
     }
 
     public bool Completed { get; }
-
-    public bool DurableWorkEmpty { get; }
 
     public int DrainSliceCount { get; }
 
@@ -99,7 +95,6 @@ internal sealed record DocumentCacheAdministrativeDrainToEmptyResult
 
         return new(
             completed: true,
-            durableWorkEmpty: true,
             stats.DrainSliceCount,
             stats.ProcessedItemCount,
             stats.AcknowledgedOrRemovedItemCount,
@@ -118,7 +113,6 @@ internal sealed record DocumentCacheAdministrativeDrainToEmptyResult
 
         return new(
             completed: false,
-            durableWorkEmpty: false,
             stats.DrainSliceCount,
             stats.ProcessedItemCount,
             stats.AcknowledgedOrRemovedItemCount,

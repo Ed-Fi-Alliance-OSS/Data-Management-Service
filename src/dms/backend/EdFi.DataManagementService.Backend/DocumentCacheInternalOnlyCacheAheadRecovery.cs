@@ -374,7 +374,7 @@ internal sealed class DocumentCacheInternalOnlyCacheAheadRecoveryCommand(
         DocumentCacheAdministrativeCommandExecutionContext context
     ) =>
         context.LiveTargetObservation?.Lifecycle
-        ?? context.ObservedLifecycle
+        ?? context.LifecycleObservation
         ?? throw new InvalidOperationException(
             "Internal-only cache-ahead recovery requires a live lifecycle observation."
         );

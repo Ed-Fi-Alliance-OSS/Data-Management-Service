@@ -317,7 +317,7 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
     ) =>
         (
             context.LiveTargetObservation?.Lifecycle
-            ?? context.ObservedLifecycle
+            ?? context.LifecycleObservation
             ?? throw new InvalidOperationException(
                 "Offline deactivation requires a live lifecycle observation."
             )

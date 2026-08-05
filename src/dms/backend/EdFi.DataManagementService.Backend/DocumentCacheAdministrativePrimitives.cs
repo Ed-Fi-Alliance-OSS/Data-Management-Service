@@ -231,8 +231,6 @@ internal sealed record DocumentCacheAdministrativeBaselineBoundaryResult
 
     public long? BoundaryDocumentId { get; }
 
-    public bool HasDocuments => BoundaryDocumentId is not null;
-
     public string Message { get; }
 }
 
@@ -598,16 +596,7 @@ internal sealed record DocumentCacheAdministrativeBaselineSeedPageResult
 
     public bool Mutated => WorkMutationCount > 0;
 
-    public bool FilledPage => RowsVisited == PageSize;
-
     public long? LastVisitedDocumentId => Documents.IsEmpty ? null : Documents[^1].DocumentId;
-
-    public ImmutableArray<long> AffectedDocumentIds =>
-        Documents
-            .Where(document => document.Mutated || document.RequiresRetry)
-            .Select(document => document.DocumentId)
-            .Take(PageSize)
-            .ToImmutableArray();
 
     public string Message { get; }
 }
@@ -901,8 +890,6 @@ internal sealed record DocumentCacheAdministrativeScrubPageResult
     public bool LatchSet => Documents.Any(document => document.LatchSet);
 
     public bool Mutated => Documents.Any(document => document.Mutated);
-
-    public bool FilledPage => RowsVisited == PageSize;
 
     public long? LastVisitedDocumentId => Documents.IsEmpty ? null : Documents[^1].DocumentId;
 

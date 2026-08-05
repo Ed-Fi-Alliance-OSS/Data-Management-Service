@@ -1069,8 +1069,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                         context.Mutated,
                         context.TargetContext.Generation.Value,
                         context.TargetContext.TargetExecutionContext.PhysicalSourceFingerprint,
-                        context.ObservedLifecycle?.State,
-                        context.ObservedLifecycle?.CacheAheadRecoveryRequired,
+                        context.LifecycleObservation?.State,
+                        context.LifecycleObservation?.CacheAheadRecoveryRequired,
                         workflowDiagnostics,
                         context.Request.AcceptedOfflineWriterAdmissionConfirmation,
                         context.ElapsedCommandTime
@@ -2556,8 +2556,7 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                     lastCommittedDocumentId: 0,
                     pagesSeeded: 0,
                     documentsVisited: 0,
-                    workMutationCount: 0,
-                    lastAffectedDocumentIds: []
+                    workMutationCount: 0
                 )
             );
         }

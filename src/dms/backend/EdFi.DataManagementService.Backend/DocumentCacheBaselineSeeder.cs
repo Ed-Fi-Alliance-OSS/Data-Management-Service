@@ -41,7 +41,6 @@ internal sealed record DocumentCacheBaselineSeedingResult
         int pagesSeeded,
         int documentsVisited,
         int workMutationCount,
-        ImmutableArray<long> lastAffectedDocumentIds,
         DocumentCacheAdministrativeCommandResult? failureResult = null
     )
     {
@@ -95,7 +94,6 @@ internal sealed record DocumentCacheBaselineSeedingResult
         PagesSeeded = pagesSeeded;
         DocumentsVisited = documentsVisited;
         WorkMutationCount = workMutationCount;
-        LastAffectedDocumentIds = lastAffectedDocumentIds.IsDefault ? [] : lastAffectedDocumentIds;
         FailureResult = failureResult;
     }
 
@@ -110,8 +108,6 @@ internal sealed record DocumentCacheBaselineSeedingResult
     public int DocumentsVisited { get; }
 
     public int WorkMutationCount { get; }
-
-    public ImmutableArray<long> LastAffectedDocumentIds { get; }
 
     public DocumentCacheAdministrativeCommandResult? FailureResult { get; }
 }
@@ -160,8 +156,7 @@ internal sealed class DocumentCacheBaselineSeeder(
                 lastCommittedDocumentId: 0,
                 pagesSeeded: 0,
                 documentsVisited: 0,
-                workMutationCount: 0,
-                lastAffectedDocumentIds: []
+                workMutationCount: 0
             );
         }
 
@@ -171,7 +166,6 @@ internal sealed class DocumentCacheBaselineSeeder(
         var pagesSeeded = 0;
         var documentsVisited = 0;
         var workMutationCount = 0;
-        ImmutableArray<long> lastAffectedDocumentIds = [];
 
         while (afterDocumentId < boundary.BoundaryDocumentId.Value)
         {
@@ -215,7 +209,6 @@ internal sealed class DocumentCacheBaselineSeeder(
                             pagesSeeded,
                             documentsVisited,
                             workMutationCount,
-                            lastAffectedDocumentIds,
                             reliefResult.FailureResult
                         );
                     }
@@ -261,7 +254,6 @@ internal sealed class DocumentCacheBaselineSeeder(
             documentsVisited += page.RowsVisited;
             workMutationCount += page.WorkMutationCount;
             afterDocumentId = page.LastVisitedDocumentId!.Value;
-            lastAffectedDocumentIds = page.AffectedDocumentIds.Take(pageSize).ToImmutableArray();
         }
 
         context.CompletePhase(DocumentCacheAdministrativeCommandPhase.SeedBaseline);
@@ -271,8 +263,7 @@ internal sealed class DocumentCacheBaselineSeeder(
             afterDocumentId,
             pagesSeeded,
             documentsVisited,
-            workMutationCount,
-            lastAffectedDocumentIds
+            workMutationCount
         );
     }
 

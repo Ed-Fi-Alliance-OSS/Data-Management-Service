@@ -190,7 +190,7 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
         ProviderConcurrencyRetrySettings = providerConcurrencyRetrySettings ?? new DeadlockRetrySettings();
         WriteExceptionClassifier = writeExceptionClassifier ?? new NoOpRelationalWriteExceptionClassifier();
         CurrentPhase = DocumentCacheAdministrativeCommandPhase.Preflight;
-        ObservedLifecycle = targetContext.TargetExecutionContext.Lifecycle;
+        LifecycleObservation = targetContext.TargetExecutionContext.Lifecycle;
     }
 
     public DocumentCacheAdministrativeCommandExecutionId ExecutionId { get; }
@@ -219,7 +219,7 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
 
     public bool Mutated { get; private set; }
 
-    public DocumentCacheLifecycleObservation? ObservedLifecycle { get; private set; }
+    public DocumentCacheLifecycleObservation? LifecycleObservation { get; private set; }
 
     public TimeSpan ElapsedCommandTime => _timeProvider.GetUtcNow() - StartedAt;
 
@@ -241,7 +241,7 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
         }
 
         LiveTargetObservation = liveTargetObservation;
-        ObservedLifecycle = liveTargetObservation.Lifecycle;
+        LifecycleObservation = liveTargetObservation.Lifecycle;
         Observe();
     }
 
@@ -262,7 +262,7 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
         Mutated = true;
         if (lifecycle is not null)
         {
-            ObservedLifecycle = lifecycle;
+            LifecycleObservation = lifecycle;
         }
 
         Observe();
@@ -362,8 +362,8 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
             Mutated,
             TargetContext.Generation.Value,
             TargetContext.TargetExecutionContext.PhysicalSourceFingerprint,
-            ObservedLifecycle?.State,
-            ObservedLifecycle?.CacheAheadRecoveryRequired,
+            LifecycleObservation?.State,
+            LifecycleObservation?.CacheAheadRecoveryRequired,
             _phaseDiagnostics,
             Request.AcceptedOfflineWriterAdmissionConfirmation,
             ElapsedCommandTime
@@ -389,8 +389,8 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
             Mutated,
             TargetContext.Generation.Value,
             TargetContext.TargetExecutionContext.PhysicalSourceFingerprint,
-            ObservedLifecycle?.State,
-            ObservedLifecycle?.CacheAheadRecoveryRequired,
+            LifecycleObservation?.State,
+            LifecycleObservation?.CacheAheadRecoveryRequired,
             _phaseDiagnostics,
             Request.AcceptedOfflineWriterAdmissionConfirmation,
             ElapsedCommandTime
@@ -421,8 +421,8 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
             LastCompletedPhase,
             Mutated,
             TargetContext.TargetExecutionContext.PhysicalSourceFingerprint,
-            ObservedLifecycle?.State,
-            ObservedLifecycle?.CacheAheadRecoveryRequired,
+            LifecycleObservation?.State,
+            LifecycleObservation?.CacheAheadRecoveryRequired,
             Request.AcceptedOfflineWriterAdmissionConfirmation,
             ElapsedCommandTime,
             _phaseDiagnostics
@@ -1099,8 +1099,9 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             mutated,
             commandContext.TargetContext.Generation.Value,
             commandContext.TargetContext.TargetExecutionContext.PhysicalSourceFingerprint,
-            commandContext.ObservedLifecycle?.State ?? result.Lifecycle,
-            commandContext.ObservedLifecycle?.CacheAheadRecoveryRequired ?? result.CacheAheadRecoveryRequired,
+            commandContext.LifecycleObservation?.State ?? result.Lifecycle,
+            commandContext.LifecycleObservation?.CacheAheadRecoveryRequired
+                ?? result.CacheAheadRecoveryRequired,
             phaseDiagnostics,
             commandContext.Request.AcceptedOfflineWriterAdmissionConfirmation,
             commandContext.ElapsedCommandTime

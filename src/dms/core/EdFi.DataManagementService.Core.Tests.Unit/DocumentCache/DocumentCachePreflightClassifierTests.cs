@@ -88,10 +88,10 @@ public class DocumentCachePreflightClassifierTests
 
             result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
             result.Command.Should().Be(DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation);
-            result.ObservedLifecycle.Should().Be(DocumentCacheLifecycleState.Disabled);
+            result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Disabled);
             result.CacheAheadRecoveryRequired.Should().BeFalse();
             result.PhysicalSourceFingerprint.Should().Be(_fingerprint);
-            result.TargetContextGeneration.Should().Be(_generation.Value);
+            result.TargetGeneration.Should().Be(_generation.Value);
             result.NoMutationGuarantee.Should().BeNull();
         }
 
@@ -338,7 +338,7 @@ public class DocumentCachePreflightClassifierTests
             result
                 .DownstreamPublicationStatus.Should()
                 .Be(DocumentCacheDownstreamPublicationStatus.InternalOnly);
-            result.ObservedLifecycle.Should().Be(lifecycleState);
+            result.Lifecycle.Should().Be(lifecycleState);
         }
 
         [Test]
@@ -566,7 +566,7 @@ public class DocumentCachePreflightClassifierTests
 
             result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
             result.Command.Should().Be(DocumentCacheAdministrativeCommand.OfflineDeactivation);
-            result.ObservedLifecycle.Should().Be(lifecycleState);
+            result.Lifecycle.Should().Be(lifecycleState);
             result
                 .DownstreamPublicationStatus.Should()
                 .Be(DocumentCacheDownstreamPublicationStatus.InternalOnly);
@@ -657,7 +657,7 @@ public class DocumentCachePreflightClassifierTests
 
             result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
             result.Command.Should().Be(DocumentCacheAdministrativeCommand.OnlineCacheRebuild);
-            result.ObservedLifecycle.Should().Be(lifecycleState);
+            result.Lifecycle.Should().Be(lifecycleState);
             result.CacheAheadRecoveryRequired.Should().BeFalse();
             result.NoMutationGuarantee.Should().BeNull();
         }
@@ -736,7 +736,7 @@ public class DocumentCachePreflightClassifierTests
 
             result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
             result.Command.Should().Be(DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub);
-            result.ObservedLifecycle.Should().Be(DocumentCacheLifecycleState.Tracking);
+            result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Tracking);
             result.CacheAheadRecoveryRequired.Should().BeFalse();
             result.NoMutationGuarantee.Should().BeNull();
         }
@@ -864,7 +864,7 @@ public class DocumentCachePreflightClassifierTests
 
             result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
             result.Command.Should().Be(DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery);
-            result.ObservedLifecycle.Should().Be(lifecycleState);
+            result.Lifecycle.Should().Be(lifecycleState);
             result.CacheAheadRecoveryRequired.Should().BeTrue();
             result
                 .DownstreamPublicationStatus.Should()
@@ -885,7 +885,7 @@ public class DocumentCachePreflightClassifierTests
                 );
 
             result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
-            result.ObservedLifecycle.Should().Be(DocumentCacheLifecycleState.Rebuilding);
+            result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Rebuilding);
             result.CacheAheadRecoveryRequired.Should().BeFalse();
         }
 
@@ -961,7 +961,7 @@ public class DocumentCachePreflightClassifierTests
                 result,
                 DocumentCacheAdministrativeCommandClassification.TargetNotConfigured,
                 DocumentCacheTargetDiagnosticCategory.TargetNotConfigured,
-                expectedObservedLifecycle: null
+                expectedLifecycle: null
             );
         }
 
@@ -979,7 +979,7 @@ public class DocumentCachePreflightClassifierTests
                 result,
                 DocumentCacheAdministrativeCommandClassification.TargetUnresolved,
                 DocumentCacheTargetDiagnosticCategory.TargetUnresolved,
-                expectedObservedLifecycle: null
+                expectedLifecycle: null
             );
         }
 
@@ -1031,7 +1031,7 @@ public class DocumentCachePreflightClassifierTests
                 result,
                 DocumentCacheAdministrativeCommandClassification.UnsupportedPrerequisiteIncident,
                 DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident,
-                expectedObservedLifecycle: DocumentCacheLifecycleState.Tracking
+                expectedLifecycle: DocumentCacheLifecycleState.Tracking
             );
         }
 
@@ -1048,18 +1048,13 @@ public class DocumentCachePreflightClassifierTests
                     GuardedFacts()
                 );
 
-            AssertRejected(
-                result,
-                expectedClassification,
-                diagnosticCategory,
-                expectedObservedLifecycle: null
-            );
+            AssertRejected(result, expectedClassification, diagnosticCategory, expectedLifecycle: null);
             result
                 .Diagnostics.Should()
                 .ContainSingle()
                 .Which.Category.Should()
                 .Be(Enum.Parse<DocumentCacheAdministrativeDiagnosticCategory>(diagnosticCategory.ToString()));
-            result.TargetContextGeneration.Should().Be(_generation.Value);
+            result.TargetGeneration.Should().Be(_generation.Value);
             result.PhysicalSourceFingerprint.Should().BeNull();
         }
 
@@ -1080,7 +1075,7 @@ public class DocumentCachePreflightClassifierTests
                 result!,
                 DocumentCacheAdministrativeCommandClassification.ProviderMetadataMissing,
                 DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing,
-                expectedObservedLifecycle: null
+                expectedLifecycle: null
             );
         }
 
@@ -1112,7 +1107,7 @@ public class DocumentCachePreflightClassifierTests
                 result!,
                 DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
                 DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure,
-                expectedObservedLifecycle: null
+                expectedLifecycle: null
             );
         }
 
@@ -1159,7 +1154,7 @@ public class DocumentCachePreflightClassifierTests
         DocumentCacheAdministrativeCommandResult result,
         DocumentCacheAdministrativeCommandClassification classification,
         DocumentCacheTargetDiagnosticCategory category,
-        DocumentCacheLifecycleState? expectedObservedLifecycle = DocumentCacheLifecycleState.Disabled
+        DocumentCacheLifecycleState? expectedLifecycle = DocumentCacheLifecycleState.Disabled
     )
     {
         result.Classification.Should().Be(classification);
@@ -1172,12 +1167,12 @@ public class DocumentCachePreflightClassifierTests
         result
             .NoMutationGuarantee.Scope.Should()
             .Be(DocumentCacheAdministrativeNoMutationScope.LifecycleCacheWorkLatchAndProviderSettings);
-        result.ObservedLifecycle.Should().Be(expectedObservedLifecycle);
+        result.Lifecycle.Should().Be(expectedLifecycle);
 
-        if (expectedObservedLifecycle is not null)
+        if (expectedLifecycle is not null)
         {
             result.PhysicalSourceFingerprint.Should().Be(_fingerprint);
-            result.TargetContextGeneration.Should().Be(_generation.Value);
+            result.TargetGeneration.Should().Be(_generation.Value);
         }
     }
 
@@ -1185,7 +1180,7 @@ public class DocumentCachePreflightClassifierTests
         DocumentCacheAdministrativeCommandResult result,
         DocumentCacheAdministrativeCommandClassification classification,
         DocumentCacheAdministrativeDiagnosticCategory diagnosticCategory,
-        DocumentCacheLifecycleState expectedObservedLifecycle
+        DocumentCacheLifecycleState expectedLifecycle
     )
     {
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
@@ -1201,9 +1196,9 @@ public class DocumentCachePreflightClassifierTests
         result.NoMutationGuarantee.Should().NotBeNull();
         result.NoMutationGuarantee!.Guaranteed.Should().BeTrue();
         result.NoMutationGuarantee.Message.Should().Be(ClassifierNoMutationMessage);
-        result.ObservedLifecycle.Should().Be(expectedObservedLifecycle);
+        result.Lifecycle.Should().Be(expectedLifecycle);
         result.PhysicalSourceFingerprint.Should().Be(_fingerprint);
-        result.TargetContextGeneration.Should().Be(_generation.Value);
+        result.TargetGeneration.Should().Be(_generation.Value);
     }
 
     protected static DocumentCacheGuardedNewEmptyActivationRequest GuardedRequest(

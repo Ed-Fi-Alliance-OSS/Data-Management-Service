@@ -19,9 +19,9 @@ internal sealed class PostgresqlDocumentCacheAdministrativeMutex(
 {
     internal const long LockNamespace = 811646948;
 
-    internal const string AcquireSql = """
+    internal static readonly string AcquireSql = $"""
         SELECT pg_advisory_lock(
-            (811646948::bigint << 32)
+            ({LockNamespace}::bigint << 32)
             | (
                 SELECT database.oid::bigint
                 FROM pg_database AS database
@@ -30,9 +30,9 @@ internal sealed class PostgresqlDocumentCacheAdministrativeMutex(
         );
         """;
 
-    internal const string ReleaseSql = """
+    internal static readonly string ReleaseSql = $"""
         SELECT pg_advisory_unlock(
-            (811646948::bigint << 32)
+            ({LockNamespace}::bigint << 32)
             | (
                 SELECT database.oid::bigint
                 FROM pg_database AS database
