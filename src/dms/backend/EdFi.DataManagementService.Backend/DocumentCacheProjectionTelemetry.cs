@@ -463,20 +463,6 @@ internal sealed class NoOpDocumentCacheProjectionTelemetry : IDocumentCacheProje
                 "Unsupported administrative diagnostic category."
             );
         }
-
-        RequireNonNegativeDuration(duration);
-    }
-
-    private static void RequireNonNegativeDuration(TimeSpan duration)
-    {
-        if (duration < TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(duration),
-                duration,
-                "Duration must be nonnegative."
-            );
-        }
     }
 }
 
@@ -630,7 +616,7 @@ internal sealed class DocumentCacheProjectionTelemetry : IDocumentCacheProjectio
         if (result.CompletedAt is not null)
         {
             _dispatchDuration.Record(
-                RequireNonNegativeMilliseconds(result.CompletedAt.Value - result.ObservedAt),
+                ClampToNonNegativeMilliseconds(result.CompletedAt.Value - result.ObservedAt),
                 tags
             );
         }
@@ -674,7 +660,7 @@ internal sealed class DocumentCacheProjectionTelemetry : IDocumentCacheProjectio
 
         _administrativePhaseCounter.Add(1, tags);
         _administrativeWorkflowTimeout.Record(
-            RequireNonNegativeMilliseconds(snapshot.EffectiveWorkflowTimeout),
+            ClampToNonNegativeMilliseconds(snapshot.EffectiveWorkflowTimeout),
             tags
         );
         LogDebug(context);
@@ -710,7 +696,7 @@ internal sealed class DocumentCacheProjectionTelemetry : IDocumentCacheProjectio
         if (result.ElapsedCommandTime is not null)
         {
             _administrativeCommandDuration.Record(
-                RequireNonNegativeMilliseconds(result.ElapsedCommandTime.Value),
+                ClampToNonNegativeMilliseconds(result.ElapsedCommandTime.Value),
                 tags
             );
         }
@@ -718,7 +704,7 @@ internal sealed class DocumentCacheProjectionTelemetry : IDocumentCacheProjectio
         if (effectiveWorkflowTimeout is not null)
         {
             _administrativeWorkflowTimeout.Record(
-                RequireNonNegativeMilliseconds(effectiveWorkflowTimeout.Value),
+                ClampToNonNegativeMilliseconds(effectiveWorkflowTimeout.Value),
                 tags
             );
         }
@@ -743,7 +729,7 @@ internal sealed class DocumentCacheProjectionTelemetry : IDocumentCacheProjectio
                 outcome,
                 category
             );
-        _administrativeMutexDuration.Record(RequireNonNegativeMilliseconds(duration), context.ToTags());
+        _administrativeMutexDuration.Record(ClampToNonNegativeMilliseconds(duration), context.ToTags());
         LogDebug(context);
     }
 
@@ -795,17 +781,6 @@ internal sealed class DocumentCacheProjectionTelemetry : IDocumentCacheProjectio
         );
     }
 
-    private static double RequireNonNegativeMilliseconds(TimeSpan duration)
-    {
-        if (duration < TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(duration),
-                duration,
-                "Duration must be nonnegative."
-            );
-        }
-
-        return duration.TotalMilliseconds;
-    }
+    private static double ClampToNonNegativeMilliseconds(TimeSpan duration) =>
+        duration < TimeSpan.Zero ? 0 : duration.TotalMilliseconds;
 }

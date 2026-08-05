@@ -6,8 +6,11 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -229,6 +232,53 @@ public class Given_DocumentCacheProjectionTelemetry
     }
 
     [Test]
+    public void It_clamps_negative_elapsed_durations_to_zero()
+    {
+        using MetricCollector collector = new();
+        DocumentCacheProjectionTelemetry telemetry = collector.CreateTelemetry();
+        DocumentCacheProjectionTargetRuntimeContext context = RuntimeContext();
+        DocumentCacheProjectionSchedulerDispatchResult dispatchResult =
+            DocumentCacheProjectionSchedulerDispatchResult.Faulted(
+                context,
+                DocumentCacheProjectionDrainPageResult.PageProcessed(2),
+                ObservedAt,
+                ObservedAt.AddMilliseconds(-15)
+            );
+
+        Action recordDispatch = () =>
+            telemetry.RecordSchedulerDispatch(
+                context,
+                dispatchResult,
+                DocumentCacheProjectionDrainInvocationKind.Ordinary
+            );
+        Action recordMutex = () =>
+            telemetry.RecordAdministrativeMutexOutcome(
+                DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub,
+                TargetKey,
+                RelationalProviderToken.Postgresql,
+                DocumentCacheAdministrativeCommandClassification.ProviderConcurrencyRetryExhausted.ToString(),
+                DocumentCacheAdministrativeDiagnosticCategory.ProviderConcurrencyRetryExhausted,
+                TimeSpan.FromMilliseconds(-9)
+            );
+
+        recordDispatch.Should().NotThrow();
+        recordMutex.Should().NotThrow();
+
+        collector
+            .MeasurementsFor(DocumentCacheProjectionTelemetry.DispatchDurationName)
+            .Should()
+            .ContainSingle()
+            .Which.DoubleValue.Should()
+            .Be(0);
+        collector
+            .MeasurementsFor(DocumentCacheProjectionTelemetry.AdministrativeMutexDurationName)
+            .Should()
+            .ContainSingle()
+            .Which.DoubleValue.Should()
+            .Be(0);
+    }
+
+    [Test]
     public void It_sanitizes_and_bounds_metric_context_labels()
     {
         DocumentCacheProjectionTelemetryContext context = new(
@@ -255,6 +305,89 @@ public class Given_DocumentCacheProjectionTelemetry
         measurement
             .Tags.Keys.Should()
             .BeSubsetOf(["provider", "target_key", "outcome", "category", "lifecycle", "command", "phase"]);
+    }
+
+    private static DocumentCacheProjectionTargetRuntimeContext RuntimeContext()
+    {
+        DocumentCacheTargetExecutionContext executionContext = new(
+            TargetKey,
+            Generation,
+            new DocumentCacheTargetEffectiveSettings(
+                readAccelerationEnabled: true,
+                directFillTimeout: TimeSpan.FromMilliseconds(250),
+                projectorPollInterval: TimeSpan.FromSeconds(5),
+                projectorPageSize: 3,
+                projectorMaxConcurrentTargets: 2,
+                projectorFailureBackoff: TimeSpan.FromSeconds(10),
+                projectorBaselineHighWaterMark: 1000,
+                administrationWorkflowTimeout: TimeSpan.FromHours(24)
+            ),
+            new DocumentCacheTargetDataStoreMetadata(TargetKey.DataStoreId, "postgresql"),
+            new DocumentCacheTargetConnectionInput(RelationalProviderToken.Postgresql, "connection"),
+            Fingerprint,
+            new DocumentCacheLifecycleObservation(
+                DocumentCacheLifecycleState.Tracking,
+                CacheAheadRecoveryRequired: false
+            ),
+            new DocumentCacheInventoryValidationResult(
+                DocumentCacheInventoryStatus.Satisfied,
+                "Inventory satisfied."
+            ),
+            new DocumentCacheEnqueueTriggerValidationResult(
+                DocumentCacheEnqueueTriggerStatus.Satisfied,
+                "Enqueue trigger satisfied."
+            ),
+            DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
+        );
+
+        return new DocumentCacheProjectionTargetRuntimeContext(
+            executionContext,
+            new DocumentCacheProjectionTargetProviderAdapters(
+                RelationalProviderToken.Postgresql,
+                MaterializationTargetContext(),
+                new ThrowingDocumentCacheMaterializer(),
+                new ThrowingDocumentCacheWriter()
+            ),
+            new NoOpObservationSink()
+        );
+    }
+
+    private static DocumentCacheMaterializationTargetContext MaterializationTargetContext() =>
+        new(
+            new DocumentCacheProjectionTargetKey(TargetKey.TenantKey, new DataStoreId(TargetKey.DataStoreId)),
+            MappingSet(),
+            DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated,
+            "connection"
+        );
+
+    private static MappingSet MappingSet()
+    {
+        EffectiveSchemaInfo effectiveSchema = new(
+            ApiSchemaFormatVersion: "5.2.0",
+            RelationalMappingVersion: "v2",
+            EffectiveSchemaHash: "schema-hash",
+            ResourceKeyCount: 0,
+            ResourceKeySeedHash: new byte[32],
+            SchemaComponentsInEndpointOrder: [],
+            ResourceKeysInIdOrder: []
+        );
+
+        return new MappingSet(
+            new MappingSetKey(
+                effectiveSchema.EffectiveSchemaHash,
+                SqlDialect.Pgsql,
+                effectiveSchema.RelationalMappingVersion
+            ),
+            new DerivedRelationalModelSet(effectiveSchema, SqlDialect.Pgsql, [], [], [], [], [], []),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>(),
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
     }
 
     private sealed class MetricCollector : IDisposable
@@ -353,4 +486,35 @@ public class Given_DocumentCacheProjectionTelemetry
         Dictionary<string, object?> Tags,
         double? DoubleValue = null
     );
+
+    private sealed class ThrowingDocumentCacheMaterializer : IDocumentCacheMaterializer
+    {
+        public Task<DocumentCacheMaterializationResult> MaterializeAsync(
+            DocumentCacheMaterializationRequest request
+        ) => throw new NotSupportedException("Telemetry tests do not materialize documents.");
+    }
+
+    private sealed class ThrowingDocumentCacheWriter : IDocumentCacheWriter
+    {
+        public Task<DocumentCacheWriterResult> WriteAsync(DocumentCacheWriterRequest request) =>
+            throw new NotSupportedException("Telemetry tests do not write documents.");
+    }
+
+    private sealed class NoOpObservationSink : IDocumentCacheProjectionObservationSink
+    {
+        public void ObserveTarget(DocumentCacheProjectionTargetHealthSnapshot snapshot) => _ = snapshot;
+
+        public void EndTargetContext(
+            DocumentCacheProjectionTargetContextKey contextKey,
+            DocumentCacheProjectionTargetEndReason endReason,
+            DateTimeOffset? endedAt = null
+        ) => _ = (contextKey, endReason, endedAt);
+
+        public void ObserveAdministrativeCommand(
+            DocumentCacheAdministrativeCommandObservationSnapshot snapshot
+        ) => _ = snapshot;
+
+        public void EndAdministrativeCommand(DocumentCacheAdministrativeCommandExecutionId executionId) =>
+            _ = executionId;
+    }
 }
