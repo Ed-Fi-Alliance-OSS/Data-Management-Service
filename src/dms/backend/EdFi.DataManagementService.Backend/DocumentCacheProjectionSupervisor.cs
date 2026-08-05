@@ -471,6 +471,17 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
     internal DocumentCacheAdministrativeCommandExecutionContext? AdministrativeCommandContext =>
         Volatile.Read(ref _administrativeCommandContext);
 
+    internal DocumentCacheAdministrativeCommandExecutionContext? ActiveAdministrativeCommandContext
+    {
+        get
+        {
+            lock (_lifetimeSync)
+            {
+                return _activeAdministrativeCommandContext;
+            }
+        }
+    }
+
     internal bool HasActiveAdministrativeCommand
     {
         get

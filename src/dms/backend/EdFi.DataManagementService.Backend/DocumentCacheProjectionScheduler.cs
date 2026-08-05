@@ -589,6 +589,7 @@ public sealed class DocumentCacheProjectionTargetSchedulingState
     private readonly object _sync = new();
     private ProjectionThroughputCounter _ordinaryPageThroughput;
     private ProjectionThroughputCounter _administrativeDrainThroughput;
+    private DocumentCacheProjectionSuccessSnapshot? _lastSuccess;
     private bool _targetPaused;
     private bool _lifecycleFencePaused;
     private DocumentCacheProjectionLifecycleFenceSnapshot _lifecycleFenceSnapshot =
@@ -844,6 +845,29 @@ public sealed class DocumentCacheProjectionTargetSchedulingState
                 startedAt,
                 completedAt
             );
+        }
+    }
+
+    public void RecordProjectionSuccess(long documentId, long contentVersion, DateTimeOffset completedAt)
+    {
+        lock (_sync)
+        {
+            _lastSuccess = new DocumentCacheProjectionSuccessSnapshot(
+                documentId,
+                contentVersion,
+                completedAt
+            );
+        }
+    }
+
+    public DocumentCacheProjectionSuccessSnapshot? LastSuccessSnapshot
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _lastSuccess;
+            }
         }
     }
 
@@ -1403,6 +1427,9 @@ internal static class DocumentCacheProjectionTargetHealthSnapshotFactory
         ArgumentNullException.ThrowIfNull(context);
 
         DocumentCacheTargetExecutionContext executionContext = context.TargetExecutionContext;
+        DocumentCacheAdministrativeCommandExecutionContext? activeCommandContext =
+            context.ActiveAdministrativeCommandContext ?? context.AdministrativeCommandContext;
+
         return new DocumentCacheProjectionTargetHealthSnapshot(
             executionContext.TargetKey,
             executionContext.Generation,
@@ -1411,11 +1438,15 @@ internal static class DocumentCacheProjectionTargetHealthSnapshotFactory
             providerToken: executionContext.ProviderToken,
             physicalSourceFingerprint: executionContext.PhysicalSourceFingerprint,
             executionState: executionState,
+            lastSuccess: context.SchedulingState.LastSuccessSnapshot,
             pageThroughput: context.SchedulingState.OrdinaryPageThroughputSnapshot,
             drainThroughput: context.SchedulingState.AdministrativeDrainThroughputSnapshot,
             lifecycleFence: SelectLifecycleFenceSnapshot(context, observedAt),
             poisonTraversal: context.FailureBackoffState.CreatePoisonTraversalSnapshot(),
-            failureDiagnostics: context.FailureBackoffState.CreateFailureDiagnosticsSnapshot()
+            failureDiagnostics: context.FailureBackoffState.CreateFailureDiagnosticsSnapshot(),
+            activeCommandExecutionId: activeCommandContext?.ExecutionId,
+            activeAdministrativeCommand: activeCommandContext?.Request.Command,
+            activeAdministrativePhase: activeCommandContext?.CurrentPhase
         );
     }
 

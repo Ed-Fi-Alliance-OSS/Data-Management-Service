@@ -204,6 +204,42 @@ public class Given_DocumentCacheProjectionObservationProvider
         ended.FinalSnapshot.FailureDiagnostics.DocumentIds.Should().Equal(401);
     }
 
+    [Test]
+    public void It_preserves_target_health_success_and_active_command_fields()
+    {
+        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheAdministrativeCommandExecutionId executionId =
+            DocumentCacheAdministrativeCommandExecutionId.New();
+        DocumentCacheProjectionSuccessSnapshot lastSuccess = new(
+            documentId: 501,
+            contentVersion: 6001,
+            completedAt: ObservedAt.AddSeconds(1)
+        );
+
+        store.ObserveTarget(
+            TargetHealth(
+                generation: 1,
+                lastSuccess: lastSuccess,
+                activeCommandExecutionId: executionId,
+                activeAdministrativeCommand: DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+                activeAdministrativePhase: DocumentCacheAdministrativeCommandPhase.SeedBaseline
+            )
+        );
+
+        DocumentCacheProjectionTargetHealthSnapshot snapshot = store.CurrentSnapshot.GetCurrentTarget(
+            TargetKey
+        )!;
+        snapshot.LastSuccess.Should().NotBeNull();
+        snapshot.LastSuccess!.DocumentId.Should().Be(501);
+        snapshot.LastSuccess.ContentVersion.Should().Be(6001);
+        snapshot.LastSuccess.CompletedAt.Should().Be(ObservedAt.AddSeconds(1));
+        snapshot.ActiveCommandExecutionId.Should().Be(executionId);
+        snapshot
+            .ActiveAdministrativeCommand.Should()
+            .Be(DocumentCacheAdministrativeCommand.OnlineCacheRebuild);
+        snapshot.ActiveAdministrativePhase.Should().Be(DocumentCacheAdministrativeCommandPhase.SeedBaseline);
+    }
+
     private static DocumentCacheProjectionTargetContextKey ContextKey(long generation) =>
         new(TargetKey, new DocumentCacheTargetContextGeneration(generation));
 
@@ -212,7 +248,11 @@ public class Given_DocumentCacheProjectionObservationProvider
         int effectiveProjectorPageSize = 2,
         long[]? failureDocumentIds = null,
         long[]? suppressedDocumentIds = null,
-        DateTimeOffset? observedAt = null
+        DateTimeOffset? observedAt = null,
+        DocumentCacheProjectionSuccessSnapshot? lastSuccess = null,
+        DocumentCacheAdministrativeCommandExecutionId? activeCommandExecutionId = null,
+        DocumentCacheAdministrativeCommand? activeAdministrativeCommand = null,
+        DocumentCacheAdministrativeCommandPhase? activeAdministrativePhase = null
     )
     {
         DateTimeOffset observationTime = observedAt ?? ObservedAt;
@@ -235,11 +275,12 @@ public class Given_DocumentCacheProjectionObservationProvider
                 cancellationRequested: false,
                 cancellationObservedAt: null
             ),
-            lastSuccess: new DocumentCacheProjectionSuccessSnapshot(
-                documentId: 999,
-                contentVersion: 1000,
-                completedAt: observationTime
-            ),
+            lastSuccess: lastSuccess
+                ?? new DocumentCacheProjectionSuccessSnapshot(
+                    documentId: 999,
+                    contentVersion: 1000,
+                    completedAt: observationTime
+                ),
             pageThroughput: new DocumentCacheProjectionThroughputSnapshot(
                 startedCount: 3,
                 completedCount: 2,
@@ -283,7 +324,10 @@ public class Given_DocumentCacheProjectionObservationProvider
                     observationTime,
                     observationTime.AddSeconds(30)
                 ))
-            )
+            ),
+            activeCommandExecutionId: activeCommandExecutionId,
+            activeAdministrativeCommand: activeAdministrativeCommand,
+            activeAdministrativePhase: activeAdministrativePhase
         );
     }
 

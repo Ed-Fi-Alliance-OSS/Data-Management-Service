@@ -117,6 +117,54 @@ public class Given_DocumentCacheProjectionTelemetry
     }
 
     [Test]
+    public void It_records_active_administrative_command_labels_for_target_observations()
+    {
+        using MetricCollector collector = new();
+        DocumentCacheProjectionTelemetry telemetry = collector.CreateTelemetry();
+        DocumentCacheAdministrativeCommandExecutionId executionId =
+            DocumentCacheAdministrativeCommandExecutionId.New();
+        DocumentCacheProjectionTargetHealthSnapshot snapshot = new(
+            TargetKey,
+            Generation,
+            effectiveProjectorPageSize: 2,
+            ObservedAt,
+            RelationalProviderToken.Postgresql,
+            Fingerprint,
+            new DocumentCacheProjectionExecutionStateSnapshot(
+                isRunning: true,
+                isActivelyProcessing: true,
+                isWaitingForWorkerGate: false,
+                isInBackoff: false,
+                backoffUntil: null,
+                cancellationRequested: false,
+                cancellationObservedAt: null
+            ),
+            lifecycleFence: DocumentCacheProjectionLifecycleFenceSnapshotFactory.FromLifecycle(
+                new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Rebuilding, false),
+                ObservedAt
+            ),
+            activeCommandExecutionId: executionId,
+            activeAdministrativeCommand: DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+            activeAdministrativePhase: DocumentCacheAdministrativeCommandPhase.SeedBaseline
+        );
+
+        telemetry.RecordTargetObservation(snapshot);
+
+        MetricMeasurement targetState = collector
+            .MeasurementsFor(DocumentCacheProjectionTelemetry.TargetStateCounterName)
+            .Should()
+            .ContainSingle()
+            .Which;
+        targetState
+            .Tags["command"]
+            .Should()
+            .Be(nameof(DocumentCacheAdministrativeCommand.OnlineCacheRebuild));
+        targetState.Tags["phase"].Should().Be(nameof(DocumentCacheAdministrativeCommandPhase.SeedBaseline));
+        targetState.Tags["command"].Should().NotBe(DocumentCacheProjectionTelemetryLabel.None);
+        targetState.Tags["phase"].Should().NotBe(DocumentCacheProjectionTelemetryLabel.None);
+    }
+
+    [Test]
     public void It_records_administrative_phase_mutation_mutex_and_result_metrics()
     {
         using MetricCollector collector = new();

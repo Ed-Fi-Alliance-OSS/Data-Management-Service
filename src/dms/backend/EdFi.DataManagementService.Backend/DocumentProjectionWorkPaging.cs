@@ -198,6 +198,11 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
             if (itemResult.AcknowledgedOrRemovedDurableWork)
             {
                 acknowledgedOrRemovedItemCount++;
+                targetContext.SchedulingState.RecordProjectionSuccess(
+                    item.DocumentId,
+                    item.RequiredContentVersion,
+                    _timeProvider.GetUtcNow()
+                );
             }
 
             if (itemResult.DocumentScopedFailureRecorded)

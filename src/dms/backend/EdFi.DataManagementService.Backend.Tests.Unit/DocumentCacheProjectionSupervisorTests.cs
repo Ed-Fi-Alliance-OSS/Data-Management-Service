@@ -295,6 +295,50 @@ public class Given_DocumentCacheProjectionSupervisor
     }
 
     [Test]
+    public async Task It_populates_target_health_success_and_active_command_fields_from_runtime_context()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            DocumentCacheTargetKey.Create("TenantA", 7),
+            generation: 1
+        );
+        DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+        RecordingTargetContextFactory targetContextFactory = new(observationStore);
+        DocumentCacheProjectionTargetRuntimeContext targetContext = await targetContextFactory.CreateAsync(
+            executionContext
+        );
+        DocumentCacheAdministrativeCommandExecutionContext commandContext = CommandContext(
+            targetContext,
+            observationStore
+        );
+
+        targetContext.SchedulingState.RecordProjectionSuccess(
+            documentId: 501,
+            contentVersion: 6001,
+            completedAt: ObservedAt.AddSeconds(1)
+        );
+        using IDisposable activeCommandTracking = targetContext.TrackActiveAdministrativeCommand(
+            commandContext
+        );
+        commandContext.EnterPhase(DocumentCacheAdministrativeCommandPhase.SeedBaseline);
+
+        DocumentCacheProjectionTargetHealthSnapshot snapshot =
+            DocumentCacheProjectionTargetHealthSnapshotFactory.Create(
+                targetContext,
+                ObservedAt.AddSeconds(2)
+            );
+
+        snapshot.LastSuccess.Should().NotBeNull();
+        snapshot.LastSuccess!.DocumentId.Should().Be(501);
+        snapshot.LastSuccess.ContentVersion.Should().Be(6001);
+        snapshot.LastSuccess.CompletedAt.Should().Be(ObservedAt.AddSeconds(1));
+        snapshot.ActiveCommandExecutionId.Should().Be(commandContext.ExecutionId);
+        snapshot
+            .ActiveAdministrativeCommand.Should()
+            .Be(DocumentCacheAdministrativeCommand.OnlineCacheRebuild);
+        snapshot.ActiveAdministrativePhase.Should().Be(DocumentCacheAdministrativeCommandPhase.SeedBaseline);
+    }
+
+    [Test]
     public async Task It_preserves_a_command_owned_drain_generation_when_the_target_is_removed()
     {
         DocumentCacheTargetKey targetKey = DocumentCacheTargetKey.Create("TenantA", 7);

@@ -65,8 +65,6 @@ public enum DocumentCacheProjectionDocumentDiagnosticCategory
 {
     PoisonSuppressed = 1,
     WorkAnomaly = 2,
-    MaterializerSourceMissing = 3,
-    MaterializerSourceChanged = 4,
     WriterOutcome = 5,
     ProviderFailure = 6,
     DeterministicInvariantFailure = 7,

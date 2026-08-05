@@ -101,6 +101,47 @@ public class Given_DocumentProjectionWorkPaging
     }
 
     [Test]
+    public async Task It_records_last_success_from_the_last_acknowledged_work_item()
+    {
+        ScriptedWorkPager pager = new(
+            RelationalProviderToken.Postgresql,
+            [
+                Page(
+                    WorkItem(101, requiredContentVersion: 10, FirstEnqueuedAt),
+                    WorkItem(102, requiredContentVersion: 11, LaterEnqueuedAt)
+                ),
+            ]
+        );
+        DocumentCacheProjectionDrainPageProcessor sut = CreateProcessor(
+            pager,
+            new AcknowledgingItemProcessor()
+        );
+        DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext(
+            RelationalProviderToken.Postgresql
+        );
+
+        DocumentCacheProjectionDrainPageResult result = await sut.ProcessPageAsync(
+            new DocumentCacheProjectionDrainPageRequest(
+                targetContext,
+                DocumentCacheProjectionDrainInvocationKind.Ordinary
+            )
+        );
+
+        result.AcknowledgedOrRemovedItemCount.Should().Be(2);
+        DocumentCacheProjectionSuccessSnapshot lastSuccess = targetContext
+            .SchedulingState
+            .LastSuccessSnapshot!;
+        lastSuccess.Should().NotBeNull();
+        lastSuccess.DocumentId.Should().Be(102);
+        lastSuccess.ContentVersion.Should().Be(11);
+        lastSuccess.CompletedAt.Should().Be(FirstEnqueuedAt);
+        DocumentCacheProjectionTargetHealthSnapshotFactory
+            .Create(targetContext, FirstEnqueuedAt)
+            .LastSuccess.Should()
+            .BeSameAs(lastSuccess);
+    }
+
+    [Test]
     public async Task It_reports_no_eligible_work_when_the_wrapped_page_is_also_empty()
     {
         ScriptedWorkPager pager = new(RelationalProviderToken.Postgresql, [Page(), Page()]);
@@ -167,11 +208,12 @@ public class Given_DocumentProjectionWorkPaging
     }
 
     private static DocumentCacheProjectionDrainPageProcessor CreateProcessor(
-        IDocumentProjectionWorkPager pager
+        IDocumentProjectionWorkPager pager,
+        IDocumentCacheProjectionItemProcessor? itemProcessor = null
     ) =>
         new(
             pager,
-            new AcknowledgingItemProcessor(),
+            itemProcessor ?? new ContinuingItemProcessor(),
             NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
             new FixedTimeProvider(FirstEnqueuedAt)
         );
@@ -273,7 +315,7 @@ public class Given_DocumentProjectionWorkPaging
         );
     }
 
-    private sealed class AcknowledgingItemProcessor : IDocumentCacheProjectionItemProcessor
+    private sealed class ContinuingItemProcessor : IDocumentCacheProjectionItemProcessor
     {
         public Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
             DocumentCacheProjectionItemProcessRequest request,
@@ -283,6 +325,18 @@ public class Given_DocumentProjectionWorkPaging
             cancellationToken.ThrowIfCancellationRequested();
             request.TargetContext.FailureBackoffState.ClearFailure(request.WorkItem.DocumentId);
             return Task.FromResult(DocumentCacheProjectionItemProcessResult.Continue);
+        }
+    }
+
+    private sealed class AcknowledgingItemProcessor : IDocumentCacheProjectionItemProcessor
+    {
+        public Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
+            DocumentCacheProjectionItemProcessRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(DocumentCacheProjectionItemProcessResult.AcknowledgedOrRemoved);
         }
     }
 
