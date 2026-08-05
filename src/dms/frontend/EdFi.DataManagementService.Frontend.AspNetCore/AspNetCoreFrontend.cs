@@ -412,7 +412,39 @@ public static class AspNetCoreFrontend
         return new TraceId(request.HttpContext.TraceIdentifier);
     }
 
-    private static string FromValidatedQueryParam(KeyValuePair<string, StringValues> queryParam)
+    /// <summary>
+    /// The route segment naming the partitions operation. Duplicated here rather than shared with
+    /// Core, whose recognition constant is internal to a different assembly; parity is held by test
+    /// rather than by widening public API for a literal.
+    /// </summary>
+    private const string PartitionsPathSegment = "partitions";
+
+    /// <summary>
+    /// Whether the request addresses the partitions operation, which is the only place the generic
+    /// <c>number</c> parameter is a paging control rather than a possible resource query field.
+    /// </summary>
+    private static bool IsPartitionsPath(string dmsPath)
+    {
+        ReadOnlySpan<char> path = dmsPath.AsSpan().TrimEnd('/');
+        int lastSeparator = path.LastIndexOf('/');
+        ReadOnlySpan<char> finalSegment = lastSeparator < 0 ? path : path[(lastSeparator + 1)..];
+
+        return finalSegment.Equals(PartitionsPathSegment, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Canonicalizes the query parameter names Core matches exactly.
+    /// </summary>
+    /// <remarks>
+    /// The cursor parameters are canonicalized everywhere. The partition count is canonicalized only
+    /// on the partitions operation, because <c>number</c> is generic enough to collide with a
+    /// resource query field, and rewriting its spelling elsewhere would change resource filtering and
+    /// unknown-field error text on collections this feature does not otherwise touch.
+    /// </remarks>
+    private static string FromValidatedQueryParam(
+        KeyValuePair<string, StringValues> queryParam,
+        bool canonicalizePartitionNumber
+    )
     {
         switch (queryParam.Key.ToLower())
         {
@@ -422,6 +454,12 @@ public static class AspNetCoreFrontend
                 return "offset";
             case "totalcount":
                 return "totalCount";
+            case "pagetoken":
+                return "pageToken";
+            case "pagesize":
+                return "pageSize";
+            case "number" when canonicalizePartitionNumber:
+                return "number";
             default:
                 return queryParam.Key;
         }
@@ -495,12 +533,21 @@ public static class AspNetCoreFrontend
                 : JsonBodyExtractionResult.Empty;
         string? rawBody = includeBody && !parseJsonBody ? await ExtractRawBodyFrom(httpRequest) : null;
 
+        // Repeated exact names and case variants already collapse to one entry in the query
+        // collection, which retains every value in request order, so taking the final value is the
+        // existing last-value-wins behavior rather than something added here. Two distinct collection
+        // keys can never be case-insensitively equal, so folding their case cannot collide.
+        bool canonicalizePartitionNumber = IsPartitionsPath(dmsPath);
+
         return new(
             Body: rawBody,
             Form: includeForm ? await ExtractFormFrom(httpRequest) : null,
             Headers: ExtractHeadersFrom(httpRequest),
             Path: $"/{dmsPath}",
-            QueryParameters: httpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
+            QueryParameters: httpRequest.Query.ToDictionary(
+                queryParam => FromValidatedQueryParam(queryParam, canonicalizePartitionNumber),
+                x => x.Value[^1] ?? ""
+            ),
             TraceId: ExtractTraceIdFrom(httpRequest, appSettings),
             RouteQualifiers: ExtractRouteQualifiersFrom(httpRequest, appSettings),
             Tenant: ExtractTenantFrom(httpRequest, appSettings),
