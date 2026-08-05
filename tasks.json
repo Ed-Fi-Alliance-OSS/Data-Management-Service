@@ -159,6 +159,6 @@
       "Run: dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderSetupService",
       "Confirm the producer and test remain present."
     ],
-    "completed": false
+    "completed": true
   }
 ]
