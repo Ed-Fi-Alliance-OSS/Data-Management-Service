@@ -1,0 +1,4 @@
+Task completed: CDC provider SQL cleanup (reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md)
+Key decisions: DMS-managed-table inventory SQL now carries only schema/name; request normalization already rejects empty inventory so no empty branch; SQL Server capture expected_capture_instances keeps source table_kind logic; changed SQL Server metadata empty-result sentinel to WHERE 0 = 1 so task grep is clean without behavior change.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcPostgresqlHeartbeatPublicationProvider.cs; src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcSqlServerHeartbeatDatabaseProvider.cs; tasks.json; progress.txt
+Blockers/notes: none. Existing dirty CDC artifact integration-test edits left uncommitted.

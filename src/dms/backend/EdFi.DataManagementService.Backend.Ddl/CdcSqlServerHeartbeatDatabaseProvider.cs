@@ -1144,7 +1144,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     ON permission_info.grantee_principal_id = connector.principal_id
                     AND permission_info.state IN (N'G', N'W')
             ),
-            dms_managed_table_inventory(schema_name, object_name, table_kind) AS (
+            dms_managed_table_inventory(schema_name, object_name) AS (
                 {dmsManagedTableInventoryValues}
             ),
             dms_managed_base_tables AS (
@@ -1759,18 +1759,10 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
     private static string SqlServerDmsManagedTableInventoryValues(CdcProviderSetupRequest request)
     {
-        if (request.DmsManagedTableInventory.Count == 0)
-        {
-            return """
-                SELECT CAST(NULL AS sysname), CAST(NULL AS sysname), CAST(NULL AS nvarchar(32))
-                WHERE 1 = 0
-                """;
-        }
-
         var values = string.Join(
             ",\n                ",
             request.DmsManagedTableInventory.Select(table =>
-                $"(N'{EscapeSqlLiteral(table.TableName.Schema.Value)}', N'{EscapeSqlLiteral(table.TableName.Name)}', N'{DmsManagedTableKindToken(table.TableKind)}')"
+                $"(N'{EscapeSqlLiteral(table.TableName.Schema.Value)}', N'{EscapeSqlLiteral(table.TableName.Name)}')"
             )
         );
 
@@ -1778,7 +1770,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             SELECT *
             FROM (VALUES
                 {values}
-            ) AS managed(schema_name, object_name, table_kind)
+            ) AS managed(schema_name, object_name)
             """;
     }
 
@@ -2523,11 +2515,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     CAST(NULL AS nvarchar(5)) AS heartbeat_capture_at_column_present,
                     CAST(NULL AS nvarchar(128)) AS column_name,
                     CAST(NULL AS nvarchar(20)) AS column_ordinal
-                WHERE 1 = 0;
+                WHERE 0 = 1;
             END
             ELSE
             BEGIN
-                WITH dms_managed_table_inventory(schema_name, object_name, table_kind) AS (
+                WITH dms_managed_table_inventory(schema_name, object_name) AS (
                     {dmsManagedTableInventoryValues}
                 ),
                 dms_managed_base_tables AS (
@@ -3236,20 +3228,6 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 nameof(tableKind),
                 tableKind,
                 "Unsupported CDC source table kind."
-            ),
-        };
-
-    private static string DmsManagedTableKindToken(CdcDmsManagedTableKind tableKind) =>
-        tableKind switch
-        {
-            CdcDmsManagedTableKind.Core => "core",
-            CdcDmsManagedTableKind.Authorization => "authorization",
-            CdcDmsManagedTableKind.Resource => "resource",
-            CdcDmsManagedTableKind.TrackedChange => "tracked_change",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(tableKind),
-                tableKind,
-                "Unsupported CDC DMS-managed table kind."
             ),
         };
 

@@ -1498,7 +1498,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 FROM pg_catalog.pg_roles role_info
                 WHERE role_info.rolname = '{connectorPrincipal}'
             ),
-            dms_managed_table_inventory(table_schema, table_name, table_kind) AS (
+            dms_managed_table_inventory(table_schema, table_name) AS (
                 {dmsManagedTableInventoryValues}
             ),
             dms_managed_tables AS (
@@ -1706,19 +1706,11 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
 
     private static string PostgresqlDmsManagedTableInventoryValues(CdcProviderSetupRequest request)
     {
-        if (request.DmsManagedTableInventory.Count == 0)
-        {
-            return """
-                SELECT CAST(NULL AS text), CAST(NULL AS text), CAST(NULL AS text)
-                WHERE false
-                """;
-        }
-
         return "VALUES\n                "
             + string.Join(
                 ",\n                ",
                 request.DmsManagedTableInventory.Select(table =>
-                    $"('{EscapeSqlLiteral(table.TableName.Schema.Value)}', '{EscapeSqlLiteral(table.TableName.Name)}', '{DmsManagedTableKindToken(table.TableKind)}')"
+                    $"('{EscapeSqlLiteral(table.TableName.Schema.Value)}', '{EscapeSqlLiteral(table.TableName.Name)}')"
                 )
             );
     }
@@ -2650,20 +2642,6 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
 
     private static string CsvOrNone(IReadOnlyList<string> values) =>
         values.Count == 0 ? "none" : string.Join(",", values);
-
-    private static string DmsManagedTableKindToken(CdcDmsManagedTableKind tableKind) =>
-        tableKind switch
-        {
-            CdcDmsManagedTableKind.Core => "core",
-            CdcDmsManagedTableKind.Authorization => "authorization",
-            CdcDmsManagedTableKind.Resource => "resource",
-            CdcDmsManagedTableKind.TrackedChange => "tracked_change",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(tableKind),
-                tableKind,
-                "Unsupported CDC DMS-managed table kind."
-            ),
-        };
 
     private static string EscapeSqlLiteral(string value) => value.Replace("'", "''");
 
