@@ -24,6 +24,7 @@ services:
       # Mask incoming HTTP POST and PUT request body structures in DEBUG logging
       AppSettings__MaskRequestBodyInLogs: ${MASK_REQUEST_BODY_IN_LOGS:-true}
       AppSettings__MaximumPageSize: ${MAXIMUM_PAGE_SIZE:-500}
+      AppSettings__DefaultPartitionCount: ${DEFAULT_PARTITION_COUNT:-10}
       # Segment of the url to use as base for all request. The default path base is deliberately blank on the following line
       AppSettings__PathBase: ${PATH_BASE:-}
       AppSettings__ReverseProxy__UseForwardedHeaders: ${USE_REVERSE_PROXY_HEADERS:-false}

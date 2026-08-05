@@ -38,6 +38,10 @@ public class WebApplicationBuilderExtensionsTests
         {
             ["AppSettings:Datastore"] = datastore,
             ["AppSettings:MaskRequestBodyInLogs"] = "false",
+            // This helper is the valid baseline; focused tests override a single setting when they
+            // intend it to be invalid.
+            ["AppSettings:MaximumPageSize"] = "500",
+            ["AppSettings:DefaultPartitionCount"] = "10",
             ["ConfigurationServiceSettings:BaseUrl"] = "https://example.org",
             ["ConfigurationServiceSettings:ClientId"] = "client-id",
             ["ConfigurationServiceSettings:ClientSecret"] = "client-secret",

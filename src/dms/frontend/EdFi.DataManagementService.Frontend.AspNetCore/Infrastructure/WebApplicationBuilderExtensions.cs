@@ -23,6 +23,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Serilog;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
+using CoreAppSettingsValidator = EdFi.DataManagementService.Core.Configuration.AppSettingsValidator;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
@@ -55,8 +56,10 @@ public static class WebApplicationBuilderExtensions
             .Configure<Frontend.AspNetCore.Configuration.AppSettings>(
                 webAppBuilder.Configuration.GetSection("AppSettings")
             )
-            .Configure<CoreAppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
-            .Configure<ReverseProxySettings>(
+            .AddOptions<CoreAppSettings>()
+            .Bind(webAppBuilder.Configuration.GetSection("AppSettings"))
+            .ValidateOnStart()
+            .Services.Configure<ReverseProxySettings>(
                 webAppBuilder.Configuration.GetSection("AppSettings:ReverseProxy")
             )
             .Configure<ConfigurationServiceSettings>(
@@ -73,8 +76,9 @@ public static class WebApplicationBuilderExtensions
             .AddSingleton<StartupPhaseExecutor>()
             .AddSingleton<
                 IValidateOptions<Frontend.AspNetCore.Configuration.AppSettings>,
-                AppSettingsValidator
+                Frontend.AspNetCore.Configuration.AppSettingsValidator
             >()
+            .AddSingleton<IValidateOptions<CoreAppSettings>, CoreAppSettingsValidator>()
             .AddSingleton<
                 IValidateOptions<ConfigurationServiceSettings>,
                 ConfigurationServiceSettingsValidator
