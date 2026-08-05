@@ -112,7 +112,7 @@
       "Run: dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CDC_SQLSERVER_HEARTBEAT_CAPTURE_NOT_VISIBLE",
       "Run: dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcSqlServerHeartbeatDatabaseProvider.cs"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Scope control",

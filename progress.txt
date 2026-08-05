@@ -22,3 +22,8 @@ Task completed: Manifest payload predicate (reference/design/backend-redesign/ep
 Key decisions: ShouldCreateManifestPayload now delegates to normalized IncludeManifestPayload only; constructor still promotes directory output to include payload; CdcProviderSetupService call-site remains the intent expression.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcProviderSetupContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcProviderArtifactOutputTests.cs; tasks.json; progress.txt
 Blockers/notes: none. Existing dirty provider/integration CDC artifact edits left unstaged.
+
+Task completed: SQL Server capture hardening (reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md)
+Key decisions: SqlServerCaptureInstanceInspection now carries typed HasDropPending and HeartbeatCaptureVisible booleans for control flow; SafeObservedValues still carries stable manifest/diagnostic keys; renamed focused tests so diagnostic-code filters run actual assertions.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcSqlServerHeartbeatDatabaseProvider.cs; src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcSqlServerHeartbeatDatabaseProviderTests.cs; tasks.json; progress.txt
+Blockers/notes: none. Verification passed: CDC_SQLSERVER_CAPTURE_INSTANCE_DROP_PENDING filter 2 tests; CDC_SQLSERVER_HEARTBEAT_CAPTURE_NOT_VISIBLE filter 1 test. Existing dirty provider/integration CDC artifact edits left unstaged.

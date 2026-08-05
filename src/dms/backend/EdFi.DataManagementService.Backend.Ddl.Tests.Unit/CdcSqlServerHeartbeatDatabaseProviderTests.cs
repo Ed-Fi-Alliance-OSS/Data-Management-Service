@@ -1089,7 +1089,7 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     }
 
     [Test]
-    public async Task MssqlCdcCaptureInstances_should_fail_closed_when_heartbeat_capture_visibility_is_not_proven()
+    public async Task MssqlCdcCaptureInstances_should_report_CDC_SQLSERVER_HEARTBEAT_CAPTURE_NOT_VISIBLE_when_heartbeat_capture_visibility_is_not_proven()
     {
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
             captureJobPresent: true,
@@ -1148,7 +1148,7 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     }
 
     [Test]
-    public async Task MssqlCdcCaptureInstances_should_fail_closed_when_initial_setup_capture_instance_has_drop_pending()
+    public async Task MssqlCdcCaptureInstances_should_report_CDC_SQLSERVER_CAPTURE_INSTANCE_DROP_PENDING_in_initial_setup()
     {
         await AssertPendingDropCaptureInstanceFailsClosedAsync(
             CdcProviderSetupMode.InitialCreateOrExactMatch
@@ -1156,7 +1156,7 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     }
 
     [Test]
-    public async Task MssqlCdcCaptureInstances_should_fail_closed_when_validate_only_capture_instance_has_drop_pending()
+    public async Task MssqlCdcCaptureInstances_should_report_CDC_SQLSERVER_CAPTURE_INSTANCE_DROP_PENDING_in_validate_only()
     {
         await AssertPendingDropCaptureInstanceFailsClosedAsync(CdcProviderSetupMode.ValidateOnly);
     }

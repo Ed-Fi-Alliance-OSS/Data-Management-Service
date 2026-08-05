@@ -2439,9 +2439,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         return new SqlServerCaptureInstancesInspection(expectedInstances, unexpectedArtifacts, diagnostics);
     }
 
-    private static bool IsDropPending(SqlServerCaptureInstanceInspection capture) =>
-        capture.ObservedValues.TryGetValue("has_drop_pending", out var hasDropPending)
-        && string.Equals(hasDropPending, "True", StringComparison.Ordinal);
+    private static bool IsDropPending(SqlServerCaptureInstanceInspection capture) => capture.HasDropPending;
 
     private static CdcProviderDiagnostic DropPendingDiagnostic(SqlServerCaptureInstanceInspection capture) =>
         new(
@@ -2750,6 +2748,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             definition.CaptureInstanceName,
             Exists: false,
             IsExactMatch: false,
+            HasDropPending: false,
+            HeartbeatCaptureVisible: false,
             new Dictionary<string, string>
             {
                 ["capture_instance"] = SafeText(definition.CaptureInstanceName.Value),
@@ -2820,6 +2820,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 && partitionSwitchMatches
                 && capturedColumnsMatch
                 && (!heartbeatCaptureVisibilityIsRequired || heartbeatCaptureVisible),
+            hasDropPending,
+            heartbeatCaptureVisible,
             CaptureInstanceObservedValues(
                 captureInstanceName,
                 definition,
@@ -3162,8 +3164,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     private static bool HeartbeatCaptureVisibilityIsUnavailable(SqlServerCaptureInstanceInspection capture) =>
         capture.TableKind == CdcSourceTableKind.CdcHeartbeat
         && capture.Exists
-        && capture.ObservedValues.TryGetValue("heartbeat_capture_visible", out var visible)
-        && !string.Equals(visible, "True", StringComparison.Ordinal);
+        && !capture.HeartbeatCaptureVisible;
 
     private static CdcProviderDiagnostic HeartbeatCaptureVisibilityUnavailableDiagnostic(
         SqlServerCaptureInstanceInspection capture
@@ -4536,6 +4537,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         CdcSafeName CaptureInstanceName,
         bool Exists,
         bool IsExactMatch,
+        bool HasDropPending,
+        bool HeartbeatCaptureVisible,
         IReadOnlyDictionary<string, string> ObservedValues
     );
 
