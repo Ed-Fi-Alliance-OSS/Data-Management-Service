@@ -42,6 +42,13 @@ internal class RequestInfo(
     }
 
     /// <summary>
+    /// The actual HTTP method name of a request whose method is not one of the supported
+    /// verbs, e.g. "PATCH". Set only when Method is RequestMethod.UNSUPPORTED, and used
+    /// both for the 405 error message and for request logging.
+    /// </summary>
+    public string? UnsupportedMethodName { get; set; }
+
+    /// <summary>
     /// The important parts of the request URL path in object form
     /// </summary>
     public PathComponents PathComponents { get; set; } = No.PathComponents;

@@ -11,4 +11,10 @@ internal enum RequestMethod
     GET,
     PUT,
     DELETE,
+
+    /// <summary>
+    /// A request whose HTTP method is not one of the supported verbs above. The actual
+    /// method name is carried on RequestInfo.UnsupportedMethodName.
+    /// </summary>
+    UNSUPPORTED,
 }

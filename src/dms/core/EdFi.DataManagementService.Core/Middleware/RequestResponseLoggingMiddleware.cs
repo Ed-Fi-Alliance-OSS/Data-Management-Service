@@ -25,7 +25,16 @@ internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
     {
         var traceId = requestInfo.FrontendRequest.TraceId.Value;
         var stopwatch = Stopwatch.StartNew();
-        string method = LoggingSanitizer.SanitizeForLogging(requestInfo.Method.ToString());
+        // An unsupported-method request carries its real verb on UnsupportedMethodName; logging
+        // requestInfo.Method would emit the literal "UNSUPPORTED" and operators searching for
+        // PATCH would find nothing. The name is client-supplied either way, so it must keep
+        // flowing through LoggingSanitizer.
+        string methodName =
+            requestInfo.Method == RequestMethod.UNSUPPORTED
+            && requestInfo.UnsupportedMethodName is { } unsupportedMethodName
+                ? unsupportedMethodName
+                : requestInfo.Method.ToString();
+        string method = LoggingSanitizer.SanitizeForLogging(methodName);
         string path = LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Path);
         string sanitizedTraceId = LoggingSanitizer.SanitizeForLogging(traceId);
 

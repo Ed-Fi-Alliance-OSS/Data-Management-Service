@@ -53,6 +53,15 @@ public interface IApiService
     Task<IFrontendResponse> GetTrackedChanges(FrontendRequest frontendRequest);
 
     /// <summary>
+    /// DMS entry point for a data-route request whose HTTP method is not one of the supported
+    /// verbs. Core determines the response, so a request for an unknown project namespace or
+    /// resource still answers 404 rather than 405.
+    /// </summary>
+    /// <param name="frontendRequest">The request to be processed</param>
+    /// <param name="requestMethodName">The actual HTTP method name of the request, e.g. "PATCH"</param>
+    Task<IFrontendResponse> MethodNotAllowed(FrontendRequest frontendRequest, string requestMethodName);
+
+    /// <summary>
     /// DMS entry point for data model information from ApiSchema.json
     /// </summary>
     IList<IDataModelInfo> GetDataModelInfo();
