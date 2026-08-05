@@ -506,6 +506,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
 
         DocumentCacheAdministrativeCommandExecutionId executionId =
             DocumentCacheAdministrativeCommandExecutionId.New();
+        DocumentCacheAdministrativeCommandResult? classifiedResult = null;
 
         IDisposable pinnedTargetRetention = targetContext.RetainForAdministrativeCommand();
         try
@@ -534,7 +535,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
                     mutexStartedAt
                 );
-                return RecordAdministrativeCommandResult(
+                classifiedResult = RecordAdministrativeCommandResult(
                     CreateAcquireMutexFailure(
                         request,
                         targetContext,
@@ -544,6 +545,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     ),
                     targetContext
                 );
+                return classifiedResult;
             }
             catch (OperationCanceledException)
             {
@@ -554,7 +556,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
                     mutexStartedAt
                 );
-                return RecordAdministrativeCommandResult(
+                classifiedResult = RecordAdministrativeCommandResult(
                     CreateAcquireMutexFailure(
                         request,
                         targetContext,
@@ -565,6 +567,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     targetContext,
                     DocumentCacheAdministrativeCommandPhase.AcquireMutex
                 );
+                return classifiedResult;
             }
             catch (Exception exception)
             {
@@ -581,7 +584,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionFailed,
                     mutexStartedAt
                 );
-                return RecordAdministrativeCommandResult(
+                classifiedResult = RecordAdministrativeCommandResult(
                     CreateAcquireMutexFailure(
                         request,
                         targetContext,
@@ -591,9 +594,9 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     ),
                     targetContext
                 );
+                return classifiedResult;
             }
 
-            DocumentCacheAdministrativeCommandResult? classifiedResult = null;
             try
             {
                 using CancellationTokenSource workflowTimeout =
@@ -747,7 +750,12 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                 finally
                 {
                     activeCommandTracking.Dispose();
-                    observationSink.EndAdministrativeCommand(executionId);
+                    EndAdministrativeCommandAfterCommand(
+                        executionId,
+                        request,
+                        targetContext,
+                        classifiedResult is not null
+                    );
                 }
             }
             finally
@@ -769,8 +777,12 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                 is IDocumentCacheProjectionRetainedTargetContextReleaser retainedTargetContextReleaser
             )
             {
-                await retainedTargetContextReleaser
-                    .ReleaseRetainedCommandOwnedTargetContextAsync(targetContext, CancellationToken.None)
+                await ReleaseRetainedCommandOwnedTargetContextAfterCommandAsync(
+                        retainedTargetContextReleaser,
+                        request,
+                        targetContext,
+                        classifiedResult is not null
+                    )
                     .ConfigureAwait(false);
             }
         }
@@ -794,6 +806,57 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                 "DocumentCache administrative mutex cleanup failed after command {Command} and target {TargetKey}. ClassifiedResultPreserved: {ClassifiedResultPreserved}.",
                 request.Command,
                 LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString()),
+                hasClassifiedResult
+            );
+        }
+    }
+
+    private void EndAdministrativeCommandAfterCommand(
+        DocumentCacheAdministrativeCommandExecutionId executionId,
+        DocumentCacheAdministrativeCommandRunnerRequest request,
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        bool hasClassifiedResult
+    )
+    {
+        try
+        {
+            observationSink.EndAdministrativeCommand(executionId);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "DocumentCache administrative command observation cleanup failed after command {Command}, target {TargetKey}, generation {TargetGeneration}, and execution {ExecutionId}. ClassifiedResultPreserved: {ClassifiedResultPreserved}.",
+                request.Command,
+                LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString()),
+                targetContext.Generation.Value,
+                LoggingSanitizer.SanitizeForLogging(executionId.ToString()),
+                hasClassifiedResult
+            );
+        }
+    }
+
+    private async Task ReleaseRetainedCommandOwnedTargetContextAfterCommandAsync(
+        IDocumentCacheProjectionRetainedTargetContextReleaser retainedTargetContextReleaser,
+        DocumentCacheAdministrativeCommandRunnerRequest request,
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        bool hasClassifiedResult
+    )
+    {
+        try
+        {
+            await retainedTargetContextReleaser
+                .ReleaseRetainedCommandOwnedTargetContextAsync(targetContext, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "DocumentCache administrative retained target-context cleanup failed after command {Command}, target {TargetKey}, and generation {TargetGeneration}. ClassifiedResultPreserved: {ClassifiedResultPreserved}.",
+                request.Command,
+                LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString()),
+                targetContext.Generation.Value,
                 hasClassifiedResult
             );
         }

@@ -1421,6 +1421,77 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             );
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_preserves_command_result_when_observation_sink_end_cleanup_fails(
+        bool classifiedFailure
+    )
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        var cleanupException = new InvalidOperationException("observation end failed");
+        var observationSink = new ThrowingEndAdministrativeCommandObservationSink(cleanupException);
+        var logger = new CapturingLogger<DocumentCacheAdministrativeCommandRunner>();
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(),
+            observationSink,
+            logger: logger
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            Request(),
+            CleanupPreservationWorkflow(classifiedFailure)
+        );
+
+        AssertCleanupPreservedResult(result, classifiedFailure);
+        observationSink.EndAdministrativeCommandCount.Should().Be(1);
+        logger
+            .Entries.Should()
+            .ContainSingle(entry =>
+                entry.Level == LogLevel.Warning
+                && entry.Exception == cleanupException
+                && entry.Message.Contains("observation cleanup failed", StringComparison.Ordinal)
+                && entry.Message.Contains("ClassifiedResultPreserved: True", StringComparison.Ordinal)
+            );
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_preserves_command_result_when_retained_target_context_release_cleanup_fails(
+        bool classifiedFailure
+    )
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        DocumentCacheProjectionTargetRuntimeContext runtimeContext = RuntimeContext(executionContext);
+        var cleanupException = new InvalidOperationException("retained release failed");
+        var supervisor = new StubProjectionSupervisor([runtimeContext], cleanupException);
+        var logger = new CapturingLogger<DocumentCacheAdministrativeCommandRunner>();
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            supervisor,
+            new RecordingAdministrativeMutex(),
+            logger: logger
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            Request(),
+            CleanupPreservationWorkflow(classifiedFailure)
+        );
+
+        AssertCleanupPreservedResult(result, classifiedFailure);
+        supervisor.ReleaseRetainedCommandOwnedTargetContextCount.Should().Be(1);
+        supervisor.LastReleasedRetainedTargetContext.Should().BeSameAs(runtimeContext);
+        logger
+            .Entries.Should()
+            .ContainSingle(entry =>
+                entry.Level == LogLevel.Warning
+                && entry.Exception == cleanupException
+                && entry.Message.Contains("retained target-context cleanup failed", StringComparison.Ordinal)
+                && entry.Message.Contains("ClassifiedResultPreserved: True", StringComparison.Ordinal)
+            );
+    }
+
     [Test]
     public async Task It_preserves_session_loss_classification_when_mutex_lease_cleanup_also_fails()
     {
@@ -1872,6 +1943,54 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             .Contain(diagnostic =>
                 diagnostic.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.TargetReplaced
             );
+    }
+
+    private static IDocumentCacheAdministrativeCommandWorkflow CleanupPreservationWorkflow(
+        bool classifiedFailure
+    ) =>
+        classifiedFailure
+            ? new DelegatingWorkflow(
+                preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+                execute: static (context, _) =>
+                {
+                    context.EnterPhase(DocumentCacheAdministrativeCommandPhase.ClearCache);
+                    return Task.FromResult(
+                        context.Failed(
+                            DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+                            DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
+                            DocumentCacheAdministrativeDiagnosticCategory.LifecycleMismatch,
+                            "Classified command failure before cleanup.",
+                            retryable: false
+                        )
+                    );
+                }
+            )
+            : SucceedingWorkflow.Instance;
+
+    private static void AssertCleanupPreservedResult(
+        DocumentCacheAdministrativeCommandResult result,
+        bool classifiedFailure
+    )
+    {
+        if (classifiedFailure)
+        {
+            result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+            result
+                .Classification.Should()
+                .Be(DocumentCacheAdministrativeCommandClassification.LifecycleMismatch);
+            result.Mutated.Should().BeFalse();
+            result
+                .PhaseDiagnostics.Should()
+                .ContainSingle(diagnostic =>
+                    diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.LifecycleMismatch
+                );
+            return;
+        }
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+        result.Mutated.Should().BeFalse();
     }
 
     private static DocumentCacheAdministrativeCommandRunnerRequest Request() =>
@@ -2414,16 +2533,71 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     }
 
     private sealed class StubProjectionSupervisor(
-        IEnumerable<DocumentCacheProjectionTargetRuntimeContext> contexts
-    ) : IDocumentCacheProjectionSupervisor
+        IEnumerable<DocumentCacheProjectionTargetRuntimeContext> contexts,
+        Exception? retainedCommandOwnedTargetContextReleaseException = null
+    ) : IDocumentCacheProjectionSupervisor, IDocumentCacheProjectionRetainedTargetContextReleaser
     {
         public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts { get; } =
             contexts.ToImmutableArray();
+
+        public int ReleaseRetainedCommandOwnedTargetContextCount { get; private set; }
+
+        public DocumentCacheProjectionTargetRuntimeContext? LastReleasedRetainedTargetContext
+        {
+            get;
+            private set;
+        }
 
         public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
             DocumentCacheTargetRefreshReason reason,
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException();
+
+        public Task ReleaseRetainedCommandOwnedTargetContextAsync(
+            DocumentCacheProjectionTargetRuntimeContext targetContext,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ReleaseRetainedCommandOwnedTargetContextCount++;
+            LastReleasedRetainedTargetContext = targetContext;
+
+            if (retainedCommandOwnedTargetContextReleaseException is not null)
+            {
+                throw retainedCommandOwnedTargetContextReleaseException;
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingEndAdministrativeCommandObservationSink(Exception endException)
+        : IDocumentCacheProjectionObservationSink
+    {
+        public int EndAdministrativeCommandCount { get; private set; }
+
+        public void ObserveTarget(DocumentCacheProjectionTargetHealthSnapshot snapshot) => _ = snapshot;
+
+        public void EndTargetContext(
+            DocumentCacheProjectionTargetContextKey contextKey,
+            DocumentCacheProjectionTargetEndReason endReason,
+            DateTimeOffset? endedAt = null
+        )
+        {
+            _ = contextKey;
+            _ = endReason;
+            _ = endedAt;
+        }
+
+        public void ObserveAdministrativeCommand(
+            DocumentCacheAdministrativeCommandObservationSnapshot snapshot
+        ) => _ = snapshot;
+
+        public void EndAdministrativeCommand(DocumentCacheAdministrativeCommandExecutionId executionId)
+        {
+            EndAdministrativeCommandCount++;
+            throw endException;
+        }
     }
 
     private sealed class RecordingTargetContextFactory(
