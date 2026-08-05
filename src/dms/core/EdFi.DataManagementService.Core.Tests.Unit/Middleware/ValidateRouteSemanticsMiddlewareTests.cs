@@ -70,6 +70,13 @@ public class ValidateRouteSemanticsMiddlewareTests
                     "Resource items can only be updated using PUT. To 'upsert' an item in the resource collection using POST, remove the 'id' from the route."
                 );
         }
+
+        [Test]
+        public void It_returns_an_allow_header_of_the_item_methods()
+        {
+            // Both method-not-allowed producers carry Allow, not just the unsupported-verb one.
+            _requestInfo.FrontendResponse.Headers.Should().Contain("Allow", "GET, PUT, DELETE");
+        }
     }
 
     [TestFixture]
@@ -109,6 +116,12 @@ public class ValidateRouteSemanticsMiddlewareTests
                     "Resource collections cannot be replaced. To 'upsert' an item in the collection, use POST. To update a specific item, use PUT and include the 'id' in the route."
                 );
         }
+
+        [Test]
+        public void It_returns_an_allow_header_of_the_collection_methods()
+        {
+            _requestInfo.FrontendResponse.Headers.Should().Contain("Allow", "GET, POST");
+        }
     }
 
     [TestFixture]
@@ -147,6 +160,12 @@ public class ValidateRouteSemanticsMiddlewareTests
                 .Contain(
                     "Resource collections cannot be deleted. To delete a specific item, use DELETE and include the 'id' in the route."
                 );
+        }
+
+        [Test]
+        public void It_returns_an_allow_header_of_the_collection_methods()
+        {
+            _requestInfo.FrontendResponse.Headers.Should().Contain("Allow", "GET, POST");
         }
     }
 

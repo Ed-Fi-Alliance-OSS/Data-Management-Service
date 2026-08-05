@@ -316,6 +316,7 @@ Feature: Validation of the structure of the URLs
               And the response headers include
                   """
                     {
+                        "Allow": "GET, PUT, DELETE",
                         "Content-Type": "application/json; charset=utf-8"
                     }
                   """
@@ -358,6 +359,7 @@ Feature: Validation of the structure of the URLs
               And the response headers include
                   """
                     {
+                        "Allow": "GET, POST",
                         "Content-Type": "application/json; charset=utf-8"
                     }
                   """
@@ -384,6 +386,7 @@ Feature: Validation of the structure of the URLs
               And the response headers include
                   """
                     {
+                        "Allow": "GET, POST",
                         "Content-Type": "application/json; charset=utf-8"
                     }
                   """
@@ -814,3 +817,25 @@ Feature: Validation of the structure of the URLs
                   | Key    | Value |
                   | Accept | */*   |
              Then it should respond with 200
+
+        # The unknown-project-namespace branch of endpoint validation, the sibling of scenario 25's
+        # unknown-resource branch.
+        @DMS-1281
+        @e2e-ci-shard-4
+        Scenario: 32 Ensure clients get 404 for an unsupported method on an unknown project namespace
+             When an "PATCH" request is made to "/notaschema/notaresource" with headers
+                  | Key    | Value |
+                  | Accept | */*   |
+             Then it should respond with 404
+              And the response body is
+                  """
+                  {
+                      "detail": "The specified data could not be found.",
+                      "type": "urn:ed-fi:api:not-found",
+                      "title": "Not Found",
+                      "status": 404,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """

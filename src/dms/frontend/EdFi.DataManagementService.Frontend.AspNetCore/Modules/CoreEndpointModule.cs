@@ -28,15 +28,16 @@ public class CoreEndpointModule(IOptions<AppSettings> appSettings) : IEndpointMo
         endpoints.MapPut(routePattern, UpdateById);
         endpoints.MapDelete(routePattern, DeleteById);
 
-        // Terminal for data-route requests whose method is not one of the four above. Core decides
+        // Terminal for data-route requests whose method is none of the verbs above. Core decides
         // 404-vs-405 (unknown resource vs unsupported method), matching ODS/API's ordering.
         //
-        // This shares the verb endpoints' exact route template, so Order and precedence both tie and
-        // EndpointComparer falls through to HttpMethodMatcherPolicy's metadata comparer, which ranks
-        // method-constrained endpoints ahead of method-less ones. The four verbs therefore win on
-        // their own merits and this terminal picks up everything else. WithOrder(1) is defensive,
-        // not load-bearing: it keeps the terminal demoted if the template is ever narrowed. Any
-        // order below MapFallback's int.MaxValue works.
+        // This shares the verb endpoints' exact route template, so precedence ties, and were this
+        // terminal left at Order 0 the Order would tie too - EndpointComparer would then fall
+        // through to HttpMethodMatcherPolicy's metadata comparer, which ranks method-constrained
+        // endpoints ahead of method-less ones, and the verbs would still win on their own merits.
+        // WithOrder(1) is therefore defensive rather than load-bearing here: it keeps the terminal
+        // demoted if the template is ever narrowed. Any order below MapFallback's int.MaxValue
+        // works. Contrast TrackedChangesEndpointModule, where the order IS load-bearing.
         endpoints.Map(routePattern, MethodNotAllowed).WithOrder(1);
     }
 

@@ -297,6 +297,10 @@ public class CoreEndpointModuleTests
         [TestCase("PUT", "/data/ed-fi/schools")]
         [TestCase("DELETE", "/data/ed-fi/schools")]
         [TestCase("GET", $"/data/ed-fi/schools/{ItemUuid}")]
+        // POST on an item route must still reach Upsert so ValidateRouteSemanticsMiddleware can
+        // emit its own distinct 405 message. If the terminal ever intercepted it the status would
+        // still be 405 and only that message would change, which no other test here would catch.
+        [TestCase("POST", $"/data/ed-fi/schools/{ItemUuid}")]
         [TestCase("PUT", $"/data/ed-fi/schools/{ItemUuid}")]
         [TestCase("DELETE", $"/data/ed-fi/schools/{ItemUuid}")]
         public async Task It_still_reaches_its_original_api_service_method(string verb, string requestUrl)

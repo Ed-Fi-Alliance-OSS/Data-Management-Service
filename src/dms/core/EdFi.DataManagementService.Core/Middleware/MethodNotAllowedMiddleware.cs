@@ -19,15 +19,9 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class MethodNotAllowedMiddleware(ILogger _logger) : IPipelineStep
 {
     /// <summary>
-    /// The authority for these sets is ValidateRouteSemanticsMiddleware: collection routes
-    /// reject PUT and DELETE, item routes reject POST.
-    /// </summary>
-    private const string CollectionMethods = "GET, POST";
-
-    private const string ItemMethods = "GET, PUT, DELETE";
-
-    /// <summary>
-    /// Tracked-change routes are read-only: TrackedChangesEndpointModule maps GET alone.
+    /// Tracked-change routes are read-only: TrackedChangesEndpointModule maps GET alone. The
+    /// data-route sets come from ValidateRouteSemanticsMiddleware, which is their authority
+    /// because its rejection table is what makes them true.
     /// </summary>
     private const string TrackedChangeMethods = "GET";
 
@@ -47,16 +41,14 @@ internal class MethodNotAllowedMiddleware(ILogger _logger) : IPipelineStep
         ) switch
         {
             (true, _) => TrackedChangeMethods,
-            (false, true) => ItemMethods,
-            (false, false) => CollectionMethods,
+            (false, true) => ValidateRouteSemanticsMiddleware.ItemMethods,
+            (false, false) => ValidateRouteSemanticsMiddleware.CollectionMethods,
         };
 
         requestInfo.FrontendResponse = new FrontendResponse(
             StatusCode: 405,
             Body: FailureResponse.ForMethodNotAllowed(
-                [
-                    $"The endpoint of the request does not support the '{requestInfo.UnsupportedMethodName}' method.",
-                ],
+                [$"The endpoint of the request does not support the '{requestInfo.MethodName}' method."],
                 requestInfo.FrontendRequest.TraceId
             ),
             Headers: new Dictionary<string, string> { ["Allow"] = allowed },

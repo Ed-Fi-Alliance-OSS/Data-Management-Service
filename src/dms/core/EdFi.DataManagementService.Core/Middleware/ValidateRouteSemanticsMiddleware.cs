@@ -16,6 +16,16 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ValidateRouteSemanticsMiddleware(ILogger _logger) : IPipelineStep
 {
+    /// <summary>
+    /// The method sets this middleware enforces, expressed for the Allow response header. They
+    /// live here because the rejection table below is what makes them true, and
+    /// MethodNotAllowedMiddleware advertises the same sets for a wholly unsupported verb -
+    /// referencing these keeps the two 405 producers in agreement by construction.
+    /// </summary>
+    internal const string CollectionMethods = "GET, POST";
+
+    internal const string ItemMethods = "GET, PUT, DELETE";
+
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
@@ -53,7 +63,18 @@ internal class ValidateRouteSemanticsMiddleware(ILogger _logger) : IPipelineStep
         requestInfo.FrontendResponse = new FrontendResponse(
             StatusCode: 405,
             Body: FailureResponse.ForMethodNotAllowed([error], requestInfo.FrontendRequest.TraceId),
-            Headers: [],
+            // RFC 9110 section 15.5.6 requires Allow on a 405. Sent here as well as from
+            // MethodNotAllowedMiddleware so both urn:ed-fi:api:method-not-allowed responses carry
+            // it, rather than only the one for a wholly unsupported verb. The profile-scoped 405
+            // in CachedProfileService is a different contract
+            // (urn:ed-fi:api:profile:method-usage) whose allowed set depends on the profile's
+            // read/write content types, and is deliberately left alone.
+            Headers: new Dictionary<string, string>
+            {
+                ["Allow"] = requestInfo.PathComponents.HasDocumentUuidSegment
+                    ? ItemMethods
+                    : CollectionMethods,
+            },
             ContentType: "application/json; charset=utf-8"
         );
     }
