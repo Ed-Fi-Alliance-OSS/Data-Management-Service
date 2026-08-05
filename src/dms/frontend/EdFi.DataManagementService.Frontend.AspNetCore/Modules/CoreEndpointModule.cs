@@ -20,16 +20,19 @@ public class CoreEndpointModule(IOptions<AppSettings> appSettings) : IEndpointMo
         );
 
         endpoints.MapPost(routePattern, Upsert);
-        // HEAD is GET without the response body (RFC 9110 section 9.3.2), and section 9.1 requires
-        // general-purpose servers to support both. Mapped on the GET endpoint rather than left to
-        // the terminal below, which would otherwise answer HEAD with a 405 whose own Allow header
-        // lists GET. Kestrel suppresses the body.
-        endpoints.MapMethods(routePattern, [HttpMethods.Get, HttpMethods.Head], Get);
+        endpoints.MapGet(routePattern, Get);
         endpoints.MapPut(routePattern, UpdateById);
         endpoints.MapDelete(routePattern, DeleteById);
 
         // Terminal for data-route requests whose method is none of the verbs above. Core decides
         // 404-vs-405 (unknown resource vs unsupported method), matching ODS/API's ordering.
+        //
+        // HEAD deliberately falls through to here rather than being mapped onto the GET endpoint.
+        // RFC 9110 section 9.1 would have general-purpose servers support HEAD wherever GET is
+        // supported, but ODS/API does not: it declares no HttpHead action and pins the resulting
+        // 405 with an integration test (GetAll_405_Tests/when_http_method_is_head_should_return_405).
+        // This endpoint exists for ODS/API compatibility, so HEAD answers 405 here too, and the
+        // Allow sets in Core list only the verbs above.
         //
         // This shares the verb endpoints' exact route template, so precedence ties, and were this
         // terminal left at Order 0 the Order would tie too - EndpointComparer would then fall

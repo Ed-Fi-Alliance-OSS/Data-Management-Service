@@ -808,15 +808,22 @@ Feature: Validation of the structure of the URLs
              When an unauthenticated "PATCH" request is made to "/ed-fi/schools/deletes"
              Then it should respond with 401
 
-        # HEAD is GET without a response body, so it is answered by the GET endpoint rather than
-        # rejected as an unsupported method.
+        # ODS/API parity: HEAD is not a supported method on a data route, so it is rejected like any
+        # other unsupported verb rather than answered by the GET endpoint. A HEAD response carries no
+        # body, so only the status and the Allow header are asserted.
         @DMS-1281
         @e2e-ci-shard-4
-        Scenario: 31 Ensure HEAD is supported wherever GET is supported
+        Scenario: 31 Ensure clients get 405 for a HEAD request on a resource collection
              When an "HEAD" request is made to "/ed-fi/schools" with headers
                   | Key    | Value |
                   | Accept | */*   |
-             Then it should respond with 200
+             Then it should respond with 405
+              And the response headers include
+                  """
+                    {
+                        "Allow": "GET, POST"
+                    }
+                  """
 
         # The unknown-project-namespace branch of endpoint validation, the sibling of scenario 25's
         # unknown-resource branch.
@@ -838,4 +845,37 @@ Feature: Validation of the structure of the URLs
                       "validationErrors": {},
                       "errors": []
                   }
+                  """
+
+        # ODS/API parity: OPTIONS is not a supported method on a data route either, so it earns the
+        # same problem-details 405 as any other unsupported verb. A CORS preflight is different - it
+        # carries Origin and Access-Control-Request-Method and is answered by the CORS middleware
+        # before routing, which OwaspCriticalPaths scenario 12 covers.
+        @DMS-1281
+        @e2e-ci-shard-4
+        Scenario: 33 Ensure clients get 405 for an OPTIONS request on a resource collection
+             When an "OPTIONS" request is made to "/ed-fi/schools" with headers
+                  | Key    | Value |
+                  | Accept | */*   |
+             Then it should respond with 405
+              And the response body is
+                  """
+                  {
+                      "detail": "The request construction was invalid.",
+                      "type": "urn:ed-fi:api:method-not-allowed",
+                      "title": "Method Not Allowed",
+                      "status": 405,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": [
+                          "The endpoint of the request does not support the 'OPTIONS' method."
+                      ]
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Allow": "GET, POST",
+                        "Content-Type": "application/json; charset=utf-8"
+                    }
                   """

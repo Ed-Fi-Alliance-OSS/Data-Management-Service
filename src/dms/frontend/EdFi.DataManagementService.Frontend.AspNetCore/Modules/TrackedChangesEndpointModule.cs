@@ -17,16 +17,11 @@ public class TrackedChangesEndpointModule(IOptions<AppSettings> appSettings) : I
         string[] routeQualifierSegments = appSettings.Value.GetRouteQualifierSegmentsArray();
         bool multiTenancy = appSettings.Value.MultiTenancy;
 
-        // GET and HEAD together, for the reason given in CoreEndpointModule: HEAD is GET without
-        // the body, so leaving it to the terminals below would answer it 405 with Allow: GET.
-        endpoints.MapMethods(
-            BuildRoutePattern(routeQualifierSegments, multiTenancy, "deletes"),
-            [HttpMethods.Get, HttpMethods.Head],
-            GetDeletes
-        );
-        endpoints.MapMethods(
+        // GET alone, for the reason given in CoreEndpointModule: ODS/API answers HEAD with a 405,
+        // so HEAD falls through to the terminals below rather than being mapped here.
+        endpoints.MapGet(BuildRoutePattern(routeQualifierSegments, multiTenancy, "deletes"), GetDeletes);
+        endpoints.MapGet(
             BuildRoutePattern(routeQualifierSegments, multiTenancy, "keyChanges"),
-            [HttpMethods.Get, HttpMethods.Head],
             GetKeyChanges
         );
 

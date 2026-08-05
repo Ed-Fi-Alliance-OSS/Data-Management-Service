@@ -8,7 +8,6 @@ using System.Net.Http;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
-using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
 using FluentAssertions;
@@ -489,16 +488,25 @@ public class CoreEndpointModuleTests
     public class Given_Other_Unmapped_Requests
     {
         /// <summary>
-        /// HEAD reaches the GET handler rather than the method-not-allowed terminal. Left to the
-        /// terminal it would answer 405 while listing GET in its own Allow header, and RFC 9110
-        /// section 9.1 requires HEAD wherever GET is supported.
+        /// HEAD falls through to the method-not-allowed terminal rather than being answered by the
+        /// GET handler. RFC 9110 section 9.1 would have a general-purpose server support HEAD
+        /// wherever GET is supported, but ODS/API declares no HttpHead action and pins the
+        /// resulting 405 with an integration test, and this endpoint exists for ODS/API
+        /// compatibility. Mapping HEAD onto GET here would answer 200 where ODS/API answers 405.
         /// </summary>
         [TestCase("/data/ed-fi/schools", TestName = "Collection route")]
         [TestCase($"/data/ed-fi/schools/{ItemUuid}", TestName = "Item route")]
         [TestCase("/data/ed-fi/schools/deletes", TestName = "Tracked change route")]
-        public async Task It_answers_head_from_the_get_handler(string requestUrl)
+        public async Task It_answers_head_from_the_method_not_allowed_terminal(string requestUrl)
         {
             var apiService = FakeApiServiceAnsweringEveryVerb();
+            List<string> terminalMethodNames = [];
+            A.CallTo(() => apiService.MethodNotAllowed(A<FrontendRequest>._, A<string>._))
+                .Invokes((FrontendRequest _, string methodName) => terminalMethodNames.Add(methodName))
+                .Returns(Task.FromResult(FakeCoreMethodNotAllowedResponse()));
+            A.CallTo(() => apiService.MethodNotAllowedForTrackedChange(A<FrontendRequest>._, A<string>._))
+                .Invokes((FrontendRequest _, string methodName) => terminalMethodNames.Add(methodName))
+                .Returns(Task.FromResult(FakeCoreMethodNotAllowedResponse(allow: "GET")));
 
             await using var factory = CreateFactory(apiService);
             using var client = factory.CreateClient();
@@ -506,42 +514,12 @@ public class CoreEndpointModuleTests
 
             var response = await client.SendAsync(request);
 
-            // Status only, deliberately: TestServer does not implement Kestrel's HEAD body
-            // suppression, so any wire-body assertion here would describe the test host rather
-            // than the product.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            A.CallTo(() => apiService.MethodNotAllowed(A<FrontendRequest>._, A<string>._))
-                .MustNotHaveHappened();
-            A.CallTo(() => apiService.MethodNotAllowedForTrackedChange(A<FrontendRequest>._, A<string>._))
-                .MustNotHaveHappened();
-        }
-
-        /// <summary>
-        /// The etag served for a resource embeds the negotiated content coding (see VariantKey), so
-        /// a HEAD that negotiated identity where GET negotiated a compressed coding would return an
-        /// etag the client's follow-up conditional GET could never match.
-        /// </summary>
-        [Test]
-        public async Task It_negotiates_the_same_content_coding_for_head_as_for_get()
-        {
-            var apiService = A.Fake<IApiService>();
-            List<ResponseContentCoding> negotiated = [];
-            A.CallTo(() => apiService.Get(A<FrontendRequest>._))
-                .Invokes((FrontendRequest request) => negotiated.Add(request.ResponseContentCoding))
-                .Returns(Task.FromResult(FakeCoreOkResponse()));
-
-            await using var factory = CreateFactory(apiService);
-            using var client = factory.CreateClient();
-
-            foreach (var method in new[] { HttpMethod.Get, HttpMethod.Head })
-            {
-                using var request = new HttpRequestMessage(method, $"/data/ed-fi/schools/{ItemUuid}");
-                request.Headers.Add("Accept-Encoding", "gzip");
-                await client.SendAsync(request);
-            }
-
-            negotiated.Should().HaveCount(2);
-            negotiated[1].Should().Be(negotiated[0]);
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            // Core names the verb in the 405 body, the same way ODS/API does from
+            // context.Request.Method, so the real verb has to survive the hand-off.
+            terminalMethodNames.Should().Equal("HEAD");
+            A.CallTo(() => apiService.Get(A<FrontendRequest>._)).MustNotHaveHappened();
+            A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._)).MustNotHaveHappened();
         }
 
         [Test]

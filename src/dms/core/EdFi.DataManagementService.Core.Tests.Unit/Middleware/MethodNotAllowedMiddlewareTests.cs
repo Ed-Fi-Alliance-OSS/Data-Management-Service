@@ -194,6 +194,8 @@ public class MethodNotAllowedMiddlewareTests
         [TestCase("OPTIONS")]
         [TestCase("TRACE")]
         [TestCase("FOO")]
+        // HEAD is rejected rather than served, matching ODS/API, so it reaches this step too.
+        [TestCase("HEAD")]
         public async Task It_names_the_method_of_the_request_in_the_errors(string unsupportedMethodName)
         {
             RequestInfo requestInfo = RequestInfoFor(unsupportedMethodName, hasDocumentUuidSegment: false);
