@@ -114,7 +114,7 @@ public class CoerceDateTimesMiddlewareTests
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
 
@@ -224,7 +224,7 @@ public class CoerceDateTimesMiddlewareTests
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
 
@@ -306,7 +306,7 @@ public class CoerceDateTimesMiddlewareTests
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
 
@@ -384,7 +384,7 @@ public class CoerceDateTimesMiddlewareTests
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
 
@@ -481,7 +481,7 @@ public class CoerceDateTimesMiddlewareTests
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("simpleResources"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
 

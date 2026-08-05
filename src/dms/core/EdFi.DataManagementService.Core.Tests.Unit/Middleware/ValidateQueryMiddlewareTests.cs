@@ -189,7 +189,7 @@ public class ValidateQueryMiddlewareTests
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
             docRefContext.ProjectSchema =
@@ -340,7 +340,7 @@ public class ValidateQueryMiddlewareTests
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
             docRefContext.ProjectSchema =
@@ -426,7 +426,7 @@ public class ValidateQueryMiddlewareTests
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
             docRefContext.ProjectSchema =
@@ -505,7 +505,7 @@ public class ValidateQueryMiddlewareTests
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
             docRefContext.ProjectSchema =
@@ -584,7 +584,7 @@ public class ValidateQueryMiddlewareTests
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
             docRefContext.ProjectSchema =
@@ -672,7 +672,7 @@ public class ValidateQueryMiddlewareTests
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
             docRefContext.ProjectSchema =
@@ -771,7 +771,7 @@ public class ValidateQueryMiddlewareTests
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
             docRefContext.ProjectSchema =
@@ -999,7 +999,7 @@ public class ValidateQueryMiddlewareTests
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
             docRefContext.ProjectSchema =
@@ -1075,7 +1075,7 @@ public class ValidateQueryMiddlewareTests
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
             docRefContext.ProjectSchema =
@@ -1145,7 +1145,7 @@ public class ValidateQueryMiddlewareTests
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
             docRefContext.ProjectSchema =

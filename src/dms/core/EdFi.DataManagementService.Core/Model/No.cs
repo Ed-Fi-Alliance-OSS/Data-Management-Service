@@ -59,7 +59,7 @@ internal static class No
     public static readonly PathComponents PathComponents = new(
         ProjectEndpointName: new(""),
         EndpointName: new(""),
-        DocumentUuid: DocumentUuid
+        Operation: ResourcePathOperation.Collection.Instance
     );
 
     /// <summary>

@@ -69,7 +69,7 @@ public class ParseTrackedChangePathMiddlewareTests
             _requestInfo.PathComponents.ProjectEndpointName.Value.Should().Be("ed-fi");
             _requestInfo.PathComponents.EndpointName.Value.Should().Be("schools");
             _requestInfo.PathComponents.DocumentUuid.Should().Be(No.DocumentUuid);
-            _requestInfo.PathComponents.HasDocumentUuidSegment.Should().BeFalse();
+            _requestInfo.PathComponents.Operation.Should().BeOfType<ResourcePathOperation.Collection>();
         }
 
         [Test]
@@ -114,7 +114,7 @@ public class ParseTrackedChangePathMiddlewareTests
             _requestInfo.PathComponents.ProjectEndpointName.Value.Should().Be("ed-fi");
             _requestInfo.PathComponents.EndpointName.Value.Should().Be("schools");
             _requestInfo.PathComponents.DocumentUuid.Should().Be(No.DocumentUuid);
-            _requestInfo.PathComponents.HasDocumentUuidSegment.Should().BeFalse();
+            _requestInfo.PathComponents.Operation.Should().BeOfType<ResourcePathOperation.Collection>();
         }
 
         [Test]

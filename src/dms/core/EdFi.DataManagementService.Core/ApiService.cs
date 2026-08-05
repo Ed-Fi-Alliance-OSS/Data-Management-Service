@@ -5,7 +5,6 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -451,6 +450,48 @@ internal class ApiService : IApiService
     }
 
     /// <summary>
+    /// Which GET pipeline serves a classified resource path.
+    /// </summary>
+    internal enum GetPipelineKind
+    {
+        Query,
+        GetById,
+    }
+
+    /// <summary>
+    /// Selects the GET pipeline from the shared path classification, so dispatch and the pipeline's
+    /// own path parsing can never recognize a path differently.
+    /// </summary>
+    /// <remarks>
+    /// Paths that are not recognized are routed to the pipeline that already served them, and every
+    /// one of those short-circuits in ParsePathMiddleware before any pipeline-specific step, so the
+    /// served response does not depend on this choice.
+    /// </remarks>
+    internal static GetPipelineKind SelectGetPipelineKind(ResourcePathParseResult parseResult) =>
+        parseResult switch
+        {
+            ResourcePathParseResult.Recognized
+            {
+                PathComponents.Operation: ResourcePathOperation.Collection,
+            } => GetPipelineKind.Query,
+            ResourcePathParseResult.Recognized { PathComponents.Operation: ResourcePathOperation.ById } =>
+                GetPipelineKind.GetById,
+            // The partitions pipeline does not exist yet. Until it does, a recognized partitions
+            // operation is dispatched to the pipeline whose path parsing answers it with the
+            // invalid-identifier response, so no incomplete partitions surface is exposed.
+            ResourcePathParseResult.Recognized
+            {
+                PathComponents.Operation: ResourcePathOperation.Partitions,
+            } => GetPipelineKind.GetById,
+            ResourcePathParseResult.InvalidIdentifier => GetPipelineKind.GetById,
+            ResourcePathParseResult.Unmatched => GetPipelineKind.Query,
+            _ => throw new InvalidOperationException(
+                $"Unhandled resource path parse result '{parseResult.GetType().Name}'. A new parse "
+                    + "result must choose its GET pipeline explicitly."
+            ),
+        };
+
+    /// <summary>
     /// DMS entry point for all API GET requests
     /// </summary>
     public async Task<IFrontendResponse> Get(FrontendRequest frontendRequest)
@@ -458,23 +499,13 @@ internal class ApiService : IApiService
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
         RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, scope.ServiceProvider);
 
-        Match match = UtilityService.PathExpressionRegex().Match(frontendRequest.Path);
-
-        string documentUuid = string.Empty;
-
-        if (match.Success)
+        PipelineProvider steps = SelectGetPipelineKind(ResourcePathParser.Parse(frontendRequest.Path)) switch
         {
-            documentUuid = match.Groups["documentUuid"].Value;
-        }
+            GetPipelineKind.GetById => _getByIdSteps.Value,
+            _ => _querySteps.Value,
+        };
 
-        if (documentUuid != string.Empty)
-        {
-            await _getByIdSteps.Value.Run(requestInfo);
-        }
-        else
-        {
-            await _querySteps.Value.Run(requestInfo);
-        }
+        await steps.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
 

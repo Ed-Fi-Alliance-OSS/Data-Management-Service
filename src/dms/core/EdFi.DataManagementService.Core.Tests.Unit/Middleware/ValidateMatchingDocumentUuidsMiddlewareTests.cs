@@ -51,7 +51,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicweeks"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
             _requestInfo.ProjectSchema = _requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
@@ -103,7 +103,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 _requestInfo.ParsedBody = JsonNode.Parse(jsonData)!;
                 _requestInfo.PathComponents = _requestInfo.PathComponents with
                 {
-                    DocumentUuid = new DocumentUuid(new(id)),
+                    Operation = new ResourcePathOperation.ById(new DocumentUuid(new(id))),
                 };
 
                 await Middleware().Execute(_requestInfo, Next());
@@ -156,7 +156,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 _requestInfo.ParsedBody = JsonNode.Parse(jsonData)!;
                 _requestInfo.PathComponents = _requestInfo.PathComponents with
                 {
-                    DocumentUuid = new DocumentUuid(new(differentId)),
+                    Operation = new ResourcePathOperation.ById(new DocumentUuid(new(differentId))),
                 };
 
                 await Middleware().Execute(_requestInfo, Next());
@@ -217,7 +217,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 _requestInfo.ParsedBody = JsonNode.Parse(jsonData)!;
                 _requestInfo.PathComponents = _requestInfo.PathComponents with
                 {
-                    DocumentUuid = new DocumentUuid(new(id)),
+                    Operation = new ResourcePathOperation.ById(new DocumentUuid(new(id))),
                 };
 
                 await Middleware().Execute(_requestInfo, Next());
@@ -278,7 +278,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 _requestInfo.ParsedBody = JsonNode.Parse(jsonData)!;
                 _requestInfo.PathComponents = _requestInfo.PathComponents with
                 {
-                    DocumentUuid = new DocumentUuid(new(id)),
+                    Operation = new ResourcePathOperation.ById(new DocumentUuid(new(id))),
                 };
 
                 await Middleware().Execute(_requestInfo, Next());

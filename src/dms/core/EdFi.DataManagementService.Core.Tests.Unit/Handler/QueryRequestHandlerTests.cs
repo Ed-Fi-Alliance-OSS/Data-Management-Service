@@ -272,9 +272,9 @@ public class QueryRequestHandlerTests
             };
             _requestInfo.ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []);
             _requestInfo.PathComponents = new PathComponents(
-                new ProjectEndpointName("ed-fi"),
-                new EndpointName("schools"),
-                new DocumentUuid()
+                ProjectEndpointName: new ProjectEndpointName("ed-fi"),
+                EndpointName: new EndpointName("schools"),
+                Operation: ResourcePathOperation.Collection.Instance
             );
             _requestInfo.ResourceInfo = new ResourceInfo(
                 ProjectName: new ProjectName("Ed-Fi"),

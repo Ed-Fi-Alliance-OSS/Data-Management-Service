@@ -86,7 +86,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 PathComponents = new(
                     ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("schools"),
-                    DocumentUuid: No.DocumentUuid
+                    Operation: ResourcePathOperation.Collection.Instance
                 ),
             };
             _requestInfo.ProjectSchema = _requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(

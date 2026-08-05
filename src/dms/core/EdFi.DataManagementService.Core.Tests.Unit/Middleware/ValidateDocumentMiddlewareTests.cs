@@ -102,7 +102,7 @@ public class ValidateDocumentMiddlewareTests
             PathComponents = new(
                 ProjectEndpointName: new("ed-fi"),
                 EndpointName: new("schools"),
-                DocumentUuid: No.DocumentUuid
+                Operation: ResourcePathOperation.Collection.Instance
             ),
         };
         _requestInfo.ProjectSchema = _requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(

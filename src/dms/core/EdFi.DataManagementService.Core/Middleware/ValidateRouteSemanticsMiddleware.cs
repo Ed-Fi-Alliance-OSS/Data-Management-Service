@@ -23,13 +23,13 @@ internal class ValidateRouteSemanticsMiddleware(ILogger _logger) : IPipelineStep
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        string? error = (requestInfo.Method, requestInfo.PathComponents.HasDocumentUuidSegment) switch
+        string? error = (requestInfo.Method, requestInfo.PathComponents.Operation) switch
         {
-            (RequestMethod.DELETE, false) =>
+            (RequestMethod.DELETE, not ResourcePathOperation.ById) =>
                 "Resource collections cannot be deleted. To delete a specific item, use DELETE and include the 'id' in the route.",
-            (RequestMethod.PUT, false) =>
+            (RequestMethod.PUT, not ResourcePathOperation.ById) =>
                 "Resource collections cannot be replaced. To 'upsert' an item in the collection, use POST. To update a specific item, use PUT and include the 'id' in the route.",
-            (RequestMethod.POST, true) =>
+            (RequestMethod.POST, ResourcePathOperation.ById) =>
                 "Resource items can only be updated using PUT. To 'upsert' an item in the resource collection using POST, remove the 'id' from the route.",
             _ => null,
         };

@@ -58,8 +58,7 @@ internal sealed class ParseTrackedChangePathMiddleware(ILogger _logger) : IPipel
         requestInfo.PathComponents = new(
             ProjectEndpointName: new(match.Groups["projectNamespace"].Value.ToLowerInvariant()),
             EndpointName: new(match.Groups["endpointName"].Value),
-            DocumentUuid: No.DocumentUuid,
-            HasDocumentUuidSegment: false
+            Operation: ResourcePathOperation.Collection.Instance
         );
         requestInfo.ChangeQueryOperation = operation.Value;
 

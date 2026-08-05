@@ -114,7 +114,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     PathComponents = new(
                         ProjectEndpointName: new("ed-fi"),
                         EndpointName: new("academicWeeks"),
-                        DocumentUuid: No.DocumentUuid
+                        Operation: ResourcePathOperation.Collection.Instance
                     ),
                 };
 
@@ -214,7 +214,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     PathComponents = new(
                         ProjectEndpointName: new("ed-fi"),
                         EndpointName: new("academicWeeks"),
-                        DocumentUuid: No.DocumentUuid
+                        Operation: ResourcePathOperation.Collection.Instance
                     ),
                 };
 
@@ -293,7 +293,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     PathComponents = new(
                         ProjectEndpointName: new("ed-fi"),
                         EndpointName: new("academicWeeks"),
-                        DocumentUuid: No.DocumentUuid
+                        Operation: ResourcePathOperation.Collection.Instance
                     ),
                 };
 
@@ -372,7 +372,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     PathComponents = new(
                         ProjectEndpointName: new("ed-fi"),
                         EndpointName: new("academicWeeks"),
-                        DocumentUuid: No.DocumentUuid
+                        Operation: ResourcePathOperation.Collection.Instance
                     ),
                 };
 
@@ -452,7 +452,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     PathComponents = new(
                         ProjectEndpointName: new("ed-fi"),
                         EndpointName: new("academicWeeks"),
-                        DocumentUuid: No.DocumentUuid
+                        Operation: ResourcePathOperation.Collection.Instance
                     ),
                 };
 
@@ -540,7 +540,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     PathComponents = new(
                         ProjectEndpointName: new("ed-fi"),
                         EndpointName: new("academicWeeks"),
-                        DocumentUuid: No.DocumentUuid
+                        Operation: ResourcePathOperation.Collection.Instance
                     ),
                 };
 
