@@ -561,7 +561,19 @@ public class Given_Relational_Write_Current_State_Loader
 
         public DbTransaction Transaction { get; } = transaction;
 
-        public DbCommand CreateCommand(RelationalCommand command) => throw new NotSupportedException();
+        /// <summary>
+        /// Mirrors the production session: builds a command bound to this session's connection and
+        /// transaction. The hydration batch now routes through here, so this can no longer throw.
+        /// </summary>
+        public DbCommand CreateCommand(RelationalCommand command)
+        {
+            ArgumentNullException.ThrowIfNull(command);
+
+            var dbCommand = Connection.CreateCommand();
+            dbCommand.Transaction = Transaction;
+            dbCommand.CommandText = command.CommandText;
+            return dbCommand;
+        }
 
         public Task CommitAsync(CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
@@ -575,19 +587,17 @@ public class Given_Relational_Write_Current_State_Loader
     private sealed class HydrationBackedSessionDocumentHydrator : ISessionDocumentHydrator
     {
         public Task<HydratedPage> HydrateAsync(
-            DbConnection connection,
-            DbTransaction transaction,
+            IRelationalWriteSession writeSession,
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
             HydrationExecutionOptions executionOptions,
             CancellationToken cancellationToken = default
         ) =>
             HydrationExecutor.ExecuteAsync(
-                connection,
+                batchSql => writeSession.CreateCommand(new RelationalCommand(batchSql)),
                 plan,
                 keyset,
                 SqlDialect.Pgsql,
-                transaction,
                 executionOptions,
                 cancellationToken
             );
@@ -599,8 +609,7 @@ public class Given_Relational_Write_Current_State_Loader
         public HydrationExecutionOptions? CapturedExecutionOptions { get; private set; }
 
         public Task<HydratedPage> HydrateAsync(
-            DbConnection connection,
-            DbTransaction transaction,
+            IRelationalWriteSession writeSession,
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
             HydrationExecutionOptions executionOptions,
@@ -608,14 +617,7 @@ public class Given_Relational_Write_Current_State_Loader
         )
         {
             CapturedExecutionOptions = executionOptions;
-            return inner.HydrateAsync(
-                connection,
-                transaction,
-                plan,
-                keyset,
-                executionOptions,
-                cancellationToken
-            );
+            return inner.HydrateAsync(writeSession, plan, keyset, executionOptions, cancellationToken);
         }
     }
 }

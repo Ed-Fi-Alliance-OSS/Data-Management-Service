@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
-using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 
@@ -111,48 +110,5 @@ internal static class RelationalWriteGuardedNoOp
             var bindingIndex = RelationalWriteMergeSupport.FindBindingIndex(tableWritePlan, columnName);
             builder.Add(values[bindingIndex]);
         }
-    }
-}
-
-internal interface IRelationalWriteFreshnessChecker
-{
-    Task<bool> IsCurrentAsync(
-        RelationalWriteExecutorRequest request,
-        RelationalWriteTargetContext.ExistingDocument targetContext,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken = default
-    );
-}
-
-internal sealed class RelationalWriteFreshnessChecker : IRelationalWriteFreshnessChecker
-{
-    public async Task<bool> IsCurrentAsync(
-        RelationalWriteExecutorRequest request,
-        RelationalWriteTargetContext.ExistingDocument targetContext,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(targetContext);
-        ArgumentNullException.ThrowIfNull(writeSession);
-
-        await using var command = writeSession.CreateCommand(
-            RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(
-                request.MappingSet.Key.Dialect,
-                targetContext.DocumentId
-            )
-        );
-
-        var scalarResult = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-
-        if (scalarResult is null or DBNull)
-        {
-            return false;
-        }
-
-        var currentContentVersion = Convert.ToInt64(scalarResult, CultureInfo.InvariantCulture);
-
-        return currentContentVersion == targetContext.ObservedContentVersion;
     }
 }

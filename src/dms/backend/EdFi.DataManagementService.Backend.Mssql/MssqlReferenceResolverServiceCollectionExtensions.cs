@@ -75,11 +75,22 @@ internal sealed class MssqlReferenceResolverAdapterFactory(IRelationalCommandExe
         return new MssqlReferenceResolverAdapter(_commandExecutor);
     }
 
-    public IReferenceResolverAdapter CreateSessionAdapter(DbConnection connection, DbTransaction transaction)
+    public IReferenceResolverAdapter CreateSessionAdapter(IRelationalCommandExecutor commandExecutor)
     {
-        return new MssqlReferenceResolverAdapter(
-            new SessionRelationalCommandExecutor(connection, transaction)
-        );
+        ArgumentNullException.ThrowIfNull(commandExecutor);
+
+        return new MssqlReferenceResolverAdapter(commandExecutor);
+    }
+
+    public RelationalCommand? TryBuildSessionLookupCommand(ReferenceLookupRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // The bulk strategy binds a table-valued parameter, which cannot be renamed into a composite
+        // command's allocator-owned parameter set; those requests fall back to the standalone adapter.
+        return MssqlReferenceLookupSmallListStrategy.CanResolve(request.ReferentialIds)
+            ? MssqlReferenceLookupSmallListStrategy.BuildCommand(request)
+            : null;
     }
 }
 
@@ -141,20 +152,22 @@ internal sealed class MssqlDocumentHydrator : IDocumentHydrator
 internal sealed class MssqlSessionDocumentHydrator : ISessionDocumentHydrator
 {
     public Task<HydratedPage> HydrateAsync(
-        DbConnection connection,
-        DbTransaction transaction,
+        IRelationalWriteSession writeSession,
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
         HydrationExecutionOptions executionOptions,
         CancellationToken cancellationToken = default
-    ) =>
-        HydrationExecutor.ExecuteAsync(
-            connection,
+    )
+    {
+        ArgumentNullException.ThrowIfNull(writeSession);
+
+        return HydrationExecutor.ExecuteAsync(
+            batchSql => writeSession.CreateCommand(new RelationalCommand(batchSql)),
             plan,
             keyset,
             SqlDialect.Mssql,
-            transaction,
             executionOptions,
             cancellationToken
         );
+    }
 }

@@ -73,7 +73,7 @@ internal sealed class MssqlRelationalWriteSessionFactory : IRelationalWriteSessi
             var transaction = await connection
                 .BeginTransactionAsync(_isolationLevel, cancellationToken)
                 .ConfigureAwait(false);
-            return new RelationalWriteSession(connection, transaction);
+            return new RelationalWriteSession(connection, transaction, MssqlTransactionStateProbe.Instance);
         }
         catch
         {

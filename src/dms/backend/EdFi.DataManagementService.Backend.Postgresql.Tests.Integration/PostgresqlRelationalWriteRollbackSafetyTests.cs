@@ -112,6 +112,10 @@ file sealed class FailOnAlignedExtensionAddressInsertRelationalWriteSession(
     public Task RollbackAsync(CancellationToken cancellationToken = default) =>
         _innerSession.RollbackAsync(cancellationToken);
 
+    // Forwarded so the wrapped session keeps the rollback tolerance the production session has.
+    public void ReportDatabaseFailure(DbException exception) =>
+        _innerSession.ReportDatabaseFailure(exception);
+
     public ValueTask DisposeAsync() => _innerSession.DisposeAsync();
 }
 
@@ -351,12 +355,19 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
         ),
     ];
 
+    // Ordered by where each statement appears in the command text, not by the snippet table's order: the
+    // write categories now share one co-batched command, so statement position inside it is what carries
+    // the production write order the shared assertion checks.
     private IReadOnlyList<NoProfileAtomicRollbackAssertions.RelationalWriteStep> RecordedWriteSteps() =>
         _commandRecorder
             .CommandTexts.SelectMany(commandText =>
                 WriteStepSnippets
-                    .Where(entry => commandText.Contains(entry.Snippet, StringComparison.Ordinal))
-                    .Select(entry => entry.Step)
+                    .Select(entry =>
+                        (entry.Step, Position: commandText.IndexOf(entry.Snippet, StringComparison.Ordinal))
+                    )
+                    .Where(match => match.Position >= 0)
+                    .OrderBy(match => match.Position)
+                    .Select(match => match.Step)
             )
             .ToArray();
 }

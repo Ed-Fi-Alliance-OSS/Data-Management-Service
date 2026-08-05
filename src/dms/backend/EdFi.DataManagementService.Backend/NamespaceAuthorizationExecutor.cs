@@ -151,7 +151,11 @@ internal sealed class NamespaceAuthorizationExecutor(
         }
     }
 
-    private static RelationalCommand BuildCommand(
+    /// <summary>
+    /// Builds the executable command for a compiled plan. Internal so composite emission can reuse the
+    /// exact standalone command — SQL and parameter binding — rather than duplicating either.
+    /// </summary>
+    internal static RelationalCommand BuildCommand(
         NamespaceAuthorizationSqlPlan sqlPlan,
         NamespaceAuthorizationExecutionRequest request
     )

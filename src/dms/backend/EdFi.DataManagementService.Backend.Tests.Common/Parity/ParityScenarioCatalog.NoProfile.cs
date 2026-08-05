@@ -191,10 +191,10 @@ public static partial class ParityScenarioCatalog
             "It_returns_update_success_and_bumps_content_version_for_a_full_surface_reorder",
             "NoProfileCollectionReorderScenarios.AssertUpdateSuccessAndContentVersionBump"
         ),
-        // --- NoProfileGuardedNoOp (10 variants) ---------------------------------------------
+        // --- NoProfileGuardedNoOp (6 variants) ----------------------------------------------
         NoProfile(
             "NoProfileGuardedNoOp",
-            "An unchanged PUT compares the post-merge rowset to current state and skips DML, revalidating freshness before returning no-op: the full persisted rowset (including referential identity), ContentVersion, every stored update-tracking stamp — document and root-table — and the engine's max ChangeVersion allocation all stay unchanged.",
+            "An unchanged PUT compares the post-merge rowset to current state and skips DML, relying on the capture lock held from observation through commit rather than a freshness re-read: the full persisted rowset (including referential identity), ContentVersion, every stored update-tracking stamp — document and root-table — and the engine's max ChangeVersion allocation all stay unchanged.",
             ProductionBoundary.GuardedNoOp,
             "RelationalWriteGuardedNoOpTests",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
@@ -205,8 +205,8 @@ public static partial class ParityScenarioCatalog
             ],
             sharedEntryPoint: "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
                 + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchanged",
-            boundaryDetail: "RelationalWriteGuardedNoOp + IRelationalWriteFreshnessChecker/IRelationalWriteCurrentStateLoader",
-            notes: "This row proves only the unchanged-PUT mechanic its own location executes. POST-as-update, post-reorder, stale-compare, current-state-refresh, and commit-window race semantics (including retained concurrent content stamps) are decomposed into the explicit NoProfileGuardedNoOp/* variant rows with their own entry points."
+            boundaryDetail: "RelationalWriteGuardedNoOp + the composite capture lock proof (ValidateGuardedNoOpLockProof)",
+            notes: "This row proves only the unchanged-PUT mechanic its own location executes. POST-as-update, post-reorder, and competing-uncommitted-bump semantics (including retained concurrent content stamps) are decomposed into the explicit NoProfileGuardedNoOp/* variant rows with their own entry points."
         ),
         GuardedNoOp(
             "Put",
@@ -231,30 +231,6 @@ public static partial class ParityScenarioCatalog
                 + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchanged"
         ),
         GuardedNoOp(
-            "PutCurrentStateRefresh",
-            "Given_A_Postgresql_Relational_Guarded_No_Op_Put_When_Current_State_Refreshes_Content_Version",
-            "Given_A_Mssql_Relational_Guarded_No_Op_Put_When_Current_State_Refreshes_Content_Version",
-            [
-                "It_returns_update_success_without_a_repository_retry_when_current_state_refreshes_the_content_version",
-                "It_preserves_rowsets_and_avoids_an_extra_content_version_bump_during_the_guarded_no_op_put",
-            ],
-            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
-                + " + NoProfileGuardedNoOpScenarios.AssertCurrentStateRefreshObservations"
-                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
-        ),
-        GuardedNoOp(
-            "PostAsUpdateCurrentStateRefresh",
-            "Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_When_Current_State_Refreshes_Content_Version",
-            "Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_When_Current_State_Refreshes_Content_Version",
-            [
-                "It_returns_update_success_without_a_repository_retry_when_post_as_update_refreshes_current_state_freshness",
-                "It_preserves_rowsets_and_avoids_an_extra_content_version_bump_during_the_guarded_no_op_post_as_update",
-            ],
-            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome"
-                + " + NoProfileGuardedNoOpScenarios.AssertCurrentStateRefreshObservations"
-                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
-        ),
-        GuardedNoOp(
             "PutAfterReorder",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
             "Given_A_Mssql_Relational_Guarded_No_Op_Put_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
@@ -277,57 +253,35 @@ public static partial class ParityScenarioCatalog
                 + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedAfterReorder"
         ),
         GuardedNoOp(
-            "StalePut",
-            "Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
-            "Given_A_Mssql_Relational_Stale_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
+            "PutCompetingUncommittedBump",
+            "Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Competing_Uncommitted_Content_Version_Bump",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Put_With_A_Competing_Uncommitted_Content_Version_Bump",
             [
-                "It_retries_and_returns_update_success_after_the_no_op_compare_goes_stale",
-                "It_preserves_the_rowsets_but_keeps_the_concurrent_content_version_bump",
+                "It_blocks_the_capture_until_the_competing_transaction_commits",
+                "It_returns_update_success_and_keeps_the_competing_content_version_bump",
             ],
-            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
-                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
-        ),
-        GuardedNoOp(
-            "StalePostAsUpdate",
-            "Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
-            "Given_A_Mssql_Relational_Stale_Guarded_No_Op_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
-            [
-                "It_retries_and_returns_update_success_for_a_stale_post_as_update_no_op_compare",
-                "It_preserves_the_existing_rowsets_but_keeps_the_concurrent_content_version_bump",
-            ],
-            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome"
-                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
-        ),
-        GuardedNoOp(
-            "PutCommitWindowRace",
-            "Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Commit_Window_Race",
-            "Given_A_Mssql_Relational_Guarded_No_Op_Put_With_A_Commit_Window_Race",
-            [
-                "It_retries_the_no_op_after_the_commit_window_race_and_returns_update_success",
-                "It_preserves_rowsets_but_keeps_the_concurrent_content_version_bump",
-            ],
-            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
-                + " + NoProfileGuardedNoOpScenarios.AssertCommitWindowFreshnessObservations"
+            "NoProfileGuardedNoOpScenarios.AssertCaptureBlockedUntilCompetingCommit"
+                + " + NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
                 + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump",
             diff: new DialectDifference(
-                "PostgreSQL snapshot reads let the first freshness check run while the competing bump is still uncommitted, so its twin starts the competing transaction before the repository call; SQL Server READ COMMITTED locking reads would block the repository's initial document lookup on the competing X-lock, so its twin begins the competing transaction inside the first freshness-check invocation and the inner freshness read blocks on that X-lock until the competing commit releases.",
-                "Commit-window scheduling and blocking behavior differ by dialect; behavioral parity is the unchanged observable outcome — freshness observations [false, true], exactly one retry, and the competing committed content version and stamp preserved."
+                "PostgreSQL takes the capture lock with FOR UPDATE inside the capture CTE; SQL Server takes it with WITH (UPDLOCK, HOLDLOCK, ROWLOCK) on the capture SELECT.",
+                "The locking construct differs by dialect; behavioral parity is the observable outcome — the capture blocks until the competing transaction commits, then observes the committed content version and still returns a guarded no-op."
             )
         ),
         GuardedNoOp(
-            "PostAsUpdateCommitWindowRace",
-            "Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_Commit_Window_Race",
-            "Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_With_A_Commit_Window_Race",
+            "PostAsUpdateCompetingUncommittedBump",
+            "Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_Competing_Uncommitted_Content_Version_Bump",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_With_A_Competing_Uncommitted_Content_Version_Bump",
             [
-                "It_retries_the_no_op_after_the_commit_window_race_and_preserves_the_existing_document",
-                "It_preserves_existing_rowsets_but_keeps_the_concurrent_content_version_bump",
+                "It_blocks_the_capture_until_the_competing_transaction_commits",
+                "It_returns_update_success_and_preserves_the_existing_document_with_the_competing_content_version_bump",
             ],
-            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome"
-                + " + NoProfileGuardedNoOpScenarios.AssertCommitWindowFreshnessObservations"
+            "NoProfileGuardedNoOpScenarios.AssertCaptureBlockedUntilCompetingCommit"
+                + " + NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome"
                 + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump",
             diff: new DialectDifference(
-                "PostgreSQL snapshot reads let the first freshness check run while the competing bump is still uncommitted, so its twin starts the competing transaction before the repository call; SQL Server READ COMMITTED locking reads would block the repository's initial document lookup on the competing X-lock, so its twin begins the competing transaction inside the first freshness-check invocation and the inner freshness read blocks on that X-lock until the competing commit releases.",
-                "Commit-window scheduling and blocking behavior differ by dialect; behavioral parity is the unchanged observable outcome — freshness observations [false, true], exactly one retry, and the competing committed content version and stamp preserved."
+                "PostgreSQL takes the capture lock with FOR UPDATE inside the capture CTE; SQL Server takes it with WITH (UPDLOCK, HOLDLOCK, ROWLOCK) on the capture SELECT.",
+                "The locking construct differs by dialect; behavioral parity is the observable outcome — the capture blocks until the competing transaction commits, then observes the committed content version and still returns a guarded no-op."
             )
         ),
         // --- NoProfileMultiBatchCollection + variants ---------------------------------------

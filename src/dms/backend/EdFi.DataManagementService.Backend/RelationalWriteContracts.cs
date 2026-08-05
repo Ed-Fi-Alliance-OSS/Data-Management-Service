@@ -555,6 +555,71 @@ public sealed record CandidateAttachedAlignedScopeData
 }
 
 /// <summary>
+/// The write-input invariants that do not depend on a resolved target document, shared by the
+/// pre-resolution <see cref="RelationalWriteExecutorInput"/> and the resolved
+/// <see cref="RelationalWriteExecutorRequest"/>. Both validate them, so an input cannot reach the
+/// database before failing and the resolved request stays independently valid; keeping the rules
+/// here is what stops the two contracts from drifting apart.
+/// </summary>
+internal static class RelationalWriteInputValidation
+{
+    public static void ValidateOperationTargetPairing(
+        RelationalWriteOperationKind operationKind,
+        RelationalWriteTargetRequest targetRequest
+    )
+    {
+        if (
+            (operationKind, targetRequest)
+            is not
+                (RelationalWriteOperationKind.Post, RelationalWriteTargetRequest.Post)
+                and not
+                (RelationalWriteOperationKind.Put, RelationalWriteTargetRequest.Put)
+        )
+        {
+            throw new ArgumentException(
+                $"{nameof(targetRequest)} must match relational write operation '{operationKind}'.",
+                nameof(targetRequest)
+            );
+        }
+    }
+
+    public static void ValidatePlanAgreement(
+        MappingSet mappingSet,
+        ResourceWritePlan writePlan,
+        ResourceReadPlan? existingDocumentReadPlan,
+        ReferenceResolverRequest referenceResolutionRequest
+    )
+    {
+        if (
+            existingDocumentReadPlan is not null
+            && existingDocumentReadPlan.Model.Resource != writePlan.Model.Resource
+        )
+        {
+            throw new ArgumentException(
+                $"{nameof(existingDocumentReadPlan)} must target resource '{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}'.",
+                nameof(existingDocumentReadPlan)
+            );
+        }
+
+        if (!ReferenceEquals(mappingSet, referenceResolutionRequest.MappingSet))
+        {
+            throw new ArgumentException(
+                $"{nameof(referenceResolutionRequest)} must reference the same mapping set instance supplied to the executor request.",
+                nameof(referenceResolutionRequest)
+            );
+        }
+
+        if (referenceResolutionRequest.RequestResource != writePlan.Model.Resource)
+        {
+            throw new ArgumentException(
+                $"{nameof(referenceResolutionRequest)} must target resource '{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}'.",
+                nameof(referenceResolutionRequest)
+            );
+        }
+    }
+}
+
+/// <summary>
 /// Input contract for executor-owned relational write orchestration.
 /// </summary>
 public sealed record RelationalWriteExecutorRequest
@@ -590,20 +655,10 @@ public sealed record RelationalWriteExecutorRequest
             referenceResolutionRequest ?? throw new ArgumentNullException(nameof(referenceResolutionRequest));
         TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
 
-        if (
-            (OperationKind, TargetRequest)
-            is not
-                (RelationalWriteOperationKind.Post, RelationalWriteTargetRequest.Post)
-                and not
-                (RelationalWriteOperationKind.Put, RelationalWriteTargetRequest.Put)
-        )
-        {
-            throw new ArgumentException(
-                $"{nameof(targetRequest)} must match relational write operation '{OperationKind}'.",
-                nameof(targetRequest)
-            );
-        }
+        RelationalWriteInputValidation.ValidateOperationTargetPairing(OperationKind, TargetRequest);
 
+        // The only invariant that needs a resolved target, so it stays here rather than in the shared
+        // pre-target validation.
         if (
             TargetContext is RelationalWriteTargetContext.CreateNew
             && OperationKind != RelationalWriteOperationKind.Post
@@ -615,32 +670,12 @@ public sealed record RelationalWriteExecutorRequest
             );
         }
 
-        if (
-            ExistingDocumentReadPlan is not null
-            && ExistingDocumentReadPlan.Model.Resource != WritePlan.Model.Resource
-        )
-        {
-            throw new ArgumentException(
-                $"{nameof(existingDocumentReadPlan)} must target resource '{RelationalWriteSupport.FormatResource(WritePlan.Model.Resource)}'.",
-                nameof(existingDocumentReadPlan)
-            );
-        }
-
-        if (!ReferenceEquals(MappingSet, ReferenceResolutionRequest.MappingSet))
-        {
-            throw new ArgumentException(
-                $"{nameof(referenceResolutionRequest)} must reference the same mapping set instance supplied to the executor request.",
-                nameof(referenceResolutionRequest)
-            );
-        }
-
-        if (ReferenceResolutionRequest.RequestResource != WritePlan.Model.Resource)
-        {
-            throw new ArgumentException(
-                $"{nameof(referenceResolutionRequest)} must target resource '{RelationalWriteSupport.FormatResource(WritePlan.Model.Resource)}'.",
-                nameof(referenceResolutionRequest)
-            );
-        }
+        RelationalWriteInputValidation.ValidatePlanAgreement(
+            MappingSet,
+            WritePlan,
+            ExistingDocumentReadPlan,
+            ReferenceResolutionRequest
+        );
 
         ProfileWriteContext = profileWriteContext;
         WritePrecondition = writePrecondition ?? new WritePrecondition.None();
@@ -745,6 +780,139 @@ public sealed record RelationalWriteExecutorRequest
     /// selection inside the executor's write session.
     /// </summary>
     internal PostRelationshipAuthorizationPlans? PostRelationshipAuthorizationPlans { get; init; }
+}
+
+/// <summary>
+/// Input contract for executor-owned relational write orchestration before the target document is
+/// known. Carries every executor input except the resolved target context, which the executor
+/// obtains from its own lookup inside the open write session so the observation and the write share
+/// one transaction. <see cref="Resolve"/> is the only way to reach the fully resolved
+/// <see cref="RelationalWriteExecutorRequest"/>, which remains the single place cross-field write
+/// input validation lives.
+/// </summary>
+public sealed record RelationalWriteExecutorInput
+{
+    public RelationalWriteExecutorInput(
+        MappingSet mappingSet,
+        RelationalWriteOperationKind operationKind,
+        RelationalWriteTargetRequest targetRequest,
+        ResourceWritePlan writePlan,
+        ResourceReadPlan? existingDocumentReadPlan,
+        JsonNode selectedBody,
+        bool allowIdentityUpdates,
+        TraceId traceId,
+        ReferenceResolverRequest referenceResolutionRequest,
+        BackendProfileWriteContext? profileWriteContext = null,
+        WritePrecondition? writePrecondition = null,
+        RelationshipAuthorizationResult? storedRelationshipAuthorization = null,
+        RelationshipAuthorizationResult? proposedRelationshipAuthorization = null,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null
+    )
+    {
+        MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
+        OperationKind = operationKind;
+        TargetRequest = targetRequest ?? throw new ArgumentNullException(nameof(targetRequest));
+        WritePlan = writePlan ?? throw new ArgumentNullException(nameof(writePlan));
+        ExistingDocumentReadPlan = existingDocumentReadPlan;
+        SelectedBody = selectedBody ?? throw new ArgumentNullException(nameof(selectedBody));
+        AllowIdentityUpdates = allowIdentityUpdates;
+        TraceId = traceId;
+        ReferenceResolutionRequest =
+            referenceResolutionRequest ?? throw new ArgumentNullException(nameof(referenceResolutionRequest));
+
+        // Every invariant that does not need a resolved target is enforced here, so an invalid input
+        // cannot open a write session or issue a target lookup before failing.
+        RelationalWriteInputValidation.ValidateOperationTargetPairing(OperationKind, TargetRequest);
+        RelationalWriteInputValidation.ValidatePlanAgreement(
+            MappingSet,
+            WritePlan,
+            ExistingDocumentReadPlan,
+            ReferenceResolutionRequest
+        );
+
+        ProfileWriteContext = profileWriteContext;
+        WritePrecondition = writePrecondition ?? new WritePrecondition.None();
+        StoredRelationshipAuthorization = storedRelationshipAuthorization;
+        ProposedRelationshipAuthorization = proposedRelationshipAuthorization;
+        StoredNamespaceAuthorization = storedNamespaceAuthorization;
+        ProposedNamespaceAuthorization = proposedNamespaceAuthorization;
+    }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.MappingSet"/>
+    public MappingSet MappingSet { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.OperationKind"/>
+    public RelationalWriteOperationKind OperationKind { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.TargetRequest"/>
+    public RelationalWriteTargetRequest TargetRequest { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.WritePlan"/>
+    public ResourceWritePlan WritePlan { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.ExistingDocumentReadPlan"/>
+    public ResourceReadPlan? ExistingDocumentReadPlan { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.SelectedBody"/>
+    public JsonNode SelectedBody { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.AllowIdentityUpdates"/>
+    public bool AllowIdentityUpdates { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.TraceId"/>
+    public TraceId TraceId { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.ReferenceResolutionRequest"/>
+    public ReferenceResolverRequest ReferenceResolutionRequest { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.ProfileWriteContext"/>
+    public BackendProfileWriteContext? ProfileWriteContext { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.WritePrecondition"/>
+    public WritePrecondition WritePrecondition { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.StoredRelationshipAuthorization"/>
+    public RelationshipAuthorizationResult? StoredRelationshipAuthorization { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.ProposedRelationshipAuthorization"/>
+    public RelationshipAuthorizationResult? ProposedRelationshipAuthorization { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.StoredNamespaceAuthorization"/>
+    public RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.ProposedNamespaceAuthorization"/>
+    public RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.PostRelationshipAuthorizationPlans"/>
+    internal PostRelationshipAuthorizationPlans? PostRelationshipAuthorizationPlans { get; init; }
+
+    /// <summary>
+    /// Produces the fully resolved executor request for a target the executor observed inside its
+    /// write session. All cross-field validation runs in the resolved request's constructor.
+    /// </summary>
+    public RelationalWriteExecutorRequest Resolve(RelationalWriteTargetContext targetContext) =>
+        new(
+            MappingSet,
+            OperationKind,
+            TargetRequest,
+            WritePlan,
+            ExistingDocumentReadPlan,
+            SelectedBody,
+            AllowIdentityUpdates,
+            TraceId,
+            ReferenceResolutionRequest,
+            targetContext,
+            ProfileWriteContext,
+            WritePrecondition,
+            StoredRelationshipAuthorization,
+            ProposedRelationshipAuthorization,
+            StoredNamespaceAuthorization,
+            ProposedNamespaceAuthorization
+        )
+        {
+            PostRelationshipAuthorizationPlans = PostRelationshipAuthorizationPlans,
+        };
 }
 
 internal sealed record PostRelationshipAuthorizationPlans(
@@ -893,10 +1061,10 @@ public abstract record RelationalWriteExecutorResult
 public interface IRelationalWriteExecutor
 {
     /// <summary>
-    /// Executes the relational write.
+    /// Executes the relational write, resolving the target document inside the write session it opens.
     /// </summary>
     Task<RelationalWriteExecutorResult> ExecuteAsync(
-        RelationalWriteExecutorRequest request,
+        RelationalWriteExecutorInput input,
         CancellationToken cancellationToken = default
     );
 }

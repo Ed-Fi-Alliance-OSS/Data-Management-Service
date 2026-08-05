@@ -32,8 +32,7 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
             _requestResource,
             referentialId,
             candidateDocumentUuid,
-            writeSession.Connection,
-            writeSession.Transaction
+            ((IRelationalWriteSession)writeSession).CreateCommandExecutor()
         );
 
         result
@@ -64,8 +63,7 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
             _requestResource,
             referentialId,
             candidateDocumentUuid,
-            writeSession.Connection,
-            writeSession.Transaction
+            ((IRelationalWriteSession)writeSession).CreateCommandExecutor()
         );
 
         result
@@ -215,7 +213,29 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
 
         public DbTransaction Transaction { get; } = transaction;
 
-        public DbCommand CreateCommand(RelationalCommand command) => throw new NotSupportedException();
+        /// <summary>
+        /// Mirrors the production session so the in-session POST target lookup is created through
+        /// this seam rather than straight off the connection.
+        /// </summary>
+        public DbCommand CreateCommand(RelationalCommand command)
+        {
+            ArgumentNullException.ThrowIfNull(command);
+
+            var dbCommand = Connection.CreateCommand();
+            dbCommand.Transaction = Transaction;
+            dbCommand.CommandText = command.CommandText;
+
+            foreach (var parameter in command.Parameters)
+            {
+                var dbParameter = dbCommand.CreateParameter();
+                dbParameter.ParameterName = parameter.Name;
+                dbParameter.Value = parameter.Value ?? DBNull.Value;
+                parameter.ConfigureParameter?.Invoke(dbParameter);
+                dbCommand.Parameters.Add(dbParameter);
+            }
+
+            return dbCommand;
+        }
 
         public Task CommitAsync(CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();

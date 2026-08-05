@@ -11,29 +11,46 @@ internal static class RelationalDocumentLockCommandBuilder
 {
     private const string DocumentIdParameterName = "@documentId";
 
-    public static RelationalCommand BuildContentVersionCommand(SqlDialect dialect, long documentId)
+    public static RelationalCommand BuildContentVersionCommand(SqlDialect dialect, long documentId) =>
+        new(BuildContentVersionSql(dialect), [new RelationalParameter(DocumentIdParameterName, documentId)]);
+
+    /// <summary>
+    /// The same statement with the document id supplied as a SQL expression instead of a bound value, for a
+    /// create whose identity an earlier statement of the same command generated.
+    /// </summary>
+    public static RelationalCommand BuildContentVersionCommand(SqlDialect dialect, string documentIdSql)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentIdSql);
+
+        return new RelationalCommand(
+            RelationalParameterTokenRewriter.Rewrite(
+                BuildContentVersionSql(dialect),
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [RelationalParameterTokenRewriter.BareName(DocumentIdParameterName)] = documentIdSql,
+                }
+            ),
+            []
+        );
+    }
+
+    private static string BuildContentVersionSql(SqlDialect dialect)
     {
         return dialect switch
         {
-            SqlDialect.Pgsql => new RelationalCommand(
-                """
+            SqlDialect.Pgsql => """
                 SELECT
                     document."ContentVersion" AS "ContentVersion"
                 FROM dms."Document" document
                 WHERE document."DocumentId" = @documentId
                 FOR UPDATE
                 """,
-                [new RelationalParameter(DocumentIdParameterName, documentId)]
-            ),
-            SqlDialect.Mssql => new RelationalCommand(
-                """
+            SqlDialect.Mssql => """
                 SELECT
                     document.[ContentVersion] AS [ContentVersion]
                 FROM [dms].[Document] document WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
                 WHERE document.[DocumentId] = @documentId
                 """,
-                [new RelationalParameter(DocumentIdParameterName, documentId)]
-            ),
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
         };
     }

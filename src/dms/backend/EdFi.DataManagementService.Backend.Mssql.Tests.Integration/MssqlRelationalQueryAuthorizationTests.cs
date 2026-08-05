@@ -310,24 +310,30 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
         commands.Select(static command => command.SessionId).Distinct().Should().ContainSingle();
 
-        // The target is locked once, up front; authorization then runs against that locked row and the
-        // delete follows — all within the single guarded session. The If-Match precondition composes its
-        // etag from the already-locked ContentVersion, so it issues neither a second lock nor a
-        // state-hydration read.
-        var lockIndex = FindRequiredCommandIndex(commands, IsMssqlDocumentLockCommand);
-        var authorizationIndex = FindRequiredCommandIndex(commands, IsMssqlRelationshipAuthorizationCommand);
-        var deleteIndex = FindRequiredCommandIndex(commands, IsMssqlDocumentDeleteCommand);
+        // A specific-tag If-Match delete is two commands on one guarded session. The capture lock and the
+        // relationship check share the first, in that order; the etag is then composed in process from the
+        // ContentVersion that capture already returned — neither a second lock nor a state-hydration read —
+        // and only once it matches do the deletes run as an ordered segment on the same transaction.
+        commands.Should().HaveCount(2);
 
-        lockIndex.Should().BeLessThan(authorizationIndex);
-        authorizationIndex.Should().BeLessThan(deleteIndex);
+        var openingCommandText = commands[0].CommandText;
+        IsMssqlDocumentLockCommand(openingCommandText).Should().BeTrue();
+        IsMssqlRelationshipAuthorizationCommand(openingCommandText).Should().BeTrue();
+        openingCommandText
+            .IndexOf("UPDLOCK", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(openingCommandText.IndexOf("AUTH1", StringComparison.Ordinal));
+        IsMssqlDocumentDeleteCommand(openingCommandText).Should().BeFalse();
 
+        IsMssqlDocumentDeleteCommand(commands[1].CommandText).Should().BeTrue();
         commands.Count(command => IsMssqlDocumentLockCommand(command.CommandText)).Should().Be(1);
     }
 
     /// <summary>
     /// Namespace twin of <see cref="AssertDeleteWithIfMatchSharedGuardedSession"/>: the target is locked
     /// once, the stored namespace check runs against that locked row, and the delete follows — all inside
-    /// one guarded session, so authorization precedes both the If-Match result and the deletion.
+    /// one guarded session, so authorization precedes both the If-Match result and the deletion. The lock
+    /// and the check share the opening command, so the ordering they must hold is textual within it.
     /// </summary>
     public void AssertDeleteWithIfMatchNamespaceOrdering()
     {
@@ -335,17 +341,64 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
         commands.Select(static command => command.SessionId).Distinct().Should().ContainSingle();
 
-        var lockIndex = FindRequiredCommandIndex(commands, IsMssqlDocumentLockCommand);
-        var authorizationIndex = FindRequiredCommandIndex(
-            commands,
-            MssqlNamespaceAuthorizationCommandAssertions.IsNamespaceAuthorizationCommand
-        );
-        var deleteIndex = FindRequiredCommandIndex(commands, IsMssqlDocumentDeleteCommand);
+        commands.Should().HaveCount(2);
 
-        lockIndex.Should().BeLessThan(authorizationIndex);
-        authorizationIndex.Should().BeLessThan(deleteIndex);
+        var openingCommandText = commands[0].CommandText;
+        IsMssqlDocumentLockCommand(openingCommandText).Should().BeTrue();
+        MssqlNamespaceAuthorizationCommandAssertions
+            .IsNamespaceAuthorizationCommand(openingCommandText)
+            .Should()
+            .BeTrue();
+        openingCommandText
+            .IndexOf("UPDLOCK", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(openingCommandText.IndexOf("AUTH1", StringComparison.Ordinal));
+        IsMssqlDocumentDeleteCommand(openingCommandText).Should().BeFalse();
 
+        IsMssqlDocumentDeleteCommand(commands[1].CommandText).Should().BeTrue();
         commands.Count(command => IsMssqlDocumentLockCommand(command.CommandText)).Should().Be(1);
+    }
+
+    /// <summary>
+    /// Asserts the whole of a delete that needs no in-process decision between observing the target and
+    /// modifying it: one command carrying capture and lock, the relationship check, and both deletes, in
+    /// that order.
+    /// </summary>
+    public void AssertDeleteIsOneCommittedCommand()
+    {
+        var commands = _writeSessionRecorder.Commands;
+
+        commands.Should().ContainSingle();
+        commands.Select(static command => command.SessionId).Distinct().Should().ContainSingle();
+
+        var commandText = commands[0].CommandText;
+        var lockIndex = commandText.IndexOf("UPDLOCK", StringComparison.Ordinal);
+        var authorizationIndex = commandText.IndexOf("AUTH1", StringComparison.Ordinal);
+        var documentDeleteIndex = commandText.IndexOf(
+            "DELETE FROM [dms].[Document]",
+            StringComparison.Ordinal
+        );
+
+        lockIndex.Should().BePositive();
+        authorizationIndex.Should().BeGreaterThan(lockIndex);
+        documentDeleteIndex.Should().BeGreaterThan(authorizationIndex);
+    }
+
+    /// <summary>
+    /// Asserts a delete whose claim list binds as a table-valued parameter: the composite rewriter cannot
+    /// rename one, so the check runs as its own ordered segment between the capture command and the deletes.
+    /// </summary>
+    public void AssertDeleteWithStructuredClaimsIsThreeCommands()
+    {
+        var commands = _writeSessionRecorder.Commands;
+
+        commands.Should().HaveCount(3);
+        commands.Select(static command => command.SessionId).Distinct().Should().ContainSingle();
+
+        IsMssqlDocumentLockCommand(commands[0].CommandText).Should().BeTrue();
+        IsMssqlDocumentDeleteCommand(commands[0].CommandText).Should().BeFalse();
+        IsMssqlRelationshipAuthorizationCommand(commands[1].CommandText).Should().BeTrue();
+        IsMssqlDocumentDeleteCommand(commands[2].CommandText).Should().BeTrue();
     }
 
     public PageKeysetSpec.Query AssertSingleQueryHydration()
@@ -1700,7 +1753,11 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     {
         var command = GetRequiredPostCreateRelationshipAuthorizationCommand();
 
-        command.Should().Contain("IN (@ClaimEducationOrganizationIds_0) OR EXISTS");
+        // The claim parameter carries the composite allocator's statement-ordinal suffix now that the
+        // proposed check is a co-batched statement rather than a prefix on the insert, so the direct-claim
+        // comparison and the hierarchy-edge fallback are matched without pinning the issued name.
+        command.Should().Contain("IN (@ClaimEducationOrganizationIds_0");
+        command.Should().Contain(") OR EXISTS");
         command.Should().Contain("[auth].[EducationOrganizationIdToEducationOrganizationId]");
         command
             .IndexOf("AUTH1", StringComparison.Ordinal)
@@ -1743,7 +1800,13 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             .Distinct()
             .Should()
             .ContainSingle();
-        peopleAuthorizationCommands[0].command.CommandText.Should().Contain("@DocumentId");
+        // The stored check is co-batched behind the capture in the first-phase command, so it consumes the
+        // provider carrier's captured document id rather than binding one; the proposed check is the one that
+        // binds values extracted from the finalized root row.
+        peopleAuthorizationCommands[0]
+            .command.CommandText.Should()
+            .Contain("@dms_composite_target_documentid");
+        peopleAuthorizationCommands[0].command.CommandText.Should().NotContain("@relationshipAuthorization_");
         peopleAuthorizationCommands[1].command.CommandText.Should().Contain("@relationshipAuthorization_");
         peopleAuthorizationCommands[0].index.Should().BeLessThan(peopleAuthorizationCommands[1].index);
     }
@@ -1757,12 +1820,34 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         command.Should().NotContain("SELECT [Id] FROM @ClaimEducationOrganizationIds");
     }
 
+    /// <summary>
+    /// A table-valued claim list cannot be renamed into a co-batched statement, so the proposed check runs as
+    /// its own ordered segment ahead of the command that inserts the document rather than as a statement
+    /// inside it. Authorization therefore still strictly precedes the created artifact, on the same session
+    /// and transaction, at the cost of one more command on this path.
+    /// </summary>
     public void AssertPostCreateRelationshipAuthorizationUsesStructuredClaimParameter()
     {
-        var command = GetRequiredPostCreateRelationshipAuthorizationCommand();
+        var recorded = _writeSessionRecorder.Commands.Select((command, index) => (command, index)).ToArray();
+        var structured = recorded
+            .Should()
+            .ContainSingle(item =>
+                item.command.CommandText.Contains(
+                    "SELECT [Id] FROM @ClaimEducationOrganizationIds",
+                    StringComparison.Ordinal
+                )
+            )
+            .Which;
+        var documentInsert = recorded
+            .Should()
+            .ContainSingle(item =>
+                item.command.CommandText.Contains("INSERT INTO [dms].[Document]", StringComparison.Ordinal)
+            )
+            .Which;
 
-        command.Should().Contain("SELECT [Id] FROM @ClaimEducationOrganizationIds");
-        command.Should().NotContain("@ClaimEducationOrganizationIds_0");
+        structured.command.CommandText.Should().NotContain("@ClaimEducationOrganizationIds_0");
+        structured.index.Should().BeLessThan(documentInsert.index);
+        structured.command.SessionId.Should().Be(documentInsert.command.SessionId);
     }
 
     public void AssertUpdateRelationshipAuthorizationUsesScalarClaimParameters(int expectedCount)
@@ -2687,23 +2772,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
     private static Dictionary<string, string> CreateHeaders(string? ifMatch) =>
         ifMatch is null ? [] : new Dictionary<string, string> { ["If-Match"] = ifMatch };
-
-    private static int FindRequiredCommandIndex(
-        IReadOnlyList<MssqlRelationalQueryAuthorizationRecordedCommand> commands,
-        Func<string, bool> predicate,
-        int startIndex = 0
-    )
-    {
-        for (var commandIndex = startIndex; commandIndex < commands.Count; commandIndex++)
-        {
-            if (predicate(commands[commandIndex].CommandText))
-            {
-                return commandIndex;
-            }
-        }
-
-        throw new InvalidOperationException("Expected relational write command was not recorded.");
-    }
 
     private static bool IsMssqlDocumentLockCommand(string commandText) =>
         commandText.Contains("UPDLOCK", StringComparison.Ordinal)

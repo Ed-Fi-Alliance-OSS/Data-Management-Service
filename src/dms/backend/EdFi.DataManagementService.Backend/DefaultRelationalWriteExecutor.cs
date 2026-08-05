@@ -20,13 +20,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteSessionFactory writeSessionFactory,
     IReferenceResolverAdapterFactory referenceResolverAdapterFactory,
     IRelationalWriteFlattener writeFlattener,
-    IRelationalWriteCurrentStateLoader currentStateLoader,
-    IRelationalCurrentEtagPreconditionChecker currentEtagPreconditionChecker,
-    IRelationalWriteTargetLookupResolver targetLookupResolver,
-    IRelationalWriteFreshnessChecker writeFreshnessChecker,
     IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer,
     IRelationalWriteProfileMergeSynthesizer profileMergeSynthesizer,
-    IRelationalWritePersister persister,
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalWriteConstraintResolver writeConstraintResolver,
     IRelationalReadMaterializer readMaterializer,
@@ -38,15 +33,13 @@ internal sealed class DefaultRelationalWriteExecutor(
     ILogger<DefaultRelationalWriteExecutor>? logger = null,
     ILoggerFactory? loggerFactory = null,
     IDocumentCacheWriterTelemetry? documentCacheWriterTelemetry = null,
-    IDataStoreSelection? dataStoreSelection = null
+    IDataStoreSelection? dataStoreSelection = null,
+    IRelationalWriteFirstPhase? writeFirstPhase = null,
+    IRelationalWriteSecondCommandPhase? secondCommandPhase = null
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
         writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
-
-    private readonly IReferenceResolverAdapterFactory _referenceResolverAdapterFactory =
-        referenceResolverAdapterFactory
-        ?? throw new ArgumentNullException(nameof(referenceResolverAdapterFactory));
 
     private readonly IServedEtagComposer _servedEtagComposer =
         servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
@@ -59,16 +52,21 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private readonly IDataStoreSelection? _dataStoreSelection = dataStoreSelection;
 
-    private readonly IRelationalWriteFreshnessChecker _writeFreshnessChecker =
-        writeFreshnessChecker ?? throw new ArgumentNullException(nameof(writeFreshnessChecker));
-
-    private readonly IRelationalWritePersister _persister =
-        persister ?? throw new ArgumentNullException(nameof(persister));
+    /// <summary>
+    /// The composite first phase: target capture and lock, stored authorization, reference
+    /// resolution, and current-state hydration in one command. Test seams may substitute a fake.
+    /// </summary>
+    private readonly IRelationalWriteFirstPhase _writeFirstPhase =
+        writeFirstPhase
+        ?? new CompositeRelationalWriteFirstPhase(
+            referenceResolverAdapterFactory
+                ?? throw new ArgumentNullException(nameof(referenceResolverAdapterFactory)),
+            relationalParameterConfigurator,
+            relationshipAuthorizationProviderFailureExtractor,
+            logger
+        );
 
     private readonly RelationalWriteExecutionStateResolver _executionStateResolver = new(
-        targetLookupResolver,
-        currentStateLoader,
-        currentEtagPreconditionChecker,
         (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<RelationalWriteExecutionStateResolver>()
     );
 
@@ -79,22 +77,16 @@ internal sealed class DefaultRelationalWriteExecutor(
         profileMergeSynthesizer
     );
 
-    private readonly StoredRelationshipAuthorizationOrchestrator _storedRelationshipAuthorizationOrchestrator =
-        new(
-            targetLookupResolver,
-            relationalParameterConfigurator ?? DefaultRelationalParameterConfigurator.Instance,
-            relationshipAuthorizationProviderFailureExtractor
-                ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance,
+    /// <summary>
+    /// The second command: the proposed namespace and proposed relationship <c>AUTH1</c> statements, plus
+    /// the data-modifying statements and the committed <c>ContentVersion</c> read in DML mode.
+    /// </summary>
+    private readonly IRelationalWriteSecondCommandPhase _secondCommandPhase =
+        secondCommandPhase
+        ?? new CompositeRelationalWriteSecondCommand(
+            relationalParameterConfigurator,
+            relationshipAuthorizationProviderFailureExtractor,
             logger
-        );
-
-    private readonly ProposedRelationshipAuthorizationOrchestrator _proposedRelationshipAuthorizationOrchestrator =
-        new(persister);
-
-    private readonly ProposedNamespaceAuthorizationOrchestrator _proposedNamespaceAuthorizationOrchestrator =
-        new(
-            relationshipAuthorizationProviderFailureExtractor
-                ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance
         );
 
     private readonly RelationalWriteDatabaseFailureResultMapper _databaseFailureResultMapper = new(
@@ -103,20 +95,24 @@ internal sealed class DefaultRelationalWriteExecutor(
     );
 
     public Task<RelationalWriteExecutorResult> ExecuteAsync(
-        RelationalWriteExecutorRequest request,
+        RelationalWriteExecutorInput input,
         CancellationToken cancellationToken = default
-    ) => ExecuteAsyncInternal(request, cancellationToken);
+    ) => ExecuteAsyncInternal(input, cancellationToken);
 
     private async Task<RelationalWriteExecutorResult> ExecuteAsyncInternal(
-        RelationalWriteExecutorRequest request,
+        RelationalWriteExecutorInput input,
         CancellationToken cancellationToken
     )
     {
-        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(input);
         cancellationToken.ThrowIfCancellationRequested();
         RelationalWriteExecutorResult? writeFailureResult = null;
-        var executionRequest = request;
-        RelationalWriteCurrentState? currentState = null;
+        RelationalWriteExecutorRequest? executionRequest = null;
+
+        // The success result the attempt has earned, composed before the commit and returned only once
+        // the commit succeeds. Carrying it out of the try is what lets the commit itself sit outside
+        // every handler that rolls back.
+        RelationalWriteExecutorResult? committedResult = null;
 
         await using var writeSession = await _writeSessionFactory
             .CreateAsync(cancellationToken)
@@ -124,75 +120,74 @@ internal sealed class DefaultRelationalWriteExecutor(
 
         try
         {
-            var storedAuthorizationBoundary = await _storedRelationshipAuthorizationOrchestrator
-                .ResolveAsync(executionRequest, writeSession, cancellationToken)
+            // One composite command observes and locks the target, runs stored authorization,
+            // resolves references, and hydrates current state inside this session's transaction
+            // before anything else runs. That first observation is the decision for the attempt: no
+            // normal path re-observes it, so a create that lands afterwards can no longer turn this
+            // write into an update, and the lock held from the capture through commit is what stands
+            // in for the guarded no-op freshness re-read.
+            var firstPhase = await _writeFirstPhase
+                .ResolveAsync(input, writeSession, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (storedAuthorizationBoundary.ImmediateResult is not null)
+            if (firstPhase.ImmediateResult is not null)
             {
                 await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return storedAuthorizationBoundary.ImmediateResult;
+                return firstPhase.ImmediateResult;
             }
 
-            executionRequest = storedAuthorizationBoundary.ExecutionRequest;
+            var outcome = firstPhase.Outcome!;
+            executionRequest = outcome.ExecutionRequest;
+            var request = executionRequest;
+            var currentState = outcome.CurrentState;
+            var lockedTarget = outcome.LockedTarget;
+            var resolvedReferences = outcome.ResolvedReferences;
+
             var etagPreconditionEvaluation =
                 RelationalWriteExecutionStateResolver.GetEtagPreconditionEvaluation(executionRequest);
-            // A stored-auth POST lookup is the authorization boundary for this attempt. If it saw
-            // CreateNew, keep that decision stable so a later race cannot become an update without
-            // stored-value authorization.
-            var postTargetReevaluation = storedAuthorizationBoundary.PostTargetReevaluation;
 
-            // If-None-Match is a sibling of If-Match, so the before-auth dispatch gate must admit both to
+            // If-None-Match is a sibling of If-Match, so the before-auth gate must admit both to
             // agree with GetEtagPreconditionEvaluation's broadened defer decision; otherwise an
-            // If-None-Match write would silently skip the precondition resolution. Reuse the resolver's
-            // single predicate so the two cannot drift and re-open the fail-open path.
+            // If-None-Match write would silently skip the precondition resolution.
             if (
                 RelationalWriteExecutionStateResolver.HasEtagPrecondition(request.WritePrecondition)
                 && etagPreconditionEvaluation is EtagPreconditionEvaluation.BeforeProposedAuthorization
             )
             {
-                var resolvedExecutionState = await _executionStateResolver
-                    .ResolveAsync(
-                        executionRequest,
-                        writeSession,
-                        ExecutionStateResolutionOptions.Standard(postTargetReevaluation),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                if (resolvedExecutionState.ImmediateResult is not null)
-                {
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return resolvedExecutionState.ImmediateResult;
-                }
-
-                executionRequest = resolvedExecutionState.ExecutionRequest;
-                currentState = resolvedExecutionState.CurrentState;
-
                 // If-Match on an insert (CreateNew) fails (412); If-None-Match on an insert is the
                 // create-only success case and proceeds.
-                if (
-                    executionRequest.TargetContext is RelationalWriteTargetContext.CreateNew
-                    && executionRequest.WritePrecondition is WritePrecondition.IfMatch
-                )
+                if (executionRequest.TargetContext is RelationalWriteTargetContext.CreateNew)
                 {
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return RelationalWriteExecutorResults.BuildPreconditionFailureResult(
-                        executionRequest.OperationKind,
-                        ETagPreconditionFailureReason.TargetDoesNotExist
+                    if (executionRequest.WritePrecondition is WritePrecondition.IfMatch)
+                    {
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                            executionRequest.OperationKind,
+                            ETagPreconditionFailureReason.TargetDoesNotExist
+                        );
+                    }
+                }
+                else
+                {
+                    // The first phase guarantees current state for an existing target on this path:
+                    // a missing read plan already returned, and the capture lock makes an empty
+                    // hydration impossible.
+                    var isSatisfied = EtagPreconditionEvaluator.IsSatisfiedByCurrentState(
+                        executionRequest.WritePrecondition,
+                        currentState!.DocumentMetadata.ContentVersion,
+                        executionRequest.MappingSet.Key.EffectiveSchemaHash
                     );
+
+                    if (!isSatisfied)
+                    {
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                            executionRequest.OperationKind,
+                            EtagPreconditionEvaluator.GetFailureReason(executionRequest.WritePrecondition)
+                        );
+                    }
                 }
             }
-
-            var referenceResolver = new ReferenceResolver(
-                _referenceResolverAdapterFactory.CreateSessionAdapter(
-                    writeSession.Connection,
-                    writeSession.Transaction
-                )
-            );
-            var resolvedReferences = await referenceResolver
-                .ResolveAsync(executionRequest.ReferenceResolutionRequest, cancellationToken)
-                .ConfigureAwait(false);
 
             var hasMissingDocumentReferenceFailures = HasMissingDocumentReferenceFailures(resolvedReferences);
 
@@ -211,40 +206,6 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             var deferMissingDocumentReferenceFailures =
                 executionRequest.ProfileWriteContext is null && hasMissingDocumentReferenceFailures;
-
-            if (
-                !RelationalWriteExecutionStateResolver.HasEtagPrecondition(request.WritePrecondition)
-                || etagPreconditionEvaluation
-                    is EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
-            )
-            {
-                var executionStateResolutionOptions =
-                    etagPreconditionEvaluation
-                    is EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
-                        ? ExecutionStateResolutionOptions.DeferredEtagPrecondition(
-                            storedAuthorizationBoundary,
-                            postTargetReevaluation
-                        )
-                        : ExecutionStateResolutionOptions.Standard(postTargetReevaluation);
-
-                var resolvedExecutionState = await _executionStateResolver
-                    .ResolveAsync(
-                        executionRequest,
-                        writeSession,
-                        executionStateResolutionOptions,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                if (resolvedExecutionState.ImmediateResult is not null)
-                {
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return resolvedExecutionState.ImmediateResult;
-                }
-
-                executionRequest = resolvedExecutionState.ExecutionRequest;
-                currentState = resolvedExecutionState.CurrentState;
-            }
 
             var targetContext = executionRequest.TargetContext;
             var mergeBoundary = _mergeOrchestrator.Resolve(
@@ -276,53 +237,82 @@ internal sealed class DefaultRelationalWriteExecutor(
                 return identityStabilityFailure;
             }
 
-            // NamespaceBased AND-composes with the relationship OR-group and runs before it, so a
-            // namespace denial surfaces over a concurrent relationship denial. Mirrors the
-            // stored-side ordering used for locked-target authorization.
-            var namespaceAuthorizationBoundary = await _proposedNamespaceAuthorizationOrchestrator
-                .ResolveAsync(executionRequest, mergeResult, writeSession, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (namespaceAuthorizationBoundary.ImmediateResult is not null)
-            {
-                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return namespaceAuthorizationBoundary.ImmediateResult;
-            }
-
-            var proposedAuthorizationBoundary = await _proposedRelationshipAuthorizationOrchestrator
-                .ResolveAsync(
-                    executionRequest,
-                    mergeResult,
-                    writeSession,
-                    cancellationToken,
-                    forceStandaloneAuthorization: deferMissingDocumentReferenceFailures
-                )
-                .ConfigureAwait(false);
-
-            if (proposedAuthorizationBoundary.ImmediateResult is not null)
-            {
-                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return proposedAuthorizationBoundary.ImmediateResult;
-            }
-
-            mergeResult = proposedAuthorizationBoundary.MergeResult;
-
-            if (
+            // Every situation that needs no data-modifying statement is decided here, in process, from
+            // the merged result and the hydrated current state. Deciding it before authorization is what
+            // lets the second command exist exactly once: it is emitted if and only if proposed
+            // authorization is configured or DML is required, and it is in authorization-only mode
+            // exactly when DML is not. A request that is several no-DML situations at once therefore
+            // still costs one command rather than one per condition.
+            var deferredPreconditionResult =
                 etagPreconditionEvaluation
                 is EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
-            )
-            {
-                var deferredPreconditionResult =
-                    _executionStateResolver.TryBuildDeferredPreconditionFailureResult(
+                    ? _executionStateResolver.TryBuildDeferredPreconditionFailureResult(
                         executionRequest,
                         currentState
-                    );
+                    )
+                    : null;
 
-                if (deferredPreconditionResult is not null)
+            var guardedNoOpTarget =
+                targetContext is RelationalWriteTargetContext.ExistingDocument existingTarget
+                && mergeResult.SupportsGuardedNoOp
+                && RelationalWriteGuardedNoOp.IsNoOpCandidate(mergeResult)
+                    ? existingTarget
+                    : null;
+
+            var requiresDataModifyingStatements =
+                deferredPreconditionResult is null
+                && !deferMissingDocumentReferenceFailures
+                && guardedNoOpTarget is null;
+
+            // NamespaceBased AND-composes with the relationship OR-group and runs before it, so a
+            // namespace denial surfaces over a concurrent relationship denial. Mirrors the stored-side
+            // ordering used for locked-target authorization. In DML mode the same command carries the
+            // document row, the resource tables, and the committed ContentVersion read behind those
+            // checks.
+            // The canonical persist now happens inside the second command's DML mode, so the
+            // canonical-writer wait is measured over that command rather than over a separate
+            // persister call. Authorization-only mode runs no data-modifying statement and is
+            // therefore not a canonical persist to report.
+            long canonicalPersistStartTimestamp = Stopwatch.GetTimestamp();
+            RelationalWriteSecondCommandResolution secondCommand;
+            try
+            {
+                secondCommand = await _secondCommandPhase
+                    .ResolveAsync(
+                        executionRequest,
+                        mergeResult,
+                        requiresDataModifyingStatements
+                            ? RelationalWriteSecondCommandMode.Dml
+                            : RelationalWriteSecondCommandMode.AuthorizationOnly,
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                if (requiresDataModifyingStatements)
                 {
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return deferredPreconditionResult;
+                    RecordCanonicalWriterWait(
+                        executionRequest,
+                        DocumentCacheWriterTelemetryLabel.Failed,
+                        canonicalPersistStartTimestamp
+                    );
                 }
+
+                throw;
+            }
+
+            if (secondCommand.ImmediateResult is not null)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return secondCommand.ImmediateResult;
+            }
+
+            if (deferredPreconditionResult is not null)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return deferredPreconditionResult;
             }
 
             if (deferMissingDocumentReferenceFailures)
@@ -334,78 +324,59 @@ internal sealed class DefaultRelationalWriteExecutor(
                 );
             }
 
-            if (
-                targetContext is RelationalWriteTargetContext.ExistingDocument guardedTarget
-                && mergeResult.SupportsGuardedNoOp
-                && RelationalWriteGuardedNoOp.IsNoOpCandidate(mergeResult)
-            )
+            if (guardedNoOpTarget is { } guardedTarget)
             {
-                var isCurrent = await _writeFreshnessChecker
-                    .IsCurrentAsync(executionRequest, guardedTarget, writeSession, cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (!isCurrent)
-                {
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return RelationalWriteExecutorResults.BuildStaleNoOpCompareResult(
-                        request.OperationKind,
-                        request.WritePrecondition
-                    );
-                }
+                // The lock proof replaces the freshness re-read: the capture statement locked this
+                // row and the lock holds through commit, so no other transaction can have bumped
+                // ContentVersion since it was observed. A no-op without the proof is a decode bug,
+                // not a fall-back-to-query situation.
+                ValidateGuardedNoOpLockProof(lockedTarget, guardedTarget, writeSession);
 
                 var guardedNoOpEtag = ComposeCommittedEtag(
                     executionRequest,
                     guardedTarget.ObservedContentVersion
                 );
 
-                await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-                return RelationalWriteExecutorResults.BuildGuardedNoOpSuccessResult(
+                committedResult = RelationalWriteExecutorResults.BuildGuardedNoOpSuccessResult(
                     request.OperationKind,
                     guardedTarget.DocumentUuid,
                     guardedNoOpEtag
                 );
             }
-
-            long canonicalPersistStartTimestamp = Stopwatch.GetTimestamp();
-            RelationalWritePersistResult persistedTarget;
-            try
+            else
             {
-                persistedTarget = await _persister
-                    .PersistAsync(executionRequest, mergeResult, writeSession, cancellationToken)
-                    .ConfigureAwait(false);
+                var persistedTarget =
+                    secondCommand.PersistResult
+                    ?? throw new InvalidOperationException(
+                        "The second command ran in DML mode but returned no persisted target."
+                    );
+
                 RecordCanonicalWriterWait(
                     executionRequest,
                     DocumentCacheWriterTelemetryLabel.AppliedWrite,
                     canonicalPersistStartTimestamp
                 );
-            }
-            catch
-            {
-                RecordCanonicalWriterWait(
-                    executionRequest,
-                    DocumentCacheWriterTelemetryLabel.Failed,
-                    canonicalPersistStartTimestamp
+
+                RelationalWritePersistedTargetValidator.Validate(
+                    executionRequest.TargetContext,
+                    persistedTarget
                 );
-                throw;
+
+                var committedEtag = ComposeCommittedEtag(executionRequest, persistedTarget.ContentVersion);
+
+                committedResult = RelationalWriteExecutorResults.BuildAppliedWriteSuccessResult(
+                    request.OperationKind,
+                    executionRequest.TargetContext,
+                    persistedTarget,
+                    committedEtag
+                );
             }
-
-            RelationalWritePersistedTargetValidator.Validate(executionRequest.TargetContext, persistedTarget);
-
-            var committedEtag = ComposeCommittedEtag(executionRequest, persistedTarget.ContentVersion);
-
-            await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return RelationalWriteExecutorResults.BuildAppliedWriteSuccessResult(
-                request.OperationKind,
-                executionRequest.TargetContext,
-                persistedTarget,
-                committedEtag
-            );
         }
         catch (RelationalWriteRequestValidationException ex)
         {
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return RelationalWriteExecutorResults.BuildValidationFailureResult(
-                request.OperationKind,
+                input.OperationKind,
                 ex.ValidationFailures
             );
         }
@@ -417,16 +388,13 @@ internal sealed class DefaultRelationalWriteExecutor(
             // failure path. We do NOT broaden this catch to InvalidOperationException — generic
             // invariant violations remain fail-fast for true backend bugs.
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return RelationalWriteExecutorResults.BuildPlannerContractMismatchResult(
-                request.OperationKind,
-                ex
-            );
+            return RelationalWriteExecutorResults.BuildPlannerContractMismatchResult(input.OperationKind, ex);
         }
         catch (RelationalWriteRelationshipAuthorizationNotAuthorizedException ex)
         {
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return RelationalWriteExecutorResults.BuildRelationshipAuthorizationFailureResult(
-                request.OperationKind,
+                input.OperationKind,
                 ex.RelationshipFailure
             );
         }
@@ -434,13 +402,23 @@ internal sealed class DefaultRelationalWriteExecutor(
         {
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
-                request.OperationKind,
+                input.OperationKind,
                 [ex.FailureMessage],
                 ex.Diagnostics
             );
         }
         catch (DbException ex)
         {
+            // A failure inside the first phase has no resolved request to attribute a write failure
+            // to, and the phase's read-only statements cannot violate a write constraint — its
+            // authorization denials were already mapped there — so it stays an unmapped fault exactly
+            // as the pre-adoption target lookup was.
+            if (executionRequest is null)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                throw;
+            }
+
             bool isMappedWriteFailure;
 
             try
@@ -471,6 +449,52 @@ internal sealed class DefaultRelationalWriteExecutor(
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
+
+        // The commit sits outside every handler above by construction, not by a flag any of them has to
+        // remember to check. Once the commit has begun the server may already have applied it and only
+        // failed to acknowledge it, so a client-side rollback could only fail on its own and replace the
+        // real failure with an unrelated one. Session disposal releases the transaction, which settles
+        // any state the server left pending.
+        try
+        {
+            await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbException ex)
+        {
+            // Only a resolved request reaches the commit, so a commit-phase provider failure is
+            // attributable and maps to the same write-failure results an in-attempt failure would. An
+            // unmapped one surfaces unchanged, exactly as it does inside the attempt.
+            if (_databaseFailureResultMapper.TryBuild(executionRequest!, ex, out var commitFailureResult))
+            {
+                return commitFailureResult!;
+            }
+
+            throw;
+        }
+
+        return committedResult!;
+    }
+
+    internal static void ValidateGuardedNoOpLockProof(
+        RelationalWriteLockedTarget? lockedTarget,
+        RelationalWriteTargetContext.ExistingDocument guardedTarget,
+        IRelationalWriteSession writeSession
+    )
+    {
+        ArgumentNullException.ThrowIfNull(guardedTarget);
+        ArgumentNullException.ThrowIfNull(writeSession);
+
+        if (
+            lockedTarget is null
+            || !lockedTarget.IsHeldBy(writeSession)
+            || lockedTarget.DocumentId != guardedTarget.DocumentId
+            || lockedTarget.ObservedContentVersion != guardedTarget.ObservedContentVersion
+        )
+        {
+            throw new InvalidOperationException(
+                "Guarded no-op reached without a matching capture lock proof from the current write session."
+            );
+        }
     }
 
     private static bool HasDescriptorReferenceFailures(ResolvedReferenceSet resolvedReferences) =>
@@ -489,7 +513,7 @@ internal sealed class DefaultRelationalWriteExecutor(
     /// <summary>
     /// Composes the served <c>_etag</c> for a just-committed write. The write response carries only
     /// the etag; the final committed <c>ContentVersion</c> is persistence metadata (from the persister,
-    /// or the freshness-checked stamp on the guarded no-op path). No <c>dms.Document</c> query, hydrate,
+    /// or the capture-locked stamp on the guarded no-op path). No <c>dms.Document</c> query, hydrate,
     /// or hashing occurs here — this is a pure string composition over the stored counter and the
     /// request's representation selectors (profile, format, link mode).
     /// </summary>

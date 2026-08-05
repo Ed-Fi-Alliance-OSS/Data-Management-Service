@@ -101,6 +101,53 @@ public static class HydrationBatchBuilder
         return BuildExistingKeysetBatch(plan, keyset, planDialect, writer, executionOptions);
     }
 
+    /// <summary>
+    /// Builds the single-document hydration batch for a document id that is not client-known at build
+    /// time. The id is still referenced through the single-document parameter token — callers
+    /// co-batching this batch substitute that token with their captured-target expression — but a
+    /// keyset materialization is guarded so an absent id materializes no keyset row rather than
+    /// inserting NULL into it.
+    /// </summary>
+    /// <param name="plan">The compiled resource read plan.</param>
+    /// <param name="dialect">The SQL dialect.</param>
+    /// <param name="executionOptions">Controls optional projection work in the batch.</param>
+    /// <param name="keysetRowGuardPredicateSql">
+    /// Raw predicate that is true only when the captured id exists, for example the composite
+    /// carrier's captured-target-present predicate.
+    /// </param>
+    /// <returns>The assembled SQL command text.</returns>
+    public static string BuildGuardedSingleDocumentBatch(
+        ResourceReadPlan plan,
+        SqlDialect dialect,
+        HydrationExecutionOptions executionOptions,
+        string keysetRowGuardPredicateSql
+    )
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentException.ThrowIfNullOrWhiteSpace(keysetRowGuardPredicateSql);
+
+        var sqlDialect = SqlDialectFactory.Create(dialect);
+        var planDialect = PlanSqlDialectFactory.Create(dialect);
+        var keyset = new PageKeysetSpec.Single(0);
+
+        if (ShouldUseSingleDocumentBatch(keyset, planDialect, executionOptions))
+        {
+            // The fast path is pure selects, so an absent id yields zero-row result sets on its own.
+            return GetOrBuildSingleDocumentBatch(plan, planDialect, sqlDialect, executionOptions);
+        }
+
+        var writer = new SqlWriter(sqlDialect);
+
+        return BuildExistingKeysetBatch(
+            plan,
+            keyset,
+            planDialect,
+            writer,
+            executionOptions,
+            keysetRowGuardPredicateSql
+        );
+    }
+
     private static bool ShouldUseSingleDocumentBatch(
         PageKeysetSpec keyset,
         IPlanSqlDialect planDialect,
@@ -154,7 +201,8 @@ public static class HydrationBatchBuilder
         PageKeysetSpec keyset,
         IPlanSqlDialect planDialect,
         SqlWriter writer,
-        HydrationExecutionOptions executionOptions
+        HydrationExecutionOptions executionOptions,
+        string? singleRowGuardPredicateSql = null
     )
     {
         // 1. Create keyset temp table
@@ -162,7 +210,7 @@ public static class HydrationBatchBuilder
         writer.AppendLine();
 
         // 2. Materialize keyset
-        AppendKeysetMaterialization(writer, plan.KeysetTable, keyset);
+        AppendKeysetMaterialization(writer, plan.KeysetTable, keyset, singleRowGuardPredicateSql);
         writer.AppendLine();
 
         // 3. Optional total count
@@ -340,13 +388,30 @@ public static class HydrationBatchBuilder
     private static void AppendKeysetMaterialization(
         SqlWriter writer,
         KeysetTableContract keyset,
-        PageKeysetSpec spec
+        PageKeysetSpec spec,
+        string? singleRowGuardPredicateSql = null
     )
     {
         var quotedDocIdCol = writer.Dialect.QuoteIdentifier(keyset.DocumentIdColumnName.Value);
 
         switch (spec)
         {
+            case PageKeysetSpec.Single when singleRowGuardPredicateSql is not null:
+                // Same INSERT ... SELECT ... WHERE shape as the empty-keyset materialization, so an
+                // absent captured id materializes no row instead of inserting NULL.
+                writer
+                    .Append("INSERT INTO ")
+                    .AppendRelation(keyset.Table)
+                    .Append(" (")
+                    .Append(quotedDocIdCol)
+                    .AppendLine(")")
+                    .Append("SELECT ")
+                    .AppendParameter(HydrationSqlConventions.SingleDocumentIdParameterName)
+                    .Append(" WHERE ")
+                    .Append(singleRowGuardPredicateSql)
+                    .AppendLine(";");
+                break;
+
             case PageKeysetSpec.Single:
                 writer
                     .Append("INSERT INTO ")

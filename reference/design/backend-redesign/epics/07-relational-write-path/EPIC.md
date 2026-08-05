@@ -54,6 +54,7 @@ Critical-path note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` re
 - `DMS-1104` — `05b-profile-error-classification.md` — Classify and map profile write failures to DMS error shapes
 - `DMS-987` — `06-descriptor-writes.md` — Descriptor POST/PUT: maintain `dms.Descriptor` + descriptor referential identities (no per-descriptor tables)
 - `DMS-1132` — `07-semantic-identity-presence-fidelity.md` — Close the presence-sensitive semantic identity fidelity gap exposed by `DMS-1124` so the merge never depends on upstream null-pruning invariants to distinguish absent vs explicit-null identity members (closed)
+- `DMS-1332` — `08-write-roundtrip-batching.md` — Verify the `auth.md` roundtrip blueprint against the implemented pipeline and batch the POST/PUT/DELETE reference-resolution, authorization, document, root, and child-table statements into single roundtrips; this is where the accommodation described above is realized
 
 ## Review Aid
 

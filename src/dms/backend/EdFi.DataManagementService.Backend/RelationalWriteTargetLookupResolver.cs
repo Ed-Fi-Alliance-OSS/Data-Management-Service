@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Model;
 
@@ -29,13 +28,29 @@ public interface IRelationalWriteTargetLookupService
 
 public interface IRelationalWriteTargetLookupResolver
 {
+    /// <summary>
+    /// Resolves the POST target inside an open write session. Takes the session's command executor
+    /// rather than a raw connection/transaction pair so the lookup stays on the session's single
+    /// command-creation seam and a session decorator observes it.
+    /// </summary>
     Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         ReferentialId referentialId,
         DocumentUuid candidateDocumentUuid,
-        DbConnection connection,
-        DbTransaction transaction,
+        IRelationalCommandExecutor commandExecutor,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Resolves the PUT target inside an open write session, on the same session command-creation
+    /// seam as <see cref="ResolveForPostAsync"/>.
+    /// </summary>
+    Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        IRelationalCommandExecutor commandExecutor,
         CancellationToken cancellationToken = default
     );
 }
@@ -88,20 +103,37 @@ internal sealed class RelationalWriteTargetLookupResolver : IRelationalWriteTarg
         QualifiedResourceName resource,
         ReferentialId referentialId,
         DocumentUuid candidateDocumentUuid,
-        DbConnection connection,
-        DbTransaction transaction,
+        IRelationalCommandExecutor commandExecutor,
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(connection);
-        ArgumentNullException.ThrowIfNull(transaction);
+        ArgumentNullException.ThrowIfNull(commandExecutor);
 
         return RelationalWriteTargetLookupSupport.ResolveForPostAsync(
-            new SessionRelationalCommandExecutor(connection, transaction),
+            commandExecutor,
             mappingSet,
             resource,
             referentialId,
             candidateDocumentUuid,
+            cancellationToken
+        );
+    }
+
+    public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        IRelationalCommandExecutor commandExecutor,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(commandExecutor);
+
+        return RelationalWriteTargetLookupSupport.ResolveForPutAsync(
+            commandExecutor,
+            mappingSet,
+            resource,
+            documentUuid,
             cancellationToken
         );
     }
@@ -111,6 +143,87 @@ internal static class RelationalWriteTargetLookupSupport
 {
     private const string ReferentialIdParameterName = "@referentialId";
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
+    private const string DocumentUuidParameterName = "@documentUuid";
+
+    /// <summary>
+    /// Builds the POST target predicate over the aliased <c>dms.Document</c> row <c>d</c> for a
+    /// composite captured-target statement. Semantically identical to
+    /// <see cref="ResolveForPostAsync"/>'s lookup — the referential-identity row selects the document,
+    /// filtered to the request's resource key — expressed as a predicate so the capture statement can
+    /// lock and observe the row in one statement. Returned as a <see cref="RelationalCommand"/> whose
+    /// text is the bare predicate, so the composite rewriter can rename its parameters.
+    /// </summary>
+    public static RelationalCommand BuildPostCaptureTargetPredicate(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ReferentialId referentialId
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+
+        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
+        var predicateSql = mappingSet.Key.Dialect switch
+        {
+            SqlDialect.Pgsql => """
+                d."DocumentId" = (
+                    SELECT referentialIdentity."DocumentId"
+                    FROM dms."ReferentialIdentity" referentialIdentity
+                    WHERE referentialIdentity."ReferentialId" = @referentialId
+                ) AND d."ResourceKeyId" = @resourceKeyId
+                """,
+            SqlDialect.Mssql => """
+                d.[DocumentId] = (
+                    SELECT referentialIdentity.[DocumentId]
+                    FROM [dms].[ReferentialIdentity] referentialIdentity
+                    WHERE referentialIdentity.[ReferentialId] = @referentialId
+                ) AND d.[ResourceKeyId] = @resourceKeyId
+                """,
+            _ => throw new NotSupportedException(
+                $"Relational POST capture predicate does not support SQL dialect '{mappingSet.Key.Dialect}'."
+            ),
+        };
+
+        return new RelationalCommand(
+            predicateSql,
+            [
+                new RelationalParameter(ReferentialIdParameterName, referentialId.Value),
+                new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
+            ]
+        );
+    }
+
+    /// <summary>
+    /// Builds the target predicate over the aliased <c>dms.Document</c> row <c>d</c> for a composite
+    /// captured-target statement addressing a document by its external id, matching
+    /// <see cref="ResolveForPutAsync"/>'s document-uuid-and-resource lookup semantics. PUT and DELETE both
+    /// address their target this way, so they capture through the same predicate.
+    /// </summary>
+    public static RelationalCommand BuildDocumentUuidCaptureTargetPredicate(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+
+        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
+        var predicateSql = mappingSet.Key.Dialect switch
+        {
+            SqlDialect.Pgsql => """d."DocumentUuid" = @documentUuid AND d."ResourceKeyId" = @resourceKeyId""",
+            SqlDialect.Mssql => "d.[DocumentUuid] = @documentUuid AND d.[ResourceKeyId] = @resourceKeyId",
+            _ => throw new NotSupportedException(
+                $"Relational document-uuid capture predicate does not support SQL dialect '{mappingSet.Key.Dialect}'."
+            ),
+        };
+
+        return new RelationalCommand(
+            predicateSql,
+            [
+                new RelationalParameter(DocumentUuidParameterName, documentUuid.Value),
+                new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
+            ]
+        );
+    }
 
     public static async Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
         IRelationalCommandExecutor commandExecutor,

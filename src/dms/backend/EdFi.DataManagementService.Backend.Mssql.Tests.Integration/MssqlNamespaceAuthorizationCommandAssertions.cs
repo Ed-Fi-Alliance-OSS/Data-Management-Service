@@ -38,6 +38,15 @@ internal static class MssqlNamespaceAuthorizationCommandAssertions
         "MERGE ",
     ];
 
+    /// <summary>
+    /// A statement whose target is a session-scoped temp table stages a read rather than persisting a row:
+    /// current-state hydration materializes its page keyset into <c>[#page]</c>, and that staging travels in
+    /// whichever command carries the hydration read. Excluding a temp-table target keeps the persistence
+    /// markers pointed at the document, root, child, extension, identity, and tracking relations, which are
+    /// always schema-qualified.
+    /// </summary>
+    private const string TempTableTargetPrefix = "[#";
+
     public static bool IsNamespaceAuthorizationCommand(string commandText) =>
         commandText.Contains(NamespaceAuthorizationMarker, StringComparison.Ordinal);
 
@@ -151,7 +160,11 @@ internal static class MssqlNamespaceAuthorizationCommandAssertions
 
             while (searchIndex >= 0)
             {
-                occurrences.Add(new PersistenceOccurrence(marker, searchIndex));
+                if (!TargetsTempTable(commandText, marker, searchIndex))
+                {
+                    occurrences.Add(new PersistenceOccurrence(marker, searchIndex));
+                }
+
                 searchIndex = commandText.IndexOf(
                     marker,
                     searchIndex + marker.Length,
@@ -162,6 +175,12 @@ internal static class MssqlNamespaceAuthorizationCommandAssertions
 
         return [.. occurrences.OrderBy(static occurrence => occurrence.Index)];
     }
+
+    private static bool TargetsTempTable(string commandText, string marker, int markerIndex) =>
+        commandText
+            .AsSpan(markerIndex + marker.Length)
+            .TrimStart()
+            .StartsWith(TempTableTargetPrefix, StringComparison.Ordinal);
 
     private static string Summarize(string commandText) =>
         commandText.Length <= SummarizedCommandLength

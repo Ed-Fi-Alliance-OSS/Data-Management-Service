@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -63,9 +62,21 @@ public interface IReferenceResolverAdapterFactory
     IReferenceResolverAdapter CreateAdapter();
 
     /// <summary>
-    /// Creates an adapter bound to an already-open write connection and transaction.
+    /// Creates an adapter bound to a write session's command executor. Taking the executor rather
+    /// than a raw connection/transaction pair keeps in-session reference lookups on the session's
+    /// single command-creation seam, so a session decorator observes them.
     /// </summary>
-    IReferenceResolverAdapter CreateSessionAdapter(DbConnection connection, DbTransaction transaction);
+    IReferenceResolverAdapter CreateSessionAdapter(IRelationalCommandExecutor commandExecutor);
+
+    /// <summary>
+    /// Builds the provider's single-statement, single-result-set lookup command so a composite write
+    /// command can co-batch it, or returns <see langword="null"/> when the provider cannot express
+    /// this request as one embeddable statement — SQL Server's table-valued bulk shape. A null return
+    /// tells the caller to fall back to <see cref="CreateSessionAdapter"/> on the same session, which
+    /// is the deterministic standalone path rather than an error. The default is that fallback, so a
+    /// factory that never co-batches — including test fakes — behaves exactly as before.
+    /// </summary>
+    RelationalCommand? TryBuildSessionLookupCommand(ReferenceLookupRequest request) => null;
 }
 
 /// <summary>

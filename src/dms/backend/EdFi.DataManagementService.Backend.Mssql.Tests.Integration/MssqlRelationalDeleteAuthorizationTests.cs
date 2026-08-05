@@ -142,6 +142,27 @@ public class Given_A_Mssql_Relational_Delete_Authorization_With_A_Synthetic_EdOr
             100,
             []
         ),
+        new(
+            new DocumentUuid(Guid.Parse("99999999-2000-0000-0000-000000000013")),
+            213,
+            "delete-one-command",
+            100,
+            []
+        ),
+        new(
+            new DocumentUuid(Guid.Parse("99999999-2000-0000-0000-000000000014")),
+            214,
+            "delete-one-command-wildcard",
+            100,
+            []
+        ),
+        new(
+            new DocumentUuid(Guid.Parse("99999999-2000-0000-0000-000000000015")),
+            215,
+            "delete-structured-claims",
+            100,
+            []
+        ),
     ];
 
     private static readonly AuthorizationRootChildSeed _directClaimRootChildSeed = new(
@@ -728,6 +749,82 @@ public class Given_A_Mssql_Relational_Delete_Authorization_With_A_Synthetic_EdOr
             0
         );
     }
+
+    [Test]
+    public async Task It_authorizes_and_deletes_in_one_command_without_a_precondition()
+    {
+        var seed = _authorizationRootChildSeeds[11];
+
+        var result = await DeleteRootChildAsync(
+            seed,
+            RelationshipAuthorizationCrudTestSupport.EdOrgOnlyStrategyNames
+        );
+
+        // Nothing has to be decided in process between observing the target and modifying it, so capture,
+        // authorization and both deletes share one command and one round trip.
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        _context.AssertDeleteIsOneCommittedCommand();
+        await AssertRowsAsync(
+            RelationshipAuthorizationCrudTestSupport.RootAndChildEdOrgResourceName,
+            seed.DocumentUuid,
+            0
+        );
+    }
+
+    [Test]
+    public async Task It_authorizes_and_deletes_in_one_command_for_a_wildcard_if_match()
+    {
+        var seed = _authorizationRootChildSeeds[12];
+
+        var result = await DeleteRootChildAsync(
+            seed,
+            RelationshipAuthorizationCrudTestSupport.EdOrgOnlyStrategyNames,
+            ifMatch: "*"
+        );
+
+        // A wildcard is an existence-only precondition, and the capture already answers existence, so it
+        // needs no in-process compare and stays on the one-command path.
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        _context.AssertDeleteIsOneCommittedCommand();
+        await AssertRowsAsync(
+            RelationshipAuthorizationCrudTestSupport.RootAndChildEdOrgResourceName,
+            seed.DocumentUuid,
+            0
+        );
+    }
+
+    [Test]
+    public async Task It_runs_a_structured_claim_check_as_its_own_segment_between_capture_and_the_deletes()
+    {
+        var seed = _authorizationRootChildSeeds[13];
+
+        var result = await DeleteRootChildAsync(
+            seed,
+            RelationshipAuthorizationCrudTestSupport.EdOrgOnlyStrategyNames,
+            CreateStructuredClaimEducationOrganizationIds()
+        );
+
+        // At the structured-parameterization threshold the claim list binds as a table-valued parameter,
+        // which the composite rewriter cannot rename into a co-batched statement. This is the recorded
+        // deviation from the one-command target on SQL Server, not a silent extra round trip.
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        _context.AssertDeleteWithStructuredClaimsIsThreeCommands();
+        await AssertRowsAsync(
+            RelationshipAuthorizationCrudTestSupport.RootAndChildEdOrgResourceName,
+            seed.DocumentUuid,
+            0
+        );
+    }
+
+    /// <summary>
+    /// A claim list at the SQL Server structured-parameterization threshold that still contains the claim
+    /// the fixture authorizes with, so the check authorizes and the command shape is what the test isolates.
+    /// </summary>
+    private static IReadOnlyList<long> CreateStructuredClaimEducationOrganizationIds() =>
+        [
+            ClaimEducationOrganizationId,
+            .. Enumerable.Range(0, 2000).Select(static offset => 100_000L + offset),
+        ];
 
     [Test]
     public async Task It_surfaces_stored_null_invalid_data_without_deleting_rows()

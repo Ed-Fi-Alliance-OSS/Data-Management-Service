@@ -396,6 +396,8 @@ Acceptance coverage should include these cases:
 
 ### Performance improvements over ODS
 
+> **Pre-implementation draft.** The per-operation roundtrip counts in this section were written before the relational write path existed and do not describe the implemented pipeline. The verified counts, the agreed targets, and the technically justified deviations live in [`epics/07-relational-write-path/08-write-roundtrip-batching.md`](../epics/07-relational-write-path/08-write-roundtrip-batching.md). This section is retained as the historical design rationale; its proof of concept below remains the reference for the database-side abort device.
+
 ODS executes an additional DB roundtrip for single-record authorizations, presumably because NHibernate limitations make batching difficult. In DMS, we have fine-grained control over the SQL queries we execute. Below are the expected DB roundtrips per operation.
 
 #### PUT

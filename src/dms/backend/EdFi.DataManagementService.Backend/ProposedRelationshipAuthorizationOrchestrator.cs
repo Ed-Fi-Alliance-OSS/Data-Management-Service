@@ -102,6 +102,12 @@ internal sealed class ProposedRelationshipAuthorizationOrchestrator(IRelationalW
         return new ProposedRelationshipAuthorizationBoundary(mergeResult, null);
     }
 
+    /// <summary>
+    /// Sends the check unless the POST create path will carry it inline on the <c>dms.Document</c>
+    /// insert. A caller that will issue no insert — every path that requires no data-modifying statement —
+    /// must force the standalone form, because there would otherwise be nothing to prefix the check onto
+    /// and the request would proceed unauthorized.
+    /// </summary>
     private async Task AuthorizeAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteMergeResult mergeResult,

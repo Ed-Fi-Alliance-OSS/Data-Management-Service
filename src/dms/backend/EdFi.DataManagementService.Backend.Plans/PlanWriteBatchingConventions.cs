@@ -78,6 +78,18 @@ public static class PlanWriteBatchingConventions
     }
 
     /// <summary>
+    /// Usable parameter placeholders per command for the dialect. Exposed so a command-level budget
+    /// derives from the same constant as per-table bulk-insert batching instead of copying it; the write
+    /// and authorization ceilings previously drifted apart when duplicated.
+    /// </summary>
+    public static int MaxCommandParameters(SqlDialect dialect) => GetLimits(dialect).MaxParametersPerCommand;
+
+    /// <summary>
+    /// Policy row cap per command for the dialect, from the same source as the parameter ceiling.
+    /// </summary>
+    public static int MaxCommandRows(SqlDialect dialect) => GetLimits(dialect).RowCap;
+
+    /// <summary>
     /// Returns dialect-specific batching limits used by bulk insert batching calculations.
     /// </summary>
     private static BatchingLimits GetLimits(SqlDialect dialect)

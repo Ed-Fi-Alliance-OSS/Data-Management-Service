@@ -539,24 +539,36 @@ public class Given_A_Host_Using_The_Relational_Backend
         private readonly ResolvedReferenceSet _resolvedReferences =
             resolvedReferences ?? throw new ArgumentNullException(nameof(resolvedReferences));
 
-        public List<RelationalWriteExecutorRequest> Requests { get; } = [];
+        public List<RelationalWriteExecutorInput> Requests { get; } = [];
 
         public Task<RelationalWriteExecutorResult> ExecuteAsync(
-            RelationalWriteExecutorRequest request,
+            RelationalWriteExecutorInput input,
             CancellationToken cancellationToken = default
         )
         {
-            Requests.Add(request);
-            var targetContext = request.TargetContext;
+            Requests.Add(input);
+
+            // The real executor resolves its own target inside the write session it opens; this fake
+            // stands in for that resolution with the same fixed outcomes the host smoke test expects.
+            RelationalWriteTargetContext targetContext = input.TargetRequest switch
+            {
+                RelationalWriteTargetRequest.Post(_, var candidateDocumentUuid) =>
+                    new RelationalWriteTargetContext.CreateNew(candidateDocumentUuid),
+                RelationalWriteTargetRequest.Put(var documentUuid) =>
+                    new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 44L),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported target request type '{input.TargetRequest.GetType().Name}'."
+                ),
+            };
 
             try
             {
                 _ = _flattener.Flatten(
                     new FlatteningInput(
-                        request.OperationKind,
+                        input.OperationKind,
                         targetContext,
-                        request.WritePlan,
-                        request.SelectedBody,
+                        input.WritePlan,
+                        input.SelectedBody,
                         _resolvedReferences
                     )
                 );

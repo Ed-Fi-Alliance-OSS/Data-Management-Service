@@ -423,6 +423,7 @@
       "edfi.datamanagementservice.backend.tests.common": {
         "type": "Project",
         "dependencies": {
+          "EdFi.DataManagementService.Backend": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",

@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 
@@ -60,11 +59,16 @@ internal interface IRelationalWriteCurrentStateLoader
     );
 }
 
+/// <summary>
+/// Hydrates a document inside an open write session. Takes the session rather than a raw
+/// connection/transaction pair so the hydration batch is created through
+/// <see cref="IRelationalWriteSession.CreateCommand(RelationalCommand)"/> and a session decorator
+/// observes it alongside every other in-session command.
+/// </summary>
 internal interface ISessionDocumentHydrator
 {
     Task<HydratedPage> HydrateAsync(
-        DbConnection connection,
-        DbTransaction transaction,
+        IRelationalWriteSession writeSession,
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
         HydrationExecutionOptions executionOptions,
@@ -93,8 +97,7 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
 
         var hydratedPage = await _sessionDocumentHydrator
             .HydrateAsync(
-                writeSession.Connection,
-                writeSession.Transaction,
+                writeSession,
                 request.ReadPlan,
                 new PageKeysetSpec.Single(request.TargetContext.DocumentId),
                 new HydrationExecutionOptions(
@@ -106,6 +109,22 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
             )
             .ConfigureAwait(false);
 
+        return TranslateHydratedPage(hydratedPage, request.TargetContext.DocumentId);
+    }
+
+    /// <summary>
+    /// Validates and translates a single-document hydration result into the write current state, or
+    /// <see langword="null"/> when the document produced no metadata row. Shared by the standalone
+    /// load above and by composite decoding, so the two paths cannot drift on what a valid
+    /// single-document page is.
+    /// </summary>
+    internal static RelationalWriteCurrentState? TranslateHydratedPage(
+        HydratedPage hydratedPage,
+        long documentId
+    )
+    {
+        ArgumentNullException.ThrowIfNull(hydratedPage);
+
         if (hydratedPage.DocumentMetadata.Count != 1)
         {
             if (hydratedPage.DocumentMetadata.Count == 0)
@@ -114,18 +133,18 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
             }
 
             throw new InvalidOperationException(
-                $"Current-state load for document id {request.TargetContext.DocumentId} returned "
+                $"Current-state load for document id {documentId} returned "
                     + $"{hydratedPage.DocumentMetadata.Count} metadata rows, but exactly 1 was expected."
             );
         }
 
         var documentMetadata = hydratedPage.DocumentMetadata[0];
 
-        if (documentMetadata.DocumentId != request.TargetContext.DocumentId)
+        if (documentMetadata.DocumentId != documentId)
         {
             throw new InvalidOperationException(
                 $"Current-state load returned metadata for document id {documentMetadata.DocumentId}, "
-                    + $"but target document id was {request.TargetContext.DocumentId}."
+                    + $"but target document id was {documentId}."
             );
         }
 

@@ -19,11 +19,18 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <param name="NamespacePrefixParameterization">Dialect-specific namespace prefix parameterization.</param>
 /// <param name="DocumentIdParameterName">Bare parameter name used for the stored row's DocumentId.</param>
 /// <param name="ProposedNamespaceParameterName">Bare parameter name carrying the proposed namespace value.</param>
+/// <param name="RowGuardPredicateSql">
+/// Optional raw predicate appended as a <c>WHERE</c> clause to every emitted check select. When it is
+/// false the check's result set is empty and none of its branches — including the abort device —
+/// evaluates, which is how checks co-batched behind a captured target stay vacuous for a write that
+/// resolved to no existing document.
+/// </param>
 public sealed record NamespaceAuthorizationSqlSpec(
     IReadOnlyList<NamespaceAuthorizationCheckSpec> Checks,
     NamespacePrefixParameterization NamespacePrefixParameterization,
     string DocumentIdParameterName,
-    string ProposedNamespaceParameterName
+    string ProposedNamespaceParameterName,
+    string? RowGuardPredicateSql = null
 );
 
 /// <summary>
@@ -120,6 +127,12 @@ public sealed class NamespaceAuthorizationSqlCompiler(SqlDialect dialect)
                         check.ValueSource,
                         "Unsupported namespace authorization value source."
                     );
+            }
+
+            if (spec.RowGuardPredicateSql is { } rowGuardPredicateSql)
+            {
+                writer.Append(" WHERE ");
+                writer.Append(rowGuardPredicateSql);
             }
 
             writer.AppendLine(";");

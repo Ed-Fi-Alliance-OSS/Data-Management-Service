@@ -159,6 +159,10 @@ file sealed class RecordingRelationalWriteSession(
     public Task RollbackAsync(CancellationToken cancellationToken = default) =>
         _innerSession.RollbackAsync(cancellationToken);
 
+    // Forwarded so the wrapped session keeps the rollback tolerance the production session has.
+    public void ReportDatabaseFailure(DbException exception) =>
+        _innerSession.ReportDatabaseFailure(exception);
+
     public ValueTask DisposeAsync() => _innerSession.DisposeAsync();
 }
 
@@ -313,6 +317,50 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             )
             .ToArray();
 
+    public static int SchoolAddressInsertStatementCount(MultiBatchCommandRecorder recorder) =>
+        StatementCount(recorder, "INSERT INTO [edfi].[SchoolAddress]");
+
+    public static int SchoolAddressInsertCommandCount(MultiBatchCommandRecorder recorder) =>
+        CommandCount(recorder, "INSERT INTO [edfi].[SchoolAddress]");
+
+    public static int SchoolExtensionAddressInsertStatementCount(MultiBatchCommandRecorder recorder) =>
+        StatementCount(recorder, "INSERT INTO [sample].[SchoolExtensionAddress]");
+
+    public static int SchoolExtensionAddressInsertCommandCount(MultiBatchCommandRecorder recorder) =>
+        CommandCount(recorder, "INSERT INTO [sample].[SchoolExtensionAddress]");
+
+    public static int SchoolAddressDeleteCommandCount(MultiBatchCommandRecorder recorder) =>
+        CommandCount(recorder, "DELETE FROM [edfi].[SchoolAddress]");
+
+    public static int SchoolAddressUpdateCommandCount(MultiBatchCommandRecorder recorder) =>
+        CommandCount(recorder, "UPDATE [edfi].[SchoolAddress]");
+
+    /// <summary>Emitted statements matching <paramref name="statementPrefix"/> across every command.</summary>
+    private static int StatementCount(MultiBatchCommandRecorder recorder, string statementPrefix) =>
+        recorder.Commands.Sum(command => CountOccurrences(command.CommandText, statementPrefix));
+
+    /// <summary>Commands carrying at least one statement matching <paramref name="statementPrefix"/>.</summary>
+    private static int CommandCount(MultiBatchCommandRecorder recorder, string statementPrefix) =>
+        recorder.Commands.Count(command =>
+            command.CommandText.Contains(statementPrefix, StringComparison.OrdinalIgnoreCase)
+        );
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var occurrences = 0;
+
+        for (
+            var index = text.IndexOf(value, StringComparison.OrdinalIgnoreCase);
+            index >= 0;
+            index = text.IndexOf(value, index + value.Length, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            occurrences++;
+        }
+
+        return occurrences;
+    }
+
     public static IReadOnlyList<int> SchoolAddressInsertParameterCounts(MultiBatchCommandRecorder recorder) =>
         InsertParameterCounts(recorder, "INSERT INTO [edfi].[SchoolAddress]");
 
@@ -334,11 +382,19 @@ file static class MultiBatchCollectionsIntegrationTestSupport
     public static IReadOnlyList<int> SchoolAddressUpdateParameterCounts(MultiBatchCommandRecorder recorder) =>
         recorder
             .Commands.Where(command =>
-                command.CommandText.Contains("update", StringComparison.OrdinalIgnoreCase)
+                StartsWithStatement(command.CommandText, "update")
                 && command.CommandText.Contains("[edfi].[SchoolAddress]", StringComparison.Ordinal)
             )
             .Select(command => command.ParametersByName.Count)
             .ToArray();
+
+    /// <summary>
+    /// Classifies a recorded command by the statement it begins with. Matching the keyword anywhere in the
+    /// text is not sound: the first phase's capture command holds <c>UPDLOCK</c> and hydrates the same
+    /// table, so it would be counted as a collection update batch.
+    /// </summary>
+    private static bool StartsWithStatement(string commandText, string statementKeyword) =>
+        commandText.TrimStart().StartsWith(statementKeyword, StringComparison.OrdinalIgnoreCase);
 
     // --- Changed-descriptor multi-batch update scenario support (NoProfileMultiBatchCollection/ChangedUpdateBatchPartitions) ---
 
@@ -810,7 +866,6 @@ public class Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Create_With_A
     private UpsertResult _result = null!;
     private MultiBatchCollectionPersistedState _persistedState = null!;
     private int _maxRowsPerBatch;
-    private int _parametersPerRow;
     private int _requestedAddressCount;
 
     protected override Task OneTimeSetUpTestAsync()
@@ -820,7 +875,6 @@ public class Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Create_With_A
         );
 
         _maxRowsPerBatch = schoolAddressTablePlan.BulkInsertBatching.MaxRowsPerBatch;
-        _parametersPerRow = schoolAddressTablePlan.BulkInsertBatching.ParametersPerRow;
         _requestedAddressCount = _maxRowsPerBatch + 2;
 
         return Task.CompletedTask;
@@ -856,9 +910,13 @@ public class Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Create_With_A
     public void It_partitions_collection_id_reservation_and_insert_commands_using_the_compiled_batch_limit() =>
         NoProfileMultiBatchCollectionScenarios.AssertCreateBatchPartitions(
             MultiBatchCollectionsIntegrationTestSupport.ReservationRowCounts(_commandRecorder),
-            MultiBatchCollectionsIntegrationTestSupport.SchoolAddressInsertParameterCounts(_commandRecorder),
-            _maxRowsPerBatch,
-            _parametersPerRow
+            MultiBatchCollectionsIntegrationTestSupport.SchoolAddressInsertStatementCount(_commandRecorder),
+            MultiBatchCollectionsIntegrationTestSupport.SchoolAddressInsertCommandCount(_commandRecorder),
+            // SQL Server reaches the parameter cap first, and its per-table row cap is derived from that
+            // same cap. Inlining the collection key frees one parameter per row, so the whole rowset now
+            // fits a single statement inside one command.
+            expectedInsertStatementCount: 1,
+            expectedInsertCommandCount: 1
         );
 
     private async Task<UpsertResult> ExecuteCreateAsync()
@@ -905,7 +963,6 @@ public class Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Delete_Update
     private MultiBatchCollectionPersistedState _persistedStateBeforeUpdate = null!;
     private MultiBatchCollectionPersistedState _persistedStateAfterUpdate = null!;
     private int _maxRowsPerBatch;
-    private int _parametersPerRow;
     private int _createdAddressCount;
 
     protected override Task OneTimeSetUpTestAsync()
@@ -915,7 +972,6 @@ public class Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Delete_Update
         );
 
         _maxRowsPerBatch = schoolAddressTablePlan.BulkInsertBatching.MaxRowsPerBatch;
-        _parametersPerRow = schoolAddressTablePlan.BulkInsertBatching.ParametersPerRow;
         _createdAddressCount = _maxRowsPerBatch + 2;
 
         return Task.CompletedTask;
@@ -961,9 +1017,7 @@ public class Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Delete_Update
     [Test]
     public void It_partitions_collection_delete_commands_using_the_compiled_batch_limit() =>
         NoProfileMultiBatchCollectionScenarios.AssertDeleteBatchPartitions(
-            MultiBatchCollectionsIntegrationTestSupport.SchoolAddressDeleteParameterCounts(_commandRecorder),
-            _maxRowsPerBatch,
-            _parametersPerRow
+            MultiBatchCollectionsIntegrationTestSupport.SchoolAddressDeleteCommandCount(_commandRecorder)
         );
 
     private async Task ExecuteCreateAsync()
@@ -1041,7 +1095,6 @@ public class Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Aligned_Exten
     private IReadOnlyList<MultiBatchCollectionPersistedSchoolExtensionAddressRow> _persistedExtensionAddresses =
         null!;
     private int _maxRowsPerBatch;
-    private int _parametersPerRow;
     private int _requestedAddressCount;
 
     protected override Task OneTimeSetUpTestAsync()
@@ -1050,7 +1103,6 @@ public class Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Aligned_Exten
             MultiBatchCollectionsIntegrationTestSupport.GetSchoolExtensionAddressTablePlan(_mappingSet);
 
         _maxRowsPerBatch = schoolExtensionAddressTablePlan.BulkInsertBatching.MaxRowsPerBatch;
-        _parametersPerRow = schoolExtensionAddressTablePlan.BulkInsertBatching.ParametersPerRow;
         _requestedAddressCount = _maxRowsPerBatch + 2;
 
         return Task.CompletedTask;
@@ -1093,11 +1145,17 @@ public class Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Aligned_Exten
     [Test]
     public void It_partitions_collection_aligned_extension_insert_commands_using_the_compiled_batch_limit() =>
         NoProfileMultiBatchCollectionScenarios.AssertAlignedExtensionInsertBatchPartitions(
-            MultiBatchCollectionsIntegrationTestSupport.SchoolExtensionAddressInsertParameterCounts(
+            MultiBatchCollectionsIntegrationTestSupport.SchoolExtensionAddressInsertStatementCount(
                 _commandRecorder
             ),
-            _maxRowsPerBatch,
-            _parametersPerRow
+            MultiBatchCollectionsIntegrationTestSupport.SchoolExtensionAddressInsertCommandCount(
+                _commandRecorder
+            ),
+            // An aligned scope binds a reserved collection key rather than inlining it, so its rows are one
+            // parameter wider and the 2098-parameter budget genuinely needs a second command. That is the
+            // budget, not a per-table round trip: the count does not grow with the number of tables.
+            expectedInsertStatementCount: 2,
+            expectedInsertCommandCount: 2
         );
 
     private async Task<UpsertResult> ExecuteCreateAsync()
@@ -1157,7 +1215,6 @@ public class Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Changed_Descr
     private IReadOnlyList<NoProfileMultiBatchCollectionScenarios.SchoolAddressWithDescriptorRow> _addressesAfter =
         null!;
     private int _maxRowsPerBatch;
-    private int _parametersPerRow;
     private int _createdAddressCount;
 
     protected override Task OneTimeSetUpTestAsync()
@@ -1167,7 +1224,6 @@ public class Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Changed_Descr
         );
 
         _maxRowsPerBatch = schoolAddressTablePlan.BulkInsertBatching.MaxRowsPerBatch;
-        _parametersPerRow = schoolAddressTablePlan.BulkInsertBatching.ParametersPerRow;
         _createdAddressCount = _maxRowsPerBatch + 2;
 
         return Task.CompletedTask;
@@ -1233,18 +1289,16 @@ public class Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Changed_Descr
     public void It_partitions_collection_update_commands_using_the_compiled_batch_limit()
     {
         MultiBatchCollectionsIntegrationTestSupport
-            .SchoolAddressInsertParameterCounts(_commandRecorder)
+            .SchoolAddressInsertStatementCount(_commandRecorder)
             .Should()
-            .BeEmpty("a pure changed-descriptor update inserts no SchoolAddress rows");
+            .Be(0, "a pure changed-descriptor update inserts no SchoolAddress rows");
         MultiBatchCollectionsIntegrationTestSupport
-            .SchoolAddressDeleteParameterCounts(_commandRecorder)
+            .SchoolAddressDeleteCommandCount(_commandRecorder)
             .Should()
-            .BeEmpty("a pure changed-descriptor update deletes no SchoolAddress rows");
+            .Be(0, "a pure changed-descriptor update deletes no SchoolAddress rows");
 
         NoProfileMultiBatchCollectionScenarios.AssertUpdateBatchPartitions(
-            MultiBatchCollectionsIntegrationTestSupport.SchoolAddressUpdateParameterCounts(_commandRecorder),
-            _maxRowsPerBatch,
-            _parametersPerRow
+            MultiBatchCollectionsIntegrationTestSupport.SchoolAddressUpdateCommandCount(_commandRecorder)
         );
     }
 

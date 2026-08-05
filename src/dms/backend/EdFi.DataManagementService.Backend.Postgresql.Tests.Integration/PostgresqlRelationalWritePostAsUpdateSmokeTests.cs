@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
-using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -30,64 +29,59 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
+/// <summary>
+/// Holds the first write session the write path opens, so a competing request can create and commit
+/// while the held request sits on an open transaction that has taken no lock and made no observation.
+/// The hold sits at session creation rather than at a command hook because the composite first phase
+/// issues its statements through <see cref="IRelationalWriteSession.CreateCommand"/>, which is
+/// synchronous and so cannot await a gate.
+/// </summary>
 internal sealed class ConcurrentPostCreateRaceCoordinator
 {
-    private readonly TaskCompletionSource _firstResolverCallPending = new(
+    private readonly TaskCompletionSource _firstWriteSessionPending = new(
         TaskCreationOptions.RunContinuationsAsynchronously
     );
 
-    private readonly TaskCompletionSource _allowFirstResolverCall = new(
+    private readonly TaskCompletionSource _allowFirstWriteSession = new(
         TaskCreationOptions.RunContinuationsAsynchronously
     );
 
-    private int _resolveForPostCallCount;
+    private int _writeSessionCount;
 
-    public async Task WaitForFirstResolverCallWindowAsync(CancellationToken cancellationToken = default)
+    public async Task WaitForFirstWriteSessionWindowAsync(CancellationToken cancellationToken = default)
     {
-        if (Interlocked.Increment(ref _resolveForPostCallCount) != 1)
+        if (Interlocked.Increment(ref _writeSessionCount) != 1)
         {
             return;
         }
 
-        _firstResolverCallPending.TrySetResult();
-        await _allowFirstResolverCall.Task.WaitAsync(cancellationToken);
+        _firstWriteSessionPending.TrySetResult();
+        await _allowFirstWriteSession.Task.WaitAsync(cancellationToken);
     }
 
-    public Task WaitUntilFirstResolverCallIsPendingAsync(CancellationToken cancellationToken = default) =>
-        _firstResolverCallPending.Task.WaitAsync(cancellationToken);
+    public Task WaitUntilFirstWriteSessionIsPendingAsync(CancellationToken cancellationToken = default) =>
+        _firstWriteSessionPending.Task.WaitAsync(cancellationToken);
 
-    public void ReleaseFirstResolverCall() => _allowFirstResolverCall.TrySetResult();
+    public void ReleaseFirstWriteSession() => _allowFirstWriteSession.TrySetResult();
 }
 
-internal sealed class BlockingPostTargetLookupResolver(ConcurrentPostCreateRaceCoordinator coordinator)
-    : IRelationalWriteTargetLookupResolver
+/// <summary>
+/// Wraps the real session factory so the first session it opens is held at the coordinator before it is
+/// handed to the write path. Gating the factory keeps the hold on the path every write takes, whatever
+/// command hook the first phase goes on to use.
+/// </summary>
+internal sealed class GatedFirstWriteSessionFactory(
+    IRelationalWriteSessionFactory innerFactory,
+    ConcurrentPostCreateRaceCoordinator coordinator
+) : IRelationalWriteSessionFactory
 {
-    private readonly ConcurrentPostCreateRaceCoordinator _coordinator =
-        coordinator ?? throw new ArgumentNullException(nameof(coordinator));
-
-    private readonly RelationalWriteTargetLookupResolver _innerResolver = new();
-
-    public async Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        ReferentialId referentialId,
-        DocumentUuid candidateDocumentUuid,
-        DbConnection connection,
-        DbTransaction transaction,
-        CancellationToken cancellationToken = default
-    )
+    public async Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
     {
-        await _coordinator.WaitForFirstResolverCallWindowAsync(cancellationToken);
+        IRelationalWriteSession session = await innerFactory.CreateAsync(cancellationToken);
 
-        return await _innerResolver.ResolveForPostAsync(
-            mappingSet,
-            resource,
-            referentialId,
-            candidateDocumentUuid,
-            connection,
-            transaction,
-            cancellationToken
-        );
+        await coordinator.WaitForFirstWriteSessionWindowAsync(cancellationToken);
+
+        return session;
     }
 }
 
@@ -110,13 +104,47 @@ file static class PostAsUpdateIntegrationTestSupport
         if (raceCoordinator is not null)
         {
             services.AddSingleton(raceCoordinator);
-            services.AddScoped<IRelationalWriteTargetLookupResolver, BlockingPostTargetLookupResolver>();
         }
 
         services.AddPostgresqlBackendIntegrationTestServices();
 
+        if (raceCoordinator is not null)
+        {
+            GateWriteSessionFactory(services);
+        }
+
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
+        );
+    }
+
+    /// <summary>
+    /// Replaces the registered write session factory with one that gates its sessions, resolving the
+    /// provider's own factory by its registered implementation type so the decorator never has to name it.
+    /// </summary>
+    private static void GateWriteSessionFactory(IServiceCollection services)
+    {
+        ServiceDescriptor registeredFactory = services.Single(descriptor =>
+            descriptor.ServiceType == typeof(IRelationalWriteSessionFactory)
+        );
+
+        Type implementationType =
+            registeredFactory.ImplementationType
+            ?? throw new InvalidOperationException(
+                "The write session factory must be registered by implementation type for the race gate to wrap it."
+            );
+
+        services.Remove(registeredFactory);
+        services.Add(
+            ServiceDescriptor.Describe(
+                typeof(IRelationalWriteSessionFactory),
+                serviceProvider => new GatedFirstWriteSessionFactory(
+                    (IRelationalWriteSessionFactory)
+                        ActivatorUtilities.CreateInstance(serviceProvider, implementationType),
+                    serviceProvider.GetRequiredService<ConcurrentPostCreateRaceCoordinator>()
+                ),
+                registeredFactory.Lifetime
+            )
         );
     }
 
@@ -2965,6 +2993,10 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
         Guid.Parse("bbbbbbbb-0000-0000-0000-000000000102")
     );
 
+    // Bounds the race-coordination waits so a stale-candidate worker that faults or blocks before
+    // reaching the gate fails the fixture instead of hanging the run.
+    private static readonly TimeSpan CoordinationTimeout = TimeSpan.FromSeconds(30);
+
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
@@ -2999,7 +3031,18 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
             _sharedSchoolReferentialId
         );
 
-        await _raceCoordinator.WaitUntilFirstResolverCallIsPendingAsync();
+        // Race readiness against the worker task under a bounded timeout — a bare readiness wait would
+        // hang the run if the worker faulted, or if the gate ever stopped sitting on the write path,
+        // before it reached the coordinator. The worker cannot complete successfully while gated, so its
+        // winning the race always propagates a fault.
+        using (var readinessTimeout = new CancellationTokenSource(CoordinationTimeout))
+        {
+            Task readinessTask = _raceCoordinator.WaitUntilFirstWriteSessionIsPendingAsync(
+                readinessTimeout.Token
+            );
+            Task completedFirst = await Task.WhenAny(readinessTask, staleCreateCandidateTask);
+            await completedFirst;
+        }
 
         _createWinnerResult = await ExecuteUpsertAsync(
             CreateWinnerRequestBodyJson,
@@ -3011,7 +3054,7 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
         (await ReadDocumentCountAsync(CreateWinnerDocumentUuid.Value)).Should().Be(1);
         (await ReadReferentialIdentityCountAsync(_sharedSchoolReferentialId.Value)).Should().Be(1);
 
-        _raceCoordinator.ReleaseFirstResolverCall();
+        _raceCoordinator.ReleaseFirstWriteSession();
 
         _staleCreateCandidateResult = await staleCreateCandidateTask;
         _documentAfterRequests = await ReadDocumentAsync(CreateWinnerDocumentUuid.Value);
@@ -3026,7 +3069,7 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
     [OneTimeTearDown]
     public async Task OneTimeTearDown()
     {
-        _raceCoordinator?.ReleaseFirstResolverCall();
+        _raceCoordinator?.ReleaseFirstWriteSession();
 
         if (_serviceProvider is not null)
         {

@@ -45,8 +45,6 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();
         var currentStateLoader =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>();
-        var writeFreshnessChecker =
-            scope.ServiceProvider.GetRequiredService<IRelationalWriteFreshnessChecker>();
         var noProfileMergeSynthesizer =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfileMergeSynthesizer>();
         var noProfilePersister = scope.ServiceProvider.GetRequiredService<IRelationalWritePersister>();
@@ -84,7 +82,6 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         resolver.Should().BeOfType<ReferenceResolver>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
-        writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
         noProfilePersister.Should().BeOfType<RelationalWriteNoProfilePersister>();
         targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();
@@ -174,6 +171,20 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
     }
 
     [Test]
+    public void It_builds_an_embeddable_postgresql_reference_lookup_command()
+    {
+        var factory = new PostgresqlReferenceResolverAdapterFactory(A.Fake<IRelationalCommandExecutor>());
+        var request = CreateLookupRequest(3);
+
+        var command = factory.TryBuildSessionLookupCommand(request);
+
+        command.Should().NotBeNull();
+        command!.Parameters.Should().ContainSingle();
+        command.Parameters[0].Name.Should().Be("@referentialIds");
+        command.CommandText.Should().Contain("unnest(@referentialIds::uuid[])");
+    }
+
+    [Test]
     public void ServiceCollection_replaces_existing_relational_token_info_lookup_with_postgresql_lookup()
     {
         var services = new ServiceCollection();
@@ -204,6 +215,25 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
+        );
+    }
+
+    private static ReferenceLookupRequest CreateLookupRequest(int count)
+    {
+        var requestResource = new QualifiedResourceName("Ed-Fi", "Student");
+        var mappingSet = RelationalAccessTestData.CreateMappingSet(requestResource);
+
+        return new ReferenceLookupRequest(
+            mappingSet,
+            requestResource,
+            Enumerable
+                .Range(1, count)
+                .Select(index =>
+                    RelationalAccessTestData.CreateSchoolLookup(
+                        new ReferentialId(Guid.ParseExact($"{index:x8}000000000000000000000000", "N"))
+                    )
+                )
+                .ToArray()
         );
     }
 

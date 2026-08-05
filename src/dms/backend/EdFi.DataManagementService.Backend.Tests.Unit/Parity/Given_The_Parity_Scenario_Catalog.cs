@@ -98,8 +98,6 @@ public class Given_The_Parity_Scenario_Catalog
         "ProfileUnchangedWriteGuardedNoOp",
         "ProfileUnchangedWriteGuardedNoOp/RootOnlyPut",
         "ProfileUnchangedWriteGuardedNoOp/RootOnlyPostAsUpdate",
-        "ProfileUnchangedWriteGuardedNoOp/StalePut",
-        "ProfileUnchangedWriteGuardedNoOp/StalePostAsUpdate",
         "ProfileUnchangedWriteGuardedNoOp/SeparateTablePut",
         "ProfileUnchangedWriteGuardedNoOp/TopLevelCollectionPut",
         "ProfileUnchangedWriteGuardedNoOp/OrdinalAlignmentAcrossNoProfilePath",
@@ -127,14 +125,10 @@ public class Given_The_Parity_Scenario_Catalog
         "NoProfileGuardedNoOp",
         "NoProfileGuardedNoOp/Put",
         "NoProfileGuardedNoOp/PostAsUpdate",
-        "NoProfileGuardedNoOp/PutCurrentStateRefresh",
-        "NoProfileGuardedNoOp/PostAsUpdateCurrentStateRefresh",
         "NoProfileGuardedNoOp/PutAfterReorder",
         "NoProfileGuardedNoOp/PostAsUpdateAfterReorder",
-        "NoProfileGuardedNoOp/StalePut",
-        "NoProfileGuardedNoOp/StalePostAsUpdate",
-        "NoProfileGuardedNoOp/PutCommitWindowRace",
-        "NoProfileGuardedNoOp/PostAsUpdateCommitWindowRace",
+        "NoProfileGuardedNoOp/PutCompetingUncommittedBump",
+        "NoProfileGuardedNoOp/PostAsUpdateCompetingUncommittedBump",
         "NoProfileMultiBatchCollection",
         "NoProfileMultiBatchCollection/Create",
         "NoProfileMultiBatchCollection/DeleteUpdate",
@@ -432,23 +426,24 @@ public class Given_The_Parity_Scenario_Catalog
     }
 
     [Test]
-    public void It_records_the_commit_window_race_scheduling_dialect_difference()
+    public void It_records_the_capture_lock_construct_dialect_difference()
     {
-        // Phase 6 of DMS-1285 validated the commit-window race on SQL Server with unchanged shared
-        // outcomes; the scheduling/blocking difference that required the redesigned twin choreography
-        // is recorded on exactly these two rows.
+        // The capture lock is the guarded no-op's freshness proof, and each engine expresses it with a
+        // different construct. The difference is recorded on exactly the two rows that contend for it.
         foreach (
             string id in (string[])
                 [
-                    "NoProfileGuardedNoOp/PutCommitWindowRace",
-                    "NoProfileGuardedNoOp/PostAsUpdateCommitWindowRace",
+                    "NoProfileGuardedNoOp/PutCompetingUncommittedBump",
+                    "NoProfileGuardedNoOp/PostAsUpdateCompetingUncommittedBump",
                 ]
         )
         {
             ParityScenario row = _all.Single(s => s.Id == id);
-            row.DialectDifference.Should().NotBeNull("{0} pins the commit-window scheduling difference", id);
-            row.DialectDifference!.Description.Should().Contain("X-lock");
-            row.DialectDifference.Rationale.Should().Contain("[false, true]");
+            row.DialectDifference.Should().NotBeNull("{0} pins the capture-lock construct difference", id);
+            row.DialectDifference!.Description.Should().Contain("FOR UPDATE");
+            row.DialectDifference.Description.Should().Contain("UPDLOCK");
+            row.DialectDifference.Rationale.Should()
+                .Contain("blocks until the competing transaction commits");
         }
     }
 
@@ -500,7 +495,7 @@ public class Given_The_Parity_Scenario_Catalog
             .Should()
             .Be("ProfileVisibleRowUpdateWithHiddenRowPreservation");
         ParityScenarioCatalog
-            .CanonicalIdOf("NoProfileGuardedNoOp/StalePut")
+            .CanonicalIdOf("NoProfileGuardedNoOp/PutCompetingUncommittedBump")
             .Should()
             .Be("NoProfileGuardedNoOp");
         ParityScenarioCatalog
