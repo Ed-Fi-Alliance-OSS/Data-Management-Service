@@ -227,6 +227,26 @@ public class DocumentCacheTargetRegistryTests
         }
 
         [Test]
+        public async Task It_uses_direct_load_on_supervisor_refresh_for_unresolved_targets()
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.DataStoreProvider.QueueLoadResult("TenantA");
+            await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+            fixture.DataStoreProvider.QueueLoadResult("TenantA", CreateDataStore(7, "connection-a"));
+
+            DocumentCacheTargetRegistrySnapshot snapshot = await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.SupervisorTriggered
+            );
+
+            DocumentCacheTargetObservation observation = snapshot.Targets.Single();
+            observation.ResolutionState.Should().Be(DocumentCacheTargetResolutionState.Resolved);
+            observation.Generation!.Value.Should().Be(1);
+            fixture.DataStoreProvider.LoadDataStoreCalls.Should().Equal("TenantA", "TenantA");
+            fixture.DataStoreProvider.RefreshIfExpiredCalls.Should().BeEmpty();
+            fixture.ContextBuilder.BuildCalls.Should().ContainSingle();
+        }
+
+        [Test]
         public async Task It_keeps_the_current_generation_when_CMS_refresh_fails_for_a_resolved_target()
         {
             RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
@@ -431,6 +451,52 @@ public class DocumentCacheTargetRegistryTests
         }
 
         [Test]
+        public async Task It_uses_expiration_aware_refresh_for_supervisor_refresh_of_resolved_current_targets()
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.DataStoreProvider.QueueLoadResult("TenantA", CreateDataStore(7, "connection-a"));
+            await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+
+            DocumentCacheTargetRegistrySnapshot snapshot = await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.SupervisorTriggered
+            );
+
+            DocumentCacheTargetObservation observation = snapshot.Targets.Single();
+            observation.ResolutionState.Should().Be(DocumentCacheTargetResolutionState.Resolved);
+            observation.Generation!.Value.Should().Be(1);
+            fixture.DataStoreProvider.LoadDataStoreCalls.Should().Equal("TenantA");
+            fixture.DataStoreProvider.RefreshIfExpiredCalls.Should().Equal("TenantA");
+            fixture.ContextBuilder.BuildCalls.Should().ContainSingle();
+        }
+
+        [Test]
+        public async Task It_detects_replacement_metadata_after_expiration_aware_supervisor_refresh()
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.DataStoreProvider.QueueLoadResult("TenantA", CreateDataStore(7, "connection-a"));
+            await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+            fixture.DataStoreProvider.QueueExpirationRefreshResult(
+                "TenantA",
+                CreateDataStore(7, "connection-b")
+            );
+
+            DocumentCacheTargetRegistrySnapshot snapshot = await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.SupervisorTriggered
+            );
+
+            DocumentCacheTargetObservation observation = snapshot.Targets.Single();
+            observation.Generation!.Value.Should().Be(2);
+            observation
+                .Diagnostics.Should()
+                .Contain(diagnostic =>
+                    diagnostic.Category == DocumentCacheTargetDiagnosticCategory.TargetReplaced
+                );
+            fixture.DataStoreProvider.LoadDataStoreCalls.Should().Equal("TenantA");
+            fixture.DataStoreProvider.RefreshIfExpiredCalls.Should().Equal("TenantA");
+            fixture.ContextBuilder.BuildCalls.Select(call => call.Generation.Value).Should().Equal(1, 2);
+        }
+
+        [Test]
         public async Task It_does_not_create_a_new_generation_for_display_or_route_context_changes()
         {
             RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
@@ -579,10 +645,6 @@ public class DocumentCacheTargetRegistryTests
             DocumentCacheTargetRegistrySnapshot initialSnapshot = await fixture.Registry.RefreshAsync(
                 DocumentCacheTargetRefreshReason.Startup
             );
-            fixture.DataStoreProvider.QueueLoadResult(
-                "TenantA",
-                CreateDataStore(7, "connection-a", RelationalProviderToken.SqlServer)
-            );
 
             DocumentCacheTargetRegistrySnapshot retrySnapshot = await fixture.Registry.RefreshAsync(
                 DocumentCacheTargetRefreshReason.SupervisorTriggered
@@ -605,6 +667,8 @@ public class DocumentCacheTargetRegistryTests
                 )
                 .Should()
                 .NotBeNull();
+            fixture.DataStoreProvider.LoadDataStoreCalls.Should().Equal("TenantA");
+            fixture.DataStoreProvider.RefreshIfExpiredCalls.Should().Equal("TenantA");
         }
 
         [Test]
@@ -617,10 +681,6 @@ public class DocumentCacheTargetRegistryTests
                 CreateDataStore(7, "connection-a", RelationalProviderToken.SqlServer)
             );
             await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
-            fixture.DataStoreProvider.QueueLoadResult(
-                "TenantA",
-                CreateDataStore(7, "connection-a", RelationalProviderToken.SqlServer)
-            );
 
             DocumentCacheTargetRegistrySnapshot retrySnapshot = await fixture.Registry.RefreshAsync(
                 DocumentCacheTargetRefreshReason.SupervisorTriggered
@@ -637,6 +697,8 @@ public class DocumentCacheTargetRegistryTests
                 );
             fixture.ContextBuilder.BuildCalls.Should().ContainSingle();
             fixture.Registry.CurrentRuntimeSnapshot.GetExecutionContext(_tenantTargetKey).Should().BeNull();
+            fixture.DataStoreProvider.LoadDataStoreCalls.Should().Equal("TenantA");
+            fixture.DataStoreProvider.RefreshIfExpiredCalls.Should().Equal("TenantA");
         }
 
         [Test]
@@ -1235,6 +1297,8 @@ public class DocumentCacheTargetRegistryTests
         private readonly Dictionary<string, Queue<LoadDataStoresResult>> _queuedLoadResults = new(
             StringComparer.OrdinalIgnoreCase
         );
+        private readonly Dictionary<string, Queue<LoadDataStoresResult>> _queuedExpirationRefreshResults =
+            new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, IList<DataStore>> _loadedDataStores = new(
             StringComparer.OrdinalIgnoreCase
         );
@@ -1243,6 +1307,8 @@ public class DocumentCacheTargetRegistryTests
         );
 
         public List<string> LoadDataStoreCalls { get; } = [];
+
+        public List<string> RefreshIfExpiredCalls { get; } = [];
 
         public List<(long Id, string TenantKey)> GetByIdCalls { get; } = [];
 
@@ -1257,6 +1323,9 @@ public class DocumentCacheTargetRegistryTests
 
         public void QueueLoadFailure(string? tenant, Exception exception) =>
             GetQueue(tenant).Enqueue(LoadDataStoresResult.Failure(exception));
+
+        public void QueueExpirationRefreshResult(string? tenant, params DataStore[] dataStores) =>
+            GetExpirationRefreshQueue(tenant).Enqueue(LoadDataStoresResult.Success(dataStores));
 
         public void QueueMutationAfterNextGetById(string? tenant, params DataStore[] dataStores) =>
             GetGetByIdMutationQueue(tenant).Enqueue(dataStores);
@@ -1283,8 +1352,26 @@ public class DocumentCacheTargetRegistryTests
             return Task.FromResult(result.DataStores);
         }
 
-        public Task RefreshInstancesIfExpiredAsync(string? tenant = null) =>
-            throw new AssertionException("DocumentCache target registry must use explicit load hooks.");
+        public Task RefreshInstancesIfExpiredAsync(string? tenant = null)
+        {
+            string tenantKey = GetTenantKey(tenant);
+            RefreshIfExpiredCalls.Add(tenantKey);
+
+            Queue<LoadDataStoresResult> queue = GetExpirationRefreshQueue(tenant);
+            if (queue.Count == 0)
+            {
+                return Task.CompletedTask;
+            }
+
+            LoadDataStoresResult result = queue.Dequeue();
+            if (result.Exception is not null)
+            {
+                throw result.Exception;
+            }
+
+            _loadedDataStores[tenantKey] = result.DataStores;
+            return Task.CompletedTask;
+        }
 
         public IReadOnlyList<DataStore> GetAll(string? tenant = null) =>
             _loadedDataStores.TryGetValue(GetTenantKey(tenant), out IList<DataStore>? dataStores)
@@ -1340,6 +1427,23 @@ public class DocumentCacheTargetRegistryTests
             {
                 queue = new Queue<LoadDataStoresResult>();
                 _queuedLoadResults.Add(tenantKey, queue);
+            }
+
+            return queue;
+        }
+
+        private Queue<LoadDataStoresResult> GetExpirationRefreshQueue(string? tenant)
+        {
+            string tenantKey = GetTenantKey(tenant);
+            if (
+                !_queuedExpirationRefreshResults.TryGetValue(
+                    tenantKey,
+                    out Queue<LoadDataStoresResult>? queue
+                )
+            )
+            {
+                queue = new Queue<LoadDataStoresResult>();
+                _queuedExpirationRefreshResults.Add(tenantKey, queue);
             }
 
             return queue;

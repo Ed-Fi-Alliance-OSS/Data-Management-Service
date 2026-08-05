@@ -1003,6 +1003,62 @@ public class Given_DocumentCacheProjectionSupervisor
     }
 
     [Test]
+    [NonParallelizable]
+    public async Task It_uses_expiration_aware_registry_refresh_at_the_poll_interval_for_current_targets()
+    {
+        DocumentCacheTargetKey targetKey = DocumentCacheTargetKey.Create("TenantA", 7);
+        IOptions<DocumentCacheOptions> options = OptionsFor([targetKey]);
+        ControlledTimeProvider timeProvider = new(ObservedAt);
+        RecordingSupervisorDataStoreProvider dataStoreProvider = new();
+        dataStoreProvider.QueueLoadResult("TenantA", CreateDataStore(7, "connection-a"));
+        RegistryTargetContextBuilder registryContextBuilder = new(options);
+        DocumentCacheTargetRegistry registry = new(
+            dataStoreProvider,
+            registryContextBuilder,
+            options,
+            timeProvider,
+            NullLogger<DocumentCacheTargetRegistry>.Instance
+        );
+        RecordingObservationSink observationSink = new();
+        RecordingTargetContextFactory targetContextFactory = new(observationSink);
+        RecordingProjectionScheduler scheduler = new(
+            contexts => DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.NoEligibleWork),
+            contexts => DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.NoEligibleWork)
+        );
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationSink,
+            options,
+            scheduler,
+            timeProvider
+        );
+
+        try
+        {
+            await supervisor.StartAsync(CancellationToken.None);
+            await scheduler.WaitForCallCountAsync(1);
+
+            await timeProvider.WaitForTimerCountAsync(1);
+            timeProvider.Advance(TimeSpan.FromSeconds(5));
+            await scheduler.WaitForCallCountAsync(2);
+
+            dataStoreProvider.LoadDataStoreCalls.Should().Equal("TenantA");
+            dataStoreProvider.RefreshIfExpiredCalls.Should().Equal("TenantA");
+            registryContextBuilder.BuildCalls.Should().ContainSingle();
+            targetContextFactory
+                .CreatedContexts.Should()
+                .ContainSingle()
+                .Which.Generation.Value.Should()
+                .Be(1);
+        }
+        finally
+        {
+            await supervisor.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Test]
     public async Task It_waits_for_the_poll_interval_after_all_ready_targets_report_no_work()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
@@ -1241,6 +1297,24 @@ public class Given_DocumentCacheProjectionSupervisor
 
         return Options.Create(options);
     }
+
+    private static DataStore CreateDataStore(
+        long id,
+        string connectionString,
+        RelationalProviderToken? relationalProviderToken = null
+    ) =>
+        new(
+            id,
+            "Operational",
+            "Display name must not leak",
+            connectionString,
+            new Dictionary<RouteQualifierName, RouteQualifierValue>
+            {
+                [new RouteQualifierName("schoolYear")] = new("2026"),
+            },
+            relationalProviderToken ?? RelationalProviderToken.Postgresql,
+            RelationalProviderMetadataStatus.Supported
+        );
 
     private sealed class RecordingTargetRegistry : IDocumentCacheTargetRegistry
     {
@@ -1509,6 +1583,126 @@ public class Given_DocumentCacheProjectionSupervisor
             DocumentCacheProjectionTargetContextKey ContextKey,
             DocumentCacheProjectionTargetEndReason EndReason
         );
+    }
+
+    private sealed class RegistryTargetContextBuilder(IOptions<DocumentCacheOptions> options)
+        : IDocumentCacheTargetContextBuilder
+    {
+        private readonly DocumentCacheTargetEffectiveSettings _effectiveSettings =
+            DocumentCacheTargetEffectiveSettings.FromOptions(options.Value);
+
+        public List<RegistryBuildCall> BuildCalls { get; } = [];
+
+        public Task<DocumentCacheTargetContextBuildResult> BuildAsync(
+            DocumentCacheTargetKey targetKey,
+            DocumentCacheResolvedTargetDataStore resolvedDataStore,
+            DocumentCacheTargetContextGeneration generation,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            BuildCalls.Add(new RegistryBuildCall(targetKey, resolvedDataStore, generation));
+
+            RelationalProviderToken providerToken =
+                resolvedDataStore.RelationalProviderToken ?? RelationalProviderToken.Postgresql;
+            DocumentCacheTargetExecutionContext executionContext = new(
+                targetKey,
+                generation,
+                _effectiveSettings,
+                new DocumentCacheTargetDataStoreMetadata(
+                    resolvedDataStore.Id,
+                    resolvedDataStore.DataStoreType
+                ),
+                new DocumentCacheTargetConnectionInput(
+                    providerToken,
+                    resolvedDataStore.ConnectionFactoryInput ?? "connection"
+                ),
+                Fingerprint,
+                TrackingLifecycle,
+                SatisfiedInventory,
+                SatisfiedEnqueueTrigger,
+                DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
+            );
+
+            return Task.FromResult(
+                new DocumentCacheTargetContextBuildResult(
+                    EligibleObservation(executionContext),
+                    executionContext
+                )
+            );
+        }
+    }
+
+    private sealed record RegistryBuildCall(
+        DocumentCacheTargetKey TargetKey,
+        DocumentCacheResolvedTargetDataStore ResolvedDataStore,
+        DocumentCacheTargetContextGeneration Generation
+    );
+
+    private sealed class RecordingSupervisorDataStoreProvider : IDataStoreProvider
+    {
+        private readonly Dictionary<string, Queue<IList<DataStore>>> _queuedLoadResults = new(
+            StringComparer.OrdinalIgnoreCase
+        );
+        private readonly Dictionary<string, IList<DataStore>> _loadedDataStores = new(
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        public List<string> LoadDataStoreCalls { get; } = [];
+
+        public List<string> RefreshIfExpiredCalls { get; } = [];
+
+        public void QueueLoadResult(string? tenant, params DataStore[] dataStores) =>
+            GetQueue(tenant).Enqueue(dataStores);
+
+        public Task<IList<DataStore>> LoadDataStores(string? tenant = null)
+        {
+            string tenantKey = GetTenantKey(tenant);
+            LoadDataStoreCalls.Add(tenantKey);
+
+            Queue<IList<DataStore>> queue = GetQueue(tenant);
+            IList<DataStore> dataStores = queue.Count == 0 ? [] : queue.Dequeue();
+            _loadedDataStores[tenantKey] = dataStores;
+            return Task.FromResult(dataStores);
+        }
+
+        public Task RefreshInstancesIfExpiredAsync(string? tenant = null)
+        {
+            RefreshIfExpiredCalls.Add(GetTenantKey(tenant));
+            return Task.CompletedTask;
+        }
+
+        public IReadOnlyList<DataStore> GetAll(string? tenant = null) =>
+            _loadedDataStores.TryGetValue(GetTenantKey(tenant), out IList<DataStore>? dataStores)
+                ? dataStores.ToList().AsReadOnly()
+                : [];
+
+        public DataStore? GetById(long id, string? tenant = null) =>
+            _loadedDataStores.TryGetValue(GetTenantKey(tenant), out IList<DataStore>? dataStores)
+                ? dataStores.FirstOrDefault(dataStore => dataStore.Id == id)
+                : null;
+
+        public bool IsLoaded(string? tenant = null) => _loadedDataStores.ContainsKey(GetTenantKey(tenant));
+
+        public Task<IList<string>> LoadTenants() => Task.FromResult<IList<string>>([]);
+
+        public bool TenantExists(string tenant) => false;
+
+        public IReadOnlyList<string> GetLoadedTenantKeys() => [];
+
+        private Queue<IList<DataStore>> GetQueue(string? tenant)
+        {
+            string tenantKey = GetTenantKey(tenant);
+            if (!_queuedLoadResults.TryGetValue(tenantKey, out Queue<IList<DataStore>>? queue))
+            {
+                queue = new Queue<IList<DataStore>>();
+                _queuedLoadResults.Add(tenantKey, queue);
+            }
+
+            return queue;
+        }
+
+        private static string GetTenantKey(string? tenant) => tenant ?? string.Empty;
     }
 
     private static ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult> DispatchedResults(
