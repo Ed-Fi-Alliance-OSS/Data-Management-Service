@@ -144,7 +144,7 @@
       "Run existing CdcProviderManifest and provider setup tests to confirm no unintended manifest shape change occurred.",
       "Record any new 19-02 requirement in the design before implementing it."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Existing coverage verification",

@@ -32,3 +32,8 @@ Task completed: String comparison (reference/design/backend-redesign/epics/19-cd
 Key decisions: SQL Server gating-role grant prefix detection now uses StartsWith("role.", StringComparison.Ordinal); no other comparison behavior changed.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcProviderSetupService.cs; tasks.json; progress.txt
 Blockers/notes: none. Verification: ordinal rg passed; task's old one-arg StartsWith grep intentionally no longer matches; CdcProviderSetupService unit filter passed 13 tests; csharpier passed.
+
+Task completed: Connector template boundary (reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md)
+Key decisions: 19-02 remains connector-template owner; DMS-1320 does not reorder provider setup to force expected_message_key_columns into failed PostgreSQL manifests; no new 19-02 requirement found. Fixed stale provider-test SQL assertions to match two-column DMS-managed inventory from prior cleanup.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcPostgresqlHeartbeatPublicationProviderTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcSqlServerHeartbeatDatabaseProviderTests.cs; tasks.json; progress.txt
+Blockers/notes: none. Verification: reviewed 19-02 story; focused manifest/provider setup unit filter passed 114 tests after stale expectation fix. Existing dirty provider/integration CDC artifact edits left unstaged.

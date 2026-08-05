@@ -1460,12 +1460,10 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
         var captureSql = executor.QueriedSql.Single(sql => sql.Contains("cdc:sqlserver:capture-instances"));
         captureSql
             .Should()
-            .Contain($"(N'{ShortenedSqlServerManagedTableTestData.ResourceSchema}', N'School', N'resource')");
+            .Contain($"(N'{ShortenedSqlServerManagedTableTestData.ResourceSchema}', N'School')");
         captureSql
             .Should()
-            .Contain(
-                $"(N'{ShortenedSqlServerManagedTableTestData.TrackedChangeSchema}', N'School', N'tracked_change')"
-            );
+            .Contain($"(N'{ShortenedSqlServerManagedTableTestData.TrackedChangeSchema}', N'School')");
         captureSql.Should().NotContain(ShortenedSqlServerManagedTableTestData.RawPhysicalSchema);
         captureSql.Should().NotContain(ShortenedSqlServerManagedTableTestData.RawTrackedChangeSchema);
         executor.ExecutedSql.Should().BeEmpty();
@@ -2102,11 +2100,9 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
             sql.Contains("cdc:sqlserver:connector-principal-access")
         );
         connectorAccessSql.Should().Contain("dms_managed_table_inventory");
-        connectorAccessSql
-            .Should()
-            .Contain("(N'auth', N'EducationOrganizationIdToEducationOrganizationId', N'authorization')");
-        connectorAccessSql.Should().Contain("(N'edfi', N'School', N'resource')");
-        connectorAccessSql.Should().Contain("(N'tracked_changes_edfi', N'School', N'tracked_change')");
+        connectorAccessSql.Should().Contain("(N'auth', N'EducationOrganizationIdToEducationOrganizationId')");
+        connectorAccessSql.Should().Contain("(N'edfi', N'School')");
+        connectorAccessSql.Should().Contain("(N'tracked_changes_edfi', N'School')");
         connectorAccessSql.Should().NotContain("ProjectEndpointName");
         connectorAccessSql.Should().NotContain("tracked[_]changes[_]%");
     }
@@ -2227,12 +2223,10 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
         );
         connectorAccessSql
             .Should()
-            .Contain($"(N'{ShortenedSqlServerManagedTableTestData.ResourceSchema}', N'School', N'resource')");
+            .Contain($"(N'{ShortenedSqlServerManagedTableTestData.ResourceSchema}', N'School')");
         connectorAccessSql
             .Should()
-            .Contain(
-                $"(N'{ShortenedSqlServerManagedTableTestData.TrackedChangeSchema}', N'School', N'tracked_change')"
-            );
+            .Contain($"(N'{ShortenedSqlServerManagedTableTestData.TrackedChangeSchema}', N'School')");
         connectorAccessSql.Should().NotContain(ShortenedSqlServerManagedTableTestData.RawPhysicalSchema);
         connectorAccessSql.Should().NotContain(ShortenedSqlServerManagedTableTestData.RawTrackedChangeSchema);
     }

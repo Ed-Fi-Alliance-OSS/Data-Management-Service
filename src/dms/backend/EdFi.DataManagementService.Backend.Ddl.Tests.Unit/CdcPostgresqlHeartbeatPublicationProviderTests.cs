@@ -836,11 +836,9 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
             sql.Contains("cdc:postgresql:connector-principal-access")
         );
         connectorAccessSql.Should().Contain("dms_managed_table_inventory");
-        connectorAccessSql
-            .Should()
-            .Contain("('auth', 'EducationOrganizationIdToEducationOrganizationId', 'authorization')");
-        connectorAccessSql.Should().Contain("('edfi', 'School', 'resource')");
-        connectorAccessSql.Should().Contain("('tracked_changes_edfi', 'School', 'tracked_change')");
+        connectorAccessSql.Should().Contain("('auth', 'EducationOrganizationIdToEducationOrganizationId')");
+        connectorAccessSql.Should().Contain("('edfi', 'School')");
+        connectorAccessSql.Should().Contain("('tracked_changes_edfi', 'School')");
         connectorAccessSql.Should().NotContain("ProjectEndpointName");
         connectorAccessSql.Should().NotContain("tracked\\_changes\\_%");
     }
@@ -934,10 +932,8 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
         var connectorAccessSql = executor.QueriedSql.Single(sql =>
             sql.Contains("cdc:postgresql:connector-principal-access")
         );
-        connectorAccessSql.Should().Contain($"('{shortenedPhysicalSchema}', 'School', 'resource')");
-        connectorAccessSql
-            .Should()
-            .Contain($"('{shortenedTrackedChangeSchema}', 'School', 'tracked_change')");
+        connectorAccessSql.Should().Contain($"('{shortenedPhysicalSchema}', 'School')");
+        connectorAccessSql.Should().Contain($"('{shortenedTrackedChangeSchema}', 'School')");
         connectorAccessSql.Should().NotContain(rawPhysicalSchema);
         connectorAccessSql.Should().NotContain(rawTrackedChangeSchema);
     }
