@@ -350,6 +350,10 @@ public static class WebApplicationBuilderExtensions
                     identitySettings.Authority
                 );
             }
+
+            // Expired-token cleanup applies to both database engines above; the OpenIddict token
+            // store is not exposed through Keycloak, so this hosted service has no role there.
+            webApplicationBuilder.Services.AddHostedService<TokenCleanupService>();
         }
         else // Default to Keycloak
         {

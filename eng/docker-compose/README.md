@@ -892,3 +892,17 @@ $parameters = @{
 * `ClientSecretMinimumLength` and `ClientSecretMaximumLength` should match the configured `IdentitySettings:ClientSecretValidation` bounds used by CMS.
 * `NewClientSecret` must also satisfy the CMS complexity rule: lowercase, uppercase, number, and one special character from `!@#$%^&*()-_=+[]{}:;,.?`.
 * Both switches can be used together or separately as needed.
+
+### Expired token cleanup (self-contained identity)
+
+The self-contained (OpenIddict) identity provider runs a background sweep that deletes expired
+rows from `dmscs.OpenIddictToken` so the table does not grow without bound. Keycloak mode has no
+equivalent setting, because Keycloak owns its own token housekeeping.
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `DMS_CONFIG_IDENTITY_TOKEN_CLEANUP_ENABLED` | `true` | Enables the expired-token cleanup sweep. |
+| `DMS_CONFIG_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES` | `30` | Interval, in minutes, between cleanup sweeps. |
+
+These map to `IdentitySettings__TokenCleanupEnabled` and
+`IdentitySettings__TokenCleanupIntervalMinutes` in `local-config.yml` and `published-config.yml`.

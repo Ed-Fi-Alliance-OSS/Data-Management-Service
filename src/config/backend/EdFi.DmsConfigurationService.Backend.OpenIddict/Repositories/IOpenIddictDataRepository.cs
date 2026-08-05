@@ -123,6 +123,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
 
         Task<bool> RevokeTokenAsync(Guid tokenId);
 
+        Task<int> DeleteExpiredTokensAsync(DateTimeOffset expiredBefore);
+
         // Key management operations
         Task<(string PrivateKey, string KeyId)?> GetActivePrivateKeyInternalAsync(string encryptionKey);
 

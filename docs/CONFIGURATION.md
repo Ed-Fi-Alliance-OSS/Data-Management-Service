@@ -328,6 +328,8 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 | `AppSettings.IdentityProvider` | Selects the identity provider                                    | `keycloak`                                           | `self-contained`                              |
 | `IdentitySettings.Authority`        | URL of the identity provider's authority (issuer)                | `http://dms-keycloak:8080/realms/edfi`              | `http://ed-fi-api-config:8081`              |
 | `IdentitySettings.EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
+| `IdentitySettings.TokenCleanupEnabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
+| `IdentitySettings.TokenCleanupIntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
 
 ### JwtAuthentication parameters in `appsettings.json` (DMS API Service)
 
