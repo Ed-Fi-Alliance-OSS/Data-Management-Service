@@ -20,7 +20,11 @@ public class CoreEndpointModule(IOptions<AppSettings> appSettings) : IEndpointMo
         );
 
         endpoints.MapPost(routePattern, Upsert);
-        endpoints.MapGet(routePattern, Get);
+        // HEAD is GET without the response body (RFC 9110 section 9.3.2), and section 9.1 requires
+        // general-purpose servers to support both. Mapped on the GET endpoint rather than left to
+        // the terminal below, which would otherwise answer HEAD with a 405 whose own Allow header
+        // lists GET. Kestrel suppresses the body.
+        endpoints.MapMethods(routePattern, [HttpMethods.Get, HttpMethods.Head], Get);
         endpoints.MapPut(routePattern, UpdateById);
         endpoints.MapDelete(routePattern, DeleteById);
 

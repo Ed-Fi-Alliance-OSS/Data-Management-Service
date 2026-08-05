@@ -857,6 +857,27 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             );
         }
 
+        // The authenticated twin above builds its headers from GetHeaders(), which always attaches a
+        // bearer token. This one deliberately sends none, so a scenario can assert that
+        // authentication is reached before the request's method is judged.
+        [When("an unauthenticated {string} request is made to {string}")]
+        public async Task WhenAnUnauthenticatedRequestIsMadeTo(string method, string url)
+        {
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", _id)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Accept"] = "*/*",
+            };
+
+            _apiResponse = await _playwrightContext.ApiRequestContext!.FetchAsync(
+                url,
+                new() { Method = method, Headers = headers }
+            );
+        }
+
         [When("a POST request larger than {int} MB is made to {string}")]
         public async Task WhenAPostRequestLargerThanMbIsMadeTo(int sizeInMb, string url)
         {

@@ -617,11 +617,21 @@ public static class AspNetCoreFrontend
             ParsedBody: jsonBody.ParsedBody,
             BodyParseErrorMessage: jsonBody.ParseErrorMessage,
             DuplicatePropertyPath: jsonBody.DuplicatePropertyPath,
-            ResponseContentCoding: HttpMethods.IsGet(httpRequest.Method)
+            ResponseContentCoding: IsGetOrHead(httpRequest)
                 ? ResolveResponseContentCoding(httpRequest.HttpContext)
                 : ResponseContentCoding.Identity
         );
     }
+
+    /// <summary>
+    /// HEAD must be answered with the same headers GET would have produced (RFC 9110 section
+    /// 9.3.2), so it negotiates the same representation. This is load-bearing rather than tidy:
+    /// the selected content coding participates in the served etag (see VariantKey), so a HEAD
+    /// that resolved identity where GET resolved gzip would hand the client an etag its follow-up
+    /// conditional GET could never match.
+    /// </summary>
+    private static bool IsGetOrHead(HttpRequest request) =>
+        HttpMethods.IsGet(request.Method) || HttpMethods.IsHead(request.Method);
 
     /// <summary>
     /// Uses the same registered provider as ASP.NET Core response compression to select the content
@@ -717,7 +727,7 @@ public static class AspNetCoreFrontend
         // middleware. Declare both request selectors at the serving boundary so caches never reuse a
         // representation across incompatible Accept or Accept-Encoding values.
         if (
-            HttpMethods.IsGet(httpContext.Request.Method)
+            IsGetOrHead(httpContext.Request)
             && frontendResponse.StatusCode is StatusCodes.Status200OK or StatusCodes.Status304NotModified
         )
         {

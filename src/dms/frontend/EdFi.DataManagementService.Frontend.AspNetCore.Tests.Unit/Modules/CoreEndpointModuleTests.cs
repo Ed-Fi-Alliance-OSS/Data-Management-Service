@@ -8,6 +8,7 @@ using System.Net.Http;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
 using FluentAssertions;
@@ -483,24 +484,60 @@ public class CoreEndpointModuleTests
     [NonParallelizable]
     public class Given_Other_Unmapped_Requests
     {
-        [Test]
-        public async Task It_answers_head_on_a_data_route_from_the_method_not_allowed_terminal()
+        /// <summary>
+        /// HEAD reaches the GET handler rather than the method-not-allowed terminal. Left to the
+        /// terminal it would answer 405 while listing GET in its own Allow header, and RFC 9110
+        /// section 9.1 requires HEAD wherever GET is supported.
+        /// </summary>
+        [TestCase("/data/ed-fi/schools", TestName = "Collection route")]
+        [TestCase($"/data/ed-fi/schools/{ItemUuid}", TestName = "Item route")]
+        [TestCase("/data/ed-fi/schools/deletes", TestName = "Tracked change route")]
+        public async Task It_answers_head_from_the_get_handler(string requestUrl)
         {
             var apiService = FakeApiServiceAnsweringEveryVerb();
 
             await using var factory = CreateFactory(apiService);
             using var client = factory.CreateClient();
-            using var request = new HttpRequestMessage(HttpMethod.Head, "/data/ed-fi/schools");
+            using var request = new HttpRequestMessage(HttpMethod.Head, requestUrl);
 
             var response = await client.SendAsync(request);
 
-            // Status and Allow only, deliberately: TestServer does not implement Kestrel's HEAD
-            // body suppression, so any wire-body assertion here would describe the test host rather
+            // Status only, deliberately: TestServer does not implement Kestrel's HEAD body
+            // suppression, so any wire-body assertion here would describe the test host rather
             // than the product.
-            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
-            string.Join(", ", response.Content.Headers.GetValues("Allow")).Should().Be("GET, POST");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
             A.CallTo(() => apiService.MethodNotAllowed(A<FrontendRequest>._, A<string>._))
-                .MustHaveHappenedOnceExactly();
+                .MustNotHaveHappened();
+            A.CallTo(() => apiService.MethodNotAllowedForTrackedChange(A<FrontendRequest>._, A<string>._))
+                .MustNotHaveHappened();
+        }
+
+        /// <summary>
+        /// The etag served for a resource embeds the negotiated content coding (see VariantKey), so
+        /// a HEAD that negotiated identity where GET negotiated a compressed coding would return an
+        /// etag the client's follow-up conditional GET could never match.
+        /// </summary>
+        [Test]
+        public async Task It_negotiates_the_same_content_coding_for_head_as_for_get()
+        {
+            var apiService = A.Fake<IApiService>();
+            List<ResponseContentCoding> negotiated = [];
+            A.CallTo(() => apiService.Get(A<FrontendRequest>._))
+                .Invokes((FrontendRequest request) => negotiated.Add(request.ResponseContentCoding))
+                .Returns(Task.FromResult(FakeCoreOkResponse()));
+
+            await using var factory = CreateFactory(apiService);
+            using var client = factory.CreateClient();
+
+            foreach (var method in new[] { HttpMethod.Get, HttpMethod.Head })
+            {
+                using var request = new HttpRequestMessage(method, $"/data/ed-fi/schools/{ItemUuid}");
+                request.Headers.Add("Accept-Encoding", "gzip");
+                await client.SendAsync(request);
+            }
+
+            negotiated.Should().HaveCount(2);
+            negotiated[1].Should().Be(negotiated[0]);
         }
 
         [Test]

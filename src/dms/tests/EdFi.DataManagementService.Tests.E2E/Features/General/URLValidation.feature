@@ -720,3 +720,97 @@ Feature: Validation of the structure of the URLs
                         "Content-Type": "application/problem+json"
                     }
                   """
+
+        # An unsupported method is routed into the DMS core rather than answered at the routing
+        # layer, so authentication runs ahead of the method check. Without a token the response is
+        # 401, never the 405 below. This is the ODS/API ordering: authentication, then existence,
+        # then method.
+        @DMS-1281
+        @e2e-ci-shard-4
+        Scenario: 26 Ensure an unsupported method without a token is rejected as unauthorized
+             When an unauthenticated "PATCH" request is made to "/ed-fi/schools"
+             Then it should respond with 401
+
+        @DMS-1281
+        @e2e-ci-shard-4
+        Scenario: 27 Ensure clients get 405 for an unsupported method on a deletes route
+             When an "PATCH" request is made to "/ed-fi/schools/deletes" with headers
+                  | Key    | Value |
+                  | Accept | */*   |
+             Then it should respond with 405
+              And the response body is
+                  """
+                  {
+                      "detail": "The request construction was invalid.",
+                      "type": "urn:ed-fi:api:method-not-allowed",
+                      "title": "Method Not Allowed",
+                      "status": 405,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": [
+                          "The endpoint of the request does not support the 'PATCH' method."
+                      ]
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Allow": "GET",
+                        "Content-Type": "application/json; charset=utf-8"
+                    }
+                  """
+
+        @DMS-1281
+        @e2e-ci-shard-4
+        Scenario: 28 Ensure clients get 405 for an unsupported method on a keyChanges route
+             When an "PATCH" request is made to "/ed-fi/schools/keyChanges" with headers
+                  | Key    | Value |
+                  | Accept | */*   |
+             Then it should respond with 405
+              And the response headers include
+                  """
+                    {
+                        "Allow": "GET",
+                        "Content-Type": "application/json; charset=utf-8"
+                    }
+                  """
+
+        # The same existence-before-method ordering as scenario 25, on a tracked-change route.
+        # These routes resolve the resource in the core pipeline, so an unknown resource is a 404.
+        @DMS-1281
+        @e2e-ci-shard-4
+        Scenario: 29 Ensure clients get 404 for an unsupported method on an unknown resource's deletes route
+             When an "PATCH" request is made to "/ed-fi/notaresource/deletes" with headers
+                  | Key    | Value |
+                  | Accept | */*   |
+             Then it should respond with 404
+              And the response body is
+                  """
+                  {
+                      "detail": "The specified data could not be found.",
+                      "type": "urn:ed-fi:api:not-found",
+                      "title": "Not Found",
+                      "status": 404,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
+
+        # Tracked-change routes are answered by the same core pipeline as the data routes, so they
+        # inherit the same authentication ordering as scenario 26.
+        @DMS-1281
+        @e2e-ci-shard-4
+        Scenario: 30 Ensure an unsupported method on a tracked-change route without a token is rejected as unauthorized
+             When an unauthenticated "PATCH" request is made to "/ed-fi/schools/deletes"
+             Then it should respond with 401
+
+        # HEAD is GET without a response body, so it is answered by the GET endpoint rather than
+        # rejected as an unsupported method.
+        @DMS-1281
+        @e2e-ci-shard-4
+        Scenario: 31 Ensure HEAD is supported wherever GET is supported
+             When an "HEAD" request is made to "/ed-fi/schools" with headers
+                  | Key    | Value |
+                  | Accept | */*   |
+             Then it should respond with 200
