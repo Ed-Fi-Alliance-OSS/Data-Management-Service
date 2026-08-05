@@ -5,8 +5,30 @@
 
 using System.Data;
 using System.Data.Common;
+using EdFi.DataManagementService.Core.Configuration;
 
 namespace EdFi.DataManagementService.Backend;
+
+public sealed class DocumentCacheAdministrativeProviderConcurrencyRetryExhaustedException : Exception
+{
+    public DocumentCacheAdministrativeProviderConcurrencyRetryExhaustedException(
+        RelationalProviderToken providerToken,
+        int attemptCount,
+        Exception innerException
+    )
+        : base(
+            "DocumentCache administrative provider concurrency retry budget was exhausted.",
+            innerException
+        )
+    {
+        ProviderToken = providerToken ?? throw new ArgumentNullException(nameof(providerToken));
+        AttemptCount = attemptCount;
+    }
+
+    public RelationalProviderToken ProviderToken { get; }
+
+    public int AttemptCount { get; }
+}
 
 internal sealed class DocumentCacheAdministrativeWorkflowCancellationScope : IDisposable
 {
@@ -134,6 +156,61 @@ internal static class DocumentCacheAdministrativeWorkflow
         }
     }
 
+    public static async Task<TResult> ExecuteInTransactionWithProviderConcurrencyRetryAsync<TResult>(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        IsolationLevel isolationLevel,
+        Func<IRelationalWriteSession, CancellationToken, Task<TResult>> executeAsync,
+        Func<TResult, bool> shouldCommit,
+        CancellationToken cancellationToken,
+        Action<TResult>? beforeCommit = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(executeAsync);
+        ArgumentNullException.ThrowIfNull(shouldCommit);
+
+        DeadlockRetrySettings retrySettings = context.ProviderConcurrencyRetrySettings;
+        retrySettings.Validate();
+        var attemptCount = 0;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            attemptCount++;
+
+            try
+            {
+                return await ExecuteInTransactionAsync(
+                        context.MutexLease,
+                        isolationLevel,
+                        executeAsync,
+                        shouldCommit,
+                        cancellationToken,
+                        beforeCommit
+                    )
+                    .ConfigureAwait(false);
+            }
+            catch (DbException exception)
+                when (context.WriteExceptionClassifier.IsTransientFailure(exception))
+            {
+                if (attemptCount > retrySettings.MaxRetryAttempts)
+                {
+                    throw new DocumentCacheAdministrativeProviderConcurrencyRetryExhaustedException(
+                        context.MutexLease.ProviderToken,
+                        attemptCount,
+                        exception
+                    );
+                }
+
+                await Task.Delay(
+                        ProviderConcurrencyRetryDelay(retrySettings, attemptCount),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
     internal static bool IsSessionLoss(IDocumentCacheAdministrativeMutexLease mutexLease, Exception exception)
     {
         ArgumentNullException.ThrowIfNull(mutexLease);
@@ -165,6 +242,21 @@ internal static class DocumentCacheAdministrativeWorkflow
     private static bool ShouldPreserveOriginalClassification(Exception exception) =>
         exception is OperationCanceledException
         || DocumentCacheProviderCommandTimeoutClassifier.IsProviderCommandTimeout(exception);
+
+    private static TimeSpan ProviderConcurrencyRetryDelay(
+        DeadlockRetrySettings settings,
+        int retryAttemptNumber
+    )
+    {
+        double delayMilliseconds = settings.BaseDelayMilliseconds * Math.Pow(2, retryAttemptNumber - 1);
+
+        if (settings.UseJitter)
+        {
+            delayMilliseconds += Random.Shared.NextDouble() * settings.BaseDelayMilliseconds;
+        }
+
+        return TimeSpan.FromMilliseconds(Math.Min(delayMilliseconds, int.MaxValue));
+    }
 
     private static DocumentCacheAdministrativeMutexSessionLostException CreateSessionLostException(
         IDocumentCacheAdministrativeMutexLease mutexLease

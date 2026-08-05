@@ -22,7 +22,7 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAdd(
-            ServiceDescriptor.Scoped<
+            ServiceDescriptor.Singleton<
                 IRelationalWriteExceptionClassifier,
                 MssqlRelationalWriteExceptionClassifier
             >()

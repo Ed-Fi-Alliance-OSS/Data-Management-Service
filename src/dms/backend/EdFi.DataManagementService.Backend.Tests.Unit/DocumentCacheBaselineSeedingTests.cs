@@ -6,6 +6,7 @@
 using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Configuration;
@@ -166,6 +167,48 @@ public class Given_DocumentCacheBaselineSeeding
     }
 
     [Test]
+    public async Task It_retries_provider_concurrency_failure_by_replaying_the_full_seed_page_transaction()
+    {
+        var providerConcurrencyException = new FakeTransientDbException("serialization failure");
+        var primitives = new RecordingAdministrativePrimitives(
+            new DocumentCacheAdministrativeBaselineBoundaryResult(1, "boundary"),
+            HighWaterBelow()
+        );
+        primitives.SeedPages.Enqueue(providerConcurrencyException);
+        primitives.SeedPages.Enqueue(
+            Page(
+                boundaryDocumentId: 1,
+                afterDocumentId: 0,
+                Document(
+                    1,
+                    10,
+                    previousRequiredContentVersion: null,
+                    DocumentCacheAdministrativeBaselineWorkMutationKind.Inserted
+                )
+            )
+        );
+        var lease = new RecordingMutexLease();
+        DocumentCacheAdministrativeCommandExecutionContext context = CreateCommandContext(
+            primitives,
+            lease,
+            ProviderConcurrencyRetrySettings(maxRetryAttempts: 1),
+            new FakeRelationalWriteExceptionClassifier(providerConcurrencyException)
+        );
+
+        DocumentCacheBaselineSeedingResult result = await CreateSeeder().SeedAsync(context);
+
+        result.Completed.Should().BeTrue();
+        result.LastCommittedDocumentId.Should().Be(1);
+        result.PagesSeeded.Should().Be(1);
+        primitives.SeedRequests.Select(request => request.AfterDocumentId).Should().Equal(0, 0);
+        lease
+            .Sessions.Where(session => session.IsolationLevel == IsolationLevel.Serializable)
+            .Select(session => (session.RolledBack, session.Committed))
+            .Should()
+            .Equal((true, false), (false, true));
+    }
+
+    [Test]
     public async Task It_waits_with_bounded_diagnostics_when_work_is_at_the_baseline_high_water_mark()
     {
         var drainer = new RecordingAdministrativeDrainer(
@@ -292,7 +335,9 @@ public class Given_DocumentCacheBaselineSeeding
 
     private static DocumentCacheAdministrativeCommandExecutionContext CreateCommandContext(
         IDocumentCacheAdministrativePrimitives primitives,
-        IDocumentCacheAdministrativeMutexLease lease
+        IDocumentCacheAdministrativeMutexLease lease,
+        DeadlockRetrySettings? providerConcurrencyRetrySettings = null,
+        IRelationalWriteExceptionClassifier? writeExceptionClassifier = null
     )
     {
         DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext();
@@ -313,9 +358,20 @@ public class Given_DocumentCacheBaselineSeeding
             new NoOpObservationSink(),
             new FixedTimeProvider(ObservedAt),
             ObservedAt,
-            CancellationToken.None
+            CancellationToken.None,
+            telemetry: null,
+            providerConcurrencyRetrySettings,
+            writeExceptionClassifier
         );
     }
+
+    private static DeadlockRetrySettings ProviderConcurrencyRetrySettings(int maxRetryAttempts) =>
+        new()
+        {
+            MaxRetryAttempts = maxRetryAttempts,
+            BaseDelayMilliseconds = 1,
+            UseJitter = false,
+        };
 
     private static DocumentCacheProjectionTargetRuntimeContext RuntimeContext()
     {
@@ -437,7 +493,7 @@ public class Given_DocumentCacheBaselineSeeding
             highWaterObservations
         );
 
-        public Queue<DocumentCacheAdministrativeBaselineSeedPageResult> SeedPages { get; } = [];
+        public Queue<object> SeedPages { get; } = [];
 
         public List<DocumentCacheAdministrativeBaselineSeedPageRequest> SeedRequests { get; } = [];
 
@@ -466,7 +522,14 @@ public class Given_DocumentCacheBaselineSeeding
         )
         {
             SeedRequests.Add(request);
-            return Task.FromResult(SeedPages.Dequeue());
+            return SeedPages.Dequeue() switch
+            {
+                DocumentCacheAdministrativeBaselineSeedPageResult page => Task.FromResult(page),
+                Exception exception => Task.FromException<DocumentCacheAdministrativeBaselineSeedPageResult>(
+                    exception
+                ),
+                _ => throw new InvalidOperationException("Unsupported baseline seed page stub item."),
+            };
         }
 
         public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
@@ -584,6 +647,28 @@ public class Given_DocumentCacheBaselineSeeding
             return Task.CompletedTask;
         }
     }
+
+    private sealed class FakeRelationalWriteExceptionClassifier(DbException transientException)
+        : IRelationalWriteExceptionClassifier
+    {
+        public bool TryClassify(
+            DbException exception,
+            [NotNullWhen(true)] out RelationalWriteExceptionClassification? classification
+        )
+        {
+            classification = null;
+            return false;
+        }
+
+        public bool IsForeignKeyViolation(DbException exception) => false;
+
+        public bool IsUniqueConstraintViolation(DbException exception) => false;
+
+        public bool IsTransientFailure(DbException exception) =>
+            ReferenceEquals(exception, transientException);
+    }
+
+    private sealed class FakeTransientDbException(string message) : DbException(message);
 
     private sealed class RecordingAdministrativeDrainer(
         params DocumentCacheAdministrativeDrainSliceResult[] reliefResults

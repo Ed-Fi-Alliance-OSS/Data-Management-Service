@@ -329,8 +329,8 @@ internal sealed class DocumentCacheBaselineSeeder(
         int pageSize,
         CancellationToken cancellationToken
     ) =>
-        DocumentCacheAdministrativeWorkflow.ExecuteInTransactionAsync(
-            context.MutexLease,
+        DocumentCacheAdministrativeWorkflow.ExecuteInTransactionWithProviderConcurrencyRetryAsync(
+            context,
             IsolationLevel.Serializable,
             (session, transactionCancellationToken) =>
                 context.Primitives.SeedBaselinePageAsync(

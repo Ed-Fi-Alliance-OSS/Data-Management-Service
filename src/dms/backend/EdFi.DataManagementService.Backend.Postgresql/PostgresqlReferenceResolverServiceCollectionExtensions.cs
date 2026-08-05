@@ -20,7 +20,7 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAdd(
-            ServiceDescriptor.Scoped<
+            ServiceDescriptor.Singleton<
                 IRelationalWriteExceptionClassifier,
                 PostgresqlRelationalWriteExceptionClassifier
             >()

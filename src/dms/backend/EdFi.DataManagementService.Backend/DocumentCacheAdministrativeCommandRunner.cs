@@ -172,7 +172,9 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
         TimeProvider timeProvider,
         DateTimeOffset startedAt,
         CancellationToken workflowCancellationToken,
-        IDocumentCacheProjectionTelemetry? telemetry = null
+        IDocumentCacheProjectionTelemetry? telemetry = null,
+        DeadlockRetrySettings? providerConcurrencyRetrySettings = null,
+        IRelationalWriteExceptionClassifier? writeExceptionClassifier = null
     )
     {
         ExecutionId = executionId ?? throw new ArgumentNullException(nameof(executionId));
@@ -185,6 +187,8 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         StartedAt = startedAt;
         WorkflowCancellationToken = workflowCancellationToken;
+        ProviderConcurrencyRetrySettings = providerConcurrencyRetrySettings ?? new DeadlockRetrySettings();
+        WriteExceptionClassifier = writeExceptionClassifier ?? new NoOpRelationalWriteExceptionClassifier();
         CurrentPhase = DocumentCacheAdministrativeCommandPhase.Preflight;
         ObservedLifecycle = targetContext.TargetExecutionContext.Lifecycle;
     }
@@ -204,6 +208,10 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
     public DateTimeOffset StartedAt { get; }
 
     public CancellationToken WorkflowCancellationToken { get; }
+
+    public DeadlockRetrySettings ProviderConcurrencyRetrySettings { get; }
+
+    public IRelationalWriteExceptionClassifier WriteExceptionClassifier { get; }
 
     public DocumentCacheAdministrativeCommandPhase CurrentPhase { get; private set; }
 
@@ -441,11 +449,17 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
     IDocumentCacheProjectionObservationSink observationSink,
     TimeProvider timeProvider,
     ILogger<DocumentCacheAdministrativeCommandRunner> logger,
-    IDocumentCacheProjectionTelemetry? telemetry = null
+    IDocumentCacheProjectionTelemetry? telemetry = null,
+    DeadlockRetrySettings? providerConcurrencyRetrySettings = null,
+    IRelationalWriteExceptionClassifier? writeExceptionClassifier = null
 ) : IDocumentCacheAdministrativeCommandRunner
 {
     private readonly IDocumentCacheProjectionTelemetry _telemetry =
         telemetry ?? NoOpDocumentCacheProjectionTelemetry.Instance;
+    private readonly DeadlockRetrySettings _providerConcurrencyRetrySettings =
+        providerConcurrencyRetrySettings ?? new DeadlockRetrySettings();
+    private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
+        writeExceptionClassifier ?? new NoOpRelationalWriteExceptionClassifier();
 
     public async Task<DocumentCacheAdministrativeCommandResult> ExecuteAsync(
         DocumentCacheAdministrativeCommandRunnerRequest request,
@@ -599,7 +613,9 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     timeProvider,
                     startedAt,
                     workflowTimeout.Token,
-                    _telemetry
+                    _telemetry,
+                    _providerConcurrencyRetrySettings,
+                    _writeExceptionClassifier
                 );
 
                 IDisposable activeCommandTracking = targetContext.TrackActiveAdministrativeCommand(
@@ -675,6 +691,22 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     );
                     classifiedResult = RecordAdministrativeCommandResult(
                         CreateProviderTimeoutResult(commandContext),
+                        commandContext
+                    );
+                    return classifiedResult;
+                }
+                catch (DocumentCacheAdministrativeProviderConcurrencyRetryExhaustedException exception)
+                {
+                    logger.LogWarning(
+                        exception,
+                        "DocumentCache administrative provider concurrency retry budget was exhausted after {AttemptCount} attempts for command {Command}, target {TargetKey}, and provider {Provider}.",
+                        exception.AttemptCount,
+                        request.Command,
+                        LoggingSanitizer.SanitizeForLogging(request.TargetKey.TargetKey.ToString()),
+                        LoggingSanitizer.SanitizeForLogging(exception.ProviderToken.Value)
+                    );
+                    classifiedResult = RecordAdministrativeCommandResult(
+                        CreateProviderConcurrencyRetryExhaustedResult(commandContext, exception.AttemptCount),
                         commandContext
                     );
                     return classifiedResult;
@@ -1144,6 +1176,23 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                 ? "Provider command timeout occurred after durable mutation."
                 : "Provider command timeout occurred before durable mutation.",
             retryable: mutated
+        );
+    }
+
+    private static DocumentCacheAdministrativeCommandResult CreateProviderConcurrencyRetryExhaustedResult(
+        DocumentCacheAdministrativeCommandExecutionContext commandContext,
+        int attemptCount
+    )
+    {
+        bool mutated = commandContext.Mutated;
+        return commandContext.Failed(
+            mutated
+                ? DocumentCacheAdministrativeCommandStatus.IncompleteRetryable
+                : DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+            DocumentCacheAdministrativeCommandClassification.ProviderConcurrencyRetryExhausted,
+            DocumentCacheAdministrativeDiagnosticCategory.ProviderConcurrencyRetryExhausted,
+            $"Provider concurrency retry budget was exhausted after {attemptCount} transaction attempts.",
+            retryable: true
         );
     }
 

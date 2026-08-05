@@ -180,8 +180,8 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
         int pageSize,
         CancellationToken cancellationToken
     ) =>
-        DocumentCacheAdministrativeWorkflow.ExecuteInTransactionAsync(
-            context.MutexLease,
+        DocumentCacheAdministrativeWorkflow.ExecuteInTransactionWithProviderConcurrencyRetryAsync(
+            context,
             IsolationLevel.Serializable,
             async (session, transactionCancellationToken) =>
             {

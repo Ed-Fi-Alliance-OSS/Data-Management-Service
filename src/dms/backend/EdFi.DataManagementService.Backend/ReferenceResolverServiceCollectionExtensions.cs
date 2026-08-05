@@ -278,7 +278,7 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Scoped<IRelationalWritePersister, RelationalWriteNoProfilePersister>()
         );
         services.TryAdd(
-            ServiceDescriptor.Scoped<
+            ServiceDescriptor.Singleton<
                 IRelationalWriteExceptionClassifier,
                 NoOpRelationalWriteExceptionClassifier
             >()

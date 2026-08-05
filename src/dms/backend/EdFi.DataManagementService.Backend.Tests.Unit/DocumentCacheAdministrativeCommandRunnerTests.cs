@@ -11,6 +11,8 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Mssql;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
@@ -790,6 +792,60 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 && diagnostic.DiagnosticCategory
                     == DocumentCacheAdministrativeDiagnosticCategory.ProviderCommandTimeout
                 && !diagnostic.Retryable
+            );
+    }
+
+    [TestCaseSource(nameof(ProviderConcurrencyRetryExhaustionCases))]
+    public async Task It_classifies_exhausted_provider_concurrency_retry_from_explicit_scrub_page(
+        RelationalProviderToken providerToken,
+        DbException providerConcurrencyException,
+        IRelationalWriteExceptionClassifier writeExceptionClassifier
+    )
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            generation: 1,
+            providerToken: providerToken
+        );
+        var primitives = new StubAdministrativePrimitives(
+            providerToken,
+            lifecycleReads:
+            [
+                DocumentCacheLifecycleReadResult.Success(TrackingLifecycle),
+                DocumentCacheLifecycleReadResult.Success(TrackingLifecycle),
+                DocumentCacheLifecycleReadResult.Success(TrackingLifecycle),
+                DocumentCacheLifecycleReadResult.Success(TrackingLifecycle),
+            ],
+            baselineBoundary: new DocumentCacheAdministrativeBaselineBoundaryResult(5, "boundary"),
+            scrubPages: [providerConcurrencyException, providerConcurrencyException]
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(providerToken: providerToken),
+            primitives: primitives,
+            providerConcurrencyRetrySettings: ProviderConcurrencyRetrySettings(maxRetryAttempts: 1),
+            writeExceptionClassifier: writeExceptionClassifier
+        );
+        var command = new DocumentCacheExplicitIntegrityScrubCommand(runner);
+
+        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
+            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.ProviderConcurrencyRetryExhausted);
+        result.Mutated.Should().BeFalse();
+        primitives.ScrubPageCallCount.Should().Be(2);
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.ScrubScan
+                && diagnostic.LastCompletedPhase == DocumentCacheAdministrativeCommandPhase.CaptureBoundary
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.ProviderConcurrencyRetryExhausted
+                && diagnostic.Retryable
             );
     }
 
@@ -1746,7 +1802,9 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         IDocumentCacheAdministrativeMutex mutex,
         IDocumentCacheProjectionObservationSink? observationSink = null,
         IDocumentCacheAdministrativePrimitives? primitives = null,
-        ILogger<DocumentCacheAdministrativeCommandRunner>? logger = null
+        ILogger<DocumentCacheAdministrativeCommandRunner>? logger = null,
+        DeadlockRetrySettings? providerConcurrencyRetrySettings = null,
+        IRelationalWriteExceptionClassifier? writeExceptionClassifier = null
     )
     {
         DocumentCacheProjectionObservationStore defaultObservationStore = new(
@@ -1761,9 +1819,20 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             primitives ?? new StubAdministrativePrimitives(mutex.ProviderToken),
             sink,
             new FixedTimeProvider(ObservedAt),
-            logger ?? NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
+            logger ?? NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance,
+            telemetry: null,
+            providerConcurrencyRetrySettings,
+            writeExceptionClassifier
         );
     }
+
+    private static DeadlockRetrySettings ProviderConcurrencyRetrySettings(int maxRetryAttempts) =>
+        new()
+        {
+            MaxRetryAttempts = maxRetryAttempts,
+            BaseDelayMilliseconds = 1,
+            UseJitter = false,
+        };
 
     private static DocumentCacheProjectionSupervisor CreateSupervisor(
         IDocumentCacheTargetRegistry registry,
@@ -1986,6 +2055,21 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                     : "PostgreSQL timeout wrapper before mutation"
             );
         }
+    }
+
+    private static IEnumerable<TestCaseData> ProviderConcurrencyRetryExhaustionCases()
+    {
+        yield return new TestCaseData(
+            RelationalProviderToken.Postgresql,
+            CreatePostgresException(PostgresErrorCodes.SerializationFailure),
+            new PostgresqlRelationalWriteExceptionClassifier()
+        ).SetName("PostgreSQL serialization failure 40001");
+
+        yield return new TestCaseData(
+            RelationalProviderToken.SqlServer,
+            CreateSqlException(1205, "Transaction was deadlocked on lock resources."),
+            new MssqlRelationalWriteExceptionClassifier()
+        ).SetName("SQL Server deadlock victim 1205");
     }
 
     private static DocumentCacheOfflineWriterAdmission UnknownOfflineWriterAdmission() =>
@@ -2547,8 +2631,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         DocumentCacheGuardedNewEmptyActivationState? guardedNewEmptyActivationState = null,
         IReadOnlyList<DocumentCacheAdministrativeWorkHighWaterObservationResult>? highWaterObservations =
             null,
-        IReadOnlyList<DocumentCacheAdministrativeBaselineSeedPageResult>? seedPages = null,
-        IReadOnlyList<DocumentCacheAdministrativeScrubPageResult>? scrubPages = null,
+        IReadOnlyList<object>? seedPages = null,
+        IReadOnlyList<object>? scrubPages = null,
         IReadOnlyList<DocumentCacheAdministrativeClearBatchResult>? cacheClearBatches = null,
         IReadOnlyList<DocumentCacheAdministrativeClearBatchResult>? workClearBatches = null
     ) : IDocumentCacheAdministrativePrimitives
@@ -2559,12 +2643,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         private readonly Queue<DocumentCacheAdministrativeWorkHighWaterObservationResult> _highWater = new(
             highWaterObservations ?? []
         );
-        private readonly Queue<DocumentCacheAdministrativeBaselineSeedPageResult> _seedPages = new(
-            seedPages ?? []
-        );
-        private readonly Queue<DocumentCacheAdministrativeScrubPageResult> _scrubPages = new(
-            scrubPages ?? []
-        );
+        private readonly Queue<object> _seedPages = new(seedPages ?? []);
+        private readonly Queue<object> _scrubPages = new(scrubPages ?? []);
         private readonly Queue<DocumentCacheAdministrativeClearBatchResult> _cacheClearBatches = new(
             cacheClearBatches ?? []
         );
@@ -2578,6 +2658,10 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         public int CacheClearCallCount { get; private set; }
 
         public int WorkClearCallCount { get; private set; }
+
+        public int SeedBaselinePageCallCount { get; private set; }
+
+        public int ScrubPageCallCount { get; private set; }
 
         public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
             IRelationalWriteSession mutexSession,
@@ -2760,7 +2844,15 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             _ = mutexSession;
             _ = request;
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(_seedPages.Dequeue());
+            SeedBaselinePageCallCount++;
+            return _seedPages.Dequeue() switch
+            {
+                DocumentCacheAdministrativeBaselineSeedPageResult page => Task.FromResult(page),
+                Exception exception => Task.FromException<DocumentCacheAdministrativeBaselineSeedPageResult>(
+                    exception
+                ),
+                _ => throw new InvalidOperationException("Unsupported baseline seed page stub item."),
+            };
         }
 
         public Task<DocumentCacheAdministrativeScrubPageResult> ScrubPageAsync(
@@ -2772,7 +2864,15 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             _ = mutexSession;
             _ = request;
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(_scrubPages.Dequeue());
+            ScrubPageCallCount++;
+            return _scrubPages.Dequeue() switch
+            {
+                DocumentCacheAdministrativeScrubPageResult page => Task.FromResult(page),
+                Exception exception => Task.FromException<DocumentCacheAdministrativeScrubPageResult>(
+                    exception
+                ),
+                _ => throw new InvalidOperationException("Unsupported scrub page stub item."),
+            };
         }
     }
 
