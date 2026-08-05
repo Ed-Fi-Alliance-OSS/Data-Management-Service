@@ -50,7 +50,10 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         [SetUp]
         public async Task Setup()
         {
-            _dataStoreProvider = new RecordingDataStoreProvider([DataStore()]);
+            _dataStoreProvider = new RecordingDataStoreProvider([])
+            {
+                OnLoadDataStores = provider => provider.CurrentDataStores = [DataStore()],
+            };
             _projectionSupervisor = new RecordingProjectionSupervisor();
 
             var provider = CreateProvider(_dataStoreProvider, _projectionSupervisor, canNotify: true);
@@ -83,7 +86,10 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         [SetUp]
         public async Task Setup()
         {
-            var dataStoreProvider = new RecordingDataStoreProvider([DataStore()]);
+            var dataStoreProvider = new RecordingDataStoreProvider([])
+            {
+                OnLoadDataStores = provider => provider.CurrentDataStores = [DataStore()],
+            };
             _projectionSupervisor = new RecordingProjectionSupervisor();
 
             var provider = CreateProvider(dataStoreProvider, _projectionSupervisor, canNotify: false);
@@ -95,6 +101,99 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         public void It_does_not_refresh_DocumentCache_targets_during_program_startup()
         {
             _projectionSupervisor.RefreshReasons.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_DataStore_Metadata_Load_Does_Not_Change_Targets
+        : DocumentCacheRefreshNotifyingDataStoreProviderTests
+    {
+        private RecordingProjectionSupervisor _projectionSupervisor = null!;
+        private IList<DataStore> _loadedDataStores = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var dataStoreProvider = new RecordingDataStoreProvider([DataStore()]);
+            _projectionSupervisor = new RecordingProjectionSupervisor();
+
+            var provider = CreateProvider(dataStoreProvider, _projectionSupervisor, canNotify: true);
+
+            _loadedDataStores = await provider.LoadDataStores("TenantA");
+        }
+
+        [Test]
+        public void It_returns_the_loaded_data_stores()
+        {
+            _loadedDataStores.Should().ContainSingle().Which.Id.Should().Be(1);
+        }
+
+        [Test]
+        public void It_does_not_notify_the_projection_supervisor()
+        {
+            _projectionSupervisor.RefreshReasons.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_DataStore_Metadata_Load_Replaces_A_Target
+        : DocumentCacheRefreshNotifyingDataStoreProviderTests
+    {
+        private RecordingProjectionSupervisor _projectionSupervisor = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var dataStoreProvider = new RecordingDataStoreProvider([DataStore(connectionString: "first")])
+            {
+                OnLoadDataStores = provider =>
+                    provider.CurrentDataStores = [DataStore(connectionString: "second")],
+            };
+            _projectionSupervisor = new RecordingProjectionSupervisor();
+
+            var provider = CreateProvider(dataStoreProvider, _projectionSupervisor, canNotify: true);
+
+            await provider.LoadDataStores();
+        }
+
+        [Test]
+        public void It_notifies_the_projection_supervisor_with_the_cms_refresh_reason()
+        {
+            _projectionSupervisor
+                .RefreshReasons.Should()
+                .Equal(DocumentCacheTargetRefreshReason.CmsRefreshNotification);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_DataStore_Metadata_Load_Removes_A_Target
+        : DocumentCacheRefreshNotifyingDataStoreProviderTests
+    {
+        private RecordingProjectionSupervisor _projectionSupervisor = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var dataStoreProvider = new RecordingDataStoreProvider([DataStore()])
+            {
+                OnLoadDataStores = provider => provider.CurrentDataStores = [],
+            };
+            _projectionSupervisor = new RecordingProjectionSupervisor();
+
+            var provider = CreateProvider(dataStoreProvider, _projectionSupervisor, canNotify: true);
+
+            await provider.LoadDataStores();
+        }
+
+        [Test]
+        public void It_notifies_the_projection_supervisor_with_the_cms_refresh_reason()
+        {
+            _projectionSupervisor
+                .RefreshReasons.Should()
+                .Equal(DocumentCacheTargetRefreshReason.CmsRefreshNotification);
         }
     }
 
@@ -186,6 +285,37 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Load_Finds_No_DataStore_Targets : DocumentCacheRefreshNotifyingDataStoreProviderTests
+    {
+        private RecordingProjectionSupervisor _projectionSupervisor = null!;
+        private IList<DataStore> _loadedDataStores = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var dataStoreProvider = new RecordingDataStoreProvider([]);
+            _projectionSupervisor = new RecordingProjectionSupervisor();
+
+            var provider = CreateProvider(dataStoreProvider, _projectionSupervisor, canNotify: true);
+
+            _loadedDataStores = await provider.LoadDataStores();
+        }
+
+        [Test]
+        public void It_returns_no_data_stores()
+        {
+            _loadedDataStores.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_does_not_notify_the_projection_supervisor()
+        {
+            _projectionSupervisor.RefreshReasons.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Projection_Supervisor_Notification_Fails
         : DocumentCacheRefreshNotifyingDataStoreProviderTests
     {
@@ -195,7 +325,10 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         [SetUp]
         public void Setup()
         {
-            var dataStoreProvider = new RecordingDataStoreProvider([DataStore()]);
+            var dataStoreProvider = new RecordingDataStoreProvider([])
+            {
+                OnLoadDataStores = provider => provider.CurrentDataStores = [DataStore()],
+            };
             _projectionSupervisor = new RecordingProjectionSupervisor
             {
                 RefreshException = new InvalidOperationException("refresh failed"),
@@ -231,10 +364,15 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
     {
         public IReadOnlyList<DataStore> CurrentDataStores { get; set; } = currentDataStores;
 
+        public Action<RecordingDataStoreProvider>? OnLoadDataStores { get; init; }
+
         public Action<RecordingDataStoreProvider>? OnRefreshInstancesIfExpired { get; init; }
 
-        public Task<IList<DataStore>> LoadDataStores(string? tenant = null) =>
-            Task.FromResult<IList<DataStore>>(CurrentDataStores.ToList());
+        public Task<IList<DataStore>> LoadDataStores(string? tenant = null)
+        {
+            OnLoadDataStores?.Invoke(this);
+            return Task.FromResult<IList<DataStore>>(CurrentDataStores.ToList());
+        }
 
         public Task RefreshInstancesIfExpiredAsync(string? tenant = null)
         {

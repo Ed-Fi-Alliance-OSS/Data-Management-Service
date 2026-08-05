@@ -52,8 +52,16 @@ internal sealed class DocumentCacheRefreshNotifyingDataStoreProvider : IDataStor
 
     public async Task<IList<DataStore>> LoadDataStores(string? tenant = null)
     {
+        IReadOnlyList<DataStore> beforeLoad = _dataStoreProvider.GetAll(tenant);
+
         IList<DataStore> dataStores = await _dataStoreProvider.LoadDataStores(tenant).ConfigureAwait(false);
-        await NotifyDocumentCacheProjectionSupervisorAsync(tenant).ConfigureAwait(false);
+
+        IReadOnlyList<DataStore> afterLoad = _dataStoreProvider.GetAll(tenant);
+        if (!DataStoreMetadataEquals(beforeLoad, afterLoad))
+        {
+            await NotifyDocumentCacheProjectionSupervisorAsync(tenant).ConfigureAwait(false);
+        }
+
         return dataStores;
     }
 
