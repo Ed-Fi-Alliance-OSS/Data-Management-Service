@@ -1319,10 +1319,16 @@ public class Given_DocumentCacheProjectionSupervisor
             {
                 CallBatches.Add(contexts.Select(context => context.ContextKey).ToImmutableArray());
                 resultFactory = _resultFactories.Count == 0 ? _ => [] : _resultFactories.Dequeue();
+            }
+
+            ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult> results = resultFactory(contexts);
+
+            lock (_sync)
+            {
                 CompleteSatisfiedWaiters();
             }
 
-            return Task.FromResult(resultFactory(contexts));
+            return Task.FromResult(results);
         }
 
         public Task<DocumentCacheProjectionSchedulerDispatchResult> RunAdministrativeDrainSliceAsync(

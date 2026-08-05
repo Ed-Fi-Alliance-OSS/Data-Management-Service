@@ -300,6 +300,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         services.TryAddSingleton<IDocumentLinkSlugResolver, NoLinkSlugResolver>();
         services.TryAddSingleton<IDocumentCacheProjectionSupervisor, StubDocumentCacheProjectionSupervisor>();
         services.TryAddSingleton<IDocumentCacheTargetRegistry, StubDocumentCacheTargetRegistry>();
+        services.TryAddSingleton<IDocumentProjectionWorkPager, StubDocumentProjectionWorkPager>();
         services.TryAddSingleton(A.Fake<IDocumentCacheAdministrativeMutex>());
         services.TryAddSingleton(A.Fake<IDocumentCacheAdministrativePrimitives>());
         services.AddOptions<ResourceLinksOptions>();
@@ -338,6 +339,16 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             DocumentCacheTargetRefreshReason reason,
             CancellationToken cancellationToken = default
         ) => throw new InvalidOperationException("Stub registry is unused in composition-surface tests.");
+    }
+
+    private sealed class StubDocumentProjectionWorkPager : IDocumentProjectionWorkPager
+    {
+        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+
+        public Task<DocumentProjectionWorkPage> ReadPageAsync(
+            DocumentProjectionWorkPageRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new InvalidOperationException("Stub work pager is unused in composition-surface tests.");
     }
 
     private sealed class TestReferenceResolverAdapterFactory : IReferenceResolverAdapterFactory
