@@ -1369,12 +1369,20 @@ function Test-MssqlDuplicateDatabaseError {
 function Get-DatabaseNameFromConnectionString {
     <#
     .SYNOPSIS
-        Parses every database / initial-catalog value out of an ADO.NET connection string,
-        resolving any env-file indirection, so the dedicated-E2E guard can compare each one.
-        Database and Initial Catalog are provider synonyms (SqlClient keeps the LAST occurrence),
-        but the generic parser stores both as distinct keys - a string carrying both could
-        effectively target the later value, so every candidate must be returned rather than only
-        the first. Returns an empty array when the string is blank or carries no database keyword.
+        Parses every database-name value out of an ADO.NET connection string, resolving any env-file
+        indirection, so the dedicated-E2E guard can compare each one. Returns every candidate from
+        the UNION of both providers' synonym families - PostgreSQL's Database and DB, SQL Server's
+        Database and Initial Catalog - because this guard stands in front of a destructive reset and
+        takes no engine argument. Recognizing the union is fail-closed: it can only add a candidate
+        to compare, never remove one, whereas recognizing one engine's family for a string belonging
+        to the other lets the effective database hide behind a decoy. That is not hypothetical -
+        omitting DB here meant 'Database=safe;DB=protected' was read as targeting only 'safe', and
+        the guard permitted a reset that would have dropped 'protected'.
+
+        Every candidate is returned rather than only the first: these are provider synonyms (SqlClient
+        keeps the LAST occurrence), but the generic parser stores each spelling as its own key, so a
+        string carrying two of them could effectively target the later value. Returns an empty array
+        when the string is blank or carries no database keyword.
         "Initial Catalog" is recognized only in its exact single-space spelling, for the reason given
         on Get-DatabaseNameFromResolvedConnectionString: a whitespace-mutated spelling is a keyword no
         provider supports, so reading its value as a protected database name compares this guard
@@ -1417,7 +1425,7 @@ function Get-DatabaseNameFromConnectionString {
         # Streamed (not comma-wrapped) so the caller's @(...) collects a flat string array.
         return @(
             foreach ($key in $presentKeys) {
-                if ($key -imatch '^(database|initial catalog)$') {
+                if ($key -imatch '^(database|db|initial catalog)$') {
                     Resolve-ComposeEnvRawValue `
                         -EnvironmentValues $EnvironmentValues `
                         -RawValue ([string]$connectionStringBuilder.PSBase.get_Item($key))
@@ -1503,9 +1511,10 @@ function Assert-E2EDatabaseIsDedicated {
             throw "E2E database safety check could not determine a database name from $connectionStringKey in '$EnvironmentFilePath'."
         }
 
-        # Database and Initial Catalog are provider synonyms; a connection string can carry both,
-        # and SqlClient uses the last occurrence. Every candidate is checked so the effective
-        # database can never skip the collision check behind a decoy first value.
+        # Every candidate the extractor found is checked - PostgreSQL's Database and DB, SQL Server's
+        # Database and Initial Catalog - so the effective database can never skip the collision check
+        # behind a decoy first value. These are provider synonyms and a connection string can carry
+        # more than one, with SqlClient using the last occurrence.
         foreach ($connectionStringDatabaseName in $connectionStringDatabaseNames) {
             if ([string]::IsNullOrWhiteSpace($connectionStringDatabaseName)) {
                 throw "E2E database safety check could not determine a database name from $connectionStringKey in '$EnvironmentFilePath'."
