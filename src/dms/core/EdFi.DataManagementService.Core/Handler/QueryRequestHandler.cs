@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
@@ -120,7 +121,7 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
             MappingSet: mappingSet,
             QueryElements: requestInfo.QueryElements,
             AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
-            PaginationParameters: requestInfo.PaginationParameters,
+            Paging: new CollectionPaging.Traditional(requestInfo.PaginationParameters),
             TraceId: requestInfo.FrontendRequest.TraceId,
             ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo),
             ChangeVersionRange: requestInfo.ChangeVersionRange,

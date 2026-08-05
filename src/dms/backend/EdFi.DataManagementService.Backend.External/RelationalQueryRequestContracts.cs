@@ -92,9 +92,10 @@ public interface IQueryRequest : IRequestWithMappingSet
     AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; }
 
     /// <summary>
-    /// The pagination parameters for this query.
+    /// The paging mode and its inputs for this query: traditional limit/offset, or cursor over an
+    /// inclusive DocumentId range.
     /// </summary>
-    PaginationParameters PaginationParameters { get; }
+    CollectionPaging Paging { get; }
 
     /// <summary>
     /// The request TraceId.

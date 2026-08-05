@@ -522,11 +522,13 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
             MappingSet: _mappingSet,
             QueryElements: queryElements,
             AuthorizationStrategyEvaluators: [],
-            PaginationParameters: new PaginationParameters(
-                Limit: limit,
-                Offset: offset,
-                TotalCount: totalCount,
-                MaximumPageSize: MaximumPageSize
+            Paging: new CollectionPaging.Traditional(
+                new PaginationParameters(
+                    Limit: limit,
+                    Offset: offset,
+                    TotalCount: totalCount,
+                    MaximumPageSize: MaximumPageSize
+                )
             ),
             TraceId: new TraceId(traceId),
             ChangeVersionRange: changeVersionRange

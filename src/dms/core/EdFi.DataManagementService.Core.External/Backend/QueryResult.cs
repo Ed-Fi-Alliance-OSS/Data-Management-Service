@@ -16,7 +16,14 @@ public record QueryResult
     /// </summary>
     /// <param name="EdfiDocs">The documents returned from the query</param>
     /// <param name="TotalCount">The total number of documents returned</param>
-    public record QuerySuccess(JsonArray EdfiDocs, int? TotalCount) : QueryResult();
+    /// <param name="HighestSelectedDocumentId">
+    /// The maximum DocumentId in the selected page keyset, or null when page selection was skipped or
+    /// selected no keys, including early-empty paths and zero-size pages. Independent of
+    /// <paramref name="EdfiDocs"/>: it can be non-null while the body is empty, because every selected
+    /// row may be deleted before hydration completes. Populated by cursor execution in a later story.
+    /// </param>
+    public record QuerySuccess(JsonArray EdfiDocs, int? TotalCount, long? HighestSelectedDocumentId = null)
+        : QueryResult();
 
     /// <summary>
     /// A known failure from the query handler, likely invalid query terms that

@@ -19,6 +19,7 @@ using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
 using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
+using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 using ResponseCompressionDefaults = Microsoft.AspNetCore.ResponseCompression.ResponseCompressionDefaults;
 
 // Disable reload to work around .NET file watcher bug on Linux. See:
@@ -272,6 +273,10 @@ OptionsValidationException? ReportInvalidConfiguration(WebApplication app)
     {
         // Accessing IOptions<T> forces validation
         _ = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
+        // Core AppSettings is validated at startup by ValidateOnStart. Resolving it here as well is
+        // what routes a failure into the graceful path below instead of surfacing later, during host
+        // start, past every guard in this file.
+        _ = app.Services.GetRequiredService<IOptions<CoreAppSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ConfigurationServiceSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<MappingSetProviderOptions>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ReverseProxySettings>>().Value;

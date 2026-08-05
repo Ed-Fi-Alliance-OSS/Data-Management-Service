@@ -1412,11 +1412,13 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     FilterOperator.And
                 )),
             ],
-            PaginationParameters: new PaginationParameters(
-                Limit: limit,
-                Offset: offset,
-                TotalCount: totalCount,
-                MaximumPageSize: MaximumPageSize
+            Paging: new CollectionPaging.Traditional(
+                new PaginationParameters(
+                    Limit: limit,
+                    Offset: offset,
+                    TotalCount: totalCount,
+                    MaximumPageSize: MaximumPageSize
+                )
             ),
             TraceId: new TraceId($"{resourceName}-authorization-query"),
             ChangeVersionRange: changeVersionRange

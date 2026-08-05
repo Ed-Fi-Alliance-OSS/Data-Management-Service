@@ -157,11 +157,13 @@ file static class MssqlProfileIfMatchEtagTestSupport
             MappingSet: mappingSet,
             QueryElements: [],
             AuthorizationStrategyEvaluators: [],
-            PaginationParameters: new PaginationParameters(
-                Limit: MaximumPageSize,
-                Offset: 0,
-                TotalCount: false,
-                MaximumPageSize: MaximumPageSize
+            Paging: new CollectionPaging.Traditional(
+                new PaginationParameters(
+                    Limit: MaximumPageSize,
+                    Offset: 0,
+                    TotalCount: false,
+                    MaximumPageSize: MaximumPageSize
+                )
             ),
             TraceId: new TraceId(traceId),
             ReadableProfileProjectionContext: readableProfileProjectionContext

@@ -717,6 +717,15 @@ public sealed class RelationalDocumentStoreRepository(
     public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
     {
         ArgumentNullException.ThrowIfNull(queryRequest);
+
+        if (queryRequest.Paging is not CollectionPaging.Traditional traditionalPaging)
+        {
+            // Cursor page selection arrives with the shared candidate planner and cursor execution.
+            return new QueryResult.QueryFailureNotImplemented(
+                "Cursor paging is not yet supported for relational queries."
+            );
+        }
+
         var mappingSet = queryRequest.MappingSet;
         var resource = RelationalWriteSupport.ToQualifiedResourceName(queryRequest.ResourceInfo);
 
@@ -733,7 +742,7 @@ public sealed class RelationalDocumentStoreRepository(
                         mappingSet,
                         resource,
                         queryRequest.QueryElements,
-                        queryRequest.PaginationParameters,
+                        traditionalPaging.Parameters,
                         queryRequest.AuthorizationStrategyEvaluators,
                         queryRequest.ReadableProfileProjectionContext,
                         queryRequest.TraceId,
@@ -776,7 +785,7 @@ public sealed class RelationalDocumentStoreRepository(
             resource,
             configuredAuthorizationStrategies,
             queryRequest.AuthorizationContext,
-            queryRequest.PaginationParameters.TotalCount
+            queryRequest.Paging.IncludesTotalCount
         );
 
         PageDocumentIdAuthorizationSpec? pageQueryAuthorization;
@@ -817,7 +826,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
         {
-            return new QueryResult.QuerySuccess([], queryRequest.PaginationParameters.TotalCount ? 0 : null);
+            return new QueryResult.QuerySuccess([], queryRequest.Paging.IncludesTotalCount ? 0 : null);
         }
 
         ResourceReadPlan readPlan;
@@ -849,7 +858,7 @@ public sealed class RelationalDocumentStoreRepository(
                 !planner.TryPlan(
                     readPlan.Model.Root,
                     preprocessingResult,
-                    queryRequest.PaginationParameters,
+                    traditionalPaging.Parameters,
                     out plannedQuery,
                     out _,
                     authorization: pageQueryAuthorization,
@@ -857,10 +866,7 @@ public sealed class RelationalDocumentStoreRepository(
                 ) || plannedQuery is null
             )
             {
-                return new QueryResult.QuerySuccess(
-                    [],
-                    queryRequest.PaginationParameters.TotalCount ? 0 : null
-                );
+                return new QueryResult.QuerySuccess([], queryRequest.Paging.IncludesTotalCount ? 0 : null);
             }
         }
         catch (NotSupportedException ex)
@@ -3596,15 +3602,18 @@ public sealed class RelationalDocumentStoreRepository(
             edfiDocs.Add(projectedOrUnchangedDocument);
         }
 
+        // The selected-keyset boundary passes through unchanged, including when the body above came back
+        // empty: it describes what page selection chose, not what survived to hydration.
         return new QueryResult.QuerySuccess(
             edfiDocs,
-            relationalQueryRequest.PaginationParameters.TotalCount
+            relationalQueryRequest.Paging.IncludesTotalCount
                 ? RelationalReadGuardrails.ConvertTotalCountOrThrow(
                     resource,
                     hydratedPage.TotalCount,
                     "query hydration"
                 )
-                : null
+                : null,
+            hydratedPage.HighestSelectedDocumentId
         );
     }
 
