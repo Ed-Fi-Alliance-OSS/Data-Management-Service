@@ -17,6 +17,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.DocumentCache;
 [Category("DocumentCacheAdministrativeContracts")]
 public class DocumentCacheAdministrativeContractsTests
 {
+    private const string DefaultNoMutationMessage =
+        "Command result performed no lifecycle cache work latch or provider-setting mutation.";
+
     private const string Fingerprint =
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     private const string MixedCaseFingerprint =
@@ -435,6 +438,39 @@ public class DocumentCacheAdministrativeContractsTests
             result.NoMutationGuarantee!.Guaranteed.Should().BeTrue();
         }
 
+        [TestCase(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation)]
+        [TestCase(DocumentCacheAdministrativeCommandStatus.FailedNoMutation)]
+        public void It_should_compute_default_no_mutation_guarantee_when_none_is_supplied(
+            DocumentCacheAdministrativeCommandStatus status
+        )
+        {
+            DocumentCacheAdministrativeCommandResult result = new(
+                DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
+                _defaultTargetKey,
+                status,
+                DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
+                mutated: false
+            );
+
+            result.NoMutationGuarantee.Should().NotBeNull();
+            result.NoMutationGuarantee!.Guaranteed.Should().BeTrue();
+            result.NoMutationGuarantee.Message.Should().Be(DefaultNoMutationMessage);
+        }
+
+        [Test]
+        public void It_should_not_return_no_mutation_guarantee_for_mutated_results()
+        {
+            DocumentCacheAdministrativeCommandResult result = new(
+                DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+                _defaultTargetKey,
+                DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
+                DocumentCacheAdministrativeCommandClassification.CancellationAfterMutation,
+                mutated: true
+            );
+
+            result.NoMutationGuarantee.Should().BeNull();
+        }
+
         [TestCaseSource(nameof(ProducedDiagnosticCategories))]
         public void It_should_round_trip_produced_diagnostic_categories(
             DocumentCacheAdministrativeDiagnosticCategory category
@@ -508,6 +544,8 @@ public class DocumentCacheAdministrativeContractsTests
             );
 
             result.Diagnostics.Single().Message.Should().HaveLength(512).And.NotContain("\r\n");
+            result.NoMutationGuarantee!.Message.Should().HaveLength(512).And.NotContain("\r\n");
+            result.NoMutationGuarantee.Message.Should().NotBe(DefaultNoMutationMessage);
         }
 
         [Test]

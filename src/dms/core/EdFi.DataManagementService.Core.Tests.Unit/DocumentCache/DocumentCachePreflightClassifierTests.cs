@@ -16,6 +16,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.DocumentCache;
 [Category("DocumentCachePreflightClassifier")]
 public class DocumentCachePreflightClassifierTests
 {
+    private const string ClassifierNoMutationMessage =
+        "Classifier performed no lifecycle cache work latch or provider-setting mutation.";
+
     private static readonly DateTimeOffset _observedAt = new(2026, 7, 29, 12, 0, 0, TimeSpan.Zero);
 
     private static readonly DocumentCacheTargetKey _targetKey = DocumentCacheTargetKey.Create("TenantA", 7);
@@ -1165,6 +1168,7 @@ public class DocumentCachePreflightClassifierTests
         result.Diagnostics.Should().Contain(diagnostic => diagnostic.Category == expectedCategory);
         result.NoMutationGuarantee.Should().NotBeNull();
         result.NoMutationGuarantee!.Guaranteed.Should().BeTrue();
+        result.NoMutationGuarantee.Message.Should().Be(ClassifierNoMutationMessage);
         result
             .NoMutationGuarantee.Scope.Should()
             .Be(DocumentCacheAdministrativeNoMutationScope.LifecycleCacheWorkLatchAndProviderSettings);
@@ -1196,6 +1200,7 @@ public class DocumentCachePreflightClassifierTests
             );
         result.NoMutationGuarantee.Should().NotBeNull();
         result.NoMutationGuarantee!.Guaranteed.Should().BeTrue();
+        result.NoMutationGuarantee.Message.Should().Be(ClassifierNoMutationMessage);
         result.ObservedLifecycle.Should().Be(expectedObservedLifecycle);
         result.PhysicalSourceFingerprint.Should().Be(_fingerprint);
         result.TargetContextGeneration.Should().Be(_generation.Value);

@@ -498,6 +498,11 @@ public sealed class DocumentCacheOfflineWriterAdmissionJsonConverter
 
 public sealed record DocumentCacheAdministrativeCommandResult
 {
+    private const string DefaultNoMutationMessage =
+        "Command result performed no lifecycle, cache, work, latch, or provider-setting mutation.";
+
+    private readonly DocumentCacheAdministrativeNoMutationGuarantee? _noMutationGuarantee;
+
     [JsonConstructor]
     public DocumentCacheAdministrativeCommandResult(
         DocumentCacheAdministrativeCommand command,
@@ -577,6 +582,7 @@ public sealed record DocumentCacheAdministrativeCommandResult
         )
     {
         DownstreamPublicationStatus = downstreamPublicationStatus;
+        _noMutationGuarantee = noMutationGuarantee;
     }
 
     [JsonPropertyName("command")]
@@ -653,11 +659,12 @@ public sealed record DocumentCacheAdministrativeCommandResult
         && Status
             is DocumentCacheAdministrativeCommandStatus.RejectedNoMutation
                 or DocumentCacheAdministrativeCommandStatus.FailedNoMutation
-            ? new DocumentCacheAdministrativeNoMutationGuarantee(
-                guaranteed: true,
-                DocumentCacheAdministrativeNoMutationScope.LifecycleCacheWorkLatchAndProviderSettings,
-                "Command result performed no lifecycle, cache, work, latch, or provider-setting mutation."
-            )
+            ? _noMutationGuarantee
+                ?? new DocumentCacheAdministrativeNoMutationGuarantee(
+                    guaranteed: true,
+                    DocumentCacheAdministrativeNoMutationScope.LifecycleCacheWorkLatchAndProviderSettings,
+                    DefaultNoMutationMessage
+                )
             : null;
 
     private static ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> ToPhaseDiagnostics(
