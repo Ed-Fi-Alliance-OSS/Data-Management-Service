@@ -144,8 +144,7 @@ public sealed record CdcProviderArtifactOutputRequest
     [JsonIgnore]
     public string? ManifestOutputDirectoryPath { get; }
 
-    internal bool ShouldCreateManifestPayload =>
-        IncludeManifestPayload || ManifestOutputDirectoryPath is not null;
+    internal bool ShouldCreateManifestPayload => IncludeManifestPayload;
 }
 
 public sealed record CdcPostgresqlProviderArtifactNames(

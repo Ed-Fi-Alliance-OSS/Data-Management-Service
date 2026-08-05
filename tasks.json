@@ -79,7 +79,7 @@
       "Run: dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderManifest",
       "Run: dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcProviderSetupContracts.cs"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server diagnostics",

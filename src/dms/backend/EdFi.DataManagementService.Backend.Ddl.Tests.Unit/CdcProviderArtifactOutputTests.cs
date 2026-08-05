@@ -82,6 +82,25 @@ public class Given_CdcProviderArtifactOutput
     }
 
     [Test]
+    public async Task It_should_create_manifest_payload_when_only_an_output_directory_is_requested()
+    {
+        var service = new CdcProviderSetupService([
+            new TestProvider(CdcProvider.Postgresql, [BuildCompleteObservedProviderStateStep()]),
+        ]);
+        var request = CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+            artifactOutput: new CdcProviderArtifactOutputRequest(
+                IncludeManifestPayload: false,
+                ManifestOutputDirectoryPath: _tempRoot
+            )
+        );
+
+        var result = await service.SetupAsync(request);
+
+        result.ManifestPayload.Should().NotBeNull();
+        File.Exists(Path.Combine(_tempRoot, "cdc-provider.pgsql.manifest.json")).Should().BeTrue();
+    }
+
+    [Test]
     public async Task It_should_report_output_failures_without_masking_provider_setup_mismatches()
     {
         await File.WriteAllTextAsync(_tempRoot, "not-a-directory");
