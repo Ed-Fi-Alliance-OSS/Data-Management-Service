@@ -3957,6 +3957,8 @@ public sealed class RelationalDocumentStoreRepository(
             edfiDocs.Add(projectedOrUnchangedDocument);
         }
 
+        // The selected-keyset boundary passes through unchanged, including when the body above came back
+        // empty: it describes what page selection chose, not what survived to hydration.
         return new QueryResult.QuerySuccess(
             edfiDocs,
             relationalQueryRequest.Paging.IncludesTotalCount
@@ -3965,7 +3967,8 @@ public sealed class RelationalDocumentStoreRepository(
                     hydratedPage.TotalCount,
                     "query hydration"
                 )
-                : null
+                : null,
+            hydratedPage.HighestSelectedDocumentId
         );
     }
 

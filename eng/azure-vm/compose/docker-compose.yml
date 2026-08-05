@@ -42,6 +42,7 @@ x-dms-common-env: &dms-common-env
   OtlpLogging__DeploymentEnvironment: "${OTLP_LOGGING_DEPLOYMENT_ENVIRONMENT:-}"
   AppSettings__MaskRequestBodyInLogs: "true"
   AppSettings__MaximumPageSize: "500"
+  AppSettings__DefaultPartitionCount: "${DEFAULT_PARTITION_COUNT:-10}"
   RateLimit__PermitLimit: "${DMS_RATE_LIMIT_PERMIT_LIMIT:-20000}"
   RateLimit__QueueLimit: "${DMS_RATE_LIMIT_QUEUE_LIMIT:-0}"
   RateLimit__Window: "${DMS_RATE_LIMIT_WINDOW:-10}"

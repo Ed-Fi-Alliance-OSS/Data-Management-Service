@@ -134,7 +134,7 @@ public class Given_The_Page_Token_Codec
     [TestCase("MTAsMjUw\nOQ", TestName = "It_rejects_an_embedded_newline")]
     public void It_rejects_a_malformed_token(string? pageToken)
     {
-        PageTokenCodec.TryDecode(pageToken!, out CursorRange? decoded).Should().BeFalse();
+        PageTokenCodec.TryDecode(pageToken, out CursorRange? decoded).Should().BeFalse();
         decoded.Should().BeNull();
     }
 
@@ -233,7 +233,7 @@ public class Given_A_Selected_Page_Below_The_Maximum_Document_Id
     [Test]
     public void It_advances_past_the_highest_selected_document_and_retains_the_maximum()
     {
-        PageTokenCodec.TryDecode(_nextPageToken!, out CursorRange? decoded).Should().BeTrue();
+        PageTokenCodec.TryDecode(_nextPageToken, out CursorRange? decoded).Should().BeTrue();
         decoded.Should().Be(new CursorRange(101, 2509));
     }
 }
@@ -257,7 +257,7 @@ public class Given_A_Selected_Page_At_A_Bounded_Partition_Upper_Bound
     [Test]
     public void It_creates_an_inverted_range_that_ends_the_partition_walk()
     {
-        PageTokenCodec.TryDecode(_nextPageToken!, out CursorRange? decoded).Should().BeTrue();
+        PageTokenCodec.TryDecode(_nextPageToken, out CursorRange? decoded).Should().BeTrue();
         decoded.Should().Be(new CursorRange(2510, 2509));
     }
 }
@@ -281,7 +281,7 @@ public class Given_A_Selected_Page_Entered_From_An_Unbounded_Walk
     [Test]
     public void It_stays_unbounded_above()
     {
-        PageTokenCodec.TryDecode(_nextPageToken!, out CursorRange? decoded).Should().BeTrue();
+        PageTokenCodec.TryDecode(_nextPageToken, out CursorRange? decoded).Should().BeTrue();
         decoded.Should().Be(new CursorRange(101, long.MaxValue));
     }
 }

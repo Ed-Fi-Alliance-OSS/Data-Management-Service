@@ -2926,6 +2926,139 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .MustNotHaveHappened();
     }
 
+    [Test]
+    public async Task It_carries_the_hydrated_selected_keyset_boundary_into_the_query_success()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("beefbeef-1111-2222-3333-cdcdcdcdcdcd"));
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "name",
+                "$.name",
+                "string",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Name"))
+            )
+        );
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(mappingSet, [], totalCount: false);
+        var hydratedPage = CreateHydratedPage(
+            readPlan,
+            CreateDocumentMetadataRow(documentUuid, 345L, 91L),
+            (345L, "Lincoln High")
+        ) with
+        {
+            HighestSelectedDocumentId = 2509L,
+        };
+
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[0],
+                    JsonNode.Parse($$"""{"id":"{{documentUuid.Value}}"}""")!
+                ),
+            ]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedDocumentId.Should().Be(2509L);
+        success.EdfiDocs.Should().ContainSingle();
+    }
+
+    // The boundary comes from the selected keyset, not the hydrated body, so it must survive a page
+    // whose every selected row was deleted before hydration completed. A body-derived boundary would
+    // stop a cursor walk here instead of advancing past the deleted rows.
+    [Test]
+    public async Task It_carries_the_hydrated_boundary_into_the_query_success_with_an_empty_body()
+    {
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "name",
+                "$.name",
+                "string",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Name"))
+            )
+        );
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(mappingSet, [], totalCount: false);
+        var hydratedPage = new HydratedPage(null, [], [new HydratedTableRows(readPlan.Model.Root, [])], [])
+        {
+            HighestSelectedDocumentId = 2509L,
+        };
+
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedDocumentId.Should().Be(2509L);
+        success.EdfiDocs.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_leaves_the_query_success_boundary_null_when_hydration_reports_none()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("beefbeef-4444-5555-6666-cdcdcdcdcdcd"));
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "name",
+                "$.name",
+                "string",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Name"))
+            )
+        );
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(mappingSet, [], totalCount: false);
+        var hydratedPage = CreateHydratedPage(
+            readPlan,
+            CreateDocumentMetadataRow(documentUuid, 345L, 91L),
+            (345L, "Lincoln High")
+        );
+
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[0],
+                    JsonNode.Parse($$"""{"id":"{{documentUuid.Value}}"}""")!
+                ),
+            ]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedDocumentId.Should().BeNull();
+    }
+
     [TestCase("1.5")]
     [TestCase("2147483648")]
     public async Task It_returns_an_empty_query_success_when_integer_number_filter_values_cannot_match(

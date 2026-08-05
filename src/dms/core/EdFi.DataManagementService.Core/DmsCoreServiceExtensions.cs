@@ -148,7 +148,8 @@ public static class DmsCoreServiceExtensions
                         ),
                         QueryResult.QuerySuccess querySuccess => new QueryResult.QuerySuccess(
                             new JsonArray("REDACTED"),
-                            querySuccess.TotalCount
+                            querySuccess.TotalCount,
+                            querySuccess.HighestSelectedDocumentId
                         ),
                         _ => result,
                     };

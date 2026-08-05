@@ -54,7 +54,9 @@ internal static class PageTokenCodec
     }
 
     /// <summary>
-    /// Decodes a client-supplied page token, accepting correctly padded or unpadded base64url.
+    /// Decodes a client-supplied page token, accepting correctly padded or unpadded base64url. A null
+    /// or empty token is rejected like any other malformed input, so callers can hand over an absent
+    /// query-string value without a null check of their own.
     /// </summary>
     /// <remarks>
     /// Deliberately stricter than a permissive base64 reader: accepting forms the encoder never emits
@@ -62,7 +64,7 @@ internal static class PageTokenCodec
     /// empty maximum is the one accepted form the encoder does not produce, so a client or tool can
     /// express a range that is unbounded above.
     /// </remarks>
-    internal static bool TryDecode(string pageToken, out CursorRange? range)
+    internal static bool TryDecode(string? pageToken, out CursorRange? range)
     {
         range = null;
 
