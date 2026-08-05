@@ -166,6 +166,11 @@ public class TokenCleanupServiceTests
         [SetUp]
         public async Task Act()
         {
+            // NUnit reuses the fixture instance across its tests; without these resets the
+            // second test's fake would never throw and the recover path would go untested.
+            _callCount = 0;
+            _caughtException = null;
+
             _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
             A.CallTo(() => _tokenRepository.DeleteExpiredTokensAsync(A<DateTimeOffset>._))
                 .ReturnsLazily(

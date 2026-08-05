@@ -1,11 +1,3 @@
----
-status: accepted
-date: 2026-08-04
-jira: DMS-1354
-related:
-  - DMS-1353
----
-
 # Expired Access Token Cleanup
 
 ## Decision
@@ -82,6 +74,12 @@ a pure HTTP proxy to Keycloak's token endpoint.
 It persists nothing locally.
 Keycloak owns its own token and session lifecycle entirely outside DMS, so there is no
 DMS-side state to clean up in this mode.
+Because the cleanup service is registered only in the self-contained branch, the
+`TokenCleanupEnabled` and `TokenCleanupIntervalMinutes` settings are inert in Keycloak mode:
+nothing reads them, whatever they are set to.
+A deployment that ran self-contained and later switches to Keycloak strands whatever rows were
+in `dmscs.OpenIddictToken` at switch time; they are harmless dead weight (nothing in Keycloak
+mode reads or writes the table) and can be removed with a one-time manual `DELETE` if desired.
 
 ## ODS Precedent
 
@@ -112,8 +110,10 @@ No scheduler library such as Quartz is used.
 
 The deletion predicate is `ExpirationDate <=` UTC now minus the validator's five-minute clock
 skew (`JwtTokenValidator.TokenValidationClockSkew`), and it applies regardless of `Status`.
-Subtracting the skew keeps every row the JWT validator could still accept, preserving the
-behavior-neutrality argued in Current State.
+Subtracting the skew keeps every row the JWT validator could still accept until the moment that
+acceptance itself lapses, preserving the behavior-neutrality argued in Current State; a request
+racing the sweep in the final instant of the skew window is rejected at most a moment before the
+validator itself would have rejected it.
 Rows already marked `revoked` are deleted once they are also expired, exactly like rows still
 marked `valid`; `Status` plays no part in the predicate.
 Both engines run the same predicate against `dmscs.OpenIddictToken`: PostgreSQL executes

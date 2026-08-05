@@ -906,3 +906,5 @@ equivalent setting, because Keycloak owns its own token housekeeping.
 
 These map to `IdentitySettings__TokenCleanupEnabled` and
 `IdentitySettings__TokenCleanupIntervalMinutes` in `local-config.yml` and `published-config.yml`.
+The interval accepts values from 1 to 71,582 minutes; a value outside that range is logged as a
+warning and falls back to the 30-minute default.
