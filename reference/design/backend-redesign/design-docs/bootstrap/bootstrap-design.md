@@ -2563,7 +2563,7 @@ These values can be placed in `src/dms/frontend/EdFi.DataManagementService.Front
         "BaselineHighWaterMark": 1000
       },
       "Administration": {
-        "WorkflowTimeout": "24:00:00"
+        "WorkflowTimeout": "1.00:00:00"
       }
     }
   },

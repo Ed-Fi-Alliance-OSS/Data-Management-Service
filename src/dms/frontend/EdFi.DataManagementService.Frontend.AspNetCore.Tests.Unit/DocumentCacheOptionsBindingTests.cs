@@ -50,4 +50,22 @@ public class DocumentCacheOptionsBindingTests
         options.Projector.BaselineHighWaterMark.Should().Be(2500);
         options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(12));
     }
+
+    [Test]
+    public void It_binds_the_day_based_administrative_workflow_timeout()
+    {
+        IConfigurationRoot configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["DataManagement:DocumentCache:Administration:WorkflowTimeout"] = "1.00:00:00",
+                }
+            )
+            .Build();
+
+        DocumentCacheOptions options = new();
+        configuration.GetSection(DocumentCacheOptions.SectionName).Bind(options);
+
+        options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(24));
+    }
 }
