@@ -1587,8 +1587,8 @@ function Find-ConnectionStringLegacyTokenSpan {
     <#
     .SYNOPSIS
         Locates the exact source span of $LegacyToken within a connection string's database-segment
-        value (a recognized Database / Initial Catalog key), or returns $null when no such segment's
-        value is exactly $LegacyToken.
+        value - a database-name key the SELECTED provider actually recognizes - or returns $null when
+        no such segment's value is exactly $LegacyToken.
 
     .DESCRIPTION
         A hand-written quote-aware scanner, not a regex over the raw text: the connection string is
@@ -1605,6 +1605,18 @@ function Find-ConnectionStringLegacyTokenSpan {
         and a caller-authored quoted value is conservatively left untouched rather than guessing at
         escape-unescaping - not a functional regression, since a quoted database value was never part
         of this migration's supported shape.
+
+        The recognized key family is the SELECTED engine's exact family, not a union and not a
+        whitespace-tolerant pattern: PostgreSQL recognizes exactly "Database" and "DB", SQL Server
+        exactly "Database" and "Initial Catalog" (all case-insensitively, with the key's outer
+        whitespace trimmed). A whitespace-mutated spelling ("InitialCatalog", "Initial  Catalog") or
+        the other engine's spelling is NOT a migration signature and is left untouched. This differs
+        deliberately from database-safety.psm1's Get-DatabaseNameFromConnectionString, which may
+        recognize the union of both families: that function guards a destructive reset, where
+        recognizing an extra key only adds a candidate to compare. This one REWRITES caller-authored
+        text, so recognizing a key the selected provider does not support would edit a string on a
+        signature the provider never honored - and migrating a spelling the provider-aware validator
+        then refuses converts a clear authoring error into an edited file that still fails.
     #>
     param(
         [Parameter(Mandatory)]
@@ -1612,8 +1624,17 @@ function Find-ConnectionStringLegacyTokenSpan {
         [string]$ConnectionString,
 
         [Parameter(Mandatory)]
-        [string]$LegacyToken
+        [string]$LegacyToken,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine
     )
+
+    # The selected provider's exact database-name family. Defined once so the scanner cannot drift
+    # from the provider-aware recognition the validator applies to the same string.
+    $databaseKeyPattern =
+        if ($DatabaseEngine -eq "mssql") { '^(database|initial catalog)$' } else { '^(database|db)$' }
 
     $length = $ConnectionString.Length
     $segmentStart = 0
@@ -1647,7 +1668,7 @@ function Find-ConnectionStringLegacyTokenSpan {
             $equalsIndex = $segmentText.IndexOf('=')
             if ($equalsIndex -ge 0) {
                 $key = $segmentText.Substring(0, $equalsIndex).Trim()
-                if ($key -imatch '^(database|initial\s*catalog)$') {
+                if ($key -imatch $databaseKeyPattern) {
                     $rawValue = $segmentText.Substring($equalsIndex + 1)
                     $trimmedValue = $rawValue.Trim()
                     if ([string]::Equals($trimmedValue, $LegacyToken, [System.StringComparison]::Ordinal)) {
@@ -2976,7 +2997,8 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         neither value is itself a ${VAR} reference this design writes.
 
         When switching to separate mode, if the connection string's database-segment value specifically
-        - the value of a recognized database-name key (Database / Initial Catalog), not any other part
+        - the value of a database-name key the SELECTED engine recognizes (PostgreSQL: exactly Database
+        or DB; SQL Server: exactly Database or Initial Catalog), not any other part
         of the string - is, in its raw (unresolved) form, exactly the legacy template token
         ("${POSTGRES_DB_NAME}" or "${MSSQL_DB_NAME}", matching this story's own prior default template,
         before DMS_CONFIG_DATABASE_NAME existed), that exact segment is rewritten to
@@ -2985,7 +3007,10 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         quote-aware scanner (Find-ConnectionStringLegacyTokenSpan), not a blind substring or regex
         search across the whole string, so the same literal text appearing inside an unrelated quoted
         segment - a password containing a literal ';' - is never mistaken for a real segment boundary
-        and never touched. A dotenv-level outer quote wrapper around the whole connection-string value
+        and never touched. A whitespace-mutated database key ("InitialCatalog", "Initial  Catalog") or
+        the other engine's key is likewise not a migration signature, so such a string is left exactly
+        as authored and fails validation clearly instead of being edited on a signature its own
+        provider never honored. A dotenv-level outer quote wrapper around the whole connection-string value
         (e.g. "host=...;database=${TOKEN};" as one double-quoted dotenv value) is detected and stripped
         before the scanner runs, then the found span is mapped back and spliced into the original,
         still-wrapped string, so the outer wrapper is preserved exactly while only the inner token
@@ -3099,7 +3124,11 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
 
         # Quote-aware: a plain substring/regex search would mistake a ';' or '=' inside an unrelated
         # quoted segment (a password) for a real segment boundary. See Find-ConnectionStringLegacyTokenSpan.
-        $legacyTokenSpan = Find-ConnectionStringLegacyTokenSpan -ConnectionString $searchText -LegacyToken $legacyToken
+        # Engine-scoped: only the selected provider's own database-key family is a migration signature.
+        $legacyTokenSpan = Find-ConnectionStringLegacyTokenSpan `
+            -ConnectionString $searchText `
+            -LegacyToken $legacyToken `
+            -DatabaseEngine $DatabaseEngine
         if ($null -ne $legacyTokenSpan) {
             $absoluteStart = $legacyTokenSpan.Start + $searchOffset
             $intendedConnectionString =
