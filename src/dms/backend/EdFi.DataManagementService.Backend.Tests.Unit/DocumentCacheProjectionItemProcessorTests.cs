@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -327,13 +328,109 @@ public class Given_DocumentCacheProjectionItemProcessor
     }
 
     [Test]
-    public async Task It_pauses_the_target_for_deterministic_materializer_failures()
+    public async Task It_records_projection_processing_exceptions_as_document_scoped_failures_without_pausing_target_and_continues_later_work()
     {
-        RecordingDocumentCacheWriter writer = new(new DocumentCacheWriterResult.NeedsMaterialization(10));
+        RecordingDocumentCacheWriter writer = new(
+            new DocumentCacheWriterResult.NeedsMaterialization(10),
+            new DocumentCacheWriterResult.AlreadyCurrentAcknowledged(12)
+        );
         DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext(
             new RecordingDocumentCacheMaterializer(
                 new DocumentCacheProjectionProcessingException(
                     DocumentCacheProjectionProcessingFailureReason.DocumentJsonNotObject,
+                    FailureMetadata(documentId: 101)
+                )
+            ),
+            writer
+        );
+
+        DocumentCacheProjectionItemProcessResult result = await CreateProcessor()
+            .ProcessItemAsync(Request(targetContext, WorkItem(101, requiredContentVersion: 10)));
+
+        result.Should().BeSameAs(DocumentCacheProjectionItemProcessResult.DocumentScopedFailure);
+        targetContext.SchedulingState.IsTargetPaused.Should().BeFalse();
+        DocumentCacheProjectionDocumentDiagnostic diagnostic = targetContext
+            .FailureBackoffState.CreateFailureDiagnosticsSnapshot()
+            .DocumentDiagnostics.Should()
+            .ContainSingle()
+            .Subject;
+        diagnostic.DocumentId.Should().Be(101);
+        diagnostic
+            .Category.Should()
+            .Be(DocumentCacheProjectionDocumentDiagnosticCategory.DeterministicInvariantFailure);
+        diagnostic.Message.Should().Contain("DocumentJsonNotObject");
+        diagnostic.NextRetryAt.Should().Be(ObservedAt.AddSeconds(10));
+
+        DocumentCacheProjectionItemProcessResult laterResult = await CreateProcessor()
+            .ProcessItemAsync(Request(targetContext, WorkItem(102, requiredContentVersion: 12)));
+
+        laterResult.Outcome.Should().Be(DocumentCacheProjectionItemProcessOutcome.Continue);
+        laterResult.AcknowledgedOrRemovedDurableWork.Should().BeTrue();
+        targetContext.SchedulingState.IsTargetPaused.Should().BeFalse();
+        targetContext.FailureBackoffState.Count.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_records_administrative_projection_processing_exceptions_as_document_scoped_failures()
+    {
+        var processingException = new DocumentCacheProjectionProcessingException(
+            DocumentCacheProjectionProcessingFailureReason.DocumentJsonNotObject,
+            FailureMetadata(documentId: 101)
+        );
+        RecordingDocumentCacheMaterializer materializer = new(processingException);
+        RecordingDocumentCacheWriter ordinaryWriter = new();
+        RecordingSessionBoundWriter sessionBoundWriter = new(
+            DocumentCacheSessionBoundWriterResult.FromWriterResult(
+                new DocumentCacheWriterResult.NeedsMaterialization(10),
+                commandExecutionMutated: false
+            )
+        );
+        DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext(
+            materializer,
+            ordinaryWriter,
+            sessionBoundWriter
+        );
+        DocumentCacheAdministrativeCommandExecutionContext commandContext = CommandContext(targetContext);
+
+        DocumentCacheProjectionItemProcessResult result;
+        using (targetContext.BindAdministrativeCommand(commandContext))
+        {
+            result = await CreateProcessor()
+                .ProcessItemAsync(
+                    Request(
+                        targetContext,
+                        WorkItem(101, requiredContentVersion: 10),
+                        DocumentCacheProjectionDrainInvocationKind.Administrative
+                    )
+                );
+        }
+
+        result.Should().BeSameAs(DocumentCacheProjectionItemProcessResult.DocumentScopedFailure);
+        result.AdministrativeFailure.Should().BeNull();
+        commandContext.Mutated.Should().BeFalse();
+        targetContext.SchedulingState.IsTargetPaused.Should().BeFalse();
+        targetContext
+            .FailureBackoffState.CreateFailureDiagnosticsSnapshot()
+            .DocumentDiagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.DocumentId == 101
+                && diagnostic.Category
+                    == DocumentCacheProjectionDocumentDiagnosticCategory.DeterministicInvariantFailure
+                && diagnostic.NextRetryAt == ObservedAt.AddSeconds(10)
+            );
+        ordinaryWriter.Calls.Should().BeEmpty();
+        sessionBoundWriter.Calls.Should().ContainSingle();
+        materializer.Calls.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_pauses_the_target_for_target_mapping_failures()
+    {
+        RecordingDocumentCacheWriter writer = new(new DocumentCacheWriterResult.NeedsMaterialization(10));
+        DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext(
+            new RecordingDocumentCacheMaterializer(
+                new DocumentCacheTargetMappingException(
+                    DocumentCacheTargetMappingFailureReason.ReadPlanMissing,
                     FailureMetadata(documentId: 101)
                 )
             ),
@@ -411,15 +508,37 @@ public class Given_DocumentCacheProjectionItemProcessor
 
     private static DocumentCacheProjectionItemProcessRequest Request(
         DocumentCacheProjectionTargetRuntimeContext targetContext,
-        DocumentProjectionWorkPageItem workItem
-    ) => new(targetContext, workItem, DocumentCacheProjectionDrainInvocationKind.Ordinary);
+        DocumentProjectionWorkPageItem workItem,
+        DocumentCacheProjectionDrainInvocationKind invocationKind =
+            DocumentCacheProjectionDrainInvocationKind.Ordinary
+    ) => new(targetContext, workItem, invocationKind);
+
+    private static DocumentCacheAdministrativeCommandExecutionContext CommandContext(
+        DocumentCacheProjectionTargetRuntimeContext targetContext
+    ) =>
+        new(
+            DocumentCacheAdministrativeCommandExecutionId.New(),
+            new DocumentCacheAdministrativeCommandRunnerRequest(
+                DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+                DocumentCacheAdministrativeTargetKey.FromTargetKey(targetContext.TargetKey),
+                Fingerprint
+            ),
+            targetContext,
+            A.Fake<IDocumentCacheAdministrativeMutexLease>(),
+            A.Fake<IDocumentCacheAdministrativePrimitives>(),
+            new NoOpObservationSink(),
+            new FixedTimeProvider(ObservedAt),
+            ObservedAt,
+            CancellationToken.None
+        );
 
     private static DocumentProjectionWorkPageItem WorkItem(long documentId, long requiredContentVersion) =>
         new(documentId, requiredContentVersion, FirstEnqueuedAt, FirstEnqueuedAt.AddSeconds(5));
 
     private static DocumentCacheProjectionTargetRuntimeContext RuntimeContext(
         IDocumentCacheMaterializer materializer,
-        IDocumentCacheWriter writer
+        IDocumentCacheWriter writer,
+        IDocumentCacheSessionBoundWriter? sessionBoundWriter = null
     )
     {
         DocumentCacheTargetKey targetKey = DocumentCacheTargetKey.Create("Tenant-A", 1);
@@ -459,7 +578,9 @@ public class Given_DocumentCacheProjectionItemProcessor
                 materializer,
                 writer
             ),
-            new NoOpObservationSink()
+            new NoOpObservationSink(),
+            sessionBoundWriter,
+            disposeScopeAsync: null
         );
     }
 
@@ -562,6 +683,22 @@ public class Given_DocumentCacheProjectionItemProcessor
             }
 
             return Task.FromResult((DocumentCacheMaterializationResult)result);
+        }
+    }
+
+    private sealed class RecordingSessionBoundWriter(params DocumentCacheSessionBoundWriterResult[] results)
+        : IDocumentCacheSessionBoundWriter
+    {
+        private readonly Queue<DocumentCacheSessionBoundWriterResult> _results = new(results);
+
+        public List<DocumentCacheSessionBoundWriterRequest> Calls { get; } = [];
+
+        public Task<DocumentCacheSessionBoundWriterResult> WriteAsync(
+            DocumentCacheSessionBoundWriterRequest request
+        )
+        {
+            Calls.Add(request);
+            return Task.FromResult(_results.Dequeue());
         }
     }
 

@@ -223,7 +223,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         }
         catch (DocumentCacheProjectionProcessingException exception)
         {
-            return PauseTargetForDeterministicFailure(
+            return RecordProjectionProcessingFailure(
                 targetContext,
                 workItem,
                 request.InvocationKind,
@@ -460,7 +460,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         }
         catch (DocumentCacheProjectionProcessingException exception)
         {
-            return PauseTargetForDeterministicFailure(targetContext, workItem, invocationKind, exception);
+            return RecordProjectionProcessingFailure(targetContext, workItem, invocationKind, exception);
         }
         catch (DocumentCacheTargetMappingException exception)
         {
@@ -470,6 +470,37 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         {
             return TargetBackoffForProviderFailure(targetContext, invocationKind, exception);
         }
+    }
+
+    private DocumentCacheProjectionItemProcessResult RecordProjectionProcessingFailure(
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        DocumentProjectionWorkPageItem workItem,
+        DocumentCacheProjectionDrainInvocationKind invocationKind,
+        DocumentCacheProjectionProcessingException exception
+    )
+    {
+        DateTimeOffset observedAt = _timeProvider.GetUtcNow();
+        _telemetry.RecordItemOutcome(
+            targetContext,
+            invocationKind,
+            nameof(DocumentCacheProjectionItemProcessResult.DocumentScopedFailure),
+            DocumentCacheProjectionDocumentDiagnosticCategory.DeterministicInvariantFailure.ToString()
+        );
+        RecordDocumentFailure(
+            targetContext,
+            workItem,
+            DocumentCacheProjectionDocumentDiagnosticCategory.DeterministicInvariantFailure,
+            exception.Message,
+            observedAt
+        );
+        _logger.LogWarning(
+            exception,
+            "DocumentCache projection recorded document-scoped failure for document {DocumentId} on target {TargetKey} after deterministic item processing failure.",
+            workItem.DocumentId,
+            LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString())
+        );
+
+        return DocumentCacheProjectionItemProcessResult.DocumentScopedFailure;
     }
 
     private DocumentCacheProjectionItemProcessResult PauseTargetForDeterministicFailure(
