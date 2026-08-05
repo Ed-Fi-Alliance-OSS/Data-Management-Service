@@ -133,7 +133,7 @@ public class Given_A_Postgresql_DocumentCacheExplicitIntegrityScrub_Command
         await ClearProjectionWorkAsync();
         SourceDocument? insertedAfterBoundary = null;
         var primitives = new BeforeFirstScrubPagePrimitives(
-            DocumentCacheAdministrativePrimitives.Postgresql(),
+            DocumentCacheAdministrativePrimitives.ForPostgresql(),
             async () =>
             {
                 insertedAfterBoundary = await InsertDocumentAsync(contentVersion: 99);
@@ -205,7 +205,7 @@ public class Given_A_Postgresql_DocumentCacheExplicitIntegrityScrub_Command
         SourceDocument source = await InsertDocumentAsync(contentVersion: 10);
         await ClearProjectionWorkAsync();
         var primitives = new BeforeNthLifecycleReadPrimitives(
-            DocumentCacheAdministrativePrimitives.Postgresql(),
+            DocumentCacheAdministrativePrimitives.ForPostgresql(),
             lifecycleReadNumber: 2,
             () => SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: true)
         );
@@ -260,7 +260,7 @@ public class Given_A_Postgresql_DocumentCacheExplicitIntegrityScrub_Command
         SourceDocument fourth = await InsertDocumentAsync(contentVersion: 40);
         await ClearProjectionWorkAsync();
         var primitives = new BeforeNthLifecycleReadPrimitives(
-            DocumentCacheAdministrativePrimitives.Postgresql(),
+            DocumentCacheAdministrativePrimitives.ForPostgresql(),
             lifecycleReadNumber: 4,
             () => SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: true)
         );
@@ -366,7 +366,7 @@ public class Given_A_Postgresql_DocumentCacheExplicitIntegrityScrub_Command
                 _dataSourceCache,
                 NullLogger<PostgresqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            primitives ?? DocumentCacheAdministrativePrimitives.Postgresql(),
+            primitives ?? DocumentCacheAdministrativePrimitives.ForPostgresql(),
             observationSink,
             new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance

@@ -242,7 +242,7 @@ public class Given_A_Postgresql_DocumentCacheOfflineDeactivation_Command
                 _dataSourceCache,
                 NullLogger<PostgresqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            DocumentCacheAdministrativePrimitives.Postgresql(),
+            DocumentCacheAdministrativePrimitives.ForPostgresql(),
             observationSink,
             new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance

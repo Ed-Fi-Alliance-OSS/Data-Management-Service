@@ -51,7 +51,7 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
         );
         services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentCacheAdministrativePrimitives>(
-                DocumentCacheAdministrativePrimitives.Mssql()
+                DocumentCacheAdministrativePrimitives.ForSqlServer()
             )
         );
 

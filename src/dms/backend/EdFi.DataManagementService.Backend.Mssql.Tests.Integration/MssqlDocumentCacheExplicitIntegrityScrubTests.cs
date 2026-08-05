@@ -148,7 +148,7 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         await ClearProjectionWorkAsync();
         SourceDocument? insertedAfterBoundary = null;
         var primitives = new BeforeFirstScrubPagePrimitives(
-            DocumentCacheAdministrativePrimitives.Mssql(),
+            DocumentCacheAdministrativePrimitives.ForSqlServer(),
             async () =>
             {
                 insertedAfterBoundary = await InsertDocumentAsync(contentVersion: 99);
@@ -220,7 +220,7 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         SourceDocument source = await InsertDocumentAsync(contentVersion: 10);
         await ClearProjectionWorkAsync();
         var primitives = new BeforeNthLifecycleReadPrimitives(
-            DocumentCacheAdministrativePrimitives.Mssql(),
+            DocumentCacheAdministrativePrimitives.ForSqlServer(),
             lifecycleReadNumber: 2,
             () => SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: true)
         );
@@ -275,7 +275,7 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         SourceDocument fourth = await InsertDocumentAsync(contentVersion: 40);
         await ClearProjectionWorkAsync();
         var primitives = new BeforeNthLifecycleReadPrimitives(
-            DocumentCacheAdministrativePrimitives.Mssql(),
+            DocumentCacheAdministrativePrimitives.ForSqlServer(),
             lifecycleReadNumber: 4,
             () => SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: true)
         );
@@ -383,7 +383,7 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
             new MssqlDocumentCacheAdministrativeMutex(
                 NullLogger<MssqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            primitives ?? DocumentCacheAdministrativePrimitives.Mssql(),
+            primitives ?? DocumentCacheAdministrativePrimitives.ForSqlServer(),
             observationSink,
             new FixedTimeProvider(ObservedAtOffset),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance

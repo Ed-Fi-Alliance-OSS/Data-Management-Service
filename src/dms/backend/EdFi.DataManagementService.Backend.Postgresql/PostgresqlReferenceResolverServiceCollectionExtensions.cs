@@ -52,7 +52,7 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
         );
         services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentCacheAdministrativePrimitives>(
-                DocumentCacheAdministrativePrimitives.Postgresql()
+                DocumentCacheAdministrativePrimitives.ForPostgresql()
             )
         );
 

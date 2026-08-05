@@ -58,7 +58,7 @@ public class Given_A_Postgresql_DocumentCacheBaselineSeeding_Primitive
             _dataSourceCache,
             NullLogger<PostgresqlDocumentCacheAdministrativeMutex>.Instance
         );
-        _primitives = DocumentCacheAdministrativePrimitives.Postgresql();
+        _primitives = DocumentCacheAdministrativePrimitives.ForPostgresql();
     }
 
     [TearDown]

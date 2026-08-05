@@ -291,7 +291,7 @@ public class Given_A_Postgresql_DocumentCacheInternalOnlyCacheAheadRecovery_Comm
                 _dataSourceCache,
                 NullLogger<PostgresqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            DocumentCacheAdministrativePrimitives.Postgresql(),
+            DocumentCacheAdministrativePrimitives.ForPostgresql(),
             observationSink,
             new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance

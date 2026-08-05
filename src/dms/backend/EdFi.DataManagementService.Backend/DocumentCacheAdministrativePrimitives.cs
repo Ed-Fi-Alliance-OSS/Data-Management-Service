@@ -1081,10 +1081,10 @@ internal sealed class DocumentCacheAdministrativePrimitives : IDocumentCacheAdmi
 
     public RelationalProviderToken ProviderToken { get; }
 
-    public static DocumentCacheAdministrativePrimitives Postgresql() =>
+    public static DocumentCacheAdministrativePrimitives ForPostgresql() =>
         new(SqlDialect.Pgsql, RelationalProviderToken.Postgresql);
 
-    public static DocumentCacheAdministrativePrimitives Mssql() =>
+    public static DocumentCacheAdministrativePrimitives ForSqlServer() =>
         new(SqlDialect.Mssql, RelationalProviderToken.SqlServer);
 
     public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(

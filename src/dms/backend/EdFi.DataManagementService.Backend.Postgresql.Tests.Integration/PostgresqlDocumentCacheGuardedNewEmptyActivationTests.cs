@@ -164,7 +164,7 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
             ),
             new RecordingObservationSink(),
             new DelayingGuardedActivationPrimitives(
-                DocumentCacheAdministrativePrimitives.Postgresql(),
+                DocumentCacheAdministrativePrimitives.ForPostgresql(),
                 lockAcquired,
                 releaseLock
             )
@@ -218,7 +218,7 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
                 _dataSourceCache,
                 NullLogger<PostgresqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            primitives ?? DocumentCacheAdministrativePrimitives.Postgresql(),
+            primitives ?? DocumentCacheAdministrativePrimitives.ForPostgresql(),
             observationSink,
             new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance

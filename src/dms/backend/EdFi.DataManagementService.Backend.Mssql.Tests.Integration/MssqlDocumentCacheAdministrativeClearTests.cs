@@ -61,7 +61,7 @@ public class Given_A_Mssql_DocumentCacheAdministrativeClear_Primitive
         _mutex = new MssqlDocumentCacheAdministrativeMutex(
             NullLogger<MssqlDocumentCacheAdministrativeMutex>.Instance
         );
-        _primitives = DocumentCacheAdministrativePrimitives.Mssql();
+        _primitives = DocumentCacheAdministrativePrimitives.ForSqlServer();
     }
 
     [TearDown]
