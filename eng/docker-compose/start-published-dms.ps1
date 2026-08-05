@@ -269,13 +269,27 @@ if (-not $d) {
         throw "Parameters -NoDataStore and -SchoolYearRange are mutually exclusive. Use -NoDataStore for manual data store creation, or use -SchoolYearRange to auto-create data stores."
     }
 
-    # -DataStoreDatabaseName renames the DMS datastore database for the CMS data-store record,
-    # AFTER topology validation has already run - so it could silently reintroduce the very
-    # sharing -SeparateConfigDatabase exists to remove. On PostgreSQL distinctness is enforced here, at
+    # The DMS datastore database registered in the CMS data-store record is chosen AFTER topology
+    # validation has already run - so it could silently reintroduce the very sharing
+    # -SeparateConfigDatabase exists to remove. On PostgreSQL distinctness is enforced here, at
     # the same fail-fast boundary as the other parameter rules, but deliberately AFTER them: this check
     # is new, and an invalid parameter shape must keep reporting the established diagnostic that
     # describes it. Placed first, it masked "-NoDataStore and -SchoolYearRange are mutually exclusive"
     # for a caller who had made that mistake and happened to also pass the reserved database name.
+    #
+    # The guard judges the EFFECTIVE name that will actually be registered, not just the parameter:
+    # -DataStoreDatabaseName when supplied, and otherwise the Compose-resolved POSTGRES_DB_NAME
+    # fallback the registration itself computes. That is anti-drift hardening, NOT a hole this closes:
+    # when the parameter is omitted the effective name IS POSTGRES_DB_NAME, and every colliding value
+    # reachable that way is already refused earlier by Confirm-CmsDatabaseTopologyAgreement's
+    # initialized-path authority (Compose value semantics trim a declaration's trailing whitespace, so
+    # an env-file name arrives as the exact reserved literal, which that authority rejects). The one
+    # input where the two authorities disagree - a bare trailing line feed, which this registered
+    # transport collapses and createdb preserves - can only arrive through -DataStoreDatabaseName,
+    # which bypasses Compose resolution, and that remains the load-bearing case for this guard.
+    # Resolving the effective name into one variable that the registration below reuses means the
+    # guarded value and the registered value cannot drift apart if either ordering or the set of value
+    # sources changes later.
     #
     # It applies only to a shape that actually reaches the data-store registration below: -InfraOnly,
     # -DmsOnly, and -DbOnly all return before it, and -NoDataStore skips it. Because -NoDataStore and
@@ -285,8 +299,8 @@ if (-not $d) {
     #
     # WHETHER a name collides is decided by Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase,
     # and that is deliberately NOT the predicate Confirm-CmsDatabaseTopologyAgreement uses. The two ask
-    # about different physical creation mechanisms: -DataStoreDatabaseName never reaches
-    # postgresql-init.sh, which passes POSTGRES_DB_NAME to createdb as a quoted identifier. It is
+    # about different physical creation mechanisms, and this call site asks only about the REGISTERED
+    # transport: whichever name is effective, it is
     # serialized into the datastore connection string registered in CMS below, parsed back by the
     # provider, and SchemaTools creates the database with a QUOTED identifier - so on PostgreSQL nothing
     # folds on either path: only a name the provider parses back AS the reserved name collides (the exact
@@ -294,7 +308,10 @@ if (-not $d) {
     # whose bare trailing line feed this transport collapses while createdb preserves it), and a
     # mixed-case name is a genuinely distinct database. Sharing one engine-neutral
     # predicate across both call sites is what made this script reject that distinct PostgreSQL database
-    # while the validator accepted a colliding one.
+    # while the validator accepted a colliding one. The INITIALIZED path is not re-judged here: when the
+    # effective name comes from POSTGRES_DB_NAME that value also reaches postgresql-init.sh's createdb,
+    # and Confirm-CmsDatabaseTopologyAgreement owns that mechanism - which is why the omitted-parameter
+    # shape is already refused there rather than here.
     #
     # PostgreSQL only: that offline verdict is sound because it models the exact provider transport.
     # SQL Server renders NO offline verdict - database names inherit the INSTANCE collation, so MSSQL
@@ -302,8 +319,19 @@ if (-not $d) {
     # the server-backed authority against the running instance, after the database container starts
     # and before the registration below runs.
     $dataStoreRegistrationRuns = -not ($InfraOnly -or $DmsOnly -or $DbOnly -or $NoDataStore)
+    # The single source of truth for the PostgreSQL datastore database this run will register. The
+    # registration below reuses this exact variable, so the guarded value is the registered value.
+    # Every path that reaches the registration passes through here first: the registration lives in the
+    # else branch of `if ($d)`, which this block precedes.
+    $effectivePostgresDataStoreName =
+        if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
+            Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_DB_NAME" -DefaultValue "edfi_datamanagementservice"
+        }
+        else {
+            $DataStoreDatabaseName
+        }
     if ($SeparateConfigDatabase -and $dataStoreRegistrationRuns -and $DatabaseEngine -eq "postgresql" -and
-        (Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine $DatabaseEngine -DatastoreDatabaseName $DataStoreDatabaseName)) {
+        (Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine $DatabaseEngine -DatastoreDatabaseName $effectivePostgresDataStoreName)) {
         # Names the parameter and the reserved literal only - never the caller's own value.
         throw "-DataStoreDatabaseName must be provably distinct from 'edfi_configurationservice' with -SeparateConfigDatabase: that is the dedicated Configuration Service database, and pointing the DMS datastore at it would reintroduce the shared topology the switch opts out of. On PostgreSQL the name is compared as the provider parses it - SchemaTools creates it with a quoted identifier, so nothing folds; only a name that parses back to that reserved name collides, and the measured non-exact case is a trailing line feed, which connection-string parsing removes."
     }
@@ -800,13 +828,9 @@ else {
             # compose-file ${VAR:-default} fallbacks, so the registered data store targets exactly
             # the database/credentials the containers received.
             $tenant = $configServiceTenant
-            $postgresDbName =
-                if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
-                    Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_DB_NAME" -DefaultValue "edfi_datamanagementservice"
-                }
-                else {
-                    $DataStoreDatabaseName
-                }
+            # The same value the separate-mode collision guard above judged, not a second resolution of
+            # it: re-deriving it here is what let the guard and the registration disagree.
+            $postgresDbName = $effectivePostgresDataStoreName
             $postgresUser = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
             $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_PASSWORD")
 
