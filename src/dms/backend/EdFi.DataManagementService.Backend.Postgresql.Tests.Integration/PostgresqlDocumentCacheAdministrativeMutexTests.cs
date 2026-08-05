@@ -172,12 +172,22 @@ public class Given_A_Postgresql_DocumentCacheAdministrativeMutex
     }
 
     [Test]
-    public async Task It_does_not_reconnect_after_mutex_session_loss()
+    public async Task It_releases_the_advisory_lock_when_the_owning_backend_session_is_terminated()
     {
         await using IDocumentCacheAdministrativeMutexLease lease = await _mutex.AcquireAsync(
             ConnectionInput(_database.ConnectionString)
         );
-        await lease.Connection.CloseAsync();
+        int backendPid = await ExecuteScalarAsync<int>(lease.Connection, "SELECT pg_backend_pid();");
+        bool terminated = await _database.ExecuteScalarAsync<bool>(
+            "SELECT pg_terminate_backend(@backendPid);",
+            new NpgsqlParameter("backendPid", backendPid)
+        );
+
+        terminated.Should().BeTrue();
+
+        await using IDocumentCacheAdministrativeMutexLease replacementLease = await _mutex
+            .AcquireAsync(ConnectionInput(_database.ConnectionString))
+            .WaitAsync(TimeSpan.FromSeconds(5));
 
         Func<Task> beginTransactionAsync = async () =>
         {
@@ -187,6 +197,7 @@ public class Given_A_Postgresql_DocumentCacheAdministrativeMutex
         await beginTransactionAsync
             .Should()
             .ThrowAsync<DocumentCacheAdministrativeMutexSessionLostException>();
+        replacementLease.IsSessionOpen.Should().BeTrue();
         lease.IsSessionOpen.Should().BeFalse();
     }
 

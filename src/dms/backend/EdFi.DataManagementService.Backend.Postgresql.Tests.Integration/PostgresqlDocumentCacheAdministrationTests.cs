@@ -5,6 +5,7 @@
 
 using System.Collections.Immutable;
 using System.Data;
+using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
@@ -106,7 +107,7 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
         );
         var workflow = new DelegatingWorkflow(
             preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
-            execute: static async (context, cancellationToken) =>
+            execute: async (context, cancellationToken) =>
             {
                 context.EnterPhase(DocumentCacheAdministrativeCommandPhase.ClearCache);
                 await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
@@ -146,7 +147,7 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
         );
         var workflow = new DelegatingWorkflow(
             preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
-            execute: static async (context, cancellationToken) =>
+            execute: async (context, cancellationToken) =>
             {
                 await CommitLifecycleTransitionAsync(
                         context,
@@ -241,7 +242,7 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
         );
         var workflow = new DelegatingWorkflow(
             preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
-            execute: static async (context, cancellationToken) =>
+            execute: async (context, cancellationToken) =>
             {
                 context.EnterPhase(DocumentCacheAdministrativeCommandPhase.EnterResetting);
                 await using IRelationalWriteSession session = await context
@@ -346,7 +347,7 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
         );
         var workflow = new DelegatingWorkflow(
             preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
-            execute: static async (context, cancellationToken) =>
+            execute: async (context, cancellationToken) =>
             {
                 await CommitLifecycleTransitionAsync(
                         context,
@@ -357,7 +358,8 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
                     )
                     .ConfigureAwait(false);
 
-                await context.MutexLease.Connection.CloseAsync().ConfigureAwait(false);
+                await TerminateMutexSessionAsync(context.MutexLease.Connection, cancellationToken)
+                    .ConfigureAwait(false);
                 context.EnterPhase(DocumentCacheAdministrativeCommandPhase.EnterRebuilding);
                 await context
                     .MutexLease.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
@@ -383,10 +385,18 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
             .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Resetting, false));
     }
 
-    [Test]
-    public async Task It_fences_lost_session_mutations_after_a_replacement_owner_acquires_the_mutex()
+    [TestCase(StaleAdministrativeMutation.Lifecycle)]
+    [TestCase(StaleAdministrativeMutation.ClearDocumentCache)]
+    [TestCase(StaleAdministrativeMutation.ClearDocumentProjectionWork)]
+    [TestCase(StaleAdministrativeMutation.SeedBaseline)]
+    [TestCase(StaleAdministrativeMutation.Scrub)]
+    public async Task It_fences_lost_session_mutations_after_a_replacement_owner_acquires_the_mutex(
+        StaleAdministrativeMutation mutation
+    )
     {
-        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
+        StaleAdministrativeMutationExpectation expectation = await ArrangeStaleAdministrativeMutationAsync(
+            mutation
+        );
         DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
             new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false)
         );
@@ -403,7 +413,8 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
                     )
                     .ConfigureAwait(false);
 
-                await context.MutexLease.Connection.CloseAsync().ConfigureAwait(false);
+                await TerminateMutexSessionAsync(context.MutexLease.Connection, cancellationToken)
+                    .ConfigureAwait(false);
                 await CommitReplacementLifecycleTransitionAsync(
                         context,
                         DocumentCacheLifecycleState.Resetting,
@@ -412,28 +423,13 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
                     )
                     .ConfigureAwait(false);
 
-                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.EnterTracking);
-                await using IRelationalWriteSession staleSession = await context
-                    .MutexLease.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
-                    .ConfigureAwait(false);
-
-                DocumentCacheAdministrativeLifecycleTransitionResult staleTransition = await context
-                    .Primitives.TryTransitionLifecycleAsync(
-                        staleSession,
-                        new DocumentCacheAdministrativeLifecycleTransitionRequest(
-                            DocumentCacheLifecycleState.Rebuilding,
-                            expectedCacheAheadRecoveryRequired: false,
-                            DocumentCacheLifecycleState.Tracking,
-                            nextCacheAheadRecoveryRequired: false
-                        ),
+                await AttemptStaleAdministrativeMutationAsync(
+                        context,
+                        mutation,
+                        expectation.BoundaryDocumentId,
                         cancellationToken
                     )
                     .ConfigureAwait(false);
-                staleTransition.Mutated.Should().BeTrue();
-
-                await staleSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-                context.MarkMutated(staleTransition.LifecycleReadResult.Lifecycle);
-                context.CompletePhase(DocumentCacheAdministrativeCommandPhase.EnterTracking);
                 return context.Completed();
             }
         );
@@ -448,9 +444,18 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
             .Classification.Should()
             .Be(DocumentCacheAdministrativeCommandClassification.SessionLossAfterMutation);
         result.Mutated.Should().BeTrue();
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == PhaseFor(mutation)
+                && diagnostic.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.SessionLoss
+                && diagnostic.Retryable
+            );
         (await ReadLifecycleAsync())
             .Should()
             .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Rebuilding, false));
+        (await ReadCountAsync("DocumentCache")).Should().Be(expectation.DocumentCacheRows);
+        (await ReadCountAsync("DocumentProjectionWork")).Should().Be(expectation.DocumentProjectionWorkRows);
     }
 
     [Test]
@@ -1025,6 +1030,7 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
         );
         await using IDocumentCacheAdministrativeMutexLease replacementLease = await replacementMutex
             .AcquireAsync(context.TargetContext.TargetExecutionContext.ConnectionInput, cancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5))
             .ConfigureAwait(false);
         await using IRelationalWriteSession replacementSession = await replacementLease
             .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
@@ -1045,6 +1051,169 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
         transition.Mutated.Should().BeTrue();
 
         await replacementSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task TerminateMutexSessionAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        int backendPid = await ExecuteConnectionScalarAsync<int>(
+                connection,
+                "SELECT pg_backend_pid();",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        bool terminated = await _database
+            .ExecuteScalarAsync<bool>(
+                "SELECT pg_terminate_backend(@backendPid);",
+                new NpgsqlParameter("backendPid", NpgsqlDbType.Integer) { Value = backendPid }
+            )
+            .ConfigureAwait(false);
+
+        terminated.Should().BeTrue();
+    }
+
+    private async Task<StaleAdministrativeMutationExpectation> ArrangeStaleAdministrativeMutationAsync(
+        StaleAdministrativeMutation mutation
+    )
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Disabled, cacheAheadRecoveryRequired: false);
+        SourceDocument source = await InsertDocumentAsync(contentVersion: 10);
+        await ClearDocumentCacheAsync();
+        await ClearProjectionWorkAsync();
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
+
+        switch (mutation)
+        {
+            case StaleAdministrativeMutation.ClearDocumentCache:
+                await InsertCacheRowAsync(source, cacheContentVersion: source.ContentVersion);
+                return new(source.DocumentId, DocumentCacheRows: 1, DocumentProjectionWorkRows: 0);
+            case StaleAdministrativeMutation.ClearDocumentProjectionWork:
+                await InsertProjectionWorkAsync(source, requiredContentVersion: source.ContentVersion);
+                return new(source.DocumentId, DocumentCacheRows: 0, DocumentProjectionWorkRows: 1);
+            case StaleAdministrativeMutation.Lifecycle:
+            case StaleAdministrativeMutation.SeedBaseline:
+            case StaleAdministrativeMutation.Scrub:
+                return new(source.DocumentId, DocumentCacheRows: 0, DocumentProjectionWorkRows: 0);
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mutation), mutation, "Unsupported mutation.");
+        }
+    }
+
+    private static async Task AttemptStaleAdministrativeMutationAsync(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        StaleAdministrativeMutation mutation,
+        long boundaryDocumentId,
+        CancellationToken cancellationToken
+    )
+    {
+        context.EnterPhase(PhaseFor(mutation));
+
+        await using IRelationalWriteSession staleSession = await context
+            .MutexLease.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            .ConfigureAwait(false);
+
+        switch (mutation)
+        {
+            case StaleAdministrativeMutation.Lifecycle:
+                await context
+                    .Primitives.TryTransitionLifecycleAsync(
+                        staleSession,
+                        new DocumentCacheAdministrativeLifecycleTransitionRequest(
+                            DocumentCacheLifecycleState.Rebuilding,
+                            expectedCacheAheadRecoveryRequired: false,
+                            DocumentCacheLifecycleState.Tracking,
+                            nextCacheAheadRecoveryRequired: false
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                break;
+            case StaleAdministrativeMutation.ClearDocumentCache:
+                await context
+                    .Primitives.ClearDocumentCacheBatchAsync(
+                        staleSession,
+                        new DocumentCacheAdministrativeClearBatchRequest(pageSize: 1),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                break;
+            case StaleAdministrativeMutation.ClearDocumentProjectionWork:
+                await context
+                    .Primitives.ClearDocumentProjectionWorkBatchAsync(
+                        staleSession,
+                        new DocumentCacheAdministrativeClearBatchRequest(pageSize: 1),
+                        StaleClearance(),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                break;
+            case StaleAdministrativeMutation.SeedBaseline:
+                await context
+                    .Primitives.SeedBaselinePageAsync(
+                        staleSession,
+                        new DocumentCacheAdministrativeBaselineSeedPageRequest(
+                            boundaryDocumentId,
+                            afterDocumentId: 0,
+                            pageSize: 1
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                break;
+            case StaleAdministrativeMutation.Scrub:
+                await context
+                    .Primitives.ScrubPageAsync(
+                        staleSession,
+                        new DocumentCacheAdministrativeScrubPageRequest(
+                            boundaryDocumentId,
+                            afterDocumentId: 0,
+                            pageSize: 1
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mutation), mutation, "Unsupported mutation.");
+        }
+
+        await staleSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+        throw new InvalidOperationException("Stale administrative mutation unexpectedly committed.");
+    }
+
+    private static DocumentCacheAdministrativeCommandPhase PhaseFor(StaleAdministrativeMutation mutation) =>
+        mutation switch
+        {
+            StaleAdministrativeMutation.Lifecycle => DocumentCacheAdministrativeCommandPhase.EnterTracking,
+            StaleAdministrativeMutation.ClearDocumentCache =>
+                DocumentCacheAdministrativeCommandPhase.ClearCache,
+            StaleAdministrativeMutation.ClearDocumentProjectionWork =>
+                DocumentCacheAdministrativeCommandPhase.ClearWork,
+            StaleAdministrativeMutation.SeedBaseline => DocumentCacheAdministrativeCommandPhase.SeedBaseline,
+            StaleAdministrativeMutation.Scrub => DocumentCacheAdministrativeCommandPhase.ScrubScan,
+            _ => throw new ArgumentOutOfRangeException(nameof(mutation), mutation, "Unsupported mutation."),
+        };
+
+    private static DocumentCacheAdministrativeWorkClearance StaleClearance() =>
+        DocumentCacheAdministrativeWorkClearance.Require(
+            DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
+            DocumentCacheDownstreamPublicationStatus.InternalOnly,
+            DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained
+        );
+
+    private static async Task<T> ExecuteConnectionScalarAsync<T>(
+        DbConnection connection,
+        string commandText,
+        CancellationToken cancellationToken
+    )
+    {
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = commandText;
+        object? result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+
+        return (T)Convert.ChangeType(result!, typeof(T));
     }
 
     private async Task<IReadOnlyList<SourceDocument>> InsertProjectedRowsAsync(int documentCount)
@@ -1231,6 +1400,21 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
 
     private Task<long> ReadCountAsync(string tableName) =>
         _database.ExecuteScalarAsync<long>($$"""SELECT COUNT(*) FROM "dms"."{{tableName}}";""");
+
+    public enum StaleAdministrativeMutation
+    {
+        Lifecycle,
+        ClearDocumentCache,
+        ClearDocumentProjectionWork,
+        SeedBaseline,
+        Scrub,
+    }
+
+    private sealed record StaleAdministrativeMutationExpectation(
+        long BoundaryDocumentId,
+        long DocumentCacheRows,
+        long DocumentProjectionWorkRows
+    );
 
     private sealed class DelegatingWorkflow(
         Func<

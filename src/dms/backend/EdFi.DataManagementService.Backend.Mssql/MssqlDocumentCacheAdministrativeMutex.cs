@@ -73,7 +73,8 @@ internal sealed class MssqlDocumentCacheAdministrativeMutex : IDocumentCacheAdmi
         {
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
             await ExecuteAcquireAsync(connection, cancellationToken).ConfigureAwait(false);
-            return new MssqlDocumentCacheAdministrativeMutexLease(connection, _logger);
+            int sessionId = await ExecuteSessionIdAsync(connection, cancellationToken).ConfigureAwait(false);
+            return new MssqlDocumentCacheAdministrativeMutexLease(connection, _logger, sessionId);
         }
         catch
         {
@@ -100,6 +101,17 @@ internal sealed class MssqlDocumentCacheAdministrativeMutex : IDocumentCacheAdmi
         }
     }
 
+    private static async Task<int> ExecuteSessionIdAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT @@SPID;";
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
+    }
+
     private static DbCommand CreateAppLockCommand(DbConnection connection, string commandText)
     {
         DbCommand command = connection.CreateCommand();
@@ -118,10 +130,25 @@ internal sealed class MssqlDocumentCacheAdministrativeMutex : IDocumentCacheAdmi
         return command;
     }
 
-    private sealed class MssqlDocumentCacheAdministrativeMutexLease(DbConnection connection, ILogger logger)
-        : DocumentCacheAdministrativeMutexLease(RelationalProviderToken.SqlServer, connection)
+    private sealed class MssqlDocumentCacheAdministrativeMutexLease(
+        DbConnection connection,
+        ILogger logger,
+        int sessionId
+    ) : DocumentCacheAdministrativeMutexLease(RelationalProviderToken.SqlServer, connection)
     {
         private readonly ILogger _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        private readonly int _sessionId = sessionId;
+
+        protected override async Task ValidateSessionAsync(CancellationToken cancellationToken)
+        {
+            int currentSessionId = await ExecuteSessionIdAsync(Connection, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (currentSessionId != _sessionId)
+            {
+                throw new DocumentCacheAdministrativeMutexSessionLostException(ProviderToken);
+            }
+        }
 
         protected override async Task ReleaseAsync(
             DbConnection connection,

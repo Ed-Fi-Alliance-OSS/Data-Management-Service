@@ -66,7 +66,9 @@ internal sealed class PostgresqlDocumentCacheAdministrativeMutex(
         try
         {
             await ExecuteAcquireAsync(connection, cancellationToken).ConfigureAwait(false);
-            return new PostgresqlDocumentCacheAdministrativeMutexLease(connection, _logger);
+            int backendPid = await ExecuteBackendPidAsync(connection, cancellationToken)
+                .ConfigureAwait(false);
+            return new PostgresqlDocumentCacheAdministrativeMutexLease(connection, _logger, backendPid);
         }
         catch
         {
@@ -85,12 +87,39 @@ internal sealed class PostgresqlDocumentCacheAdministrativeMutex(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    private static async Task<int> ExecuteBackendPidAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        await using NpgsqlCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT pg_backend_pid();";
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
+    }
+
     private sealed class PostgresqlDocumentCacheAdministrativeMutexLease(
         NpgsqlConnection connection,
-        ILogger logger
+        ILogger logger,
+        int backendPid
     ) : DocumentCacheAdministrativeMutexLease(RelationalProviderToken.Postgresql, connection)
     {
         private readonly ILogger _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        private readonly int _backendPid = backendPid;
+
+        protected override async Task ValidateSessionAsync(CancellationToken cancellationToken)
+        {
+            int currentBackendPid = await ExecuteBackendPidAsync(
+                    (NpgsqlConnection)Connection,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (currentBackendPid != _backendPid)
+            {
+                throw new DocumentCacheAdministrativeMutexSessionLostException(ProviderToken);
+            }
+        }
 
         protected override async Task ReleaseAsync(
             DbConnection connection,

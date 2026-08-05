@@ -35,10 +35,12 @@ internal interface IDocumentCacheAdministrativeMutexLease : IAsyncDisposable
 }
 
 internal sealed class DocumentCacheAdministrativeMutexSessionLostException(
-    RelationalProviderToken providerToken
+    RelationalProviderToken providerToken,
+    Exception? innerException = null
 )
     : InvalidOperationException(
-        $"DocumentCache administrative mutex session for provider '{providerToken.Value}' is not open. The command must abort without reconnecting under presumed mutex ownership."
+        $"DocumentCache administrative mutex session for provider '{providerToken.Value}' is not open. The command must abort without reconnecting under presumed mutex ownership.",
+        innerException
     );
 
 internal static class DocumentCacheAdministrativeMutexGuards
@@ -96,9 +98,43 @@ internal abstract class DocumentCacheAdministrativeMutexLease(
             throw new DocumentCacheAdministrativeMutexSessionLostException(ProviderToken);
         }
 
-        DbTransaction transaction = await Connection
-            .BeginTransactionAsync(isolationLevel, cancellationToken)
-            .ConfigureAwait(false);
+        try
+        {
+            await ValidateSessionAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DocumentCacheAdministrativeMutexSessionLostException)
+        {
+            await CloseLostConnectionAsync().ConfigureAwait(false);
+            throw;
+        }
+        catch (DbException exception)
+        {
+            await CloseLostConnectionAsync().ConfigureAwait(false);
+            throw new DocumentCacheAdministrativeMutexSessionLostException(ProviderToken, exception);
+        }
+        catch (InvalidOperationException exception) when (Connection.State != ConnectionState.Open)
+        {
+            await CloseLostConnectionAsync().ConfigureAwait(false);
+            throw new DocumentCacheAdministrativeMutexSessionLostException(ProviderToken, exception);
+        }
+
+        DbTransaction transaction;
+        try
+        {
+            transaction = await Connection
+                .BeginTransactionAsync(isolationLevel, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (DbException exception)
+        {
+            await CloseLostConnectionAsync().ConfigureAwait(false);
+            throw new DocumentCacheAdministrativeMutexSessionLostException(ProviderToken, exception);
+        }
+        catch (InvalidOperationException exception) when (Connection.State != ConnectionState.Open)
+        {
+            await CloseLostConnectionAsync().ConfigureAwait(false);
+            throw new DocumentCacheAdministrativeMutexSessionLostException(ProviderToken, exception);
+        }
 
         return new AdministrativeMutexRelationalWriteSession(Connection, transaction);
     }
@@ -126,6 +162,20 @@ internal abstract class DocumentCacheAdministrativeMutexLease(
     }
 
     protected abstract Task ReleaseAsync(DbConnection connection, CancellationToken cancellationToken);
+
+    protected virtual Task ValidateSessionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    private async Task CloseLostConnectionAsync()
+    {
+        try
+        {
+            await Connection.CloseAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // The session is already unusable. Preserve the session-loss classification.
+        }
+    }
 }
 
 internal sealed class AdministrativeMutexRelationalWriteSession(
