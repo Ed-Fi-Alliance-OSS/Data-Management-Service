@@ -95,7 +95,7 @@
       "Run: dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CDC_SQLSERVER_NESTED_TRIGGERS_NOT_ENABLED",
       "Inspect CdcSqlServerHeartbeatDatabaseProvider diagnostics helper usage to confirm RCSI and nested-trigger checks call the projection-prerequisite warning path, not ProviderHistoryWarning."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server capture hardening",

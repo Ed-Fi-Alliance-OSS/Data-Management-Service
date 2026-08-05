@@ -12,3 +12,8 @@ Task completed: DDL constants (reference/design/backend-redesign/epics/19-cdc-ka
 Key decisions: replaced DocumentProjectionWork PK and DocumentCache ComputedAt default literals with DocumentCacheInventoryDefinition constants to restore compile-time coupling; left existing golden SQL text unchanged.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs; src/dms/backend/EdFi.DataManagementService.Backend.Ddl/DmsCoreTableDefinitions.cs; tasks.json; progress.txt
 Blockers/notes: none. Verification: literal rg no matches; CoreDdlEmitter unit filter passed 216 tests.
+
+Task completed: SQL Server diagnostics (reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md)
+Key decisions: kept provider behavior unchanged because RCSI/nested-trigger warnings already use ProjectionPrerequisiteWarning; expanded focused test to assert manifest validation_diagnostics tokens and renamed test so diagnostic-code filters execute it.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcSqlServerHeartbeatDatabaseProviderTests.cs; tasks.json; progress.txt
+Blockers/notes: none. Existing dirty provider/integration CDC artifact edits left unstaged.

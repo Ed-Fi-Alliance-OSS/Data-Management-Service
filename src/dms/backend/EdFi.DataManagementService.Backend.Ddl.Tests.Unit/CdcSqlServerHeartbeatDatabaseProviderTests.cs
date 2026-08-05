@@ -771,7 +771,7 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     }
 
     [Test]
-    public async Task It_should_report_projection_prerequisite_diagnostics_without_mutation()
+    public async Task It_should_report_CDC_SQLSERVER_READ_COMMITTED_SNAPSHOT_OFF_and_CDC_SQLSERVER_NESTED_TRIGGERS_NOT_ENABLED_without_mutation()
     {
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
             readCommittedSnapshotOn: false,
@@ -811,6 +811,34 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
                 diagnostic.Severity == CdcProviderDiagnosticSeverity.Warning
                 && diagnostic.Category == CdcProviderDiagnosticCategory.ValidationMismatch
                 && diagnostic.Classification == CdcProviderRetryContinuityClassification.None
+            );
+
+        using var manifestDocument = JsonDocument.Parse(result.ManifestPayload!.Json);
+        var manifestDiagnostics = manifestDocument
+            .RootElement.GetProperty("validation_diagnostics")
+            .EnumerateArray()
+            .ToArray();
+        manifestDiagnostics
+            .Where(diagnostic =>
+                diagnostic.GetProperty("code").GetString() == "CDC_SQLSERVER_READ_COMMITTED_SNAPSHOT_OFF"
+            )
+            .Should()
+            .NotBeEmpty()
+            .And.OnlyContain(diagnostic =>
+                diagnostic.GetProperty("category").GetString() == "validation_mismatch"
+                && diagnostic.GetProperty("severity").GetString() == "warning"
+                && diagnostic.GetProperty("classification").GetString() == "none"
+            );
+        manifestDiagnostics
+            .Where(diagnostic =>
+                diagnostic.GetProperty("code").GetString() == "CDC_SQLSERVER_NESTED_TRIGGERS_NOT_ENABLED"
+            )
+            .Should()
+            .NotBeEmpty()
+            .And.OnlyContain(diagnostic =>
+                diagnostic.GetProperty("category").GetString() == "validation_mismatch"
+                && diagnostic.GetProperty("severity").GetString() == "warning"
+                && diagnostic.GetProperty("classification").GetString() == "none"
             );
         executor.ExecutedSql.Should().BeEmpty();
     }
