@@ -155,41 +155,9 @@ internal sealed class DocumentCacheOnlineCacheRebuildCommand(
         CancellationToken cancellationToken
     )
     {
-        int pageSize = context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize;
-
-        context.EnterPhase(DocumentCacheAdministrativeCommandPhase.ClearCache);
-
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            DocumentCacheAdministrativeClearBatchResult batch = await DocumentCacheAdministrativeWorkflow
-                .ExecuteInTransactionAsync(
-                    context.MutexLease,
-                    IsolationLevel.ReadCommitted,
-                    (session, transactionCancellationToken) =>
-                        context.Primitives.ClearDocumentCacheBatchAsync(
-                            session,
-                            new DocumentCacheAdministrativeClearBatchRequest(pageSize),
-                            transactionCancellationToken
-                        ),
-                    commit: true,
-                    cancellationToken,
-                    beforeCommit: batch =>
-                    {
-                        if (batch.Mutated)
-                        {
-                            context.MarkMutated();
-                        }
-                    }
-                )
-                .ConfigureAwait(false);
-
-            if (!batch.Mutated)
-            {
-                break;
-            }
-        }
+        await DocumentCacheAdministrativeWorkflow
+            .ClearDocumentCacheAsync(context, cancellationToken, completePhase: false)
+            .ConfigureAwait(false);
 
         DocumentCacheAdministrativeProjectedStateEmptinessResult emptiness =
             await DocumentCacheAdministrativeWorkflow

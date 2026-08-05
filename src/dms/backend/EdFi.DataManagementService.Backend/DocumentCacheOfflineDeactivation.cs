@@ -137,109 +137,13 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
         CancellationToken cancellationToken
     )
     {
-        int pageSize = context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize;
-
-        DocumentCacheAdministrativeCommandResult? clearCacheFailure = await ClearCacheAsync(
-                context,
-                pageSize,
-                cancellationToken
-            )
+        await DocumentCacheAdministrativeWorkflow
+            .ClearDocumentCacheAsync(context, cancellationToken)
             .ConfigureAwait(false);
-        if (clearCacheFailure is not null)
-        {
-            return clearCacheFailure;
-        }
+        await DocumentCacheAdministrativeWorkflow
+            .ClearDocumentProjectionWorkAsync(context, clearance, cancellationToken)
+            .ConfigureAwait(false);
 
-        return await ClearWorkAsync(context, pageSize, clearance, cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task<DocumentCacheAdministrativeCommandResult?> ClearCacheAsync(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        int pageSize,
-        CancellationToken cancellationToken
-    )
-    {
-        context.EnterPhase(DocumentCacheAdministrativeCommandPhase.ClearCache);
-
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            DocumentCacheAdministrativeClearBatchResult batch = await DocumentCacheAdministrativeWorkflow
-                .ExecuteInTransactionAsync(
-                    context.MutexLease,
-                    IsolationLevel.ReadCommitted,
-                    (session, transactionCancellationToken) =>
-                        context.Primitives.ClearDocumentCacheBatchAsync(
-                            session,
-                            new DocumentCacheAdministrativeClearBatchRequest(pageSize),
-                            transactionCancellationToken
-                        ),
-                    commit: true,
-                    cancellationToken,
-                    beforeCommit: batch =>
-                    {
-                        if (batch.Mutated)
-                        {
-                            context.MarkMutated();
-                        }
-                    }
-                )
-                .ConfigureAwait(false);
-
-            if (!batch.Mutated)
-            {
-                break;
-            }
-        }
-
-        context.CompletePhase(DocumentCacheAdministrativeCommandPhase.ClearCache);
-        return null;
-    }
-
-    private static async Task<DocumentCacheAdministrativeCommandResult?> ClearWorkAsync(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        int pageSize,
-        DocumentCacheAdministrativeWorkClearance clearance,
-        CancellationToken cancellationToken
-    )
-    {
-        context.EnterPhase(DocumentCacheAdministrativeCommandPhase.ClearWork);
-
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            DocumentCacheAdministrativeClearBatchResult batch = await DocumentCacheAdministrativeWorkflow
-                .ExecuteInTransactionAsync(
-                    context.MutexLease,
-                    IsolationLevel.ReadCommitted,
-                    (session, transactionCancellationToken) =>
-                        context.Primitives.ClearDocumentProjectionWorkBatchAsync(
-                            session,
-                            new DocumentCacheAdministrativeClearBatchRequest(pageSize),
-                            clearance,
-                            transactionCancellationToken
-                        ),
-                    commit: true,
-                    cancellationToken,
-                    beforeCommit: batch =>
-                    {
-                        if (batch.Mutated)
-                        {
-                            context.MarkMutated();
-                        }
-                    }
-                )
-                .ConfigureAwait(false);
-
-            if (!batch.Mutated)
-            {
-                break;
-            }
-        }
-
-        context.CompletePhase(DocumentCacheAdministrativeCommandPhase.ClearWork);
         return null;
     }
 

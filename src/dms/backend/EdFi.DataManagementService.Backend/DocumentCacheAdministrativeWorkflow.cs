@@ -6,6 +6,7 @@
 using System.Data;
 using System.Data.Common;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -71,6 +72,52 @@ internal static class DocumentCacheAdministrativeWorkflow
         return new(
             cancellationToken.CanBeCanceled ? cancellationToken : context.WorkflowCancellationToken,
             linkedCancellationSource: null
+        );
+    }
+
+    public static Task ClearDocumentCacheAsync(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        CancellationToken cancellationToken,
+        bool completePhase = true
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return ClearBatchesAsync(
+            context,
+            DocumentCacheAdministrativeCommandPhase.ClearCache,
+            (session, request, transactionCancellationToken) =>
+                context.Primitives.ClearDocumentCacheBatchAsync(
+                    session,
+                    request,
+                    transactionCancellationToken
+                ),
+            cancellationToken,
+            completePhase
+        );
+    }
+
+    public static Task ClearDocumentProjectionWorkAsync(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        DocumentCacheAdministrativeWorkClearance clearance,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(clearance);
+
+        return ClearBatchesAsync(
+            context,
+            DocumentCacheAdministrativeCommandPhase.ClearWork,
+            (session, request, transactionCancellationToken) =>
+                context.Primitives.ClearDocumentProjectionWorkBatchAsync(
+                    session,
+                    request,
+                    clearance,
+                    transactionCancellationToken
+                ),
+            cancellationToken,
+            completePhase: true
         );
     }
 
@@ -208,6 +255,63 @@ internal static class DocumentCacheAdministrativeWorkflow
                     )
                     .ConfigureAwait(false);
             }
+        }
+    }
+
+    private static async Task ClearBatchesAsync(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        DocumentCacheAdministrativeCommandPhase phase,
+        Func<
+            IRelationalWriteSession,
+            DocumentCacheAdministrativeClearBatchRequest,
+            CancellationToken,
+            Task<DocumentCacheAdministrativeClearBatchResult>
+        > clearBatchAsync,
+        CancellationToken cancellationToken,
+        bool completePhase
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(clearBatchAsync);
+
+        int pageSize = context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize;
+
+        context.EnterPhase(phase);
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            DocumentCacheAdministrativeClearBatchResult batch = await ExecuteInTransactionAsync(
+                    context.MutexLease,
+                    IsolationLevel.ReadCommitted,
+                    (session, transactionCancellationToken) =>
+                        clearBatchAsync(
+                            session,
+                            new DocumentCacheAdministrativeClearBatchRequest(pageSize),
+                            transactionCancellationToken
+                        ),
+                    commit: true,
+                    cancellationToken,
+                    beforeCommit: batch =>
+                    {
+                        if (batch.Mutated)
+                        {
+                            context.MarkMutated();
+                        }
+                    }
+                )
+                .ConfigureAwait(false);
+
+            if (!batch.Mutated)
+            {
+                break;
+            }
+        }
+
+        if (completePhase)
+        {
+            context.CompletePhase(phase);
         }
     }
 
