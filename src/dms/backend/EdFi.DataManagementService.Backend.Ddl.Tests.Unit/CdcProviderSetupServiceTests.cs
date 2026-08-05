@@ -578,6 +578,27 @@ public class Given_CdcProviderSetupService_Registration
 
         result.Outcome.Should().Be(CdcProviderSetupOutcome.ExactMatch);
     }
+
+    [Test]
+    public async Task It_should_register_the_built_in_provider_setup_providers_for_public_callers()
+    {
+        ServiceCollection services = [];
+        services.AddCdcProviderSetup();
+
+        using var serviceProvider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
+        );
+        await using var scope = serviceProvider.CreateAsyncScope();
+
+        var service = scope.ServiceProvider.GetRequiredService<ICdcProviderSetupService>();
+        var result = await service.SetupAsync(CdcProviderSetupContractTestData.BuildPostgresqlRequest());
+
+        result
+            .Diagnostics.Select(diagnostic => diagnostic.Code)
+            .Should()
+            .Contain("CDC_PROVIDER_DATABASE_EXECUTOR_MISSING")
+            .And.NotContain("CDC_PROVIDER_SETUP_PROVIDER_MISSING");
+    }
 }
 
 [TestFixture]

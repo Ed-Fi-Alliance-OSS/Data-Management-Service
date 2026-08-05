@@ -10,40 +10,40 @@ using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
-internal enum CdcProvider
+public enum CdcProvider
 {
     Postgresql,
     SqlServer,
 }
 
-internal enum CdcProviderSetupMode
+public enum CdcProviderSetupMode
 {
     InitialCreateOrExactMatch,
     ValidateOnly,
 }
 
-internal enum CdcProviderSetupOutcome
+public enum CdcProviderSetupOutcome
 {
     CreatedOrMatched,
     ExactMatch,
     Failed,
 }
 
-internal enum CdcSourceTableKind
+public enum CdcSourceTableKind
 {
     Document,
     DocumentCache,
     CdcHeartbeat,
 }
 
-internal enum CdcPrincipalKind
+public enum CdcPrincipalKind
 {
     None,
     SetupPrincipal,
     ConnectorPrincipal,
 }
 
-internal enum CdcProviderArtifactKind
+public enum CdcProviderArtifactKind
 {
     None,
     SourceTable,
@@ -60,7 +60,7 @@ internal enum CdcProviderArtifactKind
     ProviderHistory,
 }
 
-internal enum CdcProviderArtifactState
+public enum CdcProviderArtifactState
 {
     Created,
     Matched,
@@ -69,7 +69,7 @@ internal enum CdcProviderArtifactState
     Unavailable,
 }
 
-internal enum CdcProviderDiagnosticCategory
+public enum CdcProviderDiagnosticCategory
 {
     SetupPrincipalFailure,
     ConnectorPrincipalPrivilegeFailure,
@@ -81,14 +81,14 @@ internal enum CdcProviderDiagnosticCategory
     ValidationMismatch,
 }
 
-internal enum CdcProviderDiagnosticSeverity
+public enum CdcProviderDiagnosticSeverity
 {
     Info,
     Warning,
     Error,
 }
 
-internal enum CdcProviderRetryContinuityClassification
+public enum CdcProviderRetryContinuityClassification
 {
     None,
     Retryable,
@@ -97,13 +97,13 @@ internal enum CdcProviderRetryContinuityClassification
     SourceHistoryLost,
 }
 
-internal sealed record CdcSourceFingerprint(string Version, string Value);
+public sealed record CdcSourceFingerprint(string Version, string Value);
 
-internal sealed record CdcSetupPrincipalContext(CdcSafeName SafePrincipalName);
+public sealed record CdcSetupPrincipalContext(CdcSafeName SafePrincipalName);
 
-internal sealed record CdcConnectorPrincipal(CdcSafeName SafePrincipalName);
+public sealed record CdcConnectorPrincipal(CdcSafeName SafePrincipalName);
 
-internal interface ICdcConnectorPrincipalProbeFactory
+public interface ICdcConnectorPrincipalProbeFactory
 {
     Task<CdcConnectorPrincipalProbeResult> ProbeAsync(
         CdcProviderSetupRequest request,
@@ -111,7 +111,7 @@ internal interface ICdcConnectorPrincipalProbeFactory
     );
 }
 
-internal sealed record CdcConnectorPrincipalProbeResult(
+public sealed record CdcConnectorPrincipalProbeResult(
     IReadOnlyList<CdcGrantObservation> GrantInventory,
     IReadOnlyList<CdcProviderDiagnostic> Diagnostics
 )
@@ -120,7 +120,7 @@ internal sealed record CdcConnectorPrincipalProbeResult(
         : this([], []) { }
 }
 
-internal sealed record CdcProviderArtifactOutputRequest
+public sealed record CdcProviderArtifactOutputRequest
 {
     public CdcProviderArtifactOutputRequest(
         bool IncludeManifestPayload,
@@ -148,7 +148,7 @@ internal sealed record CdcProviderArtifactOutputRequest
         IncludeManifestPayload || ManifestOutputDirectoryPath is not null;
 }
 
-internal sealed record CdcPostgresqlProviderArtifactNames(
+public sealed record CdcPostgresqlProviderArtifactNames(
     CdcSafeName PublicationName,
     CdcSafeName ReplicationSlotName
 )
@@ -180,7 +180,7 @@ internal sealed record CdcPostgresqlProviderArtifactNames(
     }
 }
 
-internal sealed record CdcPostgresqlInitialReplicationSlotProof
+public sealed record CdcPostgresqlInitialReplicationSlotProof
 {
     private const string DatabaseIdentityTokenPrefix = "postgresql_database_identity_sha256:";
 
@@ -286,7 +286,7 @@ internal sealed record CdcPostgresqlInitialReplicationSlotProof
     }
 }
 
-internal sealed record CdcSqlServerProviderArtifactNames(
+public sealed record CdcSqlServerProviderArtifactNames(
     CdcSafeName GatingRoleName,
     IReadOnlyDictionary<CdcSourceTableKind, CdcSafeName> CaptureInstanceNames
 )
@@ -368,17 +368,17 @@ internal sealed record CdcSqlServerProviderArtifactNames(
     }
 }
 
-internal sealed record CdcProviderArtifactNames(
+public sealed record CdcProviderArtifactNames(
     CdcPostgresqlProviderArtifactNames? Postgresql,
     CdcSqlServerProviderArtifactNames? SqlServer
 )
 {
-    internal static CdcProviderArtifactNames ForPostgresql(
+    public static CdcProviderArtifactNames ForPostgresql(
         CdcSafeName publicationName,
         CdcSafeName replicationSlotName
     ) => new(new CdcPostgresqlProviderArtifactNames(publicationName, replicationSlotName), null);
 
-    internal static CdcProviderArtifactNames ForSqlServer(
+    public static CdcProviderArtifactNames ForSqlServer(
         CdcSafeName gatingRoleName,
         IReadOnlyDictionary<CdcSourceTableKind, CdcSafeName> captureInstanceNames
     ) => new(null, new CdcSqlServerProviderArtifactNames(gatingRoleName, captureInstanceNames));
@@ -406,7 +406,7 @@ internal sealed record CdcProviderArtifactNames(
     }
 }
 
-internal sealed record CdcSourceColumnInventory(
+public sealed record CdcSourceColumnInventory(
     DbColumnName ColumnName,
     string EmittedQuotedColumnName,
     int Ordinal,
@@ -444,7 +444,7 @@ internal sealed record CdcSourceColumnInventory(
     }
 }
 
-internal sealed record CdcSourceTableInventory(
+public sealed record CdcSourceTableInventory(
     CdcSourceTableKind TableKind,
     DbTableName TableName,
     string EmittedQuotedTableName,
@@ -500,7 +500,7 @@ internal sealed record CdcSourceTableInventory(
     }
 }
 
-internal enum CdcDmsManagedTableKind
+public enum CdcDmsManagedTableKind
 {
     Core,
     Authorization,
@@ -508,7 +508,7 @@ internal enum CdcDmsManagedTableKind
     TrackedChange,
 }
 
-internal sealed record CdcDmsManagedTableInventory(
+public sealed record CdcDmsManagedTableInventory(
     CdcDmsManagedTableKind TableKind,
     DbTableName TableName,
     string EmittedQuotedTableName
@@ -533,7 +533,7 @@ internal sealed record CdcDmsManagedTableInventory(
     }
 }
 
-internal sealed record CdcProviderSetupRequest
+public sealed record CdcProviderSetupRequest
 {
     public CdcProviderSetupRequest(
         CdcProvider provider,
@@ -603,7 +603,7 @@ internal sealed record CdcProviderSetupRequest
     public ICdcProviderDatabaseExecutor? DatabaseExecutor { get; }
 }
 
-internal sealed record CdcProviderSetupResult(
+public sealed record CdcProviderSetupResult(
     CdcProvider Provider,
     CdcProviderSetupMode Mode,
     CdcProviderSetupOutcome Outcome,
@@ -619,14 +619,14 @@ internal sealed record CdcProviderSetupResult(
     IReadOnlyList<CdcProviderDiagnostic> Diagnostics
 );
 
-internal sealed record CdcProviderArtifactObservation(
+public sealed record CdcProviderArtifactObservation(
     CdcProviderArtifactKind ArtifactKind,
     CdcSafeName SafeArtifactName,
     CdcProviderArtifactState State,
     IReadOnlyDictionary<string, string> SafeObservedValues
 );
 
-internal sealed record CdcGrantObservation(
+public sealed record CdcGrantObservation(
     CdcPrincipalKind PrincipalKind,
     CdcSafeName SafePrincipalName,
     CdcProviderArtifactKind ArtifactKind,
@@ -635,23 +635,23 @@ internal sealed record CdcGrantObservation(
     IReadOnlyList<DbColumnName> Columns
 );
 
-internal sealed record CdcExpectedMessageKeyColumns(
+public sealed record CdcExpectedMessageKeyColumns(
     CdcSourceTableKind TableKind,
     IReadOnlyList<DbColumnName> KeyColumns
 );
 
-internal sealed record CdcHeartbeatActionQuery(string Sql, string Sha256Hash);
+public sealed record CdcHeartbeatActionQuery(string Sql, string Sha256Hash);
 
-internal sealed record CdcProviderHistoryObservation(
+public sealed record CdcProviderHistoryObservation(
     CdcProviderArtifactKind ArtifactKind,
     CdcSafeName SafeArtifactName,
     IReadOnlyDictionary<string, string> SafeObservedValues,
     CdcProviderRetryContinuityClassification Classification
 );
 
-internal sealed record CdcProviderManifestPayload(CdcSafeName FileName, string Json);
+public sealed record CdcProviderManifestPayload(CdcSafeName FileName, string Json);
 
-internal sealed record CdcProviderDiagnostic(
+public sealed record CdcProviderDiagnostic(
     string Code,
     CdcProviderDiagnosticCategory Category,
     CdcProviderDiagnosticSeverity Severity,
@@ -664,7 +664,7 @@ internal sealed record CdcProviderDiagnostic(
     CdcProviderRetryContinuityClassification Classification
 );
 
-internal readonly record struct CdcSafeName
+public readonly record struct CdcSafeName
 {
     public CdcSafeName(string value)
     {

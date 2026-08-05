@@ -9,9 +9,9 @@ using System.Text;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
-internal static class CdcSourceFingerprintMetadata
+public static class CdcSourceFingerprintMetadata
 {
-    internal const string Version = "dms-source-fingerprint-v1";
+    public const string Version = "dms-source-fingerprint-v1";
     private const string PayloadDomain = "ed-fi-dms-source-v1";
     internal static readonly CdcSafeName SafeArtifactName = new("dms.DataStoreIdentity");
 
@@ -40,7 +40,7 @@ internal static class CdcSourceFingerprintMetadata
         }
     }
 
-    internal static CdcSourceFingerprint Compute(CdcProvider provider, string sourceIdentity)
+    public static CdcSourceFingerprint Compute(CdcProvider provider, string sourceIdentity)
     {
         if (!TryNormalizeSourceIdentity(sourceIdentity, out var normalizedSourceIdentity, out var reason))
         {

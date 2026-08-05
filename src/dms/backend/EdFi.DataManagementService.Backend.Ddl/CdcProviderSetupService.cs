@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
-internal interface ICdcProviderSetupService
+public interface ICdcProviderSetupService
 {
     Task<CdcProviderSetupResult> SetupAsync(
         CdcProviderSetupRequest request,
@@ -969,8 +969,23 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
     }
 }
 
-internal static class CdcProviderSetupServiceCollectionExtensions
+public static class CdcProviderSetupServiceCollectionExtensions
 {
+    public static IServiceCollection AddCdcProviderSetup(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddCdcProviderSetupService();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<ICdcProviderSetupProvider, CdcPostgresqlHeartbeatPublicationProvider>()
+        );
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<ICdcProviderSetupProvider, CdcSqlServerHeartbeatDatabaseProvider>()
+        );
+
+        return services;
+    }
+
     internal static IServiceCollection AddCdcProviderSetupService(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

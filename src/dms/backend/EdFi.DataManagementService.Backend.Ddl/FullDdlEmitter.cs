@@ -8,7 +8,7 @@ using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
-internal sealed record FullDdlEmission(
+public sealed record FullDdlEmission(
     string CombinedSql,
     IReadOnlyList<CdcSourceTableInventory> CdcSourceInventory,
     IReadOnlyList<CdcDmsManagedTableInventory> CdcDmsManagedTableInventory
@@ -30,10 +30,10 @@ public static class FullDdlEmitter
         EmitWithMetadata(dialect, modelSet).CombinedSql;
 
     /// <summary>
-    /// Emits full ordinary DDL plus internal typed metadata consumed by opt-in provider setup.
+    /// Emits full ordinary DDL plus typed metadata consumed by opt-in provider setup.
     /// The CDC metadata does not add CDC provider objects to ordinary DDL output.
     /// </summary>
-    internal static FullDdlEmission EmitWithMetadata(ISqlDialect dialect, DerivedRelationalModelSet modelSet)
+    public static FullDdlEmission EmitWithMetadata(ISqlDialect dialect, DerivedRelationalModelSet modelSet)
     {
         var seedEmitter = new SeedDmlEmitter(dialect);
         string preflightDdl = WrapPhase0(

@@ -9,7 +9,7 @@ using EdFi.DataManagementService.Backend.RelationalModel.Build;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
-internal sealed record DdlPipelineEmission(
+public sealed record DdlPipelineEmission(
     DerivedRelationalModelSet ModelSet,
     string CombinedSql,
     IReadOnlyList<CdcSourceTableInventory> CdcSourceInventory,
@@ -80,7 +80,7 @@ public static class DdlPipelineHelpers
         return (emission.ModelSet, emission.CombinedSql);
     }
 
-    internal static DdlPipelineEmission BuildDdlEmissionForDialect(
+    public static DdlPipelineEmission BuildDdlEmissionForDialect(
         EffectiveSchemaSet effectiveSchemaSet,
         SqlDialect dialect,
         bool strict = true

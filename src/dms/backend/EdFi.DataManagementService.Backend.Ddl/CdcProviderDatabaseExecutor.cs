@@ -9,7 +9,7 @@ using System.Globalization;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
-internal interface ICdcProviderDatabaseExecutor
+public interface ICdcProviderDatabaseExecutor
 {
     Task ExecuteNonQueryAsync(string sql, CancellationToken cancellationToken);
 
@@ -19,7 +19,7 @@ internal interface ICdcProviderDatabaseExecutor
     );
 }
 
-internal sealed class DbConnectionCdcProviderDatabaseExecutor(
+public sealed class DbConnectionCdcProviderDatabaseExecutor(
     DbConnection connection,
     DbTransaction? transaction = null
 ) : ICdcProviderDatabaseExecutor
