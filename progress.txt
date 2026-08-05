@@ -37,3 +37,8 @@ Task completed: Connector template boundary (reference/design/backend-redesign/e
 Key decisions: 19-02 remains connector-template owner; DMS-1320 does not reorder provider setup to force expected_message_key_columns into failed PostgreSQL manifests; no new 19-02 requirement found. Fixed stale provider-test SQL assertions to match two-column DMS-managed inventory from prior cleanup.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcPostgresqlHeartbeatPublicationProviderTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcSqlServerHeartbeatDatabaseProviderTests.cs; tasks.json; progress.txt
 Blockers/notes: none. Verification: reviewed 19-02 story; focused manifest/provider setup unit filter passed 114 tests after stale expectation fix. Existing dirty provider/integration CDC artifact edits left unstaged.
+
+Task completed: Scope control (reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md)
+Key decisions: no shared provider utility layer added; current dirty diff remains provider-local plus provider artifact integration tests; provider helpers stay local to PostgreSQL/SQL Server classes.
+Files changed: tasks.json; progress.txt
+Blockers/notes: none. Verification: PostgresqlCdc filter passed 38 tests; MssqlCdc filter passed 50 tests; csharpier passed. Initial parallel dotnet test hit build artifact lock, reran sequentially. Existing dirty provider/integration CDC artifact edits left unstaged.

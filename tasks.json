@@ -128,7 +128,7 @@
       "Run the focused CDC provider unit tests for both PostgreSQL and SQL Server after the review cleanup.",
       "Run: dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Ddl"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Connector template boundary",
