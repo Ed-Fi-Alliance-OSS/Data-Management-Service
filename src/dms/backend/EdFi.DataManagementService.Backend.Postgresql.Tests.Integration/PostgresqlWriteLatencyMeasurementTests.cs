@@ -262,6 +262,9 @@ public class Given_A_Postgresql_Warm_Steady_State_Write_Latency_Measurement
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
+        // The reference resolver brings the document cache writer's retry adapter with it, and that
+        // adapter takes the deadlock retry settings as a constructed dependency.
+        services.AddSingleton(new DeadlockRetrySettings());
         services.AddPostgresqlReferenceResolver();
         services.AddScoped<IRelationalWriteSessionFactory, PostgresqlRelationalWriteSessionFactory>();
 
