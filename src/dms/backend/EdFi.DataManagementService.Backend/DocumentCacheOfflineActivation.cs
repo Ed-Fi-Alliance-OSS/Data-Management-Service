@@ -223,7 +223,7 @@ internal sealed class DocumentCacheOfflineActivationCommand(
                 )
                 .ConfigureAwait(false);
 
-            if (!batch.FilledBatch)
+            if (!batch.Mutated)
             {
                 break;
             }
@@ -269,7 +269,7 @@ internal sealed class DocumentCacheOfflineActivationCommand(
                 )
                 .ConfigureAwait(false);
 
-            if (!batch.FilledBatch)
+            if (!batch.Mutated)
             {
                 break;
             }

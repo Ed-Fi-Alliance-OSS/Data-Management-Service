@@ -185,7 +185,7 @@ internal sealed class DocumentCacheOnlineCacheRebuildCommand(
                 )
                 .ConfigureAwait(false);
 
-            if (!batch.FilledBatch)
+            if (!batch.Mutated)
             {
                 break;
             }

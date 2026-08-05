@@ -1452,6 +1452,46 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     }
 
     [Test]
+    public async Task It_continues_online_rebuild_cache_clearing_after_a_cascade_short_mutated_batch()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        var primitives = new StubAdministrativePrimitives(
+            cacheClearBatches:
+            [
+                ClearBatch(DocumentCacheAdministrativeClearTarget.DocumentCache, 101),
+                ClearBatch(DocumentCacheAdministrativeClearTarget.DocumentCache, 202),
+                ClearBatch(DocumentCacheAdministrativeClearTarget.DocumentCache),
+            ],
+            projectedStateEmptiness: (cacheClearCallCount, _) =>
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(
+                    documentCacheEmpty: cacheClearCallCount >= 3,
+                    documentProjectionWorkEmpty: true,
+                    "Projected state is empty after all clear batches."
+                )
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(),
+            primitives: primitives
+        );
+        var seeder = new SucceedingBaselineSeeder();
+        var drainer = new SucceedingAdministrativeDrainer();
+        var command = new DocumentCacheOnlineCacheRebuildCommand(runner, seeder, drainer);
+
+        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
+            new DocumentCacheOnlineCacheRebuildRequest(AdministrativeTargetKey, Fingerprint)
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+        result.Mutated.Should().BeTrue();
+        primitives.CacheClearCallCount.Should().Be(3);
+        seeder.SeedCallCount.Should().Be(1);
+        drainer.DrainToEmptyCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_classifies_read_only_commit_session_loss_before_mutation()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
@@ -1854,6 +1894,17 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         params DocumentCacheAdministrativeScrubbedDocument[] documents
     ) => new(status, boundaryDocumentId: 1, afterDocumentId: 0, pageSize: 3, [.. documents], "scrub page");
 
+    private static DocumentCacheAdministrativeClearBatchResult ClearBatch(
+        DocumentCacheAdministrativeClearTarget target,
+        params long[] clearedDocumentIds
+    ) =>
+        new(
+            target,
+            pageSize: 3,
+            [.. clearedDocumentIds],
+            clearedDocumentIds.Length == 0 ? "empty clear batch" : "short mutated clear batch"
+        );
+
     private static IEnumerable<TestCaseData> InvalidOfflineWriterAdmissionRequests()
     {
         yield return new TestCaseData(
@@ -2221,6 +2272,63 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         ) => Task.FromResult(context.Completed());
     }
 
+    private sealed class SucceedingBaselineSeeder : IDocumentCacheBaselineSeeder
+    {
+        public int SeedCallCount { get; private set; }
+
+        public Task<DocumentCacheBaselineSeedingResult> SeedAsync(
+            DocumentCacheAdministrativeCommandExecutionContext context,
+            CancellationToken cancellationToken = default
+        )
+        {
+            _ = context;
+            cancellationToken.ThrowIfCancellationRequested();
+            SeedCallCount++;
+
+            return Task.FromResult(
+                new DocumentCacheBaselineSeedingResult(
+                    boundaryDocumentId: null,
+                    lastCommittedDocumentId: 0,
+                    pagesSeeded: 0,
+                    documentsVisited: 0,
+                    workMutationCount: 0,
+                    lastAffectedDocumentIds: []
+                )
+            );
+        }
+    }
+
+    private sealed class SucceedingAdministrativeDrainer : IDocumentCacheAdministrativeDrainer
+    {
+        public int DrainToEmptyCallCount { get; private set; }
+
+        public Task<DocumentCacheAdministrativeDrainToEmptyResult> DrainToEmptyAsync(
+            DocumentCacheAdministrativeCommandExecutionContext context,
+            CancellationToken cancellationToken = default
+        )
+        {
+            _ = context;
+            cancellationToken.ThrowIfCancellationRequested();
+            DrainToEmptyCallCount++;
+
+            return Task.FromResult(
+                DocumentCacheAdministrativeDrainToEmptyResult.Succeeded(
+                    new DocumentCacheAdministrativeDrainStats()
+                )
+            );
+        }
+
+        public Task<DocumentCacheAdministrativeDrainSliceResult> DrainBackpressureReliefSliceAsync(
+            DocumentCacheAdministrativeCommandExecutionContext context,
+            CancellationToken cancellationToken = default
+        )
+        {
+            _ = context;
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new NotSupportedException();
+        }
+    }
+
     private sealed class StubProjectionSupervisor(
         IEnumerable<DocumentCacheProjectionTargetRuntimeContext> contexts
     ) : IDocumentCacheProjectionSupervisor
@@ -2430,6 +2538,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     private sealed class StubAdministrativePrimitives(
         RelationalProviderToken? providerToken = null,
         Exception? projectedStateEmptinessException = null,
+        Func<int, int, DocumentCacheAdministrativeProjectedStateEmptinessResult>? projectedStateEmptiness =
+            null,
         IReadOnlyList<object>? lifecycleReads = null,
         Exception? transitionLifecycleException = null,
         Exception? activationPrerequisiteException = null,
@@ -2438,7 +2548,9 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         IReadOnlyList<DocumentCacheAdministrativeWorkHighWaterObservationResult>? highWaterObservations =
             null,
         IReadOnlyList<DocumentCacheAdministrativeBaselineSeedPageResult>? seedPages = null,
-        IReadOnlyList<DocumentCacheAdministrativeScrubPageResult>? scrubPages = null
+        IReadOnlyList<DocumentCacheAdministrativeScrubPageResult>? scrubPages = null,
+        IReadOnlyList<DocumentCacheAdministrativeClearBatchResult>? cacheClearBatches = null,
+        IReadOnlyList<DocumentCacheAdministrativeClearBatchResult>? workClearBatches = null
     ) : IDocumentCacheAdministrativePrimitives
     {
         private readonly Queue<object> _lifecycleReads = new(
@@ -2453,9 +2565,19 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         private readonly Queue<DocumentCacheAdministrativeScrubPageResult> _scrubPages = new(
             scrubPages ?? []
         );
+        private readonly Queue<DocumentCacheAdministrativeClearBatchResult> _cacheClearBatches = new(
+            cacheClearBatches ?? []
+        );
+        private readonly Queue<DocumentCacheAdministrativeClearBatchResult> _workClearBatches = new(
+            workClearBatches ?? []
+        );
 
         public RelationalProviderToken ProviderToken { get; } =
             providerToken ?? RelationalProviderToken.Postgresql;
+
+        public int CacheClearCallCount { get; private set; }
+
+        public int WorkClearCallCount { get; private set; }
 
         public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
             IRelationalWriteSession mutexSession,
@@ -2548,25 +2670,54 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             IRelationalWriteSession mutexSession,
             DocumentCacheAdministrativeClearBatchRequest request,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            _ = mutexSession;
+            _ = request;
+            cancellationToken.ThrowIfCancellationRequested();
+            CacheClearCallCount++;
+
+            return _cacheClearBatches.Count > 0
+                ? Task.FromResult(_cacheClearBatches.Dequeue())
+                : throw new NotSupportedException();
+        }
 
         public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentProjectionWorkBatchAsync(
             IRelationalWriteSession mutexSession,
             DocumentCacheAdministrativeClearBatchRequest request,
             DocumentCacheAdministrativeWorkClearance clearance,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            _ = mutexSession;
+            _ = request;
+            _ = clearance;
+            cancellationToken.ThrowIfCancellationRequested();
+            WorkClearCallCount++;
+
+            return _workClearBatches.Count > 0
+                ? Task.FromResult(_workClearBatches.Dequeue())
+                : throw new NotSupportedException();
+        }
 
         public Task<DocumentCacheAdministrativeProjectedStateEmptinessResult> ReadProjectedStateEmptinessAsync(
             IRelationalWriteSession mutexSession,
             CancellationToken cancellationToken = default
         )
         {
+            _ = mutexSession;
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (projectedStateEmptinessException is not null)
             {
                 return Task.FromException<DocumentCacheAdministrativeProjectedStateEmptinessResult>(
                     projectedStateEmptinessException
                 );
+            }
+
+            if (projectedStateEmptiness is not null)
+            {
+                return Task.FromResult(projectedStateEmptiness(CacheClearCallCount, WorkClearCallCount));
             }
 
             throw new NotSupportedException();

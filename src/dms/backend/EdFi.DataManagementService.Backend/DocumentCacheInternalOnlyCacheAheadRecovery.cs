@@ -240,7 +240,7 @@ internal sealed class DocumentCacheInternalOnlyCacheAheadRecoveryCommand(
                 )
                 .ConfigureAwait(false);
 
-            if (!batch.FilledBatch)
+            if (!batch.Mutated)
             {
                 break;
             }
@@ -286,7 +286,7 @@ internal sealed class DocumentCacheInternalOnlyCacheAheadRecoveryCommand(
                 )
                 .ConfigureAwait(false);
 
-            if (!batch.FilledBatch)
+            if (!batch.Mutated)
             {
                 break;
             }
