@@ -27,3 +27,8 @@ Task completed: SQL Server capture hardening (reference/design/backend-redesign/
 Key decisions: SqlServerCaptureInstanceInspection now carries typed HasDropPending and HeartbeatCaptureVisible booleans for control flow; SafeObservedValues still carries stable manifest/diagnostic keys; renamed focused tests so diagnostic-code filters run actual assertions.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcSqlServerHeartbeatDatabaseProvider.cs; src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcSqlServerHeartbeatDatabaseProviderTests.cs; tasks.json; progress.txt
 Blockers/notes: none. Verification passed: CDC_SQLSERVER_CAPTURE_INSTANCE_DROP_PENDING filter 2 tests; CDC_SQLSERVER_HEARTBEAT_CAPTURE_NOT_VISIBLE filter 1 test. Existing dirty provider/integration CDC artifact edits left unstaged.
+
+Task completed: String comparison (reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md)
+Key decisions: SQL Server gating-role grant prefix detection now uses StartsWith("role.", StringComparison.Ordinal); no other comparison behavior changed.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcProviderSetupService.cs; tasks.json; progress.txt
+Blockers/notes: none. Verification: ordinal rg passed; task's old one-arg StartsWith grep intentionally no longer matches; CdcProviderSetupService unit filter passed 13 tests; csharpier passed.

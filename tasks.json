@@ -63,7 +63,7 @@
       "Run: dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderSetupService",
       "Run: dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcProviderSetupService.cs"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Manifest payload predicate",

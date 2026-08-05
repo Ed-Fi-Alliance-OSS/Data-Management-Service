@@ -594,7 +594,10 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
 
     private void AddDiagnosticsForSqlServerGatingRoleGrantMismatch(CdcGrantObservation grant)
     {
-        if (request.Provider != CdcProvider.SqlServer || !grant.SafeObjectName.Value.StartsWith("role."))
+        if (
+            request.Provider != CdcProvider.SqlServer
+            || !grant.SafeObjectName.Value.StartsWith("role.", StringComparison.Ordinal)
+        )
         {
             return;
         }
