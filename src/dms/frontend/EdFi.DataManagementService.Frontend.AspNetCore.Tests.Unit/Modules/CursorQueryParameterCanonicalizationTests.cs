@@ -259,6 +259,49 @@ public class CursorQueryParameterCanonicalizationTests
         queryParameters.Should().ContainKey("number").WhoseValue.Should().Be("10");
     }
 
+    /// <summary>
+    /// Two segments name a resource collection, not a partitions operation, even when the resource
+    /// segment happens to be spelled <c>partitions</c>. On such a collection <c>number</c> is an
+    /// ordinary resource query field, and rewriting its spelling would change which field is
+    /// filtered on or which name an unknown-field error reports.
+    /// </summary>
+    [TestCase("/data/ed-fi/partitions", "NUMBER")]
+    [TestCase("/data/partitions", "Number")]
+    public async Task It_leaves_the_partition_count_untouched_on_a_collection_named_partitions(
+        string path,
+        string suppliedName
+    )
+    {
+        var queryParameters = await CapturedQueryParameters($"{path}?{suppliedName}=10");
+
+        queryParameters.Should().ContainKey(suppliedName);
+        queryParameters.Should().NotContainKey("number");
+    }
+
+    /// <summary>
+    /// A fourth segment is not a shape Core recognizes at all, so the request is answered before query
+    /// validation. Recognition is still held to the three-segment shape rather than to the final
+    /// segment, so that nothing here depends on which of those two answers a longer path receives.
+    /// </summary>
+    [Test]
+    public async Task It_leaves_the_partition_count_untouched_on_a_longer_path_ending_in_partitions()
+    {
+        var queryParameters = await CapturedQueryParameters(
+            "/data/ed-fi/schools/11111111-1111-1111-1111-111111111111/partitions?NUMBER=10"
+        );
+
+        queryParameters.Should().ContainKey("NUMBER");
+        queryParameters.Should().NotContainKey("number");
+    }
+
+    [Test]
+    public async Task It_canonicalizes_the_partition_count_on_a_trailing_slash_partitions_path()
+    {
+        var queryParameters = await CapturedQueryParameters("/data/ed-fi/schools/partitions/?NUMBER=10");
+
+        queryParameters.Should().ContainKey("number").WhoseValue.Should().Be("10");
+    }
+
     [Test]
     public async Task It_keeps_the_last_partition_count_across_case_variants()
     {

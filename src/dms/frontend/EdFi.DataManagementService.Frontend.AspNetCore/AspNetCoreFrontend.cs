@@ -414,28 +414,48 @@ public static class AspNetCoreFrontend
 
     /// <summary>
     /// The route segment naming the partitions operation. Duplicated here rather than shared with
-    /// Core, whose recognition constant is internal to a different assembly; parity is held by test
-    /// rather than by widening public API for a literal.
+    /// Core, whose recognition constant is internal to a different assembly; each side pins the
+    /// literal in its own tests rather than public API being widened for it. Neither suite would
+    /// catch the two disagreeing, because each passes against its own spelling, so renaming the
+    /// segment must change both: canonicalization would otherwise stop reaching the operation Core
+    /// recognizes, leaving the partition count to be validated under the client's spelling.
     /// </summary>
     private const string PartitionsPathSegment = "partitions";
 
     /// <summary>
-    /// Whether the final path segment names the partitions operation, which is the only place the
-    /// generic <c>number</c> parameter is a paging control rather than a possible resource query field.
-    /// Only the final segment is tested, so this is also true of paths that end in that segment without
-    /// being a partitions request. Those are answered before query validation runs: a segment count
-    /// Core's path parser does not match is a 404, and a path short enough to resolve the segment as a
-    /// resource name is a 404 for an unknown resource from endpoint validation, which precedes query
-    /// validation. Canonicalizing <c>number</c> on them is therefore inert, and restating Core's
-    /// segment-count rules here would only give them somewhere to drift apart.
+    /// Whether the path names the partitions operation, which is the only place the generic
+    /// <c>number</c> parameter is a paging control rather than a possible resource query field.
     /// </summary>
+    /// <remarks>
+    /// The segment must be the third of the <c>{project}/{resource}/partitions</c> shape, with the
+    /// optional trailing slash Core's path expression also accepts. Testing only the final segment
+    /// would also recognize a two-segment collection whose resource is itself named
+    /// <c>partitions</c>, where <c>number</c> is an ordinary query field and rewriting its spelling
+    /// would change which field is filtered on or which name an unknown-field error reports. The
+    /// position requirement is what makes that impossible rather than merely unlikely, so nothing
+    /// here rests on an assumption about which resource names a schema declares.
+    /// </remarks>
     private static bool IsPartitionsPath(string dmsPath)
     {
         ReadOnlySpan<char> path = dmsPath.AsSpan().TrimEnd('/');
-        int lastSeparator = path.LastIndexOf('/');
-        ReadOnlySpan<char> finalSegment = lastSeparator < 0 ? path : path[(lastSeparator + 1)..];
 
-        return finalSegment.Equals(PartitionsPathSegment, StringComparison.OrdinalIgnoreCase);
+        int projectSeparator = path.IndexOf('/');
+        if (projectSeparator < 0)
+        {
+            return false;
+        }
+
+        ReadOnlySpan<char> afterProject = path[(projectSeparator + 1)..];
+        int resourceSeparator = afterProject.IndexOf('/');
+        if (resourceSeparator < 0)
+        {
+            return false;
+        }
+
+        // Everything after the resource segment, not just the next segment: a longer path leaves the
+        // separators in this span, so it cannot equal the bare segment name.
+        return afterProject[(resourceSeparator + 1)..]
+            .Equals(PartitionsPathSegment, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

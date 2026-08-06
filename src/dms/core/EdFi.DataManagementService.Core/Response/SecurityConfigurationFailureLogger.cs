@@ -110,6 +110,8 @@ internal static class SecurityConfigurationFailureLogger
         {
             RequestMethod.GET when requestInfo.PathComponents.Operation is ResourcePathOperation.ById =>
                 "GetById",
+            RequestMethod.GET when requestInfo.PathComponents.Operation is ResourcePathOperation.Partitions =>
+                "GetPartitions",
             RequestMethod.GET => "GetMany",
             RequestMethod.POST => "Create",
             RequestMethod.PUT => "Update",

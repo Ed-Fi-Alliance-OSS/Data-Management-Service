@@ -79,7 +79,7 @@ story assert a presence semantic the other owns.
   absent, and prove resource-property and change-version filters are accepted rather than reported
   as unsupported.
 - Traditional-only pagination failures retain their current response shell and messages, and the
-  existing case-sensitive matching of `limit`, `offset`, and `totalCount` is unchanged.
+  existing case-insensitive matching of `limit`, `offset`, and `totalCount` is unchanged.
 - `/deletes` and `/keyChanges` tests prove `pageToken` and `pageSize` are rejected rather than
   ignored.
 - Unit tests cover every typed path case, unknown child segments, extra segments, route qualifiers,

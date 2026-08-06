@@ -152,6 +152,25 @@ public class SecurityConfigurationFailureLoggerTests
         }
     }
 
+    /// <summary>
+    /// A partition request is a distinct request surface, not a collection read. Classifying it as
+    /// one would make the two indistinguishable in the failure log, which is the field an operator
+    /// uses to tell which surface a security configuration is broken on.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Get_Against_A_Partition : SecurityConfigurationFailureLoggerTests
+    {
+        [TestCase(false, "GetPartitionsResource")]
+        [TestCase(true, "GetPartitionsDescriptor")]
+        public void It_classifies_the_request_by_its_resource_kind(bool isDescriptor, string expectedSurface)
+        {
+            RequestSurfaceFrom(RequestMethod.GET, ResourcePathOperation.Partitions.Instance, isDescriptor)
+                .Should()
+                .Be(expectedSurface);
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Write_Request : SecurityConfigurationFailureLoggerTests
