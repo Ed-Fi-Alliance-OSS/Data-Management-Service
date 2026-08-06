@@ -36,6 +36,12 @@ public class TrackedChangesEndpointModule(IOptions<AppSettings> appSettings) : I
         // on /deletes and /keyChanges, which today fall through to the catch-all verb endpoints and
         // into Core. Order 1 demotes them below the Order-0 verb endpoints so only genuinely
         // unmapped verbs reach them.
+        //
+        // A deliberate consequence: POST, PUT and DELETE on these routes still reach the data
+        // pipeline, where ParsePathMiddleware reads the /deletes or /keyChanges suffix as a document
+        // id and rejects it as a malformed uuid with a 400. The Allow: GET these terminals emit
+        // therefore states what this terminal accepts, not what the whole URL accepts. Dropping the
+        // WithOrder(1) calls would make those three verbs answer 405 here as well.
         endpoints
             .Map(
                 BuildRoutePattern(routeQualifierSegments, multiTenancy, "deletes"),

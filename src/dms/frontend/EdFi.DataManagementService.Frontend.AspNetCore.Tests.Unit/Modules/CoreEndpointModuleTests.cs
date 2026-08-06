@@ -8,6 +8,7 @@ using System.Net.Http;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
 using FluentAssertions;
@@ -480,6 +481,60 @@ public class CoreEndpointModuleTests
 
             response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
             response.Content.Headers.Contains("Allow").Should().BeFalse();
+        }
+
+        /// <summary>
+        /// Under a tenant and route-qualifier prefix both terminals sit at Order 1, so nothing but
+        /// route precedence keeps the literal tracked-change template ahead of the data catch-all.
+        /// If that ever inverts the status stays 405 and only the Allow value degrades from "GET" to
+        /// the collection methods, which no other assertion here would notice. The prefix segments
+        /// are asserted too because the Core pipeline validates the tenant and resolves the data
+        /// store before reaching the terminal.
+        /// </summary>
+        [TestCase("deletes")]
+        [TestCase("keyChanges")]
+        public async Task It_reaches_the_tracked_change_terminal_under_a_tenant_and_qualifier_prefix(
+            string trackedChangeSegment
+        )
+        {
+            var apiService = FakeApiServiceAnsweringEveryVerb();
+            FrontendRequest? capturedRequest = null;
+            A.CallTo(() => apiService.MethodNotAllowedForTrackedChange(A<FrontendRequest>._, A<string>._))
+                .Invokes((FrontendRequest request, string _) => capturedRequest = request)
+                .Returns(Task.FromResult(FakeCoreMethodNotAllowedResponse(allow: "GET")));
+
+            await using var factory = CreateFactory(
+                apiService,
+                new Dictionary<string, string?>
+                {
+                    ["AppSettings:MultiTenancy"] = "true",
+                    ["AppSettings:RouteQualifierSegments"] = "districtId,schoolYear",
+                }
+            );
+            using var client = factory.CreateClient();
+            using var request = new HttpRequestMessage(
+                HttpMethod.Patch,
+                $"/tenant1/255902/2026/data/ed-fi/schools/{trackedChangeSegment}"
+            );
+
+            var response = await client.SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            response.Content.Headers.GetValues("Allow").Should().Equal("GET");
+            // The data-route terminal shares Order 1 and would answer with the collection methods.
+            A.CallTo(() => apiService.MethodNotAllowed(A<FrontendRequest>._, A<string>._))
+                .MustNotHaveHappened();
+            capturedRequest.Should().NotBeNull();
+            capturedRequest!.Path.Should().Be($"/ed-fi/schools/{trackedChangeSegment}");
+            capturedRequest.Tenant.Should().Be("tenant1");
+            capturedRequest
+                .RouteQualifiers[new RouteQualifierName("districtId")]
+                .Should()
+                .Be(new RouteQualifierValue("255902"));
+            capturedRequest
+                .RouteQualifiers[new RouteQualifierName("schoolYear")]
+                .Should()
+                .Be(new RouteQualifierValue("2026"));
         }
     }
 
