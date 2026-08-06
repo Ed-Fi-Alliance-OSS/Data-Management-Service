@@ -1199,11 +1199,13 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         bool publishesAllTables
     )
     {
-        var publishesDmsSchema = observedSchemaSet.Contains("dms");
+        var workTable = DmsTableNames.DocumentProjectionWork;
+        var publishesWorkTableSchema = observedSchemaSet.Contains(workTable.Schema.Value);
+        var qualifiedWorkTableName = $"{workTable.Schema.Value}.{workTable.Name}";
         if (
             !publishesAllTables
-            && !publishesDmsSchema
-            && !observedTableSet.Contains("dms.DocumentProjectionWork")
+            && !publishesWorkTableSchema
+            && !observedTableSet.Contains(qualifiedWorkTableName)
         )
         {
             return [];
@@ -1214,7 +1216,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         {
             observedValue = "publishes_all_tables";
         }
-        else if (publishesDmsSchema)
+        else if (publishesWorkTableSchema)
         {
             observedValue = "tables_in_schema";
         }
