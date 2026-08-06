@@ -2012,6 +2012,54 @@ exit 0
             $buildScript | Should -Not -Match "DMS did not become ready, but continuing anyway"
         }
 
+        It "both E2E setup wrappers let the selected environment file provide the schema package settings" {
+            # DMS-1300. Docker Compose gives process env vars precedence over --env-file entries, and
+            # local-dms.yml resolves all three names with a ${VAR:-default} fallback that treats a
+            # present-but-blank value as unset. Both wrappers must therefore REMOVE the three names
+            # around their Docker phases, never blank them: an assignment-based clear is
+            # platform- and PowerShell-version-dependent and can leave a present-but-blank value,
+            # which satisfies the fallback and silently starts DMS on the image-baked schemas while
+            # provisioning already stamped the environment file's full package surface.
+            #
+            # The symmetric pair is asserted together so the two wrappers cannot drift apart: the
+            # direct DMS wrapper had no guard at all, and the Instance Management wrapper had one built
+            # on the unreliable assignment form.
+            foreach ($path in @(
+                (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"),
+                (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1")
+            )) {
+                $content = Get-Content -LiteralPath $path -Raw
+                $wrapperName = [System.IO.Path]::GetFileName([System.IO.Path]::GetDirectoryName($path))
+
+                $content | Should -Match "function Invoke-WithEnvironmentFileSchemaSettings" -Because "$wrapperName must guard its Docker phases"
+                $content | Should -Match '"USE_API_SCHEMA_PATH"' -Because "$wrapperName must name USE_API_SCHEMA_PATH in the guard"
+                $content | Should -Match '"API_SCHEMA_PATH"' -Because "$wrapperName must name API_SCHEMA_PATH in the guard"
+                $content | Should -Match '"SCHEMA_PACKAGES"' -Because "$wrapperName must name SCHEMA_PACKAGES in the guard"
+                $content | Should -Match 'Remove-Item -LiteralPath "Env:\$name"' -Because "$wrapperName must clear by removal, not by assignment"
+                $content | Should -Match '\[System\.Environment\]::SetEnvironmentVariable\(\$name, \$previousValues\[\$name\]\)' -Because "$wrapperName must restore a present prior value verbatim"
+                $content | Should -Match 'if \(\$null -eq \$previousValues\[\$name\]\)' -Because "$wrapperName must distinguish an absent prior state from a present-but-empty one"
+
+                # The unreliable primitive, in either spelling, must not come back.
+                $content | Should -Not -Match '\$env:USE_API_SCHEMA_PATH\s*=' -Because "$wrapperName must not assign USE_API_SCHEMA_PATH"
+                $content | Should -Not -Match '\$env:API_SCHEMA_PATH\s*=' -Because "$wrapperName must not assign API_SCHEMA_PATH"
+                $content | Should -Not -Match '\$env:SCHEMA_PACKAGES\s*=' -Because "$wrapperName must not assign SCHEMA_PACKAGES"
+            }
+        }
+
+        It "start-local-dms.ps1 still owns the bootstrap schema activation the E2E guards must not clear" {
+            # DMS-1300 guards at the caller, deliberately. start-local-dms.ps1 must keep setting these
+            # in-process for bootstrap mode, because process precedence is what makes the staged
+            # .bootstrap/ApiSchema workspace authoritative over the environment file. A guard pushed
+            # down into the start script would strip its own activation values before the compose call.
+            $startScript = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
+            $manifestModule = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-manifest.psm1") -Raw
+
+            $startScript | Should -Not -Match "function Invoke-WithEnvironmentFileSchemaSettings"
+            $startScript | Should -Not -Match 'Remove-Item -LiteralPath "Env:USE_API_SCHEMA_PATH"'
+            $manifestModule | Should -Match '\$env:USE_API_SCHEMA_PATH = "true"'
+            $manifestModule | Should -Match '\$env:API_SCHEMA_PATH = "/app/ApiSchema"'
+        }
+
         It "E2E setup wrappers contain defensive .bootstrap removal step before non-bootstrap startup" {
             # Confirm that both E2E setup wrappers defensively remove .bootstrap/ before invoking
             # start-local-dms.ps1 so a stale bootstrap workspace cannot hijack the non-bootstrap run
