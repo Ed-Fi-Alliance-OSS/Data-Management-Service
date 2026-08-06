@@ -31,7 +31,7 @@ public class Given_CdcSourceInventoryContract
 
 [TestFixture(SqlDialect.Pgsql)]
 [TestFixture(SqlDialect.Mssql)]
-public class Given_CdcSourceInventoryBuilder(SqlDialect dialect)
+public class Given_CoreDdlMetadata_For_CdcSourceInventory(SqlDialect dialect)
 {
     private IReadOnlyList<CdcSourceTableInventory> _inventory = null!;
 

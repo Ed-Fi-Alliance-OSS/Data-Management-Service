@@ -47,3 +47,8 @@ Task completed: Existing coverage verification (reference/design/backend-redesig
 Key decisions: no production behavior added; stale review note closed by confirming CDC_BINDING_CONNECTOR_PRINCIPAL_MISMATCH producer and unit coverage still exist.
 Files changed: tasks.json; progress.txt
 Blockers/notes: none. Verification: rg producer/test passed; CdcProviderSetupService unit filter passed 13 tests. Existing dirty provider/integration CDC artifact edits left unstaged.
+
+Task completed: CDC source inventory (reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md)
+Key decisions: removed unused production CdcSourceInventoryBuilder so provider setup only uses caller-supplied ExpectedSourceInventory; kept validator production-only boundary and test-local CoreDdlEmitter helper.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcSourceInventory.cs; src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcSourceInventoryTests.cs; tasks.json; progress.txt
+Blockers/notes: none. Verification: rg builder/build helper no matches; CdcSourceInventory unit filter passed 21 tests; csharpier passed.

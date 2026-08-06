@@ -8,13 +8,6 @@ using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
-internal static class CdcSourceInventoryBuilder
-{
-    internal static IReadOnlyList<CdcSourceTableInventory> BuildExpectedSourceInventory(
-        ISqlDialect dialect
-    ) => new CoreDdlEmitter(dialect).EmitWithMetadata().CdcSourceInventory;
-}
-
 internal static class CdcSourceInventoryValidator
 {
     internal static IReadOnlyList<CdcProviderDiagnostic> ValidateLiveSourceInventory(
