@@ -882,6 +882,53 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     }
 
     [Test]
+    public async Task It_classifies_exhausted_page_invalidation_retry_from_explicit_scrub_page()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        var primitives = new StubAdministrativePrimitives(
+            baselineBoundary: new DocumentCacheAdministrativeBaselineBoundaryResult(5, "boundary"),
+            scrubPages:
+            [
+                ScrubRetryPage(boundaryDocumentId: 5, afterDocumentId: 0, pageSize: 3),
+                ScrubRetryPage(boundaryDocumentId: 5, afterDocumentId: 0, pageSize: 1),
+                ScrubRetryPage(boundaryDocumentId: 5, afterDocumentId: 0, pageSize: 1),
+            ]
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(),
+            primitives: primitives,
+            providerConcurrencyRetrySettings: ProviderConcurrencyRetrySettings(maxRetryAttempts: 1)
+        );
+        var command = new DocumentCacheExplicitIntegrityScrubCommand(runner);
+
+        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
+            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.PageInvalidationRetryExhausted);
+        result.Mutated.Should().BeFalse();
+        primitives
+            .ScrubPageRequests.Select(request => (request.AfterDocumentId, request.PageSize))
+            .Should()
+            .Equal((0, 3), (0, 1), (0, 1));
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.ScrubScan
+                && diagnostic.LastCompletedPhase == DocumentCacheAdministrativeCommandPhase.CaptureBoundary
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.PageInvalidationRetryExhausted
+                && diagnostic.Retryable
+                && diagnostic.AffectedDocumentIds.SequenceEqual(new long[] { 1L })
+            );
+    }
+
+    [Test]
     public async Task It_classifies_sql_server_activation_prerequisite_timeout_as_provider_command_timeout()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
@@ -2114,6 +2161,28 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         params DocumentCacheAdministrativeScrubbedDocument[] documents
     ) => new(status, boundaryDocumentId: 1, afterDocumentId: 0, pageSize: 3, [.. documents], "scrub page");
 
+    private static DocumentCacheAdministrativeScrubPageResult ScrubRetryPage(
+        long boundaryDocumentId,
+        long afterDocumentId,
+        int pageSize
+    ) =>
+        new(
+            DocumentCacheAdministrativeScrubPageStatus.RetryFromLastCommittedKey,
+            boundaryDocumentId,
+            afterDocumentId,
+            pageSize,
+            [
+                new DocumentCacheAdministrativeScrubbedDocument(
+                    afterDocumentId + 1,
+                    sourceContentVersion: 10,
+                    cacheContentVersion: null,
+                    previousRequiredContentVersion: 9,
+                    DocumentCacheAdministrativeScrubMutationKind.Retry
+                ),
+            ],
+            "retry scrub page"
+        );
+
     private static DocumentCacheAdministrativeClearBatchResult ClearBatch(
         DocumentCacheAdministrativeClearTarget target,
         params long[] clearedDocumentIds
@@ -2898,6 +2967,11 @@ public class Given_DocumentCacheAdministrativeCommandRunner
 
         public int ScrubPageCallCount { get; private set; }
 
+        public List<DocumentCacheAdministrativeBaselineSeedPageRequest> SeedBaselinePageRequests { get; } =
+        [];
+
+        public List<DocumentCacheAdministrativeScrubPageRequest> ScrubPageRequests { get; } = [];
+
         public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
             IRelationalWriteSession mutexSession,
             DocumentCacheAdministrativeStateLockMode lockMode =
@@ -3077,9 +3151,9 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         )
         {
             _ = mutexSession;
-            _ = request;
             cancellationToken.ThrowIfCancellationRequested();
             SeedBaselinePageCallCount++;
+            SeedBaselinePageRequests.Add(request);
             return _seedPages.Dequeue() switch
             {
                 DocumentCacheAdministrativeBaselineSeedPageResult page => Task.FromResult(page),
@@ -3097,9 +3171,9 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         )
         {
             _ = mutexSession;
-            _ = request;
             cancellationToken.ThrowIfCancellationRequested();
             ScrubPageCallCount++;
+            ScrubPageRequests.Add(request);
             return _scrubPages.Dequeue() switch
             {
                 DocumentCacheAdministrativeScrubPageResult page => Task.FromResult(page),

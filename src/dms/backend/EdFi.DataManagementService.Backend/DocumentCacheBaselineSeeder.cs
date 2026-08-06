@@ -166,6 +166,8 @@ internal sealed class DocumentCacheBaselineSeeder(
         var pagesSeeded = 0;
         var documentsVisited = 0;
         var workMutationCount = 0;
+        var effectivePageSize = pageSize;
+        var singleDocumentPageRetryCount = 0;
 
         while (afterDocumentId < boundary.BoundaryDocumentId.Value)
         {
@@ -235,13 +237,37 @@ internal sealed class DocumentCacheBaselineSeeder(
                     context,
                     boundary.BoundaryDocumentId.Value,
                     afterDocumentId,
-                    pageSize,
+                    effectivePageSize,
                     effectiveCancellationToken
                 )
                 .ConfigureAwait(false);
 
             if (page.Status == DocumentCacheAdministrativeBaselineSeedPageStatus.RetryFromLastCommittedKey)
             {
+                if (effectivePageSize > 1)
+                {
+                    effectivePageSize = NextRetryPageSize(effectivePageSize);
+                    singleDocumentPageRetryCount = 0;
+                    continue;
+                }
+
+                singleDocumentPageRetryCount++;
+                if (singleDocumentPageRetryCount > context.ProviderConcurrencyRetrySettings.MaxRetryAttempts)
+                {
+                    return new DocumentCacheBaselineSeedingResult(
+                        boundary.BoundaryDocumentId,
+                        afterDocumentId,
+                        pagesSeeded,
+                        documentsVisited,
+                        workMutationCount,
+                        CreatePageInvalidationRetryExhaustedFailure(
+                            context,
+                            page,
+                            singleDocumentPageRetryCount
+                        )
+                    );
+                }
+
                 continue;
             }
 
@@ -254,6 +280,8 @@ internal sealed class DocumentCacheBaselineSeeder(
             documentsVisited += page.RowsVisited;
             workMutationCount += page.WorkMutationCount;
             afterDocumentId = page.LastVisitedDocumentId!.Value;
+            effectivePageSize = pageSize;
+            singleDocumentPageRetryCount = 0;
         }
 
         context.CompletePhase(DocumentCacheAdministrativeCommandPhase.SeedBaseline);
@@ -343,5 +371,27 @@ internal sealed class DocumentCacheBaselineSeeder(
                     context.MarkMutated();
                 }
             }
+        );
+
+    private static int NextRetryPageSize(int currentPageSize) => Math.Max(1, currentPageSize / 2);
+
+    private static DocumentCacheAdministrativeCommandResult CreatePageInvalidationRetryExhaustedFailure(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        DocumentCacheAdministrativeBaselineSeedPageResult page,
+        int singleDocumentPageRetryCount
+    ) =>
+        context.Failed(
+            context.Mutated
+                ? DocumentCacheAdministrativeCommandStatus.IncompleteRetryable
+                : DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+            DocumentCacheAdministrativeCommandClassification.PageInvalidationRetryExhausted,
+            DocumentCacheAdministrativeDiagnosticCategory.PageInvalidationRetryExhausted,
+            $"DocumentCache baseline seed page invalidation retry budget was exhausted after {singleDocumentPageRetryCount} single-document retry attempts from last committed document id {page.AfterDocumentId}. Reissue the same explicit command.",
+            retryable: true,
+            [
+                .. page
+                    .Documents.Where(document => document.RequiresRetry)
+                    .Select(document => document.DocumentId),
+            ]
         );
 }

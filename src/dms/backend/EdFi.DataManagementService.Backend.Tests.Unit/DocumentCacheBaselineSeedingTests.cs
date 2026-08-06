@@ -130,19 +130,19 @@ public class Given_DocumentCacheBaselineSeeding
                     10,
                     previousRequiredContentVersion: 9,
                     DocumentCacheAdministrativeBaselineWorkMutationKind.Advanced
-                ),
-                Document(
-                    2,
-                    11,
-                    previousRequiredContentVersion: null,
-                    DocumentCacheAdministrativeBaselineWorkMutationKind.Inserted
                 )
             )
         );
         primitives.SeedPages.Enqueue(
             Page(
                 boundaryDocumentId: 4,
-                afterDocumentId: 2,
+                afterDocumentId: 1,
+                Document(
+                    2,
+                    11,
+                    previousRequiredContentVersion: null,
+                    DocumentCacheAdministrativeBaselineWorkMutationKind.Inserted
+                ),
                 Document(
                     4,
                     12,
@@ -157,13 +157,64 @@ public class Given_DocumentCacheBaselineSeeding
         DocumentCacheBaselineSeedingResult result = await CreateSeeder().SeedAsync(context);
 
         result.LastCommittedDocumentId.Should().Be(4);
-        primitives.SeedRequests.Select(request => request.AfterDocumentId).Should().Equal(0, 0, 2);
+        primitives
+            .SeedRequests.Select(request => (request.AfterDocumentId, request.PageSize))
+            .Should()
+            .Equal((0, 2), (0, 1), (1, 2));
         lease
             .Sessions.Where(session => session.IsolationLevel == IsolationLevel.Serializable)
             .Select(session => session.RolledBack)
             .Should()
             .Equal(true, false, false);
         context.PhaseDiagnostics.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_fails_with_a_retryable_result_when_single_document_page_invalidation_retry_is_exhausted()
+    {
+        var primitives = new RecordingAdministrativePrimitives(
+            new DocumentCacheAdministrativeBaselineBoundaryResult(1, "boundary"),
+            HighWaterBelow(),
+            HighWaterBelow(),
+            HighWaterBelow()
+        );
+        primitives.SeedPages.Enqueue(RetryPage(boundaryDocumentId: 1, afterDocumentId: 0, pageSize: 2));
+        primitives.SeedPages.Enqueue(RetryPage(boundaryDocumentId: 1, afterDocumentId: 0, pageSize: 1));
+        primitives.SeedPages.Enqueue(RetryPage(boundaryDocumentId: 1, afterDocumentId: 0, pageSize: 1));
+        var lease = new RecordingMutexLease();
+        DocumentCacheAdministrativeCommandExecutionContext context = CreateCommandContext(
+            primitives,
+            lease,
+            ProviderConcurrencyRetrySettings(maxRetryAttempts: 1)
+        );
+
+        DocumentCacheBaselineSeedingResult result = await CreateSeeder().SeedAsync(context);
+
+        result.Completed.Should().BeFalse();
+        result.LastCommittedDocumentId.Should().Be(0);
+        result.PagesSeeded.Should().Be(0);
+        result.FailureResult!.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .FailureResult.Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.PageInvalidationRetryExhausted);
+        result
+            .FailureResult.PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.SeedBaseline
+                && diagnostic.LastCompletedPhase == DocumentCacheAdministrativeCommandPhase.CaptureBoundary
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.PageInvalidationRetryExhausted
+                && diagnostic.Retryable
+                && diagnostic.AffectedDocumentIds.SequenceEqual(new long[] { 1L })
+            );
+        primitives
+            .SeedRequests.Select(request => (request.AfterDocumentId, request.PageSize))
+            .Should()
+            .Equal((0, 2), (0, 1), (0, 1));
+        lease
+            .Sessions.Where(session => session.IsolationLevel == IsolationLevel.Serializable)
+            .Should()
+            .OnlyContain(session => session.RolledBack);
     }
 
     [Test]
@@ -475,6 +526,27 @@ public class Given_DocumentCacheBaselineSeeding
             pageSize: 2,
             documents.ToImmutableArray(),
             "page"
+        );
+
+    private static DocumentCacheAdministrativeBaselineSeedPageResult RetryPage(
+        long boundaryDocumentId,
+        long afterDocumentId,
+        int pageSize
+    ) =>
+        new(
+            DocumentCacheAdministrativeBaselineSeedPageStatus.RetryFromLastCommittedKey,
+            boundaryDocumentId,
+            afterDocumentId,
+            pageSize,
+            [
+                Document(
+                    afterDocumentId + 1,
+                    sourceContentVersion: 10,
+                    previousRequiredContentVersion: 9,
+                    DocumentCacheAdministrativeBaselineWorkMutationKind.Retry
+                ),
+            ],
+            "retry"
         );
 
     private static DocumentCacheAdministrativeBaselineSeededDocument Document(
