@@ -17,8 +17,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Response;
 
 /// <summary>
 /// Request-surface classification is derived from the typed path operation and the resource kind.
-/// These fixtures drive the production logger so each classification is proven end to end rather
-/// than inferred from the shape of the switch.
+/// These fixtures drive the production logger rather than mirroring its switch, so each classification
+/// is asserted against the value the logger emits rather than against a copy of how it decides.
 /// </summary>
 [TestFixture]
 [Parallelizable]
@@ -155,7 +155,9 @@ public class SecurityConfigurationFailureLoggerTests
     /// <summary>
     /// A partition request is a distinct request surface, not a collection read. Classifying it as
     /// one would make the two indistinguishable in the failure log, which is the field an operator
-    /// uses to tell which surface a security configuration is broken on.
+    /// uses to tell which surface a security configuration is broken on. No request reaches this
+    /// classification while path parsing answers a partitions path itself, before authorization runs;
+    /// asserting it here is what keeps it correct for when a partitions pipeline serves those requests.
     /// </summary>
     [TestFixture]
     [Parallelizable]

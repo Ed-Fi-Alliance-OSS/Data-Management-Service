@@ -190,9 +190,12 @@ internal class ValidateQueryMiddleware(
             return;
         }
 
-        // Determined here, but applied to request state only at the accepting exit below: the
-        // change-version and query-field steps that follow can still answer the request, and a
-        // rejected request must not leave partially applied paging behind.
+        // Determined here, but the typed collection-paging choice reaches request state only at the
+        // accepting exit below, its single assignment site: the change-version and query-field steps
+        // that follow can still answer the request, and a request they reject must not carry a paging
+        // mode a handler could act on. That deferral covers the typed choice. The traditional branch
+        // assigns pagination parameters as soon as they parse cleanly, which is ahead of those later
+        // steps, so a request one of them rejects does keep parsed pagination parameters.
         CollectionPaging collectionPaging;
 
         if (cursorResult is CursorValidationResult.Valid validCursorRequest)

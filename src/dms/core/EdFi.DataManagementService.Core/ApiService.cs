@@ -484,9 +484,11 @@ internal class ApiService : IApiService
             } => GetPipelineKind.Query,
             ResourcePathParseResult.Recognized { PathComponents.Operation: ResourcePathOperation.ById } =>
                 GetPipelineKind.GetById,
-            // The partitions pipeline does not exist yet. Until it does, a recognized partitions
-            // operation is dispatched to the pipeline whose path parsing answers it with the
-            // invalid-identifier response, so no incomplete partitions surface is exposed.
+            // The partitions pipeline does not exist yet. Both GET pipelines take their path parsing
+            // from the same shared initial steps, and that parsing answers a recognized partitions
+            // operation with the invalid-identifier response either way, so the served response does
+            // not depend on this choice. GetById is named to match the response a third path segment
+            // already receives, and no incomplete partitions surface is exposed.
             ResourcePathParseResult.Recognized
             {
                 PathComponents.Operation: ResourcePathOperation.Partitions,

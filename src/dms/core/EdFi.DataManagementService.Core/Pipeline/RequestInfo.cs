@@ -94,9 +94,12 @@ internal class RequestInfo(
     public PaginationParameters PaginationParameters { get; set; } = No.PaginationParameters;
 
     /// <summary>
-    /// How a live collection query pages. Set by ValidateQueryMiddleware, and only after validation
-    /// succeeds, so a rejected request never leaves partially applied paging behind. Change Query
-    /// endpoints keep reading PaginationParameters directly and never page by cursor.
+    /// How a live collection query pages. Set by ValidateQueryMiddleware at a single assignment site,
+    /// and only once that middleware's validation succeeds, so a request it rejects never carries a
+    /// typed paging choice. <see cref="PaginationParameters"/> gives no such guarantee: it is assigned
+    /// as soon as it parses cleanly, ahead of the later validation steps that can still reject the
+    /// request. Change Query endpoints keep reading PaginationParameters directly and never page by
+    /// cursor.
     /// </summary>
     public CollectionPaging CollectionPaging { get; set; } = No.CollectionPaging;
 

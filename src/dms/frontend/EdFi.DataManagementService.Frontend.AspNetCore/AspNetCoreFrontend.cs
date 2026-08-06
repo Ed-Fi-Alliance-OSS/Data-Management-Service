@@ -413,12 +413,12 @@ public static class AspNetCoreFrontend
     }
 
     /// <summary>
-    /// The route segment naming the partitions operation. Duplicated here rather than shared with
-    /// Core, whose recognition constant is internal to a different assembly; each side pins the
-    /// literal in its own tests rather than public API being widened for it. Neither suite would
-    /// catch the two disagreeing, because each passes against its own spelling, so renaming the
-    /// segment must change both: canonicalization would otherwise stop reaching the operation Core
-    /// recognizes, leaving the partition count to be validated under the client's spelling.
+    /// The route segment naming the partitions operation. Held here rather than shared with Core,
+    /// whose recognition constant is internal to a different assembly, and held to that constant by a
+    /// frontend unit test that builds its request from it, seeing it through <c>InternalsVisibleTo</c>.
+    /// Renaming the segment on one side alone fails that test: canonicalization would otherwise
+    /// stop reaching the operation Core recognizes, leaving the partition count to be validated under
+    /// the client's spelling.
     /// </summary>
     private const string PartitionsPathSegment = "partitions";
 
@@ -427,13 +427,20 @@ public static class AspNetCoreFrontend
     /// <c>number</c> parameter is a paging control rather than a possible resource query field.
     /// </summary>
     /// <remarks>
-    /// The segment must be the third of the <c>{project}/{resource}/partitions</c> shape, with the
-    /// optional trailing slash Core's path expression also accepts. Testing only the final segment
-    /// would also recognize a two-segment collection whose resource is itself named
+    /// The segment must be the third of the <c>{project}/{resource}/partitions</c> shape. Testing only
+    /// the final segment would also recognize a two-segment collection whose resource is itself named
     /// <c>partitions</c>, where <c>number</c> is an ordinary query field and rewriting its spelling
     /// would change which field is filtered on or which name an unknown-field error reports. The
     /// position requirement is what makes that impossible rather than merely unlikely, so nothing
     /// here rests on an assumption about which resource names a schema declares.
+    /// </remarks>
+    /// <remarks>
+    /// Trailing slashes are tolerated, and the shape check deliberately stops there rather than
+    /// re-implementing Core's path expression, which is stricter: it accepts a single trailing slash
+    /// and requires every segment to be non-empty. Core classifies the path before any query parameter
+    /// name is read, so a path it does not recognize is answered as not found whatever this returns for
+    /// it, and a name canonicalized here for such a path never reaches validation. A second definition
+    /// of path shape held in step with Core's would add drift without changing a served response.
     /// </remarks>
     private static bool IsPartitionsPath(string dmsPath)
     {

@@ -145,7 +145,10 @@ scoped to exactly those three names, and `number` only on the partitions operati
 `limit`, `offset`, and `totalCount` were already case-insensitive at the HTTP boundary before this
 design, and remain so. That is deliberate public contract: the frontend has folded their names since
 DMS-397, and three URL-validation scenarios lock it — `?liMIt=2`, `?OfFSeT=1`, and `?tOtAlCoUnT=trUE`
-all succeed. This design does not widen or narrow them.
+all succeed. This design makes that fold culture-invariant, which restores recognition on a server
+whose culture is not the invariant one: the previous culture-sensitive fold left, for example,
+`LIMIT` unrecognized under a Turkish locale, which lowercases `I` to a dotless `ı`. It does not
+otherwise change which names are recognized.
 
 A consequence worth stating, because it decides a mixed-mode outcome: since `LIMIT` already reaches
 Core as `limit`, `?pageToken=<valid>&LIMIT=10` is a genuine traditional/cursor mixed-mode conflict

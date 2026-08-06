@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.Model;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -260,6 +261,23 @@ public class CursorQueryParameterCanonicalizationTests
     }
 
     /// <summary>
+    /// The boundary holds its own copy of the partitions segment literal, because Core's recognition
+    /// constant is internal to another assembly. The request here is built from that constant rather
+    /// than from a spelling repeated in the test, so renaming the segment on one side alone fails:
+    /// canonicalization would otherwise stop reaching the operation Core recognizes, leaving the
+    /// partition count to be validated under the client's spelling.
+    /// </summary>
+    [Test]
+    public async Task It_canonicalizes_the_partition_count_on_the_segment_core_recognizes()
+    {
+        var queryParameters = await CapturedQueryParameters(
+            $"/data/ed-fi/schools/{ResourcePathParser.PartitionsSegment}?NUMBER=10"
+        );
+
+        queryParameters.Should().ContainKey("number").WhoseValue.Should().Be("10");
+    }
+
+    /// <summary>
     /// Two segments name a resource collection, not a partitions operation, even when the resource
     /// segment happens to be spelled <c>partitions</c>. On such a collection <c>number</c> is an
     /// ordinary resource query field, and rewriting its spelling would change which field is
@@ -324,7 +342,7 @@ public class CursorQueryParameterCanonicalizationTests
     }
 
     /// <summary>
-    /// Recognizing the partitions operation reads the final segment of the path Core is given, which holds
+    /// Recognizing the partitions operation reads the third segment of the path Core is given, which holds
     /// only the <c>{project}/{resource}[/{segment}]</c> part: the tenant segment and the route qualifier
     /// segments are bound as their own route values and are never part of it. A prefixed request therefore
     /// canonicalizes the partition count exactly as a plain one does, and moving any prefix segment into

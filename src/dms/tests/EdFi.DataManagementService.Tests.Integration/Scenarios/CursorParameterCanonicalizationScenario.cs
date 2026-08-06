@@ -3,10 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Buffers.Text;
 using System.Net;
-using System.Text;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Paging;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
@@ -46,12 +46,12 @@ internal static class CursorParameterCanonicalizationScenario
         + "approaches and cannot be used together.";
 
     /// <summary>
-    /// Encodes a token the codec would produce. Built here rather than referenced from Core, whose
-    /// codec is internal to a different assembly, and rather than hardcoded, so the payload it
-    /// carries is visible.
+    /// Encoded by the codec that decodes it, so the token is decodable by construction rather than by
+    /// a transcription of the transport encoding happening to stay in step with it. Both requests
+    /// below need a token that survives token decode, because that is what leaves the later phase free
+    /// to answer.
     /// </summary>
-    private static string PageToken(long inclusiveMinimum, long inclusiveMaximum) =>
-        Base64Url.EncodeToString(Encoding.UTF8.GetBytes($"{inclusiveMinimum},{inclusiveMaximum}"));
+    private static readonly string _decodablePageToken = PageTokenCodec.Encode(new CursorRange(1, 100));
 
     /// <summary>
     /// An undecodable token first, a valid token last. If the first value won, phase 0 would answer
@@ -65,7 +65,7 @@ internal static class CursorParameterCanonicalizationScenario
         ArgumentNullException.ThrowIfNull(harness);
 
         var response = await harness.HttpClient.GetAsync(
-            $"{SchoolsEndpoint}?PAGETOKEN=!!!&pageToken={PageToken(1, 100)}&offset=1"
+            $"{SchoolsEndpoint}?PAGETOKEN=!!!&pageToken={_decodablePageToken}&offset=1"
         );
 
         await AssertSingleParameterValidationError(response, OffsetWithPageToken);
@@ -82,7 +82,7 @@ internal static class CursorParameterCanonicalizationScenario
         ArgumentNullException.ThrowIfNull(harness);
 
         var response = await harness.HttpClient.GetAsync(
-            $"{SchoolsEndpoint}?pageToken={PageToken(1, 100)}&pageSize=5&PAGESIZE=abc"
+            $"{SchoolsEndpoint}?pageToken={_decodablePageToken}&pageSize=5&PAGESIZE=abc"
         );
 
         await AssertSingleParameterValidationError(response, "PageSize must be a value between 0 and 500.");
