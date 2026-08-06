@@ -62,3 +62,8 @@ Task completed: CDC diagnostics scope (reference/design/backend-redesign/epics/1
 Key decisions: documented current fail-fast setup contract; diagnostics report first provider-step error, not exhaustive database remediation; same-mode retry exact-matches completed work and surfaces next blocker.
 Files changed: reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md; tasks.json; progress.txt
 Blockers/notes: no production behavior change.
+
+Task completed: Solution membership (reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md)
+Key decisions: added public-contract compile-check project as direct DMS solution member; kept unit-test project reference so focused compile-contract test still forces dependency.
+Files changed: src/dms/EdFi.DataManagementService.sln; tasks.json; progress.txt
+Blockers/notes: none. Verification: sln list contained project; compile-check project build passed; compile-contract test passed; full no-restore DMS solution build passed.
