@@ -86,14 +86,14 @@ internal sealed class DocumentCacheOnlineCacheRebuildCommand(
 
         if (lifecycle == DocumentCacheLifecycleState.Resetting)
         {
-            DocumentCacheAdministrativeCommandResult? clearFailure = await ClearCacheAsync(
+            DocumentCacheAdministrativeCommandResult? clearResult = await ClearCacheAsync(
                     context,
                     effectiveCancellationToken
                 )
                 .ConfigureAwait(false);
-            if (clearFailure is not null)
+            if (clearResult is not null)
             {
-                return clearFailure;
+                return clearResult;
             }
 
             DocumentCacheAdministrativeCommandResult? enterRebuilding = await TryTransitionAsync(

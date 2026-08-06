@@ -116,16 +116,8 @@ internal sealed class DocumentCacheInternalOnlyCacheAheadRecoveryCommand(
                     context.Request.AcceptedOfflineWriterAdmissionConfirmation
                 );
 
-            DocumentCacheAdministrativeCommandResult? clearFailure = await ClearCacheAndWorkAsync(
-                    context,
-                    clearance,
-                    effectiveCancellationToken
-                )
+            await ClearCacheAndWorkAsync(context, clearance, effectiveCancellationToken)
                 .ConfigureAwait(false);
-            if (clearFailure is not null)
-            {
-                return clearFailure;
-            }
 
             DocumentCacheAdministrativeCommandResult? enterRebuilding =
                 await EnterRebuildingAndClearLatchAsync(context, effectiveCancellationToken)
@@ -184,7 +176,7 @@ internal sealed class DocumentCacheInternalOnlyCacheAheadRecoveryCommand(
         return enterTracking ?? context.Completed();
     }
 
-    private static async Task<DocumentCacheAdministrativeCommandResult?> ClearCacheAndWorkAsync(
+    private static async Task ClearCacheAndWorkAsync(
         DocumentCacheAdministrativeCommandExecutionContext context,
         DocumentCacheAdministrativeWorkClearance clearance,
         CancellationToken cancellationToken
@@ -196,8 +188,6 @@ internal sealed class DocumentCacheInternalOnlyCacheAheadRecoveryCommand(
         await DocumentCacheAdministrativeWorkflow
             .ClearDocumentProjectionWorkAsync(context, clearance, cancellationToken)
             .ConfigureAwait(false);
-
-        return null;
     }
 
     private static async Task<DocumentCacheAdministrativeCommandResult?> EnterRebuildingAndClearLatchAsync(

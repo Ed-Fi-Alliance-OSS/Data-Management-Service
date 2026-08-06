@@ -111,16 +111,7 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
             context.Request.AcceptedOfflineWriterAdmissionConfirmation
         );
 
-        DocumentCacheAdministrativeCommandResult? clearFailure = await ClearCacheAndWorkAsync(
-                context,
-                clearance,
-                effectiveCancellationToken
-            )
-            .ConfigureAwait(false);
-        if (clearFailure is not null)
-        {
-            return clearFailure;
-        }
+        await ClearCacheAndWorkAsync(context, clearance, effectiveCancellationToken).ConfigureAwait(false);
 
         DocumentCacheAdministrativeCommandResult? enterDisabled = await EnterDisabledAsync(
                 context,
@@ -131,7 +122,7 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
         return enterDisabled ?? context.Completed();
     }
 
-    private static async Task<DocumentCacheAdministrativeCommandResult?> ClearCacheAndWorkAsync(
+    private static async Task ClearCacheAndWorkAsync(
         DocumentCacheAdministrativeCommandExecutionContext context,
         DocumentCacheAdministrativeWorkClearance clearance,
         CancellationToken cancellationToken
@@ -143,8 +134,6 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
         await DocumentCacheAdministrativeWorkflow
             .ClearDocumentProjectionWorkAsync(context, clearance, cancellationToken)
             .ConfigureAwait(false);
-
-        return null;
     }
 
     private static async Task<DocumentCacheAdministrativeCommandResult?> EnterDisabledAsync(
