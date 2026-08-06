@@ -441,12 +441,18 @@ public static class AspNetCoreFrontend
     /// resource query field, and rewriting its spelling elsewhere would change resource filtering and
     /// unknown-field error text on collections this feature does not otherwise touch.
     /// </remarks>
+    /// <remarks>
+    /// The fold is invariant rather than culture-sensitive. These names are fixed protocol tokens, so
+    /// recognizing them must not vary with the server's culture; a Turkish locale, for example,
+    /// lowercases <c>I</c> to a dotless <c>ı</c> and would leave every name containing that letter
+    /// unrecognized.
+    /// </remarks>
     private static string FromValidatedQueryParam(
         KeyValuePair<string, StringValues> queryParam,
         bool canonicalizePartitionNumber
     )
     {
-        switch (queryParam.Key.ToLower())
+        switch (queryParam.Key.ToLowerInvariant())
         {
             case "limit":
                 return "limit";

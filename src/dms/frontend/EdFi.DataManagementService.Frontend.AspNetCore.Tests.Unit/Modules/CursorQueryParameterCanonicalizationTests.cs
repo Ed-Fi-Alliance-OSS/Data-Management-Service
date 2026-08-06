@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -143,6 +144,42 @@ public class CursorQueryParameterCanonicalizationTests
         var queryParameters = await CapturedQueryParameters($"/data/ed-fi/schools?{suppliedName}={value}");
 
         queryParameters.Should().ContainKey(canonicalName).WhoseValue.Should().Be(value);
+    }
+
+    /// <summary>
+    /// Recognition must not depend on the server's culture. The Turkish locale lowercases <c>I</c> to
+    /// a dotless <c>ı</c>, so a culture-sensitive fold silently stops recognizing any name containing
+    /// that letter. Both a cursor name and a traditional name are covered because one fold serves all
+    /// of them.
+    /// </summary>
+    [TestCase("PAGESIZE", "pageSize", "5")]
+    [TestCase("LIMIT", "limit", "5")]
+    public async Task It_canonicalizes_independently_of_the_server_culture(
+        string suppliedName,
+        string canonicalName,
+        string value
+    )
+    {
+        CultureInfo originalCurrent = CultureInfo.CurrentCulture;
+        CultureInfo? originalDefault = CultureInfo.DefaultThreadCurrentCulture;
+        CultureInfo turkish = CultureInfo.GetCultureInfo("tr-TR");
+
+        try
+        {
+            CultureInfo.DefaultThreadCurrentCulture = turkish;
+            CultureInfo.CurrentCulture = turkish;
+
+            var queryParameters = await CapturedQueryParameters(
+                $"/data/ed-fi/schools?{suppliedName}={value}"
+            );
+
+            queryParameters.Should().ContainKey(canonicalName).WhoseValue.Should().Be(value);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCurrent;
+            CultureInfo.DefaultThreadCurrentCulture = originalDefault;
+        }
     }
 
     [Test]
