@@ -1068,11 +1068,10 @@ internal sealed class DescriptorReadHandler(
     }
 
     /// <summary>
-    /// The known-but-not-enabled 501 terminal. Custom-view strategies are AND filters executing in
-    /// CMS-configured order, so for GET-many only the custom views configured <em>ahead</em> of the
-    /// earliest known-but-not-enabled strategy are validated before the 501 is reported — mirroring the
-    /// relational query path. That lets an earlier missing or non-conforming view surface its own
-    /// configuration failure, while a view configured after OwnershipBased cannot displace its 501.
+    /// The known-but-not-enabled 501 terminal. OwnershipBased — the only known-but-not-enabled strategy —
+    /// executes last per auth.md "Execution order", regardless of its configured position, so for GET-many
+    /// every resolved custom view is validated before the 501 is reported, mirroring the relational query
+    /// path. That lets a missing or non-conforming view surface its own configuration failure.
     /// Custom views are implemented for GET-many only, so other operations keep the bare 501.
     /// </summary>
     private static DescriptorReadAuthorizationPreflightOutcome BuildDescriptorReadNotImplemented(
@@ -1092,13 +1091,9 @@ internal sealed class DescriptorReadHandler(
             return notImplementedOutcome;
         }
 
-        var customViewStrategiesToValidate =
-            CustomViewAuthorizationTerminalOrdering.CustomViewsBeforeTerminal(
-                stillUnsupported.RelationshipClassification.SupportedCustomViewStrategies,
-                CustomViewAuthorizationTerminalOrdering.EarliestKnownButNotEnabledRawConfiguredIndex(
-                    stillUnsupported.RelationshipClassification.KnownButNotEnabledStrategies
-                )
-            );
+        var customViewStrategiesToValidate = stillUnsupported
+            .RelationshipClassification
+            .SupportedCustomViewStrategies;
 
         if (customViewStrategiesToValidate.Count == 0)
         {

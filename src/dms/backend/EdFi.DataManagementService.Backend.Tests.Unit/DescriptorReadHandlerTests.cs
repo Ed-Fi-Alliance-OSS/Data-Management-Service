@@ -822,12 +822,14 @@ public class Given_DescriptorReadHandler
     }
 
     [Test]
-    public async Task It_does_not_validate_a_descriptor_custom_view_configured_after_OwnershipBased()
+    public async Task It_validates_a_descriptor_custom_view_configured_after_OwnershipBased()
     {
-        // The inverse of the sibling above. OwnershipBased is an AND term like the custom view, so with
-        // it configured first the request stops at its 501; validating the later custom view would let a
-        // missing auth view return the custom-view system 500 instead of the CMS-ordered terminal.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        // The inverse configured order of the sibling above, with the same outcome: OwnershipBased executes
+        // last per auth.md "Execution order" no matter where the CMS placed it, so the descriptor custom
+        // view is still validated ahead of the 501.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
         var sut = CreateHandler(commandExecutor);
         var request = CreateQueryRequest(
             SqlDialect.Pgsql,
@@ -845,8 +847,15 @@ public class Given_DescriptorReadHandler
             .Should()
             .BeOfType<QueryResult.QueryFailureNotImplemented>()
             .Which.FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
-        commandExecutor.Commands.Should().BeEmpty();
+            .Contain(AuthorizationStrategyNameConstants.OwnershipBased)
+            .And.NotContain("StudentWithCustomViewProviderTest");
+        commandExecutor
+            .Commands.Select(command => command.CommandText)
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("StudentWithCustomViewProviderTest", StringComparison.Ordinal)
+                && sql.Contains("LIMIT 0", StringComparison.Ordinal)
+            );
     }
 
     [TestCase(

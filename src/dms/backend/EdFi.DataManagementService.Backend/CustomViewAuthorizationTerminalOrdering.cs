@@ -25,25 +25,6 @@ internal static class CustomViewAuthorizationTerminalOrdering
     }
 
     /// <summary>
-    /// The lowest <c>RawConfiguredIndex</c> among <paramref name="knownButNotEnabledStrategies"/>, or
-    /// <see cref="int.MaxValue"/> when there are none. A known-but-not-enabled strategy such as
-    /// <c>OwnershipBased</c> is an AND term like a custom view, so its 501 terminal must not be preceded by
-    /// validating a custom view configured after it. With no such strategy the sentinel keeps every custom
-    /// view eligible.
-    /// </summary>
-    public static int EarliestKnownButNotEnabledRawConfiguredIndex(
-        IReadOnlyList<KnownButNotEnabledRelationshipAuthorizationStrategy> knownButNotEnabledStrategies
-    )
-    {
-        ArgumentNullException.ThrowIfNull(knownButNotEnabledStrategies);
-
-        return knownButNotEnabledStrategies
-            .Select(static strategy => strategy.ConfiguredStrategy.RawConfiguredIndex)
-            .DefaultIfEmpty(int.MaxValue)
-            .Min();
-    }
-
-    /// <summary>
     /// The planned custom-view checks configured strictly before <paramref name="terminalRawConfiguredIndex"/>.
     /// Custom views are AND filters that execute in CMS-configured order, so only these may be validated
     /// ahead of a terminal at that index.

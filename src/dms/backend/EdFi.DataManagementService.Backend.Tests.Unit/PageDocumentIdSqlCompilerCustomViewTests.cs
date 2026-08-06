@@ -90,11 +90,11 @@ public class Given_CustomView_Wiring_And_Sql_Emission
 
     [TestCase(
         SqlDialect.Pgsql,
-        "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"StudentTransportation\" t0 WHERE t0.\"TransportationTypeDescriptor_DescriptorId\" IN (SELECT t1.\"DocumentId\" FROM \"auth\".\"TransportationTypeDescriptorWithABus\" t1))"
+        "r.\"TransportationTypeDescriptor_DescriptorId\" IN (SELECT t0.\"DocumentId\" FROM \"auth\".\"TransportationTypeDescriptorWithABus\" t0)"
     )]
     [TestCase(
         SqlDialect.Mssql,
-        "r.[DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[StudentTransportation] t0 WHERE t0.[TransportationTypeDescriptor_DescriptorId] IN (SELECT t1.[DocumentId] FROM [auth].[TransportationTypeDescriptorWithABus] t1))"
+        "r.[TransportationTypeDescriptor_DescriptorId] IN (SELECT t0.[DocumentId] FROM [auth].[TransportationTypeDescriptorWithABus] t0)"
     )]
     public void It_emits_the_directly_referenced_descriptor_basis_path(
         SqlDialect dialect,
@@ -103,8 +103,9 @@ public class Given_CustomView_Wiring_And_Sql_Emission
     {
         // TransportationTypeDescriptorWithABus assigned to StudentTransportation: the descriptor is a
         // basis resource referenced directly by the subject via its *_DescriptorId FK. The FK holds the
-        // descriptor's DocumentId (mirroring dms.Descriptor.DocumentId), so the emitted path filters that
-        // FK against the DocumentIds returned by the custom view. See auth.md "Resolving the DB columns".
+        // descriptor's DocumentId (mirroring dms.Descriptor.DocumentId), so the FK is filtered against the
+        // custom view directly — the terminal step's dms.Descriptor target would only drive a redundant
+        // re-scan of the root table. See auth.md "Resolving the DB columns".
         var rootTable = new DbTableName(_edfiSchema, "StudentTransportation");
         var descriptorTable = new DbTableName(new DbSchemaName("dms"), "Descriptor");
         var check = new PageDocumentIdAuthorizationCustomViewCheck(
@@ -163,6 +164,119 @@ public class Given_CustomView_Wiring_And_Sql_Emission
         var plan = compiler.Compile(spec);
 
         AssertFragmentAppearsBefore(plan.PageDocumentIdSql, "StudentWithCTE", "Namespace");
+    }
+
+    [TestCase(
+        SqlDialect.Pgsql,
+        "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"StudentSchoolAssociation\" t0 JOIN \"edfi\".\"StudentSchoolAssociationProgram\" t1 ON t1.\"StudentSchoolAssociation_DocumentId\" = t0.\"DocumentId\" WHERE t1.\"Program_DocumentId\" IN (SELECT t2.\"DocumentId\" FROM \"auth\".\"ProgramWithCTE\" t2))"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "r.[DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[StudentSchoolAssociation] t0 JOIN [edfi].[StudentSchoolAssociationProgram] t1 ON t1.[StudentSchoolAssociation_DocumentId] = t0.[DocumentId] WHERE t1.[Program_DocumentId] IN (SELECT t2.[DocumentId] FROM [auth].[ProgramWithCTE] t2))"
+    )]
+    public void It_joins_a_child_collection_path_on_the_child_locator_column(
+        SqlDialect dialect,
+        string expectedPredicate
+    )
+    {
+        // The basis reference lives on a child collection table, so the resolver prefixes a root-to-child
+        // step. That child's locator column is not DocumentId, so the JOIN must key on the locator column
+        // rather than assuming the child mirrors the root's DocumentId.
+        var childTable = new DbTableName(_edfiSchema, "StudentSchoolAssociationProgram");
+        var check = new PageDocumentIdAuthorizationCustomViewCheck(
+            "ProgramWithCTE",
+            0,
+            new DbTableName(_authSchema, "ProgramWithCTE"),
+            _documentIdColumn,
+            [
+                new ColumnPathStep(
+                    _studentSchoolAssociationTable,
+                    _documentIdColumn,
+                    childTable,
+                    new DbColumnName("StudentSchoolAssociation_DocumentId")
+                ),
+                new ColumnPathStep(childTable, new DbColumnName("Program_DocumentId"), null, null),
+            ],
+            _studentSchoolAssociationTable,
+            _documentIdColumn
+        );
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+
+        var plan = compiler.Compile(CreateCustomViewSpec(check, _studentSchoolAssociationTable));
+
+        plan.PageDocumentIdSql.Should().Contain(expectedPredicate);
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should().Contain(expectedPredicate);
+    }
+
+    [Test]
+    public void It_throws_when_the_check_root_table_does_not_match_the_query_root_table()
+    {
+        var check = new PageDocumentIdAuthorizationCustomViewCheck(
+            "StratA",
+            0,
+            new DbTableName(_authSchema, "StratA"),
+            _documentIdColumn,
+            [new ColumnPathStep(_studentSchoolAssociationTable, _documentIdColumn, null, null)],
+            new DbTableName(_edfiSchema, "CourseTranscript"),
+            _documentIdColumn
+        );
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Pgsql);
+
+        var act = () => compiler.Compile(CreateCustomViewSpec(check, _studentSchoolAssociationTable));
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*check root table*CourseTranscript*does not match query root table*");
+    }
+
+    [Test]
+    public void It_throws_when_the_path_to_the_basis_resource_is_empty()
+    {
+        var check = new PageDocumentIdAuthorizationCustomViewCheck(
+            "StratA",
+            0,
+            new DbTableName(_authSchema, "StratA"),
+            _documentIdColumn,
+            [],
+            _studentSchoolAssociationTable,
+            _documentIdColumn
+        );
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Pgsql);
+
+        var act = () => compiler.Compile(CreateCustomViewSpec(check, _studentSchoolAssociationTable));
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*must include a path to the basis resource*");
+    }
+
+    [Test]
+    public void It_throws_when_a_one_step_path_does_not_source_from_the_query_root_table()
+    {
+        var check = new PageDocumentIdAuthorizationCustomViewCheck(
+            "StratA",
+            0,
+            new DbTableName(_authSchema, "StratA"),
+            _documentIdColumn,
+            [
+                new ColumnPathStep(
+                    new DbTableName(_edfiSchema, "CourseTranscript"),
+                    new DbColumnName("Student_DocumentId"),
+                    null,
+                    null
+                ),
+            ],
+            _studentSchoolAssociationTable,
+            _documentIdColumn
+        );
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Pgsql);
+
+        var act = () => compiler.Compile(CreateCustomViewSpec(check, _studentSchoolAssociationTable));
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*direct path table*CourseTranscript*does not match query root table*");
     }
 
     private static PageDocumentIdQuerySpec CreateCustomViewSpec(

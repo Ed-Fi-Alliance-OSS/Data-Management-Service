@@ -734,7 +734,13 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         var pathSteps = check.PathToBasisResource;
         var terminalStep = pathSteps[^1];
 
-        if (pathSteps.Count == 1 && terminalStep.TargetTable is null && terminalStep.TargetColumnName is null)
+        // A one-step path always sources from the root table: SecurableElementColumnPathResolver only emits a
+        // single step when the basis is the subject itself or is referenced by a root-owned FK, and a
+        // child-table edge is prefixed with a root-to-child step (making the path two steps). The FK already
+        // holds the basis resource's DocumentId, so the column can be filtered against the auth view
+        // directly. This covers descriptor bases too — their terminal step carries dms.Descriptor/DocumentId
+        // as a target, but the extra root re-scan those targets would drive is redundant.
+        if (pathSteps.Count == 1)
         {
             if (!terminalStep.SourceTable.Equals(rootTable))
             {

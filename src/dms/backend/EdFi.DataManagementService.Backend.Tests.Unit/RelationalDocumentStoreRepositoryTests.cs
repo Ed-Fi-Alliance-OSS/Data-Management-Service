@@ -4222,6 +4222,72 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_ands_two_resolving_custom_views_and_validates_them_in_one_round_trip()
+    {
+        // Two custom views configured at indexes 0 and 1: both are AND filters, so both predicates must
+        // reach the page SQL, and both auth views must be validated by a single batched command rather than
+        // one round trip per view.
+        List<string> capturedValidationSql = [];
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator("SchoolWithSecondCustomAuthorization"),
+            ],
+            claimEducationOrganizationIds: [255901L]
+        );
+        PageKeysetSpec.Query capturedKeyset = null!;
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call =>
+            {
+                capturedKeyset =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query
+                    ?? throw new AssertionException(
+                        "Custom-view query execution should hydrate through PageKeysetSpec.Query."
+                    );
+            })
+            .Returns(new HydratedPage(null, [], [], []));
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        capturedKeyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("SchoolWithCustomAuthorization")
+            .And.Contain("SchoolWithSecondCustomAuthorization");
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
+                && sql.Contains("SchoolWithSecondCustomAuthorization", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
     public async Task It_fails_closed_for_ownership_only_queries()
     {
         // OwnershipBased belongs to DMS-1060, so GET-many keeps the known-but-not-enabled 501 rather
@@ -4303,11 +4369,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_does_not_validate_a_custom_view_configured_after_the_ownership_terminal()
+    public async Task It_validates_a_custom_view_configured_after_the_ownership_terminal()
     {
-        // OwnershipBased first: it is an AND term like the custom view, so the request stops at its
-        // known-but-not-enabled 501. Validating the later custom view would let a missing auth view
-        // return the custom-view system 500 instead of the terminal the CMS order dictates.
+        // The inverse configured order of the sibling above, with the same outcome: OwnershipBased executes
+        // last per auth.md "Execution order" no matter where the CMS placed it, so the custom view is still
+        // validated ahead of the 501.
         List<string> capturedValidationSql = [];
         var queryRequest = CreateQueryRequest(
             CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
@@ -4337,7 +4403,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .BeOfType<QueryResult.QueryFailureNotImplemented>()
             .Which.FailureMessage.Should()
             .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
-        capturedValidationSql.Should().BeEmpty();
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("LIMIT 0", StringComparison.Ordinal)
+                && sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
+                && sql.Contains("DocumentId", StringComparison.Ordinal)
+            );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,

@@ -1055,19 +1055,14 @@ public sealed class RelationalDocumentStoreRepository(
             ),
         ];
 
-        // Custom views are AND filters executing in CMS-configured order, so only those configured ahead of
-        // the terminal may run: validating a later custom view first would let its missing or
-        // non-conforming auth view mask the terminal. Both terminal families are ordered this way — a
-        // classifier security-configuration failure (500) and a known-but-not-enabled strategy such as
-        // OwnershipBased (501).
+        // OwnershipBased — the only known-but-not-enabled strategy — executes last per auth.md "Execution
+        // order", regardless of where the CMS configured it. Every resolved custom view therefore precedes
+        // its 501 terminal and is validated first. A classifier security-configuration failure (500) is
+        // different: it is not an ordered AND term but a defect in the strategy metadata itself, so only
+        // custom views configured ahead of it may run.
         IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategiesToValidate =
             relationshipClassification.SecurityConfigurationFailures.Count == 0
-                ? CustomViewAuthorizationTerminalOrdering.CustomViewsBeforeTerminal(
-                    relationshipClassification.SupportedCustomViewStrategies,
-                    CustomViewAuthorizationTerminalOrdering.EarliestKnownButNotEnabledRawConfiguredIndex(
-                        relationshipClassification.KnownButNotEnabledStrategies
-                    )
-                )
+                ? relationshipClassification.SupportedCustomViewStrategies
                 : CustomViewAuthorizationTerminalOrdering.CustomViewsBeforeTerminal(
                     relationshipClassification.SupportedCustomViewStrategies,
                     RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
