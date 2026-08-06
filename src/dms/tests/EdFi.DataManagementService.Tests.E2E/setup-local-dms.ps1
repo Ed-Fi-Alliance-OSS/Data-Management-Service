@@ -192,13 +192,18 @@ function Get-DmsContainerSchemaPackageCount {
     }
 
     try {
-        $parsed = $value | ConvertFrom-Json -ErrorAction Stop
+        # -NoEnumerate keeps a single-element array an array. Without it PowerShell unwraps
+        # '[{...}]' to one PSCustomObject, and the shape check below would reject a valid
+        # one-package container as "not a JSON array".
+        $parsed = $value | ConvertFrom-Json -NoEnumerate -ErrorAction Stop
     }
     catch {
         return -1
     }
 
     # A JSON object parses without error but is not a package list; only an array is a package set.
+    # This check cannot be replaced by wrapping the parse result in @(...), which would make a JSON
+    # object look like a one-item package list.
     if ($parsed -isnot [System.Collections.IList]) {
         return -1
     }
