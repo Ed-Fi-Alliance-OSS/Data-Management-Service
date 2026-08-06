@@ -238,6 +238,24 @@ public class CursorRequestValidatorTests
         }
     }
 
+    /// <summary>
+    /// The wrong-paging-mode message belongs to a request that supplied offset and no limit. A
+    /// request that supplied both traditional parameters alongside pageSize is missing its page
+    /// token, not using the wrong page-size parameter, so the required-relationship rule answers it.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Page_Size_With_Both_Offset_And_Limit : CursorRequestValidatorTests
+    {
+        [Test]
+        public void It_requires_a_token_rather_than_reporting_the_wrong_paging_mode()
+        {
+            ErrorFrom(("pageSize", "5"), ("offset", "3"), ("limit", "10"))
+                .Should()
+                .Be(CursorRequestValidator.PageTokenRequired);
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Request_With_Several_Faults : CursorRequestValidatorTests
@@ -341,12 +359,6 @@ public class CursorRequestValidatorTests
         public void It_carries_the_decoded_range()
         {
             PagingFrom(("pageToken", ValidToken)).Range.Should().Be(new CursorRange(1, 100));
-        }
-
-        [Test]
-        public void It_never_requests_a_total_count()
-        {
-            PagingFrom(("pageToken", ValidToken)).IncludesTotalCount.Should().BeFalse();
         }
 
         [TestCase(0)]

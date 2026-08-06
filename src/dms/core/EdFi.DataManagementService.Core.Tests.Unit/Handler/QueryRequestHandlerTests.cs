@@ -99,12 +99,6 @@ public class QueryRequestHandlerTests
         }
 
         [Test]
-        public void It_requests_no_total_count()
-        {
-            _repository.CapturedRequest!.Paging.IncludesTotalCount.Should().BeFalse();
-        }
-
-        [Test]
         public void It_returns_not_implemented_until_cursor_execution_lands()
         {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(501);

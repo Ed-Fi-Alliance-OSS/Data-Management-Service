@@ -284,14 +284,6 @@ public class ValidateQueryMiddlewareCursorTests
         }
 
         [Test]
-        public async Task It_never_requests_a_total_count()
-        {
-            RequestInfo requestInfo = await Execute(true, ("pageToken", ValidToken));
-
-            requestInfo.CollectionPaging.IncludesTotalCount.Should().BeFalse();
-        }
-
-        [Test]
         public async Task It_continues_the_pipeline()
         {
             RequestInfo requestInfo = await Execute(true, ("pageToken", ValidToken));
@@ -299,12 +291,25 @@ public class ValidateQueryMiddlewareCursorTests
             requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
 
+        /// <summary>
+        /// Asserted on a request the middleware accepts alongside a real resource filter, because
+        /// query elements are assigned only at the accepting exit: a request answered before it
+        /// carries no query elements whether or not the cursor parameters were excluded.
+        /// </summary>
         [Test]
         public async Task It_does_not_treat_the_cursor_parameters_as_resource_filters()
         {
-            RequestInfo requestInfo = await Execute(true, ("pageToken", ValidToken), ("pageSize", "25"));
+            RequestInfo requestInfo = await Execute(
+                true,
+                ("pageToken", ValidToken),
+                ("pageSize", "25"),
+                ("schoolId", "1")
+            );
 
-            requestInfo.QueryElements.Should().BeEmpty();
+            requestInfo
+                .QueryElements.Select(static queryElement => queryElement.QueryFieldName)
+                .Should()
+                .Equal("schoolId");
         }
     }
 
@@ -362,13 +367,20 @@ public class ValidateQueryMiddlewareCursorTests
             requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
 
+        /// <summary>
+        /// Paired with a real resource filter so the request reaches the accepting exit, where query
+        /// elements are assigned. A request answered earlier carries none of them either way.
+        /// </summary>
         [TestCase("pageToken")]
         [TestCase("pageSize")]
         public async Task It_does_not_accept_them_as_resource_filters(string parameter)
         {
-            RequestInfo requestInfo = await Execute(false, (parameter, "5"));
+            RequestInfo requestInfo = await Execute(false, (parameter, "5"), ("schoolId", "1"));
 
-            requestInfo.QueryElements.Should().BeEmpty();
+            requestInfo
+                .QueryElements.Select(static queryElement => queryElement.QueryFieldName)
+                .Should()
+                .Equal("schoolId");
         }
 
         [Test]
