@@ -103,6 +103,7 @@ internal static class CursorParameterCanonicalizationScenario
         body["type"]!.GetValue<string>().Should().Be(ParameterValidationType);
         body["title"]!.GetValue<string>().Should().Be("Parameter Validation Failed");
         body["status"]!.GetValue<int>().Should().Be(400);
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
         body["validationErrors"]!.AsObject().Should().BeEmpty();
         body["errors"]!.AsArray().Select(error => error!.GetValue<string>()).Should().Equal(expectedError);
     }
