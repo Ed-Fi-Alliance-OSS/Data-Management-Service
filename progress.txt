@@ -72,3 +72,8 @@ Task completed: PostgreSQL grant parsing (reference/design/backend-redesign/epic
 Key decisions: PostgreSQL extra DMS forbidden privilege parser now consumes provider-local schema.table.PRIVILEGE tokens directly; SQL Server .via. provenance parsing left unchanged.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcPostgresqlHeartbeatPublicationProvider.cs; tasks.json; progress.txt
 Blockers/notes: task filter CdcPostgresqlHeartbeatPublicationProvider selected zero tests, so PostgresqlCdc filter used; 39 tests passed. csharpier passed. PostgreSQL .via. grep clean.
+
+Task completed: Public contract compile test (reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md)
+Key decisions: kept tautological runtime assertion; added comment that separate production compile-check assembly compilation is the protected assertion.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcProviderSetupPublicContractCompileCheckTests.cs; tasks.json; progress.txt
+Blockers/notes: none. Verification: focused compile-contract test passed; csharpier passed.

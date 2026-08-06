@@ -15,6 +15,7 @@ public class Given_CdcProviderSetup_Public_Contract_Compile_Check
     [Test]
     public void It_should_compile_a_production_assembly_against_the_public_contract()
     {
+        // The separate production compile-check assembly is the assertion protected by this test.
         typeof(CdcProviderSetupPublicContractCompileCheck).Should().NotBeNull();
     }
 }
