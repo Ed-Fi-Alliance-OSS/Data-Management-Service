@@ -2238,16 +2238,13 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
     {
         public static ExtraDmsGrantToken From(string privilegeToken)
         {
-            var provenanceIndex = privilegeToken.IndexOf(".via.", StringComparison.Ordinal);
-            var tokenWithoutProvenance =
-                provenanceIndex < 0 ? privilegeToken : privilegeToken[..provenanceIndex];
-            var privilegeSeparatorIndex = tokenWithoutProvenance.LastIndexOf('.');
+            var privilegeSeparatorIndex = privilegeToken.LastIndexOf('.');
 
             return privilegeSeparatorIndex <= 0
-                ? new ExtraDmsGrantToken(tokenWithoutProvenance, "UNKNOWN")
+                ? new ExtraDmsGrantToken(privilegeToken, "UNKNOWN")
                 : new ExtraDmsGrantToken(
-                    tokenWithoutProvenance[..privilegeSeparatorIndex],
-                    tokenWithoutProvenance[(privilegeSeparatorIndex + 1)..]
+                    privilegeToken[..privilegeSeparatorIndex],
+                    privilegeToken[(privilegeSeparatorIndex + 1)..]
                 );
         }
     }

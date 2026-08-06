@@ -67,3 +67,8 @@ Task completed: Solution membership (reference/design/backend-redesign/epics/19-
 Key decisions: added public-contract compile-check project as direct DMS solution member; kept unit-test project reference so focused compile-contract test still forces dependency.
 Files changed: src/dms/EdFi.DataManagementService.sln; tasks.json; progress.txt
 Blockers/notes: none. Verification: sln list contained project; compile-check project build passed; compile-contract test passed; full no-restore DMS solution build passed.
+
+Task completed: PostgreSQL grant parsing (reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md)
+Key decisions: PostgreSQL extra DMS forbidden privilege parser now consumes provider-local schema.table.PRIVILEGE tokens directly; SQL Server .via. provenance parsing left unchanged.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcPostgresqlHeartbeatPublicationProvider.cs; tasks.json; progress.txt
+Blockers/notes: task filter CdcPostgresqlHeartbeatPublicationProvider selected zero tests, so PostgresqlCdc filter used; 39 tests passed. csharpier passed. PostgreSQL .via. grep clean.
