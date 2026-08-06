@@ -122,7 +122,7 @@ internal static class DocumentCacheAdministrativeWorkflow
     }
 
     public static Task<TResult> ExecuteInTransactionAsync<TResult>(
-        IDocumentCacheAdministrativeMutexLease mutexLease,
+        DocumentCacheAdministrativeCommandExecutionContext context,
         IsolationLevel isolationLevel,
         Func<IRelationalWriteSession, CancellationToken, Task<TResult>> executeAsync,
         bool commit,
@@ -130,7 +130,7 @@ internal static class DocumentCacheAdministrativeWorkflow
         Action<TResult>? beforeCommit = null
     ) =>
         ExecuteInTransactionAsync(
-            mutexLease,
+            context,
             isolationLevel,
             executeAsync,
             _ => commit,
@@ -139,7 +139,7 @@ internal static class DocumentCacheAdministrativeWorkflow
         );
 
     public static async Task<TResult> ExecuteInTransactionAsync<TResult>(
-        IDocumentCacheAdministrativeMutexLease mutexLease,
+        DocumentCacheAdministrativeCommandExecutionContext context,
         IsolationLevel isolationLevel,
         Func<IRelationalWriteSession, CancellationToken, Task<TResult>> executeAsync,
         Func<TResult, bool> shouldCommit,
@@ -147,10 +147,11 @@ internal static class DocumentCacheAdministrativeWorkflow
         Action<TResult>? beforeCommit = null
     )
     {
-        ArgumentNullException.ThrowIfNull(mutexLease);
+        ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(executeAsync);
         ArgumentNullException.ThrowIfNull(shouldCommit);
 
+        IDocumentCacheAdministrativeMutexLease mutexLease = context.MutexLease;
         await using IRelationalWriteSession session = await mutexLease
             .BeginTransactionAsync(isolationLevel, cancellationToken)
             .ConfigureAwait(false);
@@ -194,7 +195,13 @@ internal static class DocumentCacheAdministrativeWorkflow
                 await session.RollbackAsync(activeTransactionCancellationToken).ConfigureAwait(false);
             }
             catch (Exception rollbackException)
-                when (ShouldClassifyRollbackFailureAsSessionLoss(mutexLease, exception, rollbackException))
+                when (ShouldClassifyRollbackFailureAsSessionLoss(
+                        mutexLease,
+                        context.ProviderCommandTimeoutClassifier,
+                        exception,
+                        rollbackException
+                    )
+                )
             {
                 throw CreateSessionLostException(mutexLease);
             }
@@ -228,7 +235,7 @@ internal static class DocumentCacheAdministrativeWorkflow
             try
             {
                 return await ExecuteInTransactionAsync(
-                        context.MutexLease,
+                        context,
                         isolationLevel,
                         executeAsync,
                         shouldCommit,
@@ -283,7 +290,7 @@ internal static class DocumentCacheAdministrativeWorkflow
             cancellationToken.ThrowIfCancellationRequested();
 
             DocumentCacheAdministrativeClearBatchResult batch = await ExecuteInTransactionAsync(
-                    context.MutexLease,
+                    context,
                     IsolationLevel.ReadCommitted,
                     (session, transactionCancellationToken) =>
                         clearBatchAsync(
@@ -337,15 +344,19 @@ internal static class DocumentCacheAdministrativeWorkflow
 
     private static bool ShouldClassifyRollbackFailureAsSessionLoss(
         IDocumentCacheAdministrativeMutexLease mutexLease,
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         Exception originalException,
         Exception rollbackException
     ) =>
-        !ShouldPreserveOriginalClassification(originalException)
+        !ShouldPreserveOriginalClassification(providerCommandTimeoutClassifier, originalException)
         && IsSessionLoss(mutexLease, rollbackException);
 
-    private static bool ShouldPreserveOriginalClassification(Exception exception) =>
+    private static bool ShouldPreserveOriginalClassification(
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
+        Exception exception
+    ) =>
         exception is OperationCanceledException
-        || DocumentCacheProviderCommandTimeoutClassifier.IsProviderCommandTimeout(exception);
+        || providerCommandTimeoutClassifier.IsProviderCommandTimeout(exception);
 
     private static TimeSpan ProviderConcurrencyRetryDelay(
         DeadlockRetrySettings settings,

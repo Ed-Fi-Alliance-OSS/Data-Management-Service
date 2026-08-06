@@ -1049,12 +1049,20 @@ internal interface IDocumentCacheAdministrativePrimitives
 internal sealed class DocumentCacheAdministrativePrimitives : IDocumentCacheAdministrativePrimitives
 {
     private readonly DocumentCacheAdministrativePrimitiveCommands _commands;
+    private readonly IDocumentCacheProviderCommandTimeoutClassifier _providerCommandTimeoutClassifier;
 
-    public DocumentCacheAdministrativePrimitives(SqlDialect sqlDialect, RelationalProviderToken providerToken)
+    public DocumentCacheAdministrativePrimitives(
+        SqlDialect sqlDialect,
+        RelationalProviderToken providerToken,
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier
+    )
     {
         ArgumentNullException.ThrowIfNull(providerToken);
 
         _commands = DocumentCacheAdministrativePrimitivesSupport.GetCommands(sqlDialect);
+        _providerCommandTimeoutClassifier =
+            providerCommandTimeoutClassifier
+            ?? throw new ArgumentNullException(nameof(providerCommandTimeoutClassifier));
         if (_commands.ProviderToken != providerToken)
         {
             throw new ArgumentException(
@@ -1068,11 +1076,13 @@ internal sealed class DocumentCacheAdministrativePrimitives : IDocumentCacheAdmi
 
     public RelationalProviderToken ProviderToken { get; }
 
-    public static DocumentCacheAdministrativePrimitives ForPostgresql() =>
-        new(SqlDialect.Pgsql, RelationalProviderToken.Postgresql);
+    public static DocumentCacheAdministrativePrimitives ForPostgresql(
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier
+    ) => new(SqlDialect.Pgsql, RelationalProviderToken.Postgresql, providerCommandTimeoutClassifier);
 
-    public static DocumentCacheAdministrativePrimitives ForSqlServer() =>
-        new(SqlDialect.Mssql, RelationalProviderToken.SqlServer);
+    public static DocumentCacheAdministrativePrimitives ForSqlServer(
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier
+    ) => new(SqlDialect.Mssql, RelationalProviderToken.SqlServer, providerCommandTimeoutClassifier);
 
     public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
         IRelationalWriteSession mutexSession,
@@ -1082,6 +1092,7 @@ internal sealed class DocumentCacheAdministrativePrimitives : IDocumentCacheAdmi
         DocumentCacheAdministrativePrimitivesSupport.ReadLifecycleAsync(
             mutexSession,
             _commands,
+            _providerCommandTimeoutClassifier,
             lockMode,
             cancellationToken
         );
@@ -1113,6 +1124,7 @@ internal sealed class DocumentCacheAdministrativePrimitives : IDocumentCacheAdmi
         DocumentCacheAdministrativePrimitivesSupport.ValidateActivationPrerequisitesAsync(
             mutexSession,
             _commands,
+            _providerCommandTimeoutClassifier,
             cancellationToken
         );
 
@@ -1124,6 +1136,7 @@ internal sealed class DocumentCacheAdministrativePrimitives : IDocumentCacheAdmi
         DocumentCacheAdministrativePrimitivesSupport.TryTransitionLifecycleAsync(
             mutexSession,
             _commands,
+            _providerCommandTimeoutClassifier,
             request,
             cancellationToken
         );
@@ -1366,16 +1379,19 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
     public static Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
         IRelationalWriteSession mutexSession,
         DocumentCacheAdministrativePrimitiveCommands commands,
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         DocumentCacheAdministrativeStateLockMode lockMode,
         CancellationToken cancellationToken = default
     )
     {
         ArgumentNullException.ThrowIfNull(mutexSession);
         ArgumentNullException.ThrowIfNull(commands);
+        ArgumentNullException.ThrowIfNull(providerCommandTimeoutClassifier);
 
         return ReadLifecycleAsync(
             mutexSession.CreateCommandExecutor(),
             commands,
+            providerCommandTimeoutClassifier,
             lockMode,
             cancellationToken
         );
@@ -1446,11 +1462,13 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
     public static Task<DocumentCacheProviderPrerequisiteValidationResult> ValidateActivationPrerequisitesAsync(
         IRelationalWriteSession mutexSession,
         DocumentCacheAdministrativePrimitiveCommands commands,
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         CancellationToken cancellationToken = default
     )
     {
         ArgumentNullException.ThrowIfNull(mutexSession);
         ArgumentNullException.ThrowIfNull(commands);
+        ArgumentNullException.ThrowIfNull(providerCommandTimeoutClassifier);
 
         if (commands.ActivationPrerequisiteCommandText is null)
         {
@@ -1464,6 +1482,7 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
         return ValidateSqlServerActivationPrerequisitesAsync(
             mutexSession.CreateCommandExecutor(),
             commands.ActivationPrerequisiteCommandText,
+            providerCommandTimeoutClassifier,
             cancellationToken
         );
     }
@@ -1471,12 +1490,14 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
     public static async Task<DocumentCacheAdministrativeLifecycleTransitionResult> TryTransitionLifecycleAsync(
         IRelationalWriteSession mutexSession,
         DocumentCacheAdministrativePrimitiveCommands commands,
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         DocumentCacheAdministrativeLifecycleTransitionRequest request,
         CancellationToken cancellationToken = default
     )
     {
         ArgumentNullException.ThrowIfNull(mutexSession);
         ArgumentNullException.ThrowIfNull(commands);
+        ArgumentNullException.ThrowIfNull(providerCommandTimeoutClassifier);
         ArgumentNullException.ThrowIfNull(request);
 
         DocumentCacheLifecycleReadResult transitionReadResult = await mutexSession
@@ -1502,6 +1523,7 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
         DocumentCacheLifecycleReadResult currentLifecycle = await ReadLifecycleAsync(
                 mutexSession.CreateCommandExecutor(),
                 commands,
+                providerCommandTimeoutClassifier,
                 DocumentCacheAdministrativeStateLockMode.Exclusive,
                 cancellationToken
             )
@@ -1831,6 +1853,7 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
     private static async Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
         IRelationalCommandExecutor executor,
         DocumentCacheAdministrativePrimitiveCommands commands,
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         DocumentCacheAdministrativeStateLockMode lockMode,
         CancellationToken cancellationToken
     )
@@ -1851,7 +1874,7 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
             throw;
         }
         catch (Exception exception)
-            when (DocumentCacheProviderCommandTimeoutClassifier.IsProviderCommandTimeout(exception))
+            when (providerCommandTimeoutClassifier.IsProviderCommandTimeout(exception))
         {
             throw;
         }
@@ -1975,6 +1998,7 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
     private static async Task<DocumentCacheProviderPrerequisiteValidationResult> ValidateSqlServerActivationPrerequisitesAsync(
         IRelationalCommandExecutor executor,
         string activationPrerequisiteCommandText,
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         CancellationToken cancellationToken
     )
     {
@@ -2018,7 +2042,7 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
             throw;
         }
         catch (Exception exception)
-            when (DocumentCacheProviderCommandTimeoutClassifier.IsProviderCommandTimeout(exception))
+            when (providerCommandTimeoutClassifier.IsProviderCommandTimeout(exception))
         {
             throw;
         }

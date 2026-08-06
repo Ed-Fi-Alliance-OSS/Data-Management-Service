@@ -9,6 +9,7 @@ using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
@@ -406,13 +407,14 @@ public class Given_DocumentCacheBaselineSeeding
             targetContext,
             lease,
             primitives,
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             new NoOpObservationSink(),
             new FixedTimeProvider(ObservedAt),
             ObservedAt,
             CancellationToken.None,
             telemetry: null,
-            providerConcurrencyRetrySettings,
-            writeExceptionClassifier
+            providerConcurrencyRetrySettings: providerConcurrencyRetrySettings,
+            writeExceptionClassifier: writeExceptionClassifier
         );
     }
 

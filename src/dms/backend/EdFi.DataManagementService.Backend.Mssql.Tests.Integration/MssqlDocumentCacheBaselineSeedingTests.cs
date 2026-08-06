@@ -61,7 +61,9 @@ public class Given_A_Mssql_DocumentCacheBaselineSeeding_Primitive
         _mutex = new MssqlDocumentCacheAdministrativeMutex(
             NullLogger<MssqlDocumentCacheAdministrativeMutex>.Instance
         );
-        _primitives = DocumentCacheAdministrativePrimitives.ForSqlServer();
+        _primitives = DocumentCacheAdministrativePrimitives.ForSqlServer(
+            new MssqlDocumentCacheProviderCommandTimeoutClassifier()
+        );
     }
 
     [TearDown]

@@ -85,6 +85,7 @@ public class Given_A_Mssql_DocumentCacheWriter
                 telemetry
             ),
             NullLogger<MssqlDocumentCacheWriter>.Instance,
+            new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
             faultInjectionObserver,
             telemetry,
             sessionInitializationCommandText

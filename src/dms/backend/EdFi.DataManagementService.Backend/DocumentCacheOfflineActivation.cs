@@ -48,7 +48,7 @@ internal sealed class DocumentCacheOfflineActivationCommand(
         DocumentCacheProviderPrerequisiteValidationResult activationPrerequisites =
             await DocumentCacheAdministrativeWorkflow
                 .ExecuteInTransactionAsync(
-                    context.MutexLease,
+                    context,
                     IsolationLevel.ReadCommitted,
                     (session, transactionCancellationToken) =>
                         context.Primitives.ValidateActivationPrerequisitesAsync(
@@ -194,7 +194,7 @@ internal sealed class DocumentCacheOfflineActivationCommand(
         (DocumentCacheAdministrativeCommandResult? Failure, bool Commit) transaction =
             await DocumentCacheAdministrativeWorkflow
                 .ExecuteInTransactionAsync(
-                    context.MutexLease,
+                    context,
                     IsolationLevel.ReadCommitted,
                     async (session, transactionCancellationToken) =>
                     {
@@ -265,7 +265,7 @@ internal sealed class DocumentCacheOfflineActivationCommand(
         (DocumentCacheAdministrativeCommandResult? Failure, bool Commit) transaction =
             await DocumentCacheAdministrativeWorkflow
                 .ExecuteInTransactionAsync(
-                    context.MutexLease,
+                    context,
                     IsolationLevel.ReadCommitted,
                     async (session, transactionCancellationToken) =>
                     {

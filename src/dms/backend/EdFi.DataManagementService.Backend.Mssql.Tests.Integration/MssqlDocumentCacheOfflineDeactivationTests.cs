@@ -248,9 +248,12 @@ public class Given_A_Mssql_DocumentCacheOfflineDeactivation_Command
             new MssqlDocumentCacheAdministrativeMutex(
                 NullLogger<MssqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            DocumentCacheAdministrativePrimitives.ForSqlServer(),
+            DocumentCacheAdministrativePrimitives.ForSqlServer(
+                new MssqlDocumentCacheProviderCommandTimeoutClassifier()
+            ),
             observationSink,
             new FixedTimeProvider(ObservedAtOffset),
+            new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
         );
 

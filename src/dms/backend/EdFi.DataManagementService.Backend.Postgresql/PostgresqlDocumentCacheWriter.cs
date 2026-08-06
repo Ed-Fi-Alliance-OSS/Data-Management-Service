@@ -21,12 +21,11 @@ internal sealed class PostgresqlDocumentCacheWriter(
     NpgsqlDataSourceCache dataSourceCache,
     IDocumentCacheWriterRetryAdapter retryAdapter,
     ILogger<PostgresqlDocumentCacheWriter> logger,
+    IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
     ITransactionFaultInjectionObserver? faultInjectionObserver = null,
     IDocumentCacheWriterTelemetry? telemetry = null
 ) : IDocumentCacheWriter, IDocumentCacheSessionBoundWriter
 {
-    private const string QueryCanceledSqlState = "57014";
-
     private static readonly DocumentCacheLifecycleReaderQuery LifecycleReaderQuery =
         DocumentCacheLifecycleReaderSupport.GetQuery(SqlDialect.Pgsql);
     private static readonly PostgresqlRelationalWriteExceptionClassifier LifecycleReadExceptionClassifier =
@@ -38,6 +37,9 @@ internal sealed class PostgresqlDocumentCacheWriter(
         retryAdapter ?? throw new ArgumentNullException(nameof(retryAdapter));
     private readonly ILogger<PostgresqlDocumentCacheWriter> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly IDocumentCacheProviderCommandTimeoutClassifier _providerCommandTimeoutClassifier =
+        providerCommandTimeoutClassifier
+        ?? throw new ArgumentNullException(nameof(providerCommandTimeoutClassifier));
     private readonly ITransactionFaultInjectionObserver _faultInjectionObserver =
         faultInjectionObserver ?? NoOpTransactionFaultInjectionObserver.Instance;
     private readonly IDocumentCacheWriterTelemetry _telemetry =
@@ -152,7 +154,9 @@ internal sealed class PostgresqlDocumentCacheWriter(
             );
         }
         catch (DbException exception)
-            when (request.MutexLease.IsSessionOpen && IsProviderCommandTimeout(exception))
+            when (request.MutexLease.IsSessionOpen
+                && _providerCommandTimeoutClassifier.IsProviderCommandTimeout(exception)
+            )
         {
             _logger.LogWarning(
                 exception,
@@ -1100,9 +1104,6 @@ internal sealed class PostgresqlDocumentCacheWriter(
             await session.DisposeAsync().ConfigureAwait(false);
         }
     }
-
-    private static bool IsProviderCommandTimeout(DbException exception) =>
-        exception is PostgresException { SqlState: QueryCanceledSqlState };
 
     private static bool IsRetryableDeleteRace(PostgresException exception) =>
         exception.SqlState == PostgresErrorCodes.ForeignKeyViolation

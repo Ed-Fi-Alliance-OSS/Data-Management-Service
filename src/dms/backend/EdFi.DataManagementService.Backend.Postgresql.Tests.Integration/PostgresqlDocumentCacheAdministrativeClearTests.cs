@@ -58,7 +58,9 @@ public class Given_A_Postgresql_DocumentCacheAdministrativeClear_Primitive
             _dataSourceCache,
             NullLogger<PostgresqlDocumentCacheAdministrativeMutex>.Instance
         );
-        _primitives = DocumentCacheAdministrativePrimitives.ForPostgresql();
+        _primitives = DocumentCacheAdministrativePrimitives.ForPostgresql(
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier()
+        );
     }
 
     [TearDown]

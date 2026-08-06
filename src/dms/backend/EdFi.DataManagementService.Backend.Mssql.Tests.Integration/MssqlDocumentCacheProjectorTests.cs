@@ -711,7 +711,8 @@ public class Given_A_Mssql_DocumentCacheProjector
                 new MssqlRelationalWriteExceptionClassifier(),
                 NullLogger<DocumentCacheWriterRetryAdapter>.Instance
             ),
-            NullLogger<MssqlDocumentCacheWriter>.Instance
+            NullLogger<MssqlDocumentCacheWriter>.Instance,
+            new MssqlDocumentCacheProviderCommandTimeoutClassifier()
         );
 
     private static DocumentCacheSqlServerPrerequisiteDetails SatisfiedSqlServerPrerequisites() =>

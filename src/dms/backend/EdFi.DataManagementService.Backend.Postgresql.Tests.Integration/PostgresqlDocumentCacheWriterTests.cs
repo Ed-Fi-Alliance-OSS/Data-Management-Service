@@ -80,6 +80,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
                 telemetry
             ),
             NullLogger<PostgresqlDocumentCacheWriter>.Instance,
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             faultInjectionObserver,
             telemetry
         );

@@ -202,7 +202,9 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
             ),
             new RecordingObservationSink(),
             new DelayingGuardedActivationPrimitives(
-                DocumentCacheAdministrativePrimitives.ForSqlServer(),
+                DocumentCacheAdministrativePrimitives.ForSqlServer(
+                    new MssqlDocumentCacheProviderCommandTimeoutClassifier()
+                ),
                 lockAcquired,
                 releaseLock
             )
@@ -258,9 +260,13 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
             new MssqlDocumentCacheAdministrativeMutex(
                 NullLogger<MssqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            primitives ?? DocumentCacheAdministrativePrimitives.ForSqlServer(),
+            primitives
+                ?? DocumentCacheAdministrativePrimitives.ForSqlServer(
+                    new MssqlDocumentCacheProviderCommandTimeoutClassifier()
+                ),
             observationSink,
             new FixedTimeProvider(new DateTimeOffset(ObservedAt)),
+            new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
         );
 

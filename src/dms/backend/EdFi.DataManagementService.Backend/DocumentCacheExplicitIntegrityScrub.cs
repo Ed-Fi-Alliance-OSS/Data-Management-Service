@@ -183,7 +183,7 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
 
         DocumentCacheAdministrativeBaselineBoundaryResult boundary = await DocumentCacheAdministrativeWorkflow
             .ExecuteInTransactionAsync(
-                context.MutexLease,
+                context,
                 IsolationLevel.ReadCommitted,
                 (session, transactionCancellationToken) =>
                     context.Primitives.CaptureBaselineBoundaryAsync(session, transactionCancellationToken),
@@ -304,7 +304,7 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
     {
         DocumentCacheLifecycleReadResult lifecycleReadResult = await DocumentCacheAdministrativeWorkflow
             .ExecuteInTransactionAsync(
-                context.MutexLease,
+                context,
                 IsolationLevel.ReadCommitted,
                 (session, transactionCancellationToken) =>
                     context.Primitives.ReadLifecycleAsync(

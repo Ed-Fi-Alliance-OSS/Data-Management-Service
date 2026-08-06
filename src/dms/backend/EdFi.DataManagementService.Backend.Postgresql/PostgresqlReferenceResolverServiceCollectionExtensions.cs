@@ -26,6 +26,12 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheProviderCommandTimeoutClassifier,
+                PostgresqlDocumentCacheProviderCommandTimeoutClassifier
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<
                 IRelationshipAuthorizationProviderFailureExtractor,
                 PostgresqlRelationshipAuthorizationProviderFailureExtractor
@@ -51,8 +57,10 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
-            ServiceDescriptor.Singleton<IDocumentCacheAdministrativePrimitives>(
-                DocumentCacheAdministrativePrimitives.ForPostgresql()
+            ServiceDescriptor.Singleton<IDocumentCacheAdministrativePrimitives>(serviceProvider =>
+                DocumentCacheAdministrativePrimitives.ForPostgresql(
+                    serviceProvider.GetRequiredService<IDocumentCacheProviderCommandTimeoutClassifier>()
+                )
             )
         );
 

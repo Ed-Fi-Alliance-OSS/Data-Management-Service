@@ -28,6 +28,12 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheProviderCommandTimeoutClassifier,
+                MssqlDocumentCacheProviderCommandTimeoutClassifier
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalParameterConfigurator, MssqlRelationalParameterConfigurator>()
         );
         services.TryAdd(
@@ -50,8 +56,10 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
-            ServiceDescriptor.Singleton<IDocumentCacheAdministrativePrimitives>(
-                DocumentCacheAdministrativePrimitives.ForSqlServer()
+            ServiceDescriptor.Singleton<IDocumentCacheAdministrativePrimitives>(serviceProvider =>
+                DocumentCacheAdministrativePrimitives.ForSqlServer(
+                    serviceProvider.GetRequiredService<IDocumentCacheProviderCommandTimeoutClassifier>()
+                )
             )
         );
 

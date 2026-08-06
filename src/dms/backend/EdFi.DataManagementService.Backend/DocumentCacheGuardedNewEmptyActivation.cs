@@ -76,7 +76,7 @@ internal sealed class DocumentCacheGuardedNewEmptyActivationCommand(
         (DocumentCacheAdministrativeCommandResult? Result, bool Commit) transaction =
             await DocumentCacheAdministrativeWorkflow
                 .ExecuteInTransactionAsync(
-                    context.MutexLease,
+                    context,
                     IsolationLevel.ReadCommitted,
                     async (session, transactionCancellationToken) =>
                     {

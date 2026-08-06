@@ -157,7 +157,7 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
         (DocumentCacheAdministrativeCommandResult? Failure, bool Commit) transaction =
             await DocumentCacheAdministrativeWorkflow
                 .ExecuteInTransactionAsync(
-                    context.MutexLease,
+                    context,
                     IsolationLevel.ReadCommitted,
                     async (session, transactionCancellationToken) =>
                     {
@@ -228,7 +228,7 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
         (DocumentCacheAdministrativeCommandResult? Failure, bool Commit) transaction =
             await DocumentCacheAdministrativeWorkflow
                 .ExecuteInTransactionAsync(
-                    context.MutexLease,
+                    context,
                     IsolationLevel.ReadCommitted,
                     async (session, transactionCancellationToken) =>
                     {

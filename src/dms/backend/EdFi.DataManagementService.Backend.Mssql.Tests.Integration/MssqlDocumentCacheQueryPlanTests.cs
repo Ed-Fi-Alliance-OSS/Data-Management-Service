@@ -73,7 +73,9 @@ public class Given_A_Mssql_DocumentCacheQueryPlan_Evidence
         _mutex = new MssqlDocumentCacheAdministrativeMutex(
             NullLogger<MssqlDocumentCacheAdministrativeMutex>.Instance
         );
-        _primitives = DocumentCacheAdministrativePrimitives.ForSqlServer();
+        _primitives = DocumentCacheAdministrativePrimitives.ForSqlServer(
+            new MssqlDocumentCacheProviderCommandTimeoutClassifier()
+        );
     }
 
     [TearDown]

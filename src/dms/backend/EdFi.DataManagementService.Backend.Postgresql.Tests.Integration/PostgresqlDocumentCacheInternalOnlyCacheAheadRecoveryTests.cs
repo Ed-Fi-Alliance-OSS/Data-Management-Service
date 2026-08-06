@@ -291,9 +291,12 @@ public class Given_A_Postgresql_DocumentCacheInternalOnlyCacheAheadRecovery_Comm
                 _dataSourceCache,
                 NullLogger<PostgresqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            DocumentCacheAdministrativePrimitives.ForPostgresql(),
+            DocumentCacheAdministrativePrimitives.ForPostgresql(
+                new PostgresqlDocumentCacheProviderCommandTimeoutClassifier()
+            ),
             observationSink,
             new FixedTimeProvider(ObservedAt),
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
         );
         DocumentCacheAdministrativeDrainer drainer = CreateDrainer(observationSink);
@@ -322,7 +325,8 @@ public class Given_A_Postgresql_DocumentCacheInternalOnlyCacheAheadRecovery_Comm
                 new PostgresqlRelationalWriteExceptionClassifier(),
                 NullLogger<DocumentCacheWriterRetryAdapter>.Instance
             ),
-            NullLogger<PostgresqlDocumentCacheWriter>.Instance
+            NullLogger<PostgresqlDocumentCacheWriter>.Instance,
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier()
         );
 
     private static DocumentCacheBaselineSeeder CreateBaselineSeeder(

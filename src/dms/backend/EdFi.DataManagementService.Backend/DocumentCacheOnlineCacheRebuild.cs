@@ -162,7 +162,7 @@ internal sealed class DocumentCacheOnlineCacheRebuildCommand(
         DocumentCacheAdministrativeProjectedStateEmptinessResult emptiness =
             await DocumentCacheAdministrativeWorkflow
                 .ExecuteInTransactionAsync(
-                    context.MutexLease,
+                    context,
                     IsolationLevel.ReadCommitted,
                     (session, transactionCancellationToken) =>
                         context.Primitives.ReadProjectedStateEmptinessAsync(
@@ -201,7 +201,7 @@ internal sealed class DocumentCacheOnlineCacheRebuildCommand(
         (DocumentCacheAdministrativeCommandResult? Failure, bool Commit) transaction =
             await DocumentCacheAdministrativeWorkflow
                 .ExecuteInTransactionAsync(
-                    context.MutexLease,
+                    context,
                     IsolationLevel.ReadCommitted,
                     async (session, transactionCancellationToken) =>
                     {

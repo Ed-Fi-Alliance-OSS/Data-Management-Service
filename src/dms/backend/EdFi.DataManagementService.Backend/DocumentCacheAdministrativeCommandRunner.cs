@@ -168,6 +168,7 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
         DocumentCacheProjectionTargetRuntimeContext targetContext,
         IDocumentCacheAdministrativeMutexLease mutexLease,
         IDocumentCacheAdministrativePrimitives primitives,
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         IDocumentCacheProjectionObservationSink observationSink,
         TimeProvider timeProvider,
         DateTimeOffset startedAt,
@@ -182,6 +183,9 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
         TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
         MutexLease = mutexLease ?? throw new ArgumentNullException(nameof(mutexLease));
         Primitives = primitives ?? throw new ArgumentNullException(nameof(primitives));
+        ProviderCommandTimeoutClassifier =
+            providerCommandTimeoutClassifier
+            ?? throw new ArgumentNullException(nameof(providerCommandTimeoutClassifier));
         _observationSink = observationSink ?? throw new ArgumentNullException(nameof(observationSink));
         _telemetry = telemetry ?? NoOpDocumentCacheProjectionTelemetry.Instance;
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
@@ -202,6 +206,8 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
     public IDocumentCacheAdministrativeMutexLease MutexLease { get; }
 
     public IDocumentCacheAdministrativePrimitives Primitives { get; }
+
+    public IDocumentCacheProviderCommandTimeoutClassifier ProviderCommandTimeoutClassifier { get; }
 
     public DocumentCacheTargetObservation? LiveTargetObservation { get; private set; }
 
@@ -448,6 +454,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
     IDocumentCacheAdministrativePrimitives primitives,
     IDocumentCacheProjectionObservationSink observationSink,
     TimeProvider timeProvider,
+    IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
     ILogger<DocumentCacheAdministrativeCommandRunner> logger,
     IDocumentCacheProjectionTelemetry? telemetry = null,
     DeadlockRetrySettings? providerConcurrencyRetrySettings = null,
@@ -460,6 +467,9 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
         providerConcurrencyRetrySettings ?? new DeadlockRetrySettings();
     private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
         writeExceptionClassifier ?? new NoOpRelationalWriteExceptionClassifier();
+    private readonly IDocumentCacheProviderCommandTimeoutClassifier _providerCommandTimeoutClassifier =
+        providerCommandTimeoutClassifier
+        ?? throw new ArgumentNullException(nameof(providerCommandTimeoutClassifier));
 
     public async Task<DocumentCacheAdministrativeCommandResult> ExecuteAsync(
         DocumentCacheAdministrativeCommandRunnerRequest request,
@@ -615,6 +625,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     targetContext,
                     mutexLease,
                     primitives,
+                    _providerCommandTimeoutClassifier,
                     observationSink,
                     timeProvider,
                     startedAt,
@@ -687,7 +698,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     return classifiedResult;
                 }
                 catch (Exception exception)
-                    when (DocumentCacheProviderCommandTimeoutClassifier.IsProviderCommandTimeout(exception))
+                    when (_providerCommandTimeoutClassifier.IsProviderCommandTimeout(exception))
                 {
                     logger.LogWarning(
                         exception,
@@ -951,7 +962,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
     {
         DocumentCacheLifecycleReadResult lifecycleReadResult = await DocumentCacheAdministrativeWorkflow
             .ExecuteInTransactionAsync(
-                commandContext.MutexLease,
+                commandContext,
                 System.Data.IsolationLevel.ReadCommitted,
                 (session, transactionCancellationToken) =>
                     primitives.ReadLifecycleAsync(

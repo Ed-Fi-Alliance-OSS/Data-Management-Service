@@ -495,9 +495,12 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
                 _dataSourceCache,
                 NullLogger<PostgresqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            DocumentCacheAdministrativePrimitives.ForPostgresql(),
+            DocumentCacheAdministrativePrimitives.ForPostgresql(
+                new PostgresqlDocumentCacheProviderCommandTimeoutClassifier()
+            ),
             observationStore,
             new FixedTimeProvider(ObservedAt),
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
         );
 
@@ -721,9 +724,12 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
                 _dataSourceCache,
                 NullLogger<PostgresqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            DocumentCacheAdministrativePrimitives.ForPostgresql(),
+            DocumentCacheAdministrativePrimitives.ForPostgresql(
+                new PostgresqlDocumentCacheProviderCommandTimeoutClassifier()
+            ),
             observationSink,
             new FixedTimeProvider(ObservedAt),
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
         );
 
@@ -826,7 +832,8 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
                 new PostgresqlRelationalWriteExceptionClassifier(),
                 NullLogger<DocumentCacheWriterRetryAdapter>.Instance
             ),
-            NullLogger<PostgresqlDocumentCacheWriter>.Instance
+            NullLogger<PostgresqlDocumentCacheWriter>.Instance,
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier()
         );
 
     private static DocumentCacheBaselineSeeder CreateBaselineSeeder(

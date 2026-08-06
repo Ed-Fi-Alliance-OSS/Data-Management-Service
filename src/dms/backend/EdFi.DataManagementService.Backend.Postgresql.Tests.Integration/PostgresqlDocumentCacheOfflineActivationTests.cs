@@ -194,9 +194,12 @@ public class Given_A_Postgresql_DocumentCacheOfflineActivation_Command
                 _dataSourceCache,
                 NullLogger<PostgresqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            DocumentCacheAdministrativePrimitives.ForPostgresql(),
+            DocumentCacheAdministrativePrimitives.ForPostgresql(
+                new PostgresqlDocumentCacheProviderCommandTimeoutClassifier()
+            ),
             observationSink,
             new FixedTimeProvider(ObservedAt),
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
         );
 

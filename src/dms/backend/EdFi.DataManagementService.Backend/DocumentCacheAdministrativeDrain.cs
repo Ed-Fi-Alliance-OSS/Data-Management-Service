@@ -592,7 +592,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
     {
         return await DocumentCacheAdministrativeWorkflow
             .ExecuteInTransactionAsync(
-                context.MutexLease,
+                context,
                 IsolationLevel.ReadCommitted,
                 (session, transactionCancellationToken) =>
                     context.Primitives.ReadProjectedStateEmptinessAsync(

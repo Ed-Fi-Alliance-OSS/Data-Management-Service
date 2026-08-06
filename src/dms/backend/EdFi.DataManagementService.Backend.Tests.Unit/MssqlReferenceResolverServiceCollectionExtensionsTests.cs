@@ -67,6 +67,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IDocumentCacheAdministrativeMutex>();
         var documentCacheAdministrativePrimitives =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheAdministrativePrimitives>();
+        var providerCommandTimeoutClassifier =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheProviderCommandTimeoutClassifier>();
         var documentCacheBaselineSeeder =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheBaselineSeeder>();
         var documentCacheOfflineActivationCommand =
@@ -118,6 +120,9 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         documentCacheAdministrativeMutex.Should().BeOfType<MssqlDocumentCacheAdministrativeMutex>();
         documentCacheAdministrativePrimitives.Should().BeOfType<DocumentCacheAdministrativePrimitives>();
         documentCacheAdministrativePrimitives.ProviderToken.Should().Be(RelationalProviderToken.SqlServer);
+        providerCommandTimeoutClassifier
+            .Should()
+            .BeOfType<MssqlDocumentCacheProviderCommandTimeoutClassifier>();
         documentCacheBaselineSeeder.Should().BeOfType<DocumentCacheBaselineSeeder>();
         documentCacheOfflineActivationCommand.Should().BeOfType<DocumentCacheOfflineActivationCommand>();
         documentCacheOfflineDeactivationCommand.Should().BeOfType<DocumentCacheOfflineDeactivationCommand>();

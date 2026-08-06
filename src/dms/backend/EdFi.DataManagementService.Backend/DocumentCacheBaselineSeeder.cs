@@ -139,7 +139,7 @@ internal sealed class DocumentCacheBaselineSeeder(
         context.EnterPhase(DocumentCacheAdministrativeCommandPhase.CaptureBoundary);
         DocumentCacheAdministrativeBaselineBoundaryResult boundary = await DocumentCacheAdministrativeWorkflow
             .ExecuteInTransactionAsync(
-                context.MutexLease,
+                context,
                 IsolationLevel.ReadCommitted,
                 (session, transactionCancellationToken) =>
                     context.Primitives.CaptureBaselineBoundaryAsync(session, transactionCancellationToken),
@@ -326,7 +326,7 @@ internal sealed class DocumentCacheBaselineSeeder(
         CancellationToken cancellationToken
     ) =>
         DocumentCacheAdministrativeWorkflow.ExecuteInTransactionAsync(
-            context.MutexLease,
+            context,
             IsolationLevel.ReadCommitted,
             (session, transactionCancellationToken) =>
                 context.Primitives.ObserveWorkHighWaterAsync(

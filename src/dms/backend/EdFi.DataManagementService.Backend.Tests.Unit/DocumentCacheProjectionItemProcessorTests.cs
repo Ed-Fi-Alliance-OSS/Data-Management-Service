@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
@@ -526,6 +527,7 @@ public class Given_DocumentCacheProjectionItemProcessor
             targetContext,
             A.Fake<IDocumentCacheAdministrativeMutexLease>(),
             A.Fake<IDocumentCacheAdministrativePrimitives>(),
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             new NoOpObservationSink(),
             new FixedTimeProvider(ObservedAt),
             ObservedAt,

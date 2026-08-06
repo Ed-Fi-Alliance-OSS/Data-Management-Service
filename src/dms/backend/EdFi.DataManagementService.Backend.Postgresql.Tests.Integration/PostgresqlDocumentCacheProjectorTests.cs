@@ -637,7 +637,8 @@ public class Given_A_Postgresql_DocumentCacheProjector
                 new PostgresqlRelationalWriteExceptionClassifier(),
                 NullLogger<DocumentCacheWriterRetryAdapter>.Instance
             ),
-            NullLogger<PostgresqlDocumentCacheWriter>.Instance
+            NullLogger<PostgresqlDocumentCacheWriter>.Instance,
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier()
         );
 
     private async Task<SourceDocument> InsertSourceDocumentAsync(

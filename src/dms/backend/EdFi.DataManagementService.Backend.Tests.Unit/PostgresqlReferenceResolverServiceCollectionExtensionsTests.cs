@@ -71,6 +71,8 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IDocumentCacheAdministrativeMutex>();
         var documentCacheAdministrativePrimitives =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheAdministrativePrimitives>();
+        var providerCommandTimeoutClassifier =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheProviderCommandTimeoutClassifier>();
         var documentCacheBaselineSeeder =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheBaselineSeeder>();
         var documentCacheOfflineActivationCommand =
@@ -122,6 +124,9 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         documentProjectionWorkPager.Should().BeOfType<PostgresqlDocumentProjectionWorkPager>();
         documentCacheAdministrativePrimitives.Should().BeOfType<DocumentCacheAdministrativePrimitives>();
         documentCacheAdministrativePrimitives.ProviderToken.Should().Be(RelationalProviderToken.Postgresql);
+        providerCommandTimeoutClassifier
+            .Should()
+            .BeOfType<PostgresqlDocumentCacheProviderCommandTimeoutClassifier>();
         documentCacheBaselineSeeder.Should().BeOfType<DocumentCacheBaselineSeeder>();
         documentCacheOfflineActivationCommand.Should().BeOfType<DocumentCacheOfflineActivationCommand>();
         documentCacheOfflineDeactivationCommand.Should().BeOfType<DocumentCacheOfflineDeactivationCommand>();

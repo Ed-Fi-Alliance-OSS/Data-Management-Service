@@ -148,7 +148,9 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         await ClearProjectionWorkAsync();
         SourceDocument? insertedAfterBoundary = null;
         var primitives = new BeforeFirstScrubPagePrimitives(
-            DocumentCacheAdministrativePrimitives.ForSqlServer(),
+            DocumentCacheAdministrativePrimitives.ForSqlServer(
+                new MssqlDocumentCacheProviderCommandTimeoutClassifier()
+            ),
             async () =>
             {
                 insertedAfterBoundary = await InsertDocumentAsync(contentVersion: 99);
@@ -220,7 +222,9 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         SourceDocument source = await InsertDocumentAsync(contentVersion: 10);
         await ClearProjectionWorkAsync();
         var primitives = new BeforeNthLifecycleReadPrimitives(
-            DocumentCacheAdministrativePrimitives.ForSqlServer(),
+            DocumentCacheAdministrativePrimitives.ForSqlServer(
+                new MssqlDocumentCacheProviderCommandTimeoutClassifier()
+            ),
             lifecycleReadNumber: 2,
             () => SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: true)
         );
@@ -275,7 +279,9 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         SourceDocument fourth = await InsertDocumentAsync(contentVersion: 40);
         await ClearProjectionWorkAsync();
         var primitives = new BeforeNthLifecycleReadPrimitives(
-            DocumentCacheAdministrativePrimitives.ForSqlServer(),
+            DocumentCacheAdministrativePrimitives.ForSqlServer(
+                new MssqlDocumentCacheProviderCommandTimeoutClassifier()
+            ),
             lifecycleReadNumber: 4,
             () => SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: true)
         );
@@ -383,9 +389,13 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
             new MssqlDocumentCacheAdministrativeMutex(
                 NullLogger<MssqlDocumentCacheAdministrativeMutex>.Instance
             ),
-            primitives ?? DocumentCacheAdministrativePrimitives.ForSqlServer(),
+            primitives
+                ?? DocumentCacheAdministrativePrimitives.ForSqlServer(
+                    new MssqlDocumentCacheProviderCommandTimeoutClassifier()
+                ),
             observationSink,
             new FixedTimeProvider(ObservedAtOffset),
+            new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
         );
 

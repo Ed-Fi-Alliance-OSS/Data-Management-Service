@@ -477,7 +477,7 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 context.EnterPhase(DocumentCacheAdministrativeCommandPhase.ClearCache);
                 await DocumentCacheAdministrativeWorkflow
                     .ExecuteInTransactionAsync(
-                        context.MutexLease,
+                        context,
                         IsolationLevel.ReadCommitted,
                         async (_, transactionCancellationToken) =>
                         {
@@ -541,7 +541,7 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 context.EnterPhase(DocumentCacheAdministrativeCommandPhase.ClearWork);
                 await DocumentCacheAdministrativeWorkflow
                     .ExecuteInTransactionAsync(
-                        context.MutexLease,
+                        context,
                         IsolationLevel.ReadCommitted,
                         (_, transactionCancellationToken) =>
                         {
@@ -1654,7 +1654,7 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 context.EnterPhase(DocumentCacheAdministrativeCommandPhase.ClearCache);
                 await DocumentCacheAdministrativeWorkflow
                     .ExecuteInTransactionAsync(
-                        context.MutexLease,
+                        context,
                         IsolationLevel.ReadCommitted,
                         static (_, _) =>
                             Task.FromResult(
@@ -1743,7 +1743,7 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 context.EnterPhase(DocumentCacheAdministrativeCommandPhase.CaptureBoundary);
                 await DocumentCacheAdministrativeWorkflow
                     .ExecuteInTransactionAsync(
-                        context.MutexLease,
+                        context,
                         IsolationLevel.ReadCommitted,
                         static (_, _) => Task.FromResult(true),
                         commit: true,
@@ -1983,7 +1983,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         IDocumentCacheAdministrativePrimitives? primitives = null,
         ILogger<DocumentCacheAdministrativeCommandRunner>? logger = null,
         DeadlockRetrySettings? providerConcurrencyRetrySettings = null,
-        IRelationalWriteExceptionClassifier? writeExceptionClassifier = null
+        IRelationalWriteExceptionClassifier? writeExceptionClassifier = null,
+        IDocumentCacheProviderCommandTimeoutClassifier? providerCommandTimeoutClassifier = null
     )
     {
         DocumentCacheProjectionObservationStore defaultObservationStore = new(
@@ -1998,12 +1999,20 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             primitives ?? new StubAdministrativePrimitives(mutex.ProviderToken),
             sink,
             new FixedTimeProvider(ObservedAt),
+            providerCommandTimeoutClassifier ?? ProviderCommandTimeoutClassifierFor(mutex.ProviderToken),
             logger ?? NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance,
             telemetry: null,
-            providerConcurrencyRetrySettings,
-            writeExceptionClassifier
+            providerConcurrencyRetrySettings: providerConcurrencyRetrySettings,
+            writeExceptionClassifier: writeExceptionClassifier
         );
     }
+
+    private static IDocumentCacheProviderCommandTimeoutClassifier ProviderCommandTimeoutClassifierFor(
+        RelationalProviderToken providerToken
+    ) =>
+        providerToken == RelationalProviderToken.SqlServer
+            ? new MssqlDocumentCacheProviderCommandTimeoutClassifier()
+            : new PostgresqlDocumentCacheProviderCommandTimeoutClassifier();
 
     private static DeadlockRetrySettings ProviderConcurrencyRetrySettings(int maxRetryAttempts) =>
         new()

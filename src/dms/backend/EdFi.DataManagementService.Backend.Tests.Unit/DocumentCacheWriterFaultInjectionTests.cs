@@ -173,6 +173,7 @@ public class Given_DocumentCacheWriterFaultInjection
         services.TryAddSingleton<IDocumentProjectionWorkPager, StubDocumentProjectionWorkPager>();
         services.TryAddSingleton(FakeItEasy.A.Fake<IDocumentCacheAdministrativeMutex>());
         services.TryAddSingleton(FakeItEasy.A.Fake<IDocumentCacheAdministrativePrimitives>());
+        services.TryAddSingleton(FakeItEasy.A.Fake<IDocumentCacheProviderCommandTimeoutClassifier>());
         services.AddOptions<ResourceLinksOptions>();
 
         return services.BuildServiceProvider(

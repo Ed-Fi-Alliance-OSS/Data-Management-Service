@@ -303,6 +303,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         services.TryAddSingleton<IDocumentProjectionWorkPager, StubDocumentProjectionWorkPager>();
         services.TryAddSingleton(A.Fake<IDocumentCacheAdministrativeMutex>());
         services.TryAddSingleton(A.Fake<IDocumentCacheAdministrativePrimitives>());
+        services.TryAddSingleton(A.Fake<IDocumentCacheProviderCommandTimeoutClassifier>());
         services.AddOptions<ResourceLinksOptions>();
 
         return services.BuildServiceProvider(

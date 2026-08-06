@@ -7,6 +7,8 @@ using System.Data.Common;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Mssql;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.DocumentCache;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -19,6 +21,11 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Category("DocumentCacheAdministrativePrimitives")]
 public class Given_DocumentCacheAdministrativePrimitives
 {
+    private static readonly IDocumentCacheProviderCommandTimeoutClassifier _postgresqlTimeoutClassifier =
+        new PostgresqlDocumentCacheProviderCommandTimeoutClassifier();
+    private static readonly IDocumentCacheProviderCommandTimeoutClassifier _mssqlTimeoutClassifier =
+        new MssqlDocumentCacheProviderCommandTimeoutClassifier();
+
     [Test]
     public void It_renders_provider_equivalent_writer_blocking_document_locks()
     {
@@ -86,6 +93,7 @@ public class Given_DocumentCacheAdministrativePrimitives
             await DocumentCacheAdministrativePrimitivesSupport.ReadLifecycleAsync(
                 session,
                 DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Pgsql),
+                _postgresqlTimeoutClassifier,
                 DocumentCacheAdministrativeStateLockMode.Shared
             );
 
@@ -116,6 +124,7 @@ public class Given_DocumentCacheAdministrativePrimitives
             await DocumentCacheAdministrativePrimitivesSupport.ReadLifecycleAsync(
                 session,
                 DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Pgsql),
+                _postgresqlTimeoutClassifier,
                 DocumentCacheAdministrativeStateLockMode.Shared
             );
 
@@ -135,6 +144,7 @@ public class Given_DocumentCacheAdministrativePrimitives
             DocumentCacheAdministrativePrimitivesSupport.ReadLifecycleAsync(
                 session,
                 DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Pgsql),
+                _postgresqlTimeoutClassifier,
                 DocumentCacheAdministrativeStateLockMode.Shared
             );
 
@@ -152,6 +162,7 @@ public class Given_DocumentCacheAdministrativePrimitives
             await DocumentCacheAdministrativePrimitivesSupport.ReadLifecycleAsync(
                 session,
                 DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Pgsql),
+                _postgresqlTimeoutClassifier,
                 DocumentCacheAdministrativeStateLockMode.Shared
             );
 
@@ -208,6 +219,7 @@ public class Given_DocumentCacheAdministrativePrimitives
             await DocumentCacheAdministrativePrimitivesSupport.TryTransitionLifecycleAsync(
                 session,
                 DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Pgsql),
+                _postgresqlTimeoutClassifier,
                 new DocumentCacheAdministrativeLifecycleTransitionRequest(
                     DocumentCacheLifecycleState.Disabled,
                     expectedCacheAheadRecoveryRequired: false,
@@ -248,6 +260,7 @@ public class Given_DocumentCacheAdministrativePrimitives
             await DocumentCacheAdministrativePrimitivesSupport.TryTransitionLifecycleAsync(
                 session,
                 DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Mssql),
+                _mssqlTimeoutClassifier,
                 new DocumentCacheAdministrativeLifecycleTransitionRequest(
                     DocumentCacheLifecycleState.Disabled,
                     expectedCacheAheadRecoveryRequired: false,
@@ -281,7 +294,8 @@ public class Given_DocumentCacheAdministrativePrimitives
         DocumentCacheProviderPrerequisiteValidationResult result =
             await DocumentCacheAdministrativePrimitivesSupport.ValidateActivationPrerequisitesAsync(
                 session,
-                commands
+                commands,
+                _mssqlTimeoutClassifier
             );
 
         result.IsSatisfied.Should().BeFalse();
@@ -311,7 +325,8 @@ public class Given_DocumentCacheAdministrativePrimitives
         Func<Task> act = () =>
             DocumentCacheAdministrativePrimitivesSupport.ValidateActivationPrerequisitesAsync(
                 session,
-                commands
+                commands,
+                _mssqlTimeoutClassifier
             );
 
         await act.Should().ThrowAsync<SqlException>().Where(exception => exception.Number == -2);
@@ -329,7 +344,8 @@ public class Given_DocumentCacheAdministrativePrimitives
         DocumentCacheProviderPrerequisiteValidationResult result =
             await DocumentCacheAdministrativePrimitivesSupport.ValidateActivationPrerequisitesAsync(
                 session,
-                commands
+                commands,
+                _mssqlTimeoutClassifier
             );
 
         result.IsSatisfied.Should().BeFalse();
@@ -351,7 +367,8 @@ public class Given_DocumentCacheAdministrativePrimitives
         DocumentCacheProviderPrerequisiteValidationResult result =
             await DocumentCacheAdministrativePrimitivesSupport.ValidateActivationPrerequisitesAsync(
                 session,
-                DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Pgsql)
+                DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Pgsql),
+                _postgresqlTimeoutClassifier
             );
 
         result.IsSatisfied.Should().BeTrue();
