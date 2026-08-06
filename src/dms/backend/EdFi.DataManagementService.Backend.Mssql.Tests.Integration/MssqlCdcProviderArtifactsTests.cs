@@ -361,9 +361,7 @@ public class Given_MssqlCdcProviderArtifacts
             .HaveCount(3)
             .And.OnlyContain(observation =>
                 observation.State == CdcProviderArtifactState.Created
-                && observation
-                    .SafeObservedValues["retained_min_lsn"]
-                    .StartsWith("0x", StringComparison.Ordinal)
+                && IsSafeLsnObservation(observation.SafeObservedValues["retained_min_lsn"])
                 && IsSafeLsnObservation(observation.SafeObservedValues["retained_max_lsn"])
                 && observation.SafeObservedValues["retained_lsn_gap_evaluation"]
                     == "not_evaluated_without_committed_offset"
@@ -485,11 +483,9 @@ public class Given_MssqlCdcProviderArtifacts
             .Should()
             .HaveCount(3)
             .And.OnlyContain(artifact =>
-                artifact
-                    .GetProperty("observed_values")
-                    .GetProperty("retained_min_lsn")
-                    .GetString()!
-                    .StartsWith("0x", StringComparison.Ordinal)
+                IsSafeLsnObservation(
+                    artifact.GetProperty("observed_values").GetProperty("retained_min_lsn").GetString() ?? ""
+                )
                 && IsSafeLsnObservation(
                     artifact.GetProperty("observed_values").GetProperty("retained_max_lsn").GetString() ?? ""
                 )
