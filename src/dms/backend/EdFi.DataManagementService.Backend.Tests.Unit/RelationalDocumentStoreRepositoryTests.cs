@@ -5663,6 +5663,50 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_wraps_a_provider_error_raised_by_the_custom_view_page_query()
+    {
+        // Validation and the page query are separate round trips against the same views, so a view that
+        // is dropped, revoked, or broken in between raises only at execution. That failure must keep the
+        // custom-view validation contract instead of escaping as an unhandled provider error.
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var databaseException = new StubDbException("custom view does not exist");
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ]
+        );
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(Task.FromResult(true));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Throws(databaseException);
+
+        var action = () => _sut.QueryDocuments(queryRequest);
+
+        var assertion = await action.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+
+        assertion.Which.InnerException.Should().BeSameAs(databaseException);
+    }
+
+    [Test]
     public async Task It_returns_a_namespace_security_configuration_500_for_query_when_no_usable_root_column()
     {
         var queryRequest = CreateQueryRequest(

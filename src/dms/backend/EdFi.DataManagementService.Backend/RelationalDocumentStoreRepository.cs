@@ -925,9 +925,23 @@ public sealed class RelationalDocumentStoreRepository(
             return parameterBudgetFailure;
         }
 
-        var hydratedPage = await _documentHydrator
-            .HydrateAsync(readPlan, plannedQuery, new HydrationExecutionOptions(), default)
-            .ConfigureAwait(false);
+        HydratedPage hydratedPage;
+
+        try
+        {
+            hydratedPage = await _documentHydrator
+                .HydrateAsync(readPlan, plannedQuery, new HydrationExecutionOptions(), default)
+                .ConfigureAwait(false);
+        }
+        // Trade-off: a provider error raised while executing a custom-view page query is intentionally
+        // relabeled as a custom-view validation failure, even though not every such error originates in
+        // the view. Validation above already proved the views resolve, so the alternative is letting the
+        // DbException escape into the non-ProblemDetails unhandled path and lose the public
+        // urn:ed-fi:api:system contract this failure is documented to carry.
+        catch (DbException ex) when (pageQueryAuthorization?.CustomViewChecks is { Count: > 0 })
+        {
+            throw new CustomViewAuthorizationValidationException(ex);
+        }
 
         return BuildQuerySuccess(queryRequest, resource, readPlan, hydratedPage);
     }

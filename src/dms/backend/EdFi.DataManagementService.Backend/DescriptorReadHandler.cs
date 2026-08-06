@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
@@ -306,6 +307,15 @@ internal sealed class DescriptorReadHandler(
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+        }
+        // Trade-off: a provider error raised while executing a custom-view page query is intentionally
+        // relabeled as a custom-view validation failure, even though not every such error originates in
+        // the view. Validation above already proved the views resolve, so the alternative is letting the
+        // DbException escape into the non-ProblemDetails unhandled path and lose the public
+        // urn:ed-fi:api:system contract this failure is documented to carry.
+        catch (DbException ex) when (authorizationSpec?.CustomViewChecks is { Count: > 0 })
+        {
+            throw new CustomViewAuthorizationValidationException(ex);
         }
         catch (NotSupportedException ex)
         {

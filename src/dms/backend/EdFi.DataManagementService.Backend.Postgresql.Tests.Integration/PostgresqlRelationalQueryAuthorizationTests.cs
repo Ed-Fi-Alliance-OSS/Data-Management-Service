@@ -449,6 +449,22 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    /// <summary>
+    /// Seeds an <c>AuthorizationNamespaceResource</c> row through the production write path with no
+    /// authorization strategies configured, so any stored namespace value can be established without
+    /// first passing namespace authorization.
+    /// </summary>
+    public async Task<UpsertResult> CreateAuthorizationNamespaceAsync(AuthorizationNamespaceSeed seed)
+    {
+        return await UpsertAsync(
+            "authz",
+            RelationshipAuthorizationCrudTestSupport.NamespaceResourceName,
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNamespaceRequestBody(seed),
+            seed.DocumentUuid,
+            $"seed-auth-namespace-{seed.AuthorizationNamespaceId}"
+        );
+    }
+
     public async Task<UpsertResult> CreateAuthorizationStudentAcademicRecordAsync(
         AuthorizationStudentAcademicRecordSeed seed
     )
@@ -1070,6 +1086,36 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    /// <summary>
+    /// Creates (or replaces) the "auth"."{strategyName}" custom authorization view over
+    /// <c>AuthorizationNamespaceResource</c>, authorizing only the rows whose AuthorizationNamespaceId is
+    /// in <paramref name="authorizedIds"/>. That resource also carries a Namespace securable column, so
+    /// one view composes with NamespaceBased on the same page query.
+    /// </summary>
+    public async Task CreateAuthorizationNamespaceCustomAuthViewAsync(
+        string strategyName,
+        IReadOnlyList<int> authorizedIds
+    )
+    {
+        var namespaceResource = new QualifiedResourceName(
+            "Authz",
+            RelationshipAuthorizationCrudTestSupport.NamespaceResourceName
+        );
+        var physicalSchema = MappingSet.ReadPlansByResource[namespaceResource].Model.PhysicalSchema.Value;
+        var rootTable = RelationshipAuthorizationCrudTestSupport.NamespaceResourceName;
+        var idList = string.Join(", ", authorizedIds);
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW "auth"."{strategyName}" AS
+            SELECT "DocumentId"
+            FROM "{physicalSchema}"."{rootTable}"
+            WHERE "AuthorizationNamespaceId" IN ({idList});
+            """
+        );
+    }
+
     public async Task DropCustomAuthViewAsync(string strategyName)
     {
         await Database.ExecuteNonQueryAsync($"""DROP VIEW IF EXISTS "auth"."{strategyName}";""");
@@ -1088,7 +1134,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         int? limit = null,
         int? offset = null,
         bool totalCount = true,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        IReadOnlyList<string>? namespacePrefixes = null
     )
     {
         ResetRecorder();
@@ -1099,7 +1146,10 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
         var request = new RelationalQueryRequest(
             ResourceInfo: resourceHandle.ResourceInfo,
-            AuthorizationContext: new RelationalAuthorizationContext(claimEducationOrganizationIds, []),
+            AuthorizationContext: new RelationalAuthorizationContext(
+                claimEducationOrganizationIds,
+                namespacePrefixes ?? []
+            ),
             MappingSet: MappingSet,
             QueryElements: [],
             AuthorizationStrategyEvaluators:

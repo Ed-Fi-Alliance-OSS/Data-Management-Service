@@ -41,6 +41,12 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Custom_Vie
     private const string TableInsteadOfCustomViewStrategyName =
         "SchoolWithTableInsteadOfCustomViewProviderTest";
     private const string MaterializedCustomViewStrategyName = "SchoolWithMaterializedCustomViewProviderTest";
+    private const string BroadIntersectionCustomViewStrategyName =
+        "SchoolWithBroadIntersectionCustomViewProviderTest";
+    private const string NarrowIntersectionCustomViewStrategyName =
+        "SchoolWithNarrowIntersectionCustomViewProviderTest";
+    private const string NamespaceIntersectionCustomViewStrategyName =
+        "AuthorizationNamespaceResourceWithIntersectionCustomViewProviderTest";
 
     /// <summary>
     /// A strategy (and therefore auth view) name carrying PostgreSQL's default <c>$$</c> dollar-quote
@@ -58,6 +64,39 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Custom_Vie
     [
         new(new DocumentUuid(Guid.Parse("88888888-0000-0000-0000-000000000001")), 100, "P1-Authorized"),
         new(new DocumentUuid(Guid.Parse("88888888-0000-0000-0000-000000000002")), 200, "P2-Filtered"),
+    ];
+
+    /// <summary>
+    /// Rows for the custom-view-plus-NamespaceBased intersection: seed 1 is authorized by both strategies,
+    /// seed 2 only by the namespace prefix, and seed 3 only by the custom view. Each strategy therefore
+    /// authorizes a different superset of the single row both agree on.
+    /// </summary>
+    private static readonly AuthorizationNamespaceSeed[] _namespaceSeeds =
+    [
+        new(
+            new DocumentUuid(Guid.Parse("99999999-0000-0000-0000-000000000001")),
+            1,
+            "namespace-and-custom-view",
+            RelationshipAuthorizationCrudTestSupport.AuthorizedNamespacePrefix + "alpha",
+            100,
+            []
+        ),
+        new(
+            new DocumentUuid(Guid.Parse("99999999-0000-0000-0000-000000000002")),
+            2,
+            "namespace-only",
+            RelationshipAuthorizationCrudTestSupport.AuthorizedNamespacePrefix + "beta",
+            100,
+            []
+        ),
+        new(
+            new DocumentUuid(Guid.Parse("99999999-0000-0000-0000-000000000003")),
+            3,
+            "custom-view-only",
+            RelationshipAuthorizationCrudTestSupport.UnauthorizedNamespacePrefix + "gamma",
+            100,
+            []
+        ),
     ];
 
     private PostgresqlRelationalQueryAuthorizationTestContext _context = null!;
@@ -83,10 +122,23 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Custom_Vie
             );
         }
 
+        foreach (var namespaceSeed in _namespaceSeeds)
+        {
+            RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+                await _context.CreateAuthorizationNamespaceAsync(namespaceSeed)
+            );
+        }
+
         // Only School 100 is authorized by the custom view. The claim's edorg relationship edges cover
         // both School 100 and 200, so the composition test below can prove the custom view is an AND
         // filter rather than an alternative (OR) path into the same schools.
         await _context.CreateSchoolCustomAuthViewAsync(CustomViewStrategyName, [100]);
+        await _context.CreateSchoolCustomAuthViewAsync(BroadIntersectionCustomViewStrategyName, [100, 200]);
+        await _context.CreateSchoolCustomAuthViewAsync(NarrowIntersectionCustomViewStrategyName, [200]);
+        await _context.CreateAuthorizationNamespaceCustomAuthViewAsync(
+            NamespaceIntersectionCustomViewStrategyName,
+            [1, 3]
+        );
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 100);
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 200);
     }
@@ -101,6 +153,9 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Custom_Vie
             await _context.DropCustomAuthViewAsync(InvalidCustomViewStrategyName);
             await _context.DropCustomAuthViewAsync(IncompatibleDocumentIdCustomViewStrategyName);
             await _context.DropCustomAuthViewAsync(EmptyIncompatibleDocumentIdCustomViewStrategyName);
+            await _context.DropCustomAuthViewAsync(BroadIntersectionCustomViewStrategyName);
+            await _context.DropCustomAuthViewAsync(NarrowIntersectionCustomViewStrategyName);
+            await _context.DropCustomAuthViewAsync(NamespaceIntersectionCustomViewStrategyName);
             await _context.DropCustomAuthMaterializedViewAsync(MaterializedCustomViewStrategyName);
             await _context.DisposeAsync();
         }
@@ -165,6 +220,51 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Custom_Vie
             .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
             .Should()
             .Equal(_schoolSeeds[0].DocumentUuid.Value.ToString());
+    }
+
+    [Test]
+    public async Task It_intersects_two_custom_views_on_get_many()
+    {
+        // Two custom views compose as AND, not OR: the broad view authorizes schools 100 and 200 while the
+        // narrow one authorizes only 200, so only the intersection survives. An OR composition would
+        // return both schools — the broad view alone already covers the whole seeded set.
+        var result = await _context.QueryAsync(
+            "ed-fi",
+            "School",
+            [],
+            [BroadIntersectionCustomViewStrategyName, NarrowIntersectionCustomViewStrategyName]
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(1);
+        success
+            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(_schoolSeeds[1].DocumentUuid.Value.ToString());
+    }
+
+    [Test]
+    public async Task It_intersects_a_custom_view_with_namespace_based_filtering()
+    {
+        // NamespaceBased authorizes the two rows carrying the configured prefix (seeds 1 and 2); the custom
+        // view authorizes a different superset (seeds 1 and 3). Only seed 1 satisfies both, so an OR
+        // composition would return all three seeded rows.
+        var result = await _context.QueryAsync(
+            RelationshipAuthorizationCrudTestSupport.ProjectEndpointName,
+            RelationshipAuthorizationCrudTestSupport.NamespaceResourceName,
+            [],
+            [NamespaceIntersectionCustomViewStrategyName, AuthorizationStrategyNameConstants.NamespaceBased],
+            namespacePrefixes: [RelationshipAuthorizationCrudTestSupport.AuthorizedNamespacePrefix]
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(1);
+        success
+            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(_namespaceSeeds[0].DocumentUuid.Value.ToString());
     }
 
     [Test]

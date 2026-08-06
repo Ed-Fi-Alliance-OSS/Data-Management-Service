@@ -464,6 +464,46 @@ public class Given_DescriptorReadHandler
     }
 
     [Test]
+    public async Task It_wraps_a_provider_error_raised_by_the_descriptor_custom_view_page_query()
+    {
+        // Validation and the page query are separate round trips against the same views, so a view that
+        // is dropped, revoked, or broken in between raises only at execution. That failure must keep the
+        // custom-view validation contract instead of escaping as an unhandled provider error.
+        var commandExecutor = A.Fake<IRelationalCommandExecutor>();
+        var databaseException = new StubDbException("custom view does not exist");
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(Task.FromResult(true));
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<DescriptorQueryRowsPage>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Throws(databaseException);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolTypeDescriptorWithCustomViewProviderTest"),
+            ]
+        );
+
+        var action = () => sut.HandleQueryAsync(request);
+
+        var assertion = await action.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+
+        assertion.Which.InnerException.Should().BeSameAs(databaseException);
+    }
+
+    [Test]
     public async Task It_preserves_namespace_and_custom_view_order_for_descriptor_get_many_queries()
     {
         var commandExecutor = new InMemoryRelationalCommandExecutor([

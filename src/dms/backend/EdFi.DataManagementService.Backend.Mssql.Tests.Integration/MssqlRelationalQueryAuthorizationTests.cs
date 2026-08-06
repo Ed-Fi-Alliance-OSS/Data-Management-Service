@@ -1477,6 +1477,41 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
+    /// <summary>
+    /// Creates (or replaces) the [auth].[{strategyName}] custom authorization view over
+    /// <c>AuthorizationNamespaceResource</c>, authorizing only the rows whose AuthorizationNamespaceId is
+    /// in <paramref name="authorizedIds"/>. That resource also carries a Namespace securable column, so
+    /// one view composes with NamespaceBased on the same page query.
+    /// </summary>
+    public async Task CreateAuthorizationNamespaceCustomAuthViewAsync(
+        string strategyName,
+        IReadOnlyList<int> authorizedIds
+    )
+    {
+        var namespaceResource = new QualifiedResourceName(
+            "Authz",
+            RelationshipAuthorizationCrudTestSupport.NamespaceResourceName
+        );
+        var physicalSchema = EscapeIdentifierPart(
+            MappingSet.ReadPlansByResource[namespaceResource].Model.PhysicalSchema.Value
+        );
+        var rootTable = RelationshipAuthorizationCrudTestSupport.NamespaceResourceName;
+        var idPredicate =
+            authorizedIds.Count == 0
+                ? "1 = 0"
+                : $"[AuthorizationNamespaceId] IN ({string.Join(", ", authorizedIds)})";
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW [auth].[{EscapeIdentifierPart(strategyName)}] AS
+            SELECT [DocumentId]
+            FROM [{physicalSchema}].[{rootTable}]
+            WHERE {idPredicate};
+            """
+        );
+    }
+
     public async Task DropCustomAuthViewAsync(string strategyName)
     {
         var escapedStrategyName = EscapeIdentifierPart(strategyName);
