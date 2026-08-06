@@ -156,7 +156,9 @@ internal sealed class DocumentCacheGuardedNewEmptyActivationCommand(
             );
         }
 
-        context.SetLiveTargetObservation(CreateTargetObservation(context, lifecycleReadResult.Lifecycle!));
+        context.SetLiveTargetObservation(
+            DocumentCacheAdministrativeLiveTargetObservation.Create(context, lifecycleReadResult.Lifecycle!)
+        );
 
         DocumentCacheGuardedNewEmptyActivationState guardedState = await context
             .Primitives.ReadGuardedNewEmptyActivationStateAsync(session, cancellationToken)
@@ -189,7 +191,10 @@ internal sealed class DocumentCacheGuardedNewEmptyActivationCommand(
         if (transition.LifecycleReadResult.Succeeded)
         {
             context.SetLiveTargetObservation(
-                CreateTargetObservation(context, transition.LifecycleReadResult.Lifecycle!)
+                DocumentCacheAdministrativeLiveTargetObservation.Create(
+                    context,
+                    transition.LifecycleReadResult.Lifecycle!
+                )
             );
         }
 
@@ -199,26 +204,6 @@ internal sealed class DocumentCacheGuardedNewEmptyActivationCommand(
             DocumentCacheAdministrativeDiagnosticCategory.LifecycleMismatch,
             transition.Message,
             retryable: false
-        );
-    }
-
-    private static DocumentCacheTargetObservation CreateTargetObservation(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        DocumentCacheLifecycleObservation lifecycle
-    )
-    {
-        DocumentCacheTargetExecutionContext executionContext = context.TargetContext.TargetExecutionContext;
-
-        return DocumentCacheTargetObservation.ResolvedEligible(
-            executionContext.TargetKey,
-            executionContext.EffectiveSettings,
-            executionContext.Generation,
-            executionContext.ProviderToken,
-            executionContext.PhysicalSourceFingerprint,
-            lifecycle,
-            executionContext.Inventory,
-            executionContext.EnqueueTrigger,
-            executionContext.SqlServerPrerequisites
         );
     }
 

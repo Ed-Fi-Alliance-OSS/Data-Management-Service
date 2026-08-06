@@ -972,22 +972,12 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             );
         }
 
-        DocumentCacheTargetExecutionContext executionContext = commandContext
-            .TargetContext
-            .TargetExecutionContext;
-        DocumentCacheTargetObservation liveTargetObservation =
-            DocumentCacheTargetObservation.ResolvedEligible(
-                executionContext.TargetKey,
-                executionContext.EffectiveSettings,
-                executionContext.Generation,
-                executionContext.ProviderToken,
-                executionContext.PhysicalSourceFingerprint,
-                lifecycleReadResult.Lifecycle!,
-                executionContext.Inventory,
-                executionContext.EnqueueTrigger,
-                executionContext.SqlServerPrerequisites
-            );
-        commandContext.SetLiveTargetObservation(liveTargetObservation);
+        commandContext.SetLiveTargetObservation(
+            DocumentCacheAdministrativeLiveTargetObservation.Create(
+                commandContext,
+                lifecycleReadResult.Lifecycle!
+            )
+        );
 
         return null;
     }

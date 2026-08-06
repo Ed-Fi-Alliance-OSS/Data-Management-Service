@@ -248,7 +248,9 @@ internal sealed class DocumentCacheOnlineCacheRebuildCommand(
         if (transition.LifecycleReadResult.Succeeded)
         {
             DocumentCacheLifecycleObservation lifecycle = transition.LifecycleReadResult.Lifecycle!;
-            context.SetLiveTargetObservation(CreateTargetObservation(context, lifecycle));
+            context.SetLiveTargetObservation(
+                DocumentCacheAdministrativeLiveTargetObservation.Create(context, lifecycle)
+            );
 
             if (lifecycle.CacheAheadRecoveryRequired)
             {
@@ -295,26 +297,6 @@ internal sealed class DocumentCacheOnlineCacheRebuildCommand(
                 "Online cache rebuild requires a live lifecycle observation."
             )
         ).State;
-
-    private static DocumentCacheTargetObservation CreateTargetObservation(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        DocumentCacheLifecycleObservation lifecycle
-    )
-    {
-        DocumentCacheTargetExecutionContext executionContext = context.TargetContext.TargetExecutionContext;
-
-        return DocumentCacheTargetObservation.ResolvedEligible(
-            executionContext.TargetKey,
-            executionContext.EffectiveSettings,
-            executionContext.Generation,
-            executionContext.ProviderToken,
-            executionContext.PhysicalSourceFingerprint,
-            lifecycle,
-            executionContext.Inventory,
-            executionContext.EnqueueTrigger,
-            executionContext.SqlServerPrerequisites
-        );
-    }
 
     private static DocumentCacheOnlineCacheRebuildRequest Request(
         DocumentCacheAdministrativeCommandExecutionContext context

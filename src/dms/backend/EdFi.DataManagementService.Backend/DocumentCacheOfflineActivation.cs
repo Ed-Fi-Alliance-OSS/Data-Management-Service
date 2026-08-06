@@ -312,7 +312,9 @@ internal sealed class DocumentCacheOfflineActivationCommand(
         if (transition.LifecycleReadResult.Succeeded)
         {
             DocumentCacheLifecycleObservation lifecycle = transition.LifecycleReadResult.Lifecycle!;
-            context.SetLiveTargetObservation(CreateTargetObservation(context, lifecycle));
+            context.SetLiveTargetObservation(
+                DocumentCacheAdministrativeLiveTargetObservation.Create(context, lifecycle)
+            );
 
             if (lifecycle.CacheAheadRecoveryRequired)
             {
@@ -359,26 +361,6 @@ internal sealed class DocumentCacheOfflineActivationCommand(
                 "Offline activation requires a live lifecycle observation."
             )
         ).State;
-
-    private static DocumentCacheTargetObservation CreateTargetObservation(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        DocumentCacheLifecycleObservation lifecycle
-    )
-    {
-        DocumentCacheTargetExecutionContext executionContext = context.TargetContext.TargetExecutionContext;
-
-        return DocumentCacheTargetObservation.ResolvedEligible(
-            executionContext.TargetKey,
-            executionContext.EffectiveSettings,
-            executionContext.Generation,
-            executionContext.ProviderToken,
-            executionContext.PhysicalSourceFingerprint,
-            lifecycle,
-            executionContext.Inventory,
-            executionContext.EnqueueTrigger,
-            executionContext.SqlServerPrerequisites
-        );
-    }
 
     private static DocumentCacheOfflineActivationRequest Request(
         DocumentCacheAdministrativeCommandExecutionContext context

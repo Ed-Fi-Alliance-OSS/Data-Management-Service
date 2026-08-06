@@ -112,7 +112,9 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
                 }
 
                 DocumentCacheLifecycleObservation lifecycle = lifecycleReadResult.Lifecycle!;
-                context.SetLiveTargetObservation(CreateTargetObservation(context, lifecycle));
+                context.SetLiveTargetObservation(
+                    DocumentCacheAdministrativeLiveTargetObservation.Create(context, lifecycle)
+                );
                 return CreateLifecycleFailure(context, lifecycle);
             }
 
@@ -284,7 +286,9 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
         }
 
         DocumentCacheLifecycleObservation lifecycle = lifecycleReadResult.Lifecycle!;
-        context.SetLiveTargetObservation(CreateTargetObservation(context, lifecycle));
+        context.SetLiveTargetObservation(
+            DocumentCacheAdministrativeLiveTargetObservation.Create(context, lifecycle)
+        );
 
         return lifecycle is { State: DocumentCacheLifecycleState.Tracking, CacheAheadRecoveryRequired: false }
             ? null
@@ -336,26 +340,6 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
                 ? "DocumentCache explicit integrity scrub encountered a set cache-ahead recovery latch."
                 : "DocumentCache explicit integrity scrub requires Tracking with a clear cache-ahead latch.",
             retryable: context.Mutated
-        );
-    }
-
-    private static DocumentCacheTargetObservation CreateTargetObservation(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        DocumentCacheLifecycleObservation lifecycle
-    )
-    {
-        DocumentCacheTargetExecutionContext executionContext = context.TargetContext.TargetExecutionContext;
-
-        return DocumentCacheTargetObservation.ResolvedEligible(
-            executionContext.TargetKey,
-            executionContext.EffectiveSettings,
-            executionContext.Generation,
-            executionContext.ProviderToken,
-            executionContext.PhysicalSourceFingerprint,
-            lifecycle,
-            executionContext.Inventory,
-            executionContext.EnqueueTrigger,
-            executionContext.SqlServerPrerequisites
         );
     }
 
