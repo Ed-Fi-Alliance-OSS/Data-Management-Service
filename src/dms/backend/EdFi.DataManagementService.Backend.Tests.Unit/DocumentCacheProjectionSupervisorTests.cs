@@ -295,6 +295,82 @@ public class Given_DocumentCacheProjectionSupervisor
     }
 
     [Test]
+    public async Task It_preserves_an_administratively_retained_generation_when_execution_metadata_changes()
+    {
+        DocumentCacheTargetKey targetKey = DocumentCacheTargetKey.Create("TenantA", 7);
+        DocumentCacheTargetExecutionContext firstGeneration = ExecutionContext(targetKey, generation: 1);
+        DocumentCacheTargetExecutionContext replacementGeneration = ExecutionContext(
+            targetKey,
+            generation: 2,
+            connectionInput: "connection-b"
+        );
+        DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+        RecordingTargetContextFactory targetContextFactory = new(observationStore);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(firstGeneration)]),
+            RuntimeSnapshot([firstGeneration])
+        );
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(replacementGeneration)]),
+            RuntimeSnapshot([replacementGeneration])
+        );
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationStore,
+            OptionsFor([targetKey])
+        );
+
+        await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+        DocumentCacheProjectionTargetRuntimeContext oldContext =
+            targetContextFactory.CreatedContexts.Single();
+        DocumentCacheProjectionAdministrativeTargetRetainResult retainResult = await (
+            (IDocumentCacheProjectionAdministrativeTargetRetainer)supervisor
+        ).TryRetainCurrentTargetForAdministrativeCommandAsync(targetKey);
+
+        retainResult.TargetContext.Should().BeSameAs(oldContext);
+        retainResult.Retention.Should().NotBeNull();
+
+        await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.SupervisorTriggered);
+
+        oldContext.CancellationRequested.Should().BeFalse();
+        supervisor.CurrentTargetContexts.Should().ContainSingle().Which.Generation.Value.Should().Be(2);
+        observationStore.CurrentSnapshot.LastEndedTargetDiagnostics.Should().BeEmpty();
+
+        retainResult.Retention!.Dispose();
+        await (
+            (IDocumentCacheProjectionRetainedTargetContextReleaser)supervisor
+        ).ReleaseRetainedCommandOwnedTargetContextAsync(oldContext);
+
+        oldContext.CancellationRequested.Should().BeTrue();
+        observationStore
+            .CurrentSnapshot.LastEndedTargetDiagnostics.Values.Should()
+            .ContainSingle()
+            .Which.EndReason.Should()
+            .Be(DocumentCacheProjectionTargetEndReason.Replaced);
+        observationStore.CurrentSnapshot.GetCurrentTarget(targetKey)!.Generation.Value.Should().Be(2);
+    }
+
+    [Test]
+    public async Task It_rejects_administrative_retention_after_target_context_cancellation_starts()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            DocumentCacheTargetKey.Create("TenantA", 7),
+            generation: 1
+        );
+        RecordingObservationSink observationSink = new();
+        RecordingTargetContextFactory targetContextFactory = new(observationSink);
+        DocumentCacheProjectionTargetRuntimeContext targetContext = await targetContextFactory.CreateAsync(
+            executionContext
+        );
+
+        targetContext.Cancel();
+
+        targetContext.TryRetainForAdministrativeCommand().Should().BeNull();
+    }
+
+    [Test]
     public async Task It_populates_target_health_success_and_active_command_fields_from_runtime_context()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(

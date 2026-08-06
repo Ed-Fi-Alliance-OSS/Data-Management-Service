@@ -33,6 +33,20 @@ internal interface IDocumentCacheProjectionRetainedTargetContextReleaser
     );
 }
 
+internal interface IDocumentCacheProjectionAdministrativeTargetRetainer
+{
+    Task<DocumentCacheProjectionAdministrativeTargetRetainResult> TryRetainCurrentTargetForAdministrativeCommandAsync(
+        DocumentCacheTargetKey targetKey,
+        CancellationToken cancellationToken = default
+    );
+}
+
+internal sealed record DocumentCacheProjectionAdministrativeTargetRetainResult(
+    DocumentCacheTargetObservation? TargetObservation,
+    DocumentCacheProjectionTargetRuntimeContext? TargetContext,
+    IDisposable? Retention
+);
+
 public interface IDocumentCacheProjectionTargetRuntimeContextFactory
 {
     Task<DocumentCacheProjectionTargetRuntimeContext> CreateAsync(
@@ -576,10 +590,15 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
         }
     }
 
-    internal IDisposable RetainForAdministrativeCommand()
+    internal IDisposable? TryRetainForAdministrativeCommand()
     {
         lock (_lifetimeSync)
         {
+            if (_disposeStarted || _disposed || _cancellationTokenSource.IsCancellationRequested)
+            {
+                return null;
+            }
+
             if (_administrativeCommandRetentions == 0 && _activeAdministrativeCommandContext is null)
             {
                 _administrativeCommandReleased = null;
@@ -590,6 +609,13 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
 
         return new AdministrativeCommandRetention(this);
     }
+
+    internal IDisposable RetainForAdministrativeCommand() =>
+        TryRetainForAdministrativeCommand()
+        ?? throw new ObjectDisposedException(
+            nameof(DocumentCacheProjectionTargetRuntimeContext),
+            "DocumentCache target context cannot be retained after disposal or cancellation has started."
+        );
 
     internal IDisposable TrackActiveAdministrativeCommand(
         DocumentCacheAdministrativeCommandExecutionContext commandContext
@@ -1009,7 +1035,8 @@ public sealed class DocumentCacheProjectionSupervisor(
 )
     : BackgroundService,
         IDocumentCacheProjectionSupervisor,
-        IDocumentCacheProjectionRetainedTargetContextReleaser
+        IDocumentCacheProjectionRetainedTargetContextReleaser,
+        IDocumentCacheProjectionAdministrativeTargetRetainer
 {
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private ImmutableDictionary<
@@ -1037,6 +1064,60 @@ public sealed class DocumentCacheProjectionSupervisor(
 
     public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts =>
         _targetContexts.Values.ToImmutableArray();
+
+    async Task<DocumentCacheProjectionAdministrativeTargetRetainResult> IDocumentCacheProjectionAdministrativeTargetRetainer.TryRetainCurrentTargetForAdministrativeCommandAsync(
+        DocumentCacheTargetKey targetKey,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(targetKey);
+
+        await _refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            DocumentCacheTargetObservation? targetObservation = targetRegistry.CurrentSnapshot.GetTarget(
+                targetKey
+            );
+            _targetContexts.TryGetValue(
+                targetKey,
+                out DocumentCacheProjectionTargetRuntimeContext? targetContext
+            );
+
+            if (targetObservation is null && targetContext is null)
+            {
+                return new(targetObservation, targetContext, Retention: null);
+            }
+
+            if (
+                targetObservation is not null
+                && targetObservation.EligibilityState != DocumentCacheTargetEligibilityState.Eligible
+            )
+            {
+                return new(targetObservation, targetContext, Retention: null);
+            }
+
+            if (targetContext is null)
+            {
+                return new(targetObservation, targetContext, Retention: null);
+            }
+
+            DocumentCacheTargetExecutionContext? currentExecutionContext =
+                targetRegistry.CurrentRuntimeSnapshot.GetExecutionContext(targetKey);
+            if (
+                currentExecutionContext is null
+                || currentExecutionContext.Generation != targetContext.Generation
+            )
+            {
+                return new(targetObservation, targetContext, Retention: null);
+            }
+
+            return new(targetObservation, targetContext, targetContext.TryRetainForAdministrativeCommand());
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
+    }
 
     public async Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
         DocumentCacheTargetRefreshReason reason,

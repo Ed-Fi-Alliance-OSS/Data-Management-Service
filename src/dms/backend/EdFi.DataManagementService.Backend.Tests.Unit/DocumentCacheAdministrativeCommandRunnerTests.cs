@@ -87,6 +87,35 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     }
 
     [Test]
+    public async Task It_rejects_when_administrative_target_retention_fails_before_acquiring_the_mutex()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        DocumentCacheProjectionTargetRuntimeContext runtimeContext = RuntimeContext(executionContext);
+        var mutex = new RecordingAdministrativeMutex();
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new RejectingAdministrativeTargetRetainerProjectionSupervisor(
+                EligibleObservation(executionContext),
+                runtimeContext
+            ),
+            mutex
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            Request(),
+            SucceedingWorkflow.Instance
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.TargetReplacedBeforeExecution);
+        result.Mutated.Should().BeFalse();
+        result.ElapsedCommandTime.Should().BeNull();
+        mutex.AcquireCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_rejects_expected_source_mismatch_before_acquiring_the_mutex()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
@@ -2698,6 +2727,37 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             }
 
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RejectingAdministrativeTargetRetainerProjectionSupervisor(
+        DocumentCacheTargetObservation targetObservation,
+        DocumentCacheProjectionTargetRuntimeContext targetContext
+    ) : IDocumentCacheProjectionSupervisor, IDocumentCacheProjectionAdministrativeTargetRetainer
+    {
+        public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts { get; } =
+            ImmutableArray.Create(targetContext);
+
+        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
+            DocumentCacheTargetRefreshReason reason,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheProjectionAdministrativeTargetRetainResult> TryRetainCurrentTargetForAdministrativeCommandAsync(
+            DocumentCacheTargetKey targetKey,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            targetKey.Should().Be(targetContext.TargetKey);
+
+            return Task.FromResult(
+                new DocumentCacheProjectionAdministrativeTargetRetainResult(
+                    targetObservation,
+                    targetContext,
+                    Retention: null
+                )
+            );
         }
     }
 

@@ -481,36 +481,39 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             return RecordAdministrativeCommandResult(offlineWriterAdmissionRejection);
         }
 
-        PinnedTargetResolution pinnedTargetResolution = TryResolvePinnedTarget(request);
+        PinnedTargetResolution pinnedTargetResolution = await TryResolveAndRetainPinnedTargetAsync(request)
+            .ConfigureAwait(false);
         if (pinnedTargetResolution.Rejection is not null)
         {
             return RecordAdministrativeCommandResult(pinnedTargetResolution.Rejection);
         }
 
         DocumentCacheProjectionTargetRuntimeContext targetContext = pinnedTargetResolution.TargetContext!;
-        if (administrativeMutex.ProviderToken != targetContext.TargetExecutionContext.ProviderToken)
-        {
-            return RecordAdministrativeCommandResult(
-                CreateProviderMismatchResult(request, targetContext),
-                targetContext
-            );
-        }
-
-        if (primitives.ProviderToken != targetContext.TargetExecutionContext.ProviderToken)
-        {
-            return RecordAdministrativeCommandResult(
-                CreateProviderMismatchResult(request, targetContext),
-                targetContext
-            );
-        }
-
-        DocumentCacheAdministrativeCommandExecutionId executionId =
-            DocumentCacheAdministrativeCommandExecutionId.New();
+        IDisposable pinnedTargetRetention = pinnedTargetResolution.TargetRetention!;
         DocumentCacheAdministrativeCommandResult? classifiedResult = null;
-
-        IDisposable pinnedTargetRetention = targetContext.RetainForAdministrativeCommand();
         try
         {
+            if (administrativeMutex.ProviderToken != targetContext.TargetExecutionContext.ProviderToken)
+            {
+                classifiedResult = RecordAdministrativeCommandResult(
+                    CreateProviderMismatchResult(request, targetContext),
+                    targetContext
+                );
+                return classifiedResult;
+            }
+
+            if (primitives.ProviderToken != targetContext.TargetExecutionContext.ProviderToken)
+            {
+                classifiedResult = RecordAdministrativeCommandResult(
+                    CreateProviderMismatchResult(request, targetContext),
+                    targetContext
+                );
+                return classifiedResult;
+            }
+
+            DocumentCacheAdministrativeCommandExecutionId executionId =
+                DocumentCacheAdministrativeCommandExecutionId.New();
+
             IDocumentCacheAdministrativeMutexLease mutexLease;
             long mutexStartedAt = Stopwatch.GetTimestamp();
             try
@@ -982,6 +985,114 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
         return null;
     }
 
+    private async Task<PinnedTargetResolution> TryResolveAndRetainPinnedTargetAsync(
+        DocumentCacheAdministrativeCommandRunnerRequest request
+    )
+    {
+        if (projectionSupervisor is IDocumentCacheProjectionAdministrativeTargetRetainer targetRetainer)
+        {
+            DocumentCacheProjectionAdministrativeTargetRetainResult retainResult = await targetRetainer
+                .TryRetainCurrentTargetForAdministrativeCommandAsync(
+                    request.TargetKey.TargetKey,
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
+
+            return ClassifyRetainedPinnedTarget(request, retainResult);
+        }
+
+        PinnedTargetResolution resolution = TryResolvePinnedTarget(request);
+        if (resolution.Rejection is not null)
+        {
+            return resolution;
+        }
+
+        DocumentCacheProjectionTargetRuntimeContext targetContext = resolution.TargetContext!;
+        IDisposable? targetRetention = targetContext.TryRetainForAdministrativeCommand();
+        if (targetRetention is null)
+        {
+            DocumentCacheTargetObservation? targetObservation = targetRegistry.CurrentSnapshot.GetTarget(
+                request.TargetKey.TargetKey
+            );
+
+            return PinnedTargetResolution.Rejected(
+                CreateTargetReplacedResult(request, targetObservation, targetContext)
+            );
+        }
+
+        return PinnedTargetResolution.Pinned(targetContext, targetRetention);
+    }
+
+    private static PinnedTargetResolution ClassifyRetainedPinnedTarget(
+        DocumentCacheAdministrativeCommandRunnerRequest request,
+        DocumentCacheProjectionAdministrativeTargetRetainResult retainResult
+    )
+    {
+        IDisposable? targetRetention = retainResult.Retention;
+
+        PinnedTargetResolution resolution = ClassifyPinnedTarget(
+            request,
+            retainResult.TargetObservation,
+            retainResult.TargetContext,
+            targetRetention
+        );
+
+        if (resolution.Rejection is not null)
+        {
+            targetRetention?.Dispose();
+        }
+
+        return resolution;
+    }
+
+    private static PinnedTargetResolution ClassifyPinnedTarget(
+        DocumentCacheAdministrativeCommandRunnerRequest request,
+        DocumentCacheTargetObservation? targetObservation,
+        DocumentCacheProjectionTargetRuntimeContext? targetContext,
+        IDisposable? targetRetention
+    )
+    {
+        if (targetObservation is null && targetContext is null)
+        {
+            return PinnedTargetResolution.Rejected(CreateTargetNotConfiguredResult(request));
+        }
+
+        if (
+            targetObservation is not null
+            && targetObservation.EligibilityState != DocumentCacheTargetEligibilityState.Eligible
+        )
+        {
+            return PinnedTargetResolution.Rejected(
+                CreateTargetObservationRejection(request, targetObservation)
+            );
+        }
+
+        if (targetContext is null)
+        {
+            return PinnedTargetResolution.Rejected(CreateTargetNotCurrentResult(request, targetObservation));
+        }
+
+        if (targetRetention is null)
+        {
+            return PinnedTargetResolution.Rejected(
+                CreateTargetReplacedResult(request, targetObservation, targetContext)
+            );
+        }
+
+        if (
+            request.ExpectedPhysicalSourceFingerprint is not null
+            && targetContext.TargetExecutionContext.PhysicalSourceFingerprint
+                != request.ExpectedPhysicalSourceFingerprint
+        )
+        {
+            return PinnedTargetResolution.Rejected(
+                CreateExpectedSourceMismatchResult(request, targetObservation, targetContext)
+            );
+        }
+
+        return PinnedTargetResolution.Pinned(targetContext, targetRetention);
+    }
+
     private PinnedTargetResolution TryResolvePinnedTarget(
         DocumentCacheAdministrativeCommandRunnerRequest request
     )
@@ -1042,7 +1153,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             );
         }
 
-        return PinnedTargetResolution.Pinned(targetContext);
+        return new PinnedTargetResolution(targetContext, TargetRetention: null, Rejection: null);
     }
 
     private DocumentCacheAdministrativeCommandResult AddRuntimeResultFields(
@@ -1403,14 +1514,16 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
 
     private sealed record PinnedTargetResolution(
         DocumentCacheProjectionTargetRuntimeContext? TargetContext,
+        IDisposable? TargetRetention,
         DocumentCacheAdministrativeCommandResult? Rejection
     )
     {
         public static PinnedTargetResolution Pinned(
-            DocumentCacheProjectionTargetRuntimeContext targetContext
-        ) => new(targetContext, Rejection: null);
+            DocumentCacheProjectionTargetRuntimeContext targetContext,
+            IDisposable targetRetention
+        ) => new(targetContext, targetRetention, Rejection: null);
 
         public static PinnedTargetResolution Rejected(DocumentCacheAdministrativeCommandResult result) =>
-            new(TargetContext: null, result);
+            new(TargetContext: null, TargetRetention: null, result);
     }
 }
