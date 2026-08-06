@@ -77,3 +77,8 @@ Task completed: Public contract compile test (reference/design/backend-redesign/
 Key decisions: kept tautological runtime assertion; added comment that separate production compile-check assembly compilation is the protected assertion.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcProviderSetupPublicContractCompileCheckTests.cs; tasks.json; progress.txt
 Blockers/notes: none. Verification: focused compile-contract test passed; csharpier passed.
+
+Task completed: Test comments (reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md)
+Key decisions: removed story/Jira identifiers from temporary artifact-name adapter comment while preserving rationale; no test behavior changed.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcProviderSetupContractTests.cs; tasks.json; progress.txt
+Blockers/notes: none. Verification: adapter-comment rg clean; CdcProviderSetupContract filter passed 16 tests; csharpier passed.

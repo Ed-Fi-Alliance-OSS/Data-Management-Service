@@ -291,7 +291,7 @@ internal static class CdcProviderSetupContractTestData
 
 internal static class CdcDms1320ArtifactNameTestAdapter
 {
-    // Temporary DMS-1320 test adapter until the DMS-1319/19-00 shared deterministic helper lands.
+    // Temporary test adapter until the shared deterministic artifact-name helper lands.
     internal static CdcProviderArtifactNames ForPostgresql(string generation = "binding") =>
         CdcProviderArtifactNames.ForPostgresql(
             new CdcSafeName($"dms_{generation}_publication"),
