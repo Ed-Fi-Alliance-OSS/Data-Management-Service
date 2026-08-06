@@ -930,32 +930,13 @@ internal sealed class DescriptorReadHandler(
         };
         var diagnostics = RelationalReadGuardrails.BuildNoUsableRootColumnDiagnostics(noUsableRoot.Resource);
 
-        if (operation is not NamespaceAuthorizationOperation.ReadMany)
-        {
-            return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError(
-                errors,
-                diagnostics
-            );
-        }
-
-        var customViewStrategiesToValidate =
-            CustomViewAuthorizationTerminalOrdering.CustomViewsBeforeTerminal(
-                noUsableRoot.CustomViewStrategies,
-                noUsableRoot.RawConfiguredIndex
-            );
-        if (customViewStrategiesToValidate.Count == 0)
-        {
-            return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError(
-                errors,
-                diagnostics
-            );
-        }
-
         if (
-            TryPlanDescriptorCustomViews(
+            TryResolveTerminalCustomViewChecks(
                 mappingSet,
                 resource,
-                customViewStrategiesToValidate,
+                operation,
+                noUsableRoot.CustomViewStrategies,
+                noUsableRoot.RawConfiguredIndex,
                 out var customViewChecks
             ) is
             { } customViewFailure
@@ -982,26 +963,13 @@ internal sealed class DescriptorReadHandler(
             noPrefixes.StrategyName
         );
 
-        if (operation != NamespaceAuthorizationOperation.ReadMany)
-        {
-            return new DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized(namespaceFailure);
-        }
-
-        var customViewStrategiesToValidate =
-            CustomViewAuthorizationTerminalOrdering.CustomViewsBeforeTerminal(
-                noPrefixes.CustomViewStrategies,
-                noPrefixes.RawConfiguredIndex
-            );
-        if (customViewStrategiesToValidate.Count == 0)
-        {
-            return new DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized(namespaceFailure);
-        }
-
         if (
-            TryPlanDescriptorCustomViews(
+            TryResolveTerminalCustomViewChecks(
                 mappingSet,
                 resource,
-                customViewStrategiesToValidate,
+                operation,
+                noPrefixes.CustomViewStrategies,
+                noPrefixes.RawConfiguredIndex,
                 out var customViewChecks
             ) is
             { } customViewFailure
@@ -1029,39 +997,18 @@ internal sealed class DescriptorReadHandler(
             securityConfigurationError.RelationshipClassification
         );
 
-        var securityConfigurationErrorOutcome =
-            new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError(
-                failure.Errors,
-                failure.Diagnostics
-            );
-
-        if (operation is not NamespaceAuthorizationOperation.ReadMany)
-        {
-            return securityConfigurationErrorOutcome;
-        }
-
-        // Custom-view strategies are AND filters executing in CMS-configured order, so only those
-        // configured ahead of the classifier's earliest security-configuration failure run: validating a
-        // later custom view first would let its missing or non-conforming auth view mask this terminal.
-        // Mirrors the regular-resource classifier-failure path in RelationalDocumentStoreRepository.
-        var customViewStrategiesToValidate =
-            CustomViewAuthorizationTerminalOrdering.CustomViewsBeforeTerminal(
+        // The terminal here is the classifier's earliest security-configuration failure, so only the custom
+        // views configured ahead of that index are validated. Mirrors the regular-resource
+        // classifier-failure path in RelationalDocumentStoreRepository.
+        if (
+            TryResolveTerminalCustomViewChecks(
+                mappingSet,
+                resource,
+                operation,
                 securityConfigurationError.RelationshipClassification.SupportedCustomViewStrategies,
                 RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
                     securityConfigurationError.RelationshipClassification.SecurityConfigurationFailures
-                )
-            );
-
-        if (customViewStrategiesToValidate.Count == 0)
-        {
-            return securityConfigurationErrorOutcome;
-        }
-
-        if (
-            TryPlanDescriptorCustomViews(
-                mappingSet,
-                resource,
-                customViewStrategiesToValidate,
+                ),
                 out var customViewChecks
             ) is
             { } customViewFailure
@@ -1092,29 +1039,15 @@ internal sealed class DescriptorReadHandler(
         string failureMessage
     )
     {
-        var notImplementedOutcome = new DescriptorReadAuthorizationPreflightOutcome.NotImplemented(
-            failureMessage
-        );
-
-        if (operation is not NamespaceAuthorizationOperation.ReadMany)
-        {
-            return notImplementedOutcome;
-        }
-
-        var customViewStrategiesToValidate = stillUnsupported
-            .RelationshipClassification
-            .SupportedCustomViewStrategies;
-
-        if (customViewStrategiesToValidate.Count == 0)
-        {
-            return notImplementedOutcome;
-        }
-
+        // A null terminal index: this terminal executes last whatever its configured position, so every
+        // resolved custom view is validated ahead of it rather than only those configured before it.
         if (
-            TryPlanDescriptorCustomViews(
+            TryResolveTerminalCustomViewChecks(
                 mappingSet,
                 resource,
-                customViewStrategiesToValidate,
+                operation,
+                stillUnsupported.RelationshipClassification.SupportedCustomViewStrategies,
+                terminalRawConfiguredIndex: null,
                 out var customViewChecks
             ) is
             { } customViewFailure
@@ -1171,6 +1104,42 @@ internal sealed class DescriptorReadHandler(
             {
                 Errors = joinPathErrors,
             };
+    }
+
+    /// <summary>
+    /// Resolves the custom-view checks a preflight terminal must carry, shared by every terminal builder.
+    /// Returns the planning failure when the selected views cannot be planned — that failure replaces the
+    /// terminal — otherwise null with <paramref name="checks"/> set to the checks the terminal attaches.
+    /// A null <paramref name="terminalRawConfiguredIndex"/> means the terminal executes last whatever its
+    /// configured position (per auth.md <em>Execution order</em>), so every resolved custom view runs ahead
+    /// of it and is validated; otherwise only the views configured strictly before that index are, since
+    /// validating a later one first would let its missing or non-conforming auth view mask the terminal.
+    /// </summary>
+    private static DescriptorReadAuthorizationPreflightOutcome? TryResolveTerminalCustomViewChecks(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        NamespaceAuthorizationOperation operation,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> strategies,
+        int? terminalRawConfiguredIndex,
+        out IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck> checks
+    )
+    {
+        checks = [];
+
+        // Custom views are implemented for GET-many only, so every other operation keeps its bare terminal.
+        if (operation is not NamespaceAuthorizationOperation.ReadMany)
+        {
+            return null;
+        }
+
+        var strategiesToValidate = terminalRawConfiguredIndex is { } rawConfiguredIndex
+            ? CustomViewAuthorizationTerminalOrdering.CustomViewsBeforeTerminal(
+                strategies,
+                rawConfiguredIndex
+            )
+            : strategies;
+
+        return TryPlanDescriptorCustomViews(mappingSet, resource, strategiesToValidate, out checks);
     }
 
     private static DescriptorReadAuthorizationPreflightOutcome? TryPlanDescriptorCustomViews(

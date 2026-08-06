@@ -80,8 +80,9 @@ public sealed class RelationalDocumentStoreRepository(
         namespaceAuthorizationExecutor
         ?? throw new ArgumentNullException(nameof(namespaceAuthorizationExecutor));
 
-    // The request-scoped read executor. Custom view-based GET-many validation runs on it rather than on
-    // a write session, so a read never opens a write transaction just to probe the configured auth views.
+    // The read executor. Custom view-based GET-many validation runs on it rather than on a write session:
+    // each call takes a separate read connection and round trip, but a read never opens a write
+    // transaction just to probe the configured auth views.
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
     private readonly IRelationalParameterConfigurator _relationalParameterConfigurator =

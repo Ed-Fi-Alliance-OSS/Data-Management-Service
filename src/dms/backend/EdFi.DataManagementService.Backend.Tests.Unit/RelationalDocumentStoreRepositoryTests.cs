@@ -5648,8 +5648,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 && sql.Contains("LIMIT 0", StringComparison.Ordinal)
                 && !sql.Contains("LIMIT 1", StringComparison.Ordinal)
             );
-        // Validation runs on the request-scoped read executor, so a GET-many never opens a write
-        // transaction just to probe the configured auth views.
+        // Validation runs on the read executor — a separate read connection and round trip — so a
+        // GET-many never opens a write transaction just to probe the configured auth views.
         _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
