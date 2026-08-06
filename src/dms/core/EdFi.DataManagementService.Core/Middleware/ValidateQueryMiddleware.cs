@@ -190,11 +190,14 @@ internal class ValidateQueryMiddleware(
             return;
         }
 
+        // Determined here, but applied to request state only at the accepting exit below: the
+        // change-version and query-field steps that follow can still answer the request, and a
+        // rejected request must not leave partially applied paging behind.
+        CollectionPaging collectionPaging;
+
         if (cursorResult is CursorValidationResult.Valid validCursorRequest)
         {
-            // Only reached after the cursor parameters validated, so a rejected request never leaves
-            // partially applied paging behind.
-            requestInfo.CollectionPaging = validCursorRequest.Paging;
+            collectionPaging = validCursorRequest.Paging;
         }
         else
         {
@@ -224,7 +227,7 @@ internal class ValidateQueryMiddleware(
                 return;
             }
 
-            requestInfo.CollectionPaging = new CollectionPaging.Traditional(requestInfo.PaginationParameters);
+            collectionPaging = new CollectionPaging.Traditional(requestInfo.PaginationParameters);
         }
 
         ChangeVersionValidationResult changeVersionResult = ChangeVersionParameterValidator.Validate(
@@ -410,6 +413,7 @@ internal class ValidateQueryMiddleware(
         }
         else
         {
+            requestInfo.CollectionPaging = collectionPaging;
             requestInfo.QueryElements = queryElements.ToArray();
 
             await next();

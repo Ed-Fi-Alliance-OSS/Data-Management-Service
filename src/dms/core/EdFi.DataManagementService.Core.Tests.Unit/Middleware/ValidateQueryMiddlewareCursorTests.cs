@@ -172,6 +172,57 @@ public class ValidateQueryMiddlewareCursorTests
         }
     }
 
+    /// <summary>
+    /// Paging is determined before the change-version and query-field steps run, and either of
+    /// those can still answer the request with 400. Request state must carry the paging of a
+    /// request that was actually accepted, in both paging modes.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Request_Rejected_After_Its_Paging_Was_Determined : ValidateQueryMiddlewareCursorTests
+    {
+        [Test]
+        public async Task It_leaves_cursor_paging_unapplied_for_an_unknown_query_field()
+        {
+            AssertRejectedWithoutPaging(
+                await Execute(true, ("pageToken", ValidToken), ("notAQueryField", "1"))
+            );
+        }
+
+        [Test]
+        public async Task It_leaves_cursor_paging_unapplied_for_an_invalid_change_version()
+        {
+            AssertRejectedWithoutPaging(
+                await Execute(true, ("pageToken", ValidToken), ("minChangeVersion", "abc"))
+            );
+        }
+
+        [Test]
+        public async Task It_leaves_cursor_paging_unapplied_for_a_query_field_of_the_wrong_type()
+        {
+            AssertRejectedWithoutPaging(
+                await Execute(true, ("pageToken", ValidToken), ("schoolId", "notANumber"))
+            );
+        }
+
+        [Test]
+        public async Task It_leaves_traditional_paging_unapplied_for_an_unknown_query_field()
+        {
+            AssertRejectedWithoutPaging(await Execute(true, ("limit", "25"), ("notAQueryField", "1")));
+        }
+
+        private static void AssertRejectedWithoutPaging(RequestInfo requestInfo)
+        {
+            requestInfo
+                .FrontendResponse.StatusCode.Should()
+                .Be(400, "the arrangement must reach a rejection after paging was determined");
+
+            requestInfo
+                .CollectionPaging.Should()
+                .Be(No.CollectionPaging, "a rejected request must not leave partially applied paging behind");
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Traditional_Request_With_A_Fault : ValidateQueryMiddlewareCursorTests

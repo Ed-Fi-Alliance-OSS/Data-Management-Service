@@ -131,6 +131,6 @@ internal static class ResourcePathParser
     /// </summary>
     private static bool IsDocumentUuidWellFormed(string documentUuidString)
     {
-        return UtilityService.UuidRegex().IsMatch(documentUuidString.ToLower());
+        return UtilityService.UuidRegex().IsMatch(documentUuidString.ToLowerInvariant());
     }
 }
