@@ -46,9 +46,9 @@ public class MethodNotAllowedMiddlewareTests
     }
 
     /// <summary>
-    /// Asserts the Ed-Fi method-not-allowed problem-details contract member by member. The
-    /// frontend's tracked-change terminal produces the same body from the same factory, and its
-    /// test asserts these same members so the two 405 producers cannot drift.
+    /// Asserts the Ed-Fi method-not-allowed problem-details contract member by member. This
+    /// middleware is the sole producer of that body: both frontend terminals hand the request to
+    /// Core and carry its response out through ToResult, so this is where the contract is pinned.
     /// </summary>
     private static void AssertMethodNotAllowedProblemDetails(
         IFrontendResponse response,
@@ -160,6 +160,10 @@ public class MethodNotAllowedMiddlewareTests
             // ParseTrackedChangePathMiddleware leaves no document uuid segment behind, exactly as
             // ParsePathMiddleware does for a collection route, which is why the pipeline tells this
             // step which route family it terminates rather than the step reading it off the request.
+            //
+            // These tests supply that flag themselves, so none of them can show it being wired
+            // correctly. That is pinned in PipelineOrderingTests, which exercises the terminal each
+            // pipeline factory actually constructed.
             RequestInfo requestInfo = RequestInfoFor("PATCH", hasDocumentUuidSegment: false);
 
             await Middleware(isTrackedChangeRoute: true).Execute(requestInfo, NullNext);
@@ -168,21 +172,6 @@ public class MethodNotAllowedMiddlewareTests
             requestInfo.FrontendResponse.Headers.Should().Contain("Allow", "GET");
             requestInfo.FrontendResponse.ContentType.Should().Be("application/json; charset=utf-8");
             AssertMethodNotAllowedProblemDetails(requestInfo.FrontendResponse, "PATCH");
-        }
-
-        /// <summary>
-        /// The regression guard for the discriminator: the identical request answered by the
-        /// data-route pipeline must advertise the collection methods, so a terminal wired into the
-        /// wrong pipeline cannot go unnoticed.
-        /// </summary>
-        [Test]
-        public async Task It_advertises_the_collection_methods_when_wired_into_the_data_pipeline()
-        {
-            RequestInfo requestInfo = RequestInfoFor("PATCH", hasDocumentUuidSegment: false);
-
-            await Middleware(isTrackedChangeRoute: false).Execute(requestInfo, NullNext);
-
-            requestInfo.FrontendResponse.Headers.Should().Contain("Allow", "GET, POST");
         }
     }
 

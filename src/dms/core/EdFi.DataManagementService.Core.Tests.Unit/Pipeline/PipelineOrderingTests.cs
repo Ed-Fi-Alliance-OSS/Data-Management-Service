@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Middleware;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
@@ -29,7 +30,12 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Pipeline;
 [Parallelizable]
 public class PipelineOrderingTests
 {
-    private static List<Type> GetStepTypes(ApiService apiService, string factoryMethodName)
+    /// <summary>
+    /// The steps a pipeline factory actually built, as constructed instances. Most fixtures here
+    /// only compare step types, but a step configured by a constructor argument can only be checked
+    /// by exercising the instance the factory produced.
+    /// </summary>
+    private static List<IPipelineStep> GetSteps(ApiService apiService, string factoryMethodName)
     {
         var method = typeof(ApiService).GetMethod(
             factoryMethodName,
@@ -44,8 +50,12 @@ public class PipelineOrderingTests
 
         field.Should().NotBeNull("PipelineProvider should store its steps for execution");
 
-        var steps = (List<IPipelineStep>)field!.GetValue(pipeline)!;
-        return steps.Select(step => step.GetType()).ToList();
+        return (List<IPipelineStep>)field!.GetValue(pipeline)!;
+    }
+
+    private static List<Type> GetStepTypes(ApiService apiService, string factoryMethodName)
+    {
+        return GetSteps(apiService, factoryMethodName).Select(step => step.GetType()).ToList();
     }
 
     [TestFixture]
@@ -697,7 +707,7 @@ public class PipelineOrderingTests
         private const string DataRoutePipeline = "CreateMethodNotAllowedPipeline";
         private const string TrackedChangePipeline = "CreateTrackedChangeMethodNotAllowedPipeline";
 
-        private static List<Type> GetMethodNotAllowedPipelineStepTypes(string factoryMethodName)
+        private static ApiService BuildApiService()
         {
             var services = new ServiceCollection();
 
@@ -740,7 +750,12 @@ public class PipelineOrderingTests
                 A.Fake<IProfileService>()
             );
 
-            return GetStepTypes(apiService, factoryMethodName);
+            return apiService;
+        }
+
+        private static List<Type> GetMethodNotAllowedPipelineStepTypes(string factoryMethodName)
+        {
+            return GetStepTypes(BuildApiService(), factoryMethodName);
         }
 
         [Test]
@@ -790,6 +805,41 @@ public class PipelineOrderingTests
                     typeof(ResolveDataStoreMiddleware),
                     "an unsupported method must not answer 405 where the equivalent supported request answers 403 or 404 for want of an authorized or matching instance"
                 );
+        }
+
+        /// <summary>
+        /// The regression guard for the route-family discriminator. MethodNotAllowedMiddleware takes
+        /// which family it terminates as a constructor argument, so no assertion over step types can
+        /// see it wired, and the middleware's own tests pass the flag in themselves. This runs the
+        /// terminal each factory actually built and reads the Allow header back off it, which is the
+        /// only place a pipeline constructed with the wrong flag shows up.
+        /// </summary>
+        [TestCase(DataRoutePipeline, "GET, POST")]
+        [TestCase(TrackedChangePipeline, "GET")]
+        public async Task It_builds_the_terminal_for_its_own_route_family(
+            string factoryMethodName,
+            string expectedAllow
+        )
+        {
+            IPipelineStep terminal = GetSteps(BuildApiService(), factoryMethodName)
+                .Single(step => step is MethodNotAllowedMiddleware);
+
+            // Both parse steps leave HasDocumentUuidSegment false, which is why the terminal cannot
+            // read the route family off the request and has to be told at construction.
+            RequestInfo requestInfo = No.RequestInfo("method-not-allowed-wiring-trace-id");
+            requestInfo.Method = RequestMethod.UNSUPPORTED;
+            requestInfo.UnsupportedMethodName = "PATCH";
+            requestInfo.PathComponents = new(
+                ProjectEndpointName: new("ed-fi"),
+                EndpointName: new("schools"),
+                DocumentUuid: No.DocumentUuid,
+                HasDocumentUuidSegment: false
+            );
+
+            await terminal.Execute(requestInfo, TestHelper.NullNext);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(405);
+            requestInfo.FrontendResponse.Headers.Should().Contain("Allow", expectedAllow);
         }
     }
 }

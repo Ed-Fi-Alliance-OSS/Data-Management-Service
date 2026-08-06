@@ -849,8 +849,9 @@ Feature: Validation of the structure of the URLs
 
         # ODS/API parity: OPTIONS is not a supported method on a data route either, so it earns the
         # same problem-details 405 as any other unsupported verb. A CORS preflight is different - it
-        # carries Origin and Access-Control-Request-Method and is answered by the CORS middleware
-        # before routing, which OwaspCriticalPaths scenario 12 covers.
+        # carries Origin and Access-Control-Request-Method, and the CORS middleware answers it once
+        # the route has matched but before the endpoint runs, so it never reaches the terminal this
+        # scenario exercises. OwaspCriticalPaths scenario 12 covers that path.
         @DMS-1281
         @e2e-ci-shard-4
         Scenario: 33 Ensure clients get 405 for an OPTIONS request on a resource collection
