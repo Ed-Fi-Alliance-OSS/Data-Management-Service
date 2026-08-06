@@ -117,7 +117,13 @@ internal static class NamespaceAuthorizationProviderFailureMapper
                 AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidStaleTargetPayload,
             RelationalAuthorizationAuth1DispatchResult.Namespace =>
                 AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed,
+            // A payload belonging to another AUTH1 family shares the transport but is not ours to
+            // classify. Yield so the codec that owns the discriminator reports it. Without this,
+            // a command carrying both namespace and custom-view statements would turn a custom-view
+            // 403 into a namespace invalid-metadata 500, because the catch-all below claims anything
+            // it does not recognize.
             RelationalAuthorizationAuth1DispatchResult.Relationship => string.Empty,
+            RelationalAuthorizationAuth1DispatchResult.CustomView => string.Empty,
             _ => AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidAuthorizationMetadata,
         };
 
