@@ -230,6 +230,10 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeSameAs(supervisor);
             serviceProvider
+                .GetRequiredService<IDocumentCacheProjectionRefreshSignal>()
+                .Should()
+                .BeSameAs(supervisor);
+            serviceProvider
                 .GetServices<IHostedService>()
                 .OfType<DocumentCacheProjectionSupervisor>()
                 .Should()

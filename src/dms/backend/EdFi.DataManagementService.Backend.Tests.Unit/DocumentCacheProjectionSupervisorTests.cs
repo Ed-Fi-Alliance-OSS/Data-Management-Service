@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -1001,6 +1002,175 @@ public class Given_DocumentCacheProjectionSupervisor
     }
 
     [Test]
+    public async Task It_coalesces_concurrent_refresh_signals_into_one_pending_background_refresh()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            DocumentCacheTargetKey.Create("TenantA", 7),
+            generation: 1
+        );
+        RecordingObservationSink observationSink = new();
+        RecordingTargetContextFactory targetContextFactory = new(observationSink);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(executionContext)]),
+            RuntimeSnapshot([executionContext])
+        );
+        RecordingTargetRegistry.BlockingRefreshControl signaledRefresh = registry.QueueBlockingRefresh(
+            Snapshot([EligibleObservation(executionContext)]),
+            RuntimeSnapshot([executionContext])
+        );
+        RecordingProjectionScheduler scheduler = new(
+            contexts => DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.NoEligibleWork),
+            contexts => DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.NoEligibleWork)
+        );
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationSink,
+            OptionsFor([executionContext.TargetKey]),
+            scheduler
+        );
+
+        Parallel.For(0, 32, _ => supervisor.SignalRefresh());
+
+        try
+        {
+            await supervisor.StartAsync(CancellationToken.None);
+            await signaledRefresh.WaitForStartedAsync();
+
+            registry
+                .RefreshReasons.Should()
+                .Equal(
+                    DocumentCacheTargetRefreshReason.Startup,
+                    DocumentCacheTargetRefreshReason.CmsRefreshNotification
+                );
+
+            signaledRefresh.Release();
+            await scheduler.WaitForCallCountAsync(2);
+        }
+        finally
+        {
+            signaledRefresh.Release();
+            await supervisor.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Test]
+    public async Task It_does_not_block_a_refresh_signal_behind_an_in_flight_reconciliation()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            DocumentCacheTargetKey.Create("TenantA", 7),
+            generation: 1
+        );
+        RecordingObservationSink observationSink = new();
+        RecordingTargetContextFactory targetContextFactory = new(observationSink);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(executionContext)]),
+            RuntimeSnapshot([executionContext])
+        );
+        RecordingTargetRegistry.BlockingRefreshControl blockingRefresh = registry.QueueBlockingRefresh(
+            Snapshot([EligibleObservation(executionContext)]),
+            RuntimeSnapshot([executionContext])
+        );
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationSink,
+            OptionsFor([executionContext.TargetKey])
+        );
+
+        await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+        Task<DocumentCacheTargetRegistrySnapshot> inFlightRefresh = supervisor.RefreshAsync(
+            DocumentCacheTargetRefreshReason.SupervisorTriggered
+        );
+        await blockingRefresh.WaitForStartedAsync();
+
+        try
+        {
+            await Task.Run(supervisor.SignalRefresh).WaitAsync(TimeSpan.FromSeconds(1));
+        }
+        finally
+        {
+            blockingRefresh.Release();
+            await inFlightRefresh.WaitAsync(TimeSpan.FromSeconds(5));
+            await supervisor.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Test]
+    public async Task It_logs_a_failed_signaled_refresh_and_retries_after_a_later_signal()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            DocumentCacheTargetKey.Create("TenantA", 7),
+            generation: 1
+        );
+        RecordingObservationSink observationSink = new();
+        RecordingTargetContextFactory targetContextFactory = new(observationSink);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(executionContext)]),
+            RuntimeSnapshot([executionContext])
+        );
+        var refreshException = new InvalidOperationException("CMS refresh failed");
+        registry.QueueRefreshException(refreshException);
+        RecordingTargetRegistry.BlockingRefreshControl retryRefresh = registry.QueueBlockingRefresh(
+            Snapshot([EligibleObservation(executionContext)]),
+            RuntimeSnapshot([executionContext])
+        );
+        RecordingProjectionScheduler scheduler = new(
+            contexts => DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.NoEligibleWork),
+            contexts => DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.NoEligibleWork),
+            contexts => DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.NoEligibleWork)
+        );
+        RecordingLogger<DocumentCacheProjectionSupervisor> logger = new();
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationSink,
+            OptionsFor([executionContext.TargetKey]),
+            scheduler,
+            logger: logger
+        );
+
+        try
+        {
+            await supervisor.StartAsync(CancellationToken.None);
+            await scheduler.WaitForCallCountAsync(1);
+
+            supervisor.SignalRefresh();
+            await logger.WaitForWarningAsync();
+
+            supervisor.SignalRefresh();
+            await retryRefresh.WaitForStartedAsync();
+
+            registry
+                .RefreshReasons.Should()
+                .Equal(
+                    DocumentCacheTargetRefreshReason.Startup,
+                    DocumentCacheTargetRefreshReason.CmsRefreshNotification,
+                    DocumentCacheTargetRefreshReason.CmsRefreshNotification
+                );
+            logger
+                .WarningEntries.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<RecordingLogger<DocumentCacheProjectionSupervisor>.Entry>(entry =>
+                    ReferenceEquals(entry.Exception, refreshException)
+                    && entry.Message.Contains("later signal", StringComparison.Ordinal)
+                );
+
+            retryRefresh.Release();
+            await scheduler.WaitForCallCountAsync(3);
+        }
+        finally
+        {
+            retryRefresh.Release();
+            await supervisor.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Test]
     public async Task It_reconsiders_ready_targets_immediately_after_a_page_is_processed()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
@@ -1317,7 +1487,8 @@ public class Given_DocumentCacheProjectionSupervisor
         IOptions<DocumentCacheOptions> options,
         IDocumentCacheProjectionScheduler? scheduler = null,
         TimeProvider? timeProvider = null,
-        IDocumentCacheLifecycleReader? lifecycleReader = null
+        IDocumentCacheLifecycleReader? lifecycleReader = null,
+        ILogger<DocumentCacheProjectionSupervisor>? logger = null
     ) =>
         new(
             registry,
@@ -1327,7 +1498,7 @@ public class Given_DocumentCacheProjectionSupervisor
             scheduler ?? new NoOpDocumentCacheProjectionScheduler(),
             lifecycleReader ?? new StubDocumentCacheLifecycleReader(),
             timeProvider ?? new FixedTimeProvider(ObservedAt),
-            NullLogger<DocumentCacheProjectionSupervisor>.Instance
+            logger ?? NullLogger<DocumentCacheProjectionSupervisor>.Instance
         );
 
     private static DocumentCacheTargetExecutionContext ExecutionContext(
@@ -1452,7 +1623,20 @@ public class Given_DocumentCacheProjectionSupervisor
         public void QueueRefresh(
             DocumentCacheTargetRegistrySnapshot snapshot,
             DocumentCacheTargetRuntimeSnapshot runtimeSnapshot
-        ) => _refreshes.Enqueue(new QueuedRefresh(snapshot, runtimeSnapshot, BlockingControl: null));
+        ) =>
+            _refreshes.Enqueue(
+                new QueuedRefresh(snapshot, runtimeSnapshot, BlockingControl: null, Exception: null)
+            );
+
+        public void QueueRefreshException(Exception exception) =>
+            _refreshes.Enqueue(
+                new QueuedRefresh(
+                    CurrentSnapshot,
+                    CurrentRuntimeSnapshot,
+                    BlockingControl: null,
+                    Exception: exception
+                )
+            );
 
         public BlockingRefreshControl QueueBlockingRefresh(
             DocumentCacheTargetRegistrySnapshot snapshot,
@@ -1460,7 +1644,9 @@ public class Given_DocumentCacheProjectionSupervisor
         )
         {
             BlockingRefreshControl blockingControl = new();
-            _refreshes.Enqueue(new QueuedRefresh(snapshot, runtimeSnapshot, blockingControl));
+            _refreshes.Enqueue(
+                new QueuedRefresh(snapshot, runtimeSnapshot, blockingControl, Exception: null)
+            );
             return blockingControl;
         }
 
@@ -1476,6 +1662,11 @@ public class Given_DocumentCacheProjectionSupervisor
             if (refresh.BlockingControl is not null)
             {
                 await refresh.BlockingControl.WaitForReleaseAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            if (refresh.Exception is not null)
+            {
+                throw refresh.Exception;
             }
 
             CurrentSnapshot = refresh.RegistrySnapshot;
@@ -1506,8 +1697,57 @@ public class Given_DocumentCacheProjectionSupervisor
         private sealed record QueuedRefresh(
             DocumentCacheTargetRegistrySnapshot RegistrySnapshot,
             DocumentCacheTargetRuntimeSnapshot RegistryRuntimeSnapshot,
-            BlockingRefreshControl? BlockingControl
+            BlockingRefreshControl? BlockingControl,
+            Exception? Exception
         );
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public sealed record Entry(LogLevel Level, string Message, Exception? Exception);
+
+        private readonly object _sync = new();
+        private readonly List<Entry> _entries = [];
+        private readonly TaskCompletionSource _warningLogged = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        public IReadOnlyList<Entry> WarningEntries
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    return _entries.Where(entry => entry.Level == LogLevel.Warning).ToList();
+                }
+            }
+        }
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            lock (_sync)
+            {
+                _entries.Add(new Entry(logLevel, formatter(state, exception), exception));
+            }
+
+            if (logLevel == LogLevel.Warning)
+            {
+                _warningLogged.TrySetResult();
+            }
+        }
+
+        public Task WaitForWarningAsync() => _warningLogged.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     private static DocumentCacheAdministrativeCommandExecutionContext CommandContext(

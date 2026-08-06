@@ -68,11 +68,9 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         }
 
         [Test]
-        public void It_notifies_the_projection_supervisor_with_the_cms_refresh_reason()
+        public void It_signals_the_projection_supervisor()
         {
-            _projectionSupervisor
-                .RefreshReasons.Should()
-                .Equal(DocumentCacheTargetRefreshReason.CmsRefreshNotification);
+            _projectionSupervisor.SignalCount.Should().Be(1);
         }
     }
 
@@ -100,7 +98,7 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         [Test]
         public void It_does_not_refresh_DocumentCache_targets_during_program_startup()
         {
-            _projectionSupervisor.RefreshReasons.Should().BeEmpty();
+            _projectionSupervisor.SignalCount.Should().Be(0);
         }
     }
 
@@ -132,7 +130,7 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         [Test]
         public void It_does_not_notify_the_projection_supervisor()
         {
-            _projectionSupervisor.RefreshReasons.Should().BeEmpty();
+            _projectionSupervisor.SignalCount.Should().Be(0);
         }
     }
 
@@ -159,11 +157,9 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         }
 
         [Test]
-        public void It_notifies_the_projection_supervisor_with_the_cms_refresh_reason()
+        public void It_signals_the_projection_supervisor()
         {
-            _projectionSupervisor
-                .RefreshReasons.Should()
-                .Equal(DocumentCacheTargetRefreshReason.CmsRefreshNotification);
+            _projectionSupervisor.SignalCount.Should().Be(1);
         }
     }
 
@@ -189,11 +185,9 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         }
 
         [Test]
-        public void It_notifies_the_projection_supervisor_with_the_cms_refresh_reason()
+        public void It_signals_the_projection_supervisor()
         {
-            _projectionSupervisor
-                .RefreshReasons.Should()
-                .Equal(DocumentCacheTargetRefreshReason.CmsRefreshNotification);
+            _projectionSupervisor.SignalCount.Should().Be(1);
         }
     }
 
@@ -220,11 +214,44 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         }
 
         [Test]
-        public void It_notifies_the_projection_supervisor_with_the_cms_refresh_reason()
+        public void It_signals_the_projection_supervisor()
         {
-            _projectionSupervisor
-                .RefreshReasons.Should()
-                .Equal(DocumentCacheTargetRefreshReason.CmsRefreshNotification);
+            _projectionSupervisor.SignalCount.Should().Be(1);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Expired_DataStore_Metadata_Changes_While_Supervisor_Reconciliation_Would_Block
+        : DocumentCacheRefreshNotifyingDataStoreProviderTests
+    {
+        private RecordingProjectionSupervisor _projectionSupervisor = null!;
+        private TaskCompletionSource<DocumentCacheTargetRegistrySnapshot> _reconciliationCompletion = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var dataStoreProvider = new RecordingDataStoreProvider([DataStore(connectionString: "first")])
+            {
+                OnRefreshInstancesIfExpired = provider =>
+                    provider.CurrentDataStores = [DataStore(connectionString: "second")],
+            };
+            _reconciliationCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _projectionSupervisor = new RecordingProjectionSupervisor
+            {
+                RefreshCompletion = _reconciliationCompletion,
+            };
+            var provider = CreateProvider(dataStoreProvider, _projectionSupervisor, canNotify: true);
+
+            await provider.RefreshInstancesIfExpiredAsync().WaitAsync(TimeSpan.FromSeconds(1));
+        }
+
+        [Test]
+        public void It_returns_after_signaling_without_awaiting_supervisor_reconciliation()
+        {
+            _projectionSupervisor.SignalCount.Should().Be(1);
+            _projectionSupervisor.RefreshAttemptCount.Should().Be(0);
+            _reconciliationCompletion.Task.IsCompleted.Should().BeFalse();
         }
     }
 
@@ -250,11 +277,9 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         }
 
         [Test]
-        public void It_notifies_the_projection_supervisor_with_the_cms_refresh_reason()
+        public void It_signals_the_projection_supervisor()
         {
-            _projectionSupervisor
-                .RefreshReasons.Should()
-                .Equal(DocumentCacheTargetRefreshReason.CmsRefreshNotification);
+            _projectionSupervisor.SignalCount.Should().Be(1);
         }
     }
 
@@ -279,7 +304,7 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         [Test]
         public void It_does_not_notify_the_projection_supervisor()
         {
-            _projectionSupervisor.RefreshReasons.Should().BeEmpty();
+            _projectionSupervisor.SignalCount.Should().Be(0);
         }
     }
 
@@ -310,7 +335,7 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         [Test]
         public void It_does_not_notify_the_projection_supervisor()
         {
-            _projectionSupervisor.RefreshReasons.Should().BeEmpty();
+            _projectionSupervisor.SignalCount.Should().Be(0);
         }
     }
 
@@ -331,7 +356,7 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
             };
             _projectionSupervisor = new RecordingProjectionSupervisor
             {
-                RefreshException = new InvalidOperationException("refresh failed"),
+                SignalException = new InvalidOperationException("signal failed"),
             };
 
             var provider = CreateProvider(dataStoreProvider, _projectionSupervisor, canNotify: true);
@@ -343,18 +368,18 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         public async Task It_does_not_fail_the_data_store_load()
         {
             await _act.Should().NotThrowAsync();
-            _projectionSupervisor.RefreshAttemptCount.Should().Be(1);
+            _projectionSupervisor.SignalAttemptCount.Should().Be(1);
         }
     }
 
     private static DocumentCacheRefreshNotifyingDataStoreProvider CreateProvider(
         IDataStoreProvider dataStoreProvider,
-        IDocumentCacheProjectionSupervisor projectionSupervisor,
+        IDocumentCacheProjectionRefreshSignal projectionRefreshSignal,
         bool canNotify
     ) =>
         new(
             dataStoreProvider,
-            projectionSupervisor,
+            projectionRefreshSignal,
             NullLogger<DocumentCacheRefreshNotifyingDataStoreProvider>.Instance,
             () => canNotify
         );
@@ -395,15 +420,33 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         public IReadOnlyList<string> GetLoadedTenantKeys() => [""];
     }
 
-    private sealed class RecordingProjectionSupervisor : IDocumentCacheProjectionSupervisor
+    private sealed class RecordingProjectionSupervisor
+        : IDocumentCacheProjectionSupervisor,
+            IDocumentCacheProjectionRefreshSignal
     {
         public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts => [];
 
-        public List<DocumentCacheTargetRefreshReason> RefreshReasons { get; } = [];
+        public int SignalCount { get; private set; }
 
         public int RefreshAttemptCount { get; private set; }
 
-        public Exception? RefreshException { get; init; }
+        public int SignalAttemptCount { get; private set; }
+
+        public Exception? SignalException { get; init; }
+
+        public TaskCompletionSource<DocumentCacheTargetRegistrySnapshot>? RefreshCompletion { get; init; }
+
+        public void SignalRefresh()
+        {
+            SignalAttemptCount++;
+
+            if (SignalException is not null)
+            {
+                throw SignalException;
+            }
+
+            SignalCount++;
+        }
 
         public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
             DocumentCacheTargetRefreshReason reason,
@@ -413,13 +456,8 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
             RefreshAttemptCount++;
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (RefreshException is not null)
-            {
-                throw RefreshException;
-            }
-
-            RefreshReasons.Add(reason);
-            return Task.FromResult(new DocumentCacheTargetRegistrySnapshot([], DateTimeOffset.UtcNow));
+            return RefreshCompletion?.Task
+                ?? Task.FromResult(new DocumentCacheTargetRegistrySnapshot([], DateTimeOffset.UtcNow));
         }
     }
 }

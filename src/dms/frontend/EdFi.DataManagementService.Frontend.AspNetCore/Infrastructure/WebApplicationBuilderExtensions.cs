@@ -228,6 +228,9 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.AddSingleton<IDocumentCacheProjectionSupervisor>(serviceProvider =>
             serviceProvider.GetRequiredService<DocumentCacheProjectionSupervisor>()
         );
+        webAppBuilder.Services.AddSingleton<IDocumentCacheProjectionRefreshSignal>(serviceProvider =>
+            serviceProvider.GetRequiredService<DocumentCacheProjectionSupervisor>()
+        );
         webAppBuilder.Services.AddHostedService(serviceProvider =>
             serviceProvider.GetRequiredService<DocumentCacheProjectionSupervisor>()
         );

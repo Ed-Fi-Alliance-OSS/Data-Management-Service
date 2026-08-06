@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using System.Threading.Channels;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -23,6 +24,11 @@ public interface IDocumentCacheProjectionSupervisor
         DocumentCacheTargetRefreshReason reason,
         CancellationToken cancellationToken = default
     );
+}
+
+public interface IDocumentCacheProjectionRefreshSignal
+{
+    void SignalRefresh();
 }
 
 internal interface IDocumentCacheProjectionRetainedTargetContextReleaser
@@ -1035,10 +1041,19 @@ public sealed class DocumentCacheProjectionSupervisor(
 )
     : BackgroundService,
         IDocumentCacheProjectionSupervisor,
+        IDocumentCacheProjectionRefreshSignal,
         IDocumentCacheProjectionRetainedTargetContextReleaser,
         IDocumentCacheProjectionAdministrativeTargetRetainer
 {
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
+    private readonly Channel<bool> _refreshSignals = Channel.CreateBounded<bool>(
+        new BoundedChannelOptions(1)
+        {
+            SingleReader = true,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.DropWrite,
+        }
+    );
     private ImmutableDictionary<
         DocumentCacheTargetKey,
         DocumentCacheProjectionTargetRuntimeContext
@@ -1064,6 +1079,14 @@ public sealed class DocumentCacheProjectionSupervisor(
 
     public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts =>
         _targetContexts.Values.ToImmutableArray();
+
+    public void SignalRefresh()
+    {
+        if (!ShutdownStarted())
+        {
+            _refreshSignals.Writer.TryWrite(true);
+        }
+    }
 
     async Task<DocumentCacheProjectionAdministrativeTargetRetainResult> IDocumentCacheProjectionAdministrativeTargetRetainer.TryRetainCurrentTargetForAdministrativeCommandAsync(
         DocumentCacheTargetKey targetKey,
@@ -1170,13 +1193,20 @@ public sealed class DocumentCacheProjectionSupervisor(
             DateTimeOffset now = timeProvider.GetUtcNow();
             DateTimeOffset nextWakeAt = GetNextSupervisorWakeAt(now, nextPollTickAt);
             TimeSpan waitDuration = nextWakeAt > now ? nextWakeAt - now : TimeSpan.Zero;
-            if (waitDuration > TimeSpan.Zero)
-            {
-                await Task.Delay(waitDuration, timeProvider, stoppingToken).ConfigureAwait(false);
-            }
+            bool refreshSignaled =
+                waitDuration > TimeSpan.Zero
+                    ? await WaitForRefreshSignalAsync(waitDuration, stoppingToken).ConfigureAwait(false)
+                    : _refreshSignals.Reader.TryRead(out _);
 
             DateTimeOffset wakeObservedAt = timeProvider.GetUtcNow();
-            if (wakeObservedAt >= nextPollTickAt)
+            if (refreshSignaled)
+            {
+                if (await TryProcessSignaledRefreshAsync(stoppingToken).ConfigureAwait(false))
+                {
+                    nextPollTickAt = timeProvider.GetUtcNow() + pollInterval;
+                }
+            }
+            else if (wakeObservedAt >= nextPollTickAt)
             {
                 await RefreshAsync(DocumentCacheTargetRefreshReason.SupervisorTriggered, stoppingToken)
                     .ConfigureAwait(false);
@@ -1184,6 +1214,48 @@ public sealed class DocumentCacheProjectionSupervisor(
             }
 
             await RunReadyTargetsUntilIdleAsync(nextPollTickAt, stoppingToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<bool> WaitForRefreshSignalAsync(TimeSpan waitDuration, CancellationToken stoppingToken)
+    {
+        using CancellationTokenSource timeoutSource = new(waitDuration, timeProvider);
+        using CancellationTokenSource waitSource = CancellationTokenSource.CreateLinkedTokenSource(
+            stoppingToken,
+            timeoutSource.Token
+        );
+
+        try
+        {
+            await _refreshSignals.Reader.ReadAsync(waitSource.Token).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException)
+            when (timeoutSource.IsCancellationRequested && !stoppingToken.IsCancellationRequested)
+        {
+            return _refreshSignals.Reader.TryRead(out _);
+        }
+    }
+
+    private async Task<bool> TryProcessSignaledRefreshAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await RefreshAsync(DocumentCacheTargetRefreshReason.CmsRefreshNotification, stoppingToken)
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "DocumentCache target refresh failed while processing a data store metadata change signal. A later signal or scheduled supervisor refresh can retry."
+            );
+            return false;
         }
     }
 

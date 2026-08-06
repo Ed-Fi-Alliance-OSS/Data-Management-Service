@@ -5,7 +5,6 @@
 
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
-using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Hosting;
@@ -16,20 +15,20 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 internal sealed class DocumentCacheRefreshNotifyingDataStoreProvider : IDataStoreProvider
 {
     private readonly IDataStoreProvider _dataStoreProvider;
-    private readonly IDocumentCacheProjectionSupervisor _projectionSupervisor;
+    private readonly IDocumentCacheProjectionRefreshSignal _projectionRefreshSignal;
     private readonly ILogger<DocumentCacheRefreshNotifyingDataStoreProvider> _logger;
     private readonly Func<bool> _canNotify;
 
     public DocumentCacheRefreshNotifyingDataStoreProvider(
         ConfigurationServiceDataStoreProvider dataStoreProvider,
-        IDocumentCacheProjectionSupervisor projectionSupervisor,
+        IDocumentCacheProjectionRefreshSignal projectionRefreshSignal,
         IHostApplicationLifetime hostApplicationLifetime,
         ILogger<DocumentCacheRefreshNotifyingDataStoreProvider> logger
     )
     {
         _dataStoreProvider = dataStoreProvider ?? throw new ArgumentNullException(nameof(dataStoreProvider));
-        _projectionSupervisor =
-            projectionSupervisor ?? throw new ArgumentNullException(nameof(projectionSupervisor));
+        _projectionRefreshSignal =
+            projectionRefreshSignal ?? throw new ArgumentNullException(nameof(projectionRefreshSignal));
         IHostApplicationLifetime lifetime =
             hostApplicationLifetime ?? throw new ArgumentNullException(nameof(hostApplicationLifetime));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -38,14 +37,14 @@ internal sealed class DocumentCacheRefreshNotifyingDataStoreProvider : IDataStor
 
     internal DocumentCacheRefreshNotifyingDataStoreProvider(
         IDataStoreProvider dataStoreProvider,
-        IDocumentCacheProjectionSupervisor projectionSupervisor,
+        IDocumentCacheProjectionRefreshSignal projectionRefreshSignal,
         ILogger<DocumentCacheRefreshNotifyingDataStoreProvider> logger,
         Func<bool>? canNotify = null
     )
     {
         _dataStoreProvider = dataStoreProvider ?? throw new ArgumentNullException(nameof(dataStoreProvider));
-        _projectionSupervisor =
-            projectionSupervisor ?? throw new ArgumentNullException(nameof(projectionSupervisor));
+        _projectionRefreshSignal =
+            projectionRefreshSignal ?? throw new ArgumentNullException(nameof(projectionRefreshSignal));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _canNotify = canNotify ?? (() => true);
     }
@@ -59,7 +58,7 @@ internal sealed class DocumentCacheRefreshNotifyingDataStoreProvider : IDataStor
         IReadOnlyList<DataStore> afterLoad = _dataStoreProvider.GetAll(tenant);
         if (!DataStoreMetadataEquals(beforeLoad, afterLoad))
         {
-            await NotifyDocumentCacheProjectionSupervisorAsync(tenant).ConfigureAwait(false);
+            NotifyDocumentCacheProjectionSupervisor(tenant);
         }
 
         return dataStores;
@@ -74,7 +73,7 @@ internal sealed class DocumentCacheRefreshNotifyingDataStoreProvider : IDataStor
         IReadOnlyList<DataStore> afterRefresh = _dataStoreProvider.GetAll(tenant);
         if (!DataStoreMetadataEquals(beforeRefresh, afterRefresh))
         {
-            await NotifyDocumentCacheProjectionSupervisorAsync(tenant).ConfigureAwait(false);
+            NotifyDocumentCacheProjectionSupervisor(tenant);
         }
     }
 
@@ -90,7 +89,7 @@ internal sealed class DocumentCacheRefreshNotifyingDataStoreProvider : IDataStor
 
     public IReadOnlyList<string> GetLoadedTenantKeys() => _dataStoreProvider.GetLoadedTenantKeys();
 
-    private async Task NotifyDocumentCacheProjectionSupervisorAsync(string? tenant)
+    private void NotifyDocumentCacheProjectionSupervisor(string? tenant)
     {
         if (!_canNotify())
         {
@@ -99,9 +98,7 @@ internal sealed class DocumentCacheRefreshNotifyingDataStoreProvider : IDataStor
 
         try
         {
-            await _projectionSupervisor
-                .RefreshAsync(DocumentCacheTargetRefreshReason.CmsRefreshNotification)
-                .ConfigureAwait(false);
+            _projectionRefreshSignal.SignalRefresh();
         }
         catch (Exception exception)
         {
