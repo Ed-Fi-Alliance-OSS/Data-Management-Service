@@ -1293,13 +1293,25 @@ PostgreSQL is the same shape with `DEFAULT 0` and `now()` defaults and a `timest
 
 The mirror `ContentVersion` default is a non-null sentinel, not a real change-version allocation. The production write path always goes through the `*_Stamp` trigger. Root-resource and descriptor inserts copy the existing `dms.Document` content stamp initialized by document defaults; updates, deletes, child writes, and `_ext` writes allocate a fresh `dms.Document.ContentVersion` and mirror that captured value.
 
-**`dms.Descriptor` index is composite.** Because every descriptor query is qualified by `Discriminator`, the descriptor index is `IX_Descriptor_Discriminator_ContentVersion (Discriminator, ContentVersion)` rather than a single-column `IX_Descriptor_ContentVersion`. Resource-root indexes stay single-column because each resource root has its own table and no analogous "type" filter precedes the change-version range.
+**`dms.Descriptor` uses two paging indexes.** Descriptor GET-many queries use `ResourceKeyId`
+as the authoritative, project-qualified resource-type predicate. The existing
+`IX_Descriptor_ResourceKeyId_DocumentId (ResourceKeyId, DocumentId)` index supports unfiltered
+and min-only requests, which page in `DocumentId` order. Max-bearing requests page in
+`ContentVersion` order and require
+`IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId (ResourceKeyId, ContentVersion, DocumentId)`.
+The trailing `DocumentId` covers the value returned by page selection.
+
+The older `IX_Descriptor_Discriminator_ContentVersion` shape does not match the runtime query:
+`Discriminator` is diagnostic, while the query filters by `ResourceKeyId`.
 
 **Compiled-mapping-set additions** (defined in [compiled-mapping-set.md](compiled-mapping-set.md)):
 
 - The per-resource derivation pass that builds `ConcreteResourceModel.RelationalModel` adds two synthesized columns to the root `DbTableModel` whenever `StorageKind = RelationalTables`. Their `ColumnKind` is `MirroredContentVersion` and `MirroredContentLastModifiedAt` respectively (defined in [flattening-reconstitution.md](flattening-reconstitution.md)). `SourceJsonPath` and `TargetResource` are null. The write-path `TableWritePlan.ColumnBindings` exclusion rule (also defined in [flattening-reconstitution.md](flattening-reconstitution.md)) keeps them out of client-writable column lists; dialect emitters render the correct DDL defaults for each kind (`0` for `MirroredContentVersion`, current-UTC for `MirroredContentLastModifiedAt`).
 - For `StorageKind = SharedDescriptorTable`, the columns are added by the core DDL pass that owns `dms.Descriptor`, not by the per-resource pass, because `dms.Descriptor` is a core table.
-- `DeriveIndexInventoryPass` adds one `IX_<Table>_ContentVersion` per in-scope root table and `IX_Descriptor_Discriminator_ContentVersion` on `dms.Descriptor` into `IndexesInCreateOrder`.
+- `DeriveIndexInventoryPass` adds one `IX_<Table>_ContentVersion` per in-scope root table and
+  `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` on `dms.Descriptor` into
+  `IndexesInCreateOrder`. The core DDL pass continues to own
+  `IX_Descriptor_ResourceKeyId_DocumentId`.
 - `DbTriggerInfo` for entries with `Kind = DocumentStamping` gains a required `MirrorStampTargetTable: DbTableName` field. The derivation pass assigns the target by rule: same table for root-table triggers, resource's root for child / `_ext` triggers, `dms.Descriptor` for the descriptor trigger. Dialect emitters render the mirror UPDATE against `MirrorStampTargetTable` and MUST NOT re-derive the target from the trigger's source table.
 
 #### Triggers that populate the `tracked_changes*` tables
@@ -1936,7 +1948,7 @@ WITH page_ids AS (
     SELECT r."DocumentId"
     FROM "edfi"."Grade" r
     WHERE r.ContentVersion >= @MinChangeVersion AND r.ContentVersion <= @MaxChangeVersion -- Range filter on ContentVersion
-    ORDER BY r."DocumentId" ASC
+    ORDER BY r."ContentVersion" ASC -- Conditional: see "Page-selection ordering (DMS-1298)" below
     LIMIT @limit OFFSET @offset
 )
 INSERT INTO "page" ("DocumentId")
@@ -1946,7 +1958,11 @@ FROM page_ids;
 -- The rest of the reconstitution queries are omitted for brevity.
 ```
 
-Descriptor endpoints need to join with `dms.Descriptor` in order to emit the range filter leveraging the `IX_Descriptor_Discriminator_ContentVersion`:
+Descriptor GET-many page selection starts from `dms.Descriptor`. The query filters by the
+authoritative `ResourceKeyId` and reads the mirrored `ContentVersion` from the same table. For a
+max-bearing request, the
+`IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` index supports both the range predicate
+and page ordering:
 
 ```sql
 SELECT 
@@ -1961,22 +1977,15 @@ SELECT
   descriptor."EffectiveBeginDate" AS "EffectiveBeginDate", 
   descriptor."EffectiveEndDate" AS "EffectiveEndDate", 
   descriptor."Discriminator" AS "Discriminator" 
-FROM 
+FROM
   (
-    SELECT r."DocumentId" 
-    FROM 
-      "dms"."Document" r 
-      INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = r."DocumentId" 
-    WHERE 
-      d."Discriminator" = @discriminator -- Required for IX_Descriptor_Discriminator_ContentVersion to be used as a range seek
-      AND d.ContentVersion >= @MinChangeVersion AND d.ContentVersion <= @MaxChangeVersion -- Range filter on ContentVersion
-      AND (
-        r."ResourceKeyId" = @resourceKeyId
-      ) 
-    ORDER BY 
-      r."DocumentId" ASC 
-    LIMIT 
-      @limit OFFSET @offset
+    SELECT d."DocumentId"
+    FROM "dms"."Descriptor" d
+    WHERE d."ResourceKeyId" = @resourceKeyId
+      AND d."ContentVersion" >= @MinChangeVersion
+      AND d."ContentVersion" <= @MaxChangeVersion
+    ORDER BY d."ContentVersion" ASC
+    LIMIT @limit OFFSET @offset
   ) page_document_ids 
   INNER JOIN dms."Document" document ON document."DocumentId" = page_document_ids."DocumentId" 
   LEFT JOIN dms."Descriptor" descriptor ON descriptor."DocumentId" = page_document_ids."DocumentId" 
@@ -1990,6 +1999,49 @@ The planner uses this path for every resource with a `MirroredContentVersion` co
 
 Reads of `_lastModifiedDate` and per-item `ChangeVersion` in response bodies remain sourced from `dms.Document` for now; switching to the concrete-table mirror is an optional future read-path optimization (the values are identical per Invariant #2).
 
+
+#### Page-selection ordering
+
+For live resource and descriptor GET-many queries, the change-version filter determines the
+page-selection order:
+
+| Request shape | Page-selection ordering |
+| --- | --- |
+| `maxChangeVersion` present, with or without `minChangeVersion` | `ContentVersion` |
+| `minChangeVersion` only | `DocumentId` |
+| No change-version filters | `DocumentId` |
+
+A window with `maxChangeVersion` is a monotonic-escape window: when a row changes, its
+`ContentVersion` advances beyond the maximum and the row leaves the window. Ordering by
+`ContentVersion` therefore adds no paging hazard that `DocumentId` ordering did not already
+have. It also lets the database seek the change-version index instead of scanning in
+`DocumentId` order and rejecting most rows. Measurements showed about a 1,000x improvement for
+selective upper-tail windows. An empty window with a stale maximum also becomes an immediate
+empty-page result instead of a full-table walk.
+
+A min-only window remains open as data changes. Updating a row moves it later in
+`ContentVersion` order without removing it from the window. With offset paging, that movement
+can return the row twice and shift another row past an offset boundary. Min-only requests
+therefore retain `DocumentId` ordering.
+
+The optimized path matches the recommended synchronization workflow: always supply a maximum.
+
+Client-visible behavior:
+
+- With `ContentVersion` page selection, pages progress by ChangeVersion. Hydration still orders
+  items within each page by `DocumentId`.
+- Clients must follow the documented offset workflow. They must not use the last response item's
+  ChangeVersion as a cursor.
+- Total-Count behavior does not change.
+- Page progression now depends on the request shape. Response order was not previously a
+  documented contract; this section makes the variation explicit.
+- `AppSettings:UseLegacyDocumentIdOrderingForChangeQueries` defaults to `false`. Setting it to
+  `true` restores `DocumentId` page selection for all clients in the deployment. This setting is
+  an operator escape hatch, not a per-client option.
+
+This rule applies only to traditional `limit`/`offset` page selection. It does not affect
+`/deletes`, `/keyChanges`, `/availableChangeVersions`, unfiltered GET-many, GET-by-id, or writes.
+See [partitioned-cursor-paging.md](partitioned-cursor-paging.md) for the cursor-paging behavior.
 
 ### Snapshot support is deferred
 
@@ -2013,13 +2065,17 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 - `ReadChangesAuthorizationViewInfo` union arms for current/current, current/tracked, tracked/current, and tracked/tracked association combinations.
 - Manifest output for tracked-change tables, triggers, and ReadChanges authorization views so SQL generation tests are checking renderer behavior, not hidden semantic compilation in the DDL emitter.
 - Mirror columns (`ContentVersion`, `ContentLastModifiedAt`) tagged with `ColumnKind.MirroredContentVersion` and `ColumnKind.MirroredContentLastModifiedAt` on every `ConcreteResourceModel` with `StorageKind = RelationalTables`, including extension-project resources; absent on `StorageKind = SharedDescriptorTable` resources (the columns live on `dms.Descriptor` instead, added by the core DDL pass).
-- `IX_<Table>_ContentVersion` per in-scope root in `IndexesInCreateOrder` (single-column), and `IX_Descriptor_Discriminator_ContentVersion` composite index on `dms.Descriptor` with key columns in order `[Discriminator, ContentVersion]`.
+- `IX_<Table>_ContentVersion` per in-scope root in `IndexesInCreateOrder` (single-column), plus
+  `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` on `dms.Descriptor` with key columns in
+  the order `[ResourceKeyId, ContentVersion, DocumentId]`.
 - Every `DbTriggerInfo` with `Kind = DocumentStamping` has a non-null `MirrorStampTargetTable` matching the per-trigger rule (same table for root, resource's root for child / `_ext`, `dms.Descriptor` for the descriptor trigger).
 - DB-behavior: mirror equals source (`<root>.ContentVersion = dms.Document.ContentVersion` and `<root>.ContentLastModifiedAt = dms.Document.ContentLastModifiedAt`) after every write path — insert, update, no-op update, identity change, child-collection write, `_ext` write, FK-cascade update, descriptor write. Run on at least a root-only resource (`edfi.Student`), a child-bearing resource (`edfi.School` with `SchoolAddress` writes), an `_ext`-bearing resource, an extension-project resource (e.g. `tpdm.Candidate`), and a descriptor.
 - DB-behavior: stamp-only updates (`UPDATE <root> SET ContentVersion = ContentVersion + 1 …`) do not allocate a new sequence value, do not fire additional mirror UPDATEs, and do not insert `tracked_changes_*` rows; multi-row UPDATEs that stamp N documents allocate N distinct `ContentVersion` values, and each document's mirror equals its `dms.Document` stamp.
 - DB-behavior: root deletes with cascaded child, nested-child, or `_ext` rows produce exactly one visible root tombstone in the relevant `tracked_changes_*` table. The tombstone's `ChangeVersion` is the final delete ChangeVersion exposed to Change Queries, and no later visible root stamp or tracked-change row can advance an extraction watermark past that tombstone. Run this on PostgreSQL and SQL Server for at least one child-bearing resource and one extension-bearing resource.
 - DB-behavior: `IdentityVersion` and `IdentityLastModifiedAt` columns are absent from every in-scope root table and from `dms.Descriptor`.
-- Emitted-SQL snapshot: `?minChangeVersion=X&maxChangeVersion=Y` produces a single-table range filter on the concrete table for `/ed-fi/students`, on `dms.Descriptor` (with the `Discriminator` predicate) for descriptors, and the same shape for at least one extension-project resource endpoint.
+- Emitted-SQL snapshot: `?minChangeVersion=X&maxChangeVersion=Y` produces a single-table range
+  filter on the concrete table for `/ed-fi/students`, on `dms.Descriptor` with the authoritative
+  `ResourceKeyId` predicate for descriptors, and on at least one extension-project resource.
 
 ### ProblemDetails
 

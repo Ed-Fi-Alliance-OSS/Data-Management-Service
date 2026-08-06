@@ -37,6 +37,7 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
 
     private MappingSet _ds52MappingSet = null!;
     private MappingSet _sampleExtensionMappingSet = null!;
+    private MappingSet _ds52MssqlMappingSet = null!;
 
     [OneTimeSetUp]
     public void OneTimeSetup()
@@ -50,6 +51,9 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
                 [(Ds52FixturePath, false), (SampleExtensionFixturePath, true)],
                 SqlDialect.Pgsql
             )
+        );
+        _ds52MssqlMappingSet = compiler.Compile(
+            RuntimePlanFixtureModelSetBuilder.Build(Ds52FixturePath, SqlDialect.Mssql)
         );
     }
 
@@ -107,6 +111,140 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
             .Be(_ds52MappingSet.ResourceKeyIdByResource[descriptorResource]);
         keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
         keyset.ParameterValues["maxChangeVersion"].Should().Be(200L);
+    }
+
+    [Test]
+    public void It_orders_descriptor_page_selection_by_content_version_for_bounded_windows()
+    {
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor");
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            _ds52MappingSet,
+            descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            _paginationParameters,
+            changeVersionRange: _changeVersionRange,
+            orderingMode: ChangeQueryPageOrderingPolicy.Default.ResolveForLiveQuery(_changeVersionRange)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain("ORDER BY r.\"ContentVersion\" ASC");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
+    }
+
+    [Test]
+    public void It_orders_descriptor_page_selection_by_document_id_for_min_only_windows()
+    {
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor");
+        var minOnlyRange = new ChangeVersionRange(100L, null);
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            _ds52MappingSet,
+            descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            _paginationParameters,
+            changeVersionRange: minOnlyRange,
+            orderingMode: ChangeQueryPageOrderingPolicy.Default.ResolveForLiveQuery(minOnlyRange)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain("ORDER BY r.\"DocumentId\" ASC");
+    }
+
+    [Test]
+    [TestCase(100L, 200L, "ORDER BY r.\"ContentVersion\" ASC")]
+    [TestCase(null, 200L, "ORDER BY r.\"ContentVersion\" ASC")]
+    [TestCase(100L, null, "ORDER BY r.\"DocumentId\" ASC")]
+    [TestCase(null, null, "ORDER BY r.\"DocumentId\" ASC")]
+    public void It_selects_page_ordering_from_the_change_version_filter_shape(
+        long? minChangeVersion,
+        long? maxChangeVersion,
+        string expectedOrderByFragment
+    )
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var readPlan = _ds52MappingSet.GetReadPlanOrThrow(resource);
+        var changeVersionRange = new ChangeVersionRange(minChangeVersion, maxChangeVersion);
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            readPlan.Model.Root,
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            _paginationParameters,
+            changeVersionRange: changeVersionRange,
+            orderingMode: ChangeQueryPageOrderingPolicy.Default.ResolveForLiveQuery(changeVersionRange)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain(expectedOrderByFragment);
+    }
+
+    [Test]
+    public void It_retains_document_id_ordering_for_bounded_windows_when_the_kill_switch_is_enabled()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var readPlan = _ds52MappingSet.GetReadPlanOrThrow(resource);
+        var legacyPolicy = new ChangeQueryPageOrderingPolicy(useLegacyDocumentIdOrdering: true);
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            readPlan.Model.Root,
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            _paginationParameters,
+            changeVersionRange: _changeVersionRange,
+            orderingMode: legacyPolicy.ResolveForLiveQuery(_changeVersionRange)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain("ORDER BY r.\"DocumentId\" ASC");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("ORDER BY r.\"ContentVersion\"");
+    }
+
+    [Test]
+    public void It_defaults_to_document_id_ordering_when_no_ordering_mode_is_passed()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var readPlan = _ds52MappingSet.GetReadPlanOrThrow(resource);
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var planned = planner.TryPlan(
+            readPlan.Model.Root,
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            _paginationParameters,
+            out var plannedQuery,
+            out _,
+            changeVersionRange: _changeVersionRange
+        );
+
+        planned.Should().BeTrue();
+        plannedQuery!.Plan.PageDocumentIdSql.Should().Contain("ORDER BY r.\"DocumentId\" ASC");
+    }
+
+    [Test]
+    [TestCase(100L, 200L, "ORDER BY r.[ContentVersion] ASC", TestName = "Mssql_ordering_min_and_max")]
+    [TestCase(null, 200L, "ORDER BY r.[ContentVersion] ASC", TestName = "Mssql_ordering_max_only")]
+    [TestCase(100L, null, "ORDER BY r.[DocumentId] ASC", TestName = "Mssql_ordering_min_only")]
+    public void It_selects_mssql_page_ordering_from_the_change_version_filter_shape(
+        long? minChangeVersion,
+        long? maxChangeVersion,
+        string expectedOrderByFragment
+    )
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var readPlan = _ds52MssqlMappingSet.GetReadPlanOrThrow(resource);
+        var changeVersionRange = new ChangeVersionRange(minChangeVersion, maxChangeVersion);
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Mssql);
+
+        var keyset = planner.Plan(
+            readPlan.Model.Root,
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            _paginationParameters,
+            changeVersionRange: changeVersionRange,
+            orderingMode: ChangeQueryPageOrderingPolicy.Default.ResolveForLiveQuery(changeVersionRange)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain(expectedOrderByFragment);
+
+        // Full generated SQL captured for the manual SQL Server plan-validation gate (Task 8).
+        TestContext.Out.WriteLine(keyset.Plan.PageDocumentIdSql);
     }
 
     private static void AssertRegularResourceChangeVersionSqlShape(

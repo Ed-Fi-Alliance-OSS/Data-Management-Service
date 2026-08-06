@@ -23,7 +23,8 @@ internal sealed class DescriptorReadHandler(
     IRelationalCommandExecutor commandExecutor,
     IReadableProfileProjector readableProfileProjector,
     IServedEtagComposer servedEtagComposer,
-    ILogger<DescriptorReadHandler> logger
+    ILogger<DescriptorReadHandler> logger,
+    ChangeQueryPageOrderingPolicy? orderingPolicy = null
 ) : IDescriptorReadHandler
 {
     private const string DocumentUuidParameterName = "@documentUuid";
@@ -40,6 +41,8 @@ internal sealed class DescriptorReadHandler(
         servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
     private readonly ILogger<DescriptorReadHandler> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly ChangeQueryPageOrderingPolicy _orderingPolicy =
+        orderingPolicy ?? ChangeQueryPageOrderingPolicy.Default;
 
     public async Task<GetResult> HandleGetByIdAsync(
         DescriptorGetByIdRequest request,
@@ -394,7 +397,8 @@ internal sealed class DescriptorReadHandler(
             preprocessingResult,
             request.PaginationParameters,
             authorizationSpec,
-            request.ChangeVersionRange
+            request.ChangeVersionRange,
+            orderingMode: _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange)
         );
         var command = BuildQueryCommand(request.MappingSet.Key.Dialect, plannedQuery);
 

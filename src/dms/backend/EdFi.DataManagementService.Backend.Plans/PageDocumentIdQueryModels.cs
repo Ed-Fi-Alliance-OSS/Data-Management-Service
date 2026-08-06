@@ -130,6 +130,21 @@ public sealed record PageDocumentIdAuthorizationSpec(
 );
 
 /// <summary>
+/// The page-selection ordering key for page-<c>DocumentId</c> query compilation.
+/// </summary>
+public enum PageOrderingMode
+{
+    /// <summary>Order page selection by the root table's <c>DocumentId</c>. The default.</summary>
+    DocumentId,
+
+    /// <summary>
+    /// Order page selection by the root table's mirrored <c>ContentVersion</c> column. Selected
+    /// only for max-bearing change-version windows; see <c>ChangeQueryPageOrderingPolicy</c>.
+    /// </summary>
+    ContentVersion,
+}
+
+/// <summary>
 /// Input specification for compiling page-<c>DocumentId</c> query SQL.
 /// </summary>
 /// <param name="RootTable">The resource root table queried for <c>DocumentId</c>.</param>
@@ -146,6 +161,10 @@ public sealed record PageDocumentIdAuthorizationSpec(
 /// Optional DMS-1055 authorization inputs. When present, relationship predicates are applied to both page and
 /// total-count SQL.
 /// </param>
+/// <param name="OrderingMode">
+/// The page-selection ordering key. Defaults to <see cref="PageOrderingMode.DocumentId"/>; page
+/// membership follows this key while hydration output remains ordered by <c>DocumentId</c>.
+/// </param>
 public sealed record PageDocumentIdQuerySpec(
     DbTableName RootTable,
     IReadOnlyList<QueryValuePredicate> Predicates,
@@ -153,5 +172,6 @@ public sealed record PageDocumentIdQuerySpec(
     string OffsetParameterName = "offset",
     string LimitParameterName = "limit",
     bool IncludeTotalCountSql = false,
-    PageDocumentIdAuthorizationSpec? Authorization = null
+    PageDocumentIdAuthorizationSpec? Authorization = null,
+    PageOrderingMode OrderingMode = PageOrderingMode.DocumentId
 );

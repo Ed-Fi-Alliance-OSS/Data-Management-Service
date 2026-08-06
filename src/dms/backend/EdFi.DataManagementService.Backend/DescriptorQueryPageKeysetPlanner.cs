@@ -29,7 +29,8 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         DescriptorQueryPreprocessingResult preprocessingResult,
         PaginationParameters paginationParameters,
         PageDocumentIdAuthorizationSpec? authorization = null,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        PageOrderingMode orderingMode = PageOrderingMode.DocumentId
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
@@ -71,7 +72,8 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             OffsetParameterName: OffsetParameterName,
             LimitParameterName: LimitParameterName,
             IncludeTotalCountSql: paginationParameters.TotalCount,
-            Authorization: authorization
+            Authorization: authorization,
+            OrderingMode: orderingMode
         );
         var sqlPlan = _sqlCompiler.Compile(pageQuerySpec);
         var parameterValues = BuildParameterValues(

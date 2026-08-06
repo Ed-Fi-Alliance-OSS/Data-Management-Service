@@ -41,7 +41,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         PaginationParameters paginationParameters,
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
         PageDocumentIdAuthorizationSpec? authorization = null,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        PageOrderingMode orderingMode = PageOrderingMode.DocumentId
     )
     {
         var plannedQuery = PlanOrEmptyPage(
@@ -51,7 +52,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             authorization,
             out var emptyPageReason,
             comparisonOperatorResolver,
-            changeVersionRange
+            changeVersionRange,
+            orderingMode
         );
 
         return plannedQuery
@@ -68,7 +70,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         out string? emptyPageReason,
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
         PageDocumentIdAuthorizationSpec? authorization = null,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        PageOrderingMode orderingMode = PageOrderingMode.DocumentId
     )
     {
         plannedQuery = PlanOrEmptyPage(
@@ -78,7 +81,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             authorization,
             out emptyPageReason,
             comparisonOperatorResolver,
-            changeVersionRange
+            changeVersionRange,
+            orderingMode
         );
 
         return plannedQuery is not null;
@@ -91,7 +95,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         PageDocumentIdAuthorizationSpec? authorization,
         out string? emptyPageReason,
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        PageOrderingMode orderingMode = PageOrderingMode.DocumentId
     )
     {
         ArgumentNullException.ThrowIfNull(rootTable);
@@ -182,7 +187,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             OffsetParameterName: OffsetParameterName,
             LimitParameterName: LimitParameterName,
             IncludeTotalCountSql: paginationParameters.TotalCount,
-            Authorization: authorization
+            Authorization: authorization,
+            OrderingMode: orderingMode
         );
         var sqlPlan = _sqlCompiler.Compile(querySpec);
 

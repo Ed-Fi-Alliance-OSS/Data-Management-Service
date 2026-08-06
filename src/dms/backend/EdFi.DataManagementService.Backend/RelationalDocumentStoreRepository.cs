@@ -37,7 +37,8 @@ public sealed class RelationalDocumentStoreRepository(
     INamespaceAuthorizationExecutor namespaceAuthorizationExecutor,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
-        null
+        null,
+    ChangeQueryPageOrderingPolicy? orderingPolicy = null
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private const int GetByIdRelationshipAuthorizationAuth1Index = 0;
@@ -83,6 +84,8 @@ public sealed class RelationalDocumentStoreRepository(
     private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
         relationshipAuthorizationProviderFailureExtractor
         ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
+    private readonly ChangeQueryPageOrderingPolicy _orderingPolicy =
+        orderingPolicy ?? ChangeQueryPageOrderingPolicy.Default;
     private readonly RelationshipAuthorizationPlanner _relationshipAuthorizationPlanner = new(
         edOrgAuthorizationSubjectSelector
     );
@@ -862,7 +865,8 @@ public sealed class RelationalDocumentStoreRepository(
                     out plannedQuery,
                     out _,
                     authorization: pageQueryAuthorization,
-                    changeVersionRange: queryRequest.ChangeVersionRange
+                    changeVersionRange: queryRequest.ChangeVersionRange,
+                    orderingMode: _orderingPolicy.ResolveForLiveQuery(queryRequest.ChangeVersionRange)
                 ) || plannedQuery is null
             )
             {

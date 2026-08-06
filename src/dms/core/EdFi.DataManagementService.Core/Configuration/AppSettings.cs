@@ -82,4 +82,11 @@ public class AppSettings
     /// If true, authorization is bypassed and OIDC metadata is not warmed up at startup.
     /// </summary>
     public bool BypassAuthorization { get; set; }
+
+    /// <summary>
+    /// If true, restores unconditional DocumentId ordering for change-version-filtered GET-many
+    /// page selection. Default false: bounded and max-only change-version
+    /// windows order page selection by ContentVersion.
+    /// </summary>
+    public bool UseLegacyDocumentIdOrderingForChangeQueries { get; set; }
 }
