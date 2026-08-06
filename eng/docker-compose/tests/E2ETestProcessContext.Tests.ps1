@@ -655,12 +655,17 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
         $verdict.Reason | Should -Match "provisioned for the environment file's 4"
     }
 
+    # ConvertFrom-Json is lenient about some structurally invalid JSON: it accepts a missing closing
+    # bracket and a trailing comma, parsing both as arrays. Those shapes are therefore classified by
+    # entry count, not as malformed, and still fail the verdict whenever the count disagrees with the
+    # environment file. Only inputs the parser actually rejects belong in this table.
     It "fails without throwing when the container's SCHEMA_PACKAGES is <Label>" -ForEach @(
         @{ Label = "absent"; Container = @{ OmitSchemaPackages = $true } }
         @{ Label = "blank"; Container = @{ RawSchemaPackages = "" } }
         @{ Label = "whitespace"; Container = @{ RawSchemaPackages = "   " } }
         @{ Label = "not JSON at all"; Container = @{ RawSchemaPackages = "not-json" } }
-        @{ Label = "a truncated array"; Container = @{ RawSchemaPackages = '[{"name":"Package1"}' } }
+        @{ Label = "an array with a malformed element"; Container = @{ RawSchemaPackages = '[{"name":}]' } }
+        @{ Label = "JSON null"; Container = @{ RawSchemaPackages = "null" } }
         @{ Label = "a JSON object rather than an array"; Container = @{ RawSchemaPackages = '{"name":"Package1"}' } }
     ) {
         $verdict = $null
@@ -671,6 +676,28 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
 
         $script:verdict.ShouldFail | Should -BeTrue
         $script:verdict.Reason | Should -Match "SCHEMA_PACKAGES is absent, blank, or not a JSON array"
+    }
+
+    It "accepts a one-package JSON array without mistaking a JSON object for a one-item list" {
+        # ConvertFrom-Json unwraps a single-element array to one PSCustomObject, so parsing without
+        # -NoEnumerate rejected a valid one-package container as "not a JSON array". The shape check
+        # cannot be relaxed by wrapping the parse result in @(...) instead, because that would make a
+        # JSON object look like a one-item package list, so both halves are pinned together here.
+        $onePackageArray = Get-DmsSchemaEnvironmentVerdict `
+            -ContainerEnvironment (Get-ContainerEnvironmentFixture -PackageCount 1) `
+            -ExpectedPackageCount 1 `
+            -EnvironmentFileUsesApiSchemaPath $true
+
+        $onePackageArray.ShouldFail |
+            Should -BeFalse -Because "a one-package container matches a one-package environment file"
+
+        $jsonObject = Get-DmsSchemaEnvironmentVerdict `
+            -ContainerEnvironment (Get-ContainerEnvironmentFixture -RawSchemaPackages '{"name":"Package1"}') `
+            -ExpectedPackageCount 1 `
+            -EnvironmentFileUsesApiSchemaPath $true
+
+        $jsonObject.ShouldFail | Should -BeTrue -Because "a JSON object is not a package list"
+        $jsonObject.Reason | Should -Match "SCHEMA_PACKAGES is absent, blank, or not a JSON array"
     }
 
     It "reports a package-bearing environment file that does not enable the ApiSchema path as the inconsistency" {
