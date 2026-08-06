@@ -94,7 +94,9 @@ public class CoreExceptionLoggingMiddlewareTests
         public void It_returns_a_system_error_response()
         {
             _response.StatusCode.Should().Be(500);
-            _response.ContentType.Should().Be("application/json");
+            // A ProblemDetails body must be served as problem+json. The generic unhandled-exception 500
+            // above keeps application/json because its body is deliberately not ProblemDetails.
+            _response.ContentType.Should().Be("application/problem+json");
 
             JsonObject body = _response.Body!.AsObject();
             body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:system");

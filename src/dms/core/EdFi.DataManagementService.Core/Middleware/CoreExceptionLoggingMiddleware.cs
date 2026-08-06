@@ -64,6 +64,14 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger) : IPipelineStep
         }
     }
 
+    // ForSystemError emits a ProblemDetails body, so it must be served as problem+json rather than
+    // inheriting FrontendResponse's application/json default. The generic 500 above is deliberately
+    // left alone: its body is not ProblemDetails.
     private static FrontendResponse CreateSystemErrorResponse(TraceId traceId) =>
-        new(StatusCode: 500, Body: FailureResponse.ForSystemError(traceId), Headers: []);
+        new(
+            StatusCode: 500,
+            Body: FailureResponse.ForSystemError(traceId),
+            Headers: [],
+            ContentType: "application/problem+json"
+        );
 }

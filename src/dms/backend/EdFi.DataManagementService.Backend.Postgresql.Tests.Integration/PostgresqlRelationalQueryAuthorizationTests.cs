@@ -1004,6 +1004,35 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     }
 
     /// <summary>
+    /// Creates the custom authorization view with an <em>unquoted</em> name, which PostgreSQL folds to
+    /// lower case: the object lands as <c>auth.{lowercased}</c> while the configured strategy name stays
+    /// PascalCase. This is the mistake hand-written DDL actually makes, as opposed to simulating the
+    /// folded result by passing an already-lowercased name to the quoted helper above.
+    /// </summary>
+    public async Task CreateSchoolCustomAuthViewWithUnquotedNameAsync(
+        string strategyName,
+        IReadOnlyList<int> authorizedSchoolIds
+    )
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var physicalSchema = MappingSet.ReadPlansByResource[schoolResource].Model.PhysicalSchema.Value;
+        var schoolIdList = string.Join(", ", authorizedSchoolIds);
+
+        await DropCustomAuthViewAsync(FoldUnquotedIdentifier(strategyName));
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW auth.{strategyName} AS
+            SELECT "DocumentId"
+            FROM "{physicalSchema}"."School"
+            WHERE "SchoolId" IN ({schoolIdList});
+            """
+        );
+    }
+
+    /// <summary>The name PostgreSQL stores for an unquoted identifier.</summary>
+    public static string FoldUnquotedIdentifier(string identifier) => identifier.ToLowerInvariant();
+
+    /// <summary>
     /// Creates (or replaces) an "auth"."{strategyName}" view that omits the required DocumentId column,
     /// simulating a misconfigured custom authorization view.
     /// </summary>

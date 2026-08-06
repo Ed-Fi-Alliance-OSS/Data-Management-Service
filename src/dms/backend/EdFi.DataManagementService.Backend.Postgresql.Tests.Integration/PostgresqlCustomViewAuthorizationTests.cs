@@ -49,6 +49,12 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Custom_Vie
         "AuthorizationNamespaceResourceWithIntersectionCustomViewProviderTest";
 
     /// <summary>
+    /// A configured strategy whose auth view was created with unquoted DDL, so PostgreSQL folded the
+    /// object name to lower case while the strategy name stays PascalCase.
+    /// </summary>
+    private const string FoldedCaseCustomViewStrategyName = "SchoolWithFoldedCaseCustomViewProviderTest";
+
+    /// <summary>
     /// A strategy (and therefore auth view) name carrying PostgreSQL's default <c>$$</c> dollar-quote
     /// delimiter. The validator embeds the view name in a <c>DO</c> block as a string literal, so a fixed
     /// <c>$$</c> delimiter would be closed by the name itself.
@@ -156,6 +162,11 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Custom_Vie
             await _context.DropCustomAuthViewAsync(BroadIntersectionCustomViewStrategyName);
             await _context.DropCustomAuthViewAsync(NarrowIntersectionCustomViewStrategyName);
             await _context.DropCustomAuthViewAsync(NamespaceIntersectionCustomViewStrategyName);
+            await _context.DropCustomAuthViewAsync(
+                PostgresqlRelationalQueryAuthorizationTestContext.FoldUnquotedIdentifier(
+                    FoldedCaseCustomViewStrategyName
+                )
+            );
             await _context.DropCustomAuthMaterializedViewAsync(MaterializedCustomViewStrategyName);
             await _context.DisposeAsync();
         }
@@ -319,6 +330,26 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Custom_Vie
         var exception = await AssertCustomViewValidationFailure(act);
         exception.SqlState.Should().Be(PostgresErrorCodes.UndefinedTable);
         exception.Message.Should().Contain(MissingCustomViewStrategyName);
+    }
+
+    [Test]
+    public async Task It_rejects_a_custom_view_created_with_an_unquoted_name()
+    {
+        // Unquoted DDL folds to lower case, so the view lands as auth.schoolwithfoldedcase... while the
+        // configured strategy stays PascalCase. DMS quotes the identifier and compares the catalog name
+        // verbatim, so the mismatch must surface as a validation failure rather than silently authorizing
+        // against the folded object. This is the DDL mistake auth.md's quoting note warns about, and it
+        // pairs with the SQL Server binary-collation guard so the contract is case-sensitive on both.
+        await _context.CreateSchoolCustomAuthViewWithUnquotedNameAsync(
+            FoldedCaseCustomViewStrategyName,
+            [100]
+        );
+
+        Func<Task> act = () => _context.QueryAsync("ed-fi", "School", [], [FoldedCaseCustomViewStrategyName]);
+
+        var exception = await AssertCustomViewValidationFailure(act);
+        exception.SqlState.Should().Be(PostgresErrorCodes.UndefinedTable);
+        exception.Message.Should().Contain(FoldedCaseCustomViewStrategyName);
     }
 
     [Test]
