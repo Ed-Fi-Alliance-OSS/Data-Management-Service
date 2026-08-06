@@ -407,23 +407,15 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
         IDocumentCacheProjectionObservationSink observationSink,
         Func<ValueTask>? disposeScopeAsync = null
     )
+        : this(
+            targetExecutionContext,
+            providerAdapters,
+            observationSink,
+            sessionBoundWriter: null,
+            disposeScopeAsync: disposeScopeAsync
+        )
     {
-        TargetExecutionContext =
-            targetExecutionContext ?? throw new ArgumentNullException(nameof(targetExecutionContext));
-        ProviderAdapters = providerAdapters ?? throw new ArgumentNullException(nameof(providerAdapters));
-        ObservationSink = observationSink ?? throw new ArgumentNullException(nameof(observationSink));
-        Cursor = new DocumentCacheProjectionCursorState();
-        FailureBackoffState = new DocumentCacheProjectionFailureBackoffState(
-            TargetExecutionContext.EffectiveSettings.ProjectorPageSize
-        );
-        SchedulingState = new DocumentCacheProjectionTargetSchedulingState();
-        DrainExecutor = new DocumentCacheProjectionTargetDrainExecutor();
-        ContextKey = new DocumentCacheProjectionTargetContextKey(
-            TargetExecutionContext.TargetKey,
-            TargetExecutionContext.Generation
-        );
-        _sessionBoundWriter = null;
-        _disposeScopeAsync = disposeScopeAsync;
+        // Shared initialization lives in the internal constructor.
     }
 
     internal DocumentCacheProjectionTargetRuntimeContext(
