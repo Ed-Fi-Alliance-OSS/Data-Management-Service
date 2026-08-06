@@ -266,6 +266,12 @@ internal sealed class DocumentCacheAdministrativeDrainer(
     ILogger<DocumentCacheAdministrativeDrainer> logger
 ) : IDocumentCacheAdministrativeDrainer
 {
+    private enum DocumentCacheAdministrativeUnproductivePassKind
+    {
+        NoDurableProgress,
+        PoisonSuppression,
+    }
+
     public async Task<DocumentCacheAdministrativeDrainSliceResult> DrainBackpressureReliefSliceAsync(
         DocumentCacheAdministrativeCommandExecutionContext context,
         CancellationToken cancellationToken = default
@@ -358,33 +364,71 @@ internal sealed class DocumentCacheAdministrativeDrainer(
             context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize
         );
         var unproductiveRetryPassCount = 0;
+        DocumentCacheAdministrativeUnproductivePassKind? unproductiveRetryPassKind = null;
 
         while (true)
         {
             effectiveCancellationToken.ThrowIfCancellationRequested();
 
+            DocumentCacheAdministrativeDrainCursorPosition? startingCursor =
+                DocumentCacheAdministrativeDrainCursorPosition.From(context.TargetContext.Cursor);
             DocumentCacheProjectionDrainPageResult drainResult = await RunDrainSliceAsync(
                     context,
                     effectiveCancellationToken
                 )
                 .ConfigureAwait(false);
+            DocumentCacheAdministrativeDrainCursorPosition? endingCursor =
+                DocumentCacheAdministrativeDrainCursorPosition.From(context.TargetContext.Cursor);
 
             stats.Record(drainResult);
-            currentPass.Record(drainResult);
 
             if (drainResult.AdministrativeFailure is not null)
             {
                 return Fail(context, stats, drainResult.AdministrativeFailure);
             }
 
+            if (CompletedCursorPass(startingCursor, endingCursor, drainResult))
+            {
+                if (
+                    drainResult.AcknowledgedOrRemovedItemCount > 0
+                    || drainResult.DocumentScopedFailureCount > 0
+                )
+                {
+                    ResetUnproductiveRetryPassCount(
+                        ref unproductiveRetryPassCount,
+                        ref unproductiveRetryPassKind
+                    );
+                }
+                else if (currentPass.IsUnproductiveNoProgressPass)
+                {
+                    RecordUnproductiveRetryPass(
+                        DocumentCacheAdministrativeUnproductivePassKind.NoDurableProgress,
+                        ref unproductiveRetryPassCount,
+                        ref unproductiveRetryPassKind
+                    );
+                    logger.LogDebug(
+                        "DocumentCache administrative drain for target {TargetKey} completed a cursor pass without acknowledging, removing, or recording failures and will poll again.",
+                        LoggingSanitizer.SanitizeForLogging(context.TargetContext.TargetKey.ToString())
+                    );
+                    await DelayForPollIntervalAsync(context, effectiveCancellationToken)
+                        .ConfigureAwait(false);
+                }
+                else if (currentPass.RecordedDurableProgress)
+                {
+                    ResetUnproductiveRetryPassCount(
+                        ref unproductiveRetryPassCount,
+                        ref unproductiveRetryPassKind
+                    );
+                }
+
+                currentPass = NewPass(context);
+            }
+
+            currentPass.Record(drainResult);
+
             switch (drainResult.Outcome)
             {
                 case DocumentCacheProjectionDrainPageOutcome.PageProcessed:
-                    if (drainResult.AcknowledgedOrRemovedItemCount > 0)
-                    {
-                        unproductiveRetryPassCount = 0;
-                    }
-
                     continue;
 
                 case DocumentCacheProjectionDrainPageOutcome.NoEligibleWork:
@@ -400,17 +444,31 @@ internal sealed class DocumentCacheAdministrativeDrainer(
 
                     if (drainResult.NextRetryAt is not null)
                     {
-                        if (currentPass.IsUnproductivePoisonPass)
+                        if (currentPass.IsUnproductivePoisonPass || currentPass.ProcessedItemCount == 0)
                         {
-                            unproductiveRetryPassCount++;
-                            if (unproductiveRetryPassCount >= 2)
+                            int retryPassCount = RecordUnproductiveRetryPass(
+                                DocumentCacheAdministrativeUnproductivePassKind.PoisonSuppression,
+                                ref unproductiveRetryPassCount,
+                                ref unproductiveRetryPassKind
+                            );
+                            if (retryPassCount >= 2)
                             {
                                 return PersistentPoison(context, stats, currentPass.DiagnosticDocumentIds);
                             }
                         }
+                        else if (currentPass.RecordedDurableProgress)
+                        {
+                            ResetUnproductiveRetryPassCount(
+                                ref unproductiveRetryPassCount,
+                                ref unproductiveRetryPassKind
+                            );
+                        }
                         else
                         {
-                            unproductiveRetryPassCount = 0;
+                            ResetUnproductiveRetryPassCount(
+                                ref unproductiveRetryPassCount,
+                                ref unproductiveRetryPassKind
+                            );
                         }
 
                         await DelayUntilAsync(drainResult.NextRetryAt.Value, effectiveCancellationToken)
@@ -419,22 +477,28 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                         continue;
                     }
 
-                    unproductiveRetryPassCount = 0;
+                    if (currentPass.IsUnproductiveNoProgressPass)
+                    {
+                        RecordUnproductiveRetryPass(
+                            DocumentCacheAdministrativeUnproductivePassKind.NoDurableProgress,
+                            ref unproductiveRetryPassCount,
+                            ref unproductiveRetryPassKind
+                        );
+                    }
+                    else
+                    {
+                        ResetUnproductiveRetryPassCount(
+                            ref unproductiveRetryPassCount,
+                            ref unproductiveRetryPassKind
+                        );
+                    }
+
                     currentPass = NewPass(context);
                     logger.LogDebug(
                         "DocumentCache administrative drain for target {TargetKey} found durable work after an empty page and will poll again.",
                         LoggingSanitizer.SanitizeForLogging(context.TargetContext.TargetKey.ToString())
                     );
-                    await delay
-                        .DelayAsync(
-                            context
-                                .TargetContext
-                                .TargetExecutionContext
-                                .EffectiveSettings
-                                .ProjectorPollInterval,
-                            timeProvider,
-                            effectiveCancellationToken
-                        )
+                    await DelayForPollIntervalAsync(context, effectiveCancellationToken)
                         .ConfigureAwait(false);
                     continue;
 
@@ -489,9 +553,54 @@ internal sealed class DocumentCacheAdministrativeDrainer(
         await delay.DelayAsync(delayDuration, timeProvider, cancellationToken).ConfigureAwait(false);
     }
 
+    private Task DelayForPollIntervalAsync(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        CancellationToken cancellationToken
+    ) =>
+        delay.DelayAsync(
+            context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPollInterval,
+            timeProvider,
+            cancellationToken
+        );
+
     private static DocumentCacheAdministrativeDrainPass NewPass(
         DocumentCacheAdministrativeCommandExecutionContext context
     ) => new(context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize);
+
+    private static bool CompletedCursorPass(
+        DocumentCacheAdministrativeDrainCursorPosition? startingCursor,
+        DocumentCacheAdministrativeDrainCursorPosition? endingCursor,
+        DocumentCacheProjectionDrainPageResult drainResult
+    ) =>
+        drainResult.Outcome == DocumentCacheProjectionDrainPageOutcome.PageProcessed
+        && startingCursor is not null
+        && endingCursor is not null
+        && endingCursor.Value.CompareTo(startingCursor.Value) <= 0;
+
+    private static int RecordUnproductiveRetryPass(
+        DocumentCacheAdministrativeUnproductivePassKind kind,
+        ref int unproductiveRetryPassCount,
+        ref DocumentCacheAdministrativeUnproductivePassKind? unproductiveRetryPassKind
+    )
+    {
+        if (unproductiveRetryPassKind != kind)
+        {
+            unproductiveRetryPassCount = 0;
+            unproductiveRetryPassKind = kind;
+        }
+
+        unproductiveRetryPassCount++;
+        return unproductiveRetryPassCount;
+    }
+
+    private static void ResetUnproductiveRetryPassCount(
+        ref int unproductiveRetryPassCount,
+        ref DocumentCacheAdministrativeUnproductivePassKind? unproductiveRetryPassKind
+    )
+    {
+        unproductiveRetryPassCount = 0;
+        unproductiveRetryPassKind = null;
+    }
 
     private async Task<DocumentCacheProjectionDrainPageResult> RunDrainSliceAsync(
         DocumentCacheAdministrativeCommandExecutionContext context,
@@ -606,6 +715,35 @@ internal sealed class DocumentCacheAdministrativeDrainer(
     }
 }
 
+internal readonly record struct DocumentCacheAdministrativeDrainCursorPosition(
+    DateTimeOffset FirstEnqueuedAt,
+    long DocumentId
+) : IComparable<DocumentCacheAdministrativeDrainCursorPosition>
+{
+    public static DocumentCacheAdministrativeDrainCursorPosition? From(
+        DocumentCacheProjectionCursorState cursor
+    )
+    {
+        if (!cursor.HasValue)
+        {
+            return null;
+        }
+
+        return new(cursor.LastFirstEnqueuedAt!.Value, cursor.LastDocumentId!.Value);
+    }
+
+    public int CompareTo(DocumentCacheAdministrativeDrainCursorPosition other)
+    {
+        int firstEnqueuedAtComparison = FirstEnqueuedAt.CompareTo(other.FirstEnqueuedAt);
+        if (firstEnqueuedAtComparison != 0)
+        {
+            return firstEnqueuedAtComparison;
+        }
+
+        return DocumentId.CompareTo(other.DocumentId);
+    }
+}
+
 internal sealed class DocumentCacheAdministrativeDrainPass(int diagnosticCapacity)
 {
     private ImmutableArray<long> _diagnosticDocumentIds = [];
@@ -617,6 +755,12 @@ internal sealed class DocumentCacheAdministrativeDrainPass(int diagnosticCapacit
     public int DocumentScopedFailureCount { get; private set; }
 
     public ImmutableArray<long> DiagnosticDocumentIds => _diagnosticDocumentIds;
+
+    public bool RecordedDurableProgress =>
+        AcknowledgedOrRemovedItemCount > 0 || DocumentScopedFailureCount > 0;
+
+    public bool IsUnproductiveNoProgressPass =>
+        ProcessedItemCount > 0 && AcknowledgedOrRemovedItemCount == 0 && DocumentScopedFailureCount == 0;
 
     public bool IsUnproductivePoisonPass =>
         ProcessedItemCount > 0

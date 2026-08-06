@@ -75,6 +75,112 @@ public class Given_DocumentCacheAdministrativeDrain
     }
 
     [Test]
+    public async Task It_delays_after_a_completed_cursor_pass_with_no_acknowledgements_or_failures()
+    {
+        MutableTimeProvider timeProvider = new(ObservedAt);
+        var pager = new RecordingWorkPager(
+            new DocumentProjectionWorkPage([WorkItem(101, requiredContentVersion: 10)], pageSize: 3),
+            new DocumentProjectionWorkPage([], pageSize: 3),
+            new DocumentProjectionWorkPage([WorkItem(101, requiredContentVersion: 10)], pageSize: 3),
+            new DocumentProjectionWorkPage([], pageSize: 3),
+            new DocumentProjectionWorkPage([], pageSize: 3)
+        );
+        DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext();
+        var primitives = new RecordingAdministrativePrimitives(
+            new DocumentCacheAdministrativeProjectedStateEmptinessResult(
+                documentCacheEmpty: true,
+                documentProjectionWorkEmpty: true,
+                "empty"
+            )
+        );
+        DocumentCacheAdministrativeCommandExecutionContext context = CreateCommandContext(
+            primitives,
+            new RecordingMutexLease(),
+            targetContext
+        );
+        DocumentCacheProjectionScheduler scheduler = CreateRealScheduler(
+            new DocumentCacheProjectionDrainPageProcessor(
+                pager,
+                new ScriptedItemProcessor(
+                    DocumentCacheProjectionItemProcessResult.Continue,
+                    DocumentCacheProjectionItemProcessResult.Continue
+                ),
+                NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+                timeProvider
+            )
+        );
+        RecordingDrainDelay delay = new(timeProvider);
+
+        DocumentCacheAdministrativeDrainToEmptyResult result = await CreateDrainer(
+                scheduler,
+                delay,
+                timeProvider
+            )
+            .DrainToEmptyAsync(context);
+
+        result.Completed.Should().BeTrue();
+        result.ProcessedItemCount.Should().Be(2);
+        result.AcknowledgedOrRemovedItemCount.Should().Be(0);
+        result.DocumentScopedFailureCount.Should().Be(0);
+        delay.Delays.Should().Equal(TimeSpan.FromSeconds(5));
+        pager.Requests.Should().HaveCount(5);
+    }
+
+    [Test]
+    public async Task It_does_not_add_a_guard_delay_when_the_next_page_makes_durable_progress()
+    {
+        MutableTimeProvider timeProvider = new(ObservedAt);
+        var pager = new RecordingWorkPager(
+            new DocumentProjectionWorkPage([WorkItem(101, requiredContentVersion: 10)], pageSize: 3),
+            new DocumentProjectionWorkPage([], pageSize: 3),
+            new DocumentProjectionWorkPage([WorkItem(101, requiredContentVersion: 10)], pageSize: 3),
+            new DocumentProjectionWorkPage([], pageSize: 3),
+            new DocumentProjectionWorkPage([WorkItem(101, requiredContentVersion: 10)], pageSize: 3),
+            new DocumentProjectionWorkPage([], pageSize: 3),
+            new DocumentProjectionWorkPage([], pageSize: 3)
+        );
+        DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext();
+        var primitives = new RecordingAdministrativePrimitives(
+            new DocumentCacheAdministrativeProjectedStateEmptinessResult(
+                documentCacheEmpty: true,
+                documentProjectionWorkEmpty: true,
+                "empty"
+            )
+        );
+        DocumentCacheAdministrativeCommandExecutionContext context = CreateCommandContext(
+            primitives,
+            new RecordingMutexLease(),
+            targetContext
+        );
+        DocumentCacheProjectionScheduler scheduler = CreateRealScheduler(
+            new DocumentCacheProjectionDrainPageProcessor(
+                pager,
+                new ScriptedItemProcessor(
+                    DocumentCacheProjectionItemProcessResult.Continue,
+                    DocumentCacheProjectionItemProcessResult.Continue,
+                    DocumentCacheProjectionItemProcessResult.AcknowledgedOrRemoved
+                ),
+                NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+                timeProvider
+            )
+        );
+        RecordingDrainDelay delay = new(timeProvider);
+
+        DocumentCacheAdministrativeDrainToEmptyResult result = await CreateDrainer(
+                scheduler,
+                delay,
+                timeProvider
+            )
+            .DrainToEmptyAsync(context);
+
+        result.Completed.Should().BeTrue();
+        result.ProcessedItemCount.Should().Be(3);
+        result.AcknowledgedOrRemovedItemCount.Should().Be(1);
+        delay.Delays.Should().Equal(TimeSpan.FromSeconds(5));
+        pager.Requests.Should().HaveCount(7);
+    }
+
+    [Test]
     public async Task It_uses_the_session_bound_writer_fast_path_for_equal_version_work()
     {
         var pager = new RecordingWorkPager(
@@ -630,6 +736,24 @@ public class Given_DocumentCacheAdministrativeDrain
         {
             Requests.Add(request);
             return Task.FromResult(_pages.Dequeue());
+        }
+    }
+
+    private sealed class ScriptedItemProcessor(params DocumentCacheProjectionItemProcessResult[] results)
+        : IDocumentCacheProjectionItemProcessor
+    {
+        private readonly Queue<DocumentCacheProjectionItemProcessResult> _results = new(results);
+
+        public List<DocumentCacheProjectionItemProcessRequest> Requests { get; } = [];
+
+        public Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
+            DocumentCacheProjectionItemProcessRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            _ = cancellationToken;
+            Requests.Add(request);
+            return Task.FromResult(_results.Dequeue());
         }
     }
 
