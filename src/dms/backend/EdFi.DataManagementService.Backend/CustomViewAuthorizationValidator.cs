@@ -178,6 +178,17 @@ internal static class CustomViewAuthorizationValidator
             .Append(" LIMIT 0");
     }
 
+    /// <summary>
+    /// The binary collation forced onto the SQL Server catalog name comparisons. <c>sys</c> name columns
+    /// are <c>sysname</c>, carrying the database collation, which is case-insensitive by default — so a
+    /// plain <c>=</c> would accept a mis-cased schema, view, or DocumentId column, and the bracketed bind
+    /// probe below resolves identifiers case-insensitively too. Both would then pass and the request would
+    /// return a filtered 200 against an object that is not the configured <c>auth.{StrategyName}</c>.
+    /// PostgreSQL already compares <c>pg_catalog</c> names case-sensitively, so this keeps the documented
+    /// contract identical on both engines.
+    /// </summary>
+    private const string MssqlCatalogNameCollation = " COLLATE Latin1_General_100_BIN2";
+
     // The catalog guard proves the auth object is a view exposing a bigint DocumentId, and the row-free
     // bind probe proves the view and column resolve. Like PostgreSQL, the resolved root-to-basis join
     // path is left to the actual page query, so a path error surfaces there on both engines rather than
@@ -206,13 +217,19 @@ internal static class CustomViewAuthorizationValidator
             .AppendLine("    INNER JOIN sys.schemas s ON s.schema_id = v.schema_id")
             .AppendLine("    INNER JOIN sys.columns c ON c.object_id = v.object_id")
             .AppendLine("    INNER JOIN sys.types t ON t.user_type_id = c.user_type_id")
-            .Append("    WHERE s.name = ")
+            .Append("    WHERE s.name")
+            .Append(MssqlCatalogNameCollation)
+            .Append(" = ")
             .Append(schemaName)
             .AppendLine()
-            .Append("      AND v.name = ")
+            .Append("      AND v.name")
+            .Append(MssqlCatalogNameCollation)
+            .Append(" = ")
             .Append(viewName)
             .AppendLine()
-            .Append("      AND c.name = ")
+            .Append("      AND c.name")
+            .Append(MssqlCatalogNameCollation)
+            .Append(" = ")
             .Append(documentIdColumn)
             .AppendLine()
             .AppendLine("      AND c.system_type_id = TYPE_ID(N'bigint')")

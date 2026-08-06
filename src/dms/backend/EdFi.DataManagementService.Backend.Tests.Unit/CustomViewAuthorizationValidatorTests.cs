@@ -177,9 +177,13 @@ public class Given_CustomViewAuthorizationValidator
         sql.Should().Contain("FROM sys.views v");
         sql.Should().Contain("INNER JOIN sys.schemas s ON s.schema_id = v.schema_id");
         sql.Should().Contain("INNER JOIN sys.columns c ON c.object_id = v.object_id");
-        sql.Should().Contain("s.name = N'auth'");
-        sql.Should().Contain("v.name = N'StudentAuthorization'");
-        sql.Should().Contain("c.name = N'DocumentId'");
+        // Binary collation on every catalog name comparison: sysname carries the database collation,
+        // which is case-insensitive by default, and the bracketed bind probe resolves identifiers
+        // case-insensitively too — so without this a mis-cased auth view or DocumentId column would
+        // pass validation and filter the page against an object that is not the configured one.
+        sql.Should().Contain("s.name COLLATE Latin1_General_100_BIN2 = N'auth'");
+        sql.Should().Contain("v.name COLLATE Latin1_General_100_BIN2 = N'StudentAuthorization'");
+        sql.Should().Contain("c.name COLLATE Latin1_General_100_BIN2 = N'DocumentId'");
         sql.Should().Contain("c.system_type_id = TYPE_ID(N'bigint')");
         sql.Should().Contain("THROW 50000");
         sql.Should()
@@ -200,8 +204,8 @@ public class Given_CustomViewAuthorizationValidator
             [CreateCheck("Student'Authorization", "Document'Id")]
         );
 
-        sql.Should().Contain("v.name = N'Student''Authorization'");
-        sql.Should().Contain("c.name = N'Document''Id'");
+        sql.Should().Contain("v.name COLLATE Latin1_General_100_BIN2 = N'Student''Authorization'");
+        sql.Should().Contain("c.name COLLATE Latin1_General_100_BIN2 = N'Document''Id'");
     }
 
     [Test]

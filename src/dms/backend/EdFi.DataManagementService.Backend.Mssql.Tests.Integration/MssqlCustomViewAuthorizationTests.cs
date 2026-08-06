@@ -46,6 +46,13 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_A_Custom_View_Str
     private const string NamespaceIntersectionCustomViewStrategyName =
         "AuthorizationNamespaceResourceWithIntersectionCustomViewProviderTest";
 
+    /// <summary>
+    /// A configured strategy whose auth view exists in the database under
+    /// <see cref="MixedCaseCustomViewObjectName"/> — the same identifier differing only by case.
+    /// </summary>
+    private const string MixedCaseCustomViewStrategyName = "SchoolWithMixedCaseCustomViewProviderTest";
+    private const string MixedCaseCustomViewObjectName = "SCHOOLWITHMIXEDCASECUSTOMVIEWPROVIDERTEST";
+
     private static readonly QuerySchoolSeed[] _schoolSeeds =
     [
         new(new DocumentUuid(Guid.Parse("77777777-1000-0000-0000-000000000001")), 100, "Authorized School"),
@@ -153,6 +160,7 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_A_Custom_View_Str
             await _context.DropCustomAuthViewAsync(BroadIntersectionCustomViewStrategyName);
             await _context.DropCustomAuthViewAsync(NarrowIntersectionCustomViewStrategyName);
             await _context.DropCustomAuthViewAsync(NamespaceIntersectionCustomViewStrategyName);
+            await _context.DropCustomAuthViewAsync(MixedCaseCustomViewObjectName);
             await _context.DisposeAsync();
         }
     }
@@ -407,6 +415,23 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_A_Custom_View_Str
                     AuthorizationStrategyNameConstants.OwnershipBased,
                 ]
             );
+
+        var exception = await AssertCustomViewValidationFailure(act);
+        exception.Message.Should().Contain("Invalid custom authorization view DocumentId contract.");
+    }
+
+    [Test]
+    public async Task It_rejects_a_custom_view_whose_object_name_differs_from_the_strategy_name_only_by_case()
+    {
+        // sys catalog name columns are sysname, carrying the database collation — case-insensitive here
+        // (SQL_Latin1_General_CP1_CI_AS) as on a default install — and the bracketed bind probe resolves
+        // identifiers case-insensitively too. Without a binary collation on the catalog comparison both
+        // accept this view, and the request returns a filtered 200 against an object that is not the
+        // configured auth.{StrategyName}. PostgreSQL already matches case-sensitively, so this keeps the
+        // documented contract identical on both engines.
+        await _context.CreateSchoolCustomAuthViewAsync(MixedCaseCustomViewObjectName, [100]);
+
+        Func<Task> act = () => _context.QueryAsync("ed-fi", "School", [], [MixedCaseCustomViewStrategyName]);
 
         var exception = await AssertCustomViewValidationFailure(act);
         exception.Message.Should().Contain("Invalid custom authorization view DocumentId contract.");
