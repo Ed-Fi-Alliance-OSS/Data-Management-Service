@@ -162,10 +162,17 @@ function Get-DmsSchemaEnvironmentToken {
         return "<blank>"
     }
 
-    if ([string]::Equals($value, "true", [System.StringComparison]::OrdinalIgnoreCase)) {
+    # Ordinal, deliberately not OrdinalIgnoreCase. run.sh:28 gates the entire package download on
+    # [ "$AppSettings__UseApiSchemaPath" = true ], a byte-exact POSIX string comparison, so only
+    # lowercase 'true' turns on the ApiSchema path at runtime. Accepting 'TRUE' or 'True' here passed a
+    # container that then downloaded nothing, which is precisely the EffectiveSchemaHash mismatch this
+    # gate exists to catch. Any other casing classifies as <set> below and fails.
+    if ([string]::Equals($value, "true", [System.StringComparison]::Ordinal)) {
         return "true"
     }
 
+    # OrdinalIgnoreCase is still correct here: this token is only message vocabulary for a value that
+    # fails whatever its casing, not the gate itself.
     if ([string]::Equals($value, "false", [System.StringComparison]::OrdinalIgnoreCase)) {
         return "false"
     }
@@ -173,22 +180,23 @@ function Get-DmsSchemaEnvironmentToken {
     return "<set>"
 }
 
-function Get-DmsContainerSchemaPackageCount {
-    # Returns the number of entries in the container's SCHEMA_PACKAGES value, or -1 when it is absent,
-    # blank, or not a JSON array. The value itself is never returned or logged.
+function Get-DmsContainerSchemaPackage {
+    # Returns the container's SCHEMA_PACKAGES entries as a parsed array, or $null when the value is
+    # absent, blank, or not a JSON array. The value itself is never returned to a caller that logs it:
+    # the entries only reach Get-DmsSchemaPackageIdentity, which is used for comparison alone.
     param(
         [Parameter(Mandatory)]
         [hashtable] $ContainerEnvironment
     )
 
     if (-not $ContainerEnvironment.ContainsKey("SCHEMA_PACKAGES")) {
-        return -1
+        return $null
     }
 
     $value = [string]$ContainerEnvironment["SCHEMA_PACKAGES"]
 
     if ([string]::IsNullOrWhiteSpace($value)) {
-        return -1
+        return $null
     }
 
     try {
@@ -198,17 +206,56 @@ function Get-DmsContainerSchemaPackageCount {
         $parsed = $value | ConvertFrom-Json -NoEnumerate -ErrorAction Stop
     }
     catch {
-        return -1
+        return $null
     }
 
     # A JSON object parses without error but is not a package list; only an array is a package set.
     # This check cannot be replaced by wrapping the parse result in @(...), which would make a JSON
     # object look like a one-item package list.
     if ($parsed -isnot [System.Collections.IList]) {
-        return -1
+        return $null
     }
 
-    return @($parsed).Count
+    # The unary comma keeps an empty or single-entry result an array through the return: PowerShell
+    # would otherwise unroll '@()' to nothing, and the caller could not tell it from the $null above.
+    return , @($parsed)
+}
+
+function Get-DmsSchemaPackageIdentity {
+    # Reduces ApiSchema package entries to sorted, comparable identities built from the three fields
+    # that decide which schema artifact is downloaded - name, version, and feedUrl - which is what
+    # run.sh and the provision phase's downloader both consume. A count comparison alone accepts a
+    # container whose packages differ in any of them, which is exactly the surface the E2E database was
+    # not provisioned for. A missing field normalizes to an empty string rather than throwing, so a
+    # malformed entry compares unequal instead of failing the verification.
+    #
+    # The identities are only ever compared; they are never returned to a failure message, so no
+    # container-supplied text can reach the console.
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [object[]] $Package
+    )
+
+    $identities = @(
+        foreach ($entry in $Package) {
+            $fields = [ordered]@{}
+            foreach ($fieldName in @("name", "version", "feedUrl")) {
+                $property = if ($null -eq $entry) { $null } else { $entry.PSObject.Properties[$fieldName] }
+                $fields[$fieldName] = if ($null -eq $property) { "" } else { [string]$property.Value }
+            }
+
+            # JSON rather than a delimiter join: a value containing the delimiter would otherwise let
+            # two different package sets normalize to the same identity text.
+            ConvertTo-Json -InputObject $fields -Compress
+        }
+    )
+
+    # Declaration order is not part of the package surface, so both sides are sorted before they are
+    # compared. Ordinal, so the result cannot vary with the host's culture.
+    [array]::Sort($identities, [System.StringComparer]::Ordinal)
+
+    return , $identities
 }
 
 function Get-DmsSchemaEnvironmentVerdict {
@@ -224,7 +271,7 @@ function Get-DmsSchemaEnvironmentVerdict {
         and then fails every data-plane request with an EffectiveSchemaHash mismatch, so the
         disagreement is worth failing on at setup time.
 
-        Every requirement here is unconditional. The caller obtains ExpectedPackageCount from the same
+        Every requirement here is unconditional. The caller obtains ExpectedPackageIdentity from the same
         reader the provision phase used, which throws unless the file declares at least one package, so
         by the time this runs the database has been provisioned for a real package surface and the
         runtime must match it. That includes the environment file's own USE_API_SCHEMA_PATH: a file that
@@ -237,26 +284,35 @@ function Get-DmsSchemaEnvironmentVerdict {
         [Parameter(Mandatory)]
         [hashtable] $ContainerEnvironment,
 
-        # The environment file's declared ApiSchema package count. Constrained to at least one because
-        # the file-only reader the caller uses cannot produce less: an absent, malformed, or empty
-        # SCHEMA_PACKAGES declaration already failed the provision phase.
+        # The environment file's declared ApiSchema package surface, as sorted identities from
+        # Get-DmsSchemaPackageIdentity. Constrained to at least one entry because the file-only reader
+        # the caller uses cannot produce less: an absent, malformed, or empty SCHEMA_PACKAGES
+        # declaration already failed the provision phase.
         [Parameter(Mandatory)]
-        [ValidateRange(1, [int]::MaxValue)]
-        [int] $ExpectedPackageCount,
+        [ValidateCount(1, [int]::MaxValue)]
+        [string[]] $ExpectedPackageIdentity,
 
         # The environment file's own USE_API_SCHEMA_PATH, read file-only (never with Compose
         # precedence, which would let the ambient override this gate exists to catch decide the
         # expected side and agree with a wrongly-started container).
         [Parameter(Mandatory)]
-        [bool] $EnvironmentFileUsesApiSchemaPath
+        [bool] $EnvironmentFileUsesApiSchemaPath,
+
+        # The environment file's API_SCHEMA_PATH, read file-only for the same reason. Compared
+        # Ordinal: this is the value Compose passes through verbatim, so any difference means the
+        # container is not using the path the environment file selected.
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $EnvironmentFileApiSchemaPath
     )
 
     $ambientRemediation = "Remove USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES from the invoking shell, or select a different -EnvironmentFile, then re-run setup."
+    $expectedPackageCount = $ExpectedPackageIdentity.Count
 
     if (-not $EnvironmentFileUsesApiSchemaPath) {
         return [pscustomobject]@{
             ShouldFail  = $true
-            Reason      = "the environment file declares $ExpectedPackageCount ApiSchema package(s) but does not set USE_API_SCHEMA_PATH=true, so the E2E database was provisioned for those packages while DMS was configured to load only the schemas baked into the image."
+            Reason      = "the environment file declares $expectedPackageCount ApiSchema package(s) but does not set USE_API_SCHEMA_PATH=true, so the E2E database was provisioned for those packages while DMS was configured to load only the schemas baked into the image."
             Remediation = "Set USE_API_SCHEMA_PATH=true in the environment file so its declared packages are the runtime schema surface."
         }
     }
@@ -265,7 +321,7 @@ function Get-DmsSchemaEnvironmentVerdict {
     if ($useApiSchemaPathToken -ne "true") {
         return [pscustomobject]@{
             ShouldFail  = $true
-            Reason      = "the DMS container's AppSettings__UseApiSchemaPath is $useApiSchemaPathToken but the environment file declares $ExpectedPackageCount ApiSchema package(s), so DMS loaded only the schemas baked into the image while the E2E database was provisioned for those packages."
+            Reason      = "the DMS container's AppSettings__UseApiSchemaPath is $useApiSchemaPathToken but the environment file declares $expectedPackageCount ApiSchema package(s), so DMS loaded only the schemas baked into the image while the E2E database was provisioned for those packages."
             Remediation = $ambientRemediation
         }
     }
@@ -279,20 +335,53 @@ function Get-DmsSchemaEnvironmentVerdict {
         }
     }
 
-    $containerPackageCount = Get-DmsContainerSchemaPackageCount -ContainerEnvironment $ContainerEnvironment
-    if ($containerPackageCount -lt 0) {
+    # A container path that is present but not the one the environment file selected means DMS is
+    # materializing packages somewhere other than where the file said, which the token check above
+    # cannot see. Ordinal comparison only: Compose passes the value through verbatim, so no path
+    # normalization is warranted here. Neither path is echoed.
+    if (-not [string]::Equals(
+            [string]$ContainerEnvironment["AppSettings__ApiSchemaPath"],
+            $EnvironmentFileApiSchemaPath,
+            [System.StringComparison]::Ordinal)) {
         return [pscustomobject]@{
             ShouldFail  = $true
-            Reason      = "the DMS container's SCHEMA_PACKAGES is absent, blank, or not a JSON array, but the environment file declares $ExpectedPackageCount ApiSchema package(s)."
+            Reason      = "the DMS container's AppSettings__ApiSchemaPath differs from the environment file's API_SCHEMA_PATH, so DMS is not materializing the declared ApiSchema packages where the environment file selected."
             Remediation = $ambientRemediation
         }
     }
 
-    if ($containerPackageCount -ne $ExpectedPackageCount) {
+    $containerPackages = Get-DmsContainerSchemaPackage -ContainerEnvironment $ContainerEnvironment
+    if ($null -eq $containerPackages) {
         return [pscustomobject]@{
             ShouldFail  = $true
-            Reason      = "the DMS container received $containerPackageCount ApiSchema package(s) but the E2E database was provisioned for the environment file's $ExpectedPackageCount."
+            Reason      = "the DMS container's SCHEMA_PACKAGES is absent, blank, or not a JSON array, but the environment file declares $expectedPackageCount ApiSchema package(s)."
             Remediation = $ambientRemediation
+        }
+    }
+
+    if ($containerPackages.Count -ne $expectedPackageCount) {
+        return [pscustomobject]@{
+            ShouldFail  = $true
+            Reason      = "the DMS container received $($containerPackages.Count) ApiSchema package(s) but the E2E database was provisioned for the environment file's $expectedPackageCount."
+            Remediation = $ambientRemediation
+        }
+    }
+
+    # Counts agreeing is not the surface agreeing. A container carrying the same number of packages at
+    # a different name, version, or feed URL downloads different schemas, computes a different runtime
+    # hash, and fails every data-plane request exactly as a count mismatch would. Both sides are already
+    # sorted, so this is a positional comparison of equal-length identity lists; neither side is echoed.
+    $containerPackageIdentity = Get-DmsSchemaPackageIdentity -Package $containerPackages
+    for ($index = 0; $index -lt $expectedPackageCount; $index++) {
+        if (-not [string]::Equals(
+                $containerPackageIdentity[$index],
+                $ExpectedPackageIdentity[$index],
+                [System.StringComparison]::Ordinal)) {
+            return [pscustomobject]@{
+                ShouldFail  = $true
+                Reason      = "the DMS container's $expectedPackageCount ApiSchema package(s) differ from the environment file's declared packages by name, version, or feed URL, so DMS is loading a different schema surface than the E2E database was provisioned for."
+                Remediation = $ambientRemediation
+            }
         }
     }
 
@@ -357,23 +446,36 @@ function Assert-DmsContainerSchemaEnvironment {
     # acceptable here. Get-EnvValue is file-only by contract; Get-ComposeResolvedEnvValue must not be
     # used for either value, because resolving the expected side ambient-first would let the very
     # override this gate exists to catch decide what "correct" means.
-    $declaredPackageCount = @(Get-SchemaPackagesFromEnvironmentFile -EnvironmentFilePath $EnvironmentFilePath).Count
+    #
+    # ConvertFrom-ComposeEnvironmentValue is not a Compose-precedence reader: it applies only the
+    # value semantics Compose gives a single --env-file entry (surrounding quotes stripped, an inline
+    # comment dropped), so a legally quoted or commented declaration in a custom -EnvironmentFile is
+    # compared as the container actually received it instead of failing on raw file text.
+    $declaredPackages = @(Get-SchemaPackagesFromEnvironmentFile -EnvironmentFilePath $EnvironmentFilePath)
+    # Ordinal against lowercase 'true', matching run.sh's byte-exact gate. Compose passes the file's
+    # value through verbatim, so a file declaring USE_API_SCHEMA_PATH=TRUE yields a container that
+    # skips the package download while provisioning still stamps the file's packages; reporting that
+    # against the file, with the remediation that names the file, is the actionable failure. The
+    # quote/comment normalization still runs first, so "true" and 'true' pass and only the casing is
+    # significant.
     $environmentFileUsesApiSchemaPath = [string]::Equals(
-        (Get-EnvValue -EnvValues $EnvironmentValues -Name "USE_API_SCHEMA_PATH" -DefaultValue "false"),
+        (ConvertFrom-ComposeEnvironmentValue -Value (Get-EnvValue -EnvValues $EnvironmentValues -Name "USE_API_SCHEMA_PATH" -DefaultValue "false")),
         "true",
-        [System.StringComparison]::OrdinalIgnoreCase
+        [System.StringComparison]::Ordinal
     )
+    $environmentFileApiSchemaPath = ConvertFrom-ComposeEnvironmentValue -Value (Get-EnvValue -EnvValues $EnvironmentValues -Name "API_SCHEMA_PATH" -DefaultValue "")
 
     $verdict = Get-DmsSchemaEnvironmentVerdict `
         -ContainerEnvironment (Get-DmsContainerEnvironment -ContainerName $ContainerName) `
-        -ExpectedPackageCount $declaredPackageCount `
-        -EnvironmentFileUsesApiSchemaPath $environmentFileUsesApiSchemaPath
+        -ExpectedPackageIdentity (Get-DmsSchemaPackageIdentity -Package $declaredPackages) `
+        -EnvironmentFileUsesApiSchemaPath $environmentFileUsesApiSchemaPath `
+        -EnvironmentFileApiSchemaPath $environmentFileApiSchemaPath
 
     if ($verdict.ShouldFail) {
         throw "DMS E2E setup mismatch: $($verdict.Reason) $($verdict.Remediation)"
     }
 
-    Write-Host "Verified DMS container schema environment matches the environment file ($declaredPackageCount ApiSchema package(s))." -ForegroundColor Green
+    Write-Host "Verified DMS container schema environment matches the environment file ($($declaredPackages.Count) ApiSchema package(s))." -ForegroundColor Green
 }
 
 Write-Host @"
