@@ -512,3 +512,330 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
             Should -BeNullOrEmpty -Because "a Compose-invoking phase outside the guard would resolve the schema variables from the ambient process again"
     }
 }
+
+Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container disagrees with the provisioned package surface (DMS-1300)" {
+    # The provisioner reads SCHEMA_PACKAGES from the environment file only, so the E2E database is
+    # always stamped for the file's package surface; DMS receives its settings through Compose, which
+    # resolves them ambient-first. When the two disagree the stack comes up healthy and then fails
+    # every data-plane request with an EffectiveSchemaHash mismatch, so the verdict is what turns that
+    # into a setup-time failure. Pure function, so no Docker is involved.
+
+    BeforeAll {
+        function Get-ScriptFunctionText {
+            param(
+                [Parameter(Mandatory)] [string] $ScriptPath,
+                [Parameter(Mandatory)] [string] $FunctionName
+            )
+
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $functionAst = $ast.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName
+                },
+                $true
+            ) | Select-Object -First 1
+
+            if ($null -eq $functionAst) {
+                throw "Function '$FunctionName' was not found in '$ScriptPath'."
+            }
+
+            return $functionAst.Extent.Text
+        }
+
+        $script:directSetupScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"))
+
+        # The verdict delegates classification and counting, so all three come across together.
+        foreach ($functionName in @(
+                "Get-DmsSchemaEnvironmentToken",
+                "Get-DmsContainerSchemaPackageCount",
+                "Get-DmsSchemaEnvironmentVerdict"
+            )) {
+            . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:directSetupScript -FunctionName $functionName)))
+        }
+
+        function Get-ContainerEnvironmentFixture {
+            param(
+                [string] $UseApiSchemaPath = "true",
+                [string] $ApiSchemaPath = "/app/ApiSchema",
+                [int] $PackageCount = 4,
+                [string] $RawSchemaPackages,
+                [switch] $OmitUseApiSchemaPath,
+                [switch] $OmitApiSchemaPath,
+                [switch] $OmitSchemaPackages
+            )
+
+            $containerEnvironment = @{ "AppSettings__Datastore" = "postgresql" }
+
+            if (-not $OmitUseApiSchemaPath) {
+                $containerEnvironment["AppSettings__UseApiSchemaPath"] = $UseApiSchemaPath
+            }
+
+            if (-not $OmitApiSchemaPath) {
+                $containerEnvironment["AppSettings__ApiSchemaPath"] = $ApiSchemaPath
+            }
+
+            if (-not $OmitSchemaPackages) {
+                $containerEnvironment["SCHEMA_PACKAGES"] =
+                    if ($PSBoundParameters.ContainsKey("RawSchemaPackages")) {
+                        $RawSchemaPackages
+                    }
+                    else {
+                        ConvertTo-Json -InputObject @(1..$PackageCount | ForEach-Object { @{ name = "Package$_" } }) -Compress -Depth 5
+                    }
+            }
+
+            return $containerEnvironment
+        }
+    }
+
+    It "passes when the container carries exactly the environment file's package surface" {
+        $verdict = Get-DmsSchemaEnvironmentVerdict `
+            -ContainerEnvironment (Get-ContainerEnvironmentFixture -PackageCount 4) `
+            -ExpectedPackageCount 4 `
+            -EnvironmentFileUsesApiSchemaPath $true
+
+        $verdict.ShouldFail | Should -BeFalse
+        $verdict.Reason | Should -BeNullOrEmpty
+    }
+
+    It "fails on the reported compose-fallback shape, naming AppSettings__UseApiSchemaPath" {
+        # The exact container state DMS-1300 reported: false plus two blanks, which is what
+        # local-dms.yml's ${VAR:-default} produces when the process carries blank schema variables.
+        $verdict = Get-DmsSchemaEnvironmentVerdict `
+            -ContainerEnvironment (Get-ContainerEnvironmentFixture -UseApiSchemaPath "false" -ApiSchemaPath "" -RawSchemaPackages "") `
+            -ExpectedPackageCount 4 `
+            -EnvironmentFileUsesApiSchemaPath $true
+
+        $verdict.ShouldFail | Should -BeTrue
+        $verdict.Reason | Should -Match "AppSettings__UseApiSchemaPath is false"
+        $verdict.Reason | Should -Match "4 ApiSchema package"
+        $verdict.Remediation | Should -Match "USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES"
+    }
+
+    It "fails when AppSettings__UseApiSchemaPath is <Label>, reporting a fixed token" -ForEach @(
+        @{ Label = "absent"; Container = @{ OmitUseApiSchemaPath = $true }; ExpectedToken = "<absent>" }
+        @{ Label = "blank"; Container = @{ UseApiSchemaPath = "" }; ExpectedToken = "<blank>" }
+        @{ Label = "whitespace"; Container = @{ UseApiSchemaPath = "   " }; ExpectedToken = "<blank>" }
+        @{ Label = "an unrecognized value"; Container = @{ UseApiSchemaPath = "yes" }; ExpectedToken = "<set>" }
+    ) {
+        $verdict = Get-DmsSchemaEnvironmentVerdict `
+            -ContainerEnvironment (Get-ContainerEnvironmentFixture @Container) `
+            -ExpectedPackageCount 4 `
+            -EnvironmentFileUsesApiSchemaPath $true
+
+        $verdict.ShouldFail | Should -BeTrue
+        $verdict.Reason | Should -Match "AppSettings__UseApiSchemaPath is $([regex]::Escape($ExpectedToken))"
+    }
+
+    It "fails when AppSettings__ApiSchemaPath is <Label>, so declared packages have nowhere to land" -ForEach @(
+        @{ Label = "absent"; Container = @{ OmitApiSchemaPath = $true }; ExpectedToken = "<absent>" }
+        @{ Label = "blank"; Container = @{ ApiSchemaPath = "" }; ExpectedToken = "<blank>" }
+        @{ Label = "whitespace"; Container = @{ ApiSchemaPath = "   " }; ExpectedToken = "<blank>" }
+    ) {
+        $verdict = Get-DmsSchemaEnvironmentVerdict `
+            -ContainerEnvironment (Get-ContainerEnvironmentFixture @Container) `
+            -ExpectedPackageCount 4 `
+            -EnvironmentFileUsesApiSchemaPath $true
+
+        $verdict.ShouldFail | Should -BeTrue
+        $verdict.Reason | Should -Match "AppSettings__ApiSchemaPath is $([regex]::Escape($ExpectedToken))"
+    }
+
+    It "fails when the container's package count differs from the provisioned surface" {
+        $verdict = Get-DmsSchemaEnvironmentVerdict `
+            -ContainerEnvironment (Get-ContainerEnvironmentFixture -PackageCount 2) `
+            -ExpectedPackageCount 4 `
+            -EnvironmentFileUsesApiSchemaPath $true
+
+        $verdict.ShouldFail | Should -BeTrue
+        $verdict.Reason | Should -Match "received 2 ApiSchema package"
+        $verdict.Reason | Should -Match "provisioned for the environment file's 4"
+    }
+
+    It "fails without throwing when the container's SCHEMA_PACKAGES is <Label>" -ForEach @(
+        @{ Label = "absent"; Container = @{ OmitSchemaPackages = $true } }
+        @{ Label = "blank"; Container = @{ RawSchemaPackages = "" } }
+        @{ Label = "whitespace"; Container = @{ RawSchemaPackages = "   " } }
+        @{ Label = "not JSON at all"; Container = @{ RawSchemaPackages = "not-json" } }
+        @{ Label = "a truncated array"; Container = @{ RawSchemaPackages = '[{"name":"Package1"}' } }
+        @{ Label = "a JSON object rather than an array"; Container = @{ RawSchemaPackages = '{"name":"Package1"}' } }
+    ) {
+        $verdict = $null
+        { $script:verdict = Get-DmsSchemaEnvironmentVerdict `
+                -ContainerEnvironment (Get-ContainerEnvironmentFixture @Container) `
+                -ExpectedPackageCount 4 `
+                -EnvironmentFileUsesApiSchemaPath $true } | Should -Not -Throw
+
+        $script:verdict.ShouldFail | Should -BeTrue
+        $script:verdict.Reason | Should -Match "SCHEMA_PACKAGES is absent, blank, or not a JSON array"
+    }
+
+    It "reports a package-bearing environment file that does not enable the ApiSchema path as the inconsistency" {
+        # Not a skip. The provisioner stamps the file's packages regardless of USE_API_SCHEMA_PATH, so
+        # such a file guarantees the mismatch, and the remediation belongs on the file, not the shell.
+        $verdict = Get-DmsSchemaEnvironmentVerdict `
+            -ContainerEnvironment (Get-ContainerEnvironmentFixture -UseApiSchemaPath "false" -ApiSchemaPath "" -RawSchemaPackages "") `
+            -ExpectedPackageCount 4 `
+            -EnvironmentFileUsesApiSchemaPath $false
+
+        $verdict.ShouldFail | Should -BeTrue
+        $verdict.Reason | Should -Match "the environment file declares 4 ApiSchema package\(s\) but does not set USE_API_SCHEMA_PATH=true"
+        $verdict.Remediation | Should -Match "Set USE_API_SCHEMA_PATH=true in the environment file"
+    }
+
+    It "refuses a package count below one, because the file-only reader cannot produce one" {
+        # There is no "no packages declared" branch by design: an absent, malformed, or empty
+        # SCHEMA_PACKAGES already fails the provision phase, so it can never reach the gate and be
+        # classified as acceptable. The contract is encoded as parameter validation.
+        { Get-DmsSchemaEnvironmentVerdict `
+                -ContainerEnvironment (Get-ContainerEnvironmentFixture) `
+                -ExpectedPackageCount 0 `
+                -EnvironmentFileUsesApiSchemaPath $true } | Should -Throw
+    }
+
+    It "never echoes the container's raw SCHEMA_PACKAGES value into the failure text" {
+        # The message vocabulary is fixed and derived, so container-supplied text cannot forge log
+        # lines or bloat the failure with a package blob.
+        $rawSchemaPackages = "[{`"name`":`"SENTINEL-DO-NOT-ECHO`"}]`nforged-log-line"
+        $verdict = Get-DmsSchemaEnvironmentVerdict `
+            -ContainerEnvironment (Get-ContainerEnvironmentFixture -RawSchemaPackages $rawSchemaPackages) `
+            -ExpectedPackageCount 4 `
+            -EnvironmentFileUsesApiSchemaPath $true
+
+        $verdict.ShouldFail | Should -BeTrue
+        "$($verdict.Reason) $($verdict.Remediation)" | Should -Not -Match "SENTINEL-DO-NOT-ECHO"
+        "$($verdict.Reason) $($verdict.Remediation)" | Should -Not -Match "forged-log-line"
+        "$($verdict.Reason) $($verdict.Remediation)" | Should -Not -Match "`n"
+    }
+}
+
+Describe "The direct DMS E2E setup wrapper verifies the started container against the environment file only (DMS-1300)" {
+    BeforeAll {
+        $script:directSetupScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"))
+        $script:directSetupSource = Get-Content -LiteralPath $script:directSetupScript -Raw
+
+        function Test-CommandInsideSchemaGuard {
+            param(
+                [Parameter(Mandatory)] [string] $ScriptPath,
+                [Parameter(Mandatory)] [string] $CommandName
+            )
+
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+
+            $guardCall = @($ast.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.CommandAst] -and
+                    $node.GetCommandName() -eq "Invoke-WithEnvironmentFileSchemaSettings"
+                },
+                $true
+            )) | Select-Object -First 1
+
+            $actionExtent = (@($guardCall.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.ScriptBlockExpressionAst]
+                },
+                $true
+            )) | Select-Object -First 1).Extent
+
+            $calls = @($ast.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq $CommandName
+                },
+                $true
+            ))
+
+            if ($calls.Count -ne 1) {
+                throw "Expected exactly one '$CommandName' invocation in '$ScriptPath'; found $($calls.Count)."
+            }
+
+            return ($calls[0].Extent.StartOffset -ge $actionExtent.StartOffset -and $calls[0].Extent.EndOffset -le $actionExtent.EndOffset)
+        }
+
+        function Get-FunctionCommandName {
+            <#
+            .SYNOPSIS
+            Returns the distinct command names a named function invokes, from the AST. Comment text and
+            string literals are excluded by construction, so an assertion about what the function CALLS
+            cannot be satisfied or defeated by what it merely mentions.
+            #>
+            param(
+                [Parameter(Mandatory)] [string] $ScriptPath,
+                [Parameter(Mandatory)] [string] $FunctionName
+            )
+
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+
+            $functionAst = @($ast.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName
+                },
+                $true
+            )) | Select-Object -First 1
+
+            if ($null -eq $functionAst) {
+                throw "Function '$FunctionName' was not found in '$ScriptPath'."
+            }
+
+            return @($functionAst.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.CommandAst]
+                },
+                $true
+            ) | ForEach-Object { $_.GetCommandName() } | Where-Object { $_ } | Select-Object -Unique)
+        }
+    }
+
+    It "runs the container verification inside the schema-settings guard" {
+        # Inside the guard, so the file-only expectation cannot be contaminated by an ambient override
+        # even if a future edit reaches for a Compose-precedence reader.
+        Test-CommandInsideSchemaGuard -ScriptPath $script:directSetupScript -CommandName "Assert-DmsContainerSchemaEnvironment" |
+            Should -BeTrue
+    }
+
+    It "reads both expectations from the environment file, never with Compose precedence" {
+        # Asserted over the commands the function actually invokes, not its text: the function's own
+        # comment names Get-ComposeResolvedEnvValue in order to prohibit it, and a text search cannot
+        # tell a prohibition from a call.
+        #
+        # Get-ComposeResolvedEnvValue resolves ambient-first. Using it for either expectation would let
+        # the very override this gate exists to catch decide what "correct" means, so the gate would
+        # agree with a wrongly-started container and pass.
+        $invoked = @(Get-FunctionCommandName -ScriptPath $script:directSetupScript -FunctionName "Assert-DmsContainerSchemaEnvironment")
+
+        $invoked | Should -Contain "Get-SchemaPackagesFromEnvironmentFile"
+        $invoked | Should -Contain "Get-EnvValue"
+        $invoked | Should -Not -Contain "Get-ComposeResolvedEnvValue"
+        $script:directSetupSource | Should -Match 'Get-EnvValue -EnvValues \$EnvironmentValues -Name "USE_API_SCHEMA_PATH"'
+    }
+
+    It "imports the same file-only package reader the provision phase uses" {
+        $script:directSetupSource | Should -Match "Import-Module \.\./schema-package-utility\.psm1 -Force"
+    }
+
+    It "fails closed when the container cannot be inspected" {
+        $inspectFunction = [regex]::Match(
+            $script:directSetupSource,
+            '(?ms)^function Get-DmsContainerEnvironment \{.*?^\}'
+        ).Value
+
+        $inspectFunction | Should -Match 'if \(\$LASTEXITCODE -ne 0\) \{'
+        $inspectFunction | Should -Match "Unable to inspect Docker container"
+    }
+
+    It "throws rather than warning when the verdict fails" {
+        $script:directSetupSource | Should -Match 'throw "DMS E2E setup mismatch: '
+        $script:directSetupSource | Should -Not -Match 'Write-Warning[^\r\n]*setup mismatch'
+    }
+}
