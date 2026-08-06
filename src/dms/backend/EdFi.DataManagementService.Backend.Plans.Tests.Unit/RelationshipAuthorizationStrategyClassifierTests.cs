@@ -288,10 +288,12 @@ public class Given_RelationshipAuthorizationStrategyClassifier
             "SchoolWithCategoryWithSomething"
         );
 
-        classification.Outcome.Should().Be(RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled);
-        classification.KnownButNotEnabledStrategies.Should().ContainSingle();
         classification
-            .KnownButNotEnabledStrategies[0]
+            .Outcome.Should()
+            .Be(RelationshipAuthorizationClassificationOutcome.SupportedStrategies);
+        classification.SupportedCustomViewStrategies.Should().ContainSingle();
+        classification
+            .SupportedCustomViewStrategies[0]
             .BasisResource.Should()
             .Be(new QualifiedResourceName("Ed-Fi", "SchoolWithCategory"));
     }
@@ -304,10 +306,12 @@ public class Given_RelationshipAuthorizationStrategyClassifier
             "SchoolWithSomething"
         );
 
-        classification.Outcome.Should().Be(RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled);
-        classification.KnownButNotEnabledStrategies.Should().ContainSingle();
         classification
-            .KnownButNotEnabledStrategies[0]
+            .Outcome.Should()
+            .Be(RelationshipAuthorizationClassificationOutcome.SupportedStrategies);
+        classification.SupportedCustomViewStrategies.Should().ContainSingle();
+        classification
+            .SupportedCustomViewStrategies[0]
             .BasisResource.Should()
             .Be(new QualifiedResourceName("Zulu", "School"));
     }
@@ -320,10 +324,12 @@ public class Given_RelationshipAuthorizationStrategyClassifier
             "SchoolWithSomething"
         );
 
-        classification.Outcome.Should().Be(RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled);
-        classification.KnownButNotEnabledStrategies.Should().ContainSingle();
         classification
-            .KnownButNotEnabledStrategies[0]
+            .Outcome.Should()
+            .Be(RelationshipAuthorizationClassificationOutcome.SupportedStrategies);
+        classification.SupportedCustomViewStrategies.Should().ContainSingle();
+        classification
+            .SupportedCustomViewStrategies[0]
             .BasisResource.Should()
             .Be(new QualifiedResourceName("Ed-Fi", "School"));
     }
@@ -336,10 +342,12 @@ public class Given_RelationshipAuthorizationStrategyClassifier
             "SchoolCategoryDescriptorWithSomething"
         );
 
-        classification.Outcome.Should().Be(RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled);
-        classification.KnownButNotEnabledStrategies.Should().ContainSingle();
         classification
-            .KnownButNotEnabledStrategies[0]
+            .Outcome.Should()
+            .Be(RelationshipAuthorizationClassificationOutcome.SupportedStrategies);
+        classification.SupportedCustomViewStrategies.Should().ContainSingle();
+        classification
+            .SupportedCustomViewStrategies[0]
             .BasisResource.Should()
             .Be(new QualifiedResourceName("Ed-Fi", "SchoolCategoryDescriptor"));
     }
@@ -427,6 +435,59 @@ public class Given_RelationshipAuthorizationStrategyClassifier
             .FailureKind.Should()
             .Be(RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy);
         classification.SecurityConfigurationFailures[0].Hint.Should().Contain("{BasisResource}With...");
+    }
+
+    [Test]
+    public void It_classifies_resolved_custom_view_strategies_as_supported_custom_view_strategies()
+    {
+        var targetResource = new QualifiedResourceName("Ed-Fi", "CourseTranscript");
+        var basisResource = new QualifiedResourceName("Ed-Fi", "Student");
+
+        var classification = RelationshipAuthorizationStrategyClassifier.Classify(
+            CreateMappingSet(targetResource, basisResource),
+            targetResource,
+            new[] { new ConfiguredAuthorizationStrategy("StudentWithCTECourseEnrollments", 0) }
+        );
+
+        classification
+            .Outcome.Should()
+            .Be(RelationshipAuthorizationClassificationOutcome.SupportedStrategies);
+        classification.SupportedStrategies.Should().BeEmpty();
+        classification.SupportedCustomViewStrategies.Should().ContainSingle();
+        var cv = classification.SupportedCustomViewStrategies[0];
+        cv.ConfiguredStrategy.StrategyName.Should().Be("StudentWithCTECourseEnrollments");
+        cv.ConfiguredStrategy.RawConfiguredIndex.Should().Be(0);
+        cv.AuthorizationLocalOrder.Should().Be(0);
+        cv.BasisResource.Should().Be(basisResource);
+        classification.KnownButNotEnabledStrategies.Should().BeEmpty();
+        classification.SecurityConfigurationFailures.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_keeps_ownership_based_known_but_not_enabled_alongside_a_resolved_custom_view()
+    {
+        var classification = RelationshipAuthorizationStrategyClassifier.Classify(
+            CreateMappingSet(_queryResource, new QualifiedResourceName("Ed-Fi", "Student")),
+            _queryResource,
+            new[]
+            {
+                new ConfiguredAuthorizationStrategy("StudentWithCTECourseEnrollments", 0),
+                new ConfiguredAuthorizationStrategy(AuthorizationStrategyNameConstants.OwnershipBased, 1),
+            }
+        );
+
+        // The classifier has no ownership-promotion mode at all: DMS-1060 owns the strategy, so the
+        // resolved custom view is still reported (the caller validates it) while OwnershipBased keeps
+        // the known-but-not-enabled classification that produces the fail-closed 501.
+        classification
+            .Outcome.Should()
+            .Be(RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled);
+        classification.SupportedCustomViewStrategies.Should().ContainSingle();
+        classification.KnownButNotEnabledStrategies.Should().ContainSingle();
+        classification
+            .KnownButNotEnabledStrategies[0]
+            .Kind.Should()
+            .Be(RelationshipAuthorizationStrategyKind.OwnershipBased);
     }
 
     private static RelationshipAuthorizationClassification Classify(

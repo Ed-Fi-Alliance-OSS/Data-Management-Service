@@ -718,7 +718,8 @@ actual: {requestInfo.FrontendResponse.Body}
                     new RelationalEdOrgAuthorizationElementResolutionCache()
                 ),
                 A.Fake<ISingleRecordRelationshipAuthorizationExecutor>(),
-                A.Fake<INamespaceAuthorizationExecutor>()
+                A.Fake<INamespaceAuthorizationExecutor>(),
+                A.Fake<IRelationalCommandExecutor>()
             );
 
             return new RelationalWriteSeamHarness(resourceInfo, repository, writeExecutor);

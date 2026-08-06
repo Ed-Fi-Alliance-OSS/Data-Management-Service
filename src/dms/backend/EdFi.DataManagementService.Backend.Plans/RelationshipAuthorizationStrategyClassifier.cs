@@ -126,6 +126,7 @@ internal static class RelationshipAuthorizationStrategyClassifier
         ArgumentNullException.ThrowIfNull(configuredAuthorizationStrategies);
 
         List<SupportedRelationshipAuthorizationStrategy> supportedStrategies = [];
+        List<SupportedCustomViewAuthorizationStrategy> supportedCustomViewStrategies = [];
         List<ConfiguredAuthorizationStrategy> noFurtherAuthorizationRequiredStrategies = [];
         List<KnownButNotEnabledRelationshipAuthorizationStrategy> knownButNotEnabledStrategies = [];
         List<RelationshipAuthorizationFailureMetadata> securityConfigurationFailures = [];
@@ -175,14 +176,19 @@ internal static class RelationshipAuthorizationStrategyClassifier
 
             var customViewStrategyResolution = ResolveCustomViewStrategy(mappingSet, strategyName);
 
-            if (customViewStrategyResolution.Outcome is CustomViewStrategyResolutionOutcome.Resolved)
+            if (
+                customViewStrategyResolution is
+                {
+                    Outcome: CustomViewStrategyResolutionOutcome.Resolved,
+                    BasisResource: { } resolvedBasisResource,
+                }
+            )
             {
-                knownButNotEnabledStrategies.Add(
-                    new KnownButNotEnabledRelationshipAuthorizationStrategy(
-                        RelationshipAuthorizationStrategyKind.CustomViewBased,
+                supportedCustomViewStrategies.Add(
+                    new SupportedCustomViewAuthorizationStrategy(
                         configuredStrategy,
                         currentRelationshipLocalOrder,
-                        customViewStrategyResolution.BasisResource
+                        resolvedBasisResource
                     )
                 );
 
@@ -202,11 +208,13 @@ internal static class RelationshipAuthorizationStrategyClassifier
         return new RelationshipAuthorizationClassification(
             DetermineOutcome(
                 supportedStrategies,
+                supportedCustomViewStrategies,
                 noFurtherAuthorizationRequiredStrategies,
                 knownButNotEnabledStrategies,
                 securityConfigurationFailures
             ),
             supportedStrategies,
+            supportedCustomViewStrategies,
             noFurtherAuthorizationRequiredStrategies,
             knownButNotEnabledStrategies,
             securityConfigurationFailures
@@ -215,6 +223,7 @@ internal static class RelationshipAuthorizationStrategyClassifier
 
     private static RelationshipAuthorizationClassificationOutcome DetermineOutcome(
         IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> supportedCustomViewStrategies,
         IReadOnlyList<ConfiguredAuthorizationStrategy> noFurtherAuthorizationRequiredStrategies,
         IReadOnlyList<KnownButNotEnabledRelationshipAuthorizationStrategy> knownButNotEnabledStrategies,
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> securityConfigurationFailures
@@ -230,7 +239,7 @@ internal static class RelationshipAuthorizationStrategyClassifier
             return RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled;
         }
 
-        if (supportedStrategies.Count > 0)
+        if (supportedStrategies.Count > 0 || supportedCustomViewStrategies.Count > 0)
         {
             return RelationshipAuthorizationClassificationOutcome.SupportedStrategies;
         }

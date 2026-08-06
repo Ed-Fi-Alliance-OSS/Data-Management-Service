@@ -408,7 +408,6 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     }
 
     [TestCase(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly)]
-    [TestCase(AuthorizationStrategyNameConstants.OwnershipBased)]
     public async Task It_fails_closed_for_descriptor_query_with_an_unsupported_strategy_without_executing_sql(
         string authorizationStrategyName
     )
@@ -432,6 +431,34 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
             .As<QueryResult.QueryFailureNotImplemented>()
             .FailureMessage.Should()
             .Contain(authorizationStrategyName);
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_fails_closed_for_descriptor_query_with_ownership_based_authorization()
+    {
+        // OwnershipBased is known-but-not-enabled for GET-many exactly as for every other operation:
+        // DMS-1060 owns the strategy, so the request keeps its 501 rather than silently succeeding with
+        // an empty page.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateSut(commandExecutor);
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategy: new AuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.OwnershipBased,
+                    [],
+                    FilterOperator.And
+                )
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<QueryResult.QueryFailureNotImplemented>()
+            .Which.FailureMessage.Should()
+            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
         commandExecutor.Commands.Should().BeEmpty();
     }
 
@@ -470,6 +497,38 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
 
         var result = await sut.HandleQueryAsync(
             CreateQueryRequest(namespacePrefixes: [], authorizationStrategy: NamespaceStrategy())
+        );
+
+        result
+            .Should()
+            .BeOfType<QueryResult.QueryFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [TestCase("UnknownDescriptorStrategy")]
+    [TestCase("MissingBasisWithCustomAuthorization")]
+    public async Task It_returns_namespace_403_for_descriptor_query_without_executing_sql_when_the_failing_strategy_is_configured_after_namespace(
+        string failingStrategyName
+    )
+    {
+        // NamespaceBased is configured first, so its no-prefixes 403 is the terminal even though a
+        // later strategy is a security-configuration failure (unrecognized, or a custom-view name
+        // whose basis resource does not resolve).
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateSut(commandExecutor);
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(
+                namespacePrefixes: [],
+                authorizationStrategy: NamespaceStrategy(),
+                additionalAuthorizationStrategy: new AuthorizationStrategyEvaluator(
+                    failingStrategyName,
+                    [],
+                    FilterOperator.And
+                )
+            )
         );
 
         result
@@ -691,14 +750,17 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         IReadOnlyList<string> namespacePrefixes,
         AuthorizationStrategyEvaluator authorizationStrategy,
         SqlDialect dialect = SqlDialect.Pgsql,
-        bool totalCount = false
+        bool totalCount = false,
+        AuthorizationStrategyEvaluator? additionalAuthorizationStrategy = null
     ) =>
         new(
             CreateMappingSet(dialect),
             _descriptorResource,
             [],
             new PaginationParameters(Limit: 25, Offset: 0, TotalCount: totalCount, MaximumPageSize: 500),
-            [authorizationStrategy],
+            additionalAuthorizationStrategy is null
+                ? [authorizationStrategy]
+                : [authorizationStrategy, additionalAuthorizationStrategy],
             readableProfileProjectionContext: null,
             new TraceId("descriptor-query-namespace"),
             new RelationalAuthorizationContext([], namespacePrefixes)

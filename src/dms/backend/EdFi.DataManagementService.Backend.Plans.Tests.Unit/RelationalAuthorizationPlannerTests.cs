@@ -81,7 +81,7 @@ public class Given_RelationalAuthorizationPlanner
         );
     }
 
-    private static MappingSet EmptyMappingSet() =>
+    private static MappingSet EmptyMappingSet(params ResourceKeyEntry[] resourceKeysInIdOrder) =>
         new(
             Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
             Model: new DerivedRelationalModelSet(
@@ -89,10 +89,10 @@ public class Given_RelationalAuthorizationPlanner
                     ApiSchemaFormatVersion: "1.0",
                     RelationalMappingVersion: "v1",
                     EffectiveSchemaHash: "schema-hash",
-                    ResourceKeyCount: 0,
+                    ResourceKeyCount: (short)resourceKeysInIdOrder.Length,
                     ResourceKeySeedHash: [1, 2, 3],
                     SchemaComponentsInEndpointOrder: [],
-                    ResourceKeysInIdOrder: []
+                    ResourceKeysInIdOrder: resourceKeysInIdOrder
                 ),
                 Dialect: SqlDialect.Pgsql,
                 ProjectSchemasInEndpointOrder: [],
@@ -214,6 +214,216 @@ public class Given_RelationalAuthorizationPlanner
         );
 
         outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
+    }
+
+    // OwnershipBased is known-but-not-enabled for GET-many exactly as it is for every other operation:
+    // DMS-1060 owns the strategy end to end, including the CMS application-context token source and the
+    // write-side CreatedByOwnershipTokenId stamping a filter would match against. DMS-1062 ships no
+    // ownership token input at all, so there is no token state that could change these outcomes.
+    [Test]
+    public void It_returns_still_unsupported_for_ReadMany_when_OwnershipBased_is_configured_alone()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.ReadMany,
+            [Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 0)],
+            TwoPrefixContext()
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
+    }
+
+    [Test]
+    public void It_returns_still_unsupported_for_ReadMany_when_OwnershipBased_is_configured_alongside_relationship_authorization_without_a_custom_view()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.ReadMany,
+            [
+                Strategy(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly, 0),
+                Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1),
+            ],
+            TwoPrefixContext()
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
+    }
+
+    [Test]
+    public void It_returns_still_unsupported_for_ReadMany_when_a_custom_view_is_configured_with_OwnershipBased()
+    {
+        // The custom view alone would be supported, but Ownership is an AND term: an unsupported
+        // Ownership term fails the whole request closed rather than letting the custom-view filter stand
+        // in for it. The carried classification still exposes the custom view so the caller can validate
+        // it before reporting the 501.
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(2, "PlainResource"), ResourceKey(3, "Student")),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.ReadMany,
+            [
+                Strategy("StudentWithCTECourseEnrollments", 0),
+                Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1),
+            ],
+            TwoPrefixContext()
+        );
+
+        var stillUnsupported = outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>()
+            .Subject;
+        stillUnsupported
+            .RelationshipClassification.SupportedCustomViewStrategies.Should()
+            .ContainSingle()
+            .Which.ConfiguredStrategy.StrategyName.Should()
+            .Be("StudentWithCTECourseEnrollments");
+    }
+
+    [Test]
+    public void It_returns_no_prefixes_configured_for_ReadMany_ahead_of_OwnershipBased()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(),
+            RootNamespaceResource(),
+            NamespaceAuthorizationOperation.ReadMany,
+            [
+                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 0),
+                Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1),
+            ],
+            EmptyPrefixContext()
+        );
+
+        var noPrefixes = outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.NoPrefixesConfigured>()
+            .Subject;
+        noPrefixes.StrategyName.Should().Be(AuthorizationStrategyNameConstants.NamespaceBased);
+    }
+
+    [Test]
+    public void It_returns_no_usable_root_column_for_ReadMany_ahead_of_OwnershipBased()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.ReadMany,
+            [
+                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 0),
+                Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1),
+            ],
+            TwoPrefixContext()
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.NoUsableRootColumn>();
+    }
+
+    [TestCase("MadeUpStrategy")]
+    [TestCase("MissingBasisWithCustomAuthorization")]
+    public void It_returns_security_configuration_error_for_ReadMany_when_an_invalid_strategy_accompanies_OwnershipBased(
+        string failingStrategyName
+    )
+    {
+        // An unsupported Ownership term no longer short-circuits ahead of the classifier failure, so
+        // the security-configuration 500 remains the reported terminal.
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(2, "PlainResource"), ResourceKey(3, "Student")),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.ReadMany,
+            [
+                Strategy(failingStrategyName, 0),
+                Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1),
+            ],
+            TwoPrefixContext()
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.SecurityConfigurationError>();
+    }
+
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.Update)]
+    [TestCase(NamespaceAuthorizationOperation.Delete)]
+    public void It_returns_still_unsupported_for_non_ReadMany_operations(
+        NamespaceAuthorizationOperation operation
+    )
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(),
+            ResourceWithoutSecurableElements(),
+            operation,
+            [Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 0)],
+            TwoPrefixContext()
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
+    }
+
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle, false)]
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle, true)]
+    [TestCase(NamespaceAuthorizationOperation.Update, false)]
+    [TestCase(NamespaceAuthorizationOperation.Update, true)]
+    [TestCase(NamespaceAuthorizationOperation.Delete, false)]
+    [TestCase(NamespaceAuthorizationOperation.Delete, true)]
+    public void It_returns_still_unsupported_for_custom_views_on_non_ReadMany_operations(
+        NamespaceAuthorizationOperation operation,
+        bool hasEducationOrganizationClaims
+    )
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(2, "PlainResource"), ResourceKey(3, "Student")),
+            ResourceWithoutSecurableElements(),
+            operation,
+            [Strategy("StudentWithCTECourseEnrollments", 0)],
+            new RelationalAuthorizationContext(hasEducationOrganizationClaims ? [255901L] : [])
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
+    }
+
+    [Test]
+    public void It_returns_no_prefixes_for_non_ReadMany_ahead_of_an_unsupported_custom_view()
+    {
+        // Custom views are implemented for ReadMany only, so for other operations they fail closed
+        // with 501 — but like OwnershipBased they rank after the namespace terminals, so the
+        // no-prefixes 403 is still the reported outcome.
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(1, "AcademicWeek"), ResourceKey(3, "Student")),
+            RootNamespaceResource(),
+            NamespaceAuthorizationOperation.ReadSingle,
+            [
+                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 0),
+                Strategy("StudentWithCTECourseEnrollments", 1),
+            ],
+            EmptyPrefixContext()
+        );
+
+        var noPrefixes = outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.NoPrefixesConfigured>()
+            .Subject;
+        noPrefixes.StrategyName.Should().Be(AuthorizationStrategyNameConstants.NamespaceBased);
+        noPrefixes.CustomViewStrategies.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_returns_no_usable_root_column_for_non_ReadMany_ahead_of_an_unsupported_custom_view()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(2, "PlainResource"), ResourceKey(3, "Student")),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.ReadSingle,
+            [
+                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 0),
+                Strategy("StudentWithCTECourseEnrollments", 1),
+            ],
+            TwoPrefixContext()
+        );
+
+        var noUsableRootColumn = outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.NoUsableRootColumn>()
+            .Subject;
+        noUsableRootColumn.CustomViewStrategies.Should().BeEmpty();
     }
 
     [Test]
@@ -345,6 +555,33 @@ public class Given_RelationalAuthorizationPlanner
     }
 
     [Test]
+    public void It_carries_supported_custom_view_strategies_on_no_prefixes_configured_outcomes()
+    {
+        var resource = RootNamespaceResource();
+
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(1, "AcademicWeek"), ResourceKey(2, "Student")),
+            resource,
+            NamespaceAuthorizationOperation.ReadMany,
+            [
+                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 0),
+                Strategy("StudentWithCTECourseEnrollments", 1),
+            ],
+            EmptyPrefixContext()
+        );
+
+        var noPrefixes = outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.NoPrefixesConfigured>()
+            .Subject;
+        noPrefixes.CustomViewStrategies.Should().ContainSingle();
+        noPrefixes
+            .CustomViewStrategies[0]
+            .ConfiguredStrategy.StrategyName.Should()
+            .Be("StudentWithCTECourseEnrollments");
+    }
+
+    [Test]
     public void It_returns_security_configuration_error_before_namespace_outcomes_when_unknown_strategy_is_present()
     {
         var resource = RootNamespaceResource();
@@ -355,6 +592,105 @@ public class Given_RelationalAuthorizationPlanner
             NamespaceAuthorizationOperation.ReadSingle,
             [Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 0), Strategy("MadeUpStrategy", 1)],
             TwoPrefixContext()
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.SecurityConfigurationError>();
+    }
+
+    [Test]
+    public void It_returns_no_prefixes_for_ReadMany_when_a_later_custom_view_strategy_has_an_unknown_basis_resource()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(1, "AcademicWeek"), ResourceKey(2, "Student")),
+            RootNamespaceResource(),
+            NamespaceAuthorizationOperation.ReadMany,
+            [
+                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 0),
+                Strategy("MissingBasisWithCustomAuthorization", 1),
+            ],
+            EmptyPrefixContext()
+        );
+
+        var noPrefixes = outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.NoPrefixesConfigured>()
+            .Subject;
+        noPrefixes.StrategyName.Should().Be(AuthorizationStrategyNameConstants.NamespaceBased);
+        noPrefixes.RawConfiguredIndex.Should().Be(0);
+    }
+
+    [Test]
+    public void It_returns_no_prefixes_for_ReadMany_when_a_later_strategy_is_invalid()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(1, "AcademicWeek")),
+            RootNamespaceResource(),
+            NamespaceAuthorizationOperation.ReadMany,
+            [Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 0), Strategy("MadeUpStrategy", 1)],
+            EmptyPrefixContext()
+        );
+
+        var noPrefixes = outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.NoPrefixesConfigured>()
+            .Subject;
+        noPrefixes.StrategyName.Should().Be(AuthorizationStrategyNameConstants.NamespaceBased);
+        noPrefixes.RawConfiguredIndex.Should().Be(0);
+    }
+
+    [Test]
+    public void It_returns_no_usable_root_column_for_ReadMany_when_a_later_custom_view_strategy_has_an_unknown_basis_resource()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(2, "PlainResource"), ResourceKey(3, "Student")),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.ReadMany,
+            [
+                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 0),
+                Strategy("MissingBasisWithCustomAuthorization", 1),
+            ],
+            TwoPrefixContext()
+        );
+
+        var noUsableRootColumn = outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.NoUsableRootColumn>()
+            .Subject;
+        noUsableRootColumn.RawConfiguredIndex.Should().Be(0);
+    }
+
+    [Test]
+    public void It_returns_security_configuration_error_for_ReadMany_when_an_unknown_custom_view_basis_is_configured_before_a_no_usable_root_column_terminal()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(2, "PlainResource"), ResourceKey(3, "Student")),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.ReadMany,
+            [
+                Strategy("MissingBasisWithCustomAuthorization", 0),
+                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 1),
+            ],
+            TwoPrefixContext()
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.SecurityConfigurationError>();
+    }
+
+    [TestCase("MadeUpStrategy")]
+    [TestCase("MissingBasisWithCustomAuthorization")]
+    public void It_returns_security_configuration_error_for_ReadMany_when_the_failing_strategy_is_configured_before_NamespaceBased(
+        string failingStrategyName
+    )
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(1, "AcademicWeek"), ResourceKey(2, "Student")),
+            RootNamespaceResource(),
+            NamespaceAuthorizationOperation.ReadMany,
+            [
+                Strategy(failingStrategyName, 0),
+                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 1),
+            ],
+            EmptyPrefixContext()
         );
 
         outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.SecurityConfigurationError>();

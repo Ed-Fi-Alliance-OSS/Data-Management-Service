@@ -2455,6 +2455,45 @@ public class Given_RelationshipAuthorizationPlannerTests
         failure.Hint.Should().Contain("Basis resource: 'Ed-Fi.Student'");
     }
 
+    [TestCase(false, 0)]
+    [TestCase(true, 1)]
+    public void It_should_keep_resolved_custom_view_strategies_as_known_but_not_enabled_for_update_planning(
+        bool includeSupportedRelationshipStrategy,
+        int expectedRelationshipLocalOrder
+    )
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "TestResource");
+        const string customViewStrategyName = "TestResourceWithCustomViewAuthorization";
+        string[] configuredStrategyNames = includeSupportedRelationshipStrategy
+            ? [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly, customViewStrategyName]
+            : [customViewStrategyName];
+        var mappingSet = CreateMultipleRootSubjectMappingSet();
+        var planner = CreatePlanner();
+
+        var result = planner.PlanUpdateValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(configuredStrategyNames),
+            new RelationalAuthorizationContext([42L], []),
+            CreateWritePlan(
+                mappingSet,
+                resource,
+                Col("SchoolReference_SchoolId"),
+                Col("LocalEducationAgencyReference_LocalEducationAgencyId")
+            )
+        );
+
+        result.StoredValues.Should().BeOfType<RelationshipAuthorizationResult.KnownButNotEnabled>();
+        result.ProposedValues.Should().BeOfType<RelationshipAuthorizationResult.KnownButNotEnabled>();
+        result.SecurityConfigurationFailures.Should().BeEmpty();
+
+        var failure = result.KnownButNotEnabledFailures.Should().ContainSingle().Subject;
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy);
+        failure.ConfiguredStrategy?.StrategyName.Should().Be(customViewStrategyName);
+        failure.RelationshipLocalOrder.Should().Be(expectedRelationshipLocalOrder);
+        failure.Location?.AuthorizationObjectName.Should().Be("Ed-Fi.TestResource");
+    }
+
     [Test]
     public void It_should_leave_direct_claim_match_disabled_for_non_edorg_auth_objects()
     {

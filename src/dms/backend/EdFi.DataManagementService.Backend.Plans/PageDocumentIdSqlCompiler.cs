@@ -27,6 +27,17 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     );
     private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
 
+    private abstract record OrderedPageAuthorizationAndFilter(int RawConfiguredIndex, int StableTieBreaker)
+    {
+        public sealed record Namespace(NamespaceAuthorizationCheckSpec Check, int StableTieBreaker)
+            : OrderedPageAuthorizationAndFilter(Check.RawConfiguredIndex, StableTieBreaker);
+
+        public sealed record CustomView(
+            PageDocumentIdAuthorizationCustomViewCheck Check,
+            int StableTieBreaker
+        ) : OrderedPageAuthorizationAndFilter(Check.RawConfiguredIndex, StableTieBreaker);
+    }
+
     private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
     private readonly IPlanSqlDialect _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
@@ -426,7 +437,10 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
         var normalizedNamespaceChecks = (authorization.NamespaceChecks ?? []).ToArray();
 
-        if (normalizedStrategies.Length == 0 && normalizedNamespaceChecks.Length == 0)
+        var hasCustomViewChecks =
+            authorization.CustomViewChecks is not null && authorization.CustomViewChecks.Count > 0;
+
+        if (normalizedStrategies.Length == 0 && normalizedNamespaceChecks.Length == 0 && !hasCustomViewChecks)
         {
             return null;
         }
@@ -450,10 +464,24 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             );
         }
 
+        if (
+            authorization.CustomViewChecks is not null
+            && authorization.CustomViewChecks.Any(static c => c is null)
+        )
+        {
+            throw new ArgumentException(
+                $"{nameof(PageDocumentIdAuthorizationSpec.CustomViewChecks)} must not contain null entries.",
+                nameof(authorization)
+            );
+        }
+
         return authorization with
         {
             Strategies = normalizedStrategies,
             NamespaceChecks = normalizedNamespaceChecks,
+            CustomViewChecks = authorization.CustomViewChecks is null
+                ? null
+                : authorization.CustomViewChecks.ToArray(),
         };
     }
 
@@ -564,9 +592,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization
     )
     {
-        var hasNamespaceGroup = (authorization?.NamespaceChecks?.Count ?? 0) > 0;
+        var orderedAndFilters = BuildOrderedAuthorizationAndFilters(authorization);
         var hasRelationshipGroup = (authorization?.Strategies.Count ?? 0) > 0;
-        var predicateCount = predicates.Count + (hasNamespaceGroup ? 1 : 0) + (hasRelationshipGroup ? 1 : 0);
+        var predicateCount = predicates.Count + orderedAndFilters.Count + (hasRelationshipGroup ? 1 : 0);
 
         writer.AppendWhereClause(
             predicateCount,
@@ -578,18 +606,15 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                     return;
                 }
 
-                var groupIndex = index - predicates.Count;
+                var authorizationFilterIndex = index - predicates.Count;
 
-                if (hasNamespaceGroup && groupIndex == 0)
+                if (authorizationFilterIndex < orderedAndFilters.Count)
                 {
-                    AppendNamespaceChecksSql(
+                    AppendOrderedAuthorizationAndFilterSql(
                         predicateWriter,
                         rootTable,
-                        authorization!.NamespaceChecks!,
-                        authorization.NamespacePrefixParameterization
-                            ?? throw new InvalidOperationException(
-                                "Namespace authorization SQL emission requires a namespace prefix parameterization when namespace checks are present."
-                            )
+                        authorization!,
+                        orderedAndFilters[authorizationFilterIndex]
                     );
                     return;
                 }
@@ -607,36 +632,212 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         );
     }
 
-    private static void AppendNamespaceChecksSql(
-        SqlWriter writer,
-        DbTableName rootTable,
-        IReadOnlyList<NamespaceAuthorizationCheckSpec> namespaceChecks,
-        NamespacePrefixParameterization namespacePrefixParameterization
+    private static IReadOnlyList<OrderedPageAuthorizationAndFilter> BuildOrderedAuthorizationAndFilters(
+        PageDocumentIdAuthorizationSpec? authorization
     )
     {
-        for (var checkIndex = 0; checkIndex < namespaceChecks.Count; checkIndex++)
+        if (authorization is null)
         {
-            if (checkIndex > 0)
-            {
-                writer.Append(" AND ");
-            }
+            return [];
+        }
 
-            var check = namespaceChecks[checkIndex];
-            var tableAlias = ResolveNamespaceCheckAlias(check.RootTable, rootTable);
+        var filters = new List<OrderedPageAuthorizationAndFilter>();
+        var stableTieBreaker = 0;
 
-            NamespacePrefixSqlHelper.AppendRootTableNamespacePredicate(
-                writer,
-                tableAlias,
-                check.NamespaceColumn,
-                namespacePrefixParameterization
+        foreach (var namespaceCheck in authorization.NamespaceChecks ?? [])
+        {
+            filters.Add(new OrderedPageAuthorizationAndFilter.Namespace(namespaceCheck, stableTieBreaker++));
+        }
+
+        foreach (var customViewCheck in authorization.CustomViewChecks ?? [])
+        {
+            filters.Add(
+                new OrderedPageAuthorizationAndFilter.CustomView(customViewCheck, stableTieBreaker++)
             );
+        }
+
+        return filters
+            .OrderBy(static filter => filter.RawConfiguredIndex)
+            .ThenBy(static filter => filter.StableTieBreaker)
+            .ToArray();
+    }
+
+    private static void AppendOrderedAuthorizationAndFilterSql(
+        SqlWriter writer,
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationSpec authorization,
+        OrderedPageAuthorizationAndFilter filter
+    )
+    {
+        switch (filter)
+        {
+            case OrderedPageAuthorizationAndFilter.Namespace namespaceFilter:
+                AppendNamespaceCheckSql(
+                    writer,
+                    rootTable,
+                    namespaceFilter.Check,
+                    authorization.NamespacePrefixParameterization
+                        ?? throw new InvalidOperationException(
+                            "Namespace authorization SQL emission requires a namespace prefix parameterization when namespace checks are present."
+                        )
+                );
+                return;
+            case OrderedPageAuthorizationAndFilter.CustomView customViewFilter:
+                AppendCustomViewCheckSql(writer, rootTable, customViewFilter.Check);
+                return;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(filter),
+                    filter.GetType().Name,
+                    "Unsupported page authorization AND filter."
+                );
         }
     }
 
+    private static void AppendNamespaceCheckSql(
+        SqlWriter writer,
+        DbTableName rootTable,
+        NamespaceAuthorizationCheckSpec check,
+        NamespacePrefixParameterization namespacePrefixParameterization
+    )
+    {
+        var tableAlias = ResolveNamespaceCheckAlias(check.RootTable, rootTable);
+
+        NamespacePrefixSqlHelper.AppendRootTableNamespacePredicate(
+            writer,
+            tableAlias,
+            check.NamespaceColumn,
+            namespacePrefixParameterization
+        );
+    }
+
+    private static void AppendCustomViewCheckSql(
+        SqlWriter writer,
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationCustomViewCheck check
+    )
+    {
+        if (!check.RootTable.Equals(rootTable))
+        {
+            throw new InvalidOperationException(
+                $"Custom view authorization check root table '{check.RootTable}' does not match query root table '{rootTable}'."
+            );
+        }
+
+        if (check.PathToBasisResource.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "Custom view authorization check must include a path to the basis resource."
+            );
+        }
+
+        var pathSteps = check.PathToBasisResource;
+        var terminalStep = pathSteps[^1];
+
+        if (pathSteps.Count == 1 && terminalStep.TargetTable is null && terminalStep.TargetColumnName is null)
+        {
+            if (!terminalStep.SourceTable.Equals(rootTable))
+            {
+                throw new InvalidOperationException(
+                    $"Custom view authorization direct path table '{terminalStep.SourceTable}' does not match query root table '{rootTable}'."
+                );
+            }
+
+            AppendColumnInCustomViewSql(writer, _rootAlias, terminalStep.SourceColumnName, check);
+            return;
+        }
+
+        // Multi-step paths emit an uncorrelated subquery that re-scans the root table
+        // (r.DocumentId IN (SELECT t0.DocumentId FROM <root> t0 JOIN ...)) rather than correlating the
+        // joins to the outer row. Deferred, not overlooked: a correlated EXISTS rewrite would change the
+        // hot-path page SQL for every transitive custom view, so it needs a realistic-row-count
+        // measurement first — at small row counts the planner often flattens this to the same plan.
+        var aliasAllocator = PlanNamingConventions.CreateTableAliasAllocator();
+        var rootSubqueryAlias = aliasAllocator.AllocateNext();
+        var pathJoinAliases = Enumerable
+            .Range(0, pathSteps.Count - 1)
+            .Select(_ => aliasAllocator.AllocateNext())
+            .ToArray();
+
+        writer.Append($"{_rootAlias}.");
+        writer.AppendQuoted(check.RootDocumentIdColumn.Value);
+        writer.Append(" IN (SELECT ");
+        writer.Append($"{rootSubqueryAlias}.");
+        writer.AppendQuoted(check.RootDocumentIdColumn.Value);
+        writer.Append(" FROM ");
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(rootTable));
+        writer.Append($" {rootSubqueryAlias}");
+
+        var currentSourceAlias = rootSubqueryAlias;
+
+        for (var stepIndex = 0; stepIndex < pathSteps.Count - 1; stepIndex++)
+        {
+            var step = pathSteps[stepIndex];
+            var targetTable =
+                step.TargetTable
+                ?? throw new InvalidOperationException(
+                    "Custom view authorization transitive path steps must include a target table for intermediate joins."
+                );
+            var targetColumn =
+                step.TargetColumnName
+                ?? throw new InvalidOperationException(
+                    "Custom view authorization transitive path steps must include a target column for intermediate joins."
+                );
+            var joinAlias = pathJoinAliases[stepIndex];
+
+            writer.Append(" JOIN ");
+            writer.AppendRelation(new SqlRelationRef.PhysicalTable(targetTable));
+            writer.Append($" {joinAlias} ON {joinAlias}.");
+            writer.AppendQuoted(targetColumn.Value);
+            writer.Append($" = {currentSourceAlias}.");
+            writer.AppendQuoted(step.SourceColumnName.Value);
+
+            currentSourceAlias = joinAlias;
+        }
+
+        writer.Append($" WHERE {currentSourceAlias}.");
+        writer.AppendQuoted(terminalStep.SourceColumnName.Value);
+        AppendCustomViewMembershipSubquerySql(writer, check, aliasAllocator.AllocateNext());
+        writer.Append(")");
+    }
+
+    private static void AppendColumnInCustomViewSql(
+        SqlWriter writer,
+        string tableAlias,
+        DbColumnName sourceColumn,
+        PageDocumentIdAuthorizationCustomViewCheck check
+    )
+    {
+        writer.Append($"{tableAlias}.");
+        writer.AppendQuoted(sourceColumn.Value);
+        AppendCustomViewMembershipSubquerySql(
+            writer,
+            check,
+            PlanNamingConventions.CreateTableAliasAllocator().AllocateNext()
+        );
+    }
+
+    private static void AppendCustomViewMembershipSubquerySql(
+        SqlWriter writer,
+        PageDocumentIdAuthorizationCustomViewCheck check,
+        string authAlias
+    )
+    {
+        writer.Append(" IN (SELECT ");
+        writer.Append($"{authAlias}.");
+        writer.AppendQuoted(check.AuthViewDocumentIdColumn.Value);
+        writer.Append(" FROM ");
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(check.AuthView));
+        writer.Append($" {authAlias})");
+    }
+
     /// <summary>
-    /// Resolves the SQL alias to qualify a namespace check column. Checks always target the query
-    /// root table (descriptor queries root on <c>dms.Descriptor</c>, where their Namespace column
-    /// lives), so any other pairing is a planning defect and fails closed.
+    /// Resolves the SQL alias qualifying a namespace check column. Every supported query — resource and
+    /// descriptor alike — roots its namespace check on the query root table: descriptor page subqueries
+    /// root on <c>dms.Descriptor</c>, which is where <c>Namespace</c> lives, so no second alias applies.
+    /// A mismatch therefore means the planner emitted a check against a table this query does not root on,
+    /// which is a planning defect. Throwing keeps that loud instead of silently qualifying the column with
+    /// the root alias and emitting a filter against the wrong table.
     /// </summary>
     private static string ResolveNamespaceCheckAlias(DbTableName checkRootTable, DbTableName queryRootTable)
     {

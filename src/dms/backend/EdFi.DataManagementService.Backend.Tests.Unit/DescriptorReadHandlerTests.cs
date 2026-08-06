@@ -3,12 +3,16 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
@@ -104,6 +108,39 @@ public class Given_DescriptorReadHandler
                     "Relational descriptor GET authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or with 'NamespaceBased' and/or 'NoFurtherAuthorizationRequired' are currently supported."
                 )
             );
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_returns_namespace_403_for_descriptor_get_by_id_when_no_prefixes_precede_an_unsupported_custom_view()
+    {
+        // Custom views are implemented for ReadMany only, so on GET-by-id they fail closed with 501 —
+        // but ranked after the namespace terminals, exactly as OwnershipBased is. Custom-view-only
+        // GET-by-id remains 501; that ordering is pinned in Given_RelationalAuthorizationPlanner.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandleGetByIdAsync(
+            new DescriptorGetByIdRequest(
+                CreateQueryMappingSet(SqlDialect.Pgsql, CreateSupportedDescriptorQueryCapability()),
+                _descriptorResource,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-121212121212")),
+                RelationalGetRequestReadMode.ExternalResponse,
+                [
+                    CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                ],
+                readableProfileProjectionContext: null,
+                new TraceId("descriptor-get-custom-view-no-prefixes"),
+                new RelationalAuthorizationContext([], [])
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
         commandExecutor.Commands.Should().BeEmpty();
     }
 
@@ -367,6 +404,543 @@ public class Given_DescriptorReadHandler
     }
 
     [Test]
+    public async Task It_emits_custom_view_filters_for_descriptor_get_many_queries()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(SqlDialect.Pgsql);
+        var preprocessingResult = DescriptorQueryRequestPreprocessor.Preprocess(
+            request.MappingSet,
+            request.Resource,
+            request.QueryElements
+        );
+        var authorizationSpec = new PageDocumentIdAuthorizationSpec(
+            Strategies: [],
+            CustomViewChecks: [CreateCustomViewCheck("StudentWithCustomViewProviderTest")]
+        );
+
+        var result = await sut.ReadQueryRowsAsync(request, preprocessingResult, authorizationSpec);
+
+        result.Rows.Should().BeEmpty();
+        commandExecutor.Commands.Should().ContainSingle();
+        var commandText = commandExecutor.Commands[0].CommandText;
+        commandText.Should().Contain("\"auth\".\"StudentWithCustomViewProviderTest\"");
+        commandText.Should().Contain("\"DocumentId\"");
+    }
+
+    [Test]
+    public async Task It_validates_descriptor_custom_view_before_executing_ordinary_get_many_query()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow(Guid.NewGuid(), documentId: 101L)),
+            ]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolTypeDescriptorWithCustomViewProviderTest"),
+            ]
+        );
+
+        var result = await sut.HandleQueryAsync(request);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        commandExecutor.Commands.Should().HaveCount(2);
+        commandExecutor.Commands[0].CommandText.Should().Contain("LIMIT 0");
+        commandExecutor
+            .Commands[0]
+            .CommandText.Should()
+            .Contain("\"auth\".\"SchoolTypeDescriptorWithCustomViewProviderTest\"");
+        commandExecutor
+            .Commands[1]
+            .CommandText.Should()
+            .Contain("\"auth\".\"SchoolTypeDescriptorWithCustomViewProviderTest\"");
+    }
+
+    [Test]
+    public async Task It_preserves_namespace_and_custom_view_order_for_descriptor_get_many_queries()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(SqlDialect.Pgsql);
+        var preprocessingResult = DescriptorQueryRequestPreprocessor.Preprocess(
+            request.MappingSet,
+            request.Resource,
+            request.QueryElements
+        );
+        var authorizationSpec = new PageDocumentIdAuthorizationSpec(
+            Strategies: [],
+            NamespaceChecks: [CreateNamespaceCheck(rawConfiguredIndex: 0)],
+            NamespacePrefixParameterization: NamespacePrefixParameterizationFactory.Create(
+                SqlDialect.Pgsql,
+                ["uri://ed-fi.org/"],
+                "namespacePrefixes"
+            ),
+            CustomViewChecks: [CreateCustomViewCheck("StudentWithCustomViewProviderTest", 1)]
+        );
+
+        var result = await sut.ReadQueryRowsAsync(request, preprocessingResult, authorizationSpec);
+
+        result.Rows.Should().BeEmpty();
+        commandExecutor.Commands.Should().ContainSingle();
+        var commandText = commandExecutor.Commands[0].CommandText;
+        commandText
+            .Should()
+            .Contain("(r.\"Namespace\" IS NOT NULL AND r.\"Namespace\" LIKE ANY(@namespacePrefixes))");
+        commandText.Should().Contain("\"auth\".\"StudentWithCustomViewProviderTest\"");
+        commandText
+            .IndexOf(
+                "(r.\"Namespace\" IS NOT NULL AND r.\"Namespace\" LIKE ANY(@namespacePrefixes))",
+                StringComparison.Ordinal
+            )
+            .Should()
+            .BeLessThan(
+                commandText.IndexOf(
+                    "\"auth\".\"StudentWithCustomViewProviderTest\"",
+                    StringComparison.Ordinal
+                )
+            );
+    }
+
+    [Test]
+    public async Task It_validates_custom_views_before_a_later_invalid_relationship_strategy_configuration_error()
+    {
+        var commandExecutor = A.Fake<IRelationalCommandExecutor>();
+        var databaseException = new StubDbException("custom view does not exist");
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Throws(databaseException);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+                CreateAuthorizationStrategyEvaluator("InvalidRelationshipStrategy"),
+            ]
+        );
+
+        var action = () => sut.HandleQueryAsync(request);
+
+        var assertion = await action.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+
+        assertion.Which.InnerException.Should().BeSameAs(databaseException);
+    }
+
+    [Test]
+    public async Task It_does_not_validate_a_later_descriptor_custom_view_after_an_earlier_classifier_failure()
+    {
+        // InvalidRelationshipStrategy (index 0) fails the classifier; the resolved custom view at index 1
+        // executes after that terminal, so probing it would let a missing or non-conforming auth view mask
+        // the earlier security-configuration failure.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("InvalidRelationshipStrategy"),
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+            ]
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_validates_an_earlier_descriptor_custom_view_before_a_later_classifier_failure()
+    {
+        // The mirror case: the resolved custom view is configured first, so it is probed, and when that
+        // probe succeeds the classifier's security-configuration failure is still the reported terminal.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+                CreateAuthorizationStrategyEvaluator("InvalidRelationshipStrategy"),
+            ]
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        commandExecutor
+            .Commands.Select(command => command.CommandText)
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("StudentWithCustomViewProviderTest", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_validates_descriptor_custom_views_after_an_unsupported_relationship_before_returning_not_implemented()
+    {
+        var commandExecutor = A.Fake<IRelationalCommandExecutor>();
+        var databaseException = new StubDbException("custom view does not exist");
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Throws(databaseException);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+            ]
+        );
+
+        var action = () => sut.HandleQueryAsync(request);
+
+        var assertion = await action.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+
+        assertion.Which.InnerException.Should().BeSameAs(databaseException);
+    }
+
+    [Test]
+    public async Task It_excludes_the_resolved_custom_view_from_the_descriptor_not_implemented_message_after_an_unsupported_relationship()
+    {
+        // Same strategy shape as the sibling above, but with a custom view that validates cleanly, so
+        // the 501 is actually returned. A resolved custom view is a supported GET-many AND filter: it
+        // must not be listed among the unsupported effective strategies, and the message must not claim
+        // only NamespaceBased/NoFurtherAuthorizationRequired are supported. The unsupported relationship
+        // strategy that caused the 501 stays in the list.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+            ]
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        var failureMessage = result
+            .Should()
+            .BeOfType<QueryResult.QueryFailureNotImplemented>()
+            .Subject.FailureMessage;
+        failureMessage.Should().NotContain("StudentWithCustomViewProviderTest");
+        failureMessage
+            .Should()
+            .Contain(
+                $"Effective strategies: ['{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly}']."
+            );
+        failureMessage
+            .Should()
+            .Contain("and/or a resolved custom view-based strategy are currently supported.");
+        // The custom view was resolved and validated, which is what makes excluding it correct.
+        commandExecutor
+            .Commands.Select(command => command.CommandText)
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("StudentWithCustomViewProviderTest", StringComparison.Ordinal)
+                && sql.Contains("LIMIT 0", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_returns_the_descriptor_namespace_no_usable_root_column_500_when_the_failing_strategy_is_configured_after_namespace()
+    {
+        // NamespaceBased is configured first, so its no-usable-root-column terminal is reported even
+        // though a later custom-view strategy has an unresolvable basis resource.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator("MissingBasisWithCustomViewProviderTest"),
+            ],
+            namespacePrefixes: ["uri://ed-fi.org/"],
+            includeDescriptorMetadata: false
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("no Namespace securable element resolves to a root table column");
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_returns_the_descriptor_not_implemented_terminal_when_OwnershipBased_accompanies_an_unsupported_relationship_strategy()
+    {
+        // OwnershipBased is known-but-not-enabled, so it cannot short-circuit ahead of the relationship
+        // OR group with an empty page. The custom view configured ahead of it is still validated before
+        // the 501 is returned.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ]
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        // The resolved custom view is a supported GET-many AND filter, so the 501 must neither report it
+        // as an unsupported effective strategy nor claim only NamespaceBased/NoFurtherAuthorizationRequired
+        // are supported. Only the genuinely unimplemented strategies belong in the effective list.
+        var failureMessage = result
+            .Should()
+            .BeOfType<QueryResult.QueryFailureNotImplemented>()
+            .Subject.FailureMessage;
+        failureMessage.Should().NotContain("StudentWithCustomViewProviderTest");
+        failureMessage
+            .Should()
+            .Contain(
+                $"Effective strategies: ['{AuthorizationStrategyNameConstants.OwnershipBased}', "
+                    + $"'{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly}']."
+            );
+        failureMessage
+            .Should()
+            .Contain("and/or a resolved custom view-based strategy are currently supported.");
+        commandExecutor
+            .Commands.Select(command => command.CommandText)
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("StudentWithCustomViewProviderTest", StringComparison.Ordinal)
+                && sql.Contains("LIMIT 0", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_returns_the_descriptor_security_configuration_terminal_when_OwnershipBased_accompanies_an_invalid_relationship_configuration()
+    {
+        // Same as the not-implemented sibling: OwnershipBased does not displace the relationship OR
+        // group's security-configuration failure, and the earlier custom view is still validated.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator("InvalidRelationshipStrategy"),
+            ]
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        commandExecutor
+            .Commands.Select(command => command.CommandText)
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("StudentWithCustomViewProviderTest", StringComparison.Ordinal)
+                && sql.Contains("LIMIT 0", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_returns_the_descriptor_not_implemented_terminal_when_a_custom_view_accompanies_OwnershipBased()
+    {
+        // Custom view + OwnershipBased: Ownership is an AND term, so the request fails closed with 501
+        // instead of letting the custom-view filter stand in for it. The custom view is still
+        // validated first.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        result
+            .Should()
+            .BeOfType<QueryResult.QueryFailureNotImplemented>()
+            .Which.FailureMessage.Should()
+            .Contain(AuthorizationStrategyNameConstants.OwnershipBased)
+            .And.NotContain("StudentWithCustomViewProviderTest");
+        commandExecutor
+            .Commands.Select(command => command.CommandText)
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("StudentWithCustomViewProviderTest", StringComparison.Ordinal)
+                && sql.Contains("LIMIT 0", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_does_not_validate_a_descriptor_custom_view_configured_after_OwnershipBased()
+    {
+        // The inverse of the sibling above. OwnershipBased is an AND term like the custom view, so with
+        // it configured first the request stops at its 501; validating the later custom view would let a
+        // missing auth view return the custom-view system 500 instead of the CMS-ordered terminal.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+            ]
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        result
+            .Should()
+            .BeOfType<QueryResult.QueryFailureNotImplemented>()
+            .Which.FailureMessage.Should()
+            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [TestCase(
+        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+        typeof(QueryResult.QueryFailureNotImplemented)
+    )]
+    [TestCase("InvalidRelationshipStrategy", typeof(QueryResult.QueryFailureSecurityConfiguration))]
+    public async Task It_still_returns_the_descriptor_relationship_terminal_alongside_OwnershipBased(
+        string relationshipStrategyName,
+        Type expectedFailureType
+    )
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator(relationshipStrategyName),
+            ]
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        result.Should().BeOfType(expectedFailureType);
+    }
+
+    [Test]
+    public async Task It_reports_the_specific_no_join_path_error_for_a_descriptor_query_custom_view()
+    {
+        // Meeting is a known resource, so the basis resolves, but the descriptor has no reference path to
+        // it. That is NoCustomViewJoinPath, which must report the specific join-path message the regular
+        // resource GET-many path uses — not the generic unknown-strategy message.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("MeetingWithCustomViewProviderTest"),
+            ]
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().ContainSingle();
+        failure.Errors[0].Should().Contain("no DocumentId join path could be resolved");
+        failure.Errors[0].Should().Contain("auth.MeetingWithCustomViewProviderTest");
+        failure.Errors[0].Should().Contain("MeetingWithCustomViewProviderTest");
+        failure.Errors[0].Should().NotContain("is not a recognized built-in strategy");
+        failure
+            .Errors[0]
+            .Should()
+            .NotBe(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([
+                    "MeetingWithCustomViewProviderTest",
+                ])
+            );
+        failure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be("RelationshipAuthorization.NoCustomViewJoinPath");
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_reports_an_unknown_custom_view_basis_for_descriptor_query_ahead_of_OwnershipBased()
+    {
+        // Custom view-based executes before Ownership, so its configuration failure must not be hidden
+        // by the OwnershipBased known-but-not-enabled terminal.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("MissingBasisWithCustomViewProviderTest"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_short_circuits_invalid_descriptor_query_ids_to_an_empty_page_without_executing_sql()
     {
         var commandExecutor = new InMemoryRelationalCommandExecutor([]);
@@ -384,6 +958,119 @@ public class Given_DescriptorReadHandler
         success.EdfiDocs.Should().BeEmpty();
         success.TotalCount.Should().Be(0);
         commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_validates_descriptor_custom_view_before_namespace_no_prefixes_when_custom_view_is_configured_first()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ],
+            namespacePrefixes: []
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        result.Should().BeOfType<QueryResult.QueryFailureNamespaceNotAuthorized>();
+        commandExecutor
+            .Commands.Select(command => command.CommandText)
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("ON", StringComparison.Ordinal)
+                && sql.Contains("LIMIT 0", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_returns_descriptor_namespace_no_prefixes_without_custom_view_validation_when_namespace_is_configured_first()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+            ],
+            namespacePrefixes: []
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        result.Should().BeOfType<QueryResult.QueryFailureNamespaceNotAuthorized>();
+        commandExecutor
+            .Commands.Select(command => command.CommandText)
+            .Should()
+            .NotContain(sql => sql.Contains("1 = 0", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task It_validates_only_descriptor_custom_views_before_mssql_namespace_parameter_limit()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+        string[] namespacePrefixes =
+        [
+            .. Enumerable.Range(1, 2096).Select(static index => $"uri://district-{index}.example/"),
+        ];
+        var request = CreateQueryRequest(
+            SqlDialect.Mssql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator("StudentWithLaterCustomViewProviderTest"),
+            ],
+            namespacePrefixes: namespacePrefixes
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        commandExecutor
+            .Commands.Select(command => command.CommandText)
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("StudentWithCustomViewProviderTest", StringComparison.Ordinal)
+                && !sql.Contains("StudentWithLaterCustomViewProviderTest", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_validates_descriptor_custom_views_before_empty_page_preprocessing_success()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            queryElements: [CreateQueryElement("id", "$.id", "not-a-valid-uuid", "string")],
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+            ]
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.EdfiDocs.Should().BeEmpty();
+        commandExecutor
+            .Commands.Select(command => command.CommandText)
+            .Should()
+            .ContainSingle(sql => sql.Contains("LIMIT 0", StringComparison.Ordinal));
     }
 
     [TestCase(SqlDialect.Pgsql, "dms.\"Document\"", "dms.\"Descriptor\"", "page_document_ids.\"DocumentId\"")]
@@ -705,15 +1392,18 @@ public class Given_DescriptorReadHandler
         QueryElement[]? queryElements = null,
         bool totalCount = false,
         AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
+        string[]? namespacePrefixes = null,
         DescriptorQueryCapability? descriptorQueryCapability = null,
         ReadableProfileProjectionContext? readableProfileProjectionContext = null,
         int? limit = 25,
-        int? offset = 0
+        int? offset = 0,
+        bool includeDescriptorMetadata = true
     )
     {
         var mappingSet = CreateQueryMappingSet(
             dialect,
-            descriptorQueryCapability ?? CreateSupportedDescriptorQueryCapability()
+            descriptorQueryCapability ?? CreateSupportedDescriptorQueryCapability(),
+            includeDescriptorMetadata
         );
 
         return new DescriptorQueryRequest(
@@ -728,9 +1418,13 @@ public class Given_DescriptorReadHandler
             ),
             authorizationStrategyEvaluators ?? [],
             readableProfileProjectionContext,
-            new TraceId("descriptor-query-trace")
+            new TraceId("descriptor-query-trace"),
+            new RelationalAuthorizationContext([], namespacePrefixes ?? [])
         );
     }
+
+    private static AuthorizationStrategyEvaluator CreateAuthorizationStrategyEvaluator(string strategyName) =>
+        new(strategyName, [], FilterOperator.And);
 
     private static DescriptorReadHandler CreateHandler(
         IRelationalCommandExecutor commandExecutor,
@@ -779,11 +1473,57 @@ public class Given_DescriptorReadHandler
 
     private static MappingSet CreateQueryMappingSet(
         SqlDialect dialect,
-        DescriptorQueryCapability descriptorQueryCapability
+        DescriptorQueryCapability descriptorQueryCapability,
+        bool includeDescriptorMetadata = true
     )
     {
-        return CreateMappingSet(dialect) with
+        var mappingSet = CreateMappingSet(dialect);
+
+        // A SharedDescriptorTable resource with no descriptor metadata has no resolvable Namespace
+        // column, which is the namespace planner's no-usable-root-column case.
+        DescriptorMetadata? descriptorMetadata = includeDescriptorMetadata
+            ? new DescriptorMetadata(
+                new DescriptorColumnContract(
+                    Namespace: new DbColumnName("Namespace"),
+                    CodeValue: new DbColumnName("CodeValue"),
+                    ShortDescription: null,
+                    Description: null,
+                    EffectiveBeginDate: null,
+                    EffectiveEndDate: null,
+                    Discriminator: null
+                ),
+                DiscriminatorStrategy.ResourceKeyId
+            )
+            : null;
+
+        var concreteResources = mappingSet
+            .Model.ConcreteResourcesInNameOrder.Select(resource =>
+                resource.ResourceKey.Resource == _descriptorResource
+                    ? resource with
+                    {
+                        DescriptorMetadata = descriptorMetadata,
+                        RelationalModel = resource.RelationalModel with
+                        {
+                            DocumentReferenceBindings =
+                            [
+                                new DocumentReferenceBinding(
+                                    IsIdentityComponent: false,
+                                    JsonPathExpressionCompiler.Compile("$.studentReference"),
+                                    resource.RelationalModel.Root.Table,
+                                    new DbColumnName("DocumentId"),
+                                    _requestResource,
+                                    []
+                                ),
+                            ],
+                        },
+                    }
+                    : resource
+            )
+            .ToArray();
+
+        return mappingSet with
         {
+            Model = mappingSet.Model with { ConcreteResourcesInNameOrder = concreteResources },
             DescriptorQueryCapabilitiesByResource = new Dictionary<
                 QualifiedResourceName,
                 DescriptorQueryCapability
@@ -888,6 +1628,36 @@ public class Given_DescriptorReadHandler
         return new QueryElement(queryFieldName, [new JsonPath(documentPath)], value, type);
     }
 
+    private static NamespaceAuthorizationCheckSpec CreateNamespaceCheck(int rawConfiguredIndex) =>
+        new(
+            0,
+            NamespaceAuthorizationCheckValueSource.Stored,
+            new DbTableName(new DbSchemaName("dms"), "Descriptor"),
+            new DbColumnName("Namespace"),
+            RawConfiguredIndex: rawConfiguredIndex
+        );
+
+    private static PageDocumentIdAuthorizationCustomViewCheck CreateCustomViewCheck(
+        string strategyName,
+        int rawConfiguredIndex = 0
+    ) =>
+        new(
+            strategyName,
+            rawConfiguredIndex,
+            new DbTableName(new DbSchemaName("auth"), strategyName),
+            new DbColumnName("DocumentId"),
+            [
+                new ColumnPathStep(
+                    new DbTableName(new DbSchemaName("dms"), "Descriptor"),
+                    new DbColumnName("DocumentId"),
+                    null,
+                    null
+                ),
+            ],
+            new DbTableName(new DbSchemaName("dms"), "Descriptor"),
+            new DbColumnName("DocumentId")
+        );
+
     private static SupportedDescriptorQueryField CreateSupportedField(
         string queryFieldName,
         DescriptorQueryFieldTarget target
@@ -910,4 +1680,6 @@ public class Given_DescriptorReadHandler
 
         return await sut.ReadQueryRowsAsync(request, preprocessingResult);
     }
+
+    private sealed class StubDbException(string message) : DbException(message);
 }

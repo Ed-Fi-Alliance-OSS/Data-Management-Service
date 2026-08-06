@@ -137,26 +137,49 @@ internal static class RelationalReadGuardrails
             ),
         ];
 
+    /// <param name="supportedCustomViewStrategies">
+    /// Custom view-based strategies this operation resolved and will apply. Custom views are supported
+    /// AND filters on GET-many, so they are neither reported as unsupported effective strategies nor
+    /// omitted from the supported-strategy sentence. Empty (the default) for every operation that does
+    /// not implement custom views, which keeps that operation's wording unchanged.
+    /// </param>
     public static string BuildAuthorizationNotImplementedMessage(
         QualifiedResourceName resource,
         IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators,
         string operationLabel,
-        string effectiveAuthorizationActionLabel
+        string effectiveAuthorizationActionLabel,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy>? supportedCustomViewStrategies = null
     )
     {
         ArgumentNullException.ThrowIfNull(authorizationStrategyEvaluators);
 
+        HashSet<string> supportedCustomViewNames =
+        [
+            .. (supportedCustomViewStrategies ?? []).Select(static strategy =>
+                strategy.ConfiguredStrategy.StrategyName
+            ),
+        ];
+
         var strategyNames = authorizationStrategyEvaluators
             .Select(static evaluator => evaluator.AuthorizationStrategyName)
+            .Where(name => !supportedCustomViewNames.Contains(name))
             .Distinct(StringComparer.Ordinal)
             .OrderBy(static name => name, StringComparer.Ordinal)
             .Select(static name => $"'{name}'");
 
+        string supportedStrategySentence =
+            supportedCustomViewNames.Count == 0
+                ? "Only requests with no authorization strategies or with "
+                    + $"'{AuthorizationStrategyNameConstants.NamespaceBased}' and/or "
+                    + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' are currently supported."
+                : "Only requests with no authorization strategies or with "
+                    + $"'{AuthorizationStrategyNameConstants.NamespaceBased}', "
+                    + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}', and/or a resolved "
+                    + "custom view-based strategy are currently supported.";
+
         return $"Relational {operationLabel} authorization is not implemented for resource '{RelationalWriteSupport.FormatResource(resource)}' "
             + $"when effective {effectiveAuthorizationActionLabel} authorization requires filtering. Effective strategies: "
-            + $"[{string.Join(", ", strategyNames)}]. Only requests with no authorization strategies or with "
-            + $"'{AuthorizationStrategyNameConstants.NamespaceBased}' and/or "
-            + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' are currently supported.";
+            + $"[{string.Join(", ", strategyNames)}]. {supportedStrategySentence}";
     }
 
     public static int ConvertTotalCountOrThrow(

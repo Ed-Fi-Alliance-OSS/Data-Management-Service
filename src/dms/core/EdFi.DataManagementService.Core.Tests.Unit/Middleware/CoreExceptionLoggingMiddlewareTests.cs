@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
@@ -66,6 +67,40 @@ public class CoreExceptionLoggingMiddlewareTests
                 "The server encountered an unexpected condition that prevented it from fulfilling the request.",
                 "traceId"
             );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Custom_View_Validation_Exception : CoreExceptionLoggingMiddlewareTests
+    {
+        private FrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var requestInfo = No.RequestInfo("custom-view-trace-id");
+            var middleware = new CoreExceptionLoggingMiddleware(NullLogger.Instance);
+
+            await middleware.Execute(
+                requestInfo,
+                () => throw new CustomViewAuthorizationValidationException(new InvalidOperationException())
+            );
+
+            _response = (FrontendResponse)requestInfo.FrontendResponse;
+        }
+
+        [Test]
+        public void It_returns_a_system_error_response()
+        {
+            _response.StatusCode.Should().Be(500);
+            _response.ContentType.Should().Be("application/json");
+
+            JsonObject body = _response.Body!.AsObject();
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:system");
+            body["title"]!.GetValue<string>().Should().Be("System Error");
+            body["status"]!.GetValue<int>().Should().Be(500);
+            body["correlationId"]!.GetValue<string>().Should().Be("custom-view-trace-id");
         }
     }
 }
