@@ -879,3 +879,31 @@ Feature: Validation of the structure of the URLs
                         "Content-Type": "application/json; charset=utf-8"
                     }
                   """
+
+        # The path is parsed before the method is judged, so a malformed id is answered with the
+        # same 400 that scenario 14 pins for a GET - not the 405 of scenario 24. This is the third
+        # and last outcome the terminal can produce, alongside the 405s above and the 404s of
+        # scenarios 25, 29 and 32.
+        @DMS-1281
+        @e2e-ci-shard-4
+        Scenario: 34 Ensure clients get 400 for an unsupported method on a malformed resource id
+             When an "PATCH" request is made to "/ed-fi/schools/ffc0a272" with headers
+                  | Key    | Value |
+                  | Accept | */*   |
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                        "$.id": [
+                            "The value 'ffc0a272' is not valid."
+                        ]
+                      },
+                      "errors": []
+                  }
+                  """
