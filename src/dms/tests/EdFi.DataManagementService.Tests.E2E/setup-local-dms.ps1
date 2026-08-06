@@ -33,6 +33,11 @@
     environment is restored exactly on completion, including the absent, empty, whitespace, and
     valued distinctions, and on failure paths.
 
+    After DMS starts, the script verifies the container actually received that package surface and
+    fails the setup when it did not, so this class of mismatch is reported here rather than as an
+    HTTP 503 EffectiveSchemaHash failure in every scenario of the suite. Both sides of the comparison
+    are read from the environment file, never with Docker Compose precedence.
+
     On completion the script prints a copyable teardown command carrying the same -DatabaseEngine and
     the resolved -EnvironmentFile, so a custom or MSSQL run is torn down against its own compose
     definition/environment rather than the teardown wrapper's postgresql/.env.e2e defaults:
@@ -136,6 +141,236 @@ function Invoke-WithEnvironmentFileSchemaSettings {
     }
 }
 
+function Get-DmsSchemaEnvironmentToken {
+    # Classifies a container environment value without echoing it, so a failure message carries a
+    # fixed vocabulary instead of interpolated container text.
+    param(
+        [Parameter(Mandatory)]
+        [hashtable] $ContainerEnvironment,
+
+        [Parameter(Mandatory)]
+        [string] $Key
+    )
+
+    if (-not $ContainerEnvironment.ContainsKey($Key)) {
+        return "<absent>"
+    }
+
+    $value = [string]$ContainerEnvironment[$Key]
+
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return "<blank>"
+    }
+
+    if ([string]::Equals($value, "true", [System.StringComparison]::OrdinalIgnoreCase)) {
+        return "true"
+    }
+
+    if ([string]::Equals($value, "false", [System.StringComparison]::OrdinalIgnoreCase)) {
+        return "false"
+    }
+
+    return "<set>"
+}
+
+function Get-DmsContainerSchemaPackageCount {
+    # Returns the number of entries in the container's SCHEMA_PACKAGES value, or -1 when it is absent,
+    # blank, or not a JSON array. The value itself is never returned or logged.
+    param(
+        [Parameter(Mandatory)]
+        [hashtable] $ContainerEnvironment
+    )
+
+    if (-not $ContainerEnvironment.ContainsKey("SCHEMA_PACKAGES")) {
+        return -1
+    }
+
+    $value = [string]$ContainerEnvironment["SCHEMA_PACKAGES"]
+
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return -1
+    }
+
+    try {
+        $parsed = $value | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        return -1
+    }
+
+    # A JSON object parses without error but is not a package list; only an array is a package set.
+    if ($parsed -isnot [System.Collections.IList]) {
+        return -1
+    }
+
+    return @($parsed).Count
+}
+
+function Get-DmsSchemaEnvironmentVerdict {
+    <#
+    .SYNOPSIS
+        Decides whether the started DMS container's schema environment agrees with the environment file
+        the E2E database was provisioned from, and returns a verdict plus a sanitized reason and
+        remediation. Pure, so the decision is unit-testable without Docker.
+    .DESCRIPTION
+        The provisioner reads SCHEMA_PACKAGES from the environment file only, so the database is always
+        stamped for the file's package surface. DMS, by contrast, receives its settings through Docker
+        Compose, which resolves them ambient-first. When the two disagree the stack comes up healthy
+        and then fails every data-plane request with an EffectiveSchemaHash mismatch, so the
+        disagreement is worth failing on at setup time.
+
+        Every requirement here is unconditional. The caller obtains ExpectedPackageCount from the same
+        reader the provision phase used, which throws unless the file declares at least one package, so
+        by the time this runs the database has been provisioned for a real package surface and the
+        runtime must match it. That includes the environment file's own USE_API_SCHEMA_PATH: a file that
+        declares packages but does not enable the ApiSchema path is internally inconsistent and
+        guarantees the mismatch, so it is reported rather than tolerated.
+    .OUTPUTS
+        [pscustomobject] with ShouldFail, Reason, and Remediation.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [hashtable] $ContainerEnvironment,
+
+        # The environment file's declared ApiSchema package count. Constrained to at least one because
+        # the file-only reader the caller uses cannot produce less: an absent, malformed, or empty
+        # SCHEMA_PACKAGES declaration already failed the provision phase.
+        [Parameter(Mandatory)]
+        [ValidateRange(1, [int]::MaxValue)]
+        [int] $ExpectedPackageCount,
+
+        # The environment file's own USE_API_SCHEMA_PATH, read file-only (never with Compose
+        # precedence, which would let the ambient override this gate exists to catch decide the
+        # expected side and agree with a wrongly-started container).
+        [Parameter(Mandatory)]
+        [bool] $EnvironmentFileUsesApiSchemaPath
+    )
+
+    $ambientRemediation = "Remove USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES from the invoking shell, or select a different -EnvironmentFile, then re-run setup."
+
+    if (-not $EnvironmentFileUsesApiSchemaPath) {
+        return [pscustomobject]@{
+            ShouldFail  = $true
+            Reason      = "the environment file declares $ExpectedPackageCount ApiSchema package(s) but does not set USE_API_SCHEMA_PATH=true, so the E2E database was provisioned for those packages while DMS was configured to load only the schemas baked into the image."
+            Remediation = "Set USE_API_SCHEMA_PATH=true in the environment file so its declared packages are the runtime schema surface."
+        }
+    }
+
+    $useApiSchemaPathToken = Get-DmsSchemaEnvironmentToken -ContainerEnvironment $ContainerEnvironment -Key "AppSettings__UseApiSchemaPath"
+    if ($useApiSchemaPathToken -ne "true") {
+        return [pscustomobject]@{
+            ShouldFail  = $true
+            Reason      = "the DMS container's AppSettings__UseApiSchemaPath is $useApiSchemaPathToken but the environment file declares $ExpectedPackageCount ApiSchema package(s), so DMS loaded only the schemas baked into the image while the E2E database was provisioned for those packages."
+            Remediation = $ambientRemediation
+        }
+    }
+
+    $apiSchemaPathToken = Get-DmsSchemaEnvironmentToken -ContainerEnvironment $ContainerEnvironment -Key "AppSettings__ApiSchemaPath"
+    if ($apiSchemaPathToken -in @("<absent>", "<blank>")) {
+        return [pscustomobject]@{
+            ShouldFail  = $true
+            Reason      = "the DMS container's AppSettings__ApiSchemaPath is $apiSchemaPathToken, so the declared ApiSchema packages have nowhere to be materialized."
+            Remediation = $ambientRemediation
+        }
+    }
+
+    $containerPackageCount = Get-DmsContainerSchemaPackageCount -ContainerEnvironment $ContainerEnvironment
+    if ($containerPackageCount -lt 0) {
+        return [pscustomobject]@{
+            ShouldFail  = $true
+            Reason      = "the DMS container's SCHEMA_PACKAGES is absent, blank, or not a JSON array, but the environment file declares $ExpectedPackageCount ApiSchema package(s)."
+            Remediation = $ambientRemediation
+        }
+    }
+
+    if ($containerPackageCount -ne $ExpectedPackageCount) {
+        return [pscustomobject]@{
+            ShouldFail  = $true
+            Reason      = "the DMS container received $containerPackageCount ApiSchema package(s) but the E2E database was provisioned for the environment file's $ExpectedPackageCount."
+            Remediation = $ambientRemediation
+        }
+    }
+
+    return [pscustomobject]@{
+        ShouldFail  = $false
+        Reason      = ""
+        Remediation = ""
+    }
+}
+
+function Get-DmsContainerEnvironment {
+    # Reads a container's environment into a key/value map. Fails closed: an inspect that does not
+    # succeed is an inability to verify, never a pass.
+    param(
+        [Parameter(Mandatory)]
+        [string] $ContainerName
+    )
+
+    $environmentJson = docker inspect $ContainerName --format '{{json .Config.Env}}'
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect Docker container '$ContainerName' to verify its schema environment."
+    }
+
+    $containerEnvironment = @{}
+
+    foreach ($entry in @($environmentJson | ConvertFrom-Json)) {
+        $entryText = [string]$entry
+        $separatorIndex = $entryText.IndexOf("=")
+
+        if ($separatorIndex -lt 0) {
+            continue
+        }
+
+        $containerEnvironment[$entryText.Substring(0, $separatorIndex)] = $entryText.Substring($separatorIndex + 1)
+    }
+
+    return $containerEnvironment
+}
+
+function Assert-DmsContainerSchemaEnvironment {
+    <#
+    .SYNOPSIS
+        Fails the setup when the started DMS container's schema environment disagrees with the
+        environment file the E2E database was provisioned from, so this class of mismatch surfaces here
+        instead of as HTTP 503 EffectiveSchemaHash failures in every scenario of the suite.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string] $EnvironmentFilePath,
+
+        [Parameter(Mandatory)]
+        [hashtable] $EnvironmentValues,
+
+        [Parameter(Mandatory)]
+        [string] $ContainerName
+    )
+
+    # Both expectations come from the environment FILE. Get-SchemaPackagesFromEnvironmentFile is the
+    # same reader the provision phase used and it throws unless at least one package is declared, so a
+    # malformed or empty declaration has already failed provisioning rather than being treated as
+    # acceptable here. Get-EnvValue is file-only by contract; Get-ComposeResolvedEnvValue must not be
+    # used for either value, because resolving the expected side ambient-first would let the very
+    # override this gate exists to catch decide what "correct" means.
+    $declaredPackageCount = @(Get-SchemaPackagesFromEnvironmentFile -EnvironmentFilePath $EnvironmentFilePath).Count
+    $environmentFileUsesApiSchemaPath = [string]::Equals(
+        (Get-EnvValue -EnvValues $EnvironmentValues -Name "USE_API_SCHEMA_PATH" -DefaultValue "false"),
+        "true",
+        [System.StringComparison]::OrdinalIgnoreCase
+    )
+
+    $verdict = Get-DmsSchemaEnvironmentVerdict `
+        -ContainerEnvironment (Get-DmsContainerEnvironment -ContainerName $ContainerName) `
+        -ExpectedPackageCount $declaredPackageCount `
+        -EnvironmentFileUsesApiSchemaPath $environmentFileUsesApiSchemaPath
+
+    if ($verdict.ShouldFail) {
+        throw "DMS E2E setup mismatch: $($verdict.Reason) $($verdict.Remediation)"
+    }
+
+    Write-Host "Verified DMS container schema environment matches the environment file ($declaredPackageCount ApiSchema package(s))." -ForegroundColor Green
+}
+
 Write-Host @"
 Ed-Fi DMS Local Environment Setup for E2E Testing
 =================================================
@@ -175,6 +410,10 @@ try {
     # Shared Compose-equivalent resolver so this wrapper selects the same E2E target database the
     # provision phase resets (an ambient E2E_DATABASE_NAME override wins over the env file).
     Import-Module ./database-safety.psm1 -Force
+    # The same file-only schema package reader the provision phase uses, so the post-start
+    # verification below compares the container against exactly the package surface the database was
+    # provisioned for.
+    Import-Module ../schema-package-utility.psm1 -Force
 
     $baseEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $dockerComposeDir
     # Compose the data-standard overlay first, then the database-engine overlay (same order as
@@ -255,6 +494,14 @@ try {
             Write-Error "Failed to start DMS service after E2E database provisioning. Exit code: $LASTEXITCODE"
             exit $LASTEXITCODE
         }
+
+        # Prove DMS actually came up on the environment file's schema package surface before any
+        # scenario runs. Inside the guard, so the file-only expectation cannot be contaminated by an
+        # ambient override even if a future edit reaches for a Compose-precedence reader.
+        Assert-DmsContainerSchemaEnvironment `
+            -EnvironmentFilePath $resolvedEnvironmentFile `
+            -EnvironmentValues $envValues `
+            -ContainerName "ed-fi-api"
     }
 
     # Pass the fully resolved environment file (data-standard then engine overlay) so teardown uses the
