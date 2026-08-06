@@ -74,6 +74,8 @@ public static class MssqlTestDatabaseHelper
     public static void DropDatabaseIfExists(string databaseName)
     {
         SqlConnection.ClearAllPools();
+        DisableDatabaseCdcIfEnabled(databaseName);
+        SqlConnection.ClearAllPools();
 
         using SqlConnection connection = new(BaselineDatabaseConfiguration.MssqlAdminConnectionString!);
         connection.Open();
@@ -89,6 +91,7 @@ public static class MssqlTestDatabaseHelper
                 DROP DATABASE {quotedDatabaseName};
             END
             """;
+        command.CommandTimeout = DefaultCommandTimeoutSeconds;
 
         command.ExecuteNonQuery();
     }
@@ -139,6 +142,30 @@ public static class MssqlTestDatabaseHelper
                 char.IsLetterOrDigit(character) || character is '-' or '_' ? character : '_'
             ),
         ]);
+    }
+
+    private static void DisableDatabaseCdcIfEnabled(string databaseName)
+    {
+        using SqlConnection connection = new(BaselineDatabaseConfiguration.MssqlAdminConnectionString!);
+        connection.Open();
+
+        using SqlCommand command = connection.CreateCommand();
+        var escapedDatabaseName = EscapeSqlLiteral(databaseName);
+        var quotedDatabaseName = QuoteIdentifier(databaseName);
+        command.CommandText = $"""
+            IF EXISTS (
+                SELECT 1
+                FROM sys.databases
+                WHERE name = N'{escapedDatabaseName}'
+                AND is_cdc_enabled = 1
+            )
+            BEGIN
+                USE {quotedDatabaseName};
+                EXEC sys.sp_cdc_disable_db;
+            END;
+            """;
+        command.CommandTimeout = DefaultCommandTimeoutSeconds;
+        command.ExecuteNonQuery();
     }
 
     private static void CreateDatabaseWithGeneratedDdlFileLayout(string databaseName)
