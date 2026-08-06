@@ -390,7 +390,6 @@ public sealed record DocumentCacheProjectionSchedulerDispatchResult
             throw new ArgumentException("Dispatched results require a drain result.");
         }
 
-        ContextKey = contextKey;
         BlockReason = blockReason;
         DrainResult = drainResult;
         ObservedAt = observedAt;
