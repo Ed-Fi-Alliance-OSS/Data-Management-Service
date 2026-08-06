@@ -22,6 +22,17 @@
     ./provision-e2e-database.ps1 -EnvironmentFile <selected env file> -DatabaseEngine <engine> -DatabaseName <E2E_DATABASE_NAME>
     ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile <selected env file> -DatabaseEngine <engine> -AddExtensionSecurityMetadata
 
+    Every Docker phase above runs with USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES
+    removed from this process, so the selected environment file is the sole authority for the schema
+    package surface of the whole direct setup flow. Docker Compose gives process environment
+    variables precedence over --env-file entries, and local-dms.yml resolves each of those three
+    with a ${VAR:-default} fallback that treats a present-but-blank value exactly like an unset one.
+    An ambient blank or false value therefore used to start DMS on the image-baked schemas while
+    provisioning had already stamped the environment file's full package surface, and every
+    data-plane request then failed with an EffectiveSchemaHash mismatch. The caller's original
+    environment is restored exactly on completion, including the absent, empty, whitespace, and
+    valued distinctions, and on failure paths.
+
     On completion the script prints a copyable teardown command carrying the same -DatabaseEngine and
     the resolved -EnvironmentFile, so a custom or MSSQL run is torn down against its own compose
     definition/environment rather than the teardown wrapper's postgresql/.env.e2e defaults:
@@ -56,6 +67,73 @@ function Get-DirectSetupTeardownCommand {
 
     $quotedEnvironmentFile = "'" + ($EnvironmentFile -replace "'", "''") + "'"
     return "./teardown-local-dms.ps1 -DatabaseEngine $DatabaseEngine -EnvironmentFile $quotedEnvironmentFile"
+}
+
+function Invoke-WithEnvironmentFileSchemaSettings {
+    # Runs the direct setup flow's Docker phases with the three schema package variables absent from
+    # this process, so Docker Compose must resolve them from the selected --env-file, and restores
+    # the caller's exact prior state afterward.
+    #
+    # Compose gives process environment variables precedence over --env-file entries, and
+    # local-dms.yml resolves all three with a ${VAR:-default} fallback. Because ':-' substitutes the
+    # default for an empty value as well as an unset one, an ambient blank value silently wins over
+    # the environment file: the DMS container is created with AppSettings__UseApiSchemaPath=false and
+    # empty AppSettings__ApiSchemaPath/SCHEMA_PACKAGES, run.sh skips the package download entirely,
+    # and DMS loads only the image-baked schemas. Provisioning is not affected, because it reads
+    # SCHEMA_PACKAGES from the environment file only - so the database is stamped for the file's full
+    # package surface while DMS computes a different runtime hash, and every data-plane request fails
+    # with an EffectiveSchemaHash mismatch.
+    #
+    # The whole phase sequence is guarded rather than only the two start-local-dms.ps1 calls: the
+    # environment file is authoritative for the entire direct setup flow, and a Compose call added to
+    # any phase later is covered by construction. The configure and provision phases are unaffected
+    # by the removal, because neither reads these variables from the process environment.
+    #
+    # This is deliberately a caller-side guard. start-local-dms.ps1 must not clear these globally:
+    # in bootstrap mode it sets them in-process on purpose, so process precedence makes the staged
+    # .bootstrap/ApiSchema workspace authoritative.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Names the schema settings carried by an environment file, matching the equivalent build-dms.ps1 helper.')]
+    param(
+        [Parameter(Mandatory)]
+        [scriptblock] $Action
+    )
+
+    $schemaEnvironmentVariableNames = @(
+        "USE_API_SCHEMA_PATH",
+        "API_SCHEMA_PATH",
+        "SCHEMA_PACKAGES"
+    )
+
+    # $null distinguishes absent from present-and-empty, which is the distinction the restore below
+    # has to reproduce.
+    $previousValues = @{}
+    foreach ($name in $schemaEnvironmentVariableNames) {
+        $previousValues[$name] = [System.Environment]::GetEnvironmentVariable($name)
+    }
+
+    try {
+        foreach ($name in $schemaEnvironmentVariableNames) {
+            # Remove-Item, never an assignment: whether '$env:X = $null' removes the variable or
+            # leaves it present-and-blank varies by platform and PowerShell/.NET version, and a blank
+            # value satisfies ${VAR:-default} - which is the bug this guard exists to prevent.
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        }
+
+        & $Action
+    }
+    finally {
+        # Restore each variable to its exact prior state: re-create it with the verbatim prior value
+        # (including empty and whitespace) when it existed, otherwise remove it. This runs on the
+        # success path, when the action throws, and when the action calls exit.
+        foreach ($name in $schemaEnvironmentVariableNames) {
+            if ($null -eq $previousValues[$name]) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($name, $previousValues[$name])
+            }
+        }
+    }
 }
 
 Write-Host @"
@@ -141,40 +219,42 @@ try {
 
     Write-Output "Using file-based schema packages from $resolvedEnvironmentFile for E2E (non-bootstrap compatibility path)."
 
-    # Start only the infrastructure and Configuration Service first. DMS starts after the
-    # E2E data store exists and the relational schema has been provisioned.
-    ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -r -AddExtensionSecurityMetadata
+    Invoke-WithEnvironmentFileSchemaSettings -Action {
+        # Start only the infrastructure and Configuration Service first. DMS starts after the
+        # E2E data store exists and the relational schema has been provisioned.
+        ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -r -AddExtensionSecurityMetadata
 
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to start DMS infrastructure. Exit code: $LASTEXITCODE"
-        exit $LASTEXITCODE
-    }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to start DMS infrastructure. Exit code: $LASTEXITCODE"
+            exit $LASTEXITCODE
+        }
 
-    # Create the default data store via the configuration phase. start-local-dms.ps1 no longer
-    # creates a data store automatically; instance creation is owned by configure-local-data-store.ps1.
-    # Config Service is already healthy at this point because the -InfraOnly phase waits for
-    # CMS readiness before returning.
-    ./configure-local-data-store.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DataStoreDatabaseName $e2eDatabaseName
+        # Create the default data store via the configuration phase. start-local-dms.ps1 no longer
+        # creates a data store automatically; instance creation is owned by configure-local-data-store.ps1.
+        # Config Service is already healthy at this point because the -InfraOnly phase waits for
+        # CMS readiness before returning.
+        ./configure-local-data-store.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DataStoreDatabaseName $e2eDatabaseName
 
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to configure local data store. Exit code: $LASTEXITCODE"
-        exit $LASTEXITCODE
-    }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to configure local data store. Exit code: $LASTEXITCODE"
+            exit $LASTEXITCODE
+        }
 
-    Write-Host "`nProvisioning E2E database '$e2eDatabaseName'..." -ForegroundColor Cyan
-    ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DatabaseName $e2eDatabaseName
+        Write-Host "`nProvisioning E2E database '$e2eDatabaseName'..." -ForegroundColor Cyan
+        ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DatabaseName $e2eDatabaseName
 
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to provision E2E database '$e2eDatabaseName'. Exit code: $LASTEXITCODE"
-        exit $LASTEXITCODE
-    }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to provision E2E database '$e2eDatabaseName'. Exit code: $LASTEXITCODE"
+            exit $LASTEXITCODE
+        }
 
-    Write-Host "`nStarting DMS after E2E database provisioning..." -ForegroundColor Cyan
-    ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -AddExtensionSecurityMetadata
+        Write-Host "`nStarting DMS after E2E database provisioning..." -ForegroundColor Cyan
+        ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -AddExtensionSecurityMetadata
 
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to start DMS service after E2E database provisioning. Exit code: $LASTEXITCODE"
-        exit $LASTEXITCODE
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to start DMS service after E2E database provisioning. Exit code: $LASTEXITCODE"
+            exit $LASTEXITCODE
+        }
     }
 
     # Pass the fully resolved environment file (data-standard then engine overlay) so teardown uses the
