@@ -5,7 +5,6 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
-using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -22,9 +21,9 @@ public class MethodNotAllowedMiddlewareTests
 {
     private const string TraceId = "method-not-allowed-trace-id";
 
-    private static IPipelineStep Middleware()
+    private static IPipelineStep Middleware(bool isTrackedChangeRoute = false)
     {
-        return new MethodNotAllowedMiddleware(NullLogger.Instance);
+        return new MethodNotAllowedMiddleware(NullLogger.Instance, isTrackedChangeRoute);
     }
 
     private static PathComponents PathComponents(bool hasDocumentUuidSegment)
@@ -155,34 +154,35 @@ public class MethodNotAllowedMiddlewareTests
     [Parallelizable]
     public class Given_An_Unsupported_Method_On_A_Tracked_Change_Route : MethodNotAllowedMiddlewareTests
     {
-        /// <summary>
-        /// Mirrors what ParseTrackedChangePathMiddleware leaves behind for a /deletes or
-        /// /keyChanges request: the operation set, and no document uuid segment.
-        /// </summary>
-        private static RequestInfo TrackedChangeRequestInfoFor(
-            string unsupportedMethodName,
-            ChangeQueryEndpointOperation operation
-        )
+        [Test]
+        public async Task It_returns_405_allowing_get_only()
         {
-            RequestInfo requestInfo = RequestInfoFor(unsupportedMethodName, hasDocumentUuidSegment: false);
-            requestInfo.ChangeQueryOperation = operation;
-            return requestInfo;
-        }
+            // ParseTrackedChangePathMiddleware leaves no document uuid segment behind, exactly as
+            // ParsePathMiddleware does for a collection route, which is why the pipeline tells this
+            // step which route family it terminates rather than the step reading it off the request.
+            RequestInfo requestInfo = RequestInfoFor("PATCH", hasDocumentUuidSegment: false);
 
-        [TestCase(ChangeQueryEndpointOperation.Deletes)]
-        [TestCase(ChangeQueryEndpointOperation.KeyChanges)]
-        public async Task It_returns_405_allowing_get_only(ChangeQueryEndpointOperation operation)
-        {
-            RequestInfo requestInfo = TrackedChangeRequestInfoFor("PATCH", operation);
-
-            await Middleware().Execute(requestInfo, NullNext);
+            await Middleware(isTrackedChangeRoute: true).Execute(requestInfo, NullNext);
 
             requestInfo.FrontendResponse.StatusCode.Should().Be(405);
-            // A tracked-change path leaves HasDocumentUuidSegment false, so without the
-            // ChangeQueryOperation check this would advertise the collection methods.
             requestInfo.FrontendResponse.Headers.Should().Contain("Allow", "GET");
             requestInfo.FrontendResponse.ContentType.Should().Be("application/json; charset=utf-8");
             AssertMethodNotAllowedProblemDetails(requestInfo.FrontendResponse, "PATCH");
+        }
+
+        /// <summary>
+        /// The regression guard for the discriminator: the identical request answered by the
+        /// data-route pipeline must advertise the collection methods, so a terminal wired into the
+        /// wrong pipeline cannot go unnoticed.
+        /// </summary>
+        [Test]
+        public async Task It_advertises_the_collection_methods_when_wired_into_the_data_pipeline()
+        {
+            RequestInfo requestInfo = RequestInfoFor("PATCH", hasDocumentUuidSegment: false);
+
+            await Middleware(isTrackedChangeRoute: false).Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.Headers.Should().Contain("Allow", "GET, POST");
         }
     }
 

@@ -436,7 +436,7 @@ internal class ApiService : IApiService
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
             new ValidateEndpointMiddleware(_logger),
-            new MethodNotAllowedMiddleware(_logger),
+            new MethodNotAllowedMiddleware(_logger, _isTrackedChangeRoute: false),
         ]);
 
         return new PipelineProvider(steps);
@@ -457,7 +457,7 @@ internal class ApiService : IApiService
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
             new ValidateEndpointMiddleware(_logger),
-            new MethodNotAllowedMiddleware(_logger),
+            new MethodNotAllowedMiddleware(_logger, _isTrackedChangeRoute: true),
         ]);
 
         return new PipelineProvider(steps);

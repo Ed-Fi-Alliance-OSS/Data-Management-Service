@@ -16,7 +16,13 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// project namespace or resource still answers 404 rather than 405, matching ODS/API's
 /// existence-then-method ordering.
 /// </summary>
-internal class MethodNotAllowedMiddleware(ILogger _logger) : IPipelineStep
+/// <param name="_isTrackedChangeRoute">
+/// True in the tracked-change pipeline (/deletes, /keyChanges), false in the data-route pipeline.
+/// ApiService fixes this when it builds the two pipelines, because the request cannot be asked:
+/// both parse steps leave HasDocumentUuidSegment false, so that flag alone cannot tell a
+/// tracked-change route from a data collection route.
+/// </param>
+internal class MethodNotAllowedMiddleware(ILogger _logger, bool _isTrackedChangeRoute) : IPipelineStep
 {
     /// <summary>
     /// Tracked-change routes are read-only: TrackedChangesEndpointModule maps GET alone. The
@@ -32,18 +38,11 @@ internal class MethodNotAllowedMiddleware(ILogger _logger) : IPipelineStep
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        // ChangeQueryOperation is set only by ParseTrackedChangePathMiddleware, so it is what
-        // distinguishes a /deletes or /keyChanges route from a data route here. Both parse steps
-        // leave HasDocumentUuidSegment false, so that flag alone cannot tell them apart.
-        string allowed = (
-            requestInfo.ChangeQueryOperation is not null,
-            requestInfo.PathComponents.HasDocumentUuidSegment
-        ) switch
-        {
-            (true, _) => TrackedChangeMethods,
-            (false, true) => ValidateRouteSemanticsMiddleware.ItemMethods,
-            (false, false) => ValidateRouteSemanticsMiddleware.CollectionMethods,
-        };
+        string dataRouteMethods = requestInfo.PathComponents.HasDocumentUuidSegment
+            ? ValidateRouteSemanticsMiddleware.ItemMethods
+            : ValidateRouteSemanticsMiddleware.CollectionMethods;
+
+        string allowed = _isTrackedChangeRoute ? TrackedChangeMethods : dataRouteMethods;
 
         requestInfo.FrontendResponse = new FrontendResponse(
             StatusCode: 405,
