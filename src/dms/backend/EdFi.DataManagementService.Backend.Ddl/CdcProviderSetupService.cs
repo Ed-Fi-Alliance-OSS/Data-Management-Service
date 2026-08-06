@@ -253,7 +253,7 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
         _sourceTableInventory.AddRange(stepResult.SourceTableInventory);
         _expectedMessageKeyColumns.AddRange(stepResult.ExpectedMessageKeyColumns);
         UpsertProviderHistoryObservations(stepResult.ProviderHistoryObservations);
-        _diagnostics.AddRange(stepResult.Diagnostics);
+        AddStepDiagnosticsIfMissing(stepResult.Diagnostics);
 
         _heartbeatActionQuery ??= stepResult.HeartbeatActionQuery;
 
@@ -991,6 +991,19 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
         }
 
         _diagnostics.Add(diagnostic);
+    }
+
+    private void AddStepDiagnosticsIfMissing(IReadOnlyList<CdcProviderDiagnostic> diagnostics)
+    {
+        foreach (var diagnostic in diagnostics)
+        {
+            if (_diagnostics.Contains(diagnostic))
+            {
+                continue;
+            }
+
+            _diagnostics.Add(diagnostic);
+        }
     }
 }
 

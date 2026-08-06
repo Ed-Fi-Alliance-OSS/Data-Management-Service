@@ -671,21 +671,21 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
         result.Outcome.Should().Be(CdcProviderSetupOutcome.ExactMatch);
         result
             .Diagnostics.Should()
-            .Contain(diagnostic =>
+            .ContainSingle(diagnostic =>
                 diagnostic.Code == "CDC_SQLSERVER_CDC_JOB_DISABLED"
                 && diagnostic.Severity == CdcProviderDiagnosticSeverity.Warning
                 && diagnostic.ObservedValue == "database.current.capture"
             );
         result
             .Diagnostics.Should()
-            .Contain(diagnostic =>
+            .ContainSingle(diagnostic =>
                 diagnostic.Code == "CDC_SQLSERVER_CAPTURE_JOB_NOT_RUNNING"
                 && diagnostic.Severity == CdcProviderDiagnosticSeverity.Warning
                 && diagnostic.ObservedValue == "database.current.capture"
             );
         result
             .Diagnostics.Should()
-            .Contain(diagnostic =>
+            .ContainSingle(diagnostic =>
                 diagnostic.Code == "CDC_SQLSERVER_CDC_JOB_LAST_RUN_FAILED"
                 && diagnostic.Severity == CdcProviderDiagnosticSeverity.Warning
                 && diagnostic.ObservedValue == "database.current.capture"
@@ -837,7 +837,7 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
             .ToArray();
         rcsiDiagnostics
             .Should()
-            .NotBeEmpty()
+            .ContainSingle()
             .And.OnlyContain(diagnostic =>
                 diagnostic.Severity == CdcProviderDiagnosticSeverity.Warning
                 && diagnostic.Category == CdcProviderDiagnosticCategory.ValidationMismatch
@@ -848,7 +848,7 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
             .ToArray();
         nestedTriggerDiagnostics
             .Should()
-            .NotBeEmpty()
+            .ContainSingle()
             .And.OnlyContain(diagnostic =>
                 diagnostic.Severity == CdcProviderDiagnosticSeverity.Warning
                 && diagnostic.Category == CdcProviderDiagnosticCategory.ValidationMismatch
@@ -865,7 +865,7 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
                 diagnostic.GetProperty("code").GetString() == "CDC_SQLSERVER_READ_COMMITTED_SNAPSHOT_OFF"
             )
             .Should()
-            .NotBeEmpty()
+            .ContainSingle()
             .And.OnlyContain(diagnostic =>
                 diagnostic.GetProperty("category").GetString() == "validation_mismatch"
                 && diagnostic.GetProperty("severity").GetString() == "warning"
@@ -876,7 +876,7 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
                 diagnostic.GetProperty("code").GetString() == "CDC_SQLSERVER_NESTED_TRIGGERS_NOT_ENABLED"
             )
             .Should()
-            .NotBeEmpty()
+            .ContainSingle()
             .And.OnlyContain(diagnostic =>
                 diagnostic.GetProperty("category").GetString() == "validation_mismatch"
                 && diagnostic.GetProperty("severity").GetString() == "warning"
