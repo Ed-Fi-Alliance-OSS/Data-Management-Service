@@ -52,3 +52,8 @@ Task completed: CDC source inventory (reference/design/backend-redesign/epics/19
 Key decisions: removed unused production CdcSourceInventoryBuilder so provider setup only uses caller-supplied ExpectedSourceInventory; kept validator production-only boundary and test-local CoreDdlEmitter helper.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcSourceInventory.cs; src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcSourceInventoryTests.cs; tasks.json; progress.txt
 Blockers/notes: none. Verification: rg builder/build helper no matches; CdcSourceInventory unit filter passed 21 tests; csharpier passed.
+
+Task completed: SQL Server CDC grants (reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md)
+Key decisions: connector-access result no longer carries gatingRoleWasCreated; gating-role artifact state now comes only from inspection as Missing/Mismatched/Matched; grant SQL still only adds role membership and required grants.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcSqlServerHeartbeatDatabaseProvider.cs; tasks.json; progress.txt
+Blockers/notes: requested CdcSqlServerHeartbeatDatabaseProvider test filter selected zero tests, so verified with MssqlCdc filter instead; 51 tests passed; csharpier passed.

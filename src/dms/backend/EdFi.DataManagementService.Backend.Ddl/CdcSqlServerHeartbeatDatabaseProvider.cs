@@ -617,7 +617,6 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     cancellationToken
                 )
                 .ConfigureAwait(false);
-            var gatingRoleWasMissingBeforeGrant = !access.GatingRoleExists;
             var state = CdcProviderArtifactState.Matched;
 
             if (
@@ -642,18 +641,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 return ConnectorPrincipalAccessResult(
                     context.Request,
                     CdcProviderArtifactState.Mismatched,
-                    access,
-                    gatingRoleWasCreated: false
+                    access
                 );
             }
 
-            var result = ConnectorPrincipalAccessResult(
-                context.Request,
-                state,
-                access,
-                gatingRoleWasCreated: state == CdcProviderArtifactState.Created
-                    && gatingRoleWasMissingBeforeGrant
-            );
+            var result = ConnectorPrincipalAccessResult(context.Request, state, access);
 
             if (context.Request.ConnectorPrincipalProbeFactory is null)
             {
@@ -3438,8 +3430,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     private static CdcProviderSetupStepResult ConnectorPrincipalAccessResult(
         CdcProviderSetupRequest request,
         CdcProviderArtifactState state,
-        ConnectorPrincipalAccessInspection access,
-        bool gatingRoleWasCreated
+        ConnectorPrincipalAccessInspection access
     ) =>
         new(
             artifactInventory:
@@ -3453,7 +3444,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 new CdcProviderArtifactObservation(
                     CdcProviderArtifactKind.SqlServerGatingRole,
                     request.ArtifactNames.SqlServer!.GatingRoleName,
-                    GatingRoleArtifactState(access, gatingRoleWasCreated),
+                    GatingRoleArtifactState(access),
                     access.GatingRoleObservedValues
                 ),
             ],
@@ -3461,10 +3452,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             diagnostics: access.Diagnostics
         );
 
-    private static CdcProviderArtifactState GatingRoleArtifactState(
-        ConnectorPrincipalAccessInspection access,
-        bool gatingRoleWasCreated
-    )
+    private static CdcProviderArtifactState GatingRoleArtifactState(ConnectorPrincipalAccessInspection access)
     {
         if (!access.GatingRoleExists)
         {
@@ -3476,7 +3464,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             return CdcProviderArtifactState.Mismatched;
         }
 
-        return gatingRoleWasCreated ? CdcProviderArtifactState.Created : CdcProviderArtifactState.Matched;
+        return CdcProviderArtifactState.Matched;
     }
 
     private static IReadOnlyList<string> MissingRequiredSqlServerConnectorPrivileges(
