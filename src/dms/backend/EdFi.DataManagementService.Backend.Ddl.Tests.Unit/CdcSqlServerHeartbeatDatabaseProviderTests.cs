@@ -1600,6 +1600,101 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
             .NotContain(grant => grant.SafeObjectName.Value == "dms.DocumentProjectionWork");
     }
 
+    [TestCase(@"DOMAIN\svc_cdc", "DOMAIN_svc_cdc")]
+    [TestCase("svc-cdc", "svc_cdc")]
+    [TestCase("svc@tenant.com", "svc_tenant.com")]
+    public async Task It_should_accept_connector_principal_names_after_diagnostic_sanitization(
+        string connectorPrincipalName,
+        string expectedSafeObservedMember
+    )
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            connectorAccess: new RecordingSqlServerConnectorAccess
+            {
+                ConnectorPrincipalName = connectorPrincipalName,
+                GatingRoleExists = true,
+                GatingRoleDirectMembers = [connectorPrincipalName],
+                GatingRoleDirectMemberPrincipalIds = ["101"],
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                connectorPrincipalName: new CdcSafeName(connectorPrincipalName),
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        result
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        executor
+            .ExecutedSql.Where(sql => sql.Contains("cdc:sqlserver:enable-capture-instance"))
+            .Should()
+            .HaveCount(3);
+        executor
+            .ExecutedSql.Single(sql => sql.Contains("cdc:sqlserver:grant-connector-access"))
+            .Should()
+            .Contain($"ADD MEMBER [{connectorPrincipalName}]");
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeObservedValues["gating_role_direct_members"] == expectedSafeObservedMember
+            );
+
+        using var manifestDocument = JsonDocument.Parse(result.ManifestPayload!.Json);
+        manifestDocument
+            .RootElement.GetProperty("provider_artifacts")
+            .EnumerateArray()
+            .Should()
+            .Contain(artifact =>
+                artifact.GetProperty("artifact_kind").GetString() == "sqlserver_gating_role"
+                && artifact
+                    .GetProperty("observed_values")
+                    .GetProperty("gating_role_direct_members")
+                    .GetString() == expectedSafeObservedMember
+            );
+    }
+
+    [Test]
+    public async Task It_should_accept_case_drifted_connector_principal_when_sql_server_resolves_the_database_principal()
+    {
+        var executor = ExistingArtifactsWithConnectorAccess(
+            RecordingSqlServerConnectorAccess.Exact("SVC_CDC")
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                connectorPrincipalName: new CdcSafeName("svc_cdc"),
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.ExactMatch);
+        result
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeObservedValues["gating_role_direct_members"] == "SVC_CDC"
+            );
+        executor.ExecutedSql.Should().BeEmpty();
+        executor
+            .QueriedSql.Single(sql => sql.Contains("cdc:sqlserver:connector-principal-access"))
+            .Should()
+            .Contain("connector_principal_id")
+            .And.Contain("gating_role_direct_member_principal_ids")
+            .And.Contain("role_member.member_principal_id = connector.principal_id");
+    }
+
     [Test]
     public async Task It_should_fail_closed_when_initial_setup_gating_role_is_missing_after_expected_capture_instances_exist()
     {
@@ -2448,6 +2543,10 @@ internal static class SqlServerCaptureInstanceTestData
 
 internal sealed class RecordingSqlServerConnectorAccess
 {
+    public string ConnectorPrincipalName { get; init; } = "connector_principal";
+
+    public string ConnectorPrincipalId { get; init; } = "101";
+
     public bool ConnectorExists { get; init; } = true;
 
     public bool ConnectorIsDatabasePrincipal { get; init; } = true;
@@ -2457,6 +2556,8 @@ internal sealed class RecordingSqlServerConnectorAccess
     public bool GatingRoleIsNormalRole { get; set; } = true;
 
     public IReadOnlyList<string> GatingRoleDirectMembers { get; set; } = [];
+
+    public IReadOnlyList<string>? GatingRoleDirectMemberPrincipalIds { get; set; }
 
     public IReadOnlyList<string> GatingRoleParentRoles { get; init; } = [];
 
@@ -2502,11 +2603,15 @@ internal sealed class RecordingSqlServerConnectorAccess
 
     public static RecordingSqlServerConnectorAccess MissingGrants() => new();
 
-    public static RecordingSqlServerConnectorAccess Exact() =>
+    public static RecordingSqlServerConnectorAccess Exact(
+        string connectorPrincipalName = "connector_principal"
+    ) =>
         new()
         {
+            ConnectorPrincipalName = connectorPrincipalName,
             GatingRoleExists = true,
-            GatingRoleDirectMembers = ["connector_principal"],
+            GatingRoleDirectMembers = [connectorPrincipalName],
+            GatingRoleDirectMemberPrincipalIds = ["101"],
             DatabaseConnect = true,
             DocumentSelect = true,
             DocumentCacheSelect = true,
@@ -2703,7 +2808,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
 
         if (sql.Contains("cdc:sqlserver:grant-connector-access"))
         {
-            _connectorAccess.GatingRoleDirectMembers = ["connector_principal"];
+            _connectorAccess.GatingRoleDirectMembers = [_connectorAccess.ConnectorPrincipalName];
+            _connectorAccess.GatingRoleDirectMemberPrincipalIds = [_connectorAccess.ConnectorPrincipalId];
             _connectorAccess.DatabaseConnect = true;
             _connectorAccess.DocumentSelect = true;
             _connectorAccess.DocumentCacheSelect = true;
@@ -2870,15 +2976,17 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         return Row(
             ("connector_exists", _connectorAccess.ConnectorExists.ToString()),
             ("connector_is_database_principal", _connectorAccess.ConnectorIsDatabasePrincipal.ToString()),
+            ("connector_principal_id", ConnectorPrincipalId()),
             ("gating_role_exists", _connectorAccess.GatingRoleExists.ToString()),
             ("gating_role_is_normal_role", _connectorAccess.GatingRoleIsNormalRole.ToString()),
             (
                 "gating_role_member",
-                _connectorAccess
-                    .GatingRoleDirectMembers.SequenceEqual(["connector_principal"], StringComparer.Ordinal)
+                GatingRoleDirectMemberPrincipalIds()
+                    .Contains(_connectorAccess.ConnectorPrincipalId, StringComparer.Ordinal)
                     .ToString()
             ),
             ("gating_role_direct_members", Csv(_connectorAccess.GatingRoleDirectMembers)),
+            ("gating_role_direct_member_principal_ids", Csv(GatingRoleDirectMemberPrincipalIds())),
             ("gating_role_parent_roles", Csv(_connectorAccess.GatingRoleParentRoles)),
             ("gating_role_owned_objects", Csv(_connectorAccess.GatingRoleOwnedObjects)),
             ("gating_role_explicit_permissions", Csv(_connectorAccess.GatingRoleExplicitPermissions)),
@@ -2906,6 +3014,28 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             ("extra_dms_forbidden_privileges", Csv(_connectorAccess.ExtraDmsForbiddenPrivileges)),
             ("source_select_denials", Csv(_connectorAccess.SourceSelectDenials))
         );
+    }
+
+    private string ConnectorPrincipalId() =>
+        _connectorAccess.ConnectorExists && _connectorAccess.ConnectorIsDatabasePrincipal
+            ? _connectorAccess.ConnectorPrincipalId
+            : "";
+
+    private IReadOnlyList<string> GatingRoleDirectMemberPrincipalIds()
+    {
+        if (_connectorAccess.GatingRoleDirectMemberPrincipalIds is { } configuredIds)
+        {
+            return configuredIds;
+        }
+
+        var nextPrincipalId = 200;
+        return _connectorAccess
+            .GatingRoleDirectMembers.Select(member =>
+                string.Equals(member, _connectorAccess.ConnectorPrincipalName, StringComparison.Ordinal)
+                    ? _connectorAccess.ConnectorPrincipalId
+                    : (nextPrincipalId++).ToString()
+            )
+            .ToArray();
     }
 
     private int ExpectedCaptureInstancesUsingGatingRole()

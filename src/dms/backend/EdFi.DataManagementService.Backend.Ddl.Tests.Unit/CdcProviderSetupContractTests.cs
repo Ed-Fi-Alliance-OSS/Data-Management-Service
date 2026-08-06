@@ -68,6 +68,7 @@ internal static class CdcProviderSetupContractTestData
         CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
         CdcProviderArtifactOutputRequest? artifactOutput = null,
         CdcProviderArtifactNames? artifactNames = null,
+        CdcSafeName? connectorPrincipalName = null,
         ICdcProviderDatabaseExecutor? databaseExecutor = null,
         ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null
     ) =>
@@ -76,7 +77,9 @@ internal static class CdcProviderSetupContractTestData
             mode: mode,
             boundPhysicalSourceFingerprint: SqlServerSourceFingerprint,
             setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("setup_principal")),
-            connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName("connector_principal")),
+            connectorPrincipal: new CdcConnectorPrincipal(
+                connectorPrincipalName ?? new CdcSafeName("connector_principal")
+            ),
             artifactNames: artifactNames ?? CdcDms1320ArtifactNameTestAdapter.ForSqlServer(),
             artifactOutput: artifactOutput
                 ?? new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),

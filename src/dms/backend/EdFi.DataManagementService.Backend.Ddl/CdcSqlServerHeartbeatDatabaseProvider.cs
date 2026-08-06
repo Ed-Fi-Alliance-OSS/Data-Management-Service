@@ -489,11 +489,15 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         }
 
         var row = rows[0];
-        var connectorPrincipal = request.ConnectorPrincipal.SafePrincipalName;
         var gatingRoleName = request.ArtifactNames.SqlServer!.GatingRoleName;
+        var connectorPrincipalId = ReadOptional(row, "connector_principal_id");
         var gatingRoleExists = ReadBool(row, "gating_role_exists");
         var gatingRoleIsNormalRole = ReadBool(row, "gating_role_is_normal_role");
         var gatingRoleDirectMembers = ReadCsv(row, "gating_role_direct_members");
+        var gatingRoleDirectMemberPrincipalIds = ReadPrincipalIdCsv(
+            row,
+            "gating_role_direct_member_principal_ids"
+        );
         var gatingRoleParentRoles = ReadCsv(row, "gating_role_parent_roles");
         var gatingRoleOwnedObjects = ReadCsv(row, "gating_role_owned_objects");
         var gatingRoleExplicitPermissions = ReadCsv(row, "gating_role_explicit_permissions");
@@ -501,7 +505,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var unexpectedCaptureInstancesUsingRole = ReadCsv(row, "unexpected_capture_instances_using_role");
         var directMemberMismatch =
             gatingRoleDirectMembers.Count > 0
-            && !gatingRoleDirectMembers.SequenceEqual([connectorPrincipal.Value], StringComparer.Ordinal);
+            && !PrincipalIdsAreExactConnectorMember(gatingRoleDirectMemberPrincipalIds, connectorPrincipalId);
         var isCleanForCaptureCreation =
             !gatingRoleExists
             || (
@@ -735,10 +739,15 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var row = rows[0];
         var connectorExists = ReadBool(row, "connector_exists");
         var connectorIsDatabasePrincipal = ReadBool(row, "connector_is_database_principal");
+        var connectorPrincipalId = ReadOptional(row, "connector_principal_id");
         var gatingRoleExists = ReadBool(row, "gating_role_exists");
         var gatingRoleIsNormalRole = ReadBool(row, "gating_role_is_normal_role");
         var gatingRoleMember = ReadBool(row, "gating_role_member");
         var gatingRoleDirectMembers = ReadCsv(row, "gating_role_direct_members");
+        var gatingRoleDirectMemberPrincipalIds = ReadPrincipalIdCsv(
+            row,
+            "gating_role_direct_member_principal_ids"
+        );
         var gatingRoleParentRoles = ReadCsv(row, "gating_role_parent_roles");
         var gatingRoleOwnedObjects = ReadCsv(row, "gating_role_owned_objects");
         var gatingRoleExplicitPermissions = ReadCsv(row, "gating_role_explicit_permissions");
@@ -789,8 +798,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             hasHeartbeatAtUpdate
         );
         var gatingRoleDirectMembershipIsGrantable =
-            gatingRoleDirectMembers.Count == 0
-            || gatingRoleDirectMembers.SequenceEqual([connectorPrincipal.Value], StringComparer.Ordinal);
+            gatingRoleDirectMemberPrincipalIds.Count == 0
+            || PrincipalIdsAreExactConnectorMember(gatingRoleDirectMemberPrincipalIds, connectorPrincipalId);
+        var gatingRoleDirectMemberMismatch =
+            gatingRoleExists
+            && gatingRoleDirectMemberPrincipalIds.Count > 0
+            && !PrincipalIdsAreExactConnectorMember(gatingRoleDirectMemberPrincipalIds, connectorPrincipalId);
         var expectedCdcObjectInventoryIsReadable = expectedCdcObjectCount >= CaptureTableOrder.Count;
         var gatingRoleCdcObjectSelectsAreExact =
             expectedCdcObjectInventoryIsReadable
@@ -831,7 +844,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             && gatingRoleExists
             && gatingRoleIsNormalRole
             && gatingRoleMember
-            && gatingRoleDirectMembers.SequenceEqual([connectorPrincipal.Value], StringComparer.Ordinal)
+            && PrincipalIdsAreExactConnectorMember(gatingRoleDirectMemberPrincipalIds, connectorPrincipalId)
             && gatingRoleParentRoles.Count == 0
             && gatingRoleOwnedObjects.Count == 0
             && gatingRoleExplicitPermissions.Count == 0
@@ -843,7 +856,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var gatingRoleIsExactMatch =
             gatingRoleExists
             && gatingRoleIsNormalRole
-            && gatingRoleDirectMembers.SequenceEqual([connectorPrincipal.Value], StringComparer.Ordinal)
+            && PrincipalIdsAreExactConnectorMember(gatingRoleDirectMemberPrincipalIds, connectorPrincipalId)
             && gatingRoleParentRoles.Count == 0
             && gatingRoleOwnedObjects.Count == 0
             && gatingRoleExplicitPermissions.Count == 0
@@ -905,6 +918,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             connectorIsDatabasePrincipal,
             gatingRoleExists,
             gatingRoleIsNormalRole,
+            gatingRoleDirectMemberMismatch,
             gatingRoleDirectMembers,
             gatingRoleParentRoles,
             gatingRoleOwnedObjects,
@@ -1320,6 +1334,10 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             SELECT
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM connector) THEN 1 ELSE 0 END) AS connector_exists,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM connector WHERE type <> N'R') THEN 1 ELSE 0 END) AS connector_is_database_principal,
+                COALESCE((
+                    SELECT CONVERT(nvarchar(20), principal_id)
+                    FROM connector
+                ), N'') AS connector_principal_id,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM gating_role) THEN 1 ELSE 0 END) AS gating_role_exists,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM gating_role WHERE type = N'R' AND is_fixed_role = 0) THEN 1 ELSE 0 END) AS gating_role_is_normal_role,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
@@ -1339,6 +1357,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     INNER JOIN sys.database_principals role_member_principal
                         ON role_member_principal.principal_id = role_member.member_principal_id
                 ), N'') AS gating_role_direct_members,
+                COALESCE((
+                    SELECT STRING_AGG(CONVERT(nvarchar(20), role_member_principal.principal_id), N',') WITHIN GROUP (ORDER BY role_member_principal.principal_id)
+                    FROM gating_role
+                    INNER JOIN sys.database_role_members role_member
+                        ON role_member.role_principal_id = gating_role.principal_id
+                    INNER JOIN sys.database_principals role_member_principal
+                        ON role_member_principal.principal_id = role_member.member_principal_id
+                ), N'') AS gating_role_direct_member_principal_ids,
                 COALESCE((
                     SELECT STRING_AGG(parent_role.name, N',') WITHIN GROUP (ORDER BY parent_role.name)
                     FROM gating_role
@@ -1793,7 +1819,10 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         return $"""
             /* cdc:sqlserver:grant-connector-access */
-            IF USER_ID(N'{connectorPrincipalLiteral}') IS NULL
+            DECLARE @connector_principal_id int = DATABASE_PRINCIPAL_ID(N'{connectorPrincipalLiteral}');
+            DECLARE @gating_role_principal_id int = DATABASE_PRINCIPAL_ID(N'{gatingRoleLiteral}');
+
+            IF @connector_principal_id IS NULL
             BEGIN
                 THROW 51000, 'CDC SQL Server connector database principal is missing.', 1;
             END;
@@ -1801,12 +1830,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             IF NOT EXISTS (
                 SELECT 1
                 FROM sys.database_role_members role_member
-                INNER JOIN sys.database_principals database_role
-                    ON database_role.principal_id = role_member.role_principal_id
-                INNER JOIN sys.database_principals member_principal
-                    ON member_principal.principal_id = role_member.member_principal_id
-                WHERE database_role.name = N'{gatingRoleLiteral}'
-                AND member_principal.name = N'{connectorPrincipalLiteral}'
+                WHERE role_member.role_principal_id = @gating_role_principal_id
+                AND role_member.member_principal_id = @connector_principal_id
             )
             BEGIN
                 ALTER ROLE {gatingRole} ADD MEMBER {connectorPrincipal};
@@ -1822,6 +1847,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
     private static string GatingRolePreCaptureSql(CdcProviderSetupRequest request)
     {
+        var connectorPrincipalLiteral = EscapeSqlLiteral(request.ConnectorPrincipal.SafePrincipalName.Value);
         var gatingRoleLiteral = EscapeSqlLiteral(request.ArtifactNames.SqlServer!.GatingRoleName.Value);
         var expectedCaptureInstances = string.Join(
             ",\n            ",
@@ -1832,6 +1858,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         return $"""
             /* cdc:sqlserver:gating-role-pre-capture */
+            DECLARE @connector_name sysname = N'{connectorPrincipalLiteral}';
             DECLARE @gating_role_name sysname = N'{gatingRoleLiteral}';
             DECLARE @expected_capture_instances_using_role int = 0;
             DECLARE @unexpected_capture_instances_using_role nvarchar(max) = N'';
@@ -1876,7 +1903,17 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 AND expected.capture_instance IS NULL;
             END;
 
-            WITH gating_role AS (
+            WITH connector AS (
+                SELECT TOP (1)
+                    principal_info.principal_id,
+                    principal_info.name,
+                    principal_info.type,
+                    principal_info.sid
+                FROM sys.database_principals principal_info
+                WHERE principal_info.name = @connector_name
+                AND principal_info.type <> N'R'
+            ),
+            gating_role AS (
                 SELECT TOP (1)
                     principal_info.principal_id,
                     principal_info.name,
@@ -1886,6 +1923,10 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 WHERE principal_info.name = @gating_role_name
             )
             SELECT
+                COALESCE((
+                    SELECT CONVERT(nvarchar(20), principal_id)
+                    FROM connector
+                ), N'') AS connector_principal_id,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM gating_role) THEN 1 ELSE 0 END) AS gating_role_exists,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM gating_role WHERE type = N'R' AND is_fixed_role = 0) THEN 1 ELSE 0 END) AS gating_role_is_normal_role,
                 COALESCE((
@@ -1896,6 +1937,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     INNER JOIN sys.database_principals role_member_principal
                         ON role_member_principal.principal_id = role_member.member_principal_id
                 ), N'') AS gating_role_direct_members,
+                COALESCE((
+                    SELECT STRING_AGG(CONVERT(nvarchar(20), role_member_principal.principal_id), N',') WITHIN GROUP (ORDER BY role_member_principal.principal_id)
+                    FROM gating_role
+                    INNER JOIN sys.database_role_members role_member
+                        ON role_member.role_principal_id = gating_role.principal_id
+                    INNER JOIN sys.database_principals role_member_principal
+                        ON role_member_principal.principal_id = role_member.member_principal_id
+                ), N'') AS gating_role_direct_member_principal_ids,
                 COALESCE((
                     SELECT STRING_AGG(parent_role.name, N',') WITHIN GROUP (ORDER BY parent_role.name)
                     FROM gating_role
@@ -3542,6 +3591,13 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     ) =>
         sourceSelectDenials.Any(denial => denial.StartsWith($"{sourceTableName}.", StringComparison.Ordinal));
 
+    private static bool PrincipalIdsAreExactConnectorMember(
+        IReadOnlyList<string> memberPrincipalIds,
+        string connectorPrincipalId
+    ) =>
+        !string.IsNullOrWhiteSpace(connectorPrincipalId)
+        && memberPrincipalIds.SequenceEqual([connectorPrincipalId], StringComparer.Ordinal);
+
     private static IReadOnlyList<CdcProviderDiagnostic> ConnectorPrincipalAccessDiagnostics(
         CdcProviderSetupRequest request,
         CdcSafeName connectorPrincipal,
@@ -3550,6 +3606,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         bool connectorIsDatabasePrincipal,
         bool gatingRoleExists,
         bool gatingRoleIsNormalRole,
+        bool gatingRoleDirectMemberMismatch,
         IReadOnlyList<string> gatingRoleDirectMembers,
         IReadOnlyList<string> gatingRoleParentRoles,
         IReadOnlyList<string> gatingRoleOwnedObjects,
@@ -3596,10 +3653,6 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             );
         }
 
-        var gatingRoleDirectMemberMismatch =
-            gatingRoleExists
-            && gatingRoleDirectMembers.Count > 0
-            && !gatingRoleDirectMembers.SequenceEqual([connectorPrincipal.Value], StringComparer.Ordinal);
         var gatingRoleMissingAfterExpectedCaptures =
             !gatingRoleExists && expectedCaptureInstancesUsingRole == CaptureTableOrder.Count;
         var expectedCdcObjectInventoryIsReadable = expectedCdcObjectCount >= CaptureTableOrder.Count;
@@ -4482,6 +4535,20 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(SafeText)
             .ToArray();
+
+    private static IReadOnlyList<string> ReadPrincipalIdCsv(
+        IReadOnlyDictionary<string, string?> row,
+        string columnName
+    ) =>
+        ReadRequired(row, columnName)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(ReadPrincipalId)
+            .ToArray();
+
+    private static string ReadPrincipalId(string value) =>
+        value.Length > 0 && value.All(char.IsDigit)
+            ? value
+            : throw new InvalidOperationException("Expected SQL Server principal_id values.");
 
     private static string CsvOrNone(IEnumerable<string> values)
     {
