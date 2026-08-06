@@ -12,6 +12,10 @@
 #   and whitespace-valued environment variables).
 # - Get-DirectSetupTeardownCommand (standard setup-local-dms.ps1) must print a teardown command carrying
 #   the selected engine and the resolved environment-file path, safely single-quoted.
+#
+# DMS-1300 adds the same treatment for Invoke-WithEnvironmentFileSchemaSettings (both E2E setup
+# wrappers), which must make the selected environment file the sole authority for the schema package
+# surface of the Docker phases, and must round-trip the caller's exact prior environment.
 
 param()
 
@@ -183,5 +187,328 @@ Describe "setup-local-dms.ps1 wires the resolved environment file into teardown 
             Should -Match 'Get-DirectSetupTeardownCommand -DatabaseEngine \$DatabaseEngine -EnvironmentFile \$resolvedEnvironmentFile'
         $script:setupSource |
             Should -Not -Match 'Get-DirectSetupTeardownCommand[^\r\n]*-EnvironmentFile \$baseEnvironmentFile'
+    }
+}
+
+Describe "Invoke-WithEnvironmentFileSchemaSettings makes the environment file authoritative for the direct DMS E2E setup phases (DMS-1300)" {
+    # Docker Compose gives process environment variables precedence over --env-file entries, and
+    # local-dms.yml resolves USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES with
+    # ${VAR:-default} fallbacks. Because ':-' substitutes the default for an empty value as well as an
+    # unset one, an ambient blank value silently wins over the selected environment file: DMS starts on
+    # the image-baked schemas while provisioning already stamped the file's full package surface, and
+    # every data-plane request fails with an EffectiveSchemaHash mismatch. These tests execute the
+    # guard rather than pattern-matching it, so the removal and the exact round-trip are real results.
+
+    # Discovery-phase table: every guarded variable crossed with every prior-state shape that has to
+    # round-trip. Built here rather than in BeforeAll because -ForEach is bound during discovery.
+    $restoreCases = foreach ($variableName in @("USE_API_SCHEMA_PATH", "API_SCHEMA_PATH", "SCHEMA_PACKAGES")) {
+        @{ VariableName = $variableName; Label = "absent"; PriorValue = $null }
+        @{ VariableName = $variableName; Label = "empty"; PriorValue = "" }
+        @{ VariableName = $variableName; Label = "whitespace"; PriorValue = "   " }
+        @{ VariableName = $variableName; Label = "false"; PriorValue = "false" }
+        @{ VariableName = $variableName; Label = "valued"; PriorValue = "prior-$variableName" }
+    }
+
+    BeforeAll {
+        function Get-ScriptFunctionText {
+            param(
+                [Parameter(Mandatory)] [string] $ScriptPath,
+                [Parameter(Mandatory)] [string] $FunctionName
+            )
+
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $functionAst = $ast.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName
+                },
+                $true
+            ) | Select-Object -First 1
+
+            if ($null -eq $functionAst) {
+                throw "Function '$FunctionName' was not found in '$ScriptPath'."
+            }
+
+            return $functionAst.Extent.Text
+        }
+
+        $script:directSetupScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"))
+        $script:guardFunctionText = Get-ScriptFunctionText -ScriptPath $script:directSetupScript -FunctionName "Invoke-WithEnvironmentFileSchemaSettings"
+        . ([scriptblock]::Create($script:guardFunctionText))
+
+        $script:schemaVariables = @("USE_API_SCHEMA_PATH", "API_SCHEMA_PATH", "SCHEMA_PACKAGES")
+
+        # The running pwsh, resolved from the process rather than from PATH, so the child-process test
+        # below needs neither a PATH lookup nor a skip guard that could hide it in CI.
+        $script:pwshPath = (Get-Process -Id $PID).Path
+
+        function Get-SchemaVariableState {
+            $state = @{}
+            foreach ($name in @("USE_API_SCHEMA_PATH", "API_SCHEMA_PATH", "SCHEMA_PACKAGES")) {
+                $state[$name] = [pscustomobject]@{
+                    Exists = [bool](Test-Path -LiteralPath "Env:$name")
+                    Value  = [System.Environment]::GetEnvironmentVariable($name)
+                }
+            }
+
+            return $state
+        }
+    }
+
+    BeforeEach {
+        foreach ($name in $script:schemaVariables) {
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        }
+    }
+
+    AfterEach {
+        foreach ($name in $script:schemaVariables) {
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "removes every schema variable for the guarded phases when the ambient state is <Label>" -ForEach @(
+        @{ Label = "absent"; Ambient = @{} }
+        @{ Label = "the compose fallback shape (false and blank)"; Ambient = @{ USE_API_SCHEMA_PATH = "false"; API_SCHEMA_PATH = ""; SCHEMA_PACKAGES = "" } }
+        @{ Label = "all empty"; Ambient = @{ USE_API_SCHEMA_PATH = ""; API_SCHEMA_PATH = ""; SCHEMA_PACKAGES = "" } }
+        @{ Label = "all whitespace"; Ambient = @{ USE_API_SCHEMA_PATH = "   "; API_SCHEMA_PATH = "   "; SCHEMA_PACKAGES = "   " } }
+        @{ Label = "valued but wrong"; Ambient = @{ USE_API_SCHEMA_PATH = "true"; API_SCHEMA_PATH = "/ambient/ApiSchema"; SCHEMA_PACKAGES = '[{"name":"AmbientPackage"}]' } }
+    ) {
+        foreach ($entry in $Ambient.GetEnumerator()) {
+            [System.Environment]::SetEnvironmentVariable($entry.Key, $entry.Value)
+        }
+
+        $script:observedInsideAction = $null
+        Invoke-WithEnvironmentFileSchemaSettings -Action {
+            $script:observedInsideAction = Get-SchemaVariableState
+        }
+
+        # Removed, not blanked. A present-but-blank value satisfies ${VAR:-default}, so leaving any of
+        # these present would reproduce the defect even though the guard appeared to run.
+        foreach ($name in $script:schemaVariables) {
+            $script:observedInsideAction[$name].Exists |
+                Should -BeFalse -Because "$name must be absent for the guarded phases so Docker Compose resolves it from --env-file"
+        }
+    }
+
+    It "round-trips <VariableName> from its prior <Label> state on the success path" -ForEach $restoreCases {
+        if ($null -ne $PriorValue) {
+            [System.Environment]::SetEnvironmentVariable($VariableName, $PriorValue)
+        }
+
+        # The arranged state is captured, not assumed. Whether a given runtime can hold a
+        # present-but-empty environment variable is exactly the platform-dependent behavior this guard
+        # must not depend on, so the property under test is that the guard restores whatever it found.
+        $arranged = Get-SchemaVariableState
+
+        Invoke-WithEnvironmentFileSchemaSettings -Action { }
+
+        $restored = Get-SchemaVariableState
+        foreach ($name in $script:schemaVariables) {
+            $restored[$name].Exists | Should -Be $arranged[$name].Exists -Because "$name presence must round-trip"
+            $restored[$name].Value | Should -Be $arranged[$name].Value -Because "$name value must round-trip verbatim"
+        }
+    }
+
+    It "round-trips <VariableName> from its prior <Label> state when a guarded phase throws" -ForEach $restoreCases {
+        if ($null -ne $PriorValue) {
+            [System.Environment]::SetEnvironmentVariable($VariableName, $PriorValue)
+        }
+
+        $arranged = Get-SchemaVariableState
+
+        { Invoke-WithEnvironmentFileSchemaSettings -Action { throw "phase failed" } } |
+            Should -Throw -ExpectedMessage "phase failed"
+
+        $restored = Get-SchemaVariableState
+        foreach ($name in $script:schemaVariables) {
+            $restored[$name].Exists | Should -Be $arranged[$name].Exists -Because "$name presence must round-trip after a failure"
+            $restored[$name].Value | Should -Be $arranged[$name].Value -Because "$name value must round-trip verbatim after a failure"
+        }
+    }
+
+    It "restores a mixed absent, empty, whitespace, and valued starting state per variable" {
+        Remove-Item -LiteralPath "Env:USE_API_SCHEMA_PATH" -ErrorAction SilentlyContinue
+        [System.Environment]::SetEnvironmentVariable("API_SCHEMA_PATH", "   ")
+        [System.Environment]::SetEnvironmentVariable("SCHEMA_PACKAGES", "prior-packages")
+
+        $arranged = Get-SchemaVariableState
+
+        Invoke-WithEnvironmentFileSchemaSettings -Action { }
+
+        $restored = Get-SchemaVariableState
+        $restored["USE_API_SCHEMA_PATH"].Exists | Should -BeFalse
+        $restored["API_SCHEMA_PATH"].Value | Should -Be "   "
+        $restored["SCHEMA_PACKAGES"].Value | Should -Be "prior-packages"
+        foreach ($name in $script:schemaVariables) {
+            $restored[$name].Exists | Should -Be $arranged[$name].Exists
+            $restored[$name].Value | Should -Be $arranged[$name].Value
+        }
+    }
+
+    It "keeps a present-but-empty variable present rather than collapsing it to absent" {
+        # The distinction the previous assignment-based clear/restore could not express. Self-gated:
+        # if this runtime cannot represent a present-but-empty environment variable at all, there is
+        # no distinction to preserve and the case is recorded as skipped rather than failed.
+        [System.Environment]::SetEnvironmentVariable("SCHEMA_PACKAGES", "")
+        if (-not (Test-Path -LiteralPath "Env:SCHEMA_PACKAGES")) {
+            Set-ItResult -Skipped -Because "this runtime cannot hold a present-but-empty environment variable"
+            return
+        }
+
+        Invoke-WithEnvironmentFileSchemaSettings -Action { }
+
+        (Test-Path -LiteralPath "Env:SCHEMA_PACKAGES") | Should -BeTrue
+        [System.Environment]::GetEnvironmentVariable("SCHEMA_PACKAGES") | Should -Be ""
+    }
+
+    It "restores the prior state when a guarded phase calls exit" {
+        # The wrapper's phase failure paths use 'exit $LASTEXITCODE', so the guard has to survive an
+        # exit as well as a throw. This runs in a child pwsh because an in-process exit would terminate
+        # the Pester run: the child's own outer finally runs after the guard's finally, so it observes
+        # the restored state, and the recorded exit code proves the phase's status still propagates.
+        $observationPath = Join-Path $TestDrive "schema-env-exit-observations.txt"
+        $childScriptPath = Join-Path $TestDrive "schema-env-exit-child.ps1"
+        $childScript = @"
+$($script:guardFunctionText)
+
+`$env:USE_API_SCHEMA_PATH = 'prior-use'
+Remove-Item -LiteralPath 'Env:API_SCHEMA_PATH' -ErrorAction SilentlyContinue
+`$env:SCHEMA_PACKAGES = 'prior-packages'
+
+try {
+    Invoke-WithEnvironmentFileSchemaSettings -Action {
+        'inside:' + [string](Test-Path -LiteralPath 'Env:USE_API_SCHEMA_PATH') +
+            ',' + [string](Test-Path -LiteralPath 'Env:API_SCHEMA_PATH') +
+            ',' + [string](Test-Path -LiteralPath 'Env:SCHEMA_PACKAGES') |
+            Add-Content -LiteralPath '$observationPath'
+        exit 42
+    }
+}
+finally {
+    'after:' + [string](Test-Path -LiteralPath 'Env:USE_API_SCHEMA_PATH') +
+        '=' + [string]`$env:USE_API_SCHEMA_PATH +
+        ',' + [string](Test-Path -LiteralPath 'Env:API_SCHEMA_PATH') +
+        ',' + [string](Test-Path -LiteralPath 'Env:SCHEMA_PACKAGES') +
+        '=' + [string]`$env:SCHEMA_PACKAGES |
+        Add-Content -LiteralPath '$observationPath'
+}
+"@
+        Set-Content -LiteralPath $childScriptPath -Value $childScript -Encoding utf8
+
+        & $script:pwshPath -NoProfile -File $childScriptPath
+        $childExitCode = $LASTEXITCODE
+
+        $childExitCode | Should -Be 42 -Because "the guard must not swallow the phase's exit code"
+
+        $observations = @(Get-Content -LiteralPath $observationPath)
+        $observations[0] | Should -Be "inside:False,False,False"
+        $observations[1] | Should -Be "after:True=prior-use,False,True=prior-packages"
+    }
+}
+
+Describe "Both E2E setup wrappers run every Docker phase inside the schema-settings guard (DMS-1300)" {
+    BeforeAll {
+        function Get-GuardedPhaseInvocation {
+            <#
+            .SYNOPSIS
+            Returns one record per phase-script invocation in a setup wrapper, with whether the
+            invocation is lexically inside the wrapper's single Invoke-WithEnvironmentFileSchemaSettings
+            -Action block. Uses the AST rather than a text pattern, so the assertion is about the
+            structure production actually has, and is not defeated by reformatting or reindentation.
+            #>
+            param(
+                [Parameter(Mandatory)] [string] $ScriptPath
+            )
+
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+
+            if ($parseErrors.Count -gt 0) {
+                throw "'$ScriptPath' has $($parseErrors.Count) parse error(s)."
+            }
+
+            $guardCalls = @($ast.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.CommandAst] -and
+                    $node.GetCommandName() -eq "Invoke-WithEnvironmentFileSchemaSettings"
+                },
+                $true
+            ))
+
+            if ($guardCalls.Count -ne 1) {
+                throw "Expected exactly one Invoke-WithEnvironmentFileSchemaSettings invocation in '$ScriptPath'; found $($guardCalls.Count)."
+            }
+
+            $actionBlocks = @($guardCalls[0].FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.ScriptBlockExpressionAst]
+                },
+                $true
+            ))
+
+            if ($actionBlocks.Count -ne 1) {
+                throw "Expected exactly one -Action script block on the guard invocation in '$ScriptPath'; found $($actionBlocks.Count)."
+            }
+
+            $actionExtent = $actionBlocks[0].Extent
+
+            return @($ast.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.CommandAst]
+                },
+                $true
+            ) | ForEach-Object {
+                # Bareword script invocations report their own name; a script dispatched through a
+                # variable (the Instance Management provision call) reports none, so fall back to the
+                # variable name so that form is covered too.
+                $name = $_.GetCommandName()
+                if ($null -eq $name -and $_.CommandElements[0] -is [System.Management.Automation.Language.VariableExpressionAst]) {
+                    $name = '$' + $_.CommandElements[0].VariablePath.UserPath
+                }
+
+                if ($name -and ($name -like "*.ps1" -or $name -like '$*Script')) {
+                    [pscustomobject]@{
+                        Name        = $name
+                        Line        = $_.Extent.StartLineNumber
+                        InsideGuard = ($_.Extent.StartOffset -ge $actionExtent.StartOffset -and $_.Extent.EndOffset -le $actionExtent.EndOffset)
+                    }
+                }
+            })
+        }
+
+        $script:wrapperScripts = [ordered]@{
+            "DataManagementService E2E" = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"))
+            "InstanceManagement E2E"    = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"))
+        }
+    }
+
+    It "runs the direct DMS E2E phase sequence inside the guard, in order" {
+        $invocations = @(Get-GuardedPhaseInvocation -ScriptPath $script:wrapperScripts["DataManagementService E2E"])
+
+        @($invocations | ForEach-Object { $_.Name }) | Should -Be @(
+            "./start-local-dms.ps1",
+            "./configure-local-data-store.ps1",
+            "./provision-e2e-database.ps1",
+            "./start-local-dms.ps1"
+        )
+        @($invocations | Where-Object { -not $_.InsideGuard }) | Should -BeNullOrEmpty
+    }
+
+    It "leaves no phase invocation outside the guard in the <Name> wrapper" -ForEach @(
+        @{ Name = "DataManagementService E2E" }
+        @{ Name = "InstanceManagement E2E" }
+    ) {
+        $invocations = @(Get-GuardedPhaseInvocation -ScriptPath $script:wrapperScripts[$Name])
+
+        $invocations.Count | Should -BeGreaterThan 0 -Because "the wrapper must invoke phase scripts"
+        @($invocations | Where-Object { -not $_.InsideGuard } | ForEach-Object { "$($_.Name) (line $($_.Line))" }) |
+            Should -BeNullOrEmpty -Because "a Compose-invoking phase outside the guard would resolve the schema variables from the ambient process again"
     }
 }
