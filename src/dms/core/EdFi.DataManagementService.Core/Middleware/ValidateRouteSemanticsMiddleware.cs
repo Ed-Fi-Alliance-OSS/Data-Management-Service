@@ -23,13 +23,17 @@ internal class ValidateRouteSemanticsMiddleware(ILogger _logger) : IPipelineStep
             requestInfo.FrontendRequest.TraceId.Value
         );
 
+        // Every arm names the operation its method requires and rejects everything else: DELETE and
+        // PUT require an item, POST requires the collection. Phrased the other way round — as the one
+        // operation each method rejects — an operation added to the hierarchy would fall through to
+        // the rest of the pipeline under a method that was never meant to reach it.
         string? error = (requestInfo.Method, requestInfo.PathComponents.Operation) switch
         {
             (RequestMethod.DELETE, not ResourcePathOperation.ById) =>
                 "Resource collections cannot be deleted. To delete a specific item, use DELETE and include the 'id' in the route.",
             (RequestMethod.PUT, not ResourcePathOperation.ById) =>
                 "Resource collections cannot be replaced. To 'upsert' an item in the collection, use POST. To update a specific item, use PUT and include the 'id' in the route.",
-            (RequestMethod.POST, ResourcePathOperation.ById) =>
+            (RequestMethod.POST, not ResourcePathOperation.Collection) =>
                 "Resource items can only be updated using PUT. To 'upsert' an item in the resource collection using POST, remove the 'id' from the route.",
             _ => null,
         };

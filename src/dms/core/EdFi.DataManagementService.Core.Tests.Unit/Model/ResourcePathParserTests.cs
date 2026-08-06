@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Core.Model;
 using FluentAssertions;
 using NUnit.Framework;
@@ -202,6 +203,44 @@ public class ResourcePathParserTests
 
             recognized.PathComponents.ProjectEndpointName.Value.Should().Be("ed-fi");
             recognized.PathComponents.EndpointName.Value.Should().Be("endpointName");
+        }
+    }
+
+    /// <summary>
+    /// The project namespace is a fixed protocol token, so which spellings the parser accepts must not
+    /// depend on the server's culture. The Turkish locale lowercases <c>I</c> to a dotless <c>ı</c>,
+    /// which does not match the ordinal comparison the project lookup performs, so a culture-sensitive
+    /// fold answers not found for a spelling that resolves everywhere else.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Turkish_Culture_And_An_Upper_Case_Project_Namespace : ResourcePathParserTests
+    {
+        private CultureInfo _originalCulture = null!;
+        private ResourcePathParseResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Scoped to the thread the parse runs on, so a parallel sibling fixture cannot observe it.
+            _originalCulture = CultureInfo.CurrentCulture;
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("tr-TR");
+
+            _result = ResourcePathParser.Parse("/ED-FI/endpointName");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            CultureInfo.CurrentCulture = _originalCulture;
+        }
+
+        [Test]
+        public void It_lower_cases_the_project_endpoint_name_invariantly()
+        {
+            var recognized = (ResourcePathParseResult.Recognized)_result;
+
+            recognized.PathComponents.ProjectEndpointName.Value.Should().Be("ed-fi");
         }
     }
 }

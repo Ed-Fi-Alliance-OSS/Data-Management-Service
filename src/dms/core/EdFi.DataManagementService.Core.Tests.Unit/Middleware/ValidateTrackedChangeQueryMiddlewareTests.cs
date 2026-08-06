@@ -106,21 +106,32 @@ public class ValidateTrackedChangeQueryMiddlewareTests
     /// <summary>
     /// Cursor parameter recognition is operation-scoped: these names are not globally reserved, and
     /// a Change Query endpoint must reject them rather than silently discard them.
+    ///
+    /// <para>
+    /// Both Change Query operations are named because the operation scope is part of the contract.
+    /// The rejection itself is not path-dependent: one pipeline serves both operations and this step
+    /// never reads the request path, so neither operation can reject while the other accepts.
+    /// </para>
     /// </summary>
     [TestFixture]
     [Parallelizable]
     public class Given_Cursor_Parameters : ValidateTrackedChangeQueryMiddlewareTests
     {
+        private const string DeletesPath = "/ed-fi/schools/deletes";
+
+        private const string KeyChangesPath = "/ed-fi/schools/keyChanges";
+
         private static async Task<(RequestInfo RequestInfo, bool NextCalled)> Execute(
             (string Key, string Value)[] queryParameters,
-            QueryElement[]? queryElements = null
+            QueryElement[]? queryElements = null,
+            string path = DeletesPath
         )
         {
             FrontendRequest frontendRequest = new(
                 Body: null,
                 Form: null,
                 Headers: [],
-                Path: "/ed-fi/schools/deletes",
+                Path: path,
                 QueryParameters: queryParameters.ToDictionary(
                     static parameter => parameter.Key,
                     static parameter => parameter.Value,
@@ -156,11 +167,13 @@ public class ValidateTrackedChangeQueryMiddlewareTests
                     .Select(error => error!.GetValue<string>()),
             ];
 
-        [TestCase("pageToken")]
-        [TestCase("pageSize")]
-        public async Task It_rejects_a_cursor_parameter_by_name(string parameter)
+        [TestCase(DeletesPath, "pageToken")]
+        [TestCase(DeletesPath, "pageSize")]
+        [TestCase(KeyChangesPath, "pageToken")]
+        [TestCase(KeyChangesPath, "pageSize")]
+        public async Task It_rejects_a_cursor_parameter_by_name(string path, string parameter)
         {
-            var (requestInfo, nextCalled) = await Execute([(parameter, "5")]);
+            var (requestInfo, nextCalled) = await Execute([(parameter, "5")], path: path);
 
             nextCalled.Should().BeFalse();
             requestInfo.FrontendResponse.StatusCode.Should().Be(400);

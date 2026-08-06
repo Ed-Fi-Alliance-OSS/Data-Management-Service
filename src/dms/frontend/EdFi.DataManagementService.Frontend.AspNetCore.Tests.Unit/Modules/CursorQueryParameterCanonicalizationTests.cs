@@ -36,7 +36,18 @@ public class CursorQueryParameterCanonicalizationTests
         return response;
     }
 
-    private static async Task<IReadOnlyDictionary<string, string>> CapturedQueryParameters(string requestUri)
+    /// <summary>
+    /// Issues the request against a host configured with the given route shape and returns the query
+    /// parameters the HTTP boundary handed Core. <paramref name="routeQualifierSegments"/> is the
+    /// comma-separated setting value naming the qualifier route segments, and
+    /// <paramref name="multiTenancy"/> prepends the tenant route segment; the defaults produce the plain
+    /// <c>/data/{**dmsPath}</c> route.
+    /// </summary>
+    private static async Task<IReadOnlyDictionary<string, string>> CapturedQueryParameters(
+        string requestUri,
+        string? routeQualifierSegments = null,
+        bool multiTenancy = false
+    )
     {
         var apiService = A.Fake<IApiService>();
         FrontendRequest? capturedRequest = null;
@@ -48,6 +59,14 @@ public class CursorQueryParameterCanonicalizationTests
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
+            if (routeQualifierSegments is not null)
+            {
+                builder.UseSetting("AppSettings:RouteQualifierSegments", routeQualifierSegments);
+            }
+            if (multiTenancy)
+            {
+                builder.UseSetting("AppSettings:MultiTenancy", "true");
+            }
             builder.ConfigureServices(collection =>
             {
                 TestMockHelper.AddEssentialMocks(collection);
@@ -126,6 +145,26 @@ public class CursorQueryParameterCanonicalizationTests
         queryParameters.Should().ContainKey("pageToken").WhoseValue.Should().Be("b");
         queryParameters.Should().ContainKey("pageSize").WhoseValue.Should().Be("2");
         queryParameters.Should().ContainKey("limit").WhoseValue.Should().Be("4");
+    }
+
+    /// <summary>
+    /// Canonicalizing a name uses the same comparison as the query collection's own comparer, so two
+    /// entries the collection holds separately can never collapse onto one canonical key. KELVIN SIGN
+    /// is what makes that observable: it is not ordinally case-insensitively equal to <c>k</c>, so a
+    /// name spelled with it is a query collection entry of its own, yet lowercasing it yields <c>k</c>
+    /// and so would produce the canonical <c>pageToken</c> a second time.
+    /// </summary>
+    [Test]
+    public async Task It_keeps_a_page_token_lookalike_separate_from_the_canonical_name()
+    {
+        const string LookalikeName = "pageTo\u212Aen";
+
+        var queryParameters = await CapturedQueryParameters(
+            $"/data/ed-fi/schools?pageToken=abc&{LookalikeName}=xyz"
+        );
+
+        queryParameters.Should().ContainKey("pageToken").WhoseValue.Should().Be("abc");
+        queryParameters.Should().ContainKey(LookalikeName).WhoseValue.Should().Be("xyz");
     }
 
     /// <summary>
@@ -239,5 +278,53 @@ public class CursorQueryParameterCanonicalizationTests
 
         queryParameters.Should().ContainKey("NUMBER");
         queryParameters.Should().NotContainKey("number");
+    }
+
+    /// <summary>
+    /// Recognizing the partitions operation reads the final segment of the path Core is given, which holds
+    /// only the <c>{project}/{resource}[/{segment}]</c> part: the tenant segment and the route qualifier
+    /// segments are bound as their own route values and are never part of it. A prefixed request therefore
+    /// canonicalizes the partition count exactly as a plain one does, and moving any prefix segment into
+    /// that path would stop the operation from being recognized.
+    /// </summary>
+    [TestCase("/255902/2026/data/ed-fi/schools/partitions", "districtId,schoolYear", false)]
+    [TestCase("/tenant1/data/ed-fi/schools/partitions", null, true)]
+    [TestCase("/tenant1/255902/2026/data/ed-fi/schools/partitions", "districtId,schoolYear", true)]
+    public async Task It_canonicalizes_the_partition_count_on_a_prefixed_partitions_path(
+        string path,
+        string? routeQualifierSegments,
+        bool multiTenancy
+    )
+    {
+        var queryParameters = await CapturedQueryParameters(
+            $"{path}?NUMBER=10",
+            routeQualifierSegments,
+            multiTenancy
+        );
+
+        queryParameters.Should().ContainKey("number").WhoseValue.Should().Be("10");
+    }
+
+    /// <summary>
+    /// The cursor parameters are canonicalized on every request regardless of path, so this covers the
+    /// prefix handling itself: the request reaches the same boundary code once routing has bound the
+    /// tenant and qualifier segments.
+    /// </summary>
+    [TestCase("/255902/2026/data/ed-fi/schools", "districtId,schoolYear", false)]
+    [TestCase("/tenant1/data/ed-fi/schools", null, true)]
+    [TestCase("/tenant1/255902/2026/data/ed-fi/schools", "districtId,schoolYear", true)]
+    public async Task It_canonicalizes_the_page_token_on_a_prefixed_path(
+        string path,
+        string? routeQualifierSegments,
+        bool multiTenancy
+    )
+    {
+        var queryParameters = await CapturedQueryParameters(
+            $"{path}?PAGETOKEN=abc",
+            routeQualifierSegments,
+            multiTenancy
+        );
+
+        queryParameters.Should().ContainKey("pageToken").WhoseValue.Should().Be("abc");
     }
 }

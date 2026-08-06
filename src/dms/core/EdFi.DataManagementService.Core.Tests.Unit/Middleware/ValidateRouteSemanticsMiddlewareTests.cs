@@ -189,6 +189,24 @@ public class ValidateRouteSemanticsMiddlewareTests
                     "Resource collections cannot be replaced. To 'upsert' an item in the collection, use POST. To update a specific item, use PUT and include the 'id' in the route."
                 );
         }
+
+        [Test]
+        public async Task It_rejects_post_with_the_item_message()
+        {
+            RequestInfo requestInfo = No.RequestInfo();
+            requestInfo.Method = RequestMethod.POST;
+            requestInfo.PathComponents = PathComponents(ResourcePathOperation.Partitions.Instance);
+
+            await Middleware().Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(405);
+            JsonSerializer
+                .Serialize(requestInfo.FrontendResponse.Body, SerializerOptions)
+                .Should()
+                .Contain(
+                    "Resource items can only be updated using PUT. To 'upsert' an item in the resource collection using POST, remove the 'id' from the route."
+                );
+        }
     }
 
     [TestFixture]

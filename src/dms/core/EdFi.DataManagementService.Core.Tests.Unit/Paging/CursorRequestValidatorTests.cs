@@ -56,6 +56,81 @@ public class CursorRequestValidatorTests
     }
 
     /// <summary>
+    /// The exact wording of every cursor rule is part of the API contract, so each message is pinned
+    /// to its literal text here. Asserting against the constants themselves would only prove the
+    /// validator is self-consistent and would let a reworded message through unnoticed.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Contractual_Messages : CursorRequestValidatorTests
+    {
+        [Test]
+        public void It_words_the_invalid_page_token_message()
+        {
+            CursorRequestValidator.InvalidPageToken.Should().Be("The page token provided was invalid.");
+        }
+
+        [Test]
+        public void It_words_the_offset_conflict_message()
+        {
+            CursorRequestValidator
+                .OffsetWithPageToken.Should()
+                .Be(
+                    "Both offset and pageToken parameters were provided, but they support alternative paging approaches and cannot be used together."
+                );
+        }
+
+        [Test]
+        public void It_words_the_limit_conflict_message()
+        {
+            CursorRequestValidator
+                .LimitWithPageToken.Should()
+                .Be("Use pageSize instead of limit when using cursor paging with pageToken.");
+        }
+
+        [Test]
+        public void It_words_the_total_count_conflict_message()
+        {
+            CursorRequestValidator
+                .TotalCountWithPageToken.Should()
+                .Be(
+                    "The totalCount parameter cannot be set to true when using cursor paging with pageToken."
+                );
+        }
+
+        [Test]
+        public void It_words_the_page_size_with_offset_message()
+        {
+            CursorRequestValidator
+                .PageSizeWithOffset.Should()
+                .Be("Use limit instead of pageSize when using limit/offset paging.");
+        }
+
+        [Test]
+        public void It_words_the_page_token_required_message()
+        {
+            CursorRequestValidator
+                .PageTokenRequired.Should()
+                .Be("PageToken is required when pageSize is specified.");
+        }
+
+        [Test]
+        public void It_words_the_non_boolean_total_count_message()
+        {
+            CursorRequestValidator.TotalCountNotBoolean.Should().Be("TotalCount must be a boolean value.");
+        }
+
+        [Test]
+        public void It_renders_the_configured_maximum_in_the_page_size_range_message()
+        {
+            CursorRequestValidator
+                .PageSizeOutOfRange(MaximumPageSize)
+                .Should()
+                .Be("PageSize must be a value between 0 and 500.");
+        }
+    }
+
+    /// <summary>
     /// Every row of the design's worked precedence table. Each returns exactly one message.
     /// </summary>
     [TestFixture]

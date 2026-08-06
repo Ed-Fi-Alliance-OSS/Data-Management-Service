@@ -420,8 +420,14 @@ public static class AspNetCoreFrontend
     private const string PartitionsPathSegment = "partitions";
 
     /// <summary>
-    /// Whether the request addresses the partitions operation, which is the only place the generic
-    /// <c>number</c> parameter is a paging control rather than a possible resource query field.
+    /// Whether the final path segment names the partitions operation, which is the only place the
+    /// generic <c>number</c> parameter is a paging control rather than a possible resource query field.
+    /// Only the final segment is tested, so this is also true of paths that end in that segment without
+    /// being a partitions request. Those are answered before query validation runs: a segment count
+    /// Core's path parser does not match is a 404, and a path short enough to resolve the segment as a
+    /// resource name is a 404 for an unknown resource from endpoint validation, which precedes query
+    /// validation. Canonicalizing <c>number</c> on them is therefore inert, and restating Core's
+    /// segment-count rules here would only give them somewhere to drift apart.
     /// </summary>
     private static bool IsPartitionsPath(string dmsPath)
     {
@@ -433,7 +439,26 @@ public static class AspNetCoreFrontend
     }
 
     /// <summary>
-    /// Canonicalizes the query parameter names Core matches exactly.
+    /// The canonical spellings of the query parameter names recognized on every request: the
+    /// traditional paging and count controls and the cursor paging controls.
+    /// </summary>
+    private static readonly string[] QueryParameterNamesCanonicalizedEverywhere =
+    [
+        "limit",
+        "offset",
+        "totalCount",
+        "pageToken",
+        "pageSize",
+    ];
+
+    /// <summary>
+    /// The canonical spelling of the partition count, recognized only on the partitions operation.
+    /// </summary>
+    private const string PartitionNumberParameterName = "number";
+
+    /// <summary>
+    /// Canonicalizes the query parameter names Core matches exactly. A name that is not recognized is
+    /// returned exactly as supplied.
     /// </summary>
     /// <remarks>
     /// The cursor parameters are canonicalized everywhere. The partition count is canonicalized only
@@ -442,33 +467,38 @@ public static class AspNetCoreFrontend
     /// unknown-field error text on collections this feature does not otherwise touch.
     /// </remarks>
     /// <remarks>
-    /// The fold is invariant rather than culture-sensitive. These names are fixed protocol tokens, so
-    /// recognizing them must not vary with the server's culture; a Turkish locale, for example,
-    /// lowercases <c>I</c> to a dotless <c>ı</c> and would leave every name containing that letter
-    /// unrecognized.
+    /// Recognition is an ordinal case-insensitive comparison, which is the same relation the query
+    /// collection uses for its own keys. Matching it exactly is what keeps the result usable as a
+    /// dictionary key: a canonical spelling is produced only for a name ordinally case-insensitively
+    /// equal to it, so any two names producing it are equal to each other and are already a single
+    /// query collection entry, while an unrecognized name passes through and cannot equal a canonical
+    /// spelling without having been recognized. The comparison is also independent of the server's
+    /// culture, which these fixed protocol tokens require; a Turkish locale, for example, lowercases
+    /// <c>I</c> to a dotless <c>ı</c>, and a culture-sensitive fold would leave every name containing
+    /// that letter unrecognized.
     /// </remarks>
     private static string FromValidatedQueryParam(
         KeyValuePair<string, StringValues> queryParam,
         bool canonicalizePartitionNumber
     )
     {
-        switch (queryParam.Key.ToLowerInvariant())
+        string suppliedName = queryParam.Key;
+
+        string? canonicalName = Array.Find(
+            QueryParameterNamesCanonicalizedEverywhere,
+            name => string.Equals(name, suppliedName, StringComparison.OrdinalIgnoreCase)
+        );
+
+        if (canonicalName is not null)
         {
-            case "limit":
-                return "limit";
-            case "offset":
-                return "offset";
-            case "totalcount":
-                return "totalCount";
-            case "pagetoken":
-                return "pageToken";
-            case "pagesize":
-                return "pageSize";
-            case "number" when canonicalizePartitionNumber:
-                return "number";
-            default:
-                return queryParam.Key;
+            return canonicalName;
         }
+
+        return
+            canonicalizePartitionNumber
+            && string.Equals(suppliedName, PartitionNumberParameterName, StringComparison.OrdinalIgnoreCase)
+            ? PartitionNumberParameterName
+            : suppliedName;
     }
 
     /// <summary>
@@ -539,10 +569,6 @@ public static class AspNetCoreFrontend
                 : JsonBodyExtractionResult.Empty;
         string? rawBody = includeBody && !parseJsonBody ? await ExtractRawBodyFrom(httpRequest) : null;
 
-        // Repeated exact names and case variants already collapse to one entry in the query
-        // collection, which retains every value in request order, so taking the final value is the
-        // existing last-value-wins behavior rather than something added here. Two distinct collection
-        // keys can never be case-insensitively equal, so folding their case cannot collide.
         bool canonicalizePartitionNumber = IsPartitionsPath(dmsPath);
 
         return new(
@@ -550,6 +576,10 @@ public static class AspNetCoreFrontend
             Form: includeForm ? await ExtractFormFrom(httpRequest) : null,
             Headers: ExtractHeadersFrom(httpRequest),
             Path: $"/{dmsPath}",
+            // Repeated exact names and case variants already collapse to one entry in the query
+            // collection, which retains every value in request order, so taking the final value is
+            // last-value-wins. Canonicalizing a name uses the same comparison as the query collection's
+            // own comparer, so two entries it holds separately cannot produce one canonical key.
             QueryParameters: httpRequest.Query.ToDictionary(
                 queryParam => FromValidatedQueryParam(queryParam, canonicalizePartitionNumber),
                 x => x.Value[^1] ?? ""

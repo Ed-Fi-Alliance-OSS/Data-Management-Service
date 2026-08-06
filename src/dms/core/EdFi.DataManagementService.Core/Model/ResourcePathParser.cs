@@ -74,7 +74,12 @@ internal static class ResourcePathParser
             return ResourcePathParseResult.Unmatched.Instance;
         }
 
-        ProjectEndpointName projectEndpointName = new(match.Groups["projectNamespace"].Value.ToLower());
+        // Folded invariantly because the project namespace is a fixed protocol token compared
+        // ordinally downstream. A culture-sensitive fold turns "ED-FI" into a dotless "ed-fı" under
+        // the Turkish locale, so which spellings resolve would depend on the server's culture.
+        ProjectEndpointName projectEndpointName = new(
+            match.Groups["projectNamespace"].Value.ToLowerInvariant()
+        );
         EndpointName endpointName = new(match.Groups["endpointName"].Value);
 
         string suppliedSegment = match.Groups["documentUuid"].Value;
