@@ -42,9 +42,16 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
                 MssqlDocumentCacheMaterializationDataStore
             >()
         );
-        services.TryAdd(ServiceDescriptor.Scoped<IDocumentCacheWriter, MssqlDocumentCacheWriter>());
+        services.TryAdd(ServiceDescriptor.Scoped<MssqlDocumentCacheWriter, MssqlDocumentCacheWriter>());
         services.TryAdd(
-            ServiceDescriptor.Scoped<IDocumentCacheSessionBoundWriter, MssqlDocumentCacheWriter>()
+            ServiceDescriptor.Scoped<IDocumentCacheWriter>(serviceProvider =>
+                serviceProvider.GetRequiredService<MssqlDocumentCacheWriter>()
+            )
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IDocumentCacheSessionBoundWriter>(serviceProvider =>
+                serviceProvider.GetRequiredService<MssqlDocumentCacheWriter>()
+            )
         );
         services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentProjectionWorkPager, MssqlDocumentProjectionWorkPager>()

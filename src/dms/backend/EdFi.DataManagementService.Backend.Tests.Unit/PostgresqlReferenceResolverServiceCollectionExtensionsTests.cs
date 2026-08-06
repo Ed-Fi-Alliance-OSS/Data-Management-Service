@@ -63,6 +63,8 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         var documentCacheMaterializationDataStore =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializationDataStore>();
         var documentCacheWriter = scope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>();
+        var documentCacheSessionBoundWriter =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheSessionBoundWriter>();
         var documentCacheWriterRetryAdapter =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheWriterRetryAdapter>();
         var documentProjectionWorkPager =
@@ -120,6 +122,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             .Should()
             .BeOfType<PostgresqlDocumentCacheMaterializationDataStore>();
         documentCacheWriter.Should().BeOfType<PostgresqlDocumentCacheWriter>();
+        documentCacheSessionBoundWriter.Should().BeSameAs(documentCacheWriter);
         documentCacheWriterRetryAdapter.Should().BeOfType<DocumentCacheWriterRetryAdapter>();
         documentProjectionWorkPager.Should().BeOfType<PostgresqlDocumentProjectionWorkPager>();
         documentCacheAdministrativePrimitives.Should().BeOfType<DocumentCacheAdministrativePrimitives>();
@@ -168,7 +171,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         services.AddPostgresqlReferenceResolver();
 
         services
-            .Where(descriptor => descriptor.ServiceType == typeof(IDocumentCacheWriter))
+            .Where(descriptor => descriptor.ServiceType == typeof(PostgresqlDocumentCacheWriter))
             .Should()
             .ContainSingle()
             .Which.Should()
@@ -176,6 +179,8 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
                 descriptor.Lifetime == ServiceLifetime.Scoped
                 && descriptor.ImplementationType == typeof(PostgresqlDocumentCacheWriter)
             );
+        AssertScopedFactory<IDocumentCacheWriter>(services);
+        AssertScopedFactory<IDocumentCacheSessionBoundWriter>(services);
         services
             .Where(descriptor => descriptor.ServiceType == typeof(IDocumentProjectionWorkPager))
             .Should()
@@ -204,10 +209,12 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         using var serviceProvider = BuildServiceProvider(services);
         using var scope = serviceProvider.CreateScope();
 
-        scope
-            .ServiceProvider.GetRequiredService<IDocumentCacheWriter>()
-            .Should()
-            .BeOfType<PostgresqlDocumentCacheWriter>();
+        var documentCacheWriter = scope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>();
+        var documentCacheSessionBoundWriter =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheSessionBoundWriter>();
+
+        documentCacheWriter.Should().BeOfType<PostgresqlDocumentCacheWriter>();
+        documentCacheSessionBoundWriter.Should().BeSameAs(documentCacheWriter);
         scope
             .ServiceProvider.GetRequiredService<IDocumentProjectionWorkPager>()
             .Should()
@@ -285,6 +292,21 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
         );
+    }
+
+    private static void AssertScopedFactory<TService>(IServiceCollection services)
+        where TService : class
+    {
+        ServiceDescriptor descriptor = services
+            .Where(descriptor => descriptor.ServiceType == typeof(TService))
+            .Should()
+            .ContainSingle()
+            .Subject;
+
+        descriptor.Lifetime.Should().Be(ServiceLifetime.Scoped);
+        descriptor.ImplementationFactory.Should().NotBeNull();
+        descriptor.ImplementationType.Should().BeNull();
+        descriptor.ImplementationInstance.Should().BeNull();
     }
 
     private static ReferenceLookupRequest CreateLookupRequest(int count)

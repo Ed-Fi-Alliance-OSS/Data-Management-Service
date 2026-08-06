@@ -43,9 +43,18 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
                 PostgresqlDocumentCacheMaterializationDataStore
             >()
         );
-        services.TryAdd(ServiceDescriptor.Scoped<IDocumentCacheWriter, PostgresqlDocumentCacheWriter>());
         services.TryAdd(
-            ServiceDescriptor.Scoped<IDocumentCacheSessionBoundWriter, PostgresqlDocumentCacheWriter>()
+            ServiceDescriptor.Scoped<PostgresqlDocumentCacheWriter, PostgresqlDocumentCacheWriter>()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IDocumentCacheWriter>(serviceProvider =>
+                serviceProvider.GetRequiredService<PostgresqlDocumentCacheWriter>()
+            )
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IDocumentCacheSessionBoundWriter>(serviceProvider =>
+                serviceProvider.GetRequiredService<PostgresqlDocumentCacheWriter>()
+            )
         );
         services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentProjectionWorkPager, PostgresqlDocumentProjectionWorkPager>()

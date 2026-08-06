@@ -98,8 +98,9 @@ public class Given_DocumentCacheServiceRegistration
 
         services.AddPostgresqlReferenceResolver();
 
-        AssertScoped<IDocumentCacheWriter, PostgresqlDocumentCacheWriter>(services);
-        AssertScoped<IDocumentCacheSessionBoundWriter, PostgresqlDocumentCacheWriter>(services);
+        AssertScoped<PostgresqlDocumentCacheWriter, PostgresqlDocumentCacheWriter>(services);
+        AssertScopedFactory<IDocumentCacheWriter>(services);
+        AssertScopedFactory<IDocumentCacheSessionBoundWriter>(services);
         AssertSingleton<IDocumentProjectionWorkPager, PostgresqlDocumentProjectionWorkPager>(services);
         AssertSingleton<IDocumentCacheAdministrativeMutex, PostgresqlDocumentCacheAdministrativeMutex>(
             services
@@ -122,8 +123,9 @@ public class Given_DocumentCacheServiceRegistration
 
         services.AddMssqlReferenceResolver();
 
-        AssertScoped<IDocumentCacheWriter, MssqlDocumentCacheWriter>(services);
-        AssertScoped<IDocumentCacheSessionBoundWriter, MssqlDocumentCacheWriter>(services);
+        AssertScoped<MssqlDocumentCacheWriter, MssqlDocumentCacheWriter>(services);
+        AssertScopedFactory<IDocumentCacheWriter>(services);
+        AssertScopedFactory<IDocumentCacheSessionBoundWriter>(services);
         AssertSingleton<IDocumentProjectionWorkPager, MssqlDocumentProjectionWorkPager>(services);
         AssertSingleton<IDocumentCacheAdministrativeMutex, MssqlDocumentCacheAdministrativeMutex>(services);
         AssertSingleton<
@@ -167,6 +169,17 @@ public class Given_DocumentCacheServiceRegistration
         ServiceDescriptor descriptor = GetSingleDescriptor<TService>(services);
 
         descriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
+        descriptor.ImplementationType.Should().BeNull();
+        descriptor.ImplementationFactory.Should().NotBeNull();
+        descriptor.ImplementationInstance.Should().BeNull();
+    }
+
+    private static void AssertScopedFactory<TService>(IServiceCollection services)
+        where TService : class
+    {
+        ServiceDescriptor descriptor = GetSingleDescriptor<TService>(services);
+
+        descriptor.Lifetime.Should().Be(ServiceLifetime.Scoped);
         descriptor.ImplementationType.Should().BeNull();
         descriptor.ImplementationFactory.Should().NotBeNull();
         descriptor.ImplementationInstance.Should().BeNull();
