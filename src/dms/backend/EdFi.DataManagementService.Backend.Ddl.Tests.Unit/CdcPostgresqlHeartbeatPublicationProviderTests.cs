@@ -353,6 +353,46 @@ public class Given_PostgresqlCdcHeartbeatPublication_ValidateOnly
     }
 
     [Test]
+    public async Task It_should_fail_closed_in_validate_only_when_an_existing_publication_publishes_dms_schema()
+    {
+        var executor = new RecordingPostgresqlCdcExecutor(
+            heartbeatTableExists: true,
+            heartbeatSingletonExists: true,
+            documentReplicaIdentityFull: true,
+            publicationExists: true,
+            publicationPublishesDmsSchema: true
+        );
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlPublication
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["tables_in_schema"] == "dms"
+                && !observation.SafeObservedValues["tables"].Contains("dms.DocumentProjectionWork")
+            );
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_WORK_TABLE_PUBLICATION_FORBIDDEN"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.WorkTableCaptureViolation
+                && diagnostic.ObservedValue == "tables_in_schema"
+            );
+        result.ManifestPayload!.Json.Should().Contain("\"tables_in_schema\": \"dms\"");
+        executor.QueriedSql.Should().ContainSingle(sql => sql.Contains("cdc:postgresql:publication-schemas"));
+        executor.ExecutedSql.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_should_fail_closed_in_initial_rerun_when_an_existing_publication_publishes_all_tables()
     {
         var executor = new RecordingPostgresqlCdcExecutor(
@@ -1168,6 +1208,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
     private bool _publicationExists;
     private readonly bool _publicationCapturesWorkTable;
     private readonly bool _publicationPublishesAllTables;
+    private readonly bool _publicationPublishesDmsSchema;
     private bool _slotExists;
     private readonly string _slotPlugin;
     private readonly string _slotType;
@@ -1216,6 +1257,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         bool publicationExists = false,
         bool publicationCapturesWorkTable = false,
         bool publicationPublishesAllTables = false,
+        bool publicationPublishesDmsSchema = false,
         bool slotExists = false,
         string slotPlugin = "pgoutput",
         string slotType = "logical",
@@ -1261,6 +1303,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         _publicationExists = publicationExists;
         _publicationCapturesWorkTable = publicationCapturesWorkTable;
         _publicationPublishesAllTables = publicationPublishesAllTables;
+        _publicationPublishesDmsSchema = publicationPublishesDmsSchema;
         _slotExists = slotExists;
         _slotPlugin = slotPlugin;
         _slotType = slotType;
@@ -1454,6 +1497,9 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
             var text when text.Contains("cdc:postgresql:publication-tables") => _publicationExists
                 ? PublicationTableRows()
                 : [],
+            var text when text.Contains("cdc:postgresql:publication-schemas") => _publicationExists
+                ? PublicationSchemaRows()
+                : [],
             var text when text.Contains("cdc:postgresql:replication-slot") => _slotExists
                 ?
                 [
@@ -1555,6 +1601,18 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         if (_publicationCapturesWorkTable)
         {
             rows.Add(PublicationTableRow("dms", "DocumentProjectionWork"));
+        }
+
+        return rows;
+    }
+
+    private IReadOnlyList<IReadOnlyDictionary<string, string?>> PublicationSchemaRows()
+    {
+        List<IReadOnlyDictionary<string, string?>> rows = [];
+
+        if (_publicationPublishesDmsSchema)
+        {
+            rows.Add(Row(("schema_name", "dms")));
         }
 
         return rows;

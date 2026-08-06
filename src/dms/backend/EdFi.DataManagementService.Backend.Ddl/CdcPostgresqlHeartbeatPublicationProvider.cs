@@ -376,15 +376,12 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
 
         try
         {
-            var supportsPublishViaPartitionRoot = await SupportsPublishViaPartitionRootAsync(
-                    executor,
-                    cancellationToken
-                )
+            var serverFeatures = await ReadServerFeaturesAsync(executor, cancellationToken)
                 .ConfigureAwait(false);
             var publication = await InspectPublicationAsync(
                     executor,
                     context.Request,
-                    supportsPublishViaPartitionRoot,
+                    serverFeatures,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -404,7 +401,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
 
                 await executor
                     .ExecuteNonQueryAsync(
-                        CreatePublicationSql(context.Request, supportsPublishViaPartitionRoot),
+                        CreatePublicationSql(context.Request, serverFeatures.SupportsPublishViaPartitionRoot),
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -412,7 +409,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 publication = await InspectPublicationAsync(
                         executor,
                         context.Request,
-                        supportsPublishViaPartitionRoot,
+                        serverFeatures,
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -1075,7 +1072,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             """;
     }
 
-    private static async Task<bool> SupportsPublishViaPartitionRootAsync(
+    private static async Task<PostgresqlServerFeatures> ReadServerFeaturesAsync(
         ICdcProviderDatabaseExecutor executor,
         CancellationToken cancellationToken
     )
@@ -1083,10 +1080,17 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         var rows = await executor.QueryAsync(ServerVersionSql, cancellationToken).ConfigureAwait(false);
         if (rows.Count == 0)
         {
-            return false;
+            return new PostgresqlServerFeatures(
+                SupportsPublishViaPartitionRoot: false,
+                SupportsPublicationSchemas: false
+            );
         }
 
-        return ReadInt32(rows[0], "server_version_num") >= 130000;
+        var serverVersion = ReadInt32(rows[0], "server_version_num");
+        return new PostgresqlServerFeatures(
+            SupportsPublishViaPartitionRoot: serverVersion >= 130000,
+            SupportsPublicationSchemas: serverVersion >= 150000
+        );
     }
 
     private const string ServerVersionSql = """
@@ -1097,14 +1101,14 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
     private static async Task<PublicationInspection> InspectPublicationAsync(
         ICdcProviderDatabaseExecutor executor,
         CdcProviderSetupRequest request,
-        bool supportsPublishViaPartitionRoot,
+        PostgresqlServerFeatures serverFeatures,
         CancellationToken cancellationToken
     )
     {
         var publicationName = request.ArtifactNames.Postgresql!.PublicationName;
         var propertyRows = await executor
             .QueryAsync(
-                PublicationPropertiesSql(publicationName, supportsPublishViaPartitionRoot),
+                PublicationPropertiesSql(publicationName, serverFeatures.SupportsPublishViaPartitionRoot),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -1122,6 +1126,12 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         var tableRows = await executor
             .QueryAsync(PublicationTablesSql(publicationName), cancellationToken)
             .ConfigureAwait(false);
+        IReadOnlyList<IReadOnlyDictionary<string, string?>> schemaRows =
+            serverFeatures.SupportsPublicationSchemas
+                ? await executor
+                    .QueryAsync(PublicationSchemasSql(publicationName), cancellationToken)
+                    .ConfigureAwait(false)
+                : [];
 
         var expectedTables = CdcSourceInventoryContract
             .RequiredSourceTableKinds.Select(kind => SourceTable(request, kind))
@@ -1132,6 +1142,9 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             .ToArray();
         var observedTableSet = observedTables.ToHashSet(StringComparer.Ordinal);
         var expectedTableSet = expectedTables.ToHashSet(StringComparer.Ordinal);
+        var observedSchemas = schemaRows.Select(row => ReadRequired(row, "schema_name")).ToArray();
+        var observedSchemaSet = observedSchemas.ToHashSet(StringComparer.Ordinal);
+        var publishesTablesInSchema = observedSchemas.Length > 0;
 
         var properties = propertyRows[0];
         var publishesInsert = ReadBool(properties, "publishes_insert");
@@ -1150,6 +1163,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             && publishesDelete
             && !publishesTruncate
             && !publishesAllTables
+            && !publishesTablesInSchema
             && (
                 publishViaPartitionRoot == "unsupported"
                 || string.Equals(publishViaPartitionRoot, "false", StringComparison.OrdinalIgnoreCase)
@@ -1164,6 +1178,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             ["publish"] = $"{publishesInsert},{publishesUpdate},{publishesDelete}",
             ["publishes_truncate"] = publishesTruncate.ToString(),
             ["publishes_all_tables"] = publishesAllTables.ToString(),
+            ["tables_in_schema"] = string.Join(",", observedSchemas.Order(StringComparer.Ordinal)),
             ["publish_via_partition_root"] = publishViaPartitionRoot,
             ["row_filters"] = noRowFilters ? "absent" : "present",
             ["column_lists"] = allColumns ? "absent" : "present",
@@ -1173,19 +1188,35 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             Exists: true,
             exactTables && exactProperties,
             observedValues,
-            PublicationDiagnostics(publicationName, observedTableSet, publishesAllTables)
+            PublicationDiagnostics(publicationName, observedTableSet, observedSchemaSet, publishesAllTables)
         );
     }
 
     private static IReadOnlyList<CdcProviderDiagnostic> PublicationDiagnostics(
         CdcSafeName publicationName,
         HashSet<string> observedTableSet,
+        HashSet<string> observedSchemaSet,
         bool publishesAllTables
     )
     {
-        if (!publishesAllTables && !observedTableSet.Contains("dms.DocumentProjectionWork"))
+        var publishesDmsSchema = observedSchemaSet.Contains("dms");
+        if (
+            !publishesAllTables
+            && !publishesDmsSchema
+            && !observedTableSet.Contains("dms.DocumentProjectionWork")
+        )
         {
             return [];
+        }
+
+        var observedValue = "published";
+        if (publishesAllTables)
+        {
+            observedValue = "publishes_all_tables";
+        }
+        else if (publishesDmsSchema)
+        {
+            observedValue = "tables_in_schema";
         }
 
         return
@@ -1198,7 +1229,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 ArtifactKind: CdcProviderArtifactKind.PostgresqlPublication,
                 SafeName: publicationName,
                 ExpectedValue: "dms.DocumentProjectionWork-not-published",
-                ObservedValue: publishesAllTables ? "publishes_all_tables" : "published",
+                ObservedValue: observedValue,
                 ProviderErrorClass: null,
                 Classification: CdcProviderRetryContinuityClassification.FailClosed
             ),
@@ -1245,6 +1276,20 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 ON namespace_info.oid = table_info.relnamespace
             WHERE publication.pubname = '{EscapeSqlLiteral(publicationName.Value)}'
             ORDER BY namespace_info.nspname, table_info.relname;
+            """;
+
+    private static string PublicationSchemasSql(CdcSafeName publicationName) =>
+        $"""
+            /* cdc:postgresql:publication-schemas */
+            SELECT
+                namespace_info.nspname AS schema_name
+            FROM pg_catalog.pg_publication_namespace publication_schema
+            INNER JOIN pg_catalog.pg_publication publication
+                ON publication.oid = publication_schema.pnpubid
+            INNER JOIN pg_catalog.pg_namespace namespace_info
+                ON namespace_info.oid = publication_schema.pnnspid
+            WHERE publication.pubname = '{EscapeSqlLiteral(publicationName.Value)}'
+            ORDER BY namespace_info.nspname;
             """;
 
     private static async Task<ReplicationSlotInspection> InspectReplicationSlotAsync(
@@ -2819,6 +2864,11 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         bool IsExactMatch,
         IReadOnlyDictionary<string, string> ObservedValues,
         IReadOnlyList<CdcProviderDiagnostic> Diagnostics
+    );
+
+    private sealed record PostgresqlServerFeatures(
+        bool SupportsPublishViaPartitionRoot,
+        bool SupportsPublicationSchemas
     );
 
     private sealed record ReplicationSlotInspection(
