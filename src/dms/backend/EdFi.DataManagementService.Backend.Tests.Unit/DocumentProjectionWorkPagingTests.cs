@@ -207,6 +207,21 @@ public class Given_DocumentProjectionWorkPaging
         normalizedSql.Should().NotContain(" HOLDLOCK");
     }
 
+    [Test]
+    public void It_renders_the_work_table_and_columns_from_the_document_cache_inventory()
+    {
+        AssertInventoryIdentifiers(
+            PostgresqlDocumentProjectionWorkPager.InitialPageSql,
+            PostgresqlDocumentProjectionWorkPager.CursorPageSql,
+            SqlDialect.Pgsql
+        );
+        AssertInventoryIdentifiers(
+            MssqlDocumentProjectionWorkPager.InitialPageSql,
+            MssqlDocumentProjectionWorkPager.CursorPageSql,
+            SqlDialect.Mssql
+        );
+    }
+
     private static DocumentCacheProjectionDrainPageProcessor CreateProcessor(
         IDocumentProjectionWorkPager pager,
         IDocumentCacheProjectionItemProcessor? itemProcessor = null
@@ -217,6 +232,33 @@ public class Given_DocumentProjectionWorkPaging
             NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
             new FixedTimeProvider(FirstEnqueuedAt)
         );
+
+    private static void AssertInventoryIdentifiers(
+        string initialPageSql,
+        string cursorPageSql,
+        SqlDialect dialect
+    )
+    {
+        string workTable = SqlIdentifierQuoter.QuoteTableName(
+            dialect,
+            DocumentCacheInventoryDefinition.DocumentProjectionWork
+        );
+        initialPageSql.Should().Contain(workTable);
+        cursorPageSql.Should().Contain(workTable);
+
+        DbColumnName[] workColumns =
+        [
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.DocumentId,
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.RequiredContentVersion,
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.FirstEnqueuedAt,
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.LastEnqueuedAt,
+        ];
+        foreach (DbColumnName column in workColumns)
+        {
+            initialPageSql.Should().Contain(SqlIdentifierQuoter.QuoteIdentifier(dialect, column));
+            cursorPageSql.Should().Contain(SqlIdentifierQuoter.QuoteIdentifier(dialect, column));
+        }
+    }
 
     private static DocumentProjectionWorkPage Page(params DocumentProjectionWorkPageItem[] items) =>
         new(items, pageSize: 3);

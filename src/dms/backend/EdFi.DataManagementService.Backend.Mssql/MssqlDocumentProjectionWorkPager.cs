@@ -5,6 +5,7 @@
 
 using System.Data;
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Data.SqlClient;
@@ -14,27 +15,49 @@ namespace EdFi.DataManagementService.Backend.Mssql;
 
 internal sealed class MssqlDocumentProjectionWorkPager : IDocumentProjectionWorkPager
 {
-    internal const string InitialPageSql = """
+    private static readonly string _workAlias = SqlIdentifierQuoter.QuoteIdentifier(SqlDialect.Mssql, "work");
+    private static readonly string _workTable = SqlIdentifierQuoter.QuoteTableName(
+        SqlDialect.Mssql,
+        DocumentCacheInventoryDefinition.DocumentProjectionWork
+    );
+    private static readonly DbColumnName _documentIdColumn = DocumentCacheInventoryDefinition
+        .DocumentProjectionWorkColumns
+        .DocumentId;
+    private static readonly DbColumnName _requiredContentVersionColumn = DocumentCacheInventoryDefinition
+        .DocumentProjectionWorkColumns
+        .RequiredContentVersion;
+    private static readonly DbColumnName _firstEnqueuedAtColumn = DocumentCacheInventoryDefinition
+        .DocumentProjectionWorkColumns
+        .FirstEnqueuedAt;
+    private static readonly DbColumnName _lastEnqueuedAtColumn = DocumentCacheInventoryDefinition
+        .DocumentProjectionWorkColumns
+        .LastEnqueuedAt;
+    private static readonly string _documentId = Quote(_documentIdColumn);
+    private static readonly string _requiredContentVersion = Quote(_requiredContentVersionColumn);
+    private static readonly string _firstEnqueuedAt = Quote(_firstEnqueuedAtColumn);
+    private static readonly string _lastEnqueuedAt = Quote(_lastEnqueuedAtColumn);
+
+    internal static readonly string InitialPageSql = $"""
         SELECT
-            [work].[DocumentId],
-            [work].[RequiredContentVersion],
-            [work].[FirstEnqueuedAt],
-            [work].[LastEnqueuedAt]
-        FROM [dms].[DocumentProjectionWork] AS [work]
-        ORDER BY [work].[FirstEnqueuedAt], [work].[DocumentId]
+            {_workAlias}.{_documentId},
+            {_workAlias}.{_requiredContentVersion},
+            {_workAlias}.{_firstEnqueuedAt},
+            {_workAlias}.{_lastEnqueuedAt}
+        FROM {_workTable} AS {_workAlias}
+        ORDER BY {_workAlias}.{_firstEnqueuedAt}, {_workAlias}.{_documentId}
         OFFSET 0 ROWS FETCH NEXT @pageSize ROWS ONLY;
         """;
 
-    internal const string CursorPageSql = """
+    internal static readonly string CursorPageSql = $"""
         SELECT
-            [work].[DocumentId],
-            [work].[RequiredContentVersion],
-            [work].[FirstEnqueuedAt],
-            [work].[LastEnqueuedAt]
-        FROM [dms].[DocumentProjectionWork] AS [work]
-        WHERE [work].[FirstEnqueuedAt] > @lastFirstEnqueuedAt
-           OR ([work].[FirstEnqueuedAt] = @lastFirstEnqueuedAt AND [work].[DocumentId] > @lastDocumentId)
-        ORDER BY [work].[FirstEnqueuedAt], [work].[DocumentId]
+            {_workAlias}.{_documentId},
+            {_workAlias}.{_requiredContentVersion},
+            {_workAlias}.{_firstEnqueuedAt},
+            {_workAlias}.{_lastEnqueuedAt}
+        FROM {_workTable} AS {_workAlias}
+        WHERE {_workAlias}.{_firstEnqueuedAt} > @lastFirstEnqueuedAt
+           OR ({_workAlias}.{_firstEnqueuedAt} = @lastFirstEnqueuedAt AND {_workAlias}.{_documentId} > @lastDocumentId)
+        ORDER BY {_workAlias}.{_firstEnqueuedAt}, {_workAlias}.{_documentId}
         OFFSET 0 ROWS FETCH NEXT @pageSize ROWS ONLY;
         """;
 
@@ -116,13 +139,16 @@ internal sealed class MssqlDocumentProjectionWorkPager : IDocumentProjectionWork
 
     private static DocumentProjectionWorkPageItem ReadItem(DbDataReader reader) =>
         new(
-            reader.GetInt64(reader.GetOrdinal("DocumentId")),
-            reader.GetInt64(reader.GetOrdinal("RequiredContentVersion")),
+            reader.GetInt64(reader.GetOrdinal(_documentIdColumn.Value)),
+            reader.GetInt64(reader.GetOrdinal(_requiredContentVersionColumn.Value)),
             DocumentProjectionWorkPagingGuards.NormalizeUtcTimestamp(
-                reader.GetValue(reader.GetOrdinal("FirstEnqueuedAt"))
+                reader.GetValue(reader.GetOrdinal(_firstEnqueuedAtColumn.Value))
             ),
             DocumentProjectionWorkPagingGuards.NormalizeUtcTimestamp(
-                reader.GetValue(reader.GetOrdinal("LastEnqueuedAt"))
+                reader.GetValue(reader.GetOrdinal(_lastEnqueuedAtColumn.Value))
             )
         );
+
+    private static string Quote(DbColumnName column) =>
+        SqlIdentifierQuoter.QuoteIdentifier(SqlDialect.Mssql, column);
 }
