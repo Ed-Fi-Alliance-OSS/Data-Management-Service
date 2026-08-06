@@ -248,8 +248,11 @@ Playwright setup/teardown.
   in your shell used to start DMS on the image-baked schemas while provisioning had already
   stamped the environment file's full package surface. Both setup wrappers now remove those three
   names around their Docker phases, so the selected `-EnvironmentFile` is authoritative and an
-  ambient value cannot reach Compose; `setup-local-dms.ps1` also verifies the started container
-  against that file and fails with `DMS E2E setup mismatch: ...` before any scenario runs. To
+  ambient value cannot reach Compose. The two entry points report a detected mismatch differently:
+  `build-dms.ps1 E2ETest` compares the provisioned and runtime schema hashes and fails with
+  `E2E setup mismatch: ...`, while the direct `setup-local-dms.ps1` verifies the started container's
+  schema settings against the environment file and fails with `DMS E2E setup mismatch: ...`. Either
+  way the failure happens before any scenario runs. To
   point a run at a different package surface, select a different `-EnvironmentFile` — ambient
   overrides of those three names are deliberately not a supported channel here.
 - **SQL Server stack fails to start or is unhealthy.** Treat an unavailable or unhealthy
