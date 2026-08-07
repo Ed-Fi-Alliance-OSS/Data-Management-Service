@@ -776,6 +776,13 @@ public sealed record RelationalWriteExecutorRequest
     public RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization { get; init; }
 
     /// <summary>
+    /// Stored-value custom view-based authorization for existing-target writes. Evaluated inside the
+    /// locked-target boundary before any precondition, interleaved with the namespace checks by configured
+    /// index. Null when no custom view participates.
+    /// </summary>
+    public RelationalCustomViewAuthorization? StoredCustomViewAuthorization { get; init; }
+
+    /// <summary>
     /// POST-specific relationship authorization plans for target-dependent create-new vs upsert-as-update
     /// selection inside the executor's write session.
     /// </summary>
@@ -881,6 +888,9 @@ public sealed record RelationalWriteExecutorInput
     /// <inheritdoc cref="RelationalWriteExecutorRequest.StoredNamespaceAuthorization"/>
     public RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization { get; init; }
 
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.StoredCustomViewAuthorization"/>
+    public RelationalCustomViewAuthorization? StoredCustomViewAuthorization { get; init; }
+
     /// <inheritdoc cref="RelationalWriteExecutorRequest.ProposedNamespaceAuthorization"/>
     public RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization { get; init; }
 
@@ -912,6 +922,7 @@ public sealed record RelationalWriteExecutorInput
         )
         {
             PostRelationshipAuthorizationPlans = PostRelationshipAuthorizationPlans,
+            StoredCustomViewAuthorization = StoredCustomViewAuthorization,
         };
 }
 
