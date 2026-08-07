@@ -410,15 +410,14 @@ public class Given_RelationalAuthorizationPlanner
         plan.NonNamespaceConfiguredStrategies.Should().BeEmpty();
     }
 
-    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
     [TestCase(NamespaceAuthorizationOperation.Delete)]
     [TestCase(NamespaceAuthorizationOperation.Update)]
     public void It_returns_still_unsupported_for_custom_views_on_a_descriptor_single_record_operation(
         NamespaceAuthorizationOperation operation
     )
     {
-        // The descriptor single-record paths do not execute custom-view checks yet, so they must keep failing
-        // closed even though the regular-resource paths for the same operations now enforce them.
+        // The descriptor DELETE and write paths do not execute custom-view checks yet, so they must keep
+        // failing closed even though the regular-resource paths for the same operations now enforce them.
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor"), ResourceKey(3, "Student")),
             DescriptorResource(),
@@ -430,14 +429,15 @@ public class Given_RelationalAuthorizationPlanner
         outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
     }
 
-    [Test]
-    public void It_plans_custom_views_for_a_descriptor_read_many()
+    [TestCase(NamespaceAuthorizationOperation.ReadMany)]
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    public void It_plans_custom_views_for_a_descriptor_read(NamespaceAuthorizationOperation operation)
     {
-        // Descriptor GET-many was wired with the rest of GET-many, so storage kind only gates ReadSingle.
+        // Both descriptor read paths execute custom-view checks, so storage kind no longer gates either.
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor"), ResourceKey(3, "Student")),
             DescriptorResource(),
-            NamespaceAuthorizationOperation.ReadMany,
+            operation,
             [Strategy("StudentWithCTECourseEnrollments", 0)],
             TwoPrefixContext()
         );

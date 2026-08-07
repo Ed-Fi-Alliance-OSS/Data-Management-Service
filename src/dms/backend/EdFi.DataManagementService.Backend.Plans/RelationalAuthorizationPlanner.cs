@@ -297,10 +297,13 @@ public static class RelationalAuthorizationPlanner
     /// </para>
     /// <list type="bullet">
     /// <item><description><c>ReadMany</c> — both storage kinds execute page filters (DMS-1062).</description></item>
-    /// <item><description><c>ReadSingle</c>, <c>Delete</c>, and <c>Update</c> — the regular-resource
-    /// GET-by-id, DELETE, and POST/PUT paths execute them; their descriptor counterparts do not yet.
-    /// <c>Update</c> covers both write verbs because a POST resolves to a create or an upsert-as-update only
-    /// in-session, so both value sources are planned the same way.</description></item>
+    /// <item><description><c>ReadSingle</c> — both storage kinds execute stored checks. The descriptor
+    /// GET-by-id path has no <c>AUTH1</c> statement to carry them, so it runs them as their own membership
+    /// query ordered against its in-memory namespace check.</description></item>
+    /// <item><description><c>Delete</c> and <c>Update</c> — the regular-resource DELETE and POST/PUT paths
+    /// execute them; their descriptor counterparts do not yet. <c>Update</c> covers both write verbs because
+    /// a POST resolves to a create or an upsert-as-update only in-session, so both value sources are planned
+    /// the same way.</description></item>
     /// </list>
     /// <para>
     /// Each entry flips in the phase that wires that caller, and the corresponding
@@ -316,10 +319,8 @@ public static class RelationalAuthorizationPlanner
 
         return operation switch
         {
-            NamespaceAuthorizationOperation.ReadMany => true,
-            NamespaceAuthorizationOperation.ReadSingle
-            or NamespaceAuthorizationOperation.Delete
-            or NamespaceAuthorizationOperation.Update => !isDescriptor,
+            NamespaceAuthorizationOperation.ReadMany or NamespaceAuthorizationOperation.ReadSingle => true,
+            NamespaceAuthorizationOperation.Delete or NamespaceAuthorizationOperation.Update => !isDescriptor,
             _ => false,
         };
     }

@@ -3308,6 +3308,7 @@ public sealed class RelationalDocumentStoreRepository(
                             relationalGetRequest,
                             mappingSet,
                             proceed.StoredNamespaceAuthorization,
+                            proceed.StoredCustomViewAuthorization,
                             proceed.StoredRelationshipAuthorization,
                             existingDocument.DocumentId,
                             existingDocument.ContentVersion,
