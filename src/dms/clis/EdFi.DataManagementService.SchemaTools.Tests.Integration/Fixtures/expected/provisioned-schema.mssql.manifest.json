@@ -113105,6 +113105,17 @@
     {
       "schema_name": "dms",
       "table_name": "Descriptor",
+      "index_name": "IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId",
+      "is_unique": false,
+      "columns": [
+        "ResourceKeyId",
+        "ContentVersion",
+        "DocumentId"
+      ]
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "Descriptor",
       "index_name": "IX_Descriptor_ResourceKeyId_DocumentId",
       "is_unique": false,
       "columns": [

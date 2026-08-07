@@ -284,6 +284,10 @@ CREATE TABLE dms.Descriptor (
 
 CREATE INDEX IX_Descriptor_ResourceKeyId_DocumentId
     ON dms.Descriptor (ResourceKeyId, DocumentId);
+
+-- Serves change-version-windowed descriptor page selection: ResourceKeyId equality, ContentVersion range/order, trailing DocumentId for index-only page and count reads.
+CREATE INDEX IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId
+    ON dms.Descriptor (ResourceKeyId, ContentVersion, DocumentId);
 ```
 
 `(Uri, Discriminator)` lookups are served by the `UX_Descriptor_Uri_Discriminator` unique constraint; no additional plain index on the same columns is defined.

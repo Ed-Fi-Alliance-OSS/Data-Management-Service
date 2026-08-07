@@ -1301,17 +1301,21 @@ and min-only requests, which page in `DocumentId` order. Max-bearing requests pa
 `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId (ResourceKeyId, ContentVersion, DocumentId)`.
 The trailing `DocumentId` covers the value returned by page selection.
 
-The older `IX_Descriptor_Discriminator_ContentVersion` shape does not match the runtime query:
-`Discriminator` is diagnostic, while the query filters by `ResourceKeyId`.
+`IX_Descriptor_Discriminator_ContentVersion` remains in the derived inventory for a different
+consumer: tracked-change probes qualify shared-descriptor rows by `Discriminator` (see
+`TrackedChangeQueryPlanner`) because the tracked-change tables carry no `ResourceKeyId`. The live
+descriptor page query never filters by `Discriminator`, so it uses the `ResourceKeyId`-leading
+indexes above instead.
 
 **Compiled-mapping-set additions** (defined in [compiled-mapping-set.md](compiled-mapping-set.md)):
 
 - The per-resource derivation pass that builds `ConcreteResourceModel.RelationalModel` adds two synthesized columns to the root `DbTableModel` whenever `StorageKind = RelationalTables`. Their `ColumnKind` is `MirroredContentVersion` and `MirroredContentLastModifiedAt` respectively (defined in [flattening-reconstitution.md](flattening-reconstitution.md)). `SourceJsonPath` and `TargetResource` are null. The write-path `TableWritePlan.ColumnBindings` exclusion rule (also defined in [flattening-reconstitution.md](flattening-reconstitution.md)) keeps them out of client-writable column lists; dialect emitters render the correct DDL defaults for each kind (`0` for `MirroredContentVersion`, current-UTC for `MirroredContentLastModifiedAt`).
 - For `StorageKind = SharedDescriptorTable`, the columns are added by the core DDL pass that owns `dms.Descriptor`, not by the per-resource pass, because `dms.Descriptor` is a core table.
-- `DeriveIndexInventoryPass` adds one `IX_<Table>_ContentVersion` per in-scope root table and
-  `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` on `dms.Descriptor` into
-  `IndexesInCreateOrder`. The core DDL pass continues to own
-  `IX_Descriptor_ResourceKeyId_DocumentId`.
+- `DeriveIndexInventoryPass` adds one `IX_<Table>_ContentVersion` per in-scope root table and two
+  `dms.Descriptor` indexes into `IndexesInCreateOrder`:
+  `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` for live change-version-windowed page
+  selection and `IX_Descriptor_Discriminator_ContentVersion` for tracked-change probes. The core
+  DDL pass continues to own `IX_Descriptor_ResourceKeyId_DocumentId`.
 - `DbTriggerInfo` for entries with `Kind = DocumentStamping` gains a required `MirrorStampTargetTable: DbTableName` field. The derivation pass assigns the target by rule: same table for root-table triggers, resource's root for child / `_ext` triggers, `dms.Descriptor` for the descriptor trigger. Dialect emitters render the mirror UPDATE against `MirrorStampTargetTable` and MUST NOT re-derive the target from the trigger's source table.
 
 #### Triggers that populate the `tracked_changes*` tables
@@ -1984,7 +1988,7 @@ FROM
     WHERE d."ResourceKeyId" = @resourceKeyId
       AND d."ContentVersion" >= @MinChangeVersion
       AND d."ContentVersion" <= @MaxChangeVersion
-    ORDER BY d."ContentVersion" ASC
+    ORDER BY d."ContentVersion" ASC -- Conditional: see "Page-selection ordering (DMS-1298)" below
     LIMIT @limit OFFSET @offset
   ) page_document_ids 
   INNER JOIN dms."Document" document ON document."DocumentId" = page_document_ids."DocumentId" 
@@ -2066,8 +2070,11 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 - Manifest output for tracked-change tables, triggers, and ReadChanges authorization views so SQL generation tests are checking renderer behavior, not hidden semantic compilation in the DDL emitter.
 - Mirror columns (`ContentVersion`, `ContentLastModifiedAt`) tagged with `ColumnKind.MirroredContentVersion` and `ColumnKind.MirroredContentLastModifiedAt` on every `ConcreteResourceModel` with `StorageKind = RelationalTables`, including extension-project resources; absent on `StorageKind = SharedDescriptorTable` resources (the columns live on `dms.Descriptor` instead, added by the core DDL pass).
 - `IX_<Table>_ContentVersion` per in-scope root in `IndexesInCreateOrder` (single-column), plus
-  `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` on `dms.Descriptor` with key columns in
-  the order `[ResourceKeyId, ContentVersion, DocumentId]`.
+  both `dms.Descriptor` composite indexes:
+  `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` with key columns in the order
+  `[ResourceKeyId, ContentVersion, DocumentId]` (live change-version-windowed page selection) and
+  `IX_Descriptor_Discriminator_ContentVersion` with key columns `[Discriminator, ContentVersion]`
+  (tracked-change probes).
 - Every `DbTriggerInfo` with `Kind = DocumentStamping` has a non-null `MirrorStampTargetTable` matching the per-trigger rule (same table for root, resource's root for child / `_ext`, `dms.Descriptor` for the descriptor trigger).
 - DB-behavior: mirror equals source (`<root>.ContentVersion = dms.Document.ContentVersion` and `<root>.ContentLastModifiedAt = dms.Document.ContentLastModifiedAt`) after every write path — insert, update, no-op update, identity change, child-collection write, `_ext` write, FK-cascade update, descriptor write. Run on at least a root-only resource (`edfi.Student`), a child-bearing resource (`edfi.School` with `SchoolAddress` writes), an `_ext`-bearing resource, an extension-project resource (e.g. `tpdm.Candidate`), and a descriptor.
 - DB-behavior: stamp-only updates (`UPDATE <root> SET ContentVersion = ContentVersion + 1 …`) do not allocate a new sequence value, do not fire additional mirror UPDATEs, and do not insert `tracked_changes_*` rows; multi-row UPDATEs that stamp N documents allocate N distinct `ContentVersion` values, and each document's mirror equals its `dms.Document` stamp.

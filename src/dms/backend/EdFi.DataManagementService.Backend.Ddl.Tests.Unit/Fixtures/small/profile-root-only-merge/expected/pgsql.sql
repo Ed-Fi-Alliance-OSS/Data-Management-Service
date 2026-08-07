@@ -1112,6 +1112,8 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_Descriptor_Discriminator_ContentVersion" ON "dms"."Descriptor" ("Discriminator", "ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId" ON "dms"."Descriptor" ("ResourceKeyId", "ContentVersion", "DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_ContentVersion" ON "edfi"."ProfileRootOnlyMergeItem" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescrip_5313ae7036" ON "edfi"."ProfileRootOnlyMergeItem" ("PrimarySchoolTypeDescriptor_Unified_DescriptorId");
