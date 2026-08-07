@@ -8,6 +8,12 @@ using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
+public sealed record FullDdlEmission(
+    string CombinedSql,
+    IReadOnlyList<CdcSourceTableInventory> CdcSourceInventory,
+    IReadOnlyList<CdcDmsManagedTableInventory> CdcDmsManagedTableInventory
+);
+
 /// <summary>
 /// Combines all DDL emission stages (core DDL, relational model DDL, and seed DML)
 /// into a single SQL output. This is the shared artifact emitter required by
@@ -20,7 +26,14 @@ public static class FullDdlEmitter
     /// core schema DDL, relational model DDL, and seed DML for the given dialect and
     /// derived model set.
     /// </summary>
-    public static string Emit(ISqlDialect dialect, DerivedRelationalModelSet modelSet)
+    public static string Emit(ISqlDialect dialect, DerivedRelationalModelSet modelSet) =>
+        EmitWithMetadata(dialect, modelSet).CombinedSql;
+
+    /// <summary>
+    /// Emits full ordinary DDL plus typed metadata consumed by opt-in provider setup.
+    /// The CDC metadata does not add CDC provider objects to ordinary DDL output.
+    /// </summary>
+    public static FullDdlEmission EmitWithMetadata(ISqlDialect dialect, DerivedRelationalModelSet modelSet)
     {
         var seedEmitter = new SeedDmlEmitter(dialect);
         string preflightDdl = WrapPhase0(
@@ -29,10 +42,20 @@ public static class FullDdlEmitter
         var sharedDescriptorTrackedChangeTable = modelSet.TrackedChangeTablesInNameOrder.SingleOrDefault(t =>
             t.Kind == TrackedChangeTableKind.SharedDescriptor
         );
-        string coreDdl = new CoreDdlEmitter(dialect, sharedDescriptorTrackedChangeTable).Emit();
+        var coreEmission = new CoreDdlEmitter(dialect, sharedDescriptorTrackedChangeTable).EmitWithMetadata();
         string relationalDdl = new RelationalModelDdlEmitter(dialect).Emit(modelSet);
         string seedDml = seedEmitter.EmitForFullDdl(modelSet.EffectiveSchema);
-        return JoinSegments(preflightDdl, coreDdl, relationalDdl, seedDml);
+        var cdcDmsManagedTableInventory = CdcDmsManagedTableInventoryBuilder.Build(
+            dialect,
+            modelSet,
+            coreEmission.CdcSourceInventory
+        );
+
+        return new FullDdlEmission(
+            JoinSegments(preflightDdl, coreEmission.Sql, relationalDdl, seedDml),
+            coreEmission.CdcSourceInventory,
+            cdcDmsManagedTableInventory
+        );
     }
 
     private static string WrapPhase0(string preflightSql)

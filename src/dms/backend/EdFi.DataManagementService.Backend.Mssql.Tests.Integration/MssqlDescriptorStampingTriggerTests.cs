@@ -16,6 +16,16 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category(MssqlCiShards.Shard3)]
 public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
 {
+    private static readonly DateTime RewoundContentLastModifiedAt = new(
+        2000,
+        1,
+        1,
+        0,
+        0,
+        0,
+        DateTimeKind.Utc
+    );
+
     private static readonly string FixtureRelativePath = Path.Combine(
         "src",
         "dms",
@@ -75,6 +85,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     {
         var documentId = await InsertDocumentAsync();
         await InsertDescriptorAsync(documentId, shortDescription, codeValue);
+        await RewindContentLastModifiedAtAsync(documentId);
 
         var stamps = await ReadStampPairAsync(documentId);
         return (documentId, stamps.Document.ContentVersion, stamps.Document.ContentLastModifiedAt);
@@ -124,6 +135,23 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
             new SqlParameter("@description", codeValue),
             new SqlParameter("@discriminator", uriOrDiscriminator),
             new SqlParameter("@uri", uriOrDiscriminator)
+        );
+    }
+
+    private async Task RewindContentLastModifiedAtAsync(long documentId)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [dms].[Document]
+            SET [ContentLastModifiedAt] = @contentLastModifiedAt
+            WHERE [DocumentId] = @documentId;
+
+            UPDATE [dms].[Descriptor]
+            SET [ContentLastModifiedAt] = @contentLastModifiedAt
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@contentLastModifiedAt", RewoundContentLastModifiedAt)
         );
     }
 

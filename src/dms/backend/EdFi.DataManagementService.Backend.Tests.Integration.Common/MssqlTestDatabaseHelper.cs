@@ -89,6 +89,7 @@ public static class MssqlTestDatabaseHelper
                 DROP DATABASE {quotedDatabaseName};
             END
             """;
+        command.CommandTimeout = DefaultCommandTimeoutSeconds;
 
         command.ExecuteNonQuery();
     }

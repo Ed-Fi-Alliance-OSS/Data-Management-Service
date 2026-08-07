@@ -45,7 +45,11 @@ runs:
           $env:POSTGRES_IMAGE `
           postgres `
           -c `
-          max_locks_per_transaction=256
+          max_locks_per_transaction=256 `
+          -c `
+          wal_level=logical `
+          -c `
+          max_replication_slots=10
 
         if ($LASTEXITCODE -ne 0) {
           throw "Failed to start PostgreSQL container $env:CONTAINER_NAME."

@@ -1,0 +1,624 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Text.Json;
+using EdFi.DataManagementService.Backend.External;
+using FluentAssertions;
+using NUnit.Framework;
+
+namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
+
+internal sealed class TestConnectorPrincipalProbeFactory : ICdcConnectorPrincipalProbeFactory
+{
+    public Task<CdcConnectorPrincipalProbeResult> ProbeAsync(
+        CdcProviderSetupRequest request,
+        CancellationToken cancellationToken
+    ) => Task.FromResult(new CdcConnectorPrincipalProbeResult());
+}
+
+internal static class CdcProviderSetupContractTestData
+{
+    internal const string SourceIdentity = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6";
+    internal const string OtherSourceIdentity = "11111111-1111-1111-1111-111111111111";
+
+    internal static CdcSourceFingerprint PostgresqlSourceFingerprint =>
+        CdcSourceFingerprintMetadata.Compute(CdcProvider.Postgresql, SourceIdentity);
+
+    internal static CdcSourceFingerprint OtherPostgresqlSourceFingerprint =>
+        CdcSourceFingerprintMetadata.Compute(CdcProvider.Postgresql, OtherSourceIdentity);
+
+    internal static CdcSourceFingerprint SqlServerSourceFingerprint =>
+        CdcSourceFingerprintMetadata.Compute(CdcProvider.SqlServer, SourceIdentity);
+
+    internal static CdcSourceFingerprint OtherSqlServerSourceFingerprint =>
+        CdcSourceFingerprintMetadata.Compute(CdcProvider.SqlServer, OtherSourceIdentity);
+
+    internal static CdcProviderSetupRequest BuildPostgresqlRequest(
+        IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
+        IReadOnlyList<CdcDmsManagedTableInventory>? dmsManagedTableInventory = null,
+        CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
+        CdcProviderArtifactOutputRequest? artifactOutput = null,
+        CdcProviderArtifactNames? artifactNames = null,
+        ICdcProviderDatabaseExecutor? databaseExecutor = null,
+        CdcPostgresqlInitialReplicationSlotProof? postgresqlInitialReplicationSlotProof = null,
+        ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null
+    ) =>
+        new(
+            provider: CdcProvider.Postgresql,
+            mode: mode,
+            boundPhysicalSourceFingerprint: PostgresqlSourceFingerprint,
+            setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("setup_principal")),
+            connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName("connector_principal")),
+            artifactNames: artifactNames ?? CdcDms1320ArtifactNameTestAdapter.ForPostgresql(),
+            artifactOutput: artifactOutput
+                ?? new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
+            expectedSourceInventory: sourceInventory ?? BuildRequiredSourceInventory(),
+            dmsManagedTableInventory: dmsManagedTableInventory ?? BuildPostgresqlDmsManagedTableInventory(),
+            postgresqlInitialReplicationSlotProof: postgresqlInitialReplicationSlotProof,
+            connectorPrincipalProbeFactory: connectorPrincipalProbeFactory
+                ?? new TestConnectorPrincipalProbeFactory(),
+            databaseExecutor: databaseExecutor
+        );
+
+    internal static CdcProviderSetupRequest BuildSqlServerRequest(
+        IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
+        IReadOnlyList<CdcDmsManagedTableInventory>? dmsManagedTableInventory = null,
+        CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
+        CdcProviderArtifactOutputRequest? artifactOutput = null,
+        CdcProviderArtifactNames? artifactNames = null,
+        CdcSafeName? connectorPrincipalName = null,
+        ICdcProviderDatabaseExecutor? databaseExecutor = null,
+        ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null
+    ) =>
+        new(
+            provider: CdcProvider.SqlServer,
+            mode: mode,
+            boundPhysicalSourceFingerprint: SqlServerSourceFingerprint,
+            setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("setup_principal")),
+            connectorPrincipal: new CdcConnectorPrincipal(
+                connectorPrincipalName ?? new CdcSafeName("connector_principal")
+            ),
+            artifactNames: artifactNames ?? CdcDms1320ArtifactNameTestAdapter.ForSqlServer(),
+            artifactOutput: artifactOutput
+                ?? new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
+            expectedSourceInventory: sourceInventory ?? BuildSqlServerRequiredSourceInventory(),
+            dmsManagedTableInventory: dmsManagedTableInventory ?? BuildSqlServerDmsManagedTableInventory(),
+            connectorPrincipalProbeFactory: connectorPrincipalProbeFactory
+                ?? new TestConnectorPrincipalProbeFactory(),
+            databaseExecutor: databaseExecutor
+        );
+
+    internal static CdcProviderSetupResult BuildResult() =>
+        new(
+            Provider: CdcProvider.Postgresql,
+            Mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
+            Outcome: CdcProviderSetupOutcome.CreatedOrMatched,
+            BoundPhysicalSourceFingerprint: PostgresqlSourceFingerprint,
+            ObservedSourceFingerprint: PostgresqlSourceFingerprint,
+            ArtifactInventory:
+            [
+                new CdcProviderArtifactObservation(
+                    CdcProviderArtifactKind.PostgresqlPublication,
+                    new CdcSafeName("dms_binding_publication"),
+                    CdcProviderArtifactState.Matched,
+                    new Dictionary<string, string> { ["tables"] = "3" }
+                ),
+            ],
+            GrantInventory:
+            [
+                new CdcGrantObservation(
+                    CdcPrincipalKind.ConnectorPrincipal,
+                    new CdcSafeName("connector_principal"),
+                    CdcProviderArtifactKind.SourceTable,
+                    new CdcSafeName("dms.Document"),
+                    ["SELECT"],
+                    []
+                ),
+            ],
+            SourceTableInventory: BuildRequiredSourceInventory(),
+            ExpectedMessageKeyColumns:
+            [
+                new CdcExpectedMessageKeyColumns(
+                    CdcSourceTableKind.Document,
+                    [new DbColumnName("DocumentUuid")]
+                ),
+            ],
+            HeartbeatActionQuery: new CdcHeartbeatActionQuery(
+                """UPDATE "dms"."CdcHeartbeat" SET "HeartbeatSequence" = "HeartbeatSequence" + 1 WHERE "HeartbeatId" = 1""",
+                "7bda7f8a6f09c7b1e3a469f31eb1a05a05fb2be23e27a2f7ec330564a5d2e7c8"
+            ),
+            ProviderHistoryObservations:
+            [
+                new CdcProviderHistoryObservation(
+                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    new CdcSafeName("dms_binding_slot"),
+                    new Dictionary<string, string> { ["plugin"] = "pgoutput" },
+                    CdcProviderRetryContinuityClassification.None
+                ),
+            ],
+            ManifestPayload: new CdcProviderManifestPayload(
+                new CdcSafeName("cdc-provider.pgsql.manifest.json"),
+                """{"provider":"postgresql"}"""
+            ),
+            Diagnostics:
+            [
+                new CdcProviderDiagnostic(
+                    Code: "CDC_SOURCE_TABLE_MISSING",
+                    Category: CdcProviderDiagnosticCategory.MissingRequiredSourceObject,
+                    Severity: CdcProviderDiagnosticSeverity.Error,
+                    PrincipalKind: CdcPrincipalKind.None,
+                    ArtifactKind: CdcProviderArtifactKind.SourceTable,
+                    SafeName: new CdcSafeName("dms.CdcHeartbeat"),
+                    ExpectedValue: "present",
+                    ObservedValue: "missing",
+                    ProviderErrorClass: "UndefinedTable",
+                    Classification: CdcProviderRetryContinuityClassification.FailClosed
+                ),
+            ]
+        );
+
+    internal static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceInventory() =>
+        new CoreDdlEmitter(SqlDialectFactory.Create(SqlDialect.Pgsql)).EmitWithMetadata().CdcSourceInventory;
+
+    internal static IReadOnlyList<CdcSourceTableInventory> BuildSqlServerRequiredSourceInventory() =>
+        new CoreDdlEmitter(SqlDialectFactory.Create(SqlDialect.Mssql)).EmitWithMetadata().CdcSourceInventory;
+
+    internal static IReadOnlyList<CdcSourceTableInventory> BuildRenamedSourceInventory(
+        IReadOnlyList<CdcSourceTableInventory> sourceInventory,
+        ISqlDialect dialect
+    )
+    {
+        var tableNamesByKind = new Dictionary<CdcSourceTableKind, DbTableName>
+        {
+            [CdcSourceTableKind.DocumentCache] = new(new DbSchemaName("cdc_source"), "DocumentCacheSource"),
+            [CdcSourceTableKind.Document] = new(new DbSchemaName("cdc_source"), "DocumentSource"),
+            [CdcSourceTableKind.CdcHeartbeat] = new(new DbSchemaName("cdc_source"), "HeartbeatSource"),
+        };
+
+        return sourceInventory
+            .Select(table =>
+            {
+                var tableName = tableNamesByKind[table.TableKind];
+                return new CdcSourceTableInventory(
+                    table.TableKind,
+                    tableName,
+                    dialect.QualifyTable(tableName),
+                    table.Columns
+                );
+            })
+            .ToArray();
+    }
+
+    internal static IReadOnlyList<CdcDmsManagedTableInventory> BuildPostgresqlDmsManagedTableInventory()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+
+        return BuildDmsManagedTableInventory(dialect);
+    }
+
+    internal static IReadOnlyList<CdcDmsManagedTableInventory> BuildSqlServerDmsManagedTableInventory()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+
+        return BuildDmsManagedTableInventory(dialect);
+    }
+
+    internal static IReadOnlyList<CdcDmsManagedTableInventory> BuildDmsManagedTableInventory(
+        ISqlDialect dialect,
+        DbTableName? resourceTable = null,
+        DbTableName? trackedChangeTable = null
+    )
+    {
+        DbTableName resolvedResourceTable =
+            resourceTable ?? new DbTableName(new DbSchemaName("edfi"), "School");
+        DbTableName resolvedTrackedChangeTable =
+            trackedChangeTable ?? new DbTableName(new DbSchemaName("tracked_changes_edfi"), "School");
+
+        return CdcDmsManagedTableInventoryContract.Normalize(
+            [
+                new(
+                    CdcDmsManagedTableKind.Core,
+                    DmsTableNames.DataStoreIdentity,
+                    dialect.QualifyTable(DmsTableNames.DataStoreIdentity)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Core,
+                    DmsTableNames.CdcHeartbeat,
+                    dialect.QualifyTable(DmsTableNames.CdcHeartbeat)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Core,
+                    DmsTableNames.Descriptor,
+                    dialect.QualifyTable(DmsTableNames.Descriptor)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Core,
+                    DmsTableNames.Document,
+                    dialect.QualifyTable(DmsTableNames.Document)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Core,
+                    DmsTableNames.DocumentCache,
+                    dialect.QualifyTable(DmsTableNames.DocumentCache)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Core,
+                    DmsTableNames.DocumentProjectionWork,
+                    dialect.QualifyTable(DmsTableNames.DocumentProjectionWork)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Core,
+                    DmsTableNames.ResourceKey,
+                    dialect.QualifyTable(DmsTableNames.ResourceKey)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Authorization,
+                    AuthObjectDefinitions.AuthEdOrgTable.Table,
+                    dialect.QualifyTable(AuthObjectDefinitions.AuthEdOrgTable.Table)
+                ),
+                new(
+                    CdcDmsManagedTableKind.Resource,
+                    resolvedResourceTable,
+                    dialect.QualifyTable(resolvedResourceTable)
+                ),
+                new(
+                    CdcDmsManagedTableKind.TrackedChange,
+                    resolvedTrackedChangeTable,
+                    dialect.QualifyTable(resolvedTrackedChangeTable)
+                ),
+            ],
+            "dmsManagedTableInventory"
+        );
+    }
+
+    internal static CdcPostgresqlInitialReplicationSlotProof BuildPostgresqlInitialSlotProof(
+        string replicationSlotName = "dms_binding_slot",
+        CdcSourceFingerprint? sourceFingerprint = null,
+        string? databaseIdentityToken = null,
+        string retainedRestartLsn = "0_16B6C50",
+        string retainedConfirmedFlushLsn = "0_16B6C50"
+    ) =>
+        new(
+            new CdcSafeName(replicationSlotName),
+            sourceFingerprint ?? PostgresqlSourceFingerprint,
+            new CdcSafeName(
+                databaseIdentityToken
+                    ?? CdcPostgresqlInitialReplicationSlotProof.CreateDatabaseIdentityToken("dms_test").Value
+            ),
+            retainedRestartLsn,
+            retainedConfirmedFlushLsn
+        );
+}
+
+internal static class CdcDms1320ArtifactNameTestAdapter
+{
+    // Temporary test adapter until the shared deterministic artifact-name helper lands.
+    internal static CdcProviderArtifactNames ForPostgresql(string generation = "binding") =>
+        CdcProviderArtifactNames.ForPostgresql(
+            new CdcSafeName($"dms_{generation}_publication"),
+            new CdcSafeName($"dms_{generation}_slot")
+        );
+
+    internal static CdcProviderArtifactNames ForSqlServer(string generation = "binding") =>
+        CdcProviderArtifactNames.ForSqlServer(
+            new CdcSafeName($"dms_{generation}_gate"),
+            new Dictionary<CdcSourceTableKind, CdcSafeName>
+            {
+                [CdcSourceTableKind.Document] = new($"dms_{generation}_document"),
+                [CdcSourceTableKind.DocumentCache] = new($"dms_{generation}_document_cache"),
+                [CdcSourceTableKind.CdcHeartbeat] = new($"dms_{generation}_cdc_heartbeat"),
+            }
+        );
+}
+
+[TestFixture]
+public class Given_CdcProviderSetupContract_Setup_Modes
+{
+    [Test]
+    public void It_should_expose_initial_create_or_exact_match()
+    {
+        Enum.GetNames<CdcProviderSetupMode>()
+            .Should()
+            .Contain(nameof(CdcProviderSetupMode.InitialCreateOrExactMatch));
+    }
+
+    [Test]
+    public void It_should_expose_validate_only()
+    {
+        Enum.GetNames<CdcProviderSetupMode>().Should().Contain(nameof(CdcProviderSetupMode.ValidateOnly));
+    }
+}
+
+[TestFixture]
+public class Given_CdcProviderSetupContract_Request
+{
+    [Test]
+    public void It_should_require_caller_supplied_provider_artifact_names()
+    {
+        var request = CdcProviderSetupContractTestData.BuildPostgresqlRequest();
+
+        request.ArtifactNames.Postgresql.Should().NotBeNull();
+        request.ArtifactNames.Postgresql!.PublicationName.Value.Should().Be("dms_binding_publication");
+        request.ArtifactNames.Postgresql.ReplicationSlotName.Value.Should().Be("dms_binding_slot");
+    }
+
+    [Test]
+    public void It_should_expose_metadata_safe_postgresql_initial_slot_proof()
+    {
+        var proof = CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof();
+
+        var request = CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+            postgresqlInitialReplicationSlotProof: proof
+        );
+
+        request.PostgresqlInitialReplicationSlotProof.Should().Be(proof);
+        proof.DatabaseIdentityToken.Value.Should().StartWith("postgresql_database_identity_sha256:");
+        proof.DatabaseIdentityToken.Value.Should().NotContain("dms_test");
+    }
+
+    [Test]
+    public void It_should_require_the_three_fixed_emitted_source_tables_only()
+    {
+        var request = CdcProviderSetupContractTestData.BuildPostgresqlRequest();
+
+        request
+            .ExpectedSourceInventory.Select(table => table.TableKind)
+            .Should()
+            .BeEquivalentTo([
+                CdcSourceTableKind.Document,
+                CdcSourceTableKind.DocumentCache,
+                CdcSourceTableKind.CdcHeartbeat,
+            ]);
+    }
+
+    [Test]
+    public void It_should_require_caller_supplied_dms_managed_table_inventory()
+    {
+        Action action = () =>
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(dmsManagedTableInventory: []);
+
+        action
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*DMS-managed table inventory must be supplied*");
+    }
+
+    [Test]
+    public void It_should_reject_missing_required_source_inventory()
+    {
+        var incompleteInventory = CdcProviderSetupContractTestData
+            .BuildRequiredSourceInventory()
+            .Where(table => table.TableKind != CdcSourceTableKind.CdcHeartbeat)
+            .ToArray();
+
+        Action action = () => CdcProviderSetupContractTestData.BuildPostgresqlRequest(incompleteInventory);
+
+        action
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*dms.DocumentCache, dms.Document, and dms.CdcHeartbeat*");
+    }
+
+    [Test]
+    public void It_should_reject_columns_that_are_not_in_table_ordinal_order()
+    {
+        var misorderedInventory = CdcProviderSetupContractTestData
+            .BuildRequiredSourceInventory()
+            .Select(table =>
+                table.TableKind == CdcSourceTableKind.Document
+                    ? new CdcSourceTableInventory(
+                        table.TableKind,
+                        table.TableName,
+                        table.EmittedQuotedTableName,
+                        [
+                            new CdcSourceColumnInventory(
+                                new DbColumnName("DocumentUuid"),
+                                @"""DocumentUuid""",
+                                2,
+                                "uuid",
+                                IsNullable: false
+                            ),
+                            new CdcSourceColumnInventory(
+                                new DbColumnName("DocumentId"),
+                                @"""DocumentId""",
+                                1,
+                                "bigint",
+                                IsNullable: false
+                            ),
+                        ]
+                    )
+                    : table
+            )
+            .ToArray();
+
+        Action action = () =>
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(sourceInventory: misorderedInventory);
+
+        action.Should().Throw<ArgumentException>().WithMessage("*table-ordinal order*");
+    }
+
+    [Test]
+    public void It_should_reject_source_inventory_missing_required_contract_columns()
+    {
+        var missingDocumentUuid = SourceInventoryWithoutColumn(
+            CdcProviderSetupContractTestData.BuildRequiredSourceInventory(),
+            CdcSourceTableKind.Document,
+            "DocumentUuid"
+        );
+
+        Action action = () =>
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(sourceInventory: missingDocumentUuid);
+
+        action.Should().Throw<ArgumentException>().WithMessage("*Document.DocumentUuid*");
+    }
+
+    [Test]
+    public void It_should_reject_heartbeat_inventory_missing_required_contract_columns()
+    {
+        var missingHeartbeatSequence = SourceInventoryWithoutColumn(
+            CdcProviderSetupContractTestData.BuildRequiredSourceInventory(),
+            CdcSourceTableKind.CdcHeartbeat,
+            "HeartbeatSequence"
+        );
+
+        Action action = () =>
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                sourceInventory: missingHeartbeatSequence
+            );
+
+        action.Should().Throw<ArgumentException>().WithMessage("*CdcHeartbeat.HeartbeatSequence*");
+    }
+
+    [Test]
+    public void It_should_not_accept_a_free_form_heartbeat_action_query()
+    {
+        typeof(CdcProviderSetupRequest)
+            .GetProperties()
+            .Select(property => property.Name)
+            .Should()
+            .NotContain("HeartbeatActionQuery");
+    }
+
+    private static IReadOnlyList<CdcSourceTableInventory> SourceInventoryWithoutColumn(
+        IReadOnlyList<CdcSourceTableInventory> sourceInventory,
+        CdcSourceTableKind tableKind,
+        string columnName
+    ) =>
+        sourceInventory
+            .Select(table =>
+                table.TableKind == tableKind
+                    ? new CdcSourceTableInventory(
+                        table.TableKind,
+                        table.TableName,
+                        table.EmittedQuotedTableName,
+                        table
+                            .Columns.Where(column =>
+                                !string.Equals(column.ColumnName.Value, columnName, StringComparison.Ordinal)
+                            )
+                            .Select(
+                                (column, index) =>
+                                    new CdcSourceColumnInventory(
+                                        column.ColumnName,
+                                        column.EmittedQuotedColumnName,
+                                        index + 1,
+                                        column.ProviderDataType,
+                                        column.IsNullable
+                                    )
+                            )
+                            .ToArray()
+                    )
+                    : table
+            )
+            .ToArray();
+}
+
+[TestFixture]
+public class Given_CdcProviderSetupContract_Result
+{
+    [Test]
+    public void It_should_expose_stable_result_fields()
+    {
+        typeof(CdcProviderSetupResult)
+            .GetProperties()
+            .Select(property => property.Name)
+            .Should()
+            .Contain([
+                nameof(CdcProviderSetupResult.Provider),
+                nameof(CdcProviderSetupResult.Mode),
+                nameof(CdcProviderSetupResult.Outcome),
+                nameof(CdcProviderSetupResult.BoundPhysicalSourceFingerprint),
+                nameof(CdcProviderSetupResult.ObservedSourceFingerprint),
+                nameof(CdcProviderSetupResult.ArtifactInventory),
+                nameof(CdcProviderSetupResult.GrantInventory),
+                nameof(CdcProviderSetupResult.SourceTableInventory),
+                nameof(CdcProviderSetupResult.ExpectedMessageKeyColumns),
+                nameof(CdcProviderSetupResult.HeartbeatActionQuery),
+                nameof(CdcProviderSetupResult.ProviderHistoryObservations),
+                nameof(CdcProviderSetupResult.ManifestPayload),
+                nameof(CdcProviderSetupResult.Diagnostics),
+            ]);
+    }
+
+    [Test]
+    public void It_should_return_heartbeat_action_query_only_as_provider_metadata()
+    {
+        var result = CdcProviderSetupContractTestData.BuildResult();
+
+        result.HeartbeatActionQuery.Should().NotBeNull();
+        result.HeartbeatActionQuery!.Sql.Should().Contain(@"""dms"".""CdcHeartbeat""");
+    }
+}
+
+[TestFixture]
+public class Given_CdcProviderSetupContract_Diagnostics
+{
+    [Test]
+    public void It_should_expose_required_diagnostic_categories()
+    {
+        Enum.GetNames<CdcProviderDiagnosticCategory>()
+            .Should()
+            .Contain([
+                nameof(CdcProviderDiagnosticCategory.SetupPrincipalFailure),
+                nameof(CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure),
+                nameof(CdcProviderDiagnosticCategory.MissingRequiredSourceObject),
+                nameof(CdcProviderDiagnosticCategory.WorkTableCaptureViolation),
+                nameof(CdcProviderDiagnosticCategory.WorkTableGrantViolation),
+                nameof(CdcProviderDiagnosticCategory.ProviderHistoryUnavailable),
+                nameof(CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence),
+            ]);
+    }
+
+    [Test]
+    public void It_should_expose_stable_diagnostic_fields()
+    {
+        typeof(CdcProviderDiagnostic)
+            .GetProperties()
+            .Select(property => property.Name)
+            .Should()
+            .Contain([
+                nameof(CdcProviderDiagnostic.Code),
+                nameof(CdcProviderDiagnostic.Category),
+                nameof(CdcProviderDiagnostic.Severity),
+                nameof(CdcProviderDiagnostic.PrincipalKind),
+                nameof(CdcProviderDiagnostic.ArtifactKind),
+                nameof(CdcProviderDiagnostic.SafeName),
+                nameof(CdcProviderDiagnostic.ExpectedValue),
+                nameof(CdcProviderDiagnostic.ObservedValue),
+                nameof(CdcProviderDiagnostic.ProviderErrorClass),
+                nameof(CdcProviderDiagnostic.Classification),
+            ]);
+    }
+}
+
+[TestFixture]
+public class Given_CdcProviderSetupContract_Serialization
+{
+    [Test]
+    public void It_should_not_serialize_probe_factories_or_secret_shaped_fields()
+    {
+        var request = CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+            postgresqlInitialReplicationSlotProof: CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof()
+        );
+        var json = JsonSerializer.Serialize(request);
+
+        json.Should().NotContain(nameof(CdcProviderSetupRequest.ConnectorPrincipalProbeFactory));
+        json.Should().NotContain(nameof(CdcProviderSetupRequest.DatabaseExecutor));
+        json.Should().Contain(nameof(CdcProviderSetupRequest.PostgresqlInitialReplicationSlotProof));
+        json.Should().Contain("dms_binding_slot");
+        json.Should().Contain("0_16B6C50");
+        json.Should().Contain("postgresql_database_identity_sha256");
+        json.Should().NotContain("dms_test");
+        json.Should().NotContain("Credential");
+        json.Should().NotContain("ConnectionString");
+        json.Should().NotContain("Password");
+        json.Should().NotContain("Secret");
+        json.Should().NotContain("Tenant");
+        json.Should().NotContain("DisplayName");
+        json.Should().NotContain("ServerName");
+        json.Should().NotContain("DatabaseName");
+        json.Should().NotContain("ConnectorJson");
+        json.Should().NotContain(CdcProviderSetupContractTestData.SourceIdentity);
+    }
+}

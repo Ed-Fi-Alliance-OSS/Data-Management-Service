@@ -414,6 +414,13 @@
           "EdFi.DataManagementService.Backend.RelationalModel": "[1.0.0, )"
         }
       },
+      "edfi.datamanagementservice.backend.ddl.publiccontract.compilecheck": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.External": "[1.0.0, )"
+        }
+      },
       "edfi.datamanagementservice.backend.external": {
         "type": "Project",
         "dependencies": {

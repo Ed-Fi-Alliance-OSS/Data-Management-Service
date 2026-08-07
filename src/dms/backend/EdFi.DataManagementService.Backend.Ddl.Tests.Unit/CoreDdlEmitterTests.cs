@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using NUnit.Framework;
@@ -65,6 +66,80 @@ public class Given_CoreDdlEmitter_With_MssqlDialect_Emitting_Twice
     {
         _first.Should().NotBeNullOrWhiteSpace();
     }
+}
+
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_CoreDdlEmitter_Ordinary_Tables_And_Cdc_Managed_Core_Table_Inventory(SqlDialect dialect)
+{
+    private IReadOnlyList<DbTableName> _ordinaryCoreTables = default!;
+    private IReadOnlyList<DbTableName> _cdcManagedCoreTables = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var sqlDialect = SqlDialectFactory.Create(dialect);
+        var coreEmission = new CoreDdlEmitter(sqlDialect).EmitWithMetadata();
+
+        _ordinaryCoreTables = ExtractOrdinaryCoreTables(coreEmission.Sql, dialect);
+        _cdcManagedCoreTables = CdcDmsManagedTableInventoryBuilder
+            .Build(sqlDialect, BuildEmptyModelSet(dialect), coreEmission.CdcSourceInventory)
+            .Select(table => table.TableName)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_should_keep_CdcHeartbeat_out_of_ordinary_core_DDL()
+    {
+        _ordinaryCoreTables
+            .Should()
+            .NotContain(
+                DmsTableNames.CdcHeartbeat,
+                "dms.CdcHeartbeat is created only by opt-in CDC provider setup"
+            );
+    }
+
+    [Test]
+    public void It_should_match_every_ordinary_core_table_plus_the_opt_in_CdcHeartbeat_table()
+    {
+        // Do not exclude any managed core table. CdcHeartbeat is the sole expected delta because
+        // provider setup creates it separately from ordinary CoreDdlEmitter DDL.
+        var expectedTables = _ordinaryCoreTables.Append(DmsTableNames.CdcHeartbeat);
+
+        _cdcManagedCoreTables
+            .Should()
+            .BeEquivalentTo(
+                expectedTables,
+                "CDC over-grant validation must cover ordinary core DDL plus its heartbeat table"
+            );
+    }
+
+    private static IReadOnlyList<DbTableName> ExtractOrdinaryCoreTables(string ddl, SqlDialect dialect)
+    {
+        var tablePattern = dialect switch
+        {
+            SqlDialect.Pgsql => @"^CREATE TABLE IF NOT EXISTS ""dms""\.""(?<table>[^""]+)""\r?$",
+            SqlDialect.Mssql => @"^CREATE TABLE \[dms\]\.\[(?<table>[^\]]+)\]\r?$",
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect"),
+        };
+
+        return Regex
+            .Matches(ddl, tablePattern, RegexOptions.Multiline)
+            .Select(match => new DbTableName(DmsTableNames.DmsSchema, match.Groups["table"].Value))
+            .ToArray();
+    }
+
+    private static DerivedRelationalModelSet BuildEmptyModelSet(SqlDialect dialect) =>
+        new(
+            new EffectiveSchemaInfo("1.0.0", "1.0.0", new string('0', 64), 0, new byte[32], [], []),
+            dialect,
+            [],
+            [],
+            [],
+            [],
+            [],
+            []
+        );
 }
 
 // ═══════════════════════════════════════════════════════════════════

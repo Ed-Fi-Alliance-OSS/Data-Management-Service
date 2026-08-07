@@ -7,6 +7,8 @@ using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
+internal sealed record CoreDdlEmission(string Sql, IReadOnlyList<CdcSourceTableInventory> CdcSourceInventory);
+
 /// <summary>
 /// Emits deterministic DDL for the core <c>dms.*</c> schema objects.
 /// <para>
@@ -131,13 +133,6 @@ public sealed class CoreDdlEmitter
         $"{_dialect.Rules.ScalarTypeDefaults.StringType}({maxLength})";
 
     /// <summary>
-    /// Gets the fixed ASCII stream-etag type. SQL Server uses varchar here instead of the
-    /// generic Unicode string default.
-    /// </summary>
-    private string StreamEtagType =>
-        _dialect.Rules.Dialect == SqlDialect.Mssql ? "varchar(64)" : StringType(64);
-
-    /// <summary>
     /// Gets the exact ASCII lifecycle-token type. SQL Server intentionally uses varchar plus
     /// binary collation so DATALENGTH checks match the fixed token byte lengths.
     /// </summary>
@@ -162,21 +157,18 @@ public sealed class CoreDdlEmitter
     private string BooleanType => _dialect.Rules.ScalarTypeDefaults.BooleanType;
 
     /// <summary>
-    /// Gets the default expression for generating change/version values from the core change-version sequence.
-    /// </summary>
-    private string SequenceDefault =>
-        _dialect.RenderSequenceDefaultExpression(
-            DmsTableNames.DmsSchema,
-            DmsTableNames.ChangeVersionSequence
-        );
-
-    /// <summary>
     /// Generates the complete core <c>dms.*</c> DDL script for the configured dialect.
     /// </summary>
     /// <returns>
     /// A deterministic, canonicalized SQL string containing all core schema objects.
     /// </returns>
-    public string Emit()
+    public string Emit() => EmitWithMetadata().Sql;
+
+    /// <summary>
+    /// Generates the complete core <c>dms.*</c> DDL script and the typed CDC source
+    /// inventory derived from the same core table definitions used by the emitted DDL.
+    /// </summary>
+    internal CoreDdlEmission EmitWithMetadata()
     {
         var writer = new SqlWriter(_dialect);
 
@@ -190,8 +182,44 @@ public sealed class CoreDdlEmitter
         EmitTriggers(writer);
         EmitSecurityAndGrants(writer);
 
-        return writer.ToString();
+        return new CoreDdlEmission(writer.ToString(), BuildCdcSourceInventory());
     }
+
+    private IReadOnlyList<CdcSourceTableInventory> BuildCdcSourceInventory() =>
+        CdcSourceInventoryContract
+            .RequiredSourceTableKinds.Select(kind => BuildCdcSourceTable(kind, CoreTableDefinition(kind)))
+            .ToArray();
+
+    private DmsCoreTableDefinition CoreTableDefinition(CdcSourceTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.DocumentCache => DmsCoreTableDefinitions.DocumentCache(_dialect),
+            CdcSourceTableKind.Document => DmsCoreTableDefinitions.Document(_dialect),
+            CdcSourceTableKind.CdcHeartbeat => DmsCoreTableDefinitions.CdcHeartbeat(_dialect),
+            _ => throw new InvalidOperationException("Unsupported CDC source table kind."),
+        };
+
+    private CdcSourceTableInventory BuildCdcSourceTable(
+        CdcSourceTableKind tableKind,
+        DmsCoreTableDefinition table
+    ) =>
+        new(
+            tableKind,
+            table.TableName,
+            _dialect.QualifyTable(table.TableName),
+            table
+                .Columns.Select(
+                    (column, index) =>
+                        new CdcSourceColumnInventory(
+                            column.ColumnName,
+                            _dialect.QuoteIdentifier(column.ColumnName.Value),
+                            index + 1,
+                            column.SqlType,
+                            column.IsNullable
+                        )
+                )
+                .ToArray()
+        );
 
     // ── Phase 1: Schemas ────────────────────────────────────────────────
 
@@ -446,41 +474,7 @@ public sealed class CoreDdlEmitter
     /// </summary>
     private void EmitDocumentTable(SqlWriter writer)
     {
-        writer.AppendLine(_dialect.CreateTableHeader(_documentTable));
-        writer.AppendLine("(");
-        using (writer.Indent())
-        {
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("DocumentId"), _dialect.IdentityBigintColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("DocumentUuid"), _dialect.UuidColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("ResourceKeyId"), _dialect.SmallintColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("CreatedByOwnershipTokenId"), _dialect.SmallintColumnType, true)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentVersion"), "bigint", false, "DF_Document_ContentVersion", SequenceDefault)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("IdentityVersion"), "bigint", false, "DF_Document_IdentityVersion", SequenceDefault)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentLastModifiedAt"), DateTimeType, false, "DF_Document_ContentLastModifiedAt", _dialect.CurrentTimestampDefaultExpression)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("IdentityLastModifiedAt"), DateTimeType, false, "DF_Document_IdentityLastModifiedAt", _dialect.CurrentTimestampDefaultExpression)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("CreatedAt"), DateTimeType, false, "DF_Document_CreatedAt", _dialect.CurrentTimestampDefaultExpression)},"
-            );
-            writer.AppendLine(_dialect.RenderNamedPrimaryKeyClause("PK_Document", [Col("DocumentId")]));
-        }
-        writer.AppendLine(");");
-        writer.AppendLine();
+        EmitCoreTableDefinition(writer, DmsCoreTableDefinitions.Document(_dialect), "PK_Document");
 
         writer.AppendLine(
             _dialect.AddUniqueConstraint(_documentTable, "UX_Document_DocumentUuid", [Col("DocumentUuid")])
@@ -493,47 +487,11 @@ public sealed class CoreDdlEmitter
     /// </summary>
     private void EmitDocumentCacheTable(SqlWriter writer)
     {
-        writer.AppendLine(_dialect.CreateTableHeader(_documentCacheTable));
-        writer.AppendLine("(");
-        using (writer.Indent())
-        {
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("DocumentId"), _dialect.DocumentIdColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("DocumentUuid"), _dialect.UuidColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("ProjectName"), StringType(256), false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("ResourceName"), StringType(256), false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("ResourceVersion"), StringType(32), false)},"
-            );
-            writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("ContentVersion"), "bigint", false)},");
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("StreamEtag"), StreamEtagType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("LastModifiedAt"), DateTimeType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("DocumentJson"), _dialect.JsonColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ComputedAt"), DateTimeType, false, DocumentCacheInventoryDefinition.DocumentCacheConstraints.ComputedAtDefault, _dialect.CurrentTimestampDefaultExpression)},"
-            );
-            writer.AppendLine(
-                _dialect.RenderNamedPrimaryKeyClause(
-                    DocumentCacheInventoryDefinition.DocumentCacheConstraints.PrimaryKey,
-                    [Col("DocumentId")]
-                )
-            );
-        }
-        writer.AppendLine(");");
-        writer.AppendLine();
+        EmitCoreTableDefinition(
+            writer,
+            DmsCoreTableDefinitions.DocumentCache(_dialect),
+            DocumentCacheInventoryDefinition.DocumentCacheConstraints.PrimaryKey
+        );
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
@@ -615,32 +573,45 @@ public sealed class CoreDdlEmitter
     /// </summary>
     private void EmitDocumentProjectionWorkTable(SqlWriter writer)
     {
-        writer.AppendLine(_dialect.CreateTableHeader(_documentProjectionWorkTable));
+        EmitCoreTableDefinition(
+            writer,
+            DmsCoreTableDefinitions.DocumentProjectionWork(_dialect),
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkConstraints.PrimaryKey
+        );
+    }
+
+    private void EmitCoreTableDefinition(
+        SqlWriter writer,
+        DmsCoreTableDefinition table,
+        string primaryKeyConstraintName
+    )
+    {
+        writer.AppendLine(_dialect.CreateTableHeader(table.TableName));
         writer.AppendLine("(");
         using (writer.Indent())
         {
+            foreach (var column in table.Columns)
+            {
+                writer.AppendLine($"{RenderColumnDefinition(column)},");
+            }
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("DocumentId"), _dialect.DocumentIdColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("RequiredContentVersion"), "bigint", false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("FirstEnqueuedAt"), DateTimeType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("LastEnqueuedAt"), DateTimeType, false)},"
-            );
-            writer.AppendLine(
-                _dialect.RenderNamedPrimaryKeyClause(
-                    DocumentCacheInventoryDefinition.DocumentProjectionWorkConstraints.PrimaryKey,
-                    [Col("DocumentId")]
-                )
+                _dialect.RenderNamedPrimaryKeyClause(primaryKeyConstraintName, table.PrimaryKeyColumns)
             );
         }
         writer.AppendLine(");");
         writer.AppendLine();
     }
+
+    private string RenderColumnDefinition(DmsCoreColumnDefinition column) =>
+        column.DefaultExpression is null
+            ? _dialect.RenderColumnDefinition(column.ColumnName, column.SqlType, column.IsNullable)
+            : _dialect.RenderColumnDefinitionWithNamedDefault(
+                column.ColumnName,
+                column.SqlType,
+                column.IsNullable,
+                column.DefaultConstraintName,
+                column.DefaultExpression
+            );
 
     /// <summary>
     /// Emits the <c>dms.EffectiveSchema</c> table definition.

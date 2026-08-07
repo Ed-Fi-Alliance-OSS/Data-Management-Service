@@ -20,6 +20,7 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Ddl\EdFi.DataManagementService.Backend.Ddl.csproj" />
+        <ProjectReference Include="..\EdFi.DataManagementService.Backend.Ddl.PublicContract.CompileCheck\EdFi.DataManagementService.Backend.Ddl.PublicContract.CompileCheck.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.External\EdFi.DataManagementService.Backend.External.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Tests.Common\EdFi.DataManagementService.Backend.Tests.Common.csproj" />
         <ProjectReference Include="..\..\clis\EdFi.DataManagementService.SchemaTools\EdFi.DataManagementService.SchemaTools.csproj" />
