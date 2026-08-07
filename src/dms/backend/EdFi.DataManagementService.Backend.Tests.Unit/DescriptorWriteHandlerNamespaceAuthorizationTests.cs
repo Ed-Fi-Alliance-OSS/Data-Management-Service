@@ -844,6 +844,294 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [Test]
+    public async Task It_validates_a_descriptor_post_custom_view_configured_before_a_namespace_no_prefixes_terminal()
+    {
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var validationExecutor = new RecordingCustomViewValidationExecutor();
+        var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(
+                namespacePrefixes: [],
+                authorizationStrategies: [DeleteCustomViewStrategy(), NamespaceStrategy()]
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
+        validationExecutor
+            .Commands.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain(DeleteCustomViewStrategyName);
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_does_not_validate_a_descriptor_post_custom_view_configured_after_a_namespace_no_prefixes_terminal()
+    {
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var validationExecutor = new RecordingCustomViewValidationExecutor();
+        var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(
+                namespacePrefixes: [],
+                authorizationStrategies: [NamespaceStrategy(), DeleteCustomViewStrategy()]
+            )
+        );
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>();
+        validationExecutor.Commands.Should().BeEmpty();
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_validates_a_descriptor_put_custom_view_configured_before_an_unsupported_strategy()
+    {
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var validationExecutor = new RecordingCustomViewValidationExecutor();
+        var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
+
+        var result = await sut.HandlePutAsync(
+            CreatePutRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategies:
+                [
+                    DeleteCustomViewStrategy(),
+                    UnsupportedStrategy(AuthorizationStrategyNameConstants.OwnershipBased),
+                ]
+            )
+        );
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureNotImplemented>();
+        validationExecutor
+            .Commands.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain(DeleteCustomViewStrategyName);
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_fails_closed_for_a_descriptor_write_custom_view_needing_a_proposed_reference_value()
+    {
+        // A basis reached through a document reference needs a proposed basis value bound from the finalized
+        // root row, which descriptor writes have no equivalent of. Skipping the check would serve a write the
+        // strategy restricts, so the plan is rejected before the write session opens.
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory);
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(
+                namespacePrefixes: [],
+                authorizationStrategies: [CustomViewStrategy("StudentWithATag")],
+                mappingSet: CreateMappingSetWithStudentReference(SqlDialect.Pgsql)
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(
+                CustomViewAuthorizationSecurityConfigurationMessages.UnsupportedProposedBasisForDescriptorWrite(
+                    "StudentWithATag"
+                )
+            );
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_reports_a_self_basis_denial_through_the_precondition_helper_without_a_later_namespace_check()
+    {
+        // Seam E: the If-None-Match create resolves through the shared locked-precondition helper rather than
+        // the plain create path. The exact defect this guards was the two paths disagreeing, so the same
+        // configured-order rule has to hold here — the denial preempts both the namespace check and the
+        // precondition outcome.
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var validationExecutor = new RecordingCustomViewValidationExecutor();
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.CreateNew(_documentUuid),
+        };
+        var sut = CreateSut(
+            sessionFactory,
+            targetLookupService,
+            customViewValidationCommandExecutor: validationExecutor
+        );
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategies: [DeleteCustomViewStrategy(), NamespaceStrategy()],
+                writePrecondition: new WritePrecondition.IfNoneMatch(["\"some-etag\""])
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureCustomViewNotAuthorized>()
+            .Which.CustomViewFailure.StrategyName.Should()
+            .Be(DeleteCustomViewStrategyName);
+        validationExecutor.Commands.Should().ContainSingle();
+        // The outcome is the same in either ordering once namespace authorizes, so the ordering is only
+        // observable in whether the namespace statement was issued at all.
+        sessionFactory
+            .Session.Executor.Commands.Should()
+            .NotContain(command =>
+                command.CommandText.Contains("namespacePrefixes", StringComparison.OrdinalIgnoreCase)
+            );
+    }
+
+    [Test]
+    public async Task It_runs_a_namespace_check_configured_first_before_a_precondition_helper_self_basis_denial()
+    {
+        // The mirror of the previous case through the same helper: NamespaceBased is configured first, so it
+        // runs, and the denial is reported only once it authorizes.
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var validationExecutor = new RecordingCustomViewValidationExecutor();
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.CreateNew(_documentUuid),
+        };
+        var sut = CreateSut(
+            sessionFactory,
+            targetLookupService,
+            customViewValidationCommandExecutor: validationExecutor
+        );
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategies: [NamespaceStrategy(), DeleteCustomViewStrategy()],
+                writePrecondition: new WritePrecondition.IfNoneMatch(["\"some-etag\""])
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureCustomViewNotAuthorized>()
+            .Which.CustomViewFailure.StrategyName.Should()
+            .Be(DeleteCustomViewStrategyName);
+        validationExecutor.Commands.Should().ContainSingle();
+        // The mirror assertion: configured first, the namespace statement is issued before the denial.
+        sessionFactory
+            .Session.Executor.Commands.Should()
+            .Contain(command =>
+                command.CommandText.Contains("namespacePrefixes", StringComparison.OrdinalIgnoreCase)
+            );
+    }
+
+    [Test]
+    public async Task It_reports_a_self_basis_denial_without_running_a_namespace_check_configured_after_it()
+    {
+        // Configured order decides the first failure. The denial is deterministic and configured first, so the
+        // namespace check never runs — no session is opened at all.
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var validationExecutor = new RecordingCustomViewValidationExecutor();
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.CreateNew(_documentUuid),
+        };
+        var sut = CreateSut(
+            sessionFactory,
+            targetLookupService,
+            customViewValidationCommandExecutor: validationExecutor
+        );
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategies: [DeleteCustomViewStrategy(), NamespaceStrategy()]
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureCustomViewNotAuthorized>()
+            .Which.CustomViewFailure.StrategyName.Should()
+            .Be(DeleteCustomViewStrategyName);
+        validationExecutor.Commands.Should().ContainSingle();
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_runs_a_namespace_check_configured_before_a_self_basis_denial_first()
+    {
+        // The mirror case: NamespaceBased is configured first, so it runs — which requires a session — and the
+        // denial is only reported once that check has authorized.
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var validationExecutor = new RecordingCustomViewValidationExecutor();
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.CreateNew(_documentUuid),
+        };
+        var sut = CreateSut(
+            sessionFactory,
+            targetLookupService,
+            customViewValidationCommandExecutor: validationExecutor
+        );
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategies: [NamespaceStrategy(), DeleteCustomViewStrategy()]
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureCustomViewNotAuthorized>()
+            .Which.CustomViewFailure.StrategyName.Should()
+            .Be(DeleteCustomViewStrategyName);
+        // The session proves the earlier namespace check actually ran before the denial was reported.
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        validationExecutor.Commands.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_denies_a_descriptor_post_create_with_a_self_basis_custom_view_after_validating_the_view()
+    {
+        // The row does not exist yet, so no view row can reference it — a deterministic auth.md 2.4 denial. The
+        // view is still probed first so a misconfigured view keeps its own 500, and no session is opened.
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var validationExecutor = new RecordingCustomViewValidationExecutor();
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.CreateNew(_documentUuid),
+        };
+        var sut = CreateSut(
+            sessionFactory,
+            targetLookupService,
+            customViewValidationCommandExecutor: validationExecutor
+        );
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(namespacePrefixes: [], authorizationStrategies: [DeleteCustomViewStrategy()])
+        );
+
+        var failure = result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureCustomViewNotAuthorized>()
+            .Subject.CustomViewFailure;
+        failure.StrategyName.Should().Be(DeleteCustomViewStrategyName);
+        failure.FailureKind.Should().Be(CustomViewAuthorizationFailureKind.NoMatchingRow);
+        failure.ValueSource.Should().Be(CustomViewAuthorizationFailureValueSource.Proposed);
+        validationExecutor
+            .Commands.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain(DeleteCustomViewStrategyName);
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_validates_a_descriptor_delete_custom_view_configured_before_a_namespace_no_prefixes_terminal()
     {
         // The namespace 403 resolves before the write session opens, but a custom view configured ahead of it
@@ -1270,6 +1558,29 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
 
     private static DescriptorWriteRequest CreatePostRequest(
         IReadOnlyList<string> namespacePrefixes,
+        AuthorizationStrategyEvaluator[] authorizationStrategies,
+        string @namespace = "uri://ed-fi.org/SchoolTypeDescriptor",
+        string codeValue = "Charter",
+        SqlDialect dialect = SqlDialect.Pgsql,
+        WritePrecondition? writePrecondition = null,
+        MappingSet? mappingSet = null
+    ) =>
+        new(
+            mappingSet ?? CreateMappingSet(dialect),
+            _descriptorResource,
+            CreateDescriptorRequestBody(@namespace, codeValue),
+            _documentUuid,
+            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
+            new TraceId("descriptor-post-namespace"),
+            authorizationStrategies,
+            new RelationalAuthorizationContext([], namespacePrefixes)
+        )
+        {
+            WritePrecondition = writePrecondition ?? new WritePrecondition.None(),
+        };
+
+    private static DescriptorWriteRequest CreatePostRequest(
+        IReadOnlyList<string> namespacePrefixes,
         AuthorizationStrategyEvaluator authorizationStrategy,
         string @namespace = "uri://ed-fi.org/SchoolTypeDescriptor",
         string codeValue = "Charter",
@@ -1283,6 +1594,24 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
             new TraceId("descriptor-post-namespace"),
             [authorizationStrategy],
+            new RelationalAuthorizationContext([], namespacePrefixes)
+        );
+
+    private static DescriptorWriteRequest CreatePutRequest(
+        IReadOnlyList<string> namespacePrefixes,
+        AuthorizationStrategyEvaluator[] authorizationStrategies,
+        string @namespace = "uri://ed-fi.org/SchoolTypeDescriptor",
+        string codeValue = "Charter",
+        SqlDialect dialect = SqlDialect.Pgsql
+    ) =>
+        new(
+            CreateMappingSet(dialect),
+            _descriptorResource,
+            CreateDescriptorRequestBody(@namespace, codeValue),
+            _documentUuid,
+            referentialId: null,
+            new TraceId("descriptor-put-namespace"),
+            authorizationStrategies,
             new RelationalAuthorizationContext([], namespacePrefixes)
         );
 
@@ -1325,6 +1654,9 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
 
     private static AuthorizationStrategyEvaluator DeleteCustomViewStrategy() =>
         new(DeleteCustomViewStrategyName, [], FilterOperator.And);
+
+    private static AuthorizationStrategyEvaluator CustomViewStrategy(string strategyName) =>
+        new(strategyName, [], FilterOperator.And);
 
     private static DescriptorDeleteRequest CreateDeleteRequest(
         IReadOnlyList<string> namespacePrefixes,
@@ -1419,9 +1751,19 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             }
         );
 
-    private static MappingSet CreateMappingSet(SqlDialect dialect)
+    /// <summary>
+    /// A descriptor mapping set whose root carries a document reference to <c>Ed-Fi.Student</c>. No shipped
+    /// ApiSchema produces this shape — see the ApiSchema pinning test — but nothing in the model builder
+    /// prevents it, so the descriptor write path's fail-closed branch needs a way to be reached.
+    /// </summary>
+    private static MappingSet CreateMappingSetWithStudentReference(SqlDialect dialect) =>
+        CreateMappingSet(dialect, withStudentReference: true);
+
+    private static MappingSet CreateMappingSet(SqlDialect dialect, bool withStudentReference = false)
     {
         var resourceKey = new ResourceKeyEntry(1, _descriptorResource, "1.0.0", true);
+        var studentResource = new QualifiedResourceName("Ed-Fi", "Student");
+        var studentResourceKey = new ResourceKeyEntry(2, studentResource, "1.0.0", true);
         var descriptorSchema = new DbSchemaName("dms");
         var rootTable = new DbTableModel(
             new DbTableName(descriptorSchema, "Descriptor"),
@@ -1449,6 +1791,20 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
                     null,
                     new ColumnStorage.Stored()
                 ),
+                .. withStudentReference
+                    ?
+                    [
+                        new DbColumnModel(
+                            new DbColumnName("StudentDocumentId"),
+                            ColumnKind.Scalar,
+                            new RelationalScalarType(ScalarKind.Int64),
+                            true,
+                            null,
+                            null,
+                            new ColumnStorage.Stored()
+                        ),
+                    ]
+                    : (DbColumnModel[])[],
             ],
             []
         );
@@ -1458,6 +1814,57 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             StorageKind: ResourceStorageKind.SharedDescriptorTable,
             Root: rootTable,
             TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings: withStudentReference
+                ?
+                [
+                    new DocumentReferenceBinding(
+                        IsIdentityComponent: false,
+                        ReferenceObjectPath: new JsonPathExpression("$.studentReference", []),
+                        Table: rootTable.Table,
+                        FkColumn: new DbColumnName("StudentDocumentId"),
+                        TargetResource: studentResource,
+                        IdentityBindings:
+                        [
+                            new ReferenceIdentityBinding(
+                                IdentityJsonPath: new JsonPathExpression("$.studentUniqueId", []),
+                                ReferenceJsonPath: new JsonPathExpression(
+                                    "$.studentReference.studentUniqueId",
+                                    []
+                                ),
+                                Column: new DbColumnName("StudentDocumentId")
+                            ),
+                        ]
+                    ),
+                ]
+                : [],
+            DescriptorEdgeSources: []
+        );
+        var studentRootTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "Student"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_Student",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            []
+        );
+        var studentResourceModel = new RelationalResourceModel(
+            Resource: studentResource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: studentRootTable,
+            TablesInDependencyOrder: [studentRootTable],
             DocumentReferenceBindings: [],
             DescriptorEdgeSources: []
         );
@@ -1481,13 +1888,15 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
                     ApiSchemaFormatVersion: "1.0",
                     RelationalMappingVersion: "v1",
                     EffectiveSchemaHash: "schema-hash",
-                    ResourceKeyCount: 1,
+                    ResourceKeyCount: (short)(withStudentReference ? 2 : 1),
                     ResourceKeySeedHash: [1, 2, 3],
                     SchemaComponentsInEndpointOrder:
                     [
                         new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false, "component-hash"),
                     ],
-                    ResourceKeysInIdOrder: [resourceKey]
+                    ResourceKeysInIdOrder: withStudentReference
+                        ? [resourceKey, studentResourceKey]
+                        : [resourceKey]
                 ),
                 Dialect: dialect,
                 ProjectSchemasInEndpointOrder:
@@ -1502,6 +1911,16 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
                         resourceModel,
                         descriptorMetadata
                     ),
+                    .. withStudentReference
+                        ?
+                        [
+                            new ConcreteResourceModel(
+                                studentResourceKey,
+                                ResourceStorageKind.RelationalTables,
+                                studentResourceModel
+                            ),
+                        ]
+                        : (ConcreteResourceModel[])[],
                 ],
                 AbstractIdentityTablesInNameOrder: [],
                 AbstractUnionViewsInNameOrder: [],
@@ -1510,14 +1929,23 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             ),
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
             ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
-            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
-            {
-                [resourceKey.Resource] = resourceKey.ResourceKeyId,
-            },
-            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
-            {
-                [resourceKey.ResourceKeyId] = resourceKey,
-            },
+            ResourceKeyIdByResource: withStudentReference
+                ? new Dictionary<QualifiedResourceName, short>
+                {
+                    [resourceKey.Resource] = resourceKey.ResourceKeyId,
+                    [studentResource] = studentResourceKey.ResourceKeyId,
+                }
+                : new Dictionary<QualifiedResourceName, short>
+                {
+                    [resourceKey.Resource] = resourceKey.ResourceKeyId,
+                },
+            ResourceKeyById: withStudentReference
+                ? new Dictionary<short, ResourceKeyEntry>
+                {
+                    [resourceKey.ResourceKeyId] = resourceKey,
+                    [studentResourceKey.ResourceKeyId] = studentResourceKey,
+                }
+                : new Dictionary<short, ResourceKeyEntry> { [resourceKey.ResourceKeyId] = resourceKey },
             SecurableElementColumnPathsByResource: new Dictionary<
                 QualifiedResourceName,
                 IReadOnlyList<ResolvedSecurableElementPath>

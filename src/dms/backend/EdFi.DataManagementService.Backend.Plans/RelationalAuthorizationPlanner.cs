@@ -145,7 +145,7 @@ public static class RelationalAuthorizationPlanner
             relationshipClassification is
             { Outcome: RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError };
 
-        var enforcesCustomViewChecks = EnforcesCustomViewChecks(operation, resource);
+        var enforcesCustomViewChecks = EnforcesCustomViewChecks(operation);
 
         if (hasSecurityConfigurationError && !enforcesCustomViewChecks)
         {
@@ -284,50 +284,34 @@ public static class RelationalAuthorizationPlanner
     }
 
     /// <summary>
-    /// Whether the caller for this operation and storage kind executes the custom-view checks this planner
-    /// hands back. When it does not, a configured custom view fails the request closed with 501 instead of
-    /// being silently dropped — dropping it would serve data the strategy was configured to restrict.
+    /// Whether the caller for this operation executes the custom-view checks this planner hands back. When it
+    /// does not, a configured custom view fails the request closed with 501 instead of being silently dropped —
+    /// dropping it would serve data the strategy was configured to restrict.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This is a property of the call site, not of the strategy: the same operation reaches the planner from
-    /// both the regular-resource and descriptor paths, which are wired independently. Descriptors are
-    /// therefore split out by <see cref="ResourceStorageKind.SharedDescriptorTable"/> rather than assumed to
-    /// follow the resource path.
+    /// Every operation's callers now execute them, for both storage kinds: the regular-resource paths carry the
+    /// checks in their <c>AUTH1</c> statements, and the descriptor paths — which have no <c>AUTH1</c> statement
+    /// to carry them — run them as their own membership query ordered against that path's namespace check.
+    /// <c>Update</c> covers both write verbs, because a POST resolves to a create or an upsert-as-update only
+    /// in-session, so both value sources are planned the same way.
     /// </para>
-    /// <list type="bullet">
-    /// <item><description><c>ReadMany</c> — both storage kinds execute page filters (DMS-1062).</description></item>
-    /// <item><description><c>ReadSingle</c> — both storage kinds execute stored checks. The descriptor
-    /// GET-by-id path has no <c>AUTH1</c> statement to carry them, so it runs them as their own membership
-    /// query ordered against its in-memory namespace check.</description></item>
-    /// <item><description><c>Delete</c> — both storage kinds execute stored checks. The descriptor DELETE
-    /// path runs them inside its locked-target boundary as their own membership query, ordered against its
-    /// namespace check.</description></item>
-    /// <item><description><c>Update</c> — the regular-resource POST/PUT paths execute them; their descriptor
-    /// counterpart does not yet. It covers both write verbs because a POST resolves to a create or an
-    /// upsert-as-update only in-session, so both value sources are planned the same way.</description></item>
-    /// </list>
     /// <para>
-    /// Each entry flips in the phase that wires that caller, and the corresponding
-    /// still-fails-closed test flips with it.
+    /// The predicate is kept rather than inlined so an operation added without such a caller defaults to
+    /// failing closed instead of inheriting enforcement it does not implement.
     /// </para>
     /// </remarks>
-    private static bool EnforcesCustomViewChecks(
-        NamespaceAuthorizationOperation operation,
-        ConcreteResourceModel resource
-    )
-    {
-        var isDescriptor = resource.StorageKind is ResourceStorageKind.SharedDescriptorTable;
-
-        return operation switch
+    private static bool EnforcesCustomViewChecks(NamespaceAuthorizationOperation operation) =>
+        operation switch
         {
             NamespaceAuthorizationOperation.ReadMany
             or NamespaceAuthorizationOperation.ReadSingle
-            or NamespaceAuthorizationOperation.Delete => true,
-            NamespaceAuthorizationOperation.Update => !isDescriptor,
+            or NamespaceAuthorizationOperation.Delete
+            or NamespaceAuthorizationOperation.Update => true,
+            // Unreachable for today's operations, and deliberately fail-closed: an operation added without a
+            // caller that executes the checks must keep its 501 rather than silently dropping them.
             _ => false,
         };
-    }
 
     /// <summary>
     /// Lowest <c>RawConfiguredIndex</c> among <paramref name="failures"/>. A failure without a configured

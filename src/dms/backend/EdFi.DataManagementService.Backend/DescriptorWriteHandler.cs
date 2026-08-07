@@ -91,22 +91,41 @@ internal sealed class DescriptorWriteHandler(
         switch (authorizationPreflight)
         {
             case DescriptorWriteAuthorizationPreflightOutcome.NotImplemented notImplemented:
+                await ValidateDescriptorWriteCustomViewsAsync(
+                        request.MappingSet,
+                        notImplemented.CustomViewChecksToValidate,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
                 return new UpsertResult.UpsertFailureNotImplemented(
                     notImplemented.FailureMessage,
                     UpsertFailureNotImplementedReason.StrategyNotEnabled
                 );
             case DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError configError:
+                await ValidateDescriptorWriteCustomViewsAsync(
+                        request.MappingSet,
+                        configError.CustomViewChecksToValidate,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
                 return new UpsertResult.UpsertFailureSecurityConfiguration(
                     configError.Errors,
                     configError.Diagnostics
                 );
             case DescriptorWriteAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
+                await ValidateDescriptorWriteCustomViewsAsync(
+                        request.MappingSet,
+                        namespaceNotAuthorized.CustomViewChecksToValidate,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
                 return new UpsertResult.UpsertFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure);
         }
 
         var proceed = (DescriptorWriteAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
         var storedNamespaceAuthorization = proceed.StoredNamespaceAuthorization;
         var proposedNamespaceAuthorization = proceed.ProposedNamespaceAuthorization;
+        var customViewAuthorization = proceed.CustomViewAuthorization;
 
         var body = DescriptorWriteBodyExtractor.Extract(request.RequestBody, request.Resource);
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(
@@ -151,6 +170,7 @@ internal sealed class DescriptorWriteHandler(
                                 documentUuid,
                                 resourceKeyId,
                                 proposedNamespaceAuthorization,
+                                customViewAuthorization,
                                 cancellationToken
                             )
                             .ConfigureAwait(false),
@@ -164,6 +184,7 @@ internal sealed class DescriptorWriteHandler(
                                 resourceKeyId,
                                 storedNamespaceAuthorization,
                                 proposedNamespaceAuthorization,
+                                customViewAuthorization,
                                 cancellationToken
                             )
                             .ConfigureAwait(false),
@@ -188,7 +209,8 @@ internal sealed class DescriptorWriteHandler(
                     request.ProfileName,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization,
-                    body.Namespace
+                    body.Namespace,
+                    customViewAuthorization
                 )
                 .ConfigureAwait(false);
 
@@ -242,6 +264,20 @@ internal sealed class DescriptorWriteHandler(
                     return new UpsertResult.UpsertFailureSecurityConfiguration(
                         [namespaceFailureMessage],
                         diagnostics
+                    );
+
+                case DescriptorLockedPreconditionResult.CustomViewNotAuthorized(var customViewFailure):
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new UpsertResult.UpsertFailureCustomViewNotAuthorized(customViewFailure);
+
+                case DescriptorLockedPreconditionResult.CustomViewAuthorizationInvalid(
+                    var customViewFailureMessage,
+                    var customViewDiagnostics
+                ):
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new UpsertResult.UpsertFailureSecurityConfiguration(
+                        [customViewFailureMessage],
+                        customViewDiagnostics
                     );
 
                 case DescriptorLockedPreconditionResult.Mismatch(var reason):
@@ -357,19 +393,38 @@ internal sealed class DescriptorWriteHandler(
         switch (authorizationPreflight)
         {
             case DescriptorWriteAuthorizationPreflightOutcome.NotImplemented notImplemented:
+                await ValidateDescriptorWriteCustomViewsAsync(
+                        request.MappingSet,
+                        notImplemented.CustomViewChecksToValidate,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
                 return new UpdateResult.UpdateFailureNotImplemented(notImplemented.FailureMessage);
             case DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError configError:
+                await ValidateDescriptorWriteCustomViewsAsync(
+                        request.MappingSet,
+                        configError.CustomViewChecksToValidate,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
                 return new UpdateResult.UpdateFailureSecurityConfiguration(
                     configError.Errors,
                     configError.Diagnostics
                 );
             case DescriptorWriteAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
+                await ValidateDescriptorWriteCustomViewsAsync(
+                        request.MappingSet,
+                        namespaceNotAuthorized.CustomViewChecksToValidate,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
                 return new UpdateResult.UpdateFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure);
         }
 
         var proceed = (DescriptorWriteAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
         var storedNamespaceAuthorization = proceed.StoredNamespaceAuthorization;
         var proposedNamespaceAuthorization = proceed.ProposedNamespaceAuthorization;
+        var customViewAuthorization = proceed.CustomViewAuthorization;
 
         var body = DescriptorWriteBodyExtractor.Extract(request.RequestBody, request.Resource);
 
@@ -395,7 +450,8 @@ internal sealed class DescriptorWriteHandler(
                         request.ProfileName,
                         storedNamespaceAuthorization,
                         proposedNamespaceAuthorization,
-                        body.Namespace
+                        body.Namespace,
+                        customViewAuthorization
                     )
                     .ConfigureAwait(false);
 
@@ -434,6 +490,20 @@ internal sealed class DescriptorWriteHandler(
                         return new UpdateResult.UpdateFailureSecurityConfiguration(
                             [namespaceFailureMessage],
                             diagnostics
+                        );
+
+                    case DescriptorLockedPreconditionResult.CustomViewNotAuthorized(var customViewFailure):
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return new UpdateResult.UpdateFailureCustomViewNotAuthorized(customViewFailure);
+
+                    case DescriptorLockedPreconditionResult.CustomViewAuthorizationInvalid(
+                        var customViewFailureMessage,
+                        var customViewDiagnostics
+                    ):
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return new UpdateResult.UpdateFailureSecurityConfiguration(
+                            [customViewFailureMessage],
+                            customViewDiagnostics
                         );
 
                     case DescriptorLockedPreconditionResult.Mismatch(var reason):
@@ -508,6 +578,7 @@ internal sealed class DescriptorWriteHandler(
                     documentUuid,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization,
+                    customViewAuthorization,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -979,10 +1050,31 @@ internal sealed class DescriptorWriteHandler(
         {
             // POST with If-Match where no existing document was found normally returns ETagMisMatch,
             // and If-None-Match on the same create proceeds to insert (the caller branches on the
-            // precondition type). Either way a configured proposed-value namespace authorization must
-            // run first so that a denial (403) precedes the precondition outcome. The proposed check is
-            // a single statement against the dialect's namespace authorization SQL and needs no row
-            // lookup.
+            // precondition type). Either way the configured proposed-value filters run before the
+            // precondition outcome, so an authorization denial (403) precedes it. Which of those filters
+            // answers is decided by CMS-configured order, below. The proposed namespace check is a single
+            // statement against the dialect's namespace authorization SQL and needs no row lookup.
+            // Same deterministic denial as the non-precondition create path: no row exists yet, so no view row
+            // can reference it. It and the proposed namespace check run in CMS-configured order, so whichever is
+            // configured first is the one that answers.
+            var createSelfBasisDenial = FindSelfBasisProposedCheck(customViewAuthorization);
+
+            if (
+                createSelfBasisDenial is not null
+                && !NamespacePrecedesSelfBasisDenial(proposedNamespaceAuthorization, createSelfBasisDenial)
+            )
+            {
+                return await BuildSelfBasisCreateDenialResultAsync(
+                        mappingSet,
+                        createSelfBasisDenial,
+                        static failure => new DescriptorLockedPreconditionResult.CustomViewNotAuthorized(
+                            failure
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
             if (proposedNamespaceAuthorization is not null)
             {
                 var preconditionFromProposed = await EvaluateNamespaceAuthorizationAsync(
@@ -999,6 +1091,19 @@ internal sealed class DescriptorWriteHandler(
                 {
                     return preconditionFromProposed;
                 }
+            }
+
+            if (createSelfBasisDenial is not null)
+            {
+                return await BuildSelfBasisCreateDenialResultAsync(
+                        mappingSet,
+                        createSelfBasisDenial,
+                        static failure => new DescriptorLockedPreconditionResult.CustomViewNotAuthorized(
+                            failure
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
             }
 
             return new DescriptorLockedPreconditionResult.CreateNew(createDocumentUuid);
@@ -1718,8 +1823,9 @@ internal sealed class DescriptorWriteHandler(
     /// orchestrator. Strategies other than <c>NamespaceBased</c> / <c>NoFurtherAuthorizationRequired</c>
     /// fail closed; the namespace planner terminals (no configured prefixes, no usable root column,
     /// MSSQL prefix cap) short-circuit with no DB roundtrip; otherwise the planner's checks are
-    /// split into stored-value (locked target) and proposed-value (request body) authorizations
-    /// re-indexed from zero, each executed as its own single-record statement inside the write
+    /// split into stored-value (locked target) and proposed-value (request body) namespace authorizations
+    /// re-indexed from zero — custom-view checks keep their request-wide indexes instead, so both value
+    /// sources can share one payload space — each executed as its own single-record statement inside the write
     /// session.
     /// </summary>
     private static DescriptorWriteAuthorizationPreflightOutcome ResolveDescriptorWriteAuthorization(
@@ -1742,7 +1848,8 @@ internal sealed class DescriptorWriteHandler(
 
         return orchestratorOutcome switch
         {
-            RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot =>
+            RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot => WriteTerminal(
+                request,
                 new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError(
                     [
                         NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
@@ -1751,33 +1858,63 @@ internal sealed class DescriptorWriteHandler(
                     ],
                     RelationalReadGuardrails.BuildNoUsableRootColumnDiagnostics(noUsableRoot.Resource)
                 ),
-            RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes =>
+                noUsableRoot.CustomViewStrategies,
+                noUsableRoot.RawConfiguredIndex
+            ),
+            RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes => WriteTerminal(
+                request,
                 new DescriptorWriteAuthorizationPreflightOutcome.NamespaceNotAuthorized(
                     NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
                 ),
+                noPrefixes.CustomViewStrategies,
+                noPrefixes.RawConfiguredIndex
+            ),
             RelationalAuthorizationPlanOutcome.Plan plan
                 when RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies(
                     plan.NonNamespaceConfiguredStrategies
-                ) => new DescriptorWriteAuthorizationPreflightOutcome.NotImplemented(
-                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
-                    request.Resource,
-                    request.AuthorizationStrategyEvaluators,
-                    operationLabel,
-                    actionLabel
-                )
-            ),
-            RelationalAuthorizationPlanOutcome.Plan plan => BuildDescriptorWritePlanPreflight(request, plan),
-            RelationalAuthorizationPlanOutcome.StillUnsupported =>
+                ) => WriteTerminal(
+                request,
                 new DescriptorWriteAuthorizationPreflightOutcome.NotImplemented(
                     RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
                         request.Resource,
                         request.AuthorizationStrategyEvaluators,
                         operationLabel,
-                        actionLabel
+                        actionLabel,
+                        plan.CustomViewStrategies
                     )
                 ),
+                plan.CustomViewStrategies,
+                // OwnershipBased executes last per auth.md regardless of configured position, so every
+                // resolved view runs before this 501.
+                int.MaxValue
+            ),
+            RelationalAuthorizationPlanOutcome.Plan plan => BuildDescriptorWritePlanPreflight(request, plan),
+            RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported => WriteTerminal(
+                request,
+                new DescriptorWriteAuthorizationPreflightOutcome.NotImplemented(
+                    RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
+                        request.Resource,
+                        request.AuthorizationStrategyEvaluators,
+                        operationLabel,
+                        actionLabel,
+                        stillUnsupported.RelationshipClassification.SupportedCustomViewStrategies
+                    )
+                ),
+                stillUnsupported.RelationshipClassification.SupportedCustomViewStrategies,
+                int.MaxValue
+            ),
             RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError =>
-                BuildDescriptorWriteSecurityConfigurationError(request.Resource, securityConfigurationError),
+                WriteTerminal(
+                    request,
+                    BuildDescriptorWriteSecurityConfigurationError(
+                        request.Resource,
+                        securityConfigurationError
+                    ),
+                    securityConfigurationError.RelationshipClassification.SupportedCustomViewStrategies,
+                    RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+                        securityConfigurationError.RelationshipClassification.SecurityConfigurationFailures
+                    )
+                ),
             _ => throw new InvalidOperationException(
                 $"Unsupported relational authorization plan outcome '{orchestratorOutcome.GetType().Name}'."
             ),
@@ -1815,14 +1952,396 @@ internal sealed class DescriptorWriteHandler(
         );
     }
 
+    /// <summary>
+    /// Runs one ordered custom-view segment inside a descriptor write's locked-target boundary, projecting the
+    /// outcome through the caller's result factories so POST and PUT keep their own result types.
+    /// </summary>
+    private async Task<TResult?> EvaluateLockedDescriptorWriteCustomViewsAsync<TResult>(
+        MappingSet mappingSet,
+        long documentId,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> runChecks,
+        RelationalCustomViewAuthorization? customViewAuthorization,
+        IRelationalCommandExecutor sessionCommandExecutor,
+        Func<CustomViewAuthorizationFailure, TResult> customViewNotAuthorizedFactory,
+        Func<string, SecurityConfigurationFailureDiagnostic[]?, TResult> authorizationInvalidFactory,
+        Func<TResult> staleTargetFactory,
+        CancellationToken cancellationToken
+    )
+        where TResult : class
+    {
+        if (runChecks.Count == 0 || customViewAuthorization is null)
+        {
+            return null;
+        }
+
+        var result = await ExecuteDescriptorCustomViewAuthorizationAsync(
+                mappingSet,
+                documentId,
+                runChecks,
+                customViewAuthorization.Checks,
+                sessionCommandExecutor,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return result switch
+        {
+            CustomViewAuthorizationExecutionResult.Authorized => null,
+            CustomViewAuthorizationExecutionResult.NotAuthorized notAuthorized =>
+                customViewNotAuthorizedFactory(notAuthorized.Failure),
+            CustomViewAuthorizationExecutionResult.InvalidAuthorizationFailure invalid =>
+                authorizationInvalidFactory(invalid.FailureMessage, invalid.Diagnostics),
+            CustomViewAuthorizationExecutionResult.StaleTarget => staleTargetFactory(),
+            _ => throw new InvalidOperationException(
+                $"Unsupported custom view authorization execution result '{result.GetType().Name}'."
+            ),
+        };
+    }
+
+    /// <summary>
+    /// The first self-basis proposed check whose configured strategy planned no stored check, or
+    /// <see langword="null"/> when every one of them is paired. A self-basis proposed check is only satisfied
+    /// by its stored pair, so an unpaired one has proven nothing and must fail closed.
+    /// </summary>
+    private static SingleRecordCustomViewAuthorizationCheckSpec? FindUnpairedSelfBasisProposedCheck(
+        RelationalCustomViewAuthorization? customViewAuthorization
+    )
+    {
+        if (customViewAuthorization is null)
+        {
+            return null;
+        }
+
+        foreach (var check in customViewAuthorization.ProposedChecks)
+        {
+            if (check.CheckTarget is not CustomViewAuthorizationCheckTarget.ProposedSelfBasisUnavailable)
+            {
+                continue;
+            }
+
+            var hasPairedStoredCheck = customViewAuthorization.Checks.Any(planned =>
+                planned.ValueSource is CustomViewAuthorizationCheckValueSource.Stored
+                && planned.ConfiguredStrategy == check.ConfiguredStrategy
+            );
+
+            if (!hasPairedStoredCheck)
+            {
+                return check;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The first proposed check that is not self-basis, or <see langword="null"/> when every one is. Descriptor
+    /// writes have no finalized root row to read a bound basis value from, so such a check cannot be executed
+    /// and must fail closed rather than be skipped.
+    /// </summary>
+    private static SingleRecordCustomViewAuthorizationCheckSpec? FindNonSelfBasisProposedCheck(
+        RelationalCustomViewAuthorization? customViewAuthorization
+    ) =>
+        customViewAuthorization?.ProposedChecks.FirstOrDefault(check =>
+            check.CheckTarget is not CustomViewAuthorizationCheckTarget.ProposedSelfBasisUnavailable
+        );
+
+    /// <summary>
+    /// Whether the proposed namespace check is configured strictly before a self-basis denial, and so still
+    /// runs ahead of it. Custom views and <c>NamespaceBased</c> are AND filters executing in CMS-configured
+    /// order and the first failure is the one reported, so a denial configured at or before the namespace
+    /// position preempts it — matching the tie rule that puts a custom view first at an equal index.
+    /// </summary>
+    private static bool NamespacePrecedesSelfBasisDenial(
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
+        SingleRecordCustomViewAuthorizationCheckSpec selfBasisDenial
+    ) =>
+        proposedNamespaceAuthorization is { Checks.Count: > 0 } namespaceAuthorization
+        && namespaceAuthorization.Checks[0].RawConfiguredIndex
+            < selfBasisDenial.ConfiguredStrategy.RawConfiguredIndex;
+
+    /// <summary>
+    /// The first self-basis proposed check, or <see langword="null"/> when none is planned.
+    /// </summary>
+    private static SingleRecordCustomViewAuthorizationCheckSpec? FindSelfBasisProposedCheck(
+        RelationalCustomViewAuthorization? customViewAuthorization
+    ) =>
+        customViewAuthorization?.ProposedChecks.FirstOrDefault(check =>
+            check.CheckTarget is CustomViewAuthorizationCheckTarget.ProposedSelfBasisUnavailable
+        );
+
+    /// <summary>
+    /// Validates the denying view, then projects its auth.md §2.4 access-denied failure through the caller's
+    /// result factory. Validating first is what keeps a missing or non-conforming view a 500 rather than being
+    /// reported as this denial.
+    /// </summary>
+    private async Task<TResult> BuildSelfBasisCreateDenialResultAsync<TResult>(
+        MappingSet mappingSet,
+        SingleRecordCustomViewAuthorizationCheckSpec selfBasisDenial,
+        Func<CustomViewAuthorizationFailure, TResult> customViewNotAuthorizedFactory,
+        CancellationToken cancellationToken
+    )
+    {
+        await ValidateDescriptorWriteCustomViewsSingleRecordAsync(
+                mappingSet,
+                [selfBasisDenial],
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return customViewNotAuthorizedFactory(BuildSelfBasisCreateDenial(selfBasisDenial));
+    }
+
+    /// <summary>
+    /// The auth.md §2.4 access-denied failure a self-basis proposed check produces on a create.
+    /// </summary>
+    private static CustomViewAuthorizationFailure BuildSelfBasisCreateDenial(
+        SingleRecordCustomViewAuthorizationCheckSpec check
+    ) =>
+        new(
+            CustomViewAuthorizationFailureKind.NoMatchingRow,
+            CustomViewAuthorizationFailureValueSource.Proposed,
+            check.Index,
+            check.ConfiguredStrategy.StrategyName,
+            [.. check.ReadableSecurableElements],
+            check.FailureHint
+        );
+
+    /// <summary>
+    /// Validates the views behind single-record checks decided in C#, where no membership statement runs.
+    /// </summary>
+    private Task ValidateDescriptorWriteCustomViewsSingleRecordAsync(
+        MappingSet mappingSet,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks,
+        CancellationToken cancellationToken
+    ) =>
+        _customViewValidationCommandExecutor is null
+            ? Task.CompletedTask
+            : CustomViewAuthorizationValidator.ValidateSingleRecordAsync(
+                _customViewValidationCommandExecutor,
+                mappingSet.Key.Dialect,
+                checks,
+                cancellationToken
+            );
+
+    /// <summary>
+    /// Builds a write terminal carrying the views configured strictly before <paramref name="terminalIndex"/>,
+    /// so those views are validated before the terminal is reported. A planning failure among them replaces the
+    /// terminal, matching how the descriptor read and DELETE paths order the two.
+    /// </summary>
+    private static DescriptorWriteAuthorizationPreflightOutcome WriteTerminal(
+        DescriptorWriteRequest request,
+        DescriptorWriteAuthorizationPreflightOutcome terminal,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
+        int terminalIndex
+    )
+    {
+        var strategiesToValidate = CustomViewAuthorizationTerminalOrdering.CustomViewsBeforeTerminal(
+            customViewStrategies,
+            terminalIndex
+        );
+
+        if (strategiesToValidate.Count == 0)
+        {
+            return terminal;
+        }
+
+        var outcome = CustomViewAuthorizationPlanner.Plan(
+            request.MappingSet,
+            request.MappingSet.GetConcreteResourceModelOrThrow(request.Resource),
+            strategiesToValidate
+        );
+
+        if (outcome is CustomViewAuthorizationPlanOutcome.SecurityConfiguration customViewSecurity)
+        {
+            var failure = BuildDescriptorWriteCustomViewSecurityConfigurationFailure(
+                request.Resource,
+                customViewSecurity.Failures
+            );
+
+            return new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError(
+                failure.Errors,
+                failure.Diagnostics,
+                PageDocumentIdCustomViewAdapter.AdaptFromChecks(
+                    CustomViewAuthorizationTerminalOrdering.ChecksBeforeTerminal(
+                        customViewSecurity.PlannedChecks,
+                        RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+                            customViewSecurity.Failures
+                        )
+                    )
+                )
+            );
+        }
+
+        var checksToValidate = PageDocumentIdCustomViewAdapter.AdaptFromChecks(
+            ((CustomViewAuthorizationPlanOutcome.Plan)outcome).Checks
+        );
+
+        return terminal switch
+        {
+            DescriptorWriteAuthorizationPreflightOutcome.NotImplemented notImplemented => notImplemented with
+            {
+                CustomViewChecksToValidate = checksToValidate,
+            },
+            DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError configError =>
+                configError with
+                {
+                    CustomViewChecksToValidate = checksToValidate,
+                },
+            DescriptorWriteAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized =>
+                namespaceNotAuthorized with
+                {
+                    CustomViewChecksToValidate = checksToValidate,
+                },
+            _ => throw new InvalidOperationException(
+                $"Descriptor write terminal '{terminal.GetType().Name}' cannot carry custom-view checks."
+            ),
+        };
+    }
+
+    /// <summary>
+    /// A custom-view planning failure reported as a descriptor write security-configuration result.
+    /// <see cref="RelationshipAuthorizationFailureKind.NoCustomViewJoinPath"/> keeps the specific join-path
+    /// message; every other kind keeps the guardrail's unknown-strategy wording.
+    /// </summary>
+    private static RelationalReadSecurityConfigurationFailure BuildDescriptorWriteCustomViewSecurityConfigurationFailure(
+        QualifiedResourceName resource,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    )
+    {
+        var guardrailFailure = RelationalReadGuardrails.BuildSecurityConfigurationFailure(
+            resource,
+            [],
+            new RelationshipAuthorizationClassification(
+                RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError,
+                [],
+                [],
+                [],
+                [],
+                failures
+            )
+        );
+
+        string[] joinPathErrors =
+        [
+            .. failures
+                .Where(static failure =>
+                    failure.FailureKind is RelationshipAuthorizationFailureKind.NoCustomViewJoinPath
+                )
+                .Select(static failure =>
+                    CustomViewAuthorizationFailureMessages.NoJoinPath(failure, "descriptor write")
+                ),
+        ];
+
+        return joinPathErrors.Length == 0
+            ? guardrailFailure
+            : guardrailFailure with
+            {
+                Errors = joinPathErrors,
+            };
+    }
+
+    /// <summary>
+    /// Plans the single-record custom-view checks a descriptor POST or PUT owes, across both value sources, or
+    /// reports the security-configuration failure that stops the write.
+    /// </summary>
+    private static bool TryPlanDescriptorWriteCustomViews(
+        DescriptorWriteRequest request,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
+        out RelationalCustomViewAuthorization? customViewAuthorization,
+        out DescriptorWriteAuthorizationPreflightOutcome? securityConfigurationFailure
+    )
+    {
+        customViewAuthorization = null;
+        securityConfigurationFailure = null;
+
+        if (customViewStrategies.Count == 0)
+        {
+            return true;
+        }
+
+        var outcome = SingleRecordCustomViewAuthorizationPlanner.Plan(
+            request.MappingSet,
+            request.MappingSet.GetConcreteResourceModelOrThrow(request.Resource),
+            customViewStrategies,
+            NamespaceAuthorizationOperation.Update
+        );
+
+        if (
+            outcome
+            is SingleRecordCustomViewAuthorizationPlanOutcome.SecurityConfiguration configurationFailure
+        )
+        {
+            var failure = BuildDescriptorWriteCustomViewSecurityConfigurationFailure(
+                request.Resource,
+                configurationFailure.Failures
+            );
+
+            securityConfigurationFailure =
+                new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError(
+                    failure.Errors,
+                    failure.Diagnostics
+                );
+            return false;
+        }
+
+        var checks = ((SingleRecordCustomViewAuthorizationPlanOutcome.Plan)outcome).Checks;
+
+        if (checks.Count == 0)
+        {
+            return true;
+        }
+
+        var planned = new RelationalCustomViewAuthorization(checks);
+
+        // Descriptor writes bind no document references, so there is no finalized root row to read a proposed
+        // basis value from. Only a self-basis proposed check can be settled here; anything else is a
+        // configuration defect this path cannot execute, and must fail closed rather than be skipped. No
+        // shipped ApiSchema produces it — see the pinning test — but nothing in the model builder prevents it.
+        if (FindNonSelfBasisProposedCheck(planned) is { } unsupported)
+        {
+            securityConfigurationFailure =
+                new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError(
+                    [
+                        CustomViewAuthorizationSecurityConfigurationMessages.UnsupportedProposedBasisForDescriptorWrite(
+                            unsupported.ConfiguredStrategy.StrategyName
+                        ),
+                    ],
+                    AuthorizationSecurityConfigurationDiagnostics.ForCustomViewProposedValueExtraction(checks)
+                );
+            return false;
+        }
+
+        customViewAuthorization = planned;
+
+        return true;
+    }
+
     private static DescriptorWriteAuthorizationPreflightOutcome BuildDescriptorWritePlanPreflight(
         DescriptorWriteRequest request,
         RelationalAuthorizationPlanOutcome.Plan plan
     )
     {
+        if (
+            !TryPlanDescriptorWriteCustomViews(
+                request,
+                plan.CustomViewStrategies,
+                out var customViewAuthorization,
+                out var customViewPlanFailure
+            )
+        )
+        {
+            return customViewPlanFailure!;
+        }
+
         if (plan.NamespaceChecks.Count == 0)
         {
-            return DescriptorWriteAuthorizationPreflightOutcome.Proceed.NoAuthorization;
+            return customViewAuthorization is null
+                ? DescriptorWriteAuthorizationPreflightOutcome.Proceed.NoAuthorization
+                : new DescriptorWriteAuthorizationPreflightOutcome.Proceed(
+                    null,
+                    null,
+                    customViewAuthorization
+                );
         }
 
         if (
@@ -1835,9 +2354,14 @@ internal sealed class DescriptorWriteHandler(
             )
         )
         {
-            return new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError(
-                [securityConfigurationMessage],
-                securityConfigurationDiagnostics
+            return WriteTerminal(
+                request,
+                new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError(
+                    [securityConfigurationMessage],
+                    securityConfigurationDiagnostics
+                ),
+                plan.CustomViewStrategies,
+                plan.NamespaceChecks[0].RawConfiguredIndex
             );
         }
 
@@ -1852,30 +2376,67 @@ internal sealed class DescriptorWriteHandler(
             namespacePrefixParameterization
         );
 
-        return new DescriptorWriteAuthorizationPreflightOutcome.Proceed(stored, proposed);
+        return new DescriptorWriteAuthorizationPreflightOutcome.Proceed(
+            stored,
+            proposed,
+            customViewAuthorization
+        );
     }
 
     private abstract record DescriptorWriteAuthorizationPreflightOutcome
     {
         private DescriptorWriteAuthorizationPreflightOutcome() { }
 
-        public sealed record NotImplemented(string FailureMessage)
-            : DescriptorWriteAuthorizationPreflightOutcome;
+        /// <param name="CustomViewChecksToValidate">
+        /// The views configured strictly before this terminal. They execute first, so a missing or
+        /// non-conforming view keeps its own 500 rather than being hidden by the terminal's response.
+        /// </param>
+        public sealed record NotImplemented(
+            string FailureMessage,
+            IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck> CustomViewChecksToValidate
+        ) : DescriptorWriteAuthorizationPreflightOutcome
+        {
+            public NotImplemented(string failureMessage)
+                : this(failureMessage, []) { }
+        }
 
+        /// <inheritdoc cref="NotImplemented.CustomViewChecksToValidate"/>
         public sealed record SecurityConfigurationError(
             string[] Errors,
-            SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
-        ) : DescriptorWriteAuthorizationPreflightOutcome;
+            SecurityConfigurationFailureDiagnostic[]? Diagnostics,
+            IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck> CustomViewChecksToValidate
+        ) : DescriptorWriteAuthorizationPreflightOutcome
+        {
+            public SecurityConfigurationError(
+                string[] errors,
+                SecurityConfigurationFailureDiagnostic[]? diagnostics = null
+            )
+                : this(errors, diagnostics, []) { }
+        }
 
-        public sealed record NamespaceNotAuthorized(NamespaceAuthorizationFailure Failure)
-            : DescriptorWriteAuthorizationPreflightOutcome;
+        /// <inheritdoc cref="NotImplemented.CustomViewChecksToValidate"/>
+        public sealed record NamespaceNotAuthorized(
+            NamespaceAuthorizationFailure Failure,
+            IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck> CustomViewChecksToValidate
+        ) : DescriptorWriteAuthorizationPreflightOutcome
+        {
+            public NamespaceNotAuthorized(NamespaceAuthorizationFailure failure)
+                : this(failure, []) { }
+        }
 
         public sealed record Proceed(
             RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization,
-            RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization
+            RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization,
+            RelationalCustomViewAuthorization? CustomViewAuthorization
         ) : DescriptorWriteAuthorizationPreflightOutcome
         {
-            public static Proceed NoAuthorization { get; } = new(null, null);
+            public Proceed(
+                RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+                RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
+            )
+                : this(storedNamespaceAuthorization, proposedNamespaceAuthorization, null) { }
+
+            public static Proceed NoAuthorization { get; } = new(null, null, null);
         }
     }
 
@@ -2115,6 +2676,7 @@ internal sealed class DescriptorWriteHandler(
         short resourceKeyId,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? customViewAuthorization,
         CancellationToken cancellationToken
     ) =>
         ApplyWithLockedDescriptorCurrentStateAsync<UpsertResult>(
@@ -2123,6 +2685,7 @@ internal sealed class DescriptorWriteHandler(
             documentId,
             storedNamespaceAuthorization,
             proposedNamespaceAuthorization,
+            customViewAuthorization,
             static () => new UpsertResult.UpsertFailureWriteConflict(),
             missingDescriptorDocumentId => new UpsertResult.UnknownFailure(
                 BuildMissingDescriptorMessage(request.Resource, missingDescriptorDocumentId)
@@ -2131,6 +2694,9 @@ internal sealed class DescriptorWriteHandler(
             static (failureMessage, diagnostics) =>
                 new UpsertResult.UpsertFailureSecurityConfiguration([failureMessage], diagnostics),
             static () => new UpsertResult.UpsertFailureWriteConflict(),
+            static customViewFailure => new UpsertResult.UpsertFailureCustomViewNotAuthorized(
+                customViewFailure
+            ),
             (persisted, currentEtag, writeSession, ct) =>
                 ApplyLockedDescriptorPostUpsertAsync(
                     request,
@@ -2153,6 +2719,7 @@ internal sealed class DescriptorWriteHandler(
         DocumentUuid documentUuid,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? customViewAuthorization,
         CancellationToken cancellationToken
     ) =>
         ApplyWithLockedDescriptorCurrentStateAsync<UpdateResult>(
@@ -2161,6 +2728,7 @@ internal sealed class DescriptorWriteHandler(
             documentId,
             storedNamespaceAuthorization,
             proposedNamespaceAuthorization,
+            customViewAuthorization,
             static () => new UpdateResult.UpdateFailureNotExists(),
             missingDescriptorDocumentId => new UpdateResult.UnknownFailure(
                 BuildMissingDescriptorMessage(request.Resource, missingDescriptorDocumentId)
@@ -2169,6 +2737,9 @@ internal sealed class DescriptorWriteHandler(
             static (failureMessage, diagnostics) =>
                 new UpdateResult.UpdateFailureSecurityConfiguration([failureMessage], diagnostics),
             static () => new UpdateResult.UpdateFailureNotExists(),
+            static customViewFailure => new UpdateResult.UpdateFailureCustomViewNotAuthorized(
+                customViewFailure
+            ),
             (persisted, currentEtag, writeSession, ct) =>
                 ApplyLockedDescriptorPutAsync(
                     request,
@@ -2189,11 +2760,13 @@ internal sealed class DescriptorWriteHandler(
         long documentId,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? customViewAuthorization,
         Func<TResult> missingDocumentResultFactory,
         Func<long, TResult> missingDescriptorResultFactory,
         Func<NamespaceAuthorizationFailure, TResult> namespaceNotAuthorizedFactory,
         Func<string, SecurityConfigurationFailureDiagnostic[]?, TResult> namespaceAuthorizationInvalidFactory,
         Func<TResult> namespaceStaleTargetFactory,
+        Func<CustomViewAuthorizationFailure, TResult> customViewNotAuthorizedFactory,
         Func<
             PersistedDescriptorState,
             string,
@@ -2232,11 +2805,36 @@ internal sealed class DescriptorWriteHandler(
                     return missingDescriptorResultFactory(documentId);
 
                 case DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag):
-                    // AND-compose stored then proposed namespace authorization against the locked target
-                    // before applying any change. Either denial returns the namespace 403 with no
-                    // INSERT/UPDATE statement, and short-circuits before the no-op or immutable-identity
+                    // AND-compose the configured filters against the locked target before applying any
+                    // change: the custom views configured at or before NamespaceBased, then stored and
+                    // proposed namespace, then the views configured after it. Any denial returns its 403 with
+                    // no INSERT/UPDATE statement, and short-circuits before the no-op or immutable-identity
                     // checks so 403 wins over those outcomes too.
                     var sessionCommandExecutor = writeSession.CreateCommandExecutor();
+                    var (customViewsBeforeNamespace, customViewsAfterNamespace) =
+                        PartitionDescriptorCustomViewRuns(
+                            customViewAuthorization,
+                            storedNamespaceAuthorization
+                        );
+
+                    var earlyCustomViewFailure = await EvaluateLockedDescriptorWriteCustomViewsAsync(
+                            request.MappingSet,
+                            documentId,
+                            customViewsBeforeNamespace,
+                            customViewAuthorization,
+                            sessionCommandExecutor,
+                            customViewNotAuthorizedFactory,
+                            namespaceAuthorizationInvalidFactory,
+                            namespaceStaleTargetFactory,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    if (earlyCustomViewFailure is not null)
+                    {
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return earlyCustomViewFailure;
+                    }
 
                     if (storedNamespaceAuthorization is not null)
                     {
@@ -2290,6 +2888,42 @@ internal sealed class DescriptorWriteHandler(
                         }
                     }
 
+                    var lateCustomViewFailure = await EvaluateLockedDescriptorWriteCustomViewsAsync(
+                            request.MappingSet,
+                            documentId,
+                            customViewsAfterNamespace,
+                            customViewAuthorization,
+                            sessionCommandExecutor,
+                            customViewNotAuthorizedFactory,
+                            namespaceAuthorizationInvalidFactory,
+                            namespaceStaleTargetFactory,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    if (lateCustomViewFailure is not null)
+                    {
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return lateCustomViewFailure;
+                    }
+
+                    // A self-basis proposed check against an existing target is satisfied by the paired stored
+                    // check that just authorized this row: a document's own DocumentId is immutable, so the
+                    // proposed basis value is the value already authorized. Without that pair nothing proved
+                    // it, so the plan fails closed.
+                    var unpairedSelfBasis = FindUnpairedSelfBasisProposedCheck(customViewAuthorization);
+
+                    if (unpairedSelfBasis is not null)
+                    {
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return namespaceAuthorizationInvalidFactory(
+                            CustomViewAuthorizationSecurityConfigurationMessages.UnpairedSelfBasisProposedCheck(
+                                unpairedSelfBasis.ConfiguredStrategy.StrategyName
+                            ),
+                            null
+                        );
+                    }
+
                     return await applyLoadedAsync(persisted, currentEtag, writeSession, cancellationToken)
                         .ConfigureAwait(false);
 
@@ -2318,9 +2952,30 @@ internal sealed class DescriptorWriteHandler(
         DocumentUuid documentUuid,
         short resourceKeyId,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? customViewAuthorization,
         CancellationToken cancellationToken
     )
     {
+        // A self-basis proposed check on a create has no DocumentId to prove membership for — the row does not
+        // exist yet, so no view row can reference it. The denial is deterministic, so when nothing is configured
+        // ahead of it no session is opened at all; the view is still validated so a misconfigured view keeps its
+        // own 500.
+        var selfBasisDenial = FindSelfBasisProposedCheck(customViewAuthorization);
+
+        if (
+            selfBasisDenial is not null
+            && !NamespacePrecedesSelfBasisDenial(proposedNamespaceAuthorization, selfBasisDenial)
+        )
+        {
+            return await BuildSelfBasisCreateDenialResultAsync(
+                    request.MappingSet,
+                    selfBasisDenial,
+                    static failure => new UpsertResult.UpsertFailureCustomViewNotAuthorized(failure),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
         await using var writeSession = await _writeSessionFactory
             .CreateAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -2354,6 +3009,21 @@ internal sealed class DescriptorWriteHandler(
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return proposedFailure;
                 }
+            }
+
+            // The namespace check was configured first and authorized, so the denial configured after it is now
+            // the first failure.
+            if (selfBasisDenial is not null)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+
+                return await BuildSelfBasisCreateDenialResultAsync(
+                        request.MappingSet,
+                        selfBasisDenial,
+                        static failure => new UpsertResult.UpsertFailureCustomViewNotAuthorized(failure),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
             }
 
             var insertResult = await InsertDescriptorAsync(

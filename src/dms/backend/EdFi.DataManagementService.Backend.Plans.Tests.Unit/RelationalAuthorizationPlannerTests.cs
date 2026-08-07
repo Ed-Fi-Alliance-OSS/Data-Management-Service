@@ -410,29 +410,13 @@ public class Given_RelationalAuthorizationPlanner
         plan.NonNamespaceConfiguredStrategies.Should().BeEmpty();
     }
 
-    [Test]
-    public void It_returns_still_unsupported_for_custom_views_on_a_descriptor_update()
-    {
-        // The descriptor write path does not execute custom-view checks yet, so it must keep failing closed
-        // even though the regular-resource POST/PUT paths now enforce them.
-        var outcome = RelationalAuthorizationPlanner.Plan(
-            EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor"), ResourceKey(3, "Student")),
-            DescriptorResource(),
-            NamespaceAuthorizationOperation.Update,
-            [Strategy("StudentWithCTECourseEnrollments", 0)],
-            TwoPrefixContext()
-        );
-
-        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
-    }
-
     [TestCase(NamespaceAuthorizationOperation.ReadMany)]
     [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
     [TestCase(NamespaceAuthorizationOperation.Delete)]
-    public void It_plans_custom_views_for_a_descriptor_read(NamespaceAuthorizationOperation operation)
+    [TestCase(NamespaceAuthorizationOperation.Update)]
+    public void It_plans_custom_views_for_a_descriptor_operation(NamespaceAuthorizationOperation operation)
     {
-        // Both descriptor read paths and descriptor DELETE execute custom-view checks, so storage kind gates
-        // only the write verbs now.
+        // Every descriptor path executes custom-view checks now, so storage kind no longer gates any of them.
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor"), ResourceKey(3, "Student")),
             DescriptorResource(),

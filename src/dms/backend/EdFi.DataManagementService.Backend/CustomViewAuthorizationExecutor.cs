@@ -232,6 +232,23 @@ internal static class CustomViewAuthorizationSqlSpecDefaults
 
 internal static class CustomViewAuthorizationSecurityConfigurationMessages
 {
+    /// <summary>
+    /// A self-basis proposed check is only ever satisfied by the stored check for the same configured
+    /// strategy, which is what authorizes the row whose immutable <c>DocumentId</c> the proposed value reuses.
+    /// Without that pair nothing has been proven, so the plan is a configuration defect.
+    /// </summary>
+    public static string UnpairedSelfBasisProposedCheck(string strategyName) =>
+        $"Relational custom view-based authorization metadata is invalid: strategy '{strategyName}' planned a "
+        + "self-basis proposed check with no paired stored check to authorize the existing row.";
+
+    /// <summary>
+    /// Descriptor writes have no finalized root row to read a bound basis value from, so a proposed check
+    /// whose basis is some other resource cannot be executed on that path.
+    /// </summary>
+    public static string UnsupportedProposedBasisForDescriptorWrite(string strategyName) =>
+        $"Relational custom view-based authorization metadata is invalid: strategy '{strategyName}' requires a "
+        + "proposed basis value from a document reference, which descriptor writes do not bind.";
+
     public const string InvalidAuthorizationMetadata =
         "Relational custom view-based authorization metadata is invalid: the authorization batch reported a "
         + "failure that does not correspond to any planned custom-view check.";
