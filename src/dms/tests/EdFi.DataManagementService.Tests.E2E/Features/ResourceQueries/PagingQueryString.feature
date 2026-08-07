@@ -123,9 +123,9 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
               And the response body is
                   """
                   {
-                        "detail": "The request could not be processed. See 'errors' for details.",
-                        "type": "urn:ed-fi:api:bad-request",
-                        "title": "Bad Request",
+                        "detail": "Parameters supplied to the request were invalid.",
+                        "type": "urn:ed-fi:api:bad-request:parameter-validation-failed",
+                        "title": "Parameter Validation Failed",
                         "status": 400,
                         "correlationId": null,
                         "validationErrors": {},
@@ -149,9 +149,9 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
               And the response body is
                   """
                   {
-                        "detail": "The request could not be processed. See 'errors' for details.",
-                        "type": "urn:ed-fi:api:bad-request",
-                        "title": "Bad Request",
+                        "detail": "Parameters supplied to the request were invalid.",
+                        "type": "urn:ed-fi:api:bad-request:parameter-validation-failed",
+                        "title": "Parameter Validation Failed",
                         "status": 400,
                         "correlationId": null,
                         "validationErrors": {},
@@ -164,3 +164,32 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   | value |
                   | -1    |
                   | 900   |
+
+        @e2e-ci-shard-4
+        Scenario Outline: 14 Ensure clients can not GET information when using an invalid totalCount value
+             When a GET request is made to "/ed-fi/schools?totalCount=<value>"
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                        "detail": "Parameters supplied to the request were invalid.",
+                        "type": "urn:ed-fi:api:bad-request:parameter-validation-failed",
+                        "title": "Parameter Validation Failed",
+                        "status": 400,
+                        "correlationId": null,
+                        "validationErrors": {},
+                        "errors": [
+                            "TotalCount must be a boolean value."
+                        ]
+                    }
+                  """
+              And the response headers include
+                  """
+                  {
+                        "Content-Type": "application/json; charset=utf-8"
+                    }
+                  """
+        Examples:
+                  | value |
+                  | abc   |
+                  | 1     |
