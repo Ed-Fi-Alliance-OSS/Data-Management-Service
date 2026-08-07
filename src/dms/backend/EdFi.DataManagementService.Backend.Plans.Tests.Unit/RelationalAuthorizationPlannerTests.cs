@@ -410,18 +410,15 @@ public class Given_RelationalAuthorizationPlanner
         plan.NonNamespaceConfiguredStrategies.Should().BeEmpty();
     }
 
-    [TestCase(NamespaceAuthorizationOperation.Delete)]
-    [TestCase(NamespaceAuthorizationOperation.Update)]
-    public void It_returns_still_unsupported_for_custom_views_on_a_descriptor_single_record_operation(
-        NamespaceAuthorizationOperation operation
-    )
+    [Test]
+    public void It_returns_still_unsupported_for_custom_views_on_a_descriptor_update()
     {
-        // The descriptor DELETE and write paths do not execute custom-view checks yet, so they must keep
-        // failing closed even though the regular-resource paths for the same operations now enforce them.
+        // The descriptor write path does not execute custom-view checks yet, so it must keep failing closed
+        // even though the regular-resource POST/PUT paths now enforce them.
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor"), ResourceKey(3, "Student")),
             DescriptorResource(),
-            operation,
+            NamespaceAuthorizationOperation.Update,
             [Strategy("StudentWithCTECourseEnrollments", 0)],
             TwoPrefixContext()
         );
@@ -431,9 +428,11 @@ public class Given_RelationalAuthorizationPlanner
 
     [TestCase(NamespaceAuthorizationOperation.ReadMany)]
     [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.Delete)]
     public void It_plans_custom_views_for_a_descriptor_read(NamespaceAuthorizationOperation operation)
     {
-        // Both descriptor read paths execute custom-view checks, so storage kind no longer gates either.
+        // Both descriptor read paths and descriptor DELETE execute custom-view checks, so storage kind gates
+        // only the write verbs now.
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor"), ResourceKey(3, "Student")),
             DescriptorResource(),

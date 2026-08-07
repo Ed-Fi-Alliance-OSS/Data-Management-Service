@@ -844,6 +844,85 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [Test]
+    public async Task It_validates_a_descriptor_delete_custom_view_configured_before_a_namespace_no_prefixes_terminal()
+    {
+        // The namespace 403 resolves before the write session opens, but a custom view configured ahead of it
+        // executes first, so a missing or non-conforming view keeps its own 500.
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var validationExecutor = new RecordingCustomViewValidationExecutor();
+        var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
+
+        var result = await sut.HandleDeleteAsync(
+            CreateDeleteRequest(
+                namespacePrefixes: [],
+                authorizationStrategies: [DeleteCustomViewStrategy(), NamespaceStrategy()]
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
+        validationExecutor
+            .Commands.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain(DeleteCustomViewStrategyName);
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_does_not_validate_a_descriptor_delete_custom_view_configured_after_a_namespace_no_prefixes_terminal()
+    {
+        // The run would have aborted at the namespace position, so a view configured after it never executes
+        // and must not be probed either.
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var validationExecutor = new RecordingCustomViewValidationExecutor();
+        var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
+
+        var result = await sut.HandleDeleteAsync(
+            CreateDeleteRequest(
+                namespacePrefixes: [],
+                authorizationStrategies: [NamespaceStrategy(), DeleteCustomViewStrategy()]
+            )
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNamespaceNotAuthorized>();
+        validationExecutor.Commands.Should().BeEmpty();
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_validates_a_descriptor_delete_custom_view_configured_before_an_unsupported_strategy()
+    {
+        // OwnershipBased executes last regardless of configured position, so every resolved view is validated
+        // before its 501.
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var validationExecutor = new RecordingCustomViewValidationExecutor();
+        var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
+
+        var result = await sut.HandleDeleteAsync(
+            CreateDeleteRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategies:
+                [
+                    DeleteCustomViewStrategy(),
+                    UnsupportedStrategy(AuthorizationStrategyNameConstants.OwnershipBased),
+                ]
+            )
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotImplemented>();
+        validationExecutor
+            .Commands.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain(DeleteCustomViewStrategyName);
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_returns_namespace_403_without_opening_a_session_when_the_client_has_no_prefixes()
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
@@ -1228,7 +1307,8 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     private static DescriptorWriteHandler CreateSut(
         RecordingNamespaceWriteSessionFactory sessionFactory,
         IRelationalWriteTargetLookupService? targetLookupService = null,
-        IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null
+        IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
+        IRelationalCommandExecutor? customViewValidationCommandExecutor = null
     ) =>
         new(
             targetLookupService ?? A.Fake<IRelationalWriteTargetLookupService>(),
@@ -1237,7 +1317,26 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             sessionFactory,
             NullLogger<DescriptorWriteHandler>.Instance,
             new ServedEtagComposer(),
-            providerFailureExtractor
+            providerFailureExtractor,
+            customViewValidationCommandExecutor: customViewValidationCommandExecutor
+        );
+
+    private const string DeleteCustomViewStrategyName = "SchoolTypeDescriptorWithATag";
+
+    private static AuthorizationStrategyEvaluator DeleteCustomViewStrategy() =>
+        new(DeleteCustomViewStrategyName, [], FilterOperator.And);
+
+    private static DescriptorDeleteRequest CreateDeleteRequest(
+        IReadOnlyList<string> namespacePrefixes,
+        AuthorizationStrategyEvaluator[] authorizationStrategies
+    ) =>
+        new(
+            CreateMappingSet(SqlDialect.Pgsql),
+            _descriptorResource,
+            _documentUuid,
+            new TraceId("descriptor-delete-namespace"),
+            authorizationStrategies,
+            new RelationalAuthorizationContext([], namespacePrefixes)
         );
 
     private sealed class StubRelationalWriteTargetLookupService : IRelationalWriteTargetLookupService
@@ -1566,5 +1665,28 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             await using var reader = new InMemoryRelationalCommandReader(resultSets);
             return await readAsync(reader, cancellationToken);
         }
+    }
+}
+
+/// <summary>
+/// Records the custom-view validation probes a descriptor write terminal issues. The probe is parameterless
+/// catalog SQL, so the recorded command text is the whole observable effect.
+/// </summary>
+internal sealed class RecordingCustomViewValidationExecutor : IRelationalCommandExecutor
+{
+    public SqlDialect Dialect => SqlDialect.Pgsql;
+
+    public List<string> Commands { get; } = [];
+
+    public Task<TResult> ExecuteReaderAsync<TResult>(
+        RelationalCommand command,
+        Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        Commands.Add(command.CommandText);
+
+        return Task.FromResult(default(TResult)!);
     }
 }
