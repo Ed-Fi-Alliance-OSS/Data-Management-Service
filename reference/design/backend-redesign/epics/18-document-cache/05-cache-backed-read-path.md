@@ -43,8 +43,9 @@ relational read path as the correctness path.
   cache-write/conditional-acknowledgement component.
 - When DMS-1190 Story 39 derivative routing is present, bind cache lookup, lifecycle reads,
   canonical-version comparison, and relational fallback to the request's selected physical
-  database. A snapshot or read-replica request either uses `DocumentCache` state from that
-  same database or bypasses cache acceleration; it never reads the parent primary's cache.
+  database. A snapshot or read-replica request uses `DocumentCache` state only from that
+  same database when it is eligible; otherwise it bypasses cache acceleration. It never
+  reads the parent primary's cache.
 - Under that same condition, treat an expected connection-establishment failure during
   cache data-source or connection construction, connection-string parsing, or open as an
   unavailable cache read and fall through to relational acquisition on the same selected
@@ -60,8 +61,8 @@ relational read path as the correctness path.
 ### Component Boundary
 
 - Add one read-acceleration coordinator around the existing relational GET/query body
-  assembly. The coordinator may live in the relational repository/read-handler layer and
-  may use provider-specific adapters, but it must not become a second authorization,
+  assembly. Implement the coordinator in the relational repository/read-handler layer with
+  provider-specific cache-lookup adapters. It must not become a second authorization,
   query-planning, hydration, or cache-writing pipeline.
 - The coordinator consumes the 18-01 resolved target context, the 18-02
   `IDocumentCacheMaterializer`-style service, and the 18-03 shared
@@ -87,7 +88,7 @@ relational read path as the correctness path.
   `DataStoreId`.
 - The cache lookup adapter must use the same physical database selected for the request.
   With DMS-1190 Story 39 present, the target kind (`Primary`, `Snapshot`, or
-  `ReadReplica`) is part of that binding decision. A derivative request may use only cache
+  `ReadReplica`) is part of that binding decision. A derivative request uses only cache
   state from that derivative database; it never opens the parent primary connection for
   lifecycle, source-version comparison, cache lookup, or fallback.
 - If the cache adapter cannot bind every cache-read operation to the request-selected
@@ -104,11 +105,11 @@ relational read path as the correctness path.
 
 - Authorization, query filtering, descriptor URI resolution, change-version filtering,
   total-count calculation, page ordering, and candidate `DocumentId` selection remain
-  relational. Cache rows may supply only the body for a candidate that the relational path
-  has already selected and authorized for a `200` response.
+  relational. Cache rows supply only the body for a candidate that the relational path has
+  already selected and authorized for a `200` response.
 - GET-by-id first runs the existing target lookup and GET authorization flow. Only after the
   request has a stable authorized `DocumentId`, `DocumentUuid`, resource key, and
-  `ContentVersion` may the coordinator attempt a cache lookup. `404`, wrong-resource,
+  `ContentVersion` does the coordinator attempt a cache lookup. `404`, wrong-resource,
   unsupported authorization, security-configuration, namespace/relationship denial, and
   authorization retry outcomes do not consult the cache.
 - GET-many first runs the existing relational page-candidate query, including
@@ -129,18 +130,16 @@ relational read path as the correctness path.
   outcomes for metrics and diagnostics. They all fall back relationally and do not surface
   as public cache-specific errors.
 
-### Query Page Fallback Choice
+### Query Page Fallback Rule
 
 - Use an all-or-nothing cache page for v1 GET-many. After relational candidate selection,
   perform one bounded batch cache lookup for the selected page. If every selected candidate
   is fresh, shape the response from cached JSON. If any selected candidate misses or is
   stale, hydrate and materialize the complete selected page through the existing relational
   path rather than mixing cached and relational documents in one response.
-- The all-or-nothing page rule is the simplest responsible option because it preserves
-  existing page hydration, readable-profile, link-stripping, and retry-boundary behavior
-  without adding partial-page merge semantics. A later optimization may hydrate only missed
-  documents, but it must prove identical ordering, profile, link, ETag, and total-count
-  behavior before replacing this rule.
+- The all-or-nothing page rule is the selected v1 solution because it preserves existing
+  page hydration, readable-profile, link-stripping, and retry-boundary behavior without
+  adding partial-page merge semantics.
 - Empty GET-many pages are successful relational candidate results and do not require a
   cache lookup or direct fill.
 
@@ -149,9 +148,9 @@ relational read path as the correctness path.
 - Treat `dms.DocumentCache.DocumentJson` as the 18-02 caller-agnostic cache projection:
   full unprofiled JSON with `id` and `_lastModifiedDate`, no served `_etag`, ordinary
   resource links in the fixed stream context, and descriptor no-link shape.
-- Never mutate the cached `JsonObject` instance in place. Clone or parse it into a
-  request-local JSON object before injecting served metadata or applying readable-profile
-  projection.
+- Never mutate cached JSON in place. The cache lookup adapter returns raw JSON content, and
+  the coordinator parses it into a request-local `JsonObject` with `System.Text.Json`
+  before injecting served metadata or applying readable-profile projection.
 - For cache hits, compose the served `_etag` with the same `IServedEtagComposer` inputs as
   the relational external-response path: current `ContentVersion`, selected
   effective-schema/schema epoch, JSON format, readable profile name when present,
@@ -174,10 +173,10 @@ relational read path as the correctness path.
   response. It must use the 18-02 materializer and 18-03 shared writer with caller purpose
   `DirectFill`; it must not build cache rows from already-shaped API response JSON, update
   `DocumentCache` directly, or acknowledge work through a read-path-specific SQL path.
-- For GET-by-id, direct fill may attempt the single authorized `DocumentId` that missed or
-  was stale. For GET-many, direct fill may attempt only the selected page's missed or stale
-  `DocumentId`s, sequentially or with a small bounded concurrency, and must stop when the
-  request-scoped `DirectFillTimeout` budget is exhausted.
+- For GET-by-id, direct fill attempts the single authorized `DocumentId` that missed or was
+  stale. For GET-many, direct fill attempts the selected page's missed or stale
+  `DocumentId`s sequentially and stops when the request-scoped `DirectFillTimeout` budget
+  is exhausted.
 - Direct fill is skipped when read acceleration is disabled, the target is not an exact
   resolved primary target, the lifecycle/target state is ineligible, the request is a
   snapshot or read-replica request, the relational result is not a successful external
@@ -193,9 +192,9 @@ relational read path as the correctness path.
 - Emit bounded counters for cache read attempts, hits, all-or-nothing page hits, misses by
   reason, fallback reason, expected adapter-acquisition failure, unexpected exception,
   direct-fill skipped/attempted/succeeded/failed/timed-out, and derivative-target bypass.
-  Add duration histograms for cache lookup and direct fill. Labels may include provider,
-  normalized target key, effective target kind when available, operation
-  (`getById`, `query`), resource kind (`resource`, `descriptor`), and bounded outcome.
+  Add duration histograms for cache lookup and direct fill. Labels include provider,
+  normalized target key, effective target kind, operation (`getById`, `query`), resource
+  kind (`resource`, `descriptor`), and bounded outcome.
   Do not label logs or metrics with `DocumentUuid`, `DocumentId`, `DocumentJson`, query
   parameter values, authorization subjects, namespace values, or profile payload content.
 - Unit tests should cover the coordinator decision table, response-shaping order, served
