@@ -151,6 +151,7 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
 
         var descriptorAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Descriptor);
         var tableAliasAllocator = PlanNamingConventions.CreateTableAliasAllocator();
+        var sourceGroups = BuildSourceGroups(sqlSources);
         var writer = new SqlWriter(_sqlDialect);
 
         writer.AppendLine("SELECT");
@@ -172,32 +173,20 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
 
             using (writer.Indent())
             {
-                for (var index = 0; index < sqlSources.Count; index++)
+                for (var index = 0; index < sourceGroups.Count; index++)
                 {
-                    var sqlSource = sqlSources[index];
-                    var tableModel = sqlSource.TableModel;
-                    var tableAlias = tableAliasAllocator.AllocateNext();
-
-                    writer.Append("SELECT ");
-
-                    if (sqlSources.Count == 1)
-                    {
-                        writer.Append("DISTINCT ");
-                    }
-
-                    AppendQualifiedColumn(writer, tableAlias, sqlSource.StorageColumn);
-                    writer.Append(" AS ").AppendQuoted(_descriptorIdProjectionColumn.Value).AppendLine();
-                    writer.Append("FROM ").AppendTable(tableModel.Table).AppendLine($" {tableAlias}");
-                    ProjectionSourceFilterSql.Append(
+                    ProjectionSourceBranchSql.Append(
                         writer,
-                        tableModel,
-                        tableAlias,
-                        sqlSource.StorageColumn,
+                        _planSqlDialect,
+                        sourceGroups[index],
+                        tableAliasAllocator.AllocateNextSourceAliases(),
+                        _descriptorIdProjectionColumn,
                         sourceFilter,
+                        emitDistinct: sourceGroups.Count == 1,
                         "descriptor projection plan"
                     );
 
-                    if (index + 1 < sqlSources.Count)
+                    if (index + 1 < sourceGroups.Count)
                     {
                         writer.AppendLine("UNION");
                     }
@@ -222,6 +211,41 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         writer.AppendLine(";");
 
         return writer.ToString();
+    }
+
+    /// <summary>
+    /// Determines the SQL-emission source grouping for descriptor projection.
+    /// </summary>
+    /// <remarks>
+    /// SQL Server groups by owning table, so a table contributing several descriptor columns is
+    /// scanned once and its columns expanded inline. PostgreSQL deliberately keeps one branch per
+    /// column: its planner cannot estimate distinctness through the row-set expansion, and the
+    /// resulting estimate collapse switches the comparatively small <c>dms.Descriptor</c> join from a
+    /// hash join to per-row nested loops. The expansion's offsetting saving is planning time, which
+    /// the read path does not pay once statements are auto-prepared, leaving only the join
+    /// regression. The document-reference lookup is unaffected because <c>dms.Document</c> is large
+    /// enough that nested loops are already the appropriate join for it.
+    /// </remarks>
+    private IReadOnlyList<ProjectionSourceTableGroup> BuildSourceGroups(
+        IReadOnlyList<DescriptorProjectionSqlSource> sqlSources
+    )
+    {
+        if (_planSqlDialect.Dialect is SqlDialect.Mssql)
+        {
+            return ProjectionSourceBranchSql.GroupByTable(
+                sqlSources,
+                static source => source.TableModel,
+                static source => source.StorageColumn
+            );
+        }
+
+        return
+        [
+            .. sqlSources.Select(static source => new ProjectionSourceTableGroup(
+                source.TableModel,
+                [source.StorageColumn]
+            )),
+        ];
     }
 
     private static DbColumnName ResolveStorageColumnOrThrow(

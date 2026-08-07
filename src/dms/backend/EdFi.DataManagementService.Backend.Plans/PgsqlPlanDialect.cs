@@ -25,6 +25,9 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
     /// <inheritdoc />
     public bool SupportsSingleDocumentHydration => true;
 
+    /// <inheritdoc />
+    public string CorrelatedRowSetJoinKeyword => "CROSS JOIN LATERAL";
+
     /// <summary>
     /// Appends a PostgreSQL <c>LIMIT</c>/<c>OFFSET</c> paging clause.
     /// </summary>

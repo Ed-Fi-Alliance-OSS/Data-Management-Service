@@ -1015,7 +1015,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
-    public void It_should_emit_exact_pgsql_DocumentReferenceLookup_sql_for_multiple_bindings_joined_with_UNION()
+    public void It_should_emit_exact_pgsql_DocumentReferenceLookup_sql_for_multiple_bindings_on_one_table_as_a_single_scan()
     {
         var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
             CreateRootMultiBindingReferenceProjectionResourceModel()
@@ -1033,15 +1033,11 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     doc."ResourceKeyId"
                 FROM
                     (
-                        SELECT t0."School_DocumentId" AS "DocumentId"
+                        SELECT DISTINCT v0."DocumentId"
                         FROM "edfi"."StudentReferenceProjection" t0
                         INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
-                        WHERE t0."School_DocumentId" IS NOT NULL
-                        UNION
-                        SELECT t1."Calendar_DocumentId" AS "DocumentId"
-                        FROM "edfi"."StudentReferenceProjection" t1
-                        INNER JOIN "page" k ON t1."DocumentId" = k."DocumentId"
-                        WHERE t1."Calendar_DocumentId" IS NOT NULL
+                        CROSS JOIN LATERAL (VALUES (t0."School_DocumentId"), (t0."Calendar_DocumentId")) AS v0("DocumentId")
+                        WHERE v0."DocumentId" IS NOT NULL
                     ) p
                 INNER JOIN "dms"."Document" doc ON doc."DocumentId" = p."DocumentId"
                 ORDER BY
@@ -1051,6 +1047,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 """
             );
 
+        lookup.SelectByKeysetSql.Should().NotContain("UNION");
         lookup
             .SourcesInOrder.Select(static source => source.FkColumn.Value)
             .Should()
@@ -1062,7 +1059,41 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
-    public void It_should_emit_exact_pgsql_DocumentReferenceLookup_single_document_sql_for_multiple_bindings_joined_with_UNION()
+    public void It_should_emit_exact_mssql_DocumentReferenceLookup_sql_for_multiple_bindings_on_one_table_as_a_single_scan()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Mssql).Compile(
+            CreateRootMultiBindingReferenceProjectionResourceModel()
+        );
+        var lookup = readPlan.DocumentReferenceLookup;
+
+        lookup.Should().NotBeNull();
+        lookup!
+            .SelectByKeysetSql.Should()
+            .Be(
+                """
+                SELECT
+                    doc.[DocumentId],
+                    doc.[DocumentUuid],
+                    doc.[ResourceKeyId]
+                FROM
+                    (
+                        SELECT DISTINCT v0.[DocumentId]
+                        FROM [edfi].[StudentReferenceProjection] t0
+                        INNER JOIN [#page] k ON t0.[DocumentId] = k.[DocumentId]
+                        CROSS APPLY (VALUES (t0.[School_DocumentId]), (t0.[Calendar_DocumentId])) AS v0([DocumentId])
+                        WHERE v0.[DocumentId] IS NOT NULL
+                    ) p
+                INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = p.[DocumentId]
+                ORDER BY
+                    doc.[DocumentId] ASC
+                ;
+
+                """
+            );
+    }
+
+    [Test]
+    public void It_should_emit_exact_pgsql_DocumentReferenceLookup_single_document_sql_for_multiple_bindings_on_one_table_as_a_single_scan()
     {
         var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
             CreateRootMultiBindingReferenceProjectionResourceModel()
@@ -1080,15 +1111,11 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     doc."ResourceKeyId"
                 FROM
                     (
-                        SELECT t0."School_DocumentId" AS "DocumentId"
+                        SELECT DISTINCT v0."DocumentId"
                         FROM "edfi"."StudentReferenceProjection" t0
+                        CROSS JOIN LATERAL (VALUES (t0."School_DocumentId"), (t0."Calendar_DocumentId")) AS v0("DocumentId")
                         WHERE t0."DocumentId" = @DocumentId
-                        AND t0."School_DocumentId" IS NOT NULL
-                        UNION
-                        SELECT t1."Calendar_DocumentId" AS "DocumentId"
-                        FROM "edfi"."StudentReferenceProjection" t1
-                        WHERE t1."DocumentId" = @DocumentId
-                        AND t1."Calendar_DocumentId" IS NOT NULL
+                        AND v0."DocumentId" IS NOT NULL
                     ) p
                 INNER JOIN "dms"."Document" doc ON doc."DocumentId" = p."DocumentId"
                 ORDER BY
@@ -1769,6 +1796,45 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             );
     }
 
+    [Test]
+    public void It_should_emit_exact_mssql_DescriptorProjection_sql_for_multiple_sources_on_one_table_as_a_single_scan()
+    {
+        var model = CreateKeyUnifiedDescriptorProjectionResourceModelWithStoredDescriptorSource();
+        var descriptorProjectionPlans = CompileDescriptorProjectionPlans(
+            model,
+            SqlDialect.Mssql,
+            CreateHydrationColumnOrdinalsExcludingStorageOnlyColumns(model.Root)
+        );
+
+        descriptorProjectionPlans.Should().ContainSingle();
+
+        var descriptorProjectionPlan = descriptorProjectionPlans.Single();
+
+        descriptorProjectionPlan
+            .SelectByKeysetSql.Should()
+            .Be(
+                """
+                SELECT
+                    p.[DescriptorId],
+                    d.[Uri]
+                FROM
+                    (
+                        SELECT DISTINCT v0.[DescriptorId]
+                        FROM [edfi].[Student] t0
+                        INNER JOIN [#page] k ON t0.[DocumentId] = k.[DocumentId]
+                        CROSS APPLY (VALUES (t0.[SchoolYearTypeDescriptorIdCanonical]), (t0.[ProgramTypeDescriptorId])) AS v0([DescriptorId])
+                        WHERE v0.[DescriptorId] IS NOT NULL
+                    ) p
+                INNER JOIN [dms].[Descriptor] d ON d.[DocumentId] = p.[DescriptorId]
+                ORDER BY
+                    p.[DescriptorId] ASC
+                ;
+
+                """
+            );
+        descriptorProjectionPlan.SelectBySingleDocumentSql.Should().BeNull();
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public void It_should_join_descriptor_projection_keysets_through_explicit_root_locators_for_stable_key_tables(
@@ -1820,6 +1886,14 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             sourceIndex: 2,
             tableModel: alignedExtensionTable
         );
+
+        // Three distinct source tables each contributing one descriptor column stay three separate
+        // branches, and none is expanded through the row-set primitive.
+        descriptorProjectionPlan
+            .SelectByKeysetSql.Split("UNION", StringSplitOptions.None)
+            .Should()
+            .HaveCount(3);
+        descriptorProjectionPlan.SelectByKeysetSql.Should().NotContain("VALUES (");
 
         if (dialect is SqlDialect.Mssql)
         {

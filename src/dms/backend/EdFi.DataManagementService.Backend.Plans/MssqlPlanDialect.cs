@@ -26,6 +26,9 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
     /// <inheritdoc />
     public bool SupportsSingleDocumentHydration => false;
 
+    /// <inheritdoc />
+    public string CorrelatedRowSetJoinKeyword => "CROSS APPLY";
+
     /// <summary>
     /// Appends a SQL Server <c>OFFSET</c>/<c>FETCH NEXT</c> paging clause.
     /// </summary>

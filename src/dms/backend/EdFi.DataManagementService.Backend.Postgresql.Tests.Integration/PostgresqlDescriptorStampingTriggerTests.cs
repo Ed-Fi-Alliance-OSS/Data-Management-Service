@@ -155,12 +155,24 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         return await _database.ExecuteScalarAsync<long>("""SELECT "dms"."GetMaxChangeVersion"();""");
     }
 
-    private async Task DelayForDistinctTimestampsAsync()
+    private async Task<DateTime> BackdateDocumentContentStampAsync(long documentId)
     {
-        // Server-side delay so the post-write ContentLastModifiedAt is strictly greater
-        // than the seed stamp, letting assertions use BeAfter instead of the weaker
-        // BeOnOrAfter (which cannot catch a stamp that never moved).
-        await _database.ExecuteNonQueryAsync("SELECT pg_sleep(0.02);");
+        // Moving the seed stamp deterministically into the past keeps the strict BeAfter
+        // assertions independent of server clock granularity: now() can return an identical
+        // value for two reads milliseconds apart, but never one five minutes stale.
+        // Strictness is what catches a stamp the trigger never wrote, since such a stamp stays
+        // at the backdated value; BeOnOrAfter would accept it.
+        // No trigger exists on dms."Document", so this write neither stamps nor allocates a version.
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE dms."Document"
+            SET "ContentLastModifiedAt" = now() - interval '5 minutes'
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return (await ReadDocumentStampAsync(documentId)).ContentLastModifiedAt;
     }
 
     private sealed record StampPair(StampValues Document, StampValues Mirror);
@@ -188,7 +200,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
     {
         var seed = await SeedAsync();
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        await DelayForDistinctTimestampsAsync();
+        var seedContentLastModifiedAt = await BackdateDocumentContentStampAsync(seed.DocumentId);
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -201,7 +213,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
         var afterDocument = await ReadDocumentStampAsync(seed.DocumentId);
         afterDocument.ContentVersion.Should().BeGreaterThan(seed.ContentVersion);
-        afterDocument.ContentLastModifiedAt.Should().BeAfter(seed.ContentLastModifiedAt);
+        afterDocument.ContentLastModifiedAt.Should().BeAfter(seedContentLastModifiedAt);
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(1L, "a descriptor delete must allocate exactly one content stamp");
@@ -212,7 +224,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
     {
         var seed = await SeedAsync();
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        await DelayForDistinctTimestampsAsync();
+        var seedContentLastModifiedAt = await BackdateDocumentContentStampAsync(seed.DocumentId);
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -227,7 +239,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         var after = await ReadStampPairAsync(seed.DocumentId);
         after.Mirror.Should().Be(after.Document);
         after.Document.ContentVersion.Should().BeGreaterThan(seed.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().BeAfter(seed.ContentLastModifiedAt);
+        after.Document.ContentLastModifiedAt.Should().BeAfter(seedContentLastModifiedAt);
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(1L, "a single descriptor value change must allocate exactly one content stamp");

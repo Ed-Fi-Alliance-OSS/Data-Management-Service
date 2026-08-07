@@ -179,6 +179,7 @@ public class Given_PlanNamingConventions
         PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Table).Should().Be("t");
         PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Document).Should().Be("doc");
         PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Descriptor).Should().Be("d");
+        PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.RowSet).Should().Be("v");
     }
 
     private static IReadOnlyList<string> DeduplicateWithCurrentCulture(
@@ -231,5 +232,31 @@ public class Given_PlanSqlTableAliasAllocator
         var newAllocator = PlanNamingConventions.CreateTableAliasAllocator();
 
         newAllocator.AllocateNext().Should().Be("t0");
+    }
+
+    [Test]
+    public void It_should_pair_each_table_alias_with_a_row_set_alias_of_the_same_ordinal()
+    {
+        _allocator
+            .AllocateNextSourceAliases()
+            .Should()
+            .Be(new PlanSqlSourceAliases(TableAlias: "t0", RowSetAlias: "v0"));
+        _allocator
+            .AllocateNextSourceAliases()
+            .Should()
+            .Be(new PlanSqlSourceAliases(TableAlias: "t1", RowSetAlias: "v1"));
+    }
+
+    [Test]
+    public void It_should_share_one_ordinal_sequence_across_both_allocation_methods()
+    {
+        _allocator.AllocateNext().Should().Be("t0");
+
+        _allocator
+            .AllocateNextSourceAliases()
+            .Should()
+            .Be(new PlanSqlSourceAliases(TableAlias: "t1", RowSetAlias: "v1"));
+
+        _allocator.AllocateNext().Should().Be("t2");
     }
 }

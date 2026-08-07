@@ -139,6 +139,11 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
 
         var documentAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Document);
         var tableAliasAllocator = PlanNamingConventions.CreateTableAliasAllocator();
+        var sourceGroups = ProjectionSourceBranchSql.GroupByTable(
+            sqlSources,
+            static source => source.TableModel,
+            static source => source.FkColumn
+        );
         var writer = new SqlWriter(_sqlDialect);
 
         writer.AppendLine("SELECT");
@@ -158,32 +163,20 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
 
             using (writer.Indent())
             {
-                for (var index = 0; index < sqlSources.Count; index++)
+                for (var index = 0; index < sourceGroups.Count; index++)
                 {
-                    var sqlSource = sqlSources[index];
-                    var tableModel = sqlSource.TableModel;
-                    var tableAlias = tableAliasAllocator.AllocateNext();
-
-                    writer.Append("SELECT ");
-
-                    if (sqlSources.Count == 1)
-                    {
-                        writer.Append("DISTINCT ");
-                    }
-
-                    AppendQualifiedColumn(writer, tableAlias, sqlSource.FkColumn);
-                    writer.Append(" AS ").AppendQuoted(_documentIdColumn.Value).AppendLine();
-                    writer.Append("FROM ").AppendTable(tableModel.Table).AppendLine($" {tableAlias}");
-                    ProjectionSourceFilterSql.Append(
+                    ProjectionSourceBranchSql.Append(
                         writer,
-                        tableModel,
-                        tableAlias,
-                        sqlSource.FkColumn,
+                        _planSqlDialect,
+                        sourceGroups[index],
+                        tableAliasAllocator.AllocateNextSourceAliases(),
+                        _documentIdColumn,
                         sourceFilter,
+                        emitDistinct: sourceGroups.Count == 1,
                         "document-reference lookup plan"
                     );
 
-                    if (index + 1 < sqlSources.Count)
+                    if (index + 1 < sourceGroups.Count)
                     {
                         writer.AppendLine("UNION");
                     }
