@@ -215,7 +215,19 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             return ReadChangesActionName;
         }
 
-        return _methodToActionNameMapping[requestInfo.Method];
+        // The mapping covers the four verbs that carry out a resource action. RequestMethod also
+        // has UNSUPPORTED, which has no action and belongs to a pipeline that terminates at
+        // MethodNotAllowedMiddleware well before this step - so reaching here with it means a
+        // pipeline was misassembled, and saying so beats a bare KeyNotFoundException.
+        if (!_methodToActionNameMapping.TryGetValue(requestInfo.Method, out string? actionName))
+        {
+            throw new InvalidOperationException(
+                $"No resource action is defined for request method '{requestInfo.Method}'. "
+                    + "ResourceActionAuthorizationMiddleware only runs in pipelines whose method is GET, POST, PUT or DELETE."
+            );
+        }
+
+        return actionName;
     }
 
     /// <summary>

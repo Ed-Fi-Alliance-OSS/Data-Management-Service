@@ -25,7 +25,9 @@ internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
     {
         var traceId = requestInfo.FrontendRequest.TraceId.Value;
         var stopwatch = Stopwatch.StartNew();
-        string method = LoggingSanitizer.SanitizeForLogging(requestInfo.Method.ToString());
+        // RequestInfo.MethodName resolves the real verb of an unsupported-method request. It is
+        // client-supplied on that path, so it must keep flowing through LoggingSanitizer.
+        string method = LoggingSanitizer.SanitizeForLogging(requestInfo.MethodName);
         string path = LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Path);
         string sanitizedTraceId = LoggingSanitizer.SanitizeForLogging(traceId);
 

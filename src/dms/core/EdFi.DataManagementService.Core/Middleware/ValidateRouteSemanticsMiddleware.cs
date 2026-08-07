@@ -16,6 +16,44 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ValidateRouteSemanticsMiddleware(ILogger _logger) : IPipelineStep
 {
+    /// <summary>
+    /// The method sets this middleware enforces, expressed for the Allow response header. They
+    /// live here because the rejection table below is what makes them true, and
+    /// MethodNotAllowedMiddleware advertises the same sets for a wholly unsupported verb -
+    /// referencing these keeps the two 405 producers in agreement by construction.
+    /// </summary>
+    internal const string CollectionMethods = "GET, POST";
+
+    internal const string ItemMethods = "GET, PUT, DELETE";
+
+    /// <summary>
+    /// The partitions operation is a read-only sibling of the GET-many endpoint, so the write
+    /// methods this middleware rejects on it leave GET as the whole Allow set. Advertised even
+    /// though no partitions pipeline exists yet and ParsePathMiddleware answers the GET itself as
+    /// an invalid identifier: the header has to name the methods the route will serve, and naming
+    /// the collection's set instead would advertise the very POST being rejected.
+    /// </summary>
+    internal const string PartitionsMethods = "GET";
+
+    /// <summary>
+    /// The Allow set for an operation, for both this middleware and MethodNotAllowedMiddleware.
+    /// </summary>
+    /// <remarks>
+    /// Exhaustive rather than an item-or-else choice, so an operation added to the hierarchy has to
+    /// name its own set instead of silently inheriting the collection's.
+    /// </remarks>
+    internal static string AllowedMethodsFor(ResourcePathOperation operation) =>
+        operation switch
+        {
+            ResourcePathOperation.ById => ItemMethods,
+            ResourcePathOperation.Collection => CollectionMethods,
+            ResourcePathOperation.Partitions => PartitionsMethods,
+            _ => throw new InvalidOperationException(
+                $"Unhandled resource path operation '{operation.GetType().Name}'. A new operation "
+                    + "must name the methods it allows."
+            ),
+        };
+
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
@@ -53,7 +91,16 @@ internal class ValidateRouteSemanticsMiddleware(ILogger _logger) : IPipelineStep
         requestInfo.FrontendResponse = new FrontendResponse(
             StatusCode: 405,
             Body: FailureResponse.ForMethodNotAllowed([error], requestInfo.FrontendRequest.TraceId),
-            Headers: [],
+            // RFC 9110 section 15.5.6 requires Allow on a 405. Sent here as well as from
+            // MethodNotAllowedMiddleware so both urn:ed-fi:api:method-not-allowed responses carry
+            // it, rather than only the one for a wholly unsupported verb. The profile-scoped 405
+            // in CachedProfileService is a different contract
+            // (urn:ed-fi:api:profile:method-usage) whose allowed set depends on the profile's
+            // read/write content types, and is deliberately left alone.
+            Headers: new Dictionary<string, string>
+            {
+                ["Allow"] = AllowedMethodsFor(requestInfo.PathComponents.Operation),
+            },
             ContentType: "application/json; charset=utf-8"
         );
     }

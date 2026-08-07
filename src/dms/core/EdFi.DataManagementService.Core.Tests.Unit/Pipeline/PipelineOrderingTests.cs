@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Middleware;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
@@ -29,7 +30,12 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Pipeline;
 [Parallelizable]
 public class PipelineOrderingTests
 {
-    private static List<Type> GetStepTypes(ApiService apiService, string factoryMethodName)
+    /// <summary>
+    /// The steps a pipeline factory actually built, as constructed instances. Most fixtures here
+    /// only compare step types, but a step configured by a constructor argument can only be checked
+    /// by exercising the instance the factory produced.
+    /// </summary>
+    private static List<IPipelineStep> GetSteps(ApiService apiService, string factoryMethodName)
     {
         var method = typeof(ApiService).GetMethod(
             factoryMethodName,
@@ -44,8 +50,12 @@ public class PipelineOrderingTests
 
         field.Should().NotBeNull("PipelineProvider should store its steps for execution");
 
-        var steps = (List<IPipelineStep>)field!.GetValue(pipeline)!;
-        return steps.Select(step => step.GetType()).ToList();
+        return (List<IPipelineStep>)field!.GetValue(pipeline)!;
+    }
+
+    private static List<Type> GetStepTypes(ApiService apiService, string factoryMethodName)
+    {
+        return GetSteps(apiService, factoryMethodName).Select(step => step.GetType()).ToList();
     }
 
     [TestFixture]
@@ -677,6 +687,158 @@ public class PipelineOrderingTests
                     handlerIndex,
                     "ValidateResourceKeySeedMiddleware must run before token_info can resolve relational mapping metadata"
                 );
+        }
+    }
+
+    /// <summary>
+    /// The two pipelines that answer an unsupported HTTP method. They are near-identical by design and
+    /// differ in exactly one step - the path parser - which no other test can see: the terminal's own
+    /// unit tests build PathComponents by hand, and the frontend routing tests fake IApiService, so
+    /// neither ever runs a parse step.
+    ///
+    /// The registrations below are deliberately smaller than every fixture above. Neither pipeline
+    /// reaches a backend, so the fingerprint, resource-key-seed and mapping-set services are absent and
+    /// resolution would fail outright if a future change put those steps back.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Method_Not_Allowed_Pipelines : PipelineOrderingTests
+    {
+        private const string DataRoutePipeline = "CreateMethodNotAllowedPipeline";
+        private const string TrackedChangePipeline = "CreateTrackedChangeMethodNotAllowedPipeline";
+
+        private static ApiService BuildApiService()
+        {
+            var services = new ServiceCollection();
+
+            services.AddTransient<JwtAuthenticationMiddleware>();
+            services.AddTransient<IJwtValidationService>(_ => A.Fake<IJwtValidationService>());
+            services.AddTransient<ILogger<JwtAuthenticationMiddleware>>(_ =>
+                NullLogger<JwtAuthenticationMiddleware>.Instance
+            );
+
+            services.AddTransient<ResolveDataStoreMiddleware>();
+            services.AddSingleton<IDataStoreProvider>(A.Fake<IDataStoreProvider>());
+            services.AddTransient<ILogger<ResolveDataStoreMiddleware>>(_ =>
+                NullLogger<ResolveDataStoreMiddleware>.Instance
+            );
+
+            var appSettingsOptions = Options.Create(
+                new AppSettings { AllowIdentityUpdateOverrides = "", MaskRequestBodyInLogs = false }
+            );
+            services.AddSingleton(appSettingsOptions);
+
+            var serviceProvider = services.BuildServiceProvider();
+
+            var apiService = new ApiService(
+                A.Fake<IApiSchemaProvider>(),
+                A.Fake<IEffectiveApiSchemaProvider>(),
+                A.Fake<IClaimSetProvider>(),
+                A.Fake<IDocumentValidator>(),
+                A.Fake<IMatchingDocumentUuidsValidator>(),
+                A.Fake<IEqualityConstraintValidator>(),
+                A.Fake<IDecimalValidator>(),
+                NullLogger<ApiService>.Instance,
+                NullLoggerFactory.Instance,
+                appSettingsOptions,
+                ResiliencePipeline.Empty,
+                A.Fake<ResourceLoadOrderCalculator>(),
+                serviceProvider,
+                A.Fake<IServiceScopeFactory>(),
+                A.Fake<CachedClaimSetProvider>(),
+                A.Fake<IResourceDependencyGraphMLFactory>(),
+                A.Fake<IProfileService>()
+            );
+
+            return apiService;
+        }
+
+        private static List<Type> GetMethodNotAllowedPipelineStepTypes(string factoryMethodName)
+        {
+            return GetStepTypes(BuildApiService(), factoryMethodName);
+        }
+
+        [Test]
+        public void It_parses_the_data_path_in_the_data_route_pipeline()
+        {
+            // ParseTrackedChangePathMiddleware here instead would miss /ed-fi/schools, because its
+            // regex requires a third segment, turning every collection-route 405 into a 404.
+            GetMethodNotAllowedPipelineStepTypes(DataRoutePipeline)
+                .Should()
+                .Contain(typeof(ParsePathMiddleware));
+        }
+
+        [Test]
+        public void It_parses_the_operation_suffix_in_the_tracked_change_pipeline()
+        {
+            // ParsePathMiddleware here instead would read "deletes" as a document id and reject it as
+            // a malformed uuid, turning every tracked-change 405 into a 400.
+            GetMethodNotAllowedPipelineStepTypes(TrackedChangePipeline)
+                .Should()
+                .Contain(typeof(ParseTrackedChangePathMiddleware));
+        }
+
+        [TestCase(DataRoutePipeline)]
+        [TestCase(TrackedChangePipeline)]
+        public void It_answers_405_only_after_the_endpoint_is_known_to_exist(string factoryMethodName)
+        {
+            var stepTypes = GetMethodNotAllowedPipelineStepTypes(factoryMethodName);
+            var validateEndpointIndex = stepTypes.IndexOf(typeof(ValidateEndpointMiddleware));
+            var terminalIndex = stepTypes.IndexOf(typeof(MethodNotAllowedMiddleware));
+
+            validateEndpointIndex.Should().BeGreaterThanOrEqualTo(0);
+            terminalIndex
+                .Should()
+                .BeGreaterThan(
+                    validateEndpointIndex,
+                    "an unknown project namespace or resource must answer 404 rather than 405, matching ODS/API's existence-then-method ordering"
+                );
+        }
+
+        [TestCase(DataRoutePipeline)]
+        [TestCase(TrackedChangePipeline)]
+        public void It_contains_ResolveDataStoreMiddleware(string factoryMethodName)
+        {
+            GetMethodNotAllowedPipelineStepTypes(factoryMethodName)
+                .Should()
+                .Contain(
+                    typeof(ResolveDataStoreMiddleware),
+                    "an unsupported method must not answer 405 where the equivalent supported request answers 403 or 404 for want of an authorized or matching instance"
+                );
+        }
+
+        /// <summary>
+        /// The regression guard for the route-family discriminator. MethodNotAllowedMiddleware takes
+        /// which family it terminates as a constructor argument, so no assertion over step types can
+        /// see it wired, and the middleware's own tests pass the flag in themselves. This runs the
+        /// terminal each factory actually built and reads the Allow header back off it, which is the
+        /// only place a pipeline constructed with the wrong flag shows up.
+        /// </summary>
+        [TestCase(DataRoutePipeline, "GET, POST")]
+        [TestCase(TrackedChangePipeline, "GET")]
+        public async Task It_builds_the_terminal_for_its_own_route_family(
+            string factoryMethodName,
+            string expectedAllow
+        )
+        {
+            IPipelineStep terminal = GetSteps(BuildApiService(), factoryMethodName)
+                .Single(step => step is MethodNotAllowedMiddleware);
+
+            // Both parse steps classify their path as the Collection operation, which is why the
+            // terminal cannot read the route family off the request and has to be told at construction.
+            RequestInfo requestInfo = No.RequestInfo("method-not-allowed-wiring-trace-id");
+            requestInfo.Method = RequestMethod.UNSUPPORTED;
+            requestInfo.UnsupportedMethodName = "PATCH";
+            requestInfo.PathComponents = new(
+                ProjectEndpointName: new("ed-fi"),
+                EndpointName: new("schools"),
+                Operation: ResourcePathOperation.Collection.Instance
+            );
+
+            await terminal.Execute(requestInfo, TestHelper.NullNext);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(405);
+            requestInfo.FrontendResponse.Headers.Should().Contain("Allow", expectedAllow);
         }
     }
 }

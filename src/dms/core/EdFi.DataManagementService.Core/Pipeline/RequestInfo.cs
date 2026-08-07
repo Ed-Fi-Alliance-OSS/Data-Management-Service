@@ -42,6 +42,22 @@ internal class RequestInfo(
     }
 
     /// <summary>
+    /// The actual HTTP method name of a request whose method is not one of the supported
+    /// verbs, e.g. "PATCH". Set only when Method is RequestMethod.UNSUPPORTED.
+    /// Read it through <see cref="MethodName"/> rather than directly.
+    /// </summary>
+    public string? UnsupportedMethodName { get; set; }
+
+    /// <summary>
+    /// The HTTP verb to attribute this request to, for the 405 error message and for request
+    /// logging. An unsupported-method request carries its real verb on UnsupportedMethodName;
+    /// using Method there would surface the literal "UNSUPPORTED", so operators searching logs
+    /// for PATCH would find nothing and the 405 body would name the wrong method. Single
+    /// accessor so the two readers cannot disagree about whether the name can be absent.
+    /// </summary>
+    public string MethodName => UnsupportedMethodName ?? Method.ToString();
+
+    /// <summary>
     /// The important parts of the request URL path in object form
     /// </summary>
     public PathComponents PathComponents { get; set; } = No.PathComponents;
