@@ -73,6 +73,20 @@ internal static class NamespaceAuthorizationProblemDetailsScenario
         };
 
     /// <summary>
+    /// Rewrites the extracted AUTH1 payload to a truncated <c>ns1|</c> payload that keeps the namespace
+    /// discriminator but omits the required failure-kind field, so it cannot be parsed at all and dispatches as
+    /// an invalid payload rather than as a namespace payload the plan cannot map. Applied only after the
+    /// production authorization SQL has already raised a real provider exception.
+    /// </summary>
+    public static RelationshipAuthorizationProviderFailure ToMalformedPayload(
+        RelationshipAuthorizationProviderFailure providerFailure
+    ) =>
+        providerFailure with
+        {
+            Message = "Conversion failed when converting the varchar value 'AUTH1 - ns1|0' to data type int.",
+        };
+
+    /// <summary>
     /// Reads, updates, and deletes use NamespaceBased while creates stay unauthorized-by-default, so a stored
     /// row with any namespace — including an omitted one — can be seeded before the denial is exercised.
     /// </summary>
@@ -261,6 +275,52 @@ internal static class NamespaceAuthorizationProblemDetailsScenario
                     + "and cannot be mapped to the configured namespace authorization plan.",
             ]
         );
+
+        // The payload was rewritten only after SQL Server itself raised the conversion failure that the
+        // production compiler's AUTH1 cast provokes, so the sanitized response is proved to come from a real
+        // provider exception rather than a stubbed one.
+        var providerFailures =
+            harness.ProviderFailureRecorder?.ProviderFailures
+            ?? throw new InvalidOperationException(
+                "The provider failure recorder must be enabled for this scenario."
+            );
+        providerFailures
+            .Distinct()
+            .Should()
+            .ContainSingle("every exception filter must probe the one real provider exception");
+        var sqlException = providerFailures[0].Should().BeOfType<SqlException>().Subject;
+        sqlException.Number.Should().Be(245);
+        sqlException.Message.Should().Contain("AUTH1 - ns1|0|m");
+    }
+
+    public static async Task It_returns_a_sanitized_security_configuration_500_for_a_malformed_payload(
+        ApiIntegrationHarness harness
+    )
+    {
+        await SeedReferenceDataAsync(harness);
+        var locationPath = await CreateNamespaceResourceAsync(harness, 108, UnauthorizedNamespace);
+
+        using var response = await harness.HttpClient.GetAsync(locationPath);
+
+        // A payload that cannot be parsed at all maps to the same canonical envelope as one that parses but
+        // cannot be mapped: only the withheld internal diagnostic differs.
+        await AssertProblemDetailsAsync(
+            response,
+            HttpStatusCode.InternalServerError,
+            SecurityConfigurationType,
+            "Security Configuration Error",
+            "A security configuration problem was detected. The request cannot be authorized.",
+            expectedErrors:
+            [
+                "The namespace authorization failure payload returned by the authorization provider is invalid "
+                    + "and cannot be mapped to the configured namespace authorization plan.",
+            ]
+        );
+
+        // The internal diagnostic kind stays server-side; AssertProblemDetailsAsync already rejects the raw
+        // 'AUTH1' / 'ns1|' payload fragments.
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain("InvalidPayload").And.NotContain("NamespaceAuthorization.Auth1");
 
         // The payload was rewritten only after SQL Server itself raised the conversion failure that the
         // production compiler's AUTH1 cast provokes, so the sanitized response is proved to come from a real

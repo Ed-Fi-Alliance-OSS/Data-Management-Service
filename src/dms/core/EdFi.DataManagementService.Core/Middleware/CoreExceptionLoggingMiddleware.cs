@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
@@ -42,6 +44,11 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger) : IPipelineStep
                 ContentType: "application/problem+json"
             );
         }
+        catch (CustomViewAuthorizationValidationException ex)
+        {
+            requestInfo.CaughtException = ex;
+            requestInfo.FrontendResponse = CreateSystemErrorResponse(requestInfo.FrontendRequest.TraceId);
+        }
         catch (Exception ex)
         {
             requestInfo.CaughtException = ex;
@@ -56,4 +63,15 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger) : IPipelineStep
             );
         }
     }
+
+    // ForSystemError emits a ProblemDetails body, so it must be served as problem+json rather than
+    // inheriting FrontendResponse's application/json default. The generic 500 above is deliberately
+    // left alone: its body is not ProblemDetails.
+    private static FrontendResponse CreateSystemErrorResponse(TraceId traceId) =>
+        new(
+            StatusCode: 500,
+            Body: FailureResponse.ForSystemError(traceId),
+            Headers: [],
+            ContentType: "application/problem+json"
+        );
 }

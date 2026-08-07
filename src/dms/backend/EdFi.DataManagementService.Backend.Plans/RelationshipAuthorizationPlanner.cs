@@ -130,8 +130,18 @@ public sealed class RelationshipAuthorizationPlanner
                     createProposedCheckSpec,
                     proposedCacheContext
                 ),
-            RelationshipAuthorizationClassificationOutcome.SupportedStrategies =>
-                PlanSupportedUpdateStrategies(
+            RelationshipAuthorizationClassificationOutcome.SupportedStrategies => classification
+                .SupportedCustomViewStrategies
+                .Count > 0
+                ? PlanKnownButNotEnabledUpdateStrategies(
+                    mappingSet,
+                    resource,
+                    ConvertSupportedCustomViewsToKnownButNotEnabled(classification),
+                    authorizationContext,
+                    createProposedCheckSpec,
+                    proposedCacheContext
+                )
+                : PlanSupportedUpdateStrategies(
                     mappingSet,
                     resource,
                     classification.SupportedStrategies,
@@ -191,18 +201,20 @@ public sealed class RelationshipAuthorizationPlanner
     {
         ArgumentNullException.ThrowIfNull(classification);
 
-        return classification.Outcome switch
+        switch (classification.Outcome)
         {
-            RelationshipAuthorizationClassificationOutcome.NoAuthorizationRequired =>
-                new RelationshipAuthorizationResult.NoAuthorizationRequired(
+            case RelationshipAuthorizationClassificationOutcome.NoAuthorizationRequired:
+                return new RelationshipAuthorizationResult.NoAuthorizationRequired(
                     configuredAuthorizationStrategies
-                ),
-            RelationshipAuthorizationClassificationOutcome.NoFurtherAuthorizationRequired =>
-                new RelationshipAuthorizationResult.NoFurtherAuthorizationRequired(
+                );
+
+            case RelationshipAuthorizationClassificationOutcome.NoFurtherAuthorizationRequired:
+                return new RelationshipAuthorizationResult.NoFurtherAuthorizationRequired(
                     classification.NoFurtherAuthorizationRequiredStrategies
-                ),
-            RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled =>
-                PlanKnownButNotEnabledStrategies(
+                );
+
+            case RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled:
+                return PlanKnownButNotEnabledStrategies(
                     mappingSet,
                     resource,
                     classification,
@@ -210,9 +222,10 @@ public sealed class RelationshipAuthorizationPlanner
                     valueSource,
                     createCheckSpec,
                     cacheContext
-                ),
-            RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError =>
-                PlanSecurityConfigurationFailures(
+                );
+
+            case RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError:
+                return PlanSecurityConfigurationFailures(
                     mappingSet,
                     resource,
                     classification,
@@ -220,20 +233,64 @@ public sealed class RelationshipAuthorizationPlanner
                     valueSource,
                     createCheckSpec,
                     cacheContext
-                ),
-            RelationshipAuthorizationClassificationOutcome.SupportedStrategies => PlanSupportedStrategies(
-                mappingSet,
-                resource,
-                classification.SupportedStrategies,
-                authorizationContext,
-                valueSource,
-                createCheckSpec,
-                cacheContext
-            ),
-            _ => throw new InvalidOperationException(
-                $"Unsupported relationship authorization classification outcome '{classification.Outcome}'."
-            ),
-        };
+                );
+
+            case RelationshipAuthorizationClassificationOutcome.SupportedStrategies:
+                // If the classification contains any supported custom-view strategies, treat them as
+                // KnownButNotEnabled for stored/proposed value planning (they only apply to ReadMany).
+                if (classification.SupportedCustomViewStrategies.Count > 0)
+                {
+                    return PlanKnownButNotEnabledStrategies(
+                        mappingSet,
+                        resource,
+                        ConvertSupportedCustomViewsToKnownButNotEnabled(classification),
+                        authorizationContext,
+                        valueSource,
+                        createCheckSpec,
+                        cacheContext
+                    );
+                }
+
+                return PlanSupportedStrategies(
+                    mappingSet,
+                    resource,
+                    classification.SupportedStrategies,
+                    authorizationContext,
+                    valueSource,
+                    createCheckSpec,
+                    cacheContext
+                );
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported relationship authorization classification outcome '{classification.Outcome}'."
+                );
+        }
+    }
+
+    private static RelationshipAuthorizationClassification ConvertSupportedCustomViewsToKnownButNotEnabled(
+        RelationshipAuthorizationClassification classification
+    )
+    {
+        var convertedKnown = classification
+            .SupportedCustomViewStrategies.Select(
+                static s => new KnownButNotEnabledRelationshipAuthorizationStrategy(
+                    RelationshipAuthorizationStrategyKind.CustomViewBased,
+                    s.ConfiguredStrategy,
+                    s.AuthorizationLocalOrder,
+                    s.BasisResource
+                )
+            )
+            .ToArray();
+
+        return new RelationshipAuthorizationClassification(
+            RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled,
+            classification.SupportedStrategies,
+            classification.SupportedCustomViewStrategies,
+            classification.NoFurtherAuthorizationRequiredStrategies,
+            convertedKnown,
+            classification.SecurityConfigurationFailures
+        );
     }
 
     private RelationshipAuthorizationResult PlanKnownButNotEnabledStrategies(

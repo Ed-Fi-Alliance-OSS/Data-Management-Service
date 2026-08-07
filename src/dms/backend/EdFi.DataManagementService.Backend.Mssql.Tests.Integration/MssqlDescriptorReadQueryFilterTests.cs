@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -32,6 +33,12 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
     private const int MaximumPageSize = 500;
     private const string SharedPagingDescription = "Shared paging count";
+
+    // Custom view-based strategy names follow the {BasisResource}With... convention, so these resolve
+    // SchoolTypeDescriptor as the basis resource and bind auth.[{StrategyName}].
+    private const string CustomViewStrategyName = "SchoolTypeDescriptorWithCustomViewProviderTest";
+    private const string MissingCustomViewStrategyName =
+        "SchoolTypeDescriptorWithMissingCustomViewProviderTest";
 
     private static readonly QualifiedResourceName SchoolTypeDescriptorResource = new(
         "Ed-Fi",
@@ -184,6 +191,55 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
         );
 
         AssertSingleDescriptorMatch(result, FindSeedOrThrow(expectedDocumentUuid));
+    }
+
+    [Test]
+    public async Task It_filters_descriptor_queries_by_a_custom_view_against_the_real_database()
+    {
+        // Descriptor GET-many has its own authorization preflight and page SQL (rooted on dms.Document
+        // with the descriptor row joined), so its custom-view path is not covered by the regular-resource
+        // custom-view fixtures. This proves the emitted descriptor SQL and the validation probe both
+        // execute against a real database rather than only matching a unit-generated string.
+        await SeedDescriptorsAsync();
+        await CreateDescriptorCustomAuthViewAsync(
+            CustomViewStrategyName,
+            authorizedDocumentUuid: AlternativeSeed.DocumentUuid
+        );
+
+        var result = await ExecuteQueryAsync(
+            [],
+            "mssql-descriptor-query-custom-view",
+            totalCount: true,
+            authorizationStrategyEvaluators: [CreateCustomViewStrategyEvaluator(CustomViewStrategyName)]
+        );
+
+        AssertDescriptorPage(result, [AlternativeSeed], expectedTotalCount: 1);
+    }
+
+    [Test]
+    public async Task It_fails_the_descriptor_query_with_a_system_error_when_the_custom_view_is_missing()
+    {
+        // The companion negative case: descriptor GET-many must surface a missing auth view as a
+        // controlled custom-view validation failure instead of silently returning an empty page.
+        await SeedDescriptorsAsync();
+        await DropDescriptorCustomAuthViewAsync(MissingCustomViewStrategyName);
+
+        Func<Task> act = () =>
+            ExecuteQueryAsync(
+                [],
+                "mssql-descriptor-query-missing-custom-view",
+                authorizationStrategyEvaluators:
+                [
+                    CreateCustomViewStrategyEvaluator(MissingCustomViewStrategyName),
+                ]
+            );
+
+        var assertion = await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+        assertion
+            .Which.InnerException.Should()
+            .BeOfType<SqlException>()
+            .Which.Message.Should()
+            .Contain("Invalid custom authorization view DocumentId contract.");
     }
 
     [Test]
@@ -504,13 +560,51 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
         }
     }
 
+    private static AuthorizationStrategyEvaluator CreateCustomViewStrategyEvaluator(string strategyName) =>
+        new(strategyName, [], FilterOperator.And);
+
+    /// <summary>
+    /// Creates <c>auth.[{strategyName}]</c> exposing the bigint <c>DocumentId</c> of exactly one seeded
+    /// descriptor, so the descriptor page query has something real to intersect with.
+    /// </summary>
+    private async Task CreateDescriptorCustomAuthViewAsync(
+        string strategyName,
+        DocumentUuid authorizedDocumentUuid
+    )
+    {
+        await DropDescriptorCustomAuthViewAsync(strategyName);
+
+        // CREATE VIEW cannot carry parameters, so the uuid is inlined; it is a Guid, so its formatted
+        // form cannot introduce anything but hex digits and hyphens.
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW [auth].[{strategyName}] AS
+            SELECT [DocumentId]
+            FROM [dms].[Document]
+            WHERE [DocumentUuid] = CAST(N'{authorizedDocumentUuid.Value:D}' AS uniqueidentifier);
+            """
+        );
+    }
+
+    private async Task DropDescriptorCustomAuthViewAsync(string strategyName)
+    {
+        await _database.ExecuteNonQueryAsync("IF SCHEMA_ID(N'auth') IS NULL EXEC(N'CREATE SCHEMA [auth];');");
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            IF OBJECT_ID(N'[auth].[{strategyName}]', N'V') IS NOT NULL
+                DROP VIEW [auth].[{strategyName}];
+            """
+        );
+    }
+
     private async Task<QueryResult> ExecuteQueryAsync(
         QueryElement[] queryElements,
         string traceId,
         bool totalCount = false,
         int limit = 25,
         int offset = 0,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null
     )
     {
         await using var scope = _serviceProvider.CreateAsyncScope();
@@ -521,7 +615,7 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: queryElements,
-            AuthorizationStrategyEvaluators: [],
+            AuthorizationStrategyEvaluators: authorizationStrategyEvaluators ?? [],
             Paging: new CollectionPaging.Traditional(
                 new PaginationParameters(
                     Limit: limit,

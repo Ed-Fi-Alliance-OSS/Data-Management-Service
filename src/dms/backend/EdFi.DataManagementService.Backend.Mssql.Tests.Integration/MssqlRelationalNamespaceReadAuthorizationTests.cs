@@ -681,3 +681,129 @@ public class Given_A_Mssql_Relational_Namespace_Authorization_With_An_Unmappable
         _context.AssertNoHydration();
     }
 }
+
+/// <summary>
+/// Real-SQL-Server coverage for the sibling fail-closed path, where the extracted payload cannot be parsed at all
+/// rather than parsing into a namespace payload the plan cannot map. The request first raises a genuine
+/// <c>SqlException</c> through the production authorization SQL; only then does the test-only extractor seam
+/// rewrite the extracted payload to a truncated <c>ns1|</c> value.
+/// </summary>
+/// <remarks>
+/// This is the only integration-level coverage of the dispatcher's invalid-payload branch; the unmappable-index
+/// sibling above deliberately covers the different <c>PayloadMappingFailed</c> branch.
+/// </remarks>
+[TestFixture]
+[NonParallelizable]
+[Category("Authorization")]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[Category("RelationalNamespace")]
+[Category(MssqlCiShards.Shard1)]
+public class Given_A_Mssql_Relational_Namespace_Authorization_With_A_Malformed_Auth1_Payload
+{
+    private const string ProjectEndpointName = RelationshipAuthorizationCrudTestSupport.ProjectEndpointName;
+    private const string ResourceName = RelationshipAuthorizationCrudTestSupport.NamespaceResourceName;
+    private const int AuthorizedSchoolId = (int)RelationshipAuthorizationCrudTestSupport.AuthorizedSchoolId;
+
+    /// <summary>
+    /// A truncated namespace payload: it keeps the <c>ns1|</c> discriminator but omits the required failure-kind
+    /// field, so the codec's three-section parse fails and the dispatcher reports an invalid payload.
+    /// </summary>
+    private const string MalformedProviderMessage =
+        "Conversion failed when converting the varchar value 'AUTH1 - ns1|0' to data type int.";
+
+    private static readonly QuerySchoolSeed _schoolSeed = new(
+        new DocumentUuid(Guid.Parse("a6a6a6a6-0000-0000-0000-000000000001")),
+        AuthorizedSchoolId,
+        "North"
+    );
+
+    private static readonly AuthorizationNamespaceSeed _seed = new(
+        new DocumentUuid(Guid.Parse("a7a7a7a7-0000-0000-0000-000000000001")),
+        902,
+        "malformed-auth1-payload",
+        RelationshipAuthorizationCrudTestSupport.UnauthorizedNamespacePrefix + "assessments",
+        AuthorizedSchoolId,
+        []
+    );
+
+    private MssqlRelationalQueryAuthorizationTestContext _context = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _context = new MssqlRelationalQueryAuthorizationTestContext(providerFailure =>
+            providerFailure with
+            {
+                Message = MalformedProviderMessage,
+            }
+        );
+        await _context.InitializeAsync(
+            RelationshipAuthorizationCrudTestSupport.FixtureRelativePath,
+            strict: false,
+            replaceReadTargetLookup: false
+        );
+        await _context.SeedSchoolDescriptorDataAsync();
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateSchoolAsync(_schoolSeed)
+        );
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationNamespaceAsync(_seed)
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_context is not null)
+        {
+            await _context.DisposeAsync();
+        }
+    }
+
+    [SetUp]
+    public void SetUp()
+    {
+        _context.ResetRecorder();
+    }
+
+    [Test]
+    public async Task It_fails_closed_with_sanitized_security_configuration_diagnostics()
+    {
+        var result = await _context.GetByIdAsync(
+            ProjectEndpointName,
+            ResourceName,
+            _seed.DocumentUuid,
+            [],
+            RelationshipAuthorizationCrudTestSupport.NamespaceBasedStrategyNames,
+            namespacePrefixes: RelationshipAuthorizationCrudTestSupport.ConfiguredNamespacePrefixes
+        );
+
+        var failure = result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .Equal(NamespaceAuthorizationSecurityConfigurationMessages.InvalidAuthorizationMetadata);
+        failure
+            .Errors.Should()
+            .NotContain(error =>
+                error.Contains("AUTH1", StringComparison.OrdinalIgnoreCase)
+                || error.Contains("Conversion failed", StringComparison.OrdinalIgnoreCase)
+                || error.Contains("varchar", StringComparison.OrdinalIgnoreCase)
+            );
+
+        var diagnostic = failure.Diagnostics.Should().ContainSingle().Subject;
+        diagnostic.ProviderOrPlannerFailureKind.Should().Be("NamespaceAuthorization.Auth1.InvalidPayload");
+        diagnostic
+            .ConfiguredStrategyNames.Should()
+            .Equal(RelationshipAuthorizationCrudTestSupport.NamespaceBased);
+        diagnostic.PhysicalPath.Should().Be($"authz.{ResourceName}.Namespace");
+        _context.AssertNoHydration();
+    }
+}

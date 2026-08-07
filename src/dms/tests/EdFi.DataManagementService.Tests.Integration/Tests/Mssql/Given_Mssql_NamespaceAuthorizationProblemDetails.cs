@@ -112,3 +112,33 @@ public sealed class Given_Mssql_NamespaceAuthorizationProblemDetails_For_An_Unma
             Harness
         );
 }
+
+/// <summary>
+/// The same sanitized 500 for a payload that cannot be parsed at all, rather than one that parses but cannot be
+/// mapped onto the plan. A separate class is required because one provider-failure transform is configured for
+/// the lifetime of an API integration fixture.
+/// </summary>
+public sealed class Given_Mssql_NamespaceAuthorizationProblemDetails_For_A_Malformed_Auth1_Payload
+    : MssqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.AuthorizationQuery;
+
+    protected override bool BypassAuthorization => false;
+
+    protected override IReadOnlyList<string> ClientNamespacePrefixes =>
+        NamespaceAuthorizationProblemDetailsScenario.ConfiguredPrefixes;
+
+    protected override IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
+        NamespaceAuthorizationProblemDetailsScenario.CreateReadUpdateDeleteClaimSetProvider(fixture);
+
+    protected override Func<
+        RelationshipAuthorizationProviderFailure,
+        RelationshipAuthorizationProviderFailure
+    >? ProviderFailureTransform => NamespaceAuthorizationProblemDetailsScenario.ToMalformedPayload;
+
+    [Test]
+    public Task It_returns_a_sanitized_security_configuration_500_for_a_malformed_payload() =>
+        NamespaceAuthorizationProblemDetailsScenario.It_returns_a_sanitized_security_configuration_500_for_a_malformed_payload(
+            Harness
+        );
+}

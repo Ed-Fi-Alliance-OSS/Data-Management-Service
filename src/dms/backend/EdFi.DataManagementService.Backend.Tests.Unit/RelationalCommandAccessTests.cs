@@ -821,8 +821,15 @@ internal static class RelationalAccessTestData
             columns.AddRange(CreateIdentityColumns(resource));
         }
 
+        // Shared-descriptor-table resources root on dms.Descriptor, not on a per-resource edfi table.
+        // The generated model does this, so the fixture must too: rooting them under edfi would make
+        // planner output that cannot occur in production.
+        var rootSchema = new DbSchemaName(
+            storageKind is ResourceStorageKind.SharedDescriptorTable ? "dms" : "edfi"
+        );
+
         var rootTable = new DbTableModel(
-            Table: new DbTableName(new DbSchemaName("edfi"), tableName),
+            Table: new DbTableName(rootSchema, tableName),
             JsonScope: new JsonPathExpression("$", []),
             Key: new TableKey(
                 $"PK_{tableName}",

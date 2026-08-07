@@ -1375,6 +1375,158 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
+    public async Task CreateSchoolCustomAuthViewAsync(
+        string strategyName,
+        IReadOnlyList<int> authorizedSchoolIds
+    )
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var physicalSchema = MappingSet.ReadPlansByResource[schoolResource].Model.PhysicalSchema.Value;
+        var schoolIdPredicate =
+            authorizedSchoolIds.Count == 0
+                ? "1 = 0"
+                : $"[SchoolId] IN ({string.Join(", ", authorizedSchoolIds)})";
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW [auth].[{EscapeIdentifierPart(strategyName)}] AS
+            SELECT [DocumentId]
+            FROM [{EscapeIdentifierPart(physicalSchema)}].[School]
+            WHERE {schoolIdPredicate};
+            """
+        );
+    }
+
+    public async Task CreateCustomAuthViewWithoutDocumentIdAsync(string strategyName)
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var physicalSchema = MappingSet.ReadPlansByResource[schoolResource].Model.PhysicalSchema.Value;
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW [auth].[{EscapeIdentifierPart(strategyName)}] AS
+            SELECT [SchoolId]
+            FROM [{EscapeIdentifierPart(physicalSchema)}].[School];
+            """
+        );
+    }
+
+    public async Task CreateCustomAuthViewWithTextDocumentIdAsync(string strategyName)
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var physicalSchema = MappingSet.ReadPlansByResource[schoolResource].Model.PhysicalSchema.Value;
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW [auth].[{EscapeIdentifierPart(strategyName)}] AS
+            SELECT N'Document-' + CAST([DocumentId] AS nvarchar(32)) AS [DocumentId]
+            FROM [{EscapeIdentifierPart(physicalSchema)}].[School];
+            """
+        );
+    }
+
+    public async Task CreateEmptyCustomAuthViewWithTextDocumentIdAsync(string strategyName)
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var physicalSchema = MappingSet.ReadPlansByResource[schoolResource].Model.PhysicalSchema.Value;
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW [auth].[{EscapeIdentifierPart(strategyName)}] AS
+            SELECT CAST([DocumentId] AS nvarchar(32)) AS [DocumentId]
+            FROM [{EscapeIdentifierPart(physicalSchema)}].[School]
+            WHERE 1 = 0;
+            """
+        );
+    }
+
+    public async Task CreateCustomAuthViewWithTextDocumentIdAndNoRootMatchAsync(string strategyName)
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var physicalSchema = MappingSet.ReadPlansByResource[schoolResource].Model.PhysicalSchema.Value;
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW [auth].[{EscapeIdentifierPart(strategyName)}] AS
+            SELECT CAST([DocumentId] + 100000 AS nvarchar(32)) AS [DocumentId]
+            FROM [{EscapeIdentifierPart(physicalSchema)}].[School];
+            """
+        );
+    }
+
+    public async Task CreateCustomAuthViewWithMixedTextDocumentIdsAsync(string strategyName)
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var physicalSchema = MappingSet.ReadPlansByResource[schoolResource].Model.PhysicalSchema.Value;
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW [auth].[{EscapeIdentifierPart(strategyName)}] AS
+            SELECT CASE
+                WHEN [SchoolId] = 100 THEN CAST([DocumentId] AS nvarchar(32))
+                ELSE N'not-a-document-id'
+            END AS [DocumentId]
+            FROM [{EscapeIdentifierPart(physicalSchema)}].[School];
+            """
+        );
+    }
+
+    /// <summary>
+    /// Creates (or replaces) the [auth].[{strategyName}] custom authorization view over
+    /// <c>AuthorizationNamespaceResource</c>, authorizing only the rows whose AuthorizationNamespaceId is
+    /// in <paramref name="authorizedIds"/>. That resource also carries a Namespace securable column, so
+    /// one view composes with NamespaceBased on the same page query.
+    /// </summary>
+    public async Task CreateAuthorizationNamespaceCustomAuthViewAsync(
+        string strategyName,
+        IReadOnlyList<int> authorizedIds
+    )
+    {
+        var namespaceResource = new QualifiedResourceName(
+            "Authz",
+            RelationshipAuthorizationCrudTestSupport.NamespaceResourceName
+        );
+        var physicalSchema = EscapeIdentifierPart(
+            MappingSet.ReadPlansByResource[namespaceResource].Model.PhysicalSchema.Value
+        );
+        var rootTable = RelationshipAuthorizationCrudTestSupport.NamespaceResourceName;
+        var idPredicate =
+            authorizedIds.Count == 0
+                ? "1 = 0"
+                : $"[AuthorizationNamespaceId] IN ({string.Join(", ", authorizedIds)})";
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW [auth].[{EscapeIdentifierPart(strategyName)}] AS
+            SELECT [DocumentId]
+            FROM [{physicalSchema}].[{rootTable}]
+            WHERE {idPredicate};
+            """
+        );
+    }
+
+    public async Task DropCustomAuthViewAsync(string strategyName)
+    {
+        var escapedStrategyName = EscapeIdentifierPart(strategyName);
+
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            IF OBJECT_ID(N'[auth].[{escapedStrategyName}]', N'V') IS NOT NULL
+                DROP VIEW [auth].[{escapedStrategyName}];
+            """
+        );
+    }
+
+    private static string EscapeIdentifierPart(string identifierPart) =>
+        identifierPart.Replace("]", "]]", StringComparison.Ordinal);
+
     public async Task<QueryResult> QueryAsync(
         string projectEndpointName,
         string resourceName,

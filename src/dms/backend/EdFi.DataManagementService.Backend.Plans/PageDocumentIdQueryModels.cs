@@ -104,6 +104,21 @@ public sealed record PageDocumentIdAuthorizationStrategy(
 );
 
 /// <summary>
+/// One custom view-based (<c>auth.{StrategyName}</c>) authorization check. The compiler emits it as an AND
+/// filter restricting the subject's <c>DocumentId</c> to those reachable from the auth view along
+/// <paramref name="PathToBasisResource" />.
+/// </summary>
+public sealed record PageDocumentIdAuthorizationCustomViewCheck(
+    string StrategyName,
+    int RawConfiguredIndex,
+    DbTableName AuthView,
+    DbColumnName AuthViewDocumentIdColumn,
+    IReadOnlyList<ColumnPathStep> PathToBasisResource,
+    DbTableName RootTable,
+    DbColumnName RootDocumentIdColumn
+);
+
+/// <summary>
 /// Optional authorization inputs for page-<c>DocumentId</c> query compilation.
 /// </summary>
 /// <param name="Strategies">
@@ -114,19 +129,26 @@ public sealed record PageDocumentIdAuthorizationStrategy(
 /// <paramref name="Strategies" /> is non-empty; ignored when the strategy list is empty.
 /// </param>
 /// <param name="NamespaceChecks">
-/// Namespace authorization checks. The compiler emits each as a root-table <c>IS NOT NULL</c> + prefix-LIKE
-/// predicate and AND-combines them into a single outer group placed before the relationship OR group.
+/// Namespace authorization checks. The compiler emits each as its own root-table <c>IS NOT NULL</c> +
+/// prefix-LIKE AND predicate rather than as one combined group: namespace and custom-view checks share a
+/// single ordering by <c>RawConfiguredIndex</c>, so they interleave in CMS-configured order. The
+/// relationship OR group is emitted after all of them.
 /// </param>
 /// <param name="NamespacePrefixParameterization">
 /// Dialect-specific namespace prefix parameterization shared by SQL emission and runtime binding. Required
 /// when <paramref name="NamespaceChecks" /> is non-empty; ignored otherwise.
+/// </param>
+/// <param name="CustomViewChecks">
+/// Custom view-based authorization checks. Each is emitted as an AND predicate, ordered against
+/// <paramref name="NamespaceChecks" /> by <c>RawConfiguredIndex</c> as described above.
 /// </param>
 public sealed record PageDocumentIdAuthorizationSpec(
     IReadOnlyList<PageDocumentIdAuthorizationStrategy> Strategies,
     AuthorizationClaimEducationOrganizationIdParameterization? ClaimEducationOrganizationIdParameterization =
         null,
     IReadOnlyList<NamespaceAuthorizationCheckSpec>? NamespaceChecks = null,
-    NamespacePrefixParameterization? NamespacePrefixParameterization = null
+    NamespacePrefixParameterization? NamespacePrefixParameterization = null,
+    IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? CustomViewChecks = null
 );
 
 /// <summary>

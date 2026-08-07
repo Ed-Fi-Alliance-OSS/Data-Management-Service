@@ -85,6 +85,12 @@ public sealed record SupportedRelationshipAuthorizationStrategy(
     IReadOnlyList<RelationshipAuthorizationStrategySubjectEligibility> EligibleSubjects
 );
 
+public sealed record SupportedCustomViewAuthorizationStrategy(
+    ConfiguredAuthorizationStrategy ConfiguredStrategy,
+    int AuthorizationLocalOrder,
+    QualifiedResourceName BasisResource
+);
+
 public sealed record KnownButNotEnabledRelationshipAuthorizationStrategy(
     RelationshipAuthorizationStrategyKind Kind,
     ConfiguredAuthorizationStrategy ConfiguredStrategy,
@@ -95,6 +101,7 @@ public sealed record KnownButNotEnabledRelationshipAuthorizationStrategy(
 public sealed record RelationshipAuthorizationClassification(
     RelationshipAuthorizationClassificationOutcome Outcome,
     IReadOnlyList<SupportedRelationshipAuthorizationStrategy> SupportedStrategies,
+    IReadOnlyList<SupportedCustomViewAuthorizationStrategy> SupportedCustomViewStrategies,
     IReadOnlyList<ConfiguredAuthorizationStrategy> NoFurtherAuthorizationRequiredStrategies,
     IReadOnlyList<KnownButNotEnabledRelationshipAuthorizationStrategy> KnownButNotEnabledStrategies,
     IReadOnlyList<RelationshipAuthorizationFailureMetadata> SecurityConfigurationFailures
@@ -357,6 +364,7 @@ public enum RelationshipAuthorizationFailureKind
     StoredValueNull,
     ProposedValueMissing,
     MissingPeopleAuthViewAssociations,
+    NoCustomViewJoinPath,
 }
 
 public sealed record RelationshipAuthorizationFailureLocation(

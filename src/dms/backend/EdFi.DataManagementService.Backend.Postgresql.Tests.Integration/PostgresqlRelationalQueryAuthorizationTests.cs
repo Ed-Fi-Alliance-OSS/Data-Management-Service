@@ -449,6 +449,22 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    /// <summary>
+    /// Seeds an <c>AuthorizationNamespaceResource</c> row through the production write path with no
+    /// authorization strategies configured, so any stored namespace value can be established without
+    /// first passing namespace authorization.
+    /// </summary>
+    public async Task<UpsertResult> CreateAuthorizationNamespaceAsync(AuthorizationNamespaceSeed seed)
+    {
+        return await UpsertAsync(
+            "authz",
+            RelationshipAuthorizationCrudTestSupport.NamespaceResourceName,
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNamespaceRequestBody(seed),
+            seed.DocumentUuid,
+            $"seed-auth-namespace-{seed.AuthorizationNamespaceId}"
+        );
+    }
+
     public async Task<UpsertResult> CreateAuthorizationStudentAcademicRecordAsync(
         AuthorizationStudentAcademicRecordSeed seed
     )
@@ -960,6 +976,185 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    /// <summary>
+    /// Creates (or replaces) the "auth"."{strategyName}" custom authorization view, authorizing only the
+    /// School documents whose SchoolId is in <paramref name="authorizedSchoolIds"/>. The view always
+    /// selects the basis resource's own DocumentId, per the custom-view authorization contract — the same
+    /// view authorizes both the basis resource (School) and any subject resource transitively related to
+    /// it (e.g. ClassPeriod) through the resolved join path.
+    /// </summary>
+    public async Task CreateSchoolCustomAuthViewAsync(
+        string strategyName,
+        IReadOnlyList<int> authorizedSchoolIds
+    )
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var physicalSchema = MappingSet.ReadPlansByResource[schoolResource].Model.PhysicalSchema.Value;
+        var schoolIdList = string.Join(", ", authorizedSchoolIds);
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW "auth"."{strategyName}" AS
+            SELECT "DocumentId"
+            FROM "{physicalSchema}"."School"
+            WHERE "SchoolId" IN ({schoolIdList});
+            """
+        );
+    }
+
+    /// <summary>
+    /// Creates the custom authorization view with an <em>unquoted</em> name, which PostgreSQL folds to
+    /// lower case: the object lands as <c>auth.{lowercased}</c> while the configured strategy name stays
+    /// PascalCase. This is the mistake hand-written DDL actually makes, as opposed to simulating the
+    /// folded result by passing an already-lowercased name to the quoted helper above.
+    /// </summary>
+    public async Task CreateSchoolCustomAuthViewWithUnquotedNameAsync(
+        string strategyName,
+        IReadOnlyList<int> authorizedSchoolIds
+    )
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var physicalSchema = MappingSet.ReadPlansByResource[schoolResource].Model.PhysicalSchema.Value;
+        var schoolIdList = string.Join(", ", authorizedSchoolIds);
+
+        await DropCustomAuthViewAsync(FoldUnquotedIdentifier(strategyName));
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW auth.{strategyName} AS
+            SELECT "DocumentId"
+            FROM "{physicalSchema}"."School"
+            WHERE "SchoolId" IN ({schoolIdList});
+            """
+        );
+    }
+
+    /// <summary>The name PostgreSQL stores for an unquoted identifier.</summary>
+    public static string FoldUnquotedIdentifier(string identifier) => identifier.ToLowerInvariant();
+
+    /// <summary>
+    /// Creates (or replaces) an "auth"."{strategyName}" view that omits the required DocumentId column,
+    /// simulating a misconfigured custom authorization view.
+    /// </summary>
+    public async Task CreateCustomAuthViewWithoutDocumentIdAsync(string strategyName)
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var physicalSchema = MappingSet.ReadPlansByResource[schoolResource].Model.PhysicalSchema.Value;
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW "auth"."{strategyName}" AS
+            SELECT "SchoolId"
+            FROM "{physicalSchema}"."School";
+            """
+        );
+    }
+
+    public async Task CreateCustomAuthViewWithTextDocumentIdAsync(string strategyName)
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var physicalSchema = MappingSet.ReadPlansByResource[schoolResource].Model.PhysicalSchema.Value;
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW "auth"."{strategyName}" AS
+            SELECT "DocumentId"::text AS "DocumentId"
+            FROM "{physicalSchema}"."School";
+            """
+        );
+    }
+
+    /// <summary>
+    /// Creates (or replaces) an "auth"."{strategyName}" view whose DocumentId column is typed as integer
+    /// instead of bigint. PostgreSQL provides a valid <c>bigint = integer</c> operator, so the query-time
+    /// join never surfaces an error the way a text-typed column would; the invalid DocumentId contract
+    /// must therefore be detected by a catalog check. Emitting no rows (WHERE 1 = 0) additionally proves
+    /// the check does not depend on the join producing rows.
+    /// </summary>
+    public async Task CreateEmptyCustomAuthViewWithIntegerDocumentIdAsync(string strategyName)
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var physicalSchema = MappingSet.ReadPlansByResource[schoolResource].Model.PhysicalSchema.Value;
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW "auth"."{strategyName}" AS
+            SELECT CAST("DocumentId" AS integer) AS "DocumentId"
+            FROM "{physicalSchema}"."School"
+            WHERE 1 = 0;
+            """
+        );
+    }
+
+    /// <summary>
+    /// Creates (or replaces) "auth"."{strategyName}" as a <em>materialized</em> view with a bigint
+    /// DocumentId. Materialized views satisfy the custom authorization object contract, but their
+    /// columns are not exposed through information_schema, so a type guard reading that view would
+    /// reject a conforming DocumentId. The catalog guard must therefore read pg_catalog.pg_attribute.
+    /// </summary>
+    public async Task CreateSchoolCustomAuthMaterializedViewAsync(
+        string strategyName,
+        IReadOnlyList<int> authorizedSchoolIds
+    )
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var physicalSchema = MappingSet.ReadPlansByResource[schoolResource].Model.PhysicalSchema.Value;
+        var schoolIdList = string.Join(", ", authorizedSchoolIds);
+
+        await DropCustomAuthMaterializedViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE MATERIALIZED VIEW "auth"."{strategyName}" AS
+            SELECT "DocumentId"
+            FROM "{physicalSchema}"."School"
+            WHERE "SchoolId" IN ({schoolIdList});
+            """
+        );
+    }
+
+    /// <summary>
+    /// Creates (or replaces) the "auth"."{strategyName}" custom authorization view over
+    /// <c>AuthorizationNamespaceResource</c>, authorizing only the rows whose AuthorizationNamespaceId is
+    /// in <paramref name="authorizedIds"/>. That resource also carries a Namespace securable column, so
+    /// one view composes with NamespaceBased on the same page query.
+    /// </summary>
+    public async Task CreateAuthorizationNamespaceCustomAuthViewAsync(
+        string strategyName,
+        IReadOnlyList<int> authorizedIds
+    )
+    {
+        var namespaceResource = new QualifiedResourceName(
+            "Authz",
+            RelationshipAuthorizationCrudTestSupport.NamespaceResourceName
+        );
+        var physicalSchema = MappingSet.ReadPlansByResource[namespaceResource].Model.PhysicalSchema.Value;
+        var rootTable = RelationshipAuthorizationCrudTestSupport.NamespaceResourceName;
+        var idList = string.Join(", ", authorizedIds);
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW "auth"."{strategyName}" AS
+            SELECT "DocumentId"
+            FROM "{physicalSchema}"."{rootTable}"
+            WHERE "AuthorizationNamespaceId" IN ({idList});
+            """
+        );
+    }
+
+    public async Task DropCustomAuthViewAsync(string strategyName)
+    {
+        await Database.ExecuteNonQueryAsync($"""DROP VIEW IF EXISTS "auth"."{strategyName}";""");
+    }
+
+    public async Task DropCustomAuthMaterializedViewAsync(string strategyName)
+    {
+        await Database.ExecuteNonQueryAsync($"""DROP MATERIALIZED VIEW IF EXISTS "auth"."{strategyName}";""");
+    }
+
     public async Task<QueryResult> QueryAsync(
         string projectEndpointName,
         string resourceName,
@@ -968,7 +1163,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         int? limit = null,
         int? offset = null,
         bool totalCount = true,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        IReadOnlyList<string>? namespacePrefixes = null
     )
     {
         ResetRecorder();
@@ -979,7 +1175,10 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
         var request = new RelationalQueryRequest(
             ResourceInfo: resourceHandle.ResourceInfo,
-            AuthorizationContext: new RelationalAuthorizationContext(claimEducationOrganizationIds),
+            AuthorizationContext: new RelationalAuthorizationContext(
+                claimEducationOrganizationIds,
+                namespacePrefixes ?? []
+            ),
             MappingSet: MappingSet,
             QueryElements: [],
             AuthorizationStrategyEvaluators:

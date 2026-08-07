@@ -19,11 +19,13 @@ public abstract record RelationalAuthorizationPlanOutcome
 
     /// <summary>
     /// Proceed: execute the namespace checks (if any) and route any non-namespace configured
-    /// strategies through the relationship planner. Both lists may be empty.
+    /// strategies through the relationship planner. Both lists may be empty. Custom view
+    /// supported strategies (for ReadMany) are returned separately in the third member.
     /// </summary>
     public sealed record Plan(
         IReadOnlyList<NamespaceAuthorizationCheckSpec> NamespaceChecks,
-        IReadOnlyList<ConfiguredAuthorizationStrategy> NonNamespaceConfiguredStrategies
+        IReadOnlyList<ConfiguredAuthorizationStrategy> NonNamespaceConfiguredStrategies,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> CustomViewStrategies
     ) : RelationalAuthorizationPlanOutcome;
 
     /// <summary>
@@ -31,14 +33,25 @@ public abstract record RelationalAuthorizationPlanOutcome
     /// concrete root-table column. Maps to a 500 Security Configuration Error.
     /// </summary>
     public sealed record NoUsableRootColumn(QualifiedResourceName Resource)
-        : RelationalAuthorizationPlanOutcome;
+        : RelationalAuthorizationPlanOutcome
+    {
+        public int RawConfiguredIndex { get; init; } = -1;
+
+        public IReadOnlyList<SupportedCustomViewAuthorizationStrategy> CustomViewStrategies { get; init; } =
+        [];
+    }
 
     /// <summary>
     /// <c>NamespaceBased</c> is configured and the client has no namespace prefixes assigned.
     /// Maps to the no-prefixes-configured 403 ProblemDetails at planner/preflight time — no DB
     /// roundtrip is issued.
     /// </summary>
-    public sealed record NoPrefixesConfigured(string StrategyName) : RelationalAuthorizationPlanOutcome;
+    public sealed record NoPrefixesConfigured(string StrategyName, int RawConfiguredIndex)
+        : RelationalAuthorizationPlanOutcome
+    {
+        public IReadOnlyList<SupportedCustomViewAuthorizationStrategy> CustomViewStrategies { get; init; } =
+        [];
+    }
 
     /// <summary>
     /// At least one configured strategy is known but not yet supported (e.g. <c>OwnershipBased</c> or
@@ -46,7 +59,8 @@ public abstract record RelationalAuthorizationPlanOutcome
     /// so the caller can re-run the relationship planner and surface the exact fail-closed result.
     /// </summary>
     public sealed record StillUnsupported(
-        IReadOnlyList<ConfiguredAuthorizationStrategy> NonNamespaceConfiguredStrategies
+        IReadOnlyList<ConfiguredAuthorizationStrategy> NonNamespaceConfiguredStrategies,
+        RelationshipAuthorizationClassification RelationshipClassification
     ) : RelationalAuthorizationPlanOutcome;
 
     /// <summary>
@@ -73,7 +87,11 @@ public abstract record RelationalAuthorizationPlanOutcome
 /// Outcome precedence:
 /// <list type="number">
 /// <item><see cref="RelationalAuthorizationPlanOutcome.SecurityConfigurationError"/> — the relationship classifier
-/// reports an unrecognized or invalid strategy in the non-namespace bucket (500).</item>
+/// reports an unrecognized or invalid strategy in the non-namespace bucket (500). For <c>ReadMany</c> this yields
+/// to an earlier namespace terminal — either <see cref="RelationalAuthorizationPlanOutcome.NoPrefixesConfigured"/> or
+/// <see cref="RelationalAuthorizationPlanOutcome.NoUsableRootColumn"/>: Namespace-based and custom view-based are AND
+/// strategies that execute in CMS-configured order, so the failing strategy only wins when it is configured at or
+/// before the <c>NamespaceBased</c> index.</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.NoUsableRootColumn"/> — <c>NamespaceBased</c> is configured
 /// but no root-table column resolves (500).</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.NoPrefixesConfigured"/> — <c>NamespaceBased</c> is configured
@@ -84,6 +102,14 @@ public abstract record RelationalAuthorizationPlanOutcome
 /// known-but-not-enabled strategy in the non-namespace bucket (501 NotImplemented, fail closed).</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.Plan"/> — everything else.</item>
 /// </list>
+/// <para>
+/// <c>OwnershipBased</c> is known but not enabled for every operation, <c>ReadMany</c> included: DMS-1060 owns
+/// the complete strategy — the tenant-qualified CMS application-context token source and write-side
+/// <c>CreatedByOwnershipTokenId</c> stamping — and is still open. DMS-1062 therefore never promotes it to a
+/// supported AND filter, so it always reaches its fail-closed 501 rather than filtering a page against
+/// ownership context this story cannot provision. A custom view configured ahead of that terminal is still
+/// validated first, so an earlier custom-view configuration failure keeps its own response.
+/// </para>
 /// </remarks>
 public static class RelationalAuthorizationPlanner
 {
@@ -104,7 +130,7 @@ public static class RelationalAuthorizationPlanner
             configuredAuthorizationStrategies
         );
 
-        // SecurityConfigurationError (500) and StillUnsupported (403) are detected by the existing
+        // SecurityConfigurationError (500) and StillUnsupported (501) are detected by the existing
         // relationship classifier; invoke it only when the non-namespace bucket is non-empty.
         RelationshipAuthorizationClassification? relationshipClassification =
             nonNamespaceStrategies.Count == 0
@@ -115,14 +141,15 @@ public static class RelationalAuthorizationPlanner
                     nonNamespaceStrategies
                 );
 
-        if (
+        var hasSecurityConfigurationError =
             relationshipClassification is
-            { Outcome: RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError }
-        )
+            { Outcome: RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError };
+
+        if (hasSecurityConfigurationError && operation is not NamespaceAuthorizationOperation.ReadMany)
         {
             return new RelationalAuthorizationPlanOutcome.SecurityConfigurationError(
                 nonNamespaceStrategies,
-                relationshipClassification
+                relationshipClassification!
             );
         }
 
@@ -131,14 +158,72 @@ public static class RelationalAuthorizationPlanner
                 ? null
                 : NamespaceAuthorizationPlanner.Plan(resource, operation, context);
 
+        if (hasSecurityConfigurationError)
+        {
+            // ReadMany: Namespace-based and custom view-based are AND strategies that execute in
+            // CMS-configured order, so a classifier failure must not leap ahead of a Namespace
+            // terminal configured before it. Both namespace terminals participate — no configured
+            // prefixes and no usable root column. Every other combination — no Namespace terminal,
+            // or a Namespace terminal configured after the failing strategy — keeps the classifier's
+            // security-configuration error.
+            var namespaceTerminalPrecedesFailure =
+                namespaceOutcome
+                    is NamespaceAuthorizationPlanOutcome.NoPrefixesConfigured
+                        or NamespaceAuthorizationPlanOutcome.NoUsableRootColumn
+                && namespaceStrategies[0].RawConfiguredIndex
+                    < EarliestSecurityConfigurationFailureIndex(
+                        relationshipClassification!.SecurityConfigurationFailures
+                    );
+
+            if (!namespaceTerminalPrecedesFailure)
+            {
+                return new RelationalAuthorizationPlanOutcome.SecurityConfigurationError(
+                    nonNamespaceStrategies,
+                    relationshipClassification!
+                );
+            }
+        }
+
+        var classifiedCustomViewStrategies = relationshipClassification?.SupportedCustomViewStrategies ?? [];
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> supportedCustomViewStrategies =
+            operation is NamespaceAuthorizationOperation.ReadMany ? classifiedCustomViewStrategies : [];
+
         if (namespaceOutcome is NamespaceAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot)
         {
-            return new RelationalAuthorizationPlanOutcome.NoUsableRootColumn(noUsableRoot.Resource);
+            // namespaceOutcome is non-null only when the namespace bucket is non-empty.
+            return new RelationalAuthorizationPlanOutcome.NoUsableRootColumn(noUsableRoot.Resource)
+            {
+                RawConfiguredIndex = namespaceStrategies[0].RawConfiguredIndex,
+                CustomViewStrategies = supportedCustomViewStrategies,
+            };
         }
 
         if (namespaceOutcome is NamespaceAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes)
         {
-            return new RelationalAuthorizationPlanOutcome.NoPrefixesConfigured(noPrefixes.StrategyName);
+            ConfiguredAuthorizationStrategy namespaceStrategy = namespaceStrategies[0];
+
+            return new RelationalAuthorizationPlanOutcome.NoPrefixesConfigured(
+                noPrefixes.StrategyName,
+                namespaceStrategy.RawConfiguredIndex
+            )
+            {
+                CustomViewStrategies = supportedCustomViewStrategies,
+            };
+        }
+
+        // Custom-view strategies are only implemented for ReadMany. For every other operation their
+        // presence fails the request closed with 501, ranked after both namespace terminals above:
+        // like OwnershipBased — the other unimplemented AND strategy — an unimplemented custom view
+        // does not displace an earlier Namespace terminal.
+        if (
+            classifiedCustomViewStrategies.Count > 0
+            && operation is not NamespaceAuthorizationOperation.ReadMany
+        )
+        {
+            return new RelationalAuthorizationPlanOutcome.StillUnsupported(
+                nonNamespaceStrategies,
+                relationshipClassification!
+            );
         }
 
         if (
@@ -146,14 +231,75 @@ public static class RelationalAuthorizationPlanner
             { Outcome: RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled }
         )
         {
-            return new RelationalAuthorizationPlanOutcome.StillUnsupported(nonNamespaceStrategies);
+            return new RelationalAuthorizationPlanOutcome.StillUnsupported(
+                nonNamespaceStrategies,
+                relationshipClassification
+            );
         }
 
+        // Prepare namespace checks.
+        //
+        // Every namespace check is stamped with the same configured position — the earliest index at
+        // which NamespaceBased appears. This reads like a simplification but is not:
+        //
+        // - The namespace planner never receives the configured strategy list. It derives its checks
+        //   from the operation alone (one for reads and delete, two for Update), so the check count
+        //   carries no information about how many times NamespaceBased was configured.
+        // - Both namespace failure outcomes are global: NoUsableRootColumn is a property of the
+        //   resource model, NoPrefixesConfigured of the client's prefix list. Neither can make one
+        //   configured occurrence fail while another succeeds.
+        //
+        // So the namespace filter is evaluated once no matter how many times it is configured, and the
+        // position where it first executes — and therefore first fails — is the earliest occurrence.
+        // namespaceStrategies is in configured order, so that is [0]. Stamping a later occurrence's
+        // index would wrongly let a custom view configured between them validate ahead of this terminal.
+        // Update's Stored/Proposed pair shares the index for the same reason: two value-sources of one
+        // occurrence, not two occurrences.
         var namespaceChecks = namespaceOutcome is NamespaceAuthorizationPlanOutcome.Plan namespacePlan
-            ? namespacePlan.Checks
+            ? namespacePlan
+                .Checks.Select(check =>
+                    check with
+                    {
+                        RawConfiguredIndex = namespaceStrategies[0].RawConfiguredIndex,
+                    }
+                )
+                .ToArray()
             : (IReadOnlyList<NamespaceAuthorizationCheckSpec>)[];
 
-        return new RelationalAuthorizationPlanOutcome.Plan(namespaceChecks, nonNamespaceStrategies);
+        // Exclude custom-view configured strategies from the non-namespace configured strategies
+        // returned to the relationship planner for ReadMany; return them separately in the plan.
+        var customViewStrategyRawIndexes = supportedCustomViewStrategies
+            .Select(static s => s.ConfiguredStrategy.RawConfiguredIndex)
+            .ToHashSet();
+
+        IReadOnlyList<ConfiguredAuthorizationStrategy> relationshipConfiguredStrategies =
+            nonNamespaceStrategies
+                .Where(strategy => !customViewStrategyRawIndexes.Contains(strategy.RawConfiguredIndex))
+                .ToArray();
+
+        return new RelationalAuthorizationPlanOutcome.Plan(
+            namespaceChecks,
+            relationshipConfiguredStrategies,
+            supportedCustomViewStrategies
+        );
+    }
+
+    /// <summary>
+    /// Lowest <c>RawConfiguredIndex</c> among <paramref name="failures"/>. A failure without a configured
+    /// strategy has no determinable configured position, so it is treated as preceding every configured
+    /// strategy — which fails closed by keeping the failure as the terminal and making no earlier
+    /// AND-ordered strategy (e.g. a custom view) eligible to run ahead of it.
+    /// </summary>
+    public static int EarliestSecurityConfigurationFailureIndex(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    )
+    {
+        ArgumentNullException.ThrowIfNull(failures);
+
+        return failures
+            .Select(static failure => failure.ConfiguredStrategy?.RawConfiguredIndex ?? int.MinValue)
+            .DefaultIfEmpty(int.MinValue)
+            .Min();
     }
 
     private static (

@@ -167,7 +167,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeSessionFactory,
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor
+            _namespaceAuthorizationExecutor,
+            _commandExecutor
         );
     }
 
@@ -189,7 +190,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeSessionFactory,
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor
+            _namespaceAuthorizationExecutor,
+            _commandExecutor
         );
     }
 
@@ -317,7 +319,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeSessionFactory,
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor
+            _namespaceAuthorizationExecutor,
+            _commandExecutor
         );
 
         var getRequest = CreateGetRequest(
@@ -2630,7 +2633,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeSessionFactory,
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor
+            _namespaceAuthorizationExecutor,
+            _commandExecutor
         );
 
         var queryRequest = CreateQueryRequest(
@@ -2747,7 +2751,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeSessionFactory,
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor
+            _namespaceAuthorizationExecutor,
+            _commandExecutor
         );
 
         var queryRequest = CreateQueryRequest(
@@ -2818,7 +2823,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeSessionFactory,
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor
+            _namespaceAuthorizationExecutor,
+            _commandExecutor
         );
 
         var queryRequest = CreateQueryRequest(
@@ -4084,10 +4090,50 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_not_implemented_when_query_authorization_includes_known_out_of_scope_strategies()
+    public async Task It_validates_custom_views_before_relationship_security_configuration_terminals()
     {
+        List<string> capturedValidationSql = [];
         var queryRequest = CreateQueryRequest(
-            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            CreateQuerySupportedMappingSetWithChildOnlyEdOrgSubject(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [500L]
+        );
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql => sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task It_fails_closed_when_a_custom_view_is_composed_with_OwnershipBased()
+    {
+        // OwnershipBased belongs to DMS-1060. Even alongside a resolved custom view and a relationship
+        // strategy, GET-many must fail closed rather than emit an ownership filter: nothing stamps
+        // CreatedByOwnershipTokenId yet, so a filter would silently drop every row.
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
             [],
             totalCount: false,
             authorizationStrategyEvaluators:
@@ -4097,19 +4143,320 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 ),
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
                 CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ],
+            claimEducationOrganizationIds: [255901L]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result
+            .Should()
+            .BeOfType<QueryResult.QueryFailureNotImplemented>()
+            .Which.FailureMessage.Should()
+            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_validates_custom_views_before_executing_ordinary_query_authorization()
+    {
+        List<string> capturedValidationSql = [];
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ],
+            claimEducationOrganizationIds: [255901L]
+        );
+        PageKeysetSpec.Query capturedKeyset = null!;
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call =>
+            {
+                capturedKeyset =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query
+                    ?? throw new AssertionException(
+                        "Custom-view query execution should hydrate through PageKeysetSpec.Query."
+                    );
+            })
+            .Returns(new HydratedPage(null, [], [], []));
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        capturedKeyset.Plan.PageDocumentIdSql.Should().Contain("SchoolWithCustomAuthorization");
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql => sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task It_ands_two_resolving_custom_views_and_validates_them_in_one_round_trip()
+    {
+        // Two custom views configured at indexes 0 and 1: both are AND filters, so both predicates must
+        // reach the page SQL, and both auth views must be validated by a single batched command rather than
+        // one round trip per view.
+        List<string> capturedValidationSql = [];
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator("SchoolWithSecondCustomAuthorization"),
+            ],
+            claimEducationOrganizationIds: [255901L]
+        );
+        PageKeysetSpec.Query capturedKeyset = null!;
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call =>
+            {
+                capturedKeyset =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query
+                    ?? throw new AssertionException(
+                        "Custom-view query execution should hydrate through PageKeysetSpec.Query."
+                    );
+            })
+            .Returns(new HydratedPage(null, [], [], []));
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        capturedKeyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("SchoolWithCustomAuthorization")
+            .And.Contain("SchoolWithSecondCustomAuthorization");
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
+                && sql.Contains("SchoolWithSecondCustomAuthorization", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_fails_closed_for_ownership_only_queries()
+    {
+        // OwnershipBased belongs to DMS-1060, so GET-many keeps the known-but-not-enabled 501 rather
+        // than silently returning an empty page.
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
             ]
         );
 
         var result = await _sut.QueryDocuments(queryRequest);
 
+        result
+            .Should()
+            .BeOfType<QueryResult.QueryFailureNotImplemented>()
+            .Which.FailureMessage.Should()
+            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_validates_a_custom_view_configured_before_the_ownership_terminal()
+    {
+        // Custom view first: it executes ahead of the OwnershipBased 501, so a missing or non-conforming
+        // auth view must surface its own error rather than being masked by the terminal.
+        List<string> capturedValidationSql = [];
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            [],
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]
+        );
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
         result.Should().BeOfType<QueryResult.QueryFailureNotImplemented>();
-        var failure = result.As<QueryResult.QueryFailureNotImplemented>();
-        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
-        failure.FailureMessage.Should().Contain("SchoolWithCustomAuthorization");
-        failure
-            .FailureMessage.Should()
-            .Contain($"{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op");
-        AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("LIMIT 0", StringComparison.Ordinal)
+                && sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
+                && sql.Contains("DocumentId", StringComparison.Ordinal)
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_validates_a_custom_view_configured_after_the_ownership_terminal()
+    {
+        // The inverse configured order of the sibling above, with the same outcome: OwnershipBased executes
+        // last per auth.md "Execution order" no matter where the CMS placed it, so the custom view is still
+        // validated ahead of the 501.
+        List<string> capturedValidationSql = [];
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            [],
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ]
+        );
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result
+            .Should()
+            .BeOfType<QueryResult.QueryFailureNotImplemented>()
+            .Which.FailureMessage.Should()
+            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("LIMIT 0", StringComparison.Ordinal)
+                && sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
+                && sql.Contains("DocumentId", StringComparison.Ordinal)
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_validates_custom_views_before_the_security_configuration_terminal_when_ownership_precedes_an_invalid_strategy()
+    {
+        List<string> capturedValidationSql = [];
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            [],
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+            ]
+        );
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("LIMIT 0", StringComparison.Ordinal)
+                && sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
+                && sql.Contains("DocumentId", StringComparison.Ordinal)
+            );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -4294,6 +4641,58 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .MustHaveHappenedOnceExactly();
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_validates_custom_views_before_short_circuiting_relationship_queries_with_empty_edorg_claims(
+        bool totalCount
+    )
+    {
+        List<string> capturedValidationSql = [];
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            [],
+            totalCount: totalCount,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ],
+            claimEducationOrganizationIds: []
+        );
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], totalCount ? 0 : null));
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("LIMIT 0", StringComparison.Ordinal)
+                && sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
+                && sql.Contains("DocumentId", StringComparison.Ordinal)
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
     }
 
     [TestCase(true)]
@@ -4492,11 +4891,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .MustNotHaveHappened();
     }
 
-    [TestCase(AuthorizationStrategyNameConstants.OwnershipBased)]
-    [TestCase("SchoolWithResponsibility")]
-    public async Task It_returns_not_implemented_for_known_out_of_scope_query_authorization_when_mixed_with_people_relationship_authorization(
-        string unsupportedStrategyName
-    )
+    [Test]
+    public async Task It_returns_not_implemented_when_OwnershipBased_is_mixed_with_people_relationship_authorization()
     {
         var queryRequest = CreateQueryRequest(
             CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
@@ -4507,28 +4903,244 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(
                     AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
                 ),
-                CreateAuthorizationStrategyEvaluator(unsupportedStrategyName),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
             ],
             claimEducationOrganizationIds: [255901L]
         );
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        var failure = result.Should().BeOfType<QueryResult.QueryFailureNotImplemented>().Subject;
+        result
+            .Should()
+            .BeOfType<QueryResult.QueryFailureNotImplemented>()
+            .Which.FailureMessage.Should()
+            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+    }
+
+    [Test]
+    public async Task It_allows_a_custom_view_strategy_when_mixed_with_people_relationship_authorization()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+                ),
+                CreateAuthorizationStrategyEvaluator("SchoolWithResponsibility"),
+            ],
+            claimEducationOrganizationIds: [255901L]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_when_custom_view_basis_resource_has_no_join_path()
+    {
+        var resourceInfo = _schoolResourceInfo;
+        var mappingSet = CreateQuerySupportedMappingSetWithCustomViewBasisButNoJoinPath(resourceInfo);
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators: [CreateAuthorizationStrategyEvaluator("StudentWithNoJoinPath")],
+            resourceInfo: resourceInfo
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().ContainSingle();
+        failure.Errors[0].Should().Contain("StudentWithNoJoinPath");
+        failure.Errors[0].Should().Contain("auth.StudentWithNoJoinPath");
+        failure.Errors[0].Should().Contain("No DocumentId join path");
+        failure.Diagnostics.Should().ContainSingle();
         failure
-            .FailureMessage.Should()
-            .Contain(unsupportedStrategyName)
-            .And.Contain("GET-many relationship query execution boundary")
-            .And.Contain(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly);
+            .Diagnostics![0]
+            .ProviderOrPlannerFailureKind.Should()
+            .Be("RelationshipAuthorization.NoCustomViewJoinPath");
+        failure.Diagnostics![0].ConfiguredStrategyNames!.Should().Equal("StudentWithNoJoinPath");
+        failure.Diagnostics![0].ConfiguredStrategyIndexes!.Should().Equal(0);
+        failure.Diagnostics![0].TargetResourceFullName!.Should().Be("Ed-Fi.School");
+        Fake.GetCalls(_commandExecutor).Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_validates_an_earlier_custom_view_before_a_later_no_join_path_failure()
+    {
+        // SchoolWithCustomAuthorization (index 0) plans; StudentWithNoJoinPath (index 1) does not. The
+        // earlier auth view executes first, so it must still be probed — otherwise a missing earlier view
+        // is masked by the later planning failure — and the reported terminal stays the no-join-path 500.
+        List<string> capturedValidationSql = [];
+        var resourceInfo = _schoolResourceInfo;
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithCustomViewBasisButNoJoinPath(resourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator("StudentWithNoJoinPath"),
+            ],
+            resourceInfo: resourceInfo
+        );
+        CaptureCustomViewValidationSql(capturedValidationSql);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().ContainSingle();
+        failure.Errors[0].Should().Contain("No DocumentId join path");
+        failure.Errors[0].Should().Contain("StudentWithNoJoinPath");
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql => sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal));
+        capturedValidationSql
+            .Should()
+            .NotContain(sql => sql.Contains("StudentWithNoJoinPath", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task It_does_not_validate_a_later_custom_view_after_an_earlier_no_join_path_failure()
+    {
+        // Reverse configured order: the failure is at index 0, so the custom view at index 1 executes after
+        // the terminal and must not be probed at all.
+        List<string> capturedValidationSql = [];
+        var resourceInfo = _schoolResourceInfo;
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithCustomViewBasisButNoJoinPath(resourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("StudentWithNoJoinPath"),
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ],
+            resourceInfo: resourceInfo
+        );
+        CaptureCustomViewValidationSql(capturedValidationSql);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure.Errors[0].Should().Contain("No DocumentId join path");
+        capturedValidationSql.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_does_not_validate_a_later_custom_view_after_an_earlier_classifier_failure()
+    {
+        // CustomAuthorizationStrategy (index 0) is an unrecognized strategy, so the classifier fails there.
+        // The resolved custom view at index 1 executes after that terminal, so probing it would let a
+        // missing or non-conforming auth view mask the earlier unknown-strategy 500.
+        List<string> capturedValidationSql = [];
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ]
+        );
+        CaptureCustomViewValidationSql(capturedValidationSql);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .Contain(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([
+                    "CustomAuthorizationStrategy",
+                ])
+            );
+        capturedValidationSql.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_validates_an_earlier_custom_view_before_a_later_classifier_failure()
+    {
+        // The mirror case: the resolved custom view is configured first, so it is probed before the
+        // classifier's unknown-strategy terminal at index 1 is reported.
+        List<string> capturedValidationSql = [];
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+            ]
+        );
+        CaptureCustomViewValidationSql(capturedValidationSql);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql => sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal));
+    }
+
+    private void CaptureCustomViewValidationSql(List<string> capturedValidationSql)
+    {
         A.CallTo(() =>
-                _documentHydrator.HydrateAsync(
-                    A<ResourceReadPlan>._,
-                    A<PageKeysetSpec>._,
-                    A<HydrationExecutionOptions>._,
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
                     A<CancellationToken>._
                 )
             )
-            .MustNotHaveHappened();
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+    }
+
+    [Test]
+    public void It_orders_custom_view_before_namespace_no_prefixes_when_custom_view_has_lower_configured_index()
+    {
+        var customViewStrategies = new[]
+        {
+            new SupportedCustomViewAuthorizationStrategy(
+                new ConfiguredAuthorizationStrategy("StudentWithCustomViewProviderTest", 0),
+                AuthorizationLocalOrder: 0,
+                BasisResource: new QualifiedResourceName("Ed-Fi", "Student")
+            ),
+        };
+
+        var strategiesBeforeTerminal = CustomViewAuthorizationTerminalOrdering.CustomViewsBeforeTerminal(
+            customViewStrategies,
+            terminalRawConfiguredIndex: 1
+        );
+
+        strategiesBeforeTerminal.Should().Equal(customViewStrategies);
+    }
+
+    [Test]
+    public void It_orders_namespace_no_prefixes_before_custom_view_when_namespace_has_lower_configured_index()
+    {
+        var customViewStrategies = new[]
+        {
+            new SupportedCustomViewAuthorizationStrategy(
+                new ConfiguredAuthorizationStrategy("StudentWithCustomViewProviderTest", 1),
+                AuthorizationLocalOrder: 0,
+                BasisResource: new QualifiedResourceName("Ed-Fi", "Student")
+            ),
+        };
+
+        var strategiesBeforeTerminal = CustomViewAuthorizationTerminalOrdering.CustomViewsBeforeTerminal(
+            customViewStrategies,
+            terminalRawConfiguredIndex: 0
+        );
+
+        strategiesBeforeTerminal.Should().BeEmpty();
     }
 
     [Test]
@@ -4636,7 +5248,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_security_configuration_failure_when_query_authorization_includes_invalid_and_known_out_of_scope_strategies()
+    public async Task It_returns_security_configuration_failure_when_query_authorization_includes_an_invalid_strategy_after_OwnershipBased()
     {
         var queryRequest = CreateQueryRequest(
             CreateQuerySupportedMappingSet(_schoolResourceInfo),
@@ -4651,18 +5263,16 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
+        // Two independent configuration problems are reported: OwnershipBased is known but not enabled,
+        // and CustomAuthorizationStrategy is not a recognized strategy at all.
         var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
         failure.Errors.Should().HaveCount(2);
         failure
-            .Errors[0]
-            .Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased)
-            .And.Contain("GET-many relationship query execution boundary")
-            .And.NotContain("GET-many EdOrg-only relationship query execution boundary");
+            .Errors.Should()
+            .ContainSingle(error => error.Contains("OwnershipBased", StringComparison.Ordinal));
         failure
-            .Errors[1]
-            .Should()
-            .Be(
+            .Errors.Should()
+            .Contain(
                 SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([
                     "CustomAuthorizationStrategy",
                 ])
@@ -4671,16 +5281,16 @@ public class Given_RelationalDocumentStoreRepositoryTests
         failure
             .Diagnostics!.SelectMany(static diagnostic => diagnostic.ConfiguredStrategyNames ?? [])
             .Should()
-            .Equal(AuthorizationStrategyNameConstants.OwnershipBased, "CustomAuthorizationStrategy");
+            .BeEquivalentTo(AuthorizationStrategyNameConstants.OwnershipBased, "CustomAuthorizationStrategy");
         failure
             .Diagnostics!.SelectMany(static diagnostic => diagnostic.ConfiguredStrategyIndexes ?? [])
+            .Order()
             .Should()
             .Equal(0, 1);
         failure
             .Diagnostics!.Select(static diagnostic => diagnostic.ProviderOrPlannerFailureKind)
             .Should()
-            .Equal(
-                $"RelationshipAuthorization.{RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy}",
+            .Contain(
                 $"RelationshipAuthorization.{RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy}"
             );
         A.CallTo(() =>
@@ -4727,6 +5337,376 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_validates_custom_views_before_returning_namespace_no_prefixes_for_queries()
+    {
+        List<string> capturedValidationSql = [];
+        var queryRequest = CreateQueryRequest(
+            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ],
+            namespacePrefixes: []
+        );
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureNamespaceNotAuthorized>().Subject;
+        failure
+            .NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
+        failure.NamespaceFailure.StrategyName.Should().Be(AuthorizationStrategyNameConstants.NamespaceBased);
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("LIMIT 0", StringComparison.Ordinal)
+                && sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
+                && sql.Contains("DocumentId", StringComparison.Ordinal)
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_validates_only_custom_views_before_namespace_no_prefixes_for_queries()
+    {
+        List<string> capturedValidationSql = [];
+        var queryRequest = CreateQueryRequest(
+            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator("SchoolWithLaterCustomAuthorization"),
+            ],
+            namespacePrefixes: []
+        );
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QueryFailureNamespaceNotAuthorized>();
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
+                && !sql.Contains("SchoolWithLaterCustomAuthorization", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_returns_namespace_no_prefixes_without_custom_view_validation_when_namespace_is_configured_first()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ],
+            namespacePrefixes: []
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QueryFailureNamespaceNotAuthorized>();
+        Fake.GetCalls(_commandExecutor)
+            .Where(call => call.Method.Name == nameof(IRelationalCommandExecutor.ExecuteReaderAsync))
+            .Select(call => ((RelationalCommand)call.Arguments[0]!).CommandText)
+            .Should()
+            .NotContain(sql => sql.Contains("AND 1 = 0", StringComparison.Ordinal));
+    }
+
+    [TestCase("CustomAuthorizationStrategy")]
+    [TestCase("MissingBasisWithCustomAuthorization")]
+    public async Task It_returns_namespace_no_prefixes_for_queries_when_the_failing_strategy_is_configured_after_namespace(
+        string failingStrategyName
+    )
+    {
+        // NamespaceBased is configured first, so its no-prefixes 403 is the terminal even though a
+        // later strategy is a security-configuration failure (unrecognized, or a custom-view name
+        // whose basis resource does not resolve).
+        var queryRequest = CreateQueryRequest(
+            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator(failingStrategyName),
+            ],
+            namespacePrefixes: []
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureNamespaceNotAuthorized>().Subject;
+        failure
+            .NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
+        failure.NamespaceFailure.StrategyName.Should().Be(AuthorizationStrategyNameConstants.NamespaceBased);
+        Fake.GetCalls(_commandExecutor)
+            .Where(call => call.Method.Name == nameof(IRelationalCommandExecutor.ExecuteReaderAsync))
+            .Should()
+            .BeEmpty();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_validates_custom_views_before_empty_page_preprocessing_success_for_queries()
+    {
+        List<string> capturedValidationSql = [];
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField("id", "$.id", "string", new RelationalQueryFieldTarget.DocumentUuid())
+        );
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [CreateQueryElement("id", "$.id", "not-a-guid", "string")],
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ]
+        );
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("LIMIT 0", StringComparison.Ordinal)
+                && sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
+                && sql.Contains("DocumentId", StringComparison.Ordinal)
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_validates_custom_views_before_empty_page_planning_success_for_queries()
+    {
+        List<string> capturedValidationSql = [];
+        var mappingSet = CreateQuerySupportedMappingSet(
+            CreateNamespaceAndRootEdOrgMappingSet(_schoolResourceInfo),
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "schoolId",
+                "$.localEducationAgencyId",
+                "number",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("LocalEducationAgencyId"))
+            )
+        );
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [CreateQueryElement("schoolId", "$.localEducationAgencyId", "1.5", "number")],
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ]
+        );
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("LIMIT 0", StringComparison.Ordinal)
+                && sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
+                && sql.Contains("DocumentId", StringComparison.Ordinal)
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_validates_custom_views_before_executing_the_ordinary_query_page_and_hydration()
+    {
+        // Validation is unconditional: it is what turns a missing or non-conforming custom view into
+        // the controlled system-error response, so it runs on the ordinary page path too, not only
+        // ahead of short-circuit terminals.
+        List<string> capturedValidationSql = [];
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ]
+        );
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new HydratedPage(null, [], [], []));
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
+                && sql.Contains("DocumentId", StringComparison.Ordinal)
+                && sql.Contains("LIMIT 0", StringComparison.Ordinal)
+                && !sql.Contains("LIMIT 1", StringComparison.Ordinal)
+            );
+        // Validation runs on the read executor — a separate read connection and round trip — so a
+        // GET-many never opens a write transaction just to probe the configured auth views.
+        _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_wraps_a_provider_error_raised_by_the_custom_view_page_query()
+    {
+        // Validation and the page query are separate round trips against the same views, so a view that
+        // is dropped, revoked, or broken in between raises only at execution. That failure must keep the
+        // custom-view validation contract instead of escaping as an unhandled provider error.
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var databaseException = new StubDbException("custom view does not exist");
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ]
+        );
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(Task.FromResult(true));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Throws(databaseException);
+
+        var action = () => _sut.QueryDocuments(queryRequest);
+
+        var assertion = await action.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+
+        assertion.Which.InnerException.Should().BeSameAs(databaseException);
+    }
+
+    [Test]
     public async Task It_returns_a_namespace_security_configuration_500_for_query_when_no_usable_root_column()
     {
         var queryRequest = CreateQueryRequest(
@@ -4762,8 +5742,52 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_returns_the_namespace_no_usable_root_column_500_for_queries_when_the_failing_strategy_is_configured_after_namespace()
+    {
+        // NamespaceBased is configured first, so its no-usable-root-column terminal is reported even
+        // though a later custom-view strategy has an unresolvable basis resource.
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator("MissingBasisWithCustomAuthorization"),
+            ],
+            namespacePrefixes: ["uri://ed-fi.org/"]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("Ed-Fi.School")
+            .And.Contain("NamespaceBased")
+            .And.Contain("no Namespace securable element resolves to a root table column");
+        Fake.GetCalls(_commandExecutor)
+            .Where(call => call.Method.Name == nameof(IRelationalCommandExecutor.ExecuteReaderAsync))
+            .Should()
+            .BeEmpty();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_fails_closed_for_query_when_ownership_is_configured_alongside_namespace()
     {
+        // The namespace prefixes are authorized, so no namespace terminal precedes Ownership; the
+        // unsupported Ownership term is what fails the request closed.
         var queryRequest = CreateQueryRequest(
             CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
             [],
@@ -4783,6 +5807,37 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .BeOfType<QueryResult.QueryFailureNotImplemented>()
             .Which.FailureMessage.Should()
             .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_the_namespace_terminal_when_it_precedes_ownership()
+    {
+        // A namespace terminal configured ahead of Ownership still wins: the Ownership 501 must not
+        // displace the no-prefixes 403.
+        var queryRequest = CreateQueryRequest(
+            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            namespacePrefixes: []
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QueryFailureNamespaceNotAuthorized>();
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -4989,6 +6044,55 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Contain("1500 namespace prefixes")
             .And.Contain("1500 authorization education organization ids")
             .And.Contain("exceed the SQL Server parameter limit");
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_validates_custom_views_before_the_mssql_relationship_parameter_budget_terminal()
+    {
+        var baseMappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var mappingSet = baseMappingSet with { Key = baseMappingSet.Key with { Dialect = SqlDialect.Mssql } };
+        long[] claimEducationOrganizationIds =
+        [
+            .. Enumerable.Range(0, 2096).Select(index => 100000L + index),
+        ];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: claimEducationOrganizationIds
+        );
+        var databaseException = new StubDbException("custom view does not exist");
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Throws(databaseException);
+
+        var action = () => _sut.QueryDocuments(queryRequest);
+
+        var assertion = await action.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+
+        assertion.Which.InnerException.Should().BeSameAs(databaseException);
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -5578,6 +6682,43 @@ public class Given_RelationalDocumentStoreRepositoryTests
         failure.Reason.Should().Be(UpsertFailureNotImplementedReason.StrategyNotEnabled);
         failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
         AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
+        _capturedExecutorRequests.Should().BeEmpty();
+        A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_post_not_implemented_for_custom_view_authorization_before_any_write_work()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var requestBody = CreateRequestBody("Roosevelt High");
+        var documentInfo = CreateDocumentInfo();
+        var mappingSet = CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(requestBody);
+        A.CallTo(() => upsertRequest.TraceId).Returns(new TraceId("post-custom-auth"));
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([255901]));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureNotImplemented>().Subject;
+        failure.Reason.Should().Be(UpsertFailureNotImplementedReason.StrategyNotEnabled);
+        failure.FailureMessage.Should().Contain("SchoolWithCustomAuthorization");
         _capturedExecutorRequests.Should().BeEmpty();
         A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
             .MustNotHaveHappened();
@@ -7098,7 +8239,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeSessionFactory,
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor
+            _namespaceAuthorizationExecutor,
+            _commandExecutor
         );
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -7152,7 +8294,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeSessionFactory,
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor
+            _namespaceAuthorizationExecutor,
+            _commandExecutor
         );
 
         var upsertRequest = A.Fake<IUpsertRequest>();
@@ -7191,7 +8334,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeSessionFactory,
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor
+            _namespaceAuthorizationExecutor,
+            _commandExecutor
         );
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -7245,7 +8389,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeSessionFactory,
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor
+            _namespaceAuthorizationExecutor,
+            _commandExecutor
         );
 
         var updateRequest = A.Fake<IUpdateRequest>();
@@ -7298,7 +8443,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeSessionFactory,
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor
+            _namespaceAuthorizationExecutor,
+            _commandExecutor
         );
 
         var upsertRequest = A.Fake<IUpsertRequest>();
@@ -7361,7 +8507,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeSessionFactory,
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor
+            _namespaceAuthorizationExecutor,
+            _commandExecutor
         );
 
         var updateRequest = A.Fake<IUpdateRequest>();
@@ -7459,7 +8606,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeSessionFactory,
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor
+            _namespaceAuthorizationExecutor,
+            _commandExecutor
         );
 
         var deleteRequest = A.Fake<IDeleteRequest>();
@@ -7519,7 +8667,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeSessionFactory,
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor
+            _namespaceAuthorizationExecutor,
+            _commandExecutor
         );
 
         var deleteRequest = A.Fake<IDeleteRequest>();
@@ -7556,7 +8705,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeSessionFactory,
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor
+            _namespaceAuthorizationExecutor,
+            _commandExecutor
         );
         ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
         ConfigureDeleteOutcome(deleted: true);
@@ -10170,6 +11320,71 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 []
             )
         );
+    }
+
+    private static MappingSet CreateQuerySupportedMappingSetWithCustomViewBasisButNoJoinPath(
+        ResourceInfo resourceInfo
+    )
+    {
+        var resource = new QualifiedResourceName(
+            resourceInfo.ProjectName.Value,
+            resourceInfo.ResourceName.Value
+        );
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(resourceInfo);
+        var concreteResources = mappingSet.Model.ConcreteResourcesInNameOrder.ToList();
+
+        if (
+            !concreteResources.Exists(static concreteResource =>
+                concreteResource.ResourceKey.Resource == new QualifiedResourceName("Ed-Fi", "Student")
+            )
+        )
+        {
+            concreteResources.Add(CreateMinimalConcreteResource(99, "Student"));
+        }
+
+        return mappingSet with
+        {
+            Model = mappingSet.Model with
+            {
+                EffectiveSchema = mappingSet.Model.EffectiveSchema with
+                {
+                    ResourceKeyCount = (short)concreteResources.Count,
+                    ResourceKeysInIdOrder =
+                    [
+                        .. concreteResources
+                            .OrderBy(static concreteResource => concreteResource.ResourceKey.ResourceKeyId)
+                            .Select(static concreteResource => concreteResource.ResourceKey),
+                    ],
+                },
+                ConcreteResourcesInNameOrder =
+                [
+                    .. concreteResources
+                        .OrderBy(
+                            static concreteResource => concreteResource.ResourceKey.Resource.ProjectName,
+                            StringComparer.Ordinal
+                        )
+                        .ThenBy(
+                            static concreteResource => concreteResource.ResourceKey.Resource.ResourceName,
+                            StringComparer.Ordinal
+                        ),
+                ],
+            },
+            ResourceKeyIdByResource = concreteResources.ToDictionary(
+                static concreteResource => concreteResource.ResourceKey.Resource,
+                static concreteResource => concreteResource.ResourceKey.ResourceKeyId
+            ),
+            ResourceKeyById = concreteResources.ToDictionary(
+                static concreteResource => concreteResource.ResourceKey.ResourceKeyId,
+                static concreteResource => concreteResource.ResourceKey
+            ),
+            SecurableElementColumnPathsByResource = new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >
+            {
+                [resource] = [],
+            },
+        };
     }
 
     private static MappingSet CreateQuerySupportedMappingSetWithDuplicatePhysicalRootEdOrgSubjects(
