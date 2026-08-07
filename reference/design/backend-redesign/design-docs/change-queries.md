@@ -2091,7 +2091,7 @@ Authorization-related ProblemDetails for Change Queries are owned by [auth.md](a
 
 #### 1. Parameter Validation Failures (400 Bad Request)
 
-These errors indicate invalid query string values on `/deletes`, `/keyChanges`, or live resource and descriptor GET-many requests using `minChangeVersion` / `maxChangeVersion`.
+These errors indicate invalid query string values on `/deletes`, `/keyChanges`, or live resource and descriptor GET-many requests using `minChangeVersion` / `maxChangeVersion`, and invalid `limit`, `offset`, or `totalCount` values on `/deletes` and `/keyChanges`. Pagination failures on live GET-many are governed by [partitioned-cursor-paging.md](partitioned-cursor-paging.md), which uses this same shell.
 
 **Type**: `urn:ed-fi:api:bad-request:parameter-validation-failed`
 
@@ -2106,6 +2106,11 @@ These errors indicate invalid query string values on `/deletes`, `/keyChanges`, 
 | `minChangeVersion` cannot be parsed as an integer | `MinChangeVersion must be a numeric value greater than or equal to 0.` |
 | `maxChangeVersion` cannot be parsed as an integer | `MaxChangeVersion must be a numeric value greater than or equal to 0.` |
 | `minChangeVersion` is greater than `maxChangeVersion` | `MinChangeVersion must be less than or equal to MaxChangeVersion.` |
+| `offset` cannot be parsed as an integer, or is negative | `Offset must be a numeric value greater than or equal to 0.` |
+| `limit` cannot be parsed as an integer, or falls outside `0`–`{MaximumPageSize}` | `Limit must be omitted or set to a numeric value between 0 and {MaximumPageSize}.` |
+| `totalCount` cannot be parsed as a boolean | `TotalCount must be a boolean value.` |
+
+The pagination rules are evaluated together rather than exclusively: a request with several invalid pagination parameters reports every one of them, in the order `offset`, `limit`, `totalCount`.
 
 
 #### 2. Resource or Endpoint Not Found (404 Not Found)
