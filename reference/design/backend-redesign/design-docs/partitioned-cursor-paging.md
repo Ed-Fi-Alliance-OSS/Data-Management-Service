@@ -232,7 +232,11 @@ New cursor and partition failures use HTTP 400 with this JSON shape and the curr
 ```
 
 For a cursor failure, `errors` contains exactly the one message selected above. A partition failure
-uses the same shell but may contain several ordered messages.
+uses the same shell but may contain several ordered messages. A traditional-paging failure also uses
+this shell, and reports every faulty parameter rather than the first, ordered `offset`, `limit`,
+`totalCount`. That order is not the phase-3 order above: phase 3 breaks ties to select a single
+error, while traditional parsing emits a list. Sharing one shell therefore does not mean sharing one
+cardinality — a client cannot infer from the response shape how many messages it may hold.
 
 #### Worked precedence examples
 

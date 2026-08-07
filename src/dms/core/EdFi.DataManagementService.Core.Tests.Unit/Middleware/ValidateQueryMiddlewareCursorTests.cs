@@ -99,9 +99,14 @@ public class ValidateQueryMiddlewareCursorTests
 
     /// <summary>
     /// The parameter-validation shell, asserted whole so a partial regression cannot pass. Shared by
-    /// the cursor and traditional fixtures, which answer a parameter fault identically.
+    /// the cursor and traditional fixtures, which answer a parameter fault identically. The expected
+    /// messages are ordered: a cursor fault reports exactly one, a traditional fault reports every
+    /// faulty parameter.
     /// </summary>
-    private static void AssertParameterValidationShell(RequestInfo requestInfo, string expectedError)
+    private static void AssertParameterValidationShell(
+        RequestInfo requestInfo,
+        params string[] expectedErrors
+    )
     {
         requestInfo.FrontendResponse.StatusCode.Should().Be(400);
 
@@ -113,7 +118,7 @@ public class ValidateQueryMiddlewareCursorTests
         body["status"]!.GetValue<int>().Should().Be(400);
         body["correlationId"]!.GetValue<string>().Should().Be(TraceId);
         body["validationErrors"]!.AsObject().Should().BeEmpty();
-        body["errors"]!.AsArray().Select(error => error!.GetValue<string>()).Should().Equal(expectedError);
+        body["errors"]!.AsArray().Select(error => error!.GetValue<string>()).Should().Equal(expectedErrors);
     }
 
     [TestFixture]
@@ -266,6 +271,23 @@ public class ValidateQueryMiddlewareCursorTests
         )
         {
             AssertParameterValidationShell(await Execute(false, (parameter, value)), expectedError);
+        }
+
+        /// <summary>
+        /// The pagination rules are evaluated together rather than exclusively, so all three faults
+        /// are reported in one response. Pinned on this composition because change-queries.md states
+        /// the ordering as a contract of /deletes and /keyChanges, which is what recognizes no cursor
+        /// parameters. See change-queries.md, "Parameter Validation Failures".
+        /// </summary>
+        [Test]
+        public async Task It_reports_every_pagination_fault_in_the_documented_order()
+        {
+            AssertParameterValidationShell(
+                await Execute(false, ("offset", "-1"), ("limit", "-1"), ("totalCount", "x")),
+                OffsetNegative,
+                LimitOutOfRange,
+                TotalCountNotABoolean
+            );
         }
 
         /// <summary>
