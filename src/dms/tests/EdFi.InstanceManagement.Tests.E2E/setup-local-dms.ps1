@@ -17,6 +17,14 @@
     DMS is not started until all three schemas are provisioned and verified. Unhealthy infrastructure
     or failed verification fails the setup (never skips).
 
+    Every Docker phase above runs with USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES
+    removed from this process, so the selected environment file is the sole authority for the schema
+    package surface. Docker Compose gives process environment variables precedence over --env-file
+    entries, and local-dms.yml resolves each of those three with a ${VAR:-default} fallback that
+    treats a present-but-blank value exactly like an unset one. The caller's original environment is
+    restored exactly on completion, including the absent, empty, whitespace, and valued distinctions,
+    and on failure paths.
+
     Suite-owned fixture registration (tenants, vendor, data stores, route contexts, applications) and
     the single post-registration DMS restart are performed by build-dms.ps1 InstanceE2ETest, not here.
 .PARAMETER SkipDockerBuild
@@ -199,6 +207,69 @@ function Assert-RouteContextDatabaseNamesAreDedicated {
     }
 }
 
+function Invoke-WithEnvironmentFileSchemaSettings {
+    # Runs the route-context setup flow's Docker phases with the three schema package variables absent
+    # from this process, so Docker Compose must resolve them from the selected --env-file, and restores
+    # the caller's exact prior state afterward.
+    #
+    # Compose gives process environment variables precedence over --env-file entries, and
+    # local-dms.yml resolves all three with a ${VAR:-default} fallback. Because ':-' substitutes the
+    # default for an empty value as well as an unset one, an ambient blank value silently wins over
+    # the environment file: the DMS container is created with AppSettings__UseApiSchemaPath=false and
+    # empty AppSettings__ApiSchemaPath/SCHEMA_PACKAGES, run.sh skips the package download entirely,
+    # and DMS loads only the image-baked schemas. Provisioning is not affected, because it reads
+    # SCHEMA_PACKAGES from the environment file only - so each route-context database is stamped for
+    # the file's full package surface while DMS computes a different runtime hash, and every routed
+    # data request fails with an EffectiveSchemaHash mismatch.
+    #
+    # This is deliberately a caller-side guard. start-local-dms.ps1 must not clear these globally:
+    # in bootstrap mode it sets them in-process on purpose, so process precedence makes the staged
+    # .bootstrap/ApiSchema workspace authoritative.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Names the schema settings carried by an environment file, matching the equivalent build-dms.ps1 helper.')]
+    param(
+        [Parameter(Mandatory)]
+        [scriptblock] $Action
+    )
+
+    $schemaEnvironmentVariableNames = @(
+        "USE_API_SCHEMA_PATH",
+        "API_SCHEMA_PATH",
+        "SCHEMA_PACKAGES"
+    )
+
+    # $null distinguishes absent from present-and-empty, which is the distinction the restore below
+    # has to reproduce.
+    $previousValues = @{}
+    foreach ($name in $schemaEnvironmentVariableNames) {
+        $previousValues[$name] = [System.Environment]::GetEnvironmentVariable($name)
+    }
+
+    try {
+        foreach ($name in $schemaEnvironmentVariableNames) {
+            # Remove-Item, never an assignment: whether '$env:X = $null' removes the variable or
+            # leaves it present-and-blank varies by platform and PowerShell/.NET version, and a blank
+            # value still satisfies ${VAR:-default} - so an assignment-based clear can leave this
+            # guard doing nothing at all.
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        }
+
+        & $Action
+    }
+    finally {
+        # Restore each variable to its exact prior state: re-create it with the verbatim prior value
+        # (including empty and whitespace) when it existed, otherwise remove it. This runs on the
+        # success path, when the action throws, and when the action calls exit.
+        foreach ($name in $schemaEnvironmentVariableNames) {
+            if ($null -eq $previousValues[$name]) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($name, $previousValues[$name])
+            }
+        }
+    }
+}
+
 Write-Host @"
 Ed-Fi DMS Local Environment Setup for Instance Management E2E Testing
 ======================================================================
@@ -315,18 +386,11 @@ try {
 
     Write-Output "Using file-based schema packages from $resolvedEnvironmentFile for E2E (non-bootstrap compatibility path)."
 
-    $previousUseApiSchemaPath = [System.Environment]::GetEnvironmentVariable("USE_API_SCHEMA_PATH")
-    $previousApiSchemaPath = [System.Environment]::GetEnvironmentVariable("API_SCHEMA_PATH")
-    $previousSchemaPackages = [System.Environment]::GetEnvironmentVariable("SCHEMA_PACKAGES")
-    try {
-        # The resolved environment file carries the file-based ApiSchema package settings. Process env
-        # values win over docker compose --env-file entries, so clear stale overrides left by teardown
-        # or earlier bootstrap runs and let the env file provide
-        # USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES.
-        $env:USE_API_SCHEMA_PATH = $null
-        $env:API_SCHEMA_PATH = $null
-        $env:SCHEMA_PACKAGES = $null
-
+    # The resolved environment file carries the file-based ApiSchema package settings. Process env
+    # values win over docker compose --env-file entries, so the guard removes stale overrides left by
+    # teardown, an earlier bootstrap run, or the invoking shell and lets the env file provide
+    # USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES.
+    Invoke-WithEnvironmentFileSchemaSettings -Action {
         # 1. Start only infrastructure and the Configuration Service. DMS starts after all three
         #    route-context schemas are provisioned and verified.
         Write-Host "`nStarting infrastructure and Configuration Service (DMS not yet started)..." -ForegroundColor Cyan
@@ -377,11 +441,6 @@ try {
             Write-Error "Failed to start DMS service after route-context database provisioning. Exit code: $LASTEXITCODE"
             exit $LASTEXITCODE
         }
-    }
-    finally {
-        if ($null -eq $previousUseApiSchemaPath) { $env:USE_API_SCHEMA_PATH = $null } else { $env:USE_API_SCHEMA_PATH = $previousUseApiSchemaPath }
-        if ($null -eq $previousApiSchemaPath) { $env:API_SCHEMA_PATH = $null } else { $env:API_SCHEMA_PATH = $previousApiSchemaPath }
-        if ($null -eq $previousSchemaPackages) { $env:SCHEMA_PACKAGES = $null } else { $env:SCHEMA_PACKAGES = $previousSchemaPackages }
     }
 
     Write-Host "`n========================================" -ForegroundColor Green
