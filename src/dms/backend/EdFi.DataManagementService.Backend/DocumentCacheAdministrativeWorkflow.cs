@@ -1,0 +1,379 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Data;
+using System.Data.Common;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
+
+namespace EdFi.DataManagementService.Backend;
+
+public sealed class DocumentCacheAdministrativeProviderConcurrencyRetryExhaustedException : Exception
+{
+    public DocumentCacheAdministrativeProviderConcurrencyRetryExhaustedException(
+        RelationalProviderToken providerToken,
+        int attemptCount,
+        Exception innerException
+    )
+        : base(
+            "DocumentCache administrative provider concurrency retry budget was exhausted.",
+            innerException
+        )
+    {
+        ProviderToken = providerToken ?? throw new ArgumentNullException(nameof(providerToken));
+        AttemptCount = attemptCount;
+    }
+
+    public RelationalProviderToken ProviderToken { get; }
+
+    public int AttemptCount { get; }
+}
+
+internal sealed class DocumentCacheAdministrativeWorkflowCancellationScope : IDisposable
+{
+    private readonly CancellationTokenSource? _linkedCancellationSource;
+
+    public DocumentCacheAdministrativeWorkflowCancellationScope(
+        CancellationToken token,
+        CancellationTokenSource? linkedCancellationSource
+    )
+    {
+        Token = token;
+        _linkedCancellationSource = linkedCancellationSource;
+    }
+
+    public CancellationToken Token { get; }
+
+    public void Dispose() => _linkedCancellationSource?.Dispose();
+}
+
+internal static class DocumentCacheAdministrativeWorkflow
+{
+    public static DocumentCacheAdministrativeWorkflowCancellationScope CreateCancellationScope(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (cancellationToken.CanBeCanceled && context.WorkflowCancellationToken.CanBeCanceled)
+        {
+            CancellationTokenSource linkedCancellationSource =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    context.WorkflowCancellationToken
+                );
+
+            return new(linkedCancellationSource.Token, linkedCancellationSource);
+        }
+
+        return new(
+            cancellationToken.CanBeCanceled ? cancellationToken : context.WorkflowCancellationToken,
+            linkedCancellationSource: null
+        );
+    }
+
+    public static Task ClearDocumentCacheAsync(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        CancellationToken cancellationToken,
+        bool completePhase = true
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return ClearBatchesAsync(
+            context,
+            DocumentCacheAdministrativeCommandPhase.ClearCache,
+            (session, request, transactionCancellationToken) =>
+                context.Primitives.ClearDocumentCacheBatchAsync(
+                    session,
+                    request,
+                    transactionCancellationToken
+                ),
+            cancellationToken,
+            completePhase
+        );
+    }
+
+    public static Task ClearDocumentProjectionWorkAsync(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        DocumentCacheAdministrativeWorkClearance clearance,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(clearance);
+
+        return ClearBatchesAsync(
+            context,
+            DocumentCacheAdministrativeCommandPhase.ClearWork,
+            (session, request, transactionCancellationToken) =>
+                context.Primitives.ClearDocumentProjectionWorkBatchAsync(
+                    session,
+                    request,
+                    clearance,
+                    transactionCancellationToken
+                ),
+            cancellationToken,
+            completePhase: true
+        );
+    }
+
+    public static Task<TResult> ExecuteInTransactionAsync<TResult>(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        IsolationLevel isolationLevel,
+        Func<IRelationalWriteSession, CancellationToken, Task<TResult>> executeAsync,
+        bool commit,
+        CancellationToken cancellationToken,
+        Action<TResult>? beforeCommit = null
+    ) =>
+        ExecuteInTransactionAsync(
+            context,
+            isolationLevel,
+            executeAsync,
+            _ => commit,
+            cancellationToken,
+            beforeCommit
+        );
+
+    public static async Task<TResult> ExecuteInTransactionAsync<TResult>(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        IsolationLevel isolationLevel,
+        Func<IRelationalWriteSession, CancellationToken, Task<TResult>> executeAsync,
+        Func<TResult, bool> shouldCommit,
+        CancellationToken cancellationToken,
+        Action<TResult>? beforeCommit = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(executeAsync);
+        ArgumentNullException.ThrowIfNull(shouldCommit);
+
+        IDocumentCacheAdministrativeMutexLease mutexLease = context.MutexLease;
+        await using IRelationalWriteSession session = await mutexLease
+            .BeginTransactionAsync(isolationLevel, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Once an administrative database transaction starts, cancellation is observed at the
+        // workflow/page boundary; the active transaction must commit or roll back under its
+        // provider command timeout rather than being interrupted by caller cancellation.
+        CancellationToken activeTransactionCancellationToken = CancellationToken.None;
+        try
+        {
+            TResult result = await executeAsync(session, activeTransactionCancellationToken)
+                .ConfigureAwait(false);
+            bool commitTransaction = shouldCommit(result);
+
+            if (commitTransaction)
+            {
+                beforeCommit?.Invoke(result);
+            }
+
+            ThrowIfSessionLost(mutexLease);
+
+            if (commitTransaction)
+            {
+                await session.CommitAsync(activeTransactionCancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await session.RollbackAsync(activeTransactionCancellationToken).ConfigureAwait(false);
+            }
+
+            return result;
+        }
+        catch (Exception exception) when (IsSessionLoss(mutexLease, exception))
+        {
+            throw CreateSessionLostException(mutexLease);
+        }
+        catch (Exception exception)
+        {
+            try
+            {
+                await session.RollbackAsync(activeTransactionCancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception rollbackException)
+                when (ShouldClassifyRollbackFailureAsSessionLoss(
+                        mutexLease,
+                        context.ProviderCommandTimeoutClassifier,
+                        exception,
+                        rollbackException
+                    )
+                )
+            {
+                throw CreateSessionLostException(mutexLease);
+            }
+
+            throw;
+        }
+    }
+
+    public static async Task<TResult> ExecuteInTransactionWithProviderConcurrencyRetryAsync<TResult>(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        IsolationLevel isolationLevel,
+        Func<IRelationalWriteSession, CancellationToken, Task<TResult>> executeAsync,
+        Func<TResult, bool> shouldCommit,
+        CancellationToken cancellationToken,
+        Action<TResult>? beforeCommit = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(executeAsync);
+        ArgumentNullException.ThrowIfNull(shouldCommit);
+
+        DeadlockRetrySettings retrySettings = context.ProviderConcurrencyRetrySettings;
+        retrySettings.Validate();
+        var attemptCount = 0;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            attemptCount++;
+
+            try
+            {
+                return await ExecuteInTransactionAsync(
+                        context,
+                        isolationLevel,
+                        executeAsync,
+                        shouldCommit,
+                        cancellationToken,
+                        beforeCommit
+                    )
+                    .ConfigureAwait(false);
+            }
+            catch (DbException exception)
+                when (context.WriteExceptionClassifier.IsTransientFailure(exception))
+            {
+                if (attemptCount > retrySettings.MaxRetryAttempts)
+                {
+                    throw new DocumentCacheAdministrativeProviderConcurrencyRetryExhaustedException(
+                        context.MutexLease.ProviderToken,
+                        attemptCount,
+                        exception
+                    );
+                }
+
+                await Task.Delay(
+                        ProviderConcurrencyRetryDelay(retrySettings, attemptCount),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static async Task ClearBatchesAsync(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        DocumentCacheAdministrativeCommandPhase phase,
+        Func<
+            IRelationalWriteSession,
+            DocumentCacheAdministrativeClearBatchRequest,
+            CancellationToken,
+            Task<DocumentCacheAdministrativeClearBatchResult>
+        > clearBatchAsync,
+        CancellationToken cancellationToken,
+        bool completePhase
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(clearBatchAsync);
+
+        int pageSize = context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize;
+
+        context.EnterPhase(phase);
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            DocumentCacheAdministrativeClearBatchResult batch = await ExecuteInTransactionAsync(
+                    context,
+                    IsolationLevel.ReadCommitted,
+                    (session, transactionCancellationToken) =>
+                        clearBatchAsync(
+                            session,
+                            new DocumentCacheAdministrativeClearBatchRequest(pageSize),
+                            transactionCancellationToken
+                        ),
+                    commit: true,
+                    cancellationToken,
+                    beforeCommit: batch =>
+                    {
+                        if (batch.Mutated)
+                        {
+                            context.MarkMutated();
+                        }
+                    }
+                )
+                .ConfigureAwait(false);
+
+            if (!batch.Mutated)
+            {
+                break;
+            }
+        }
+
+        if (completePhase)
+        {
+            context.CompletePhase(phase);
+        }
+    }
+
+    internal static bool IsSessionLoss(IDocumentCacheAdministrativeMutexLease mutexLease, Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(mutexLease);
+        ArgumentNullException.ThrowIfNull(exception);
+
+        return exception is DocumentCacheAdministrativeMutexSessionLostException
+            || (
+                !mutexLease.IsSessionOpen
+                && exception is DbException or InvalidOperationException or ObjectDisposedException
+            );
+    }
+
+    private static void ThrowIfSessionLost(IDocumentCacheAdministrativeMutexLease mutexLease)
+    {
+        if (!mutexLease.IsSessionOpen)
+        {
+            throw CreateSessionLostException(mutexLease);
+        }
+    }
+
+    private static bool ShouldClassifyRollbackFailureAsSessionLoss(
+        IDocumentCacheAdministrativeMutexLease mutexLease,
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
+        Exception originalException,
+        Exception rollbackException
+    ) =>
+        !ShouldPreserveOriginalClassification(providerCommandTimeoutClassifier, originalException)
+        && IsSessionLoss(mutexLease, rollbackException);
+
+    private static bool ShouldPreserveOriginalClassification(
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
+        Exception exception
+    ) =>
+        exception is OperationCanceledException
+        || providerCommandTimeoutClassifier.IsProviderCommandTimeout(exception);
+
+    private static TimeSpan ProviderConcurrencyRetryDelay(
+        DeadlockRetrySettings settings,
+        int retryAttemptNumber
+    )
+    {
+        double delayMilliseconds = settings.BaseDelayMilliseconds * Math.Pow(2, retryAttemptNumber - 1);
+
+        if (settings.UseJitter)
+        {
+            delayMilliseconds += Random.Shared.NextDouble() * settings.BaseDelayMilliseconds;
+        }
+
+        return TimeSpan.FromMilliseconds(Math.Min(delayMilliseconds, int.MaxValue));
+    }
+
+    private static DocumentCacheAdministrativeMutexSessionLostException CreateSessionLostException(
+        IDocumentCacheAdministrativeMutexLease mutexLease
+    ) => new(mutexLease.ProviderToken);
+}

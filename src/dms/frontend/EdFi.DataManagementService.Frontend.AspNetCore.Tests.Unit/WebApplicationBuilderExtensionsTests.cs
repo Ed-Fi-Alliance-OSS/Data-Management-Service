@@ -17,6 +17,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -28,7 +29,8 @@ public class WebApplicationBuilderExtensionsTests
 {
     private static IServiceCollection CreateServiceCollection(
         string datastore,
-        Dictionary<string, string?>? additionalConfiguration = null
+        Dictionary<string, string?>? additionalConfiguration = null,
+        Action<IServiceCollection>? configureServicesBeforeAddServices = null
     )
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Test" });
@@ -59,6 +61,7 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         builder.Configuration.AddInMemoryCollection(configuration);
+        configureServicesBeforeAddServices?.Invoke(builder.Services);
 
         builder.AddServices();
 
@@ -85,6 +88,24 @@ public class WebApplicationBuilderExtensionsTests
 
         descriptor.Lifetime.Should().Be(ServiceLifetime.Scoped);
         descriptor.ImplementationType.Should().Be(typeof(RelationalDocumentStoreRepository));
+        descriptor.ImplementationFactory.Should().BeNull();
+        descriptor.ImplementationInstance.Should().BeNull();
+    }
+
+    private static void AssertSingleDownstreamPublicationHistoryProvider<TImplementation>(
+        IServiceCollection services
+    )
+        where TImplementation : class, IDocumentCacheDownstreamPublicationHistoryProvider
+    {
+        ServiceDescriptor descriptor = services
+            .Should()
+            .ContainSingle(descriptor =>
+                descriptor.ServiceType == typeof(IDocumentCacheDownstreamPublicationHistoryProvider)
+            )
+            .Subject;
+
+        descriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
+        descriptor.ImplementationType.Should().Be(typeof(TImplementation));
         descriptor.ImplementationFactory.Should().BeNull();
         descriptor.ImplementationInstance.Should().BeNull();
     }
@@ -127,6 +148,7 @@ public class WebApplicationBuilderExtensionsTests
                     ["DataManagement:DocumentCache:Projector:MaxConcurrentTargets"] = "4",
                     ["DataManagement:DocumentCache:Projector:FailureBackoff"] = "00:01:15",
                     ["DataManagement:DocumentCache:Projector:BaselineHighWaterMark"] = "2500",
+                    ["DataManagement:DocumentCache:Administration:WorkflowTimeout"] = "12:00:00",
                 }
             );
 
@@ -146,6 +168,7 @@ public class WebApplicationBuilderExtensionsTests
                 .Projector.FailureBackoff.Should()
                 .Be(TimeSpan.FromMinutes(1).Add(TimeSpan.FromSeconds(15)));
             options.Projector.BaselineHighWaterMark.Should().Be(2500);
+            options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(12));
         }
 
         [Test]
@@ -190,6 +213,65 @@ public class WebApplicationBuilderExtensionsTests
             snapshot.MaxConcurrentTargets.Should().Be(2);
             snapshot.FailureBackoff.Should().Be(TimeSpan.FromSeconds(30));
             snapshot.BaselineHighWaterMark.Should().Be(1000);
+            snapshot.WorkflowTimeout.Should().Be(TimeSpan.FromHours(24));
+        }
+
+        [Test]
+        [Category("DocumentCacheServiceRegistration")]
+        public void It_registers_the_DocumentCache_projection_supervisor_as_the_only_hosted_service()
+        {
+            using ServiceProvider serviceProvider = CreateServices("postgresql");
+
+            DocumentCacheProjectionSupervisor supervisor =
+                serviceProvider.GetRequiredService<DocumentCacheProjectionSupervisor>();
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheProjectionSupervisor>()
+                .Should()
+                .BeSameAs(supervisor);
+            serviceProvider
+                .GetRequiredService<IDocumentCacheProjectionRefreshSignal>()
+                .Should()
+                .BeSameAs(supervisor);
+            serviceProvider
+                .GetServices<IHostedService>()
+                .OfType<DocumentCacheProjectionSupervisor>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeSameAs(supervisor);
+        }
+
+        [Test]
+        [Category("DocumentCacheServiceRegistration")]
+        public void It_registers_the_data_store_provider_with_DocumentCache_refresh_notification()
+        {
+            using ServiceProvider serviceProvider = CreateServices("postgresql");
+
+            serviceProvider
+                .GetRequiredService<IDataStoreProvider>()
+                .Should()
+                .BeOfType<DocumentCacheRefreshNotifyingDataStoreProvider>();
+            serviceProvider.GetRequiredService<ConfigurationServiceDataStoreProvider>().Should().NotBeNull();
+        }
+
+        [Test]
+        [Category("DocumentCacheServiceRegistration")]
+        public void It_registers_the_DocumentCache_projection_observation_provider_and_sink()
+        {
+            using ServiceProvider serviceProvider = CreateServices("postgresql");
+
+            DocumentCacheProjectionObservationStore store =
+                serviceProvider.GetRequiredService<DocumentCacheProjectionObservationStore>();
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheProjectionObservationProvider>()
+                .Should()
+                .BeSameAs(store);
+            serviceProvider
+                .GetRequiredService<IDocumentCacheProjectionObservationSink>()
+                .Should()
+                .BeSameAs(store);
         }
     }
 
@@ -283,12 +365,72 @@ public class WebApplicationBuilderExtensionsTests
         [Category("DownstreamPublicationHistory")]
         public void It_resolves_the_default_DocumentCache_downstream_publication_history_provider_with_postgresql_provider()
         {
-            using var serviceProvider = CreateServices("postgresql");
+            IServiceCollection services = CreateServiceCollection("postgresql");
+            AssertSingleDownstreamPublicationHistoryProvider<DocumentCacheUnknownDownstreamPublicationHistoryProvider>(
+                services
+            );
+
+            using ServiceProvider serviceProvider = services.BuildServiceProvider();
 
             serviceProvider
                 .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
                 .Should()
                 .BeOfType<DocumentCacheUnknownDownstreamPublicationHistoryProvider>();
+        }
+
+        [Test]
+        [Category("DownstreamPublicationHistory")]
+        public void It_preserves_a_custom_DocumentCache_downstream_publication_history_provider_registered_before_startup()
+        {
+            IServiceCollection services = CreateServiceCollection(
+                "postgresql",
+                configureServicesBeforeAddServices: serviceCollection =>
+                    serviceCollection.AddSingleton<
+                        IDocumentCacheDownstreamPublicationHistoryProvider,
+                        CustomDocumentCacheDownstreamPublicationHistoryProvider
+                    >()
+            );
+            AssertSingleDownstreamPublicationHistoryProvider<CustomDocumentCacheDownstreamPublicationHistoryProvider>(
+                services
+            );
+
+            using ServiceProvider serviceProvider = services.BuildServiceProvider();
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
+                .Should()
+                .BeOfType<CustomDocumentCacheDownstreamPublicationHistoryProvider>();
+        }
+
+        [Test]
+        [Category("DocumentCacheServiceRegistration")]
+        public void It_resolves_the_postgresql_DocumentCache_projection_and_administrative_adapters()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+            using var scope = serviceProvider.CreateScope();
+
+            serviceProvider
+                .GetRequiredService<IDocumentProjectionWorkPager>()
+                .Should()
+                .BeOfType<PostgresqlDocumentProjectionWorkPager>();
+            serviceProvider
+                .GetRequiredService<IDocumentCacheAdministrativeMutex>()
+                .Should()
+                .BeOfType<PostgresqlDocumentCacheAdministrativeMutex>();
+            serviceProvider
+                .GetRequiredService<IDocumentCacheAdministrativePrimitives>()
+                .Should()
+                .BeOfType<DocumentCacheAdministrativePrimitives>()
+                .Which.ProviderToken.Should()
+                .Be(RelationalProviderToken.Postgresql);
+            serviceProvider
+                .GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>()
+                .Should()
+                .BeOfType<DocumentCacheProjectionDrainPageProcessor>();
+            scope
+                .ServiceProvider.GetRequiredService<IDocumentCacheSessionBoundWriter>()
+                .Should()
+                .BeOfType<PostgresqlDocumentCacheWriter>();
         }
 
         [Test]
@@ -516,12 +658,54 @@ public class WebApplicationBuilderExtensionsTests
         [Category("DownstreamPublicationHistory")]
         public void It_resolves_the_default_DocumentCache_downstream_publication_history_provider_with_sqlserver_provider()
         {
-            using var serviceProvider = CreateServices("mssql");
+            IServiceCollection services = CreateServiceCollection("mssql");
+            AssertSingleDownstreamPublicationHistoryProvider<DocumentCacheUnknownDownstreamPublicationHistoryProvider>(
+                services
+            );
+
+            using ServiceProvider serviceProvider = services.BuildServiceProvider();
 
             serviceProvider
                 .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
                 .Should()
                 .BeOfType<DocumentCacheUnknownDownstreamPublicationHistoryProvider>();
+        }
+
+        [Test]
+        [Category("DocumentCacheServiceRegistration")]
+        public void It_resolves_the_mssql_DocumentCache_projection_and_administrative_adapters()
+        {
+            using var serviceProvider = CreateServices("mssql");
+            using var scope = serviceProvider.CreateScope();
+
+            serviceProvider
+                .GetRequiredService<IDocumentProjectionWorkPager>()
+                .Should()
+                .Match<IDocumentProjectionWorkPager>(pager =>
+                    pager.GetType().Name == "MssqlDocumentProjectionWorkPager"
+                );
+            serviceProvider
+                .GetRequiredService<IDocumentCacheAdministrativeMutex>()
+                .Should()
+                .Match<IDocumentCacheAdministrativeMutex>(mutex =>
+                    mutex.GetType().Name == "MssqlDocumentCacheAdministrativeMutex"
+                );
+            serviceProvider
+                .GetRequiredService<IDocumentCacheAdministrativePrimitives>()
+                .Should()
+                .BeOfType<DocumentCacheAdministrativePrimitives>()
+                .Which.ProviderToken.Should()
+                .Be(RelationalProviderToken.SqlServer);
+            serviceProvider
+                .GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>()
+                .Should()
+                .BeOfType<DocumentCacheProjectionDrainPageProcessor>();
+            scope
+                .ServiceProvider.GetRequiredService<IDocumentCacheSessionBoundWriter>()
+                .Should()
+                .Match<IDocumentCacheSessionBoundWriter>(writer =>
+                    writer.GetType().Name == "MssqlDocumentCacheWriter"
+                );
         }
 
         [Test]
@@ -665,5 +849,15 @@ public class WebApplicationBuilderExtensionsTests
                 .Which.Should()
                 .BeOfType<RelationalBackendMappingInitializer>();
         }
+    }
+
+    private sealed class CustomDocumentCacheDownstreamPublicationHistoryProvider
+        : IDocumentCacheDownstreamPublicationHistoryProvider
+    {
+        public Task<DocumentCacheDownstreamPublicationHistoryObservation> ObserveAsync(
+            DocumentCacheTargetKey targetKey,
+            DocumentCachePhysicalSourceFingerprint? currentPhysicalSourceFingerprint,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
     }
 }

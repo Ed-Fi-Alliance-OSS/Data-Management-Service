@@ -205,7 +205,8 @@ public sealed record DocumentCacheTargetEffectiveSettings
         int projectorPageSize,
         int projectorMaxConcurrentTargets,
         TimeSpan projectorFailureBackoff,
-        int projectorBaselineHighWaterMark
+        int projectorBaselineHighWaterMark,
+        TimeSpan administrationWorkflowTimeout
     )
     {
         ReadAccelerationEnabled = readAccelerationEnabled;
@@ -215,6 +216,7 @@ public sealed record DocumentCacheTargetEffectiveSettings
         ProjectorMaxConcurrentTargets = projectorMaxConcurrentTargets;
         ProjectorFailureBackoff = projectorFailureBackoff;
         ProjectorBaselineHighWaterMark = projectorBaselineHighWaterMark;
+        AdministrationWorkflowTimeout = administrationWorkflowTimeout;
     }
 
     public bool ReadAccelerationEnabled { get; }
@@ -231,6 +233,8 @@ public sealed record DocumentCacheTargetEffectiveSettings
 
     public int ProjectorBaselineHighWaterMark { get; }
 
+    public TimeSpan AdministrationWorkflowTimeout { get; }
+
     public static DocumentCacheTargetEffectiveSettings FromOptions(DocumentCacheOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -242,7 +246,8 @@ public sealed record DocumentCacheTargetEffectiveSettings
             options.Projector.PageSize,
             options.Projector.MaxConcurrentTargets,
             options.Projector.FailureBackoff,
-            options.Projector.BaselineHighWaterMark
+            options.Projector.BaselineHighWaterMark,
+            options.Administration.WorkflowTimeout
         );
     }
 }
@@ -533,8 +538,8 @@ public sealed record DocumentCacheProviderPrerequisiteValidationResult
                 ? DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
                 : DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident,
             lifecycle.State == DocumentCacheLifecycleState.Disabled
-                ? "Provider prerequisite failed; correction and DMS/projector restart are required."
-                : "Provider prerequisite failure was observed outside the supported Disabled lifecycle."
+                ? "Provider prerequisite failed; correction can be retried by startup, CMS refresh, or supervisor tick."
+                : "Provider prerequisite failure was observed outside the supported Disabled lifecycle; process restart or target replacement is required."
         );
     }
 

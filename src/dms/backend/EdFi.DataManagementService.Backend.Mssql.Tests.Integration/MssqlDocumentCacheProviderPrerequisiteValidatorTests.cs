@@ -71,7 +71,7 @@ public class Given_A_Mssql_DocumentCachePrerequisite_Validator
     }
 
     [Test]
-    public async Task It_classifies_disabled_rcsi_with_disabled_lifecycle_as_provider_prerequisite_failed()
+    public async Task It_classifies_SqlServerDocumentCachePrerequisite_disabled_rcsi_with_disabled_lifecycle_as_provider_prerequisite_failed()
     {
         await using MssqlGeneratedDdlTestDatabase database =
             await MssqlGeneratedDdlTestDatabase.CreateEmptyAsync();
@@ -91,7 +91,39 @@ public class Given_A_Mssql_DocumentCachePrerequisite_Validator
     }
 
     [Test]
-    public async Task It_classifies_disabled_rcsi_with_tracking_lifecycle_as_unsupported_incident()
+    public async Task It_retries_SqlServerDocumentCachePrerequisite_initialization_after_disabled_lifecycle_correction()
+    {
+        await using MssqlGeneratedDdlTestDatabase database =
+            await MssqlGeneratedDdlTestDatabase.CreateEmptyAsync();
+        await SetReadCommittedSnapshotAsync(database.DatabaseName, enabled: false);
+
+        DocumentCacheProviderPrerequisiteValidationResult initialResult =
+            await _validator.ValidateInitializationAsync(database.ConnectionString, DisabledLifecycle());
+
+        await SetReadCommittedSnapshotAsync(database.DatabaseName, enabled: true);
+
+        DocumentCacheProviderPrerequisiteValidationResult retryResult =
+            await _validator.ValidateInitializationAsync(database.ConnectionString, DisabledLifecycle());
+
+        initialResult
+            .SqlServerPrerequisites.ReadCommittedSnapshot.Status.Should()
+            .Be(DocumentCacheProviderPrerequisiteStatus.Disabled);
+        retryResult
+            .SqlServerPrerequisites.ReadCommittedSnapshot.Status.Should()
+            .Be(DocumentCacheProviderPrerequisiteStatus.Satisfied);
+
+        if (
+            retryResult.SqlServerPrerequisites.NestedTriggers.Status
+            == DocumentCacheProviderPrerequisiteStatus.Satisfied
+        )
+        {
+            retryResult.IsSatisfied.Should().BeTrue();
+            retryResult.FailureCategory.Should().BeNull();
+        }
+    }
+
+    [Test]
+    public async Task It_classifies_SqlServerDocumentCachePrerequisite_disabled_rcsi_with_tracking_lifecycle_as_unsupported_incident()
     {
         await using MssqlGeneratedDdlTestDatabase database =
             await MssqlGeneratedDdlTestDatabase.CreateEmptyAsync();
@@ -115,7 +147,7 @@ public class Given_A_Mssql_DocumentCachePrerequisite_Validator
     }
 
     [Test]
-    public async Task It_rereads_provider_prerequisites_for_activation_preflight()
+    public async Task It_rereads_SqlServerDocumentCachePrerequisite_for_activation_preflight()
     {
         await using MssqlGeneratedDdlTestDatabase database =
             await MssqlGeneratedDdlTestDatabase.CreateEmptyAsync();

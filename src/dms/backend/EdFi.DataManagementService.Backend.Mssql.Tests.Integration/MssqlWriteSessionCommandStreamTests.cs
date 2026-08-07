@@ -52,7 +52,7 @@ file static class WriteSessionCommandStreamTestSupport
         // The reference resolver brings the document cache writer's retry adapter with it, and that
         // adapter takes the deadlock retry settings as a constructed dependency.
         services.AddSingleton(new DeadlockRetrySettings());
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
 
         // Decorate the provider's own session factory so the recorder observes the real production
         // session, including BEGIN/COMMIT, rather than a substitute.

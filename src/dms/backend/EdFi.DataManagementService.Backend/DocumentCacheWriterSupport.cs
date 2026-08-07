@@ -148,6 +148,18 @@ internal static class DocumentCacheWriterSupport
     {
         ArgumentNullException.ThrowIfNull(transaction);
 
+        await RollbackIfNeededAsync(transaction.RollbackAsync, transactionCompleted, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public static async Task RollbackIfNeededAsync(
+        Func<CancellationToken, Task> rollbackAsync,
+        bool transactionCompleted,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(rollbackAsync);
+
         if (transactionCompleted)
         {
             return;
@@ -155,7 +167,7 @@ internal static class DocumentCacheWriterSupport
 
         try
         {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            await rollbackAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (InvalidOperationException exception)
         {

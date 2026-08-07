@@ -118,6 +118,32 @@ public class StartupStatusTests
     internal StartupStatusDocument ReadStartupStatus() =>
         JsonSerializer.Deserialize<StartupStatusDocument>(File.ReadAllText(StatusFilePath))!;
 
+    [Test]
+    public void It_exposes_only_startup_phases_written_by_the_startup_status_flow()
+    {
+        IEnumerable<string> startupPhases = typeof(DmsStartupPhases)
+            .GetFields(
+                System.Reflection.BindingFlags.Public
+                    | System.Reflection.BindingFlags.Static
+                    | System.Reflection.BindingFlags.FlattenHierarchy
+            )
+            .Where(field => field.IsLiteral && !field.IsInitOnly && field.FieldType == typeof(string))
+            .Select(field => (string)field.GetRawConstantValue()!);
+
+        startupPhases
+            .Should()
+            .BeEquivalentTo(
+                DmsStartupPhases.ConfigureServices,
+                DmsStartupPhases.BuildApplication,
+                DmsStartupPhases.LoadDataStores,
+                DmsStartupPhases.InitializeApiSchemas,
+                DmsStartupPhases.InitializeBackendMappings,
+                DmsStartupPhases.InitializeAuthMetadata,
+                DmsStartupPhases.ConfigureEndpoints,
+                DmsStartupPhases.Ready
+            );
+    }
+
     [TestFixture]
     public class Given_Backend_Mapping_Initialization_Fails : StartupStatusTests
     {

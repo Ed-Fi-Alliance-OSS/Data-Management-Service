@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Interface;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -90,6 +91,113 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Singleton<IDocumentCacheWriterTelemetry, DocumentCacheWriterTelemetry>()
         );
         services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheProjectionTelemetry, DocumentCacheProjectionTelemetry>()
+        );
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheDownstreamPublicationHistoryProvider,
+                DocumentCacheUnknownDownstreamPublicationHistoryProvider
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                DocumentCacheProjectionObservationStore,
+                DocumentCacheProjectionObservationStore
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheProjectionObservationProvider>(static serviceProvider =>
+                serviceProvider.GetRequiredService<DocumentCacheProjectionObservationStore>()
+            )
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheProjectionObservationSink>(static serviceProvider =>
+                serviceProvider.GetRequiredService<DocumentCacheProjectionObservationStore>()
+            )
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheProjectionTargetRuntimeContextFactory,
+                DocumentCacheProjectionTargetRuntimeContextFactory
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheProjectionDrainPageProcessor,
+                DocumentCacheProjectionDrainPageProcessor
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheProjectionItemProcessor,
+                DocumentCacheProjectionItemProcessor
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheProjectionScheduler, DocumentCacheProjectionScheduler>()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheAdministrativeCommandRunner,
+                DocumentCacheAdministrativeCommandRunner
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheGuardedNewEmptyActivationCommand,
+                DocumentCacheGuardedNewEmptyActivationCommand
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheOfflineActivationCommand,
+                DocumentCacheOfflineActivationCommand
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheOfflineDeactivationCommand,
+                DocumentCacheOfflineDeactivationCommand
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheOnlineCacheRebuildCommand,
+                DocumentCacheOnlineCacheRebuildCommand
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheExplicitIntegrityScrubCommand,
+                DocumentCacheExplicitIntegrityScrubCommand
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheInternalOnlyCacheAheadRecoveryCommand,
+                DocumentCacheInternalOnlyCacheAheadRecoveryCommand
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheBaselineSeedDelay, DocumentCacheBaselineSeedDelay>()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheBaselineSeeder, DocumentCacheBaselineSeeder>()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheAdministrativeDrainDelay,
+                DocumentCacheAdministrativeDrainDelay
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheAdministrativeDrainer,
+                DocumentCacheAdministrativeDrainer
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<IDocumentCacheWriterRetryAdapter, DocumentCacheWriterRetryAdapter>()
         );
         services.TryAdd(
@@ -170,7 +278,7 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Scoped<IRelationalWritePersister, RelationalWriteNoProfilePersister>()
         );
         services.TryAdd(
-            ServiceDescriptor.Scoped<
+            ServiceDescriptor.Singleton<
                 IRelationalWriteExceptionClassifier,
                 NoOpRelationalWriteExceptionClassifier
             >()

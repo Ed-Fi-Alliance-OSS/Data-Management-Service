@@ -22,9 +22,15 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAdd(
-            ServiceDescriptor.Scoped<
+            ServiceDescriptor.Singleton<
                 IRelationalWriteExceptionClassifier,
                 MssqlRelationalWriteExceptionClassifier
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheProviderCommandTimeoutClassifier,
+                MssqlDocumentCacheProviderCommandTimeoutClassifier
             >()
         );
         services.TryAdd(
@@ -36,15 +42,43 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
                 MssqlDocumentCacheMaterializationDataStore
             >()
         );
-        services.TryAdd(ServiceDescriptor.Scoped<IDocumentCacheWriter, MssqlDocumentCacheWriter>());
+        services.TryAdd(ServiceDescriptor.Scoped<MssqlDocumentCacheWriter, MssqlDocumentCacheWriter>());
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IDocumentCacheWriter>(serviceProvider =>
+                serviceProvider.GetRequiredService<MssqlDocumentCacheWriter>()
+            )
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IDocumentCacheSessionBoundWriter>(serviceProvider =>
+                serviceProvider.GetRequiredService<MssqlDocumentCacheWriter>()
+            )
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentProjectionWorkPager, MssqlDocumentProjectionWorkPager>()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheAdministrativeMutex,
+                MssqlDocumentCacheAdministrativeMutex
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheAdministrativePrimitives>(serviceProvider =>
+                DocumentCacheAdministrativePrimitives.ForSqlServer(
+                    serviceProvider.GetRequiredService<IDocumentCacheProviderCommandTimeoutClassifier>()
+                )
+            )
+        );
 
-        return services.AddReferenceResolver<
+        services.AddReferenceResolver<
             MssqlReferenceResolverAdapterFactory,
             MssqlRelationalCommandExecutor,
             MssqlRelationalWriteSessionFactory,
             MssqlDocumentHydrator,
             MssqlSessionDocumentHydrator
         >();
+
+        return services;
     }
 
     public static IServiceCollection AddMssqlRelationalTokenInfoEducationOrganizationLookup(

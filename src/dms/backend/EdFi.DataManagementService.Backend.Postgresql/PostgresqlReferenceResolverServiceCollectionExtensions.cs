@@ -20,9 +20,15 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAdd(
-            ServiceDescriptor.Scoped<
+            ServiceDescriptor.Singleton<
                 IRelationalWriteExceptionClassifier,
                 PostgresqlRelationalWriteExceptionClassifier
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheProviderCommandTimeoutClassifier,
+                PostgresqlDocumentCacheProviderCommandTimeoutClassifier
             >()
         );
         services.TryAdd(
@@ -37,15 +43,45 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
                 PostgresqlDocumentCacheMaterializationDataStore
             >()
         );
-        services.TryAdd(ServiceDescriptor.Scoped<IDocumentCacheWriter, PostgresqlDocumentCacheWriter>());
+        services.TryAdd(
+            ServiceDescriptor.Scoped<PostgresqlDocumentCacheWriter, PostgresqlDocumentCacheWriter>()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IDocumentCacheWriter>(serviceProvider =>
+                serviceProvider.GetRequiredService<PostgresqlDocumentCacheWriter>()
+            )
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IDocumentCacheSessionBoundWriter>(serviceProvider =>
+                serviceProvider.GetRequiredService<PostgresqlDocumentCacheWriter>()
+            )
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentProjectionWorkPager, PostgresqlDocumentProjectionWorkPager>()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheAdministrativeMutex,
+                PostgresqlDocumentCacheAdministrativeMutex
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheAdministrativePrimitives>(serviceProvider =>
+                DocumentCacheAdministrativePrimitives.ForPostgresql(
+                    serviceProvider.GetRequiredService<IDocumentCacheProviderCommandTimeoutClassifier>()
+                )
+            )
+        );
 
-        return services.AddReferenceResolver<
+        services.AddReferenceResolver<
             PostgresqlReferenceResolverAdapterFactory,
             PostgresqlRelationalCommandExecutor,
             PostgresqlRelationalWriteSessionFactory,
             PostgresqlDocumentHydrator,
             PostgresqlSessionDocumentHydrator
         >();
+
+        return services;
     }
 
     public static IServiceCollection AddPostgresqlRelationalTokenInfoEducationOrganizationLookup(

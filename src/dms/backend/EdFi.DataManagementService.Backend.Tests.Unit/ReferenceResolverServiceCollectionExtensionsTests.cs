@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
@@ -297,6 +298,12 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         // full Core DI extension.
         services.TryAddSingleton(new DeadlockRetrySettings());
         services.TryAddSingleton<IDocumentLinkSlugResolver, NoLinkSlugResolver>();
+        services.TryAddSingleton<IDocumentCacheProjectionSupervisor, StubDocumentCacheProjectionSupervisor>();
+        services.TryAddSingleton<IDocumentCacheTargetRegistry, StubDocumentCacheTargetRegistry>();
+        services.TryAddSingleton<IDocumentProjectionWorkPager, StubDocumentProjectionWorkPager>();
+        services.TryAddSingleton(A.Fake<IDocumentCacheAdministrativeMutex>());
+        services.TryAddSingleton(A.Fake<IDocumentCacheAdministrativePrimitives>());
+        services.TryAddSingleton(A.Fake<IDocumentCacheProviderCommandTimeoutClassifier>());
         services.AddOptions<ResourceLinksOptions>();
 
         return services.BuildServiceProvider(
@@ -308,6 +315,41 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
     {
         public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
             throw new InvalidOperationException("NoLinkSlugResolver is unused in composition-surface tests.");
+    }
+
+    private sealed class StubDocumentCacheProjectionSupervisor : IDocumentCacheProjectionSupervisor
+    {
+        public System.Collections.Immutable.ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts =>
+            [];
+
+        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
+            DocumentCacheTargetRefreshReason reason,
+            CancellationToken cancellationToken = default
+        ) => throw new InvalidOperationException("Stub supervisor is unused in composition-surface tests.");
+    }
+
+    private sealed class StubDocumentCacheTargetRegistry : IDocumentCacheTargetRegistry
+    {
+        private static readonly DateTimeOffset ObservedAt = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
+
+        public DocumentCacheTargetRegistrySnapshot CurrentSnapshot { get; } = new([], ObservedAt);
+
+        public DocumentCacheTargetRuntimeSnapshot CurrentRuntimeSnapshot { get; } = new([], ObservedAt);
+
+        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
+            DocumentCacheTargetRefreshReason reason,
+            CancellationToken cancellationToken = default
+        ) => throw new InvalidOperationException("Stub registry is unused in composition-surface tests.");
+    }
+
+    private sealed class StubDocumentProjectionWorkPager : IDocumentProjectionWorkPager
+    {
+        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+
+        public Task<DocumentProjectionWorkPage> ReadPageAsync(
+            DocumentProjectionWorkPageRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new InvalidOperationException("Stub work pager is unused in composition-surface tests.");
     }
 
     private sealed class TestReferenceResolverAdapterFactory : IReferenceResolverAdapterFactory

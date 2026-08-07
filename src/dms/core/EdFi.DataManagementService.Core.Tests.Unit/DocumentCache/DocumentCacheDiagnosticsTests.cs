@@ -25,7 +25,8 @@ public class DocumentCacheDiagnosticsTests
         projectorPageSize: 100,
         projectorMaxConcurrentTargets: 2,
         projectorFailureBackoff: TimeSpan.FromSeconds(30),
-        projectorBaselineHighWaterMark: 1000
+        projectorBaselineHighWaterMark: 1000,
+        administrationWorkflowTimeout: TimeSpan.FromHours(24)
     );
 
     private static readonly DocumentCachePhysicalSourceFingerprint _fingerprint = new(

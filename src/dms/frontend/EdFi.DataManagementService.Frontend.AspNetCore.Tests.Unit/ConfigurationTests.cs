@@ -18,6 +18,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -310,12 +311,13 @@ public class ConfigurationTests
     }
 
     [TestFixture]
-    public class Given_DocumentCache_Target_Initialization_Fails
+    public class Given_DocumentCache_Target_Initialization_Is_Deferred
     {
         private WebApplicationFactory<Program>? _factory;
         private string _statusDirectory = null!;
         private string _statusFilePath = null!;
         private RecordingStartupProcessExit _startupProcessExit = null!;
+        private IDocumentCacheTargetRegistry _targetRegistry = null!;
 
         [SetUp]
         public void Setup()
@@ -345,10 +347,11 @@ public class ConfigurationTests
                         collection.Replace(
                             ServiceDescriptor.Singleton<IStartupProcessExit>(_startupProcessExit)
                         );
+                        collection.RemoveAll<IHostedService>();
 
-                        IDocumentCacheTargetRegistry targetRegistry = A.Fake<IDocumentCacheTargetRegistry>();
+                        _targetRegistry = A.Fake<IDocumentCacheTargetRegistry>();
                         A.CallTo(() =>
-                                targetRegistry.RefreshAsync(
+                                _targetRegistry.RefreshAsync(
                                     DocumentCacheTargetRefreshReason.Startup,
                                     A<CancellationToken>.Ignored
                                 )
@@ -357,7 +360,7 @@ public class ConfigurationTests
                                 new InvalidOperationException("DocumentCache target refresh failed.")
                             );
                         collection.Replace(
-                            ServiceDescriptor.Singleton<IDocumentCacheTargetRegistry>(targetRegistry)
+                            ServiceDescriptor.Singleton<IDocumentCacheTargetRegistry>(_targetRegistry)
                         );
                     }
                 );
@@ -376,37 +379,26 @@ public class ConfigurationTests
         }
 
         [Test]
-        public void It_writes_failed_startup_status_for_the_DocumentCache_target_phase()
+        public void It_does_not_refresh_DocumentCache_targets_during_Program_startup()
         {
             // Act
-            Action act = () => _factory!.CreateClient();
+            using var client = _factory!.CreateClient();
 
             // Assert
-            act.Should()
-                .Throw<InvalidOperationException>()
-                .WithMessage("DocumentCache target refresh failed.");
-            _startupProcessExit.ExitCallCount.Should().Be(1);
-            _startupProcessExit.ExitCode.Should().Be(-1);
+            _startupProcessExit.ExitCallCount.Should().Be(0);
+            A.CallTo(() =>
+                    _targetRegistry.RefreshAsync(
+                        DocumentCacheTargetRefreshReason.Startup,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
 
             File.Exists(_statusFilePath).Should().BeTrue();
             var startupStatus = JsonNode.Parse(File.ReadAllText(_statusFilePath))!.AsObject();
 
-            startupStatus["State"]!.GetValue<string>().Should().Be("Failed");
-            startupStatus["Phase"]!
-                .GetValue<string>()
-                .Should()
-                .Be(DmsStartupPhases.InitializeDocumentCacheTargets);
-            startupStatus["Summary"]!
-                .GetValue<string>()
-                .Should()
-                .Be(
-                    "DocumentCache target context initialization failed. DMS cannot start with failed projection target initialization."
-                );
-            startupStatus["ErrorType"]!.GetValue<string>().Should().Be(nameof(InvalidOperationException));
-            startupStatus["ErrorMessage"]!
-                .GetValue<string>()
-                .Should()
-                .Be("DocumentCache target refresh failed.");
+            startupStatus["State"]!.GetValue<string>().Should().Be("Ready");
+            startupStatus["Phase"]!.GetValue<string>().Should().Be(DmsStartupPhases.Ready);
         }
     }
 

@@ -17,6 +17,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.DocumentCache;
 [Category("DocumentCacheAdministrativeContracts")]
 public class DocumentCacheAdministrativeContractsTests
 {
+    private const string DefaultNoMutationMessage =
+        "Command result performed no lifecycle cache work latch or provider-setting mutation.";
+
     private const string Fingerprint =
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     private const string MixedCaseFingerprint =
@@ -28,6 +31,21 @@ public class DocumentCacheAdministrativeContractsTests
     );
 
     private static readonly DocumentCachePhysicalSourceFingerprint _fingerprint = new(Fingerprint);
+
+    private static readonly DocumentCacheOfflineWriterAdmission _offlineActivationAdmission = new(
+        confirmed: true,
+        DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained
+    );
+
+    private static readonly DocumentCacheOfflineWriterAdmission _offlineDeactivationAdmission = new(
+        confirmed: true,
+        DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
+    );
+
+    private static readonly DocumentCacheOfflineWriterAdmission _cacheAheadRecoveryAdmission = new(
+        confirmed: true,
+        DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained
+    );
 
     [TestFixture]
     [Parallelizable]
@@ -42,15 +60,26 @@ public class DocumentCacheAdministrativeContractsTests
             string json = JsonSerializer.Serialize(request, requestType);
             JsonObject root = JsonNode.Parse(json)!.AsObject();
 
-            root.Select(property => property.Key)
-                .Should()
-                .Equal("targetKey", "expectedPhysicalSourceFingerprint");
+            bool hasOfflineWriterAdmission = root.ContainsKey("offlineWriterAdmission");
+            string[] expectedProperties = hasOfflineWriterAdmission
+                ? ["targetKey", "expectedPhysicalSourceFingerprint", "offlineWriterAdmission"]
+                : ["targetKey", "expectedPhysicalSourceFingerprint"];
+            root.Select(property => property.Key).Should().Equal(expectedProperties);
             root["expectedPhysicalSourceFingerprint"]!.GetValue<string>().Should().Be(Fingerprint);
 
             JsonObject targetKey = root["targetKey"]!.AsObject();
             targetKey.Select(property => property.Key).Should().Equal("tenantKey", "dataStoreId");
             targetKey["tenantKey"]!.GetValue<string>().Should().Be("");
             targetKey["dataStoreId"]!.GetValue<long>().Should().Be(1);
+
+            if (hasOfflineWriterAdmission)
+            {
+                root["offlineWriterAdmission"]!["confirmed"]!.GetValue<bool>().Should().BeTrue();
+                root["offlineWriterAdmission"]!["confirmation"]!
+                    .GetValue<string>()
+                    .Should()
+                    .EndWith("WritersClosedAndDrained");
+            }
         }
 
         [Test]
@@ -59,7 +88,11 @@ public class DocumentCacheAdministrativeContractsTests
             const string json = """
                 {
                   "targetKey": { "tenantKey": "", "dataStoreId": 1 },
-                  "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                  "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                  "offlineWriterAdmission": {
+                    "confirmed": true,
+                    "confirmation": "offlineDeactivationWritersClosedAndDrained"
+                  }
                 }
                 """;
 
@@ -68,6 +101,12 @@ public class DocumentCacheAdministrativeContractsTests
 
             request.TargetKey.TargetKey.Should().Be(DocumentCacheTargetKey.Create("", 1));
             request.ExpectedPhysicalSourceFingerprint!.Value.Should().Be(Fingerprint);
+            request.OfflineWriterAdmission.Should().NotBeNull();
+            request
+                .OfflineWriterAdmission!.Confirmation.Should()
+                .Be(
+                    DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
+                );
         }
 
         [TestCase(" ")]
@@ -86,7 +125,8 @@ public class DocumentCacheAdministrativeContractsTests
                 }
                 """;
 
-            Action act = () => JsonSerializer.Deserialize<DocumentCacheOfflineDeactivationRequest>(json);
+            Action act = () =>
+                JsonSerializer.Deserialize<DocumentCacheGuardedNewEmptyActivationRequest>(json);
 
             act.Should().Throw<JsonException>();
         }
@@ -114,13 +154,130 @@ public class DocumentCacheAdministrativeContractsTests
                 typeof(DocumentCacheGuardedNewEmptyActivationRequest)
             ).SetName("Guarded new-empty activation");
             yield return new TestCaseData(
-                new DocumentCacheOfflineReadAccelerationActivationRequest(_defaultTargetKey, _fingerprint),
-                typeof(DocumentCacheOfflineReadAccelerationActivationRequest)
-            ).SetName("Offline read-acceleration activation");
+                new DocumentCacheOfflineActivationRequest(
+                    _defaultTargetKey,
+                    _offlineActivationAdmission,
+                    _fingerprint
+                ),
+                typeof(DocumentCacheOfflineActivationRequest)
+            ).SetName("Offline activation");
             yield return new TestCaseData(
-                new DocumentCacheOfflineDeactivationRequest(_defaultTargetKey, _fingerprint),
+                new DocumentCacheOfflineDeactivationRequest(
+                    _defaultTargetKey,
+                    _offlineDeactivationAdmission,
+                    _fingerprint
+                ),
                 typeof(DocumentCacheOfflineDeactivationRequest)
             ).SetName("Offline deactivation");
+            yield return new TestCaseData(
+                new DocumentCacheOnlineCacheRebuildRequest(_defaultTargetKey, _fingerprint),
+                typeof(DocumentCacheOnlineCacheRebuildRequest)
+            ).SetName("Online cache rebuild");
+            yield return new TestCaseData(
+                new DocumentCacheExplicitIntegrityScrubRequest(_defaultTargetKey, _fingerprint),
+                typeof(DocumentCacheExplicitIntegrityScrubRequest)
+            ).SetName("Explicit integrity scrub");
+            yield return new TestCaseData(
+                new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
+                    _defaultTargetKey,
+                    _cacheAheadRecoveryAdmission,
+                    _fingerprint
+                ),
+                typeof(DocumentCacheInternalOnlyCacheAheadRecoveryRequest)
+            ).SetName("Internal-only cache-ahead recovery");
+        }
+
+        [TestCaseSource(nameof(InvalidOfflineAdmissionContracts))]
+        public void It_should_represent_missing_false_unknown_or_mismatched_offline_admission(
+            string json,
+            bool expectedAdmissionPresent,
+            bool expectedConfirmed,
+            DocumentCacheOfflineWriterAdmissionConfirmation? expectedConfirmation,
+            bool expectedUnrecognizedConfirmation
+        )
+        {
+            DocumentCacheOfflineActivationRequest request =
+                JsonSerializer.Deserialize<DocumentCacheOfflineActivationRequest>(json)!;
+
+            if (!expectedAdmissionPresent)
+            {
+                request.OfflineWriterAdmission.Should().BeNull();
+                return;
+            }
+
+            request.OfflineWriterAdmission.Should().NotBeNull();
+            request.OfflineWriterAdmission!.Confirmed.Should().Be(expectedConfirmed);
+            request.OfflineWriterAdmission.Confirmation.Should().Be(expectedConfirmation);
+            request
+                .OfflineWriterAdmission.HasUnrecognizedConfirmation.Should()
+                .Be(expectedUnrecognizedConfirmation);
+        }
+
+        private static IEnumerable<TestCaseData> InvalidOfflineAdmissionContracts()
+        {
+            yield return new TestCaseData(
+                """
+                {
+                  "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+                  "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                }
+                """,
+                false,
+                false,
+                null,
+                false
+            ).SetName("Missing admission");
+
+            yield return new TestCaseData(
+                """
+                {
+                  "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+                  "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                  "offlineWriterAdmission": {
+                    "confirmed": false,
+                    "confirmation": "offlineActivationWritersClosedAndDrained"
+                  }
+                }
+                """,
+                true,
+                false,
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained,
+                false
+            ).SetName("Unconfirmed admission");
+
+            yield return new TestCaseData(
+                """
+                {
+                  "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+                  "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                  "offlineWriterAdmission": {
+                    "confirmed": true,
+                    "confirmation": "offlineDeactivationWritersClosedAndDrained"
+                  }
+                }
+                """,
+                true,
+                true,
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained,
+                false
+            ).SetName("Mismatched admission");
+
+            yield return new TestCaseData(
+                """
+                {
+                  "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+                  "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                  "offlineWriterAdmission": {
+                    "confirmed": true,
+                    "confirmation": "unknownWritersClosedAndDrained"
+                  }
+                }
+                """,
+                true,
+                true,
+                null,
+                true
+            ).SetName("Unknown admission");
         }
     }
 
@@ -128,57 +285,35 @@ public class DocumentCacheAdministrativeContractsTests
     [Parallelizable]
     public class Given_Administrative_Command_Results : DocumentCacheAdministrativeContractsTests
     {
-        private static readonly DocumentCacheTargetDiagnosticCategory[] _producedDiagnosticCategories =
-        [
-            DocumentCacheTargetDiagnosticCategory.TargetNotConfigured,
-            DocumentCacheTargetDiagnosticCategory.TargetUnresolved,
-            DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing,
-            DocumentCacheTargetDiagnosticCategory.ProviderMetadataUnknown,
-            DocumentCacheTargetDiagnosticCategory.ProviderMismatch,
-            DocumentCacheTargetDiagnosticCategory.ConnectionInputMissing,
-            DocumentCacheTargetDiagnosticCategory.PhysicalSourceFingerprintFailure,
-            DocumentCacheTargetDiagnosticCategory.InventoryFailure,
-            DocumentCacheTargetDiagnosticCategory.EnqueueTriggerFailure,
-            DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed,
-            DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident,
-            DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure,
-            DocumentCacheTargetDiagnosticCategory.TransientCmsRefreshFailure,
-            DocumentCacheTargetDiagnosticCategory.TargetReplaced,
-            DocumentCacheTargetDiagnosticCategory.LifecycleMismatch,
-            DocumentCacheTargetDiagnosticCategory.ResettingRequiresExplicitOperatorRecovery,
-            DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet,
-            DocumentCacheTargetDiagnosticCategory.NonemptyGuardedActivationState,
-            DocumentCacheTargetDiagnosticCategory.DownstreamPublicationHistoryPresentOrUnknown,
-            DocumentCacheTargetDiagnosticCategory.EffectiveSchemaCompatibilityFailure,
-            DocumentCacheTargetDiagnosticCategory.ResourceKeyCompatibilityFailure,
-            DocumentCacheTargetDiagnosticCategory.ExpectedSourceMismatch,
-            DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure,
-        ];
+        private static readonly DocumentCacheAdministrativeDiagnosticCategory[] _producedDiagnosticCategories =
+            Enum.GetValues<DocumentCacheAdministrativeDiagnosticCategory>();
 
         [Test]
         public void It_should_serialize_lower_camel_enums_and_observed_state()
         {
             DocumentCacheAdministrativeCommandResult result = new(
-                DocumentCacheAdministrativeCommand.OfflineReadAccelerationActivation,
+                DocumentCacheAdministrativeCommand.OfflineActivation,
                 _defaultTargetKey,
-                DocumentCacheAdministrativePreflightClassification.ProviderPrerequisiteFailed,
-                observedLifecycle: DocumentCacheLifecycleState.Tracking,
-                cacheAheadRecoveryRequired: false,
+                DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
+                DocumentCacheAdministrativeCommandClassification.WorkflowTimeout,
+                mutated: true,
+                targetGeneration: 42,
                 physicalSourceFingerprint: _fingerprint,
-                targetContextGeneration: 42,
-                downstreamPublicationStatus: DocumentCacheDownstreamPublicationStatus.InternalOnly,
-                diagnostics:
+                lifecycle: DocumentCacheLifecycleState.Tracking,
+                cacheAheadRecoveryRequired: false,
+                phaseDiagnostics:
                 [
-                    new DocumentCacheAdministrativeDiagnostic(
-                        DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident,
-                        "Unsupported prerequisite incident."
+                    new DocumentCacheAdministrativePhaseDiagnostic(
+                        DocumentCacheAdministrativeCommandPhase.SeedBaseline,
+                        DocumentCacheAdministrativeCommandPhase.CaptureBoundary,
+                        retryable: true,
+                        DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout,
+                        affectedDocumentIds: [101, 102],
+                        "Workflow timeout expired during baseline seeding."
                     ),
                 ],
-                noMutationGuarantee: new DocumentCacheAdministrativeNoMutationGuarantee(
-                    guaranteed: true,
-                    DocumentCacheAdministrativeNoMutationScope.LifecycleCacheWorkLatchAndProviderSettings,
-                    "Classifier performed no lifecycle, cache, work, latch, or provider-setting mutation."
-                )
+                offlineWriterAdmission: DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained,
+                elapsedCommandTime: TimeSpan.FromMinutes(3)
             );
 
             string json = JsonSerializer.Serialize(result);
@@ -189,29 +324,44 @@ public class DocumentCacheAdministrativeContractsTests
                 .Equal(
                     "command",
                     "targetKey",
+                    "status",
                     "classification",
-                    "observedLifecycle",
-                    "cacheAheadRecoveryRequired",
+                    "mutated",
+                    "targetGeneration",
                     "physicalSourceFingerprint",
-                    "targetContextGeneration",
-                    "downstreamPublicationStatus",
-                    "diagnostics",
-                    "noMutationGuarantee"
+                    "lifecycle",
+                    "cacheAheadRecoveryRequired",
+                    "phaseDiagnostics",
+                    "offlineWriterAdmission",
+                    "elapsedCommandTime"
                 );
-            root["command"]!.GetValue<string>().Should().Be("offlineReadAccelerationActivation");
-            root["classification"]!.GetValue<string>().Should().Be("providerPrerequisiteFailed");
-            root["observedLifecycle"]!.GetValue<string>().Should().Be("tracking");
+            root["command"]!.GetValue<string>().Should().Be("offlineActivation");
+            root["status"]!.GetValue<string>().Should().Be("incompleteRetryable");
+            root["classification"]!.GetValue<string>().Should().Be("workflowTimeout");
+            root["mutated"]!.GetValue<bool>().Should().BeTrue();
+            root["targetGeneration"]!.GetValue<long>().Should().Be(42);
             root["physicalSourceFingerprint"]!.GetValue<string>().Should().Be(Fingerprint);
-            root["targetContextGeneration"]!.GetValue<long>().Should().Be(42);
-            root["downstreamPublicationStatus"]!.GetValue<string>().Should().Be("internalOnly");
-            root["diagnostics"]![0]!["category"]!
+            root["lifecycle"]!.GetValue<string>().Should().Be("tracking");
+            root["phaseDiagnostics"]![0]!["currentPhase"]!.GetValue<string>().Should().Be("seedBaseline");
+            root["phaseDiagnostics"]![0]!["lastCompletedPhase"]!
                 .GetValue<string>()
                 .Should()
-                .Be("unsupportedPrerequisiteIncident");
-            root["noMutationGuarantee"]!["scope"]!
+                .Be("captureBoundary");
+            root["phaseDiagnostics"]![0]!["retryable"]!.GetValue<bool>().Should().BeTrue();
+            root["phaseDiagnostics"]![0]!["diagnosticCategory"]!
                 .GetValue<string>()
                 .Should()
-                .Be("lifecycleCacheWorkLatchAndProviderSettings");
+                .Be("workflowTimeout");
+            root["phaseDiagnostics"]![0]!["affectedDocumentIds"]!
+                .AsArray()
+                .Select(node => node!.GetValue<long>())
+                .Should()
+                .Equal(101, 102);
+            root["offlineWriterAdmission"]!
+                .GetValue<string>()
+                .Should()
+                .Be("offlineActivationWritersClosedAndDrained");
+            root["elapsedCommandTime"]!.GetValue<string>().Should().Be("00:03:00");
 
             JsonObject targetKey = root["targetKey"]!.AsObject();
             targetKey["tenantKey"]!.GetValue<string>().Should().Be("");
@@ -220,7 +370,7 @@ public class DocumentCacheAdministrativeContractsTests
 
         [TestCaseSource(nameof(PreflightClassifications))]
         public void It_should_round_trip_preflight_classifications_as_lower_camel(
-            DocumentCacheAdministrativePreflightClassification classification
+            DocumentCacheAdministrativeCommandClassification classification
         )
         {
             DocumentCacheAdministrativeCommandResult result = new(
@@ -247,23 +397,23 @@ public class DocumentCacheAdministrativeContractsTests
                 {
                   "command": "offlineDeactivation",
                   "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+                  "status": "rejectedNoMutation",
                   "classification": "unsupportedPrerequisiteIncident",
-                  "observedLifecycle": "tracking",
-                  "cacheAheadRecoveryRequired": true,
+                  "mutated": false,
+                  "targetGeneration": 9,
                   "physicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-                  "targetContextGeneration": 9,
-                  "downstreamPublicationStatus": "unknown",
-                  "diagnostics": [
+                  "lifecycle": "tracking",
+                  "cacheAheadRecoveryRequired": true,
+                  "phaseDiagnostics": [
                     {
-                      "category": "providerPrerequisiteFailed",
+                      "currentPhase": "preflight",
+                      "lastCompletedPhase": "resolveTarget",
+                      "retryable": false,
+                      "diagnosticCategory": "providerPrerequisiteFailed",
+                      "affectedDocumentIds": [],
                       "message": "Provider prerequisite failed."
                     }
-                  ],
-                  "noMutationGuarantee": {
-                    "guaranteed": true,
-                    "scope": "lifecycleCacheWorkLatchAndProviderSettings",
-                    "message": "No mutation was performed."
-                  }
+                  ]
                 }
                 """;
 
@@ -271,25 +421,59 @@ public class DocumentCacheAdministrativeContractsTests
                 JsonSerializer.Deserialize<DocumentCacheAdministrativeCommandResult>(json)!;
 
             result.Command.Should().Be(DocumentCacheAdministrativeCommand.OfflineDeactivation);
+            result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
             result
                 .Classification.Should()
-                .Be(DocumentCacheAdministrativePreflightClassification.UnsupportedPrerequisiteIncident);
-            result.ObservedLifecycle.Should().Be(DocumentCacheLifecycleState.Tracking);
+                .Be(DocumentCacheAdministrativeCommandClassification.UnsupportedPrerequisiteIncident);
+            result.Mutated.Should().BeFalse();
+            result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Tracking);
             result.CacheAheadRecoveryRequired.Should().BeTrue();
             result.PhysicalSourceFingerprint!.Value.Should().Be(Fingerprint);
-            result.TargetContextGeneration.Should().Be(9);
-            result.DownstreamPublicationStatus.Should().Be(DocumentCacheDownstreamPublicationStatus.Unknown);
+            result.TargetGeneration.Should().Be(9);
             result
-                .Diagnostics.Should()
+                .PhaseDiagnostics.Should()
                 .ContainSingle()
-                .Which.Category.Should()
-                .Be(DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed);
+                .Which.DiagnosticCategory.Should()
+                .Be(DocumentCacheAdministrativeDiagnosticCategory.ProviderPrerequisiteFailed);
             result.NoMutationGuarantee!.Guaranteed.Should().BeTrue();
+        }
+
+        [TestCase(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation)]
+        [TestCase(DocumentCacheAdministrativeCommandStatus.FailedNoMutation)]
+        public void It_should_compute_default_no_mutation_guarantee_when_none_is_supplied(
+            DocumentCacheAdministrativeCommandStatus status
+        )
+        {
+            DocumentCacheAdministrativeCommandResult result = new(
+                DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
+                _defaultTargetKey,
+                status,
+                DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
+                mutated: false
+            );
+
+            result.NoMutationGuarantee.Should().NotBeNull();
+            result.NoMutationGuarantee!.Guaranteed.Should().BeTrue();
+            result.NoMutationGuarantee.Message.Should().Be(DefaultNoMutationMessage);
+        }
+
+        [Test]
+        public void It_should_not_return_no_mutation_guarantee_for_mutated_results()
+        {
+            DocumentCacheAdministrativeCommandResult result = new(
+                DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+                _defaultTargetKey,
+                DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
+                DocumentCacheAdministrativeCommandClassification.CancellationAfterMutation,
+                mutated: true
+            );
+
+            result.NoMutationGuarantee.Should().BeNull();
         }
 
         [TestCaseSource(nameof(ProducedDiagnosticCategories))]
         public void It_should_round_trip_produced_diagnostic_categories(
-            DocumentCacheTargetDiagnosticCategory category
+            DocumentCacheAdministrativeDiagnosticCategory category
         )
         {
             DocumentCacheAdministrativeDiagnostic diagnostic = new(category, "Diagnostic message.");
@@ -310,7 +494,7 @@ public class DocumentCacheAdministrativeContractsTests
         {
             _producedDiagnosticCategories
                 .Should()
-                .BeEquivalentTo(Enum.GetValues<DocumentCacheTargetDiagnosticCategory>());
+                .BeEquivalentTo(Enum.GetValues<DocumentCacheAdministrativeDiagnosticCategory>());
         }
 
         [Test]
@@ -320,14 +504,14 @@ public class DocumentCacheAdministrativeContractsTests
                 {
                   "command": "offlineDeactivation",
                   "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+                  "status": "rejectedNoMutation",
                   "classification": 5,
-                  "observedLifecycle": null,
-                  "cacheAheadRecoveryRequired": null,
+                  "mutated": false,
+                  "targetGeneration": null,
                   "physicalSourceFingerprint": null,
-                  "targetContextGeneration": null,
-                  "downstreamPublicationStatus": null,
-                  "diagnostics": [],
-                  "noMutationGuarantee": null
+                  "lifecycle": null,
+                  "cacheAheadRecoveryRequired": null,
+                  "phaseDiagnostics": []
                 }
                 """;
 
@@ -344,7 +528,7 @@ public class DocumentCacheAdministrativeContractsTests
             DocumentCacheAdministrativeCommandResult result = new(
                 DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
                 _defaultTargetKey,
-                DocumentCacheAdministrativePreflightClassification.UnexpectedProviderFailure,
+                DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
                 diagnostics:
                 [
                     new DocumentCacheAdministrativeDiagnostic(
@@ -361,6 +545,48 @@ public class DocumentCacheAdministrativeContractsTests
 
             result.Diagnostics.Single().Message.Should().HaveLength(512).And.NotContain("\r\n");
             result.NoMutationGuarantee!.Message.Should().HaveLength(512).And.NotContain("\r\n");
+            result.NoMutationGuarantee.Message.Should().NotBe(DefaultNoMutationMessage);
+        }
+
+        [Test]
+        public void It_should_reject_nonpositive_affected_document_ids()
+        {
+            Action act = () =>
+                _ = new DocumentCacheAdministrativePhaseDiagnostic(
+                    DocumentCacheAdministrativeCommandPhase.DrainWork,
+                    DocumentCacheAdministrativeCommandPhase.SeedBaseline,
+                    retryable: true,
+                    DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison,
+                    affectedDocumentIds: [0],
+                    "Invalid document id."
+                );
+
+            act.Should().Throw<ArgumentOutOfRangeException>();
+        }
+
+        [Test]
+        public void It_should_pin_the_design_phase_names()
+        {
+            Enum.GetValues<DocumentCacheAdministrativeCommandPhase>()
+                .Select(phase => JsonSerializer.Serialize(phase).Trim('"'))
+                .Should()
+                .Equal(
+                    "resolveTarget",
+                    "acquireMutex",
+                    "preflight",
+                    "enterResetting",
+                    "clearCache",
+                    "clearWork",
+                    "enterRebuilding",
+                    "captureBoundary",
+                    "seedBaseline",
+                    "drainWork",
+                    "enterTracking",
+                    "enterDisabled",
+                    "scrubScan",
+                    "setCacheAheadLatch",
+                    "complete"
+                );
         }
 
         private static IEnumerable<TestCaseData> ProducedDiagnosticCategories()
@@ -372,7 +598,7 @@ public class DocumentCacheAdministrativeContractsTests
 
         private static IEnumerable<TestCaseData> PreflightClassifications()
         {
-            return Enum.GetValues<DocumentCacheAdministrativePreflightClassification>()
+            return Enum.GetValues<DocumentCacheAdministrativeCommandClassification>()
                 .Select(classification =>
                     new TestCaseData(classification).SetName($"Preflight classification {classification}")
                 );

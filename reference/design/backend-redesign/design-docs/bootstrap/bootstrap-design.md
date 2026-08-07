@@ -2547,6 +2547,26 @@ These values can be placed in `src/dms/frontend/EdFi.DataManagementService.Front
     "ClientRole": "dms-client",
     "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
   },
+  "DataManagement": {
+    "DocumentCache": {
+      "DesignReference": "reference/design/backend-redesign/epics/18-document-cache/01-documentcache-configuration-and-target-selection.md",
+      "Targets": [],
+      "ReadAcceleration": {
+        "Enabled": false,
+        "DirectFillTimeout": "00:00:00.250"
+      },
+      "Projector": {
+        "PollInterval": "00:00:05",
+        "PageSize": 100,
+        "MaxConcurrentTargets": 2,
+        "FailureBackoff": "00:00:30",
+        "BaselineHighWaterMark": 1000
+      },
+      "Administration": {
+        "WorkflowTimeout": "1.00:00:00"
+      }
+    }
+  },
   "Serilog": {
     "MinimumLevel": {
       "Default": "Debug"
