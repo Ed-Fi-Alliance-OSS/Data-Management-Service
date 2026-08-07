@@ -103,6 +103,15 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
                 Headers: [],
                 ContentType: "application/problem+json"
             ),
+            GetFailureCustomViewNotAuthorized notAuthorized => new FrontendResponse(
+                StatusCode: 403,
+                Body: CustomViewAuthorizationFailureResponse.ForFailure(
+                    notAuthorized.CustomViewFailure,
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
+            ),
             UnknownFailure failure => new FrontendResponse(
                 StatusCode: 500,
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),

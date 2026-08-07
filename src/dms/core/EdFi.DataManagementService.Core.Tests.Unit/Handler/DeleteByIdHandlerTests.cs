@@ -426,6 +426,75 @@ public class DeleteByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_Custom_View_Not_Authorized : DeleteByIdHandlerTests
+    {
+        internal static readonly CustomViewAuthorizationFailure CustomViewFailure = new(
+            CustomViewAuthorizationFailureKind.StoredValueUninitialized,
+            CustomViewAuthorizationFailureValueSource.Stored,
+            EmittedAuth1Index: 0,
+            StrategyName: "StudentWithCTECourseEnrollments",
+            ReadableSecurableElements: ["StudentUniqueId"],
+            Hint: "You may need a Student with CTE Course Enrollments."
+        );
+
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
+            {
+                return Task.FromResult<DeleteResult>(
+                    new DeleteFailureCustomViewNotAuthorized(CustomViewFailure)
+                );
+            }
+        }
+
+        private static readonly string _customViewTraceId = "custom-view-delete-403";
+        private readonly RequestInfo _customViewRequestInfo = RequestInfoWithRelationalMappingSet(
+            _customViewTraceId
+        );
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var projectSchemaNode = new JsonObject
+            {
+                ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
+            };
+            _customViewRequestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
+            _customViewRequestInfo.ResourceSchema = GetResourceSchema();
+
+            var (deleteHandler, serviceProvider) = Handler(new Repository());
+            _customViewRequestInfo.ScopedServiceProvider = serviceProvider;
+
+            await deleteHandler.Execute(_customViewRequestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_the_custom_view_denial_to_the_canonical_problem_details_403()
+        {
+            _customViewRequestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _customViewRequestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+
+            var expected = CustomViewAuthorizationFailureResponse.ForFailure(
+                CustomViewFailure,
+                new TraceId(_customViewTraceId)
+            );
+
+            _customViewRequestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_customViewRequestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_customViewRequestInfo.FrontendResponse.Body}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Namespace_Not_Authorized : DeleteByIdHandlerTests
     {
         internal static readonly NamespaceAuthorizationFailure Failure = new(
