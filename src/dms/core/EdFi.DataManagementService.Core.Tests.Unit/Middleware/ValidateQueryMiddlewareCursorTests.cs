@@ -219,7 +219,8 @@ public class ValidateQueryMiddlewareCursorTests
 
     /// <summary>
     /// A traditional pagination fault answers with the same parameter-validation shell as a cursor
-    /// fault, while keeping the messages that predate cursor paging.
+    /// fault, while keeping the messages that predate cursor paging, and is answered ahead of the
+    /// change-version parameters.
     /// </summary>
     [TestFixture]
     [Parallelizable]
@@ -228,11 +229,18 @@ public class ValidateQueryMiddlewareCursorTests
         private const string LimitOutOfRange =
             "Limit must be omitted or set to a numeric value between 0 and 500.";
 
+        private const string OffsetNegative = "Offset must be a numeric value greater than or equal to 0.";
+
+        private const string TotalCountNotABoolean = "TotalCount must be a boolean value.";
+
+        private const string MinChangeVersionNotNumeric =
+            "MinChangeVersion must be a numeric value greater than or equal to 0.";
+
         [TestCase("limit", "-1", LimitOutOfRange)]
         [TestCase("limit", "abc", LimitOutOfRange)]
-        [TestCase("offset", "-1", "Offset must be a numeric value greater than or equal to 0.")]
-        [TestCase("offset", "abc", "Offset must be a numeric value greater than or equal to 0.")]
-        [TestCase("totalCount", "x", "TotalCount must be a boolean value.")]
+        [TestCase("offset", "-1", OffsetNegative)]
+        [TestCase("offset", "abc", OffsetNegative)]
+        [TestCase("totalCount", "x", TotalCountNotABoolean)]
         public async Task It_returns_the_parameter_validation_shell_with_the_existing_message(
             string parameter,
             string value,
@@ -244,12 +252,48 @@ public class ValidateQueryMiddlewareCursorTests
 
         /// <summary>
         /// The traditional branch runs in the Change Query composition as well, so a pagination
-        /// fault on /deletes or /keyChanges is answered the same way live GET-many answers it.
+        /// fault on /deletes or /keyChanges is answered the same way live GET-many answers it. All
+        /// three parameters are covered rather than one representative, because this composition has
+        /// no cursor path and the traditional branch is the only thing answering them.
+        /// </summary>
+        [TestCase("limit", "-1", LimitOutOfRange)]
+        [TestCase("offset", "-1", OffsetNegative)]
+        [TestCase("totalCount", "x", TotalCountNotABoolean)]
+        public async Task It_returns_the_parameter_validation_shell_without_cursor_recognition(
+            string parameter,
+            string value,
+            string expectedError
+        )
+        {
+            AssertParameterValidationShell(await Execute(false, (parameter, value)), expectedError);
+        }
+
+        /// <summary>
+        /// Pagination is validated ahead of the change-version parameters and a fault there is
+        /// answered immediately, so the change-version values are never examined. Both families
+        /// answer with this same shell, so the reported messages are the only thing separating
+        /// "accepted" from "never reached".
         /// </summary>
         [Test]
-        public async Task It_returns_the_parameter_validation_shell_without_cursor_recognition()
+        public async Task It_reports_only_the_pagination_fault_when_change_version_is_also_invalid()
         {
-            AssertParameterValidationShell(await Execute(false, ("limit", "-1")), LimitOutOfRange);
+            AssertParameterValidationShell(
+                await Execute(true, ("limit", "-1"), ("minChangeVersion", "abc")),
+                LimitOutOfRange
+            );
+        }
+
+        /// <summary>
+        /// The same change-version value on its own, so the test above cannot pass because the
+        /// parameter is ignored outright rather than deferred behind the pagination fault.
+        /// </summary>
+        [Test]
+        public async Task It_reports_the_change_version_fault_once_pagination_is_clean()
+        {
+            AssertParameterValidationShell(
+                await Execute(true, ("minChangeVersion", "abc")),
+                MinChangeVersionNotNumeric
+            );
         }
     }
 

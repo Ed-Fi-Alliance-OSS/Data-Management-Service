@@ -50,8 +50,9 @@ story assert a presence semantic the other owns.
   conflict-ordering signal rather than deferring to a bound value.
 - Add the separately phase-gated partition validator with `number` precedence over the
   unsupported-parameter phase and canonical unsupported-parameter ordering.
-- Add the approved parameter-validation ProblemDetails shell for cursor and partition failures while
-  leaving traditional-only `limit`/`offset` failures on their existing generic bad-request response.
+- Add the approved parameter-validation ProblemDetails shell for cursor and partition failures, and
+  answer traditional-only `limit`/`offset` failures with that same shell while retaining their
+  existing messages, which predate this design.
 - Keep cursor parameter recognition operation-scoped so `/deletes` and `/keyChanges` retain their
   existing invalid-query-field HTTP 400 behavior instead of globally reserving the names.
 - Add typed `ResourcePathOperation` collection, by-id, and partition cases, and update path parsing,

@@ -76,21 +76,15 @@ internal class ValidateQueryMiddleware(
             }
         }
 
-        if (requestInfo.FrontendRequest.QueryParameters.ContainsKey("totalCount"))
+        // Unlike offset and limit, a parsed value needs no separate assignment: TryParse writes it
+        // straight to totalCount, and a failed parse writes false, which is also the value used when
+        // the parameter is omitted. The error recorded below stops the parameters being applied at all.
+        if (
+            requestInfo.FrontendRequest.QueryParameters.ContainsKey("totalCount")
+            && !bool.TryParse(requestInfo.FrontendRequest.QueryParameters["totalCount"], out totalCount)
+        )
         {
-            if (!bool.TryParse(requestInfo.FrontendRequest.QueryParameters["totalCount"], out totalCount))
-            {
-                errors.Add("TotalCount must be a boolean value.");
-            }
-            else
-            {
-                totalCount = bool.TryParse(
-                    requestInfo.FrontendRequest.QueryParameters["totalCount"],
-                    out bool totalValue
-                )
-                    ? totalValue
-                    : totalCount;
-            }
+            errors.Add("TotalCount must be a boolean value.");
         }
 
         if (errors.Count == 0)

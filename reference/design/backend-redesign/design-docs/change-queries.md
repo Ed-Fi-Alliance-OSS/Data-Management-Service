@@ -2049,6 +2049,8 @@ These errors indicate invalid query string values on `/deletes`, `/keyChanges`, 
 
 The pagination rules are evaluated together rather than exclusively: a request with several invalid pagination parameters reports every one of them, in the order `offset`, `limit`, `totalCount`.
 
+The two families do not combine. Pagination is validated ahead of the change-version parameters and a fault there is answered immediately, so a request carrying faults in both reports only its pagination errors and its change-version values are never examined. Because both families answer with this same shell, the response does not distinguish change-version values that were accepted from ones that were never reached, and a client that corrects only the pagination values may receive a second 400.
+
 
 #### 2. Resource or Endpoint Not Found (404 Not Found)
 
