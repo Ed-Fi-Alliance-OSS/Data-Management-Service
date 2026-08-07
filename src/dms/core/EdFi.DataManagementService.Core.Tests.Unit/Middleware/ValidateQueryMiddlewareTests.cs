@@ -84,12 +84,17 @@ public class ValidateQueryMiddlewareTests
         }
 
         [Test]
-        public void It_should_be_errors()
+        public void It_should_use_the_parameter_validation_failed_problem_details()
         {
-            _requestInfo
-                .FrontendResponse.Body?.ToJsonString()
+            JsonNode? body = _requestInfo.FrontendResponse.Body;
+            body?["type"]?.GetValue<string>()
                 .Should()
-                .Contain("The request could not be processed.");
+                .Be("urn:ed-fi:api:bad-request:parameter-validation-failed");
+            body?["title"]?.GetValue<string>().Should().Be("Parameter Validation Failed");
+            body?["detail"]?.GetValue<string>()
+                .Should()
+                .Be("Parameters supplied to the request were invalid.");
+            body?["status"]?.GetValue<int>().Should().Be(400);
         }
 
         [Test]
@@ -156,12 +161,17 @@ public class ValidateQueryMiddlewareTests
         }
 
         [Test]
-        public void It_should_be_errors()
+        public void It_should_use_the_parameter_validation_failed_problem_details()
         {
-            _requestInfo
-                .FrontendResponse.Body?.ToJsonString()
+            JsonNode? body = _requestInfo.FrontendResponse.Body;
+            body?["type"]?.GetValue<string>()
                 .Should()
-                .Contain("The request could not be processed.");
+                .Be("urn:ed-fi:api:bad-request:parameter-validation-failed");
+            body?["title"]?.GetValue<string>().Should().Be("Parameter Validation Failed");
+            body?["detail"]?.GetValue<string>()
+                .Should()
+                .Be("Parameters supplied to the request were invalid.");
+            body?["status"]?.GetValue<int>().Should().Be(400);
         }
 
         [Test]
