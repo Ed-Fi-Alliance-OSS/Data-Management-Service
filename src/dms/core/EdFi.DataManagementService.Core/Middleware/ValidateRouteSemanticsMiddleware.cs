@@ -26,6 +26,34 @@ internal class ValidateRouteSemanticsMiddleware(ILogger _logger) : IPipelineStep
 
     internal const string ItemMethods = "GET, PUT, DELETE";
 
+    /// <summary>
+    /// The partitions operation is a read-only sibling of the GET-many endpoint, so the write
+    /// methods this middleware rejects on it leave GET as the whole Allow set. Advertised even
+    /// though no partitions pipeline exists yet and ParsePathMiddleware answers the GET itself as
+    /// an invalid identifier: the header has to name the methods the route will serve, and naming
+    /// the collection's set instead would advertise the very POST being rejected.
+    /// </summary>
+    internal const string PartitionsMethods = "GET";
+
+    /// <summary>
+    /// The Allow set for an operation, for both this middleware and MethodNotAllowedMiddleware.
+    /// </summary>
+    /// <remarks>
+    /// Exhaustive rather than an item-or-else choice, so an operation added to the hierarchy has to
+    /// name its own set instead of silently inheriting the collection's.
+    /// </remarks>
+    internal static string AllowedMethodsFor(ResourcePathOperation operation) =>
+        operation switch
+        {
+            ResourcePathOperation.ById => ItemMethods,
+            ResourcePathOperation.Collection => CollectionMethods,
+            ResourcePathOperation.Partitions => PartitionsMethods,
+            _ => throw new InvalidOperationException(
+                $"Unhandled resource path operation '{operation.GetType().Name}'. A new operation "
+                    + "must name the methods it allows."
+            ),
+        };
+
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
@@ -71,9 +99,7 @@ internal class ValidateRouteSemanticsMiddleware(ILogger _logger) : IPipelineStep
             // read/write content types, and is deliberately left alone.
             Headers: new Dictionary<string, string>
             {
-                ["Allow"] = requestInfo.PathComponents.HasDocumentUuidSegment
-                    ? ItemMethods
-                    : CollectionMethods,
+                ["Allow"] = AllowedMethodsFor(requestInfo.PathComponents.Operation),
             },
             ContentType: "application/json; charset=utf-8"
         );

@@ -19,8 +19,8 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <param name="_isTrackedChangeRoute">
 /// True in the tracked-change pipeline (/deletes, /keyChanges), false in the data-route pipeline.
 /// ApiService fixes this when it builds the two pipelines, because the request cannot be asked:
-/// both parse steps leave HasDocumentUuidSegment false, so that flag alone cannot tell a
-/// tracked-change route from a data collection route.
+/// both parse steps classify their path as the Collection operation, so the operation alone cannot
+/// tell a tracked-change route from a data collection route.
 /// </param>
 internal class MethodNotAllowedMiddleware(ILogger _logger, bool _isTrackedChangeRoute) : IPipelineStep
 {
@@ -38,11 +38,9 @@ internal class MethodNotAllowedMiddleware(ILogger _logger, bool _isTrackedChange
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        string dataRouteMethods = requestInfo.PathComponents.HasDocumentUuidSegment
-            ? ValidateRouteSemanticsMiddleware.ItemMethods
-            : ValidateRouteSemanticsMiddleware.CollectionMethods;
-
-        string allowed = _isTrackedChangeRoute ? TrackedChangeMethods : dataRouteMethods;
+        string allowed = _isTrackedChangeRoute
+            ? TrackedChangeMethods
+            : ValidateRouteSemanticsMiddleware.AllowedMethodsFor(requestInfo.PathComponents.Operation);
 
         requestInfo.FrontendResponse = new FrontendResponse(
             StatusCode: 405,

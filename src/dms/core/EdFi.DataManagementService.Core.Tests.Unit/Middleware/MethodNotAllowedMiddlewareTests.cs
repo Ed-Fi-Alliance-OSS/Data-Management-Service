@@ -26,22 +26,19 @@ public class MethodNotAllowedMiddlewareTests
         return new MethodNotAllowedMiddleware(NullLogger.Instance, isTrackedChangeRoute);
     }
 
-    private static PathComponents PathComponents(bool hasDocumentUuidSegment)
+    private static PathComponents PathComponents(ResourcePathOperation operation)
     {
-        return new(
-            ProjectEndpointName: new("ed-fi"),
-            EndpointName: new("schools"),
-            DocumentUuid: hasDocumentUuidSegment ? new(Guid.NewGuid()) : No.DocumentUuid,
-            HasDocumentUuidSegment: hasDocumentUuidSegment
-        );
+        return new(ProjectEndpointName: new("ed-fi"), EndpointName: new("schools"), Operation: operation);
     }
 
-    private static RequestInfo RequestInfoFor(string unsupportedMethodName, bool hasDocumentUuidSegment)
+    private static ResourcePathOperation CollectionRoute() => ResourcePathOperation.Collection.Instance;
+
+    private static RequestInfo RequestInfoFor(string unsupportedMethodName, ResourcePathOperation operation)
     {
         RequestInfo requestInfo = No.RequestInfo(TraceId);
         requestInfo.Method = RequestMethod.UNSUPPORTED;
         requestInfo.UnsupportedMethodName = unsupportedMethodName;
-        requestInfo.PathComponents = PathComponents(hasDocumentUuidSegment);
+        requestInfo.PathComponents = PathComponents(operation);
         return requestInfo;
     }
 
@@ -74,7 +71,7 @@ public class MethodNotAllowedMiddlewareTests
     [Parallelizable]
     public class Given_An_Unsupported_Method_On_A_Collection_Route : MethodNotAllowedMiddlewareTests
     {
-        private readonly RequestInfo _requestInfo = RequestInfoFor("PATCH", hasDocumentUuidSegment: false);
+        private readonly RequestInfo _requestInfo = RequestInfoFor("PATCH", CollectionRoute());
 
         [SetUp]
         public async Task Setup()
@@ -117,7 +114,10 @@ public class MethodNotAllowedMiddlewareTests
     [Parallelizable]
     public class Given_An_Unsupported_Method_On_An_Item_Route : MethodNotAllowedMiddlewareTests
     {
-        private readonly RequestInfo _requestInfo = RequestInfoFor("PATCH", hasDocumentUuidSegment: true);
+        private readonly RequestInfo _requestInfo = RequestInfoFor(
+            "PATCH",
+            new ResourcePathOperation.ById(new(Guid.NewGuid()))
+        );
 
         [SetUp]
         public async Task Setup()
@@ -157,14 +157,15 @@ public class MethodNotAllowedMiddlewareTests
         [Test]
         public async Task It_returns_405_allowing_get_only()
         {
-            // ParseTrackedChangePathMiddleware leaves no document uuid segment behind, exactly as
-            // ParsePathMiddleware does for a collection route, which is why the pipeline tells this
-            // step which route family it terminates rather than the step reading it off the request.
+            // ParseTrackedChangePathMiddleware classifies its path as the Collection operation,
+            // exactly as ParsePathMiddleware does for a collection route, which is why the pipeline
+            // tells this step which route family it terminates rather than the step reading it off
+            // the request.
             //
             // These tests supply that flag themselves, so none of them can show it being wired
             // correctly. That is pinned in PipelineOrderingTests, which exercises the terminal each
             // pipeline factory actually constructed.
-            RequestInfo requestInfo = RequestInfoFor("PATCH", hasDocumentUuidSegment: false);
+            RequestInfo requestInfo = RequestInfoFor("PATCH", CollectionRoute());
 
             await Middleware(isTrackedChangeRoute: true).Execute(requestInfo, NullNext);
 
@@ -187,7 +188,7 @@ public class MethodNotAllowedMiddlewareTests
         [TestCase("HEAD")]
         public async Task It_names_the_method_of_the_request_in_the_errors(string unsupportedMethodName)
         {
-            RequestInfo requestInfo = RequestInfoFor(unsupportedMethodName, hasDocumentUuidSegment: false);
+            RequestInfo requestInfo = RequestInfoFor(unsupportedMethodName, CollectionRoute());
 
             await Middleware().Execute(requestInfo, NullNext);
 
@@ -203,7 +204,7 @@ public class MethodNotAllowedMiddlewareTests
         [Test]
         public async Task It_does_not_invoke_the_next_step()
         {
-            RequestInfo requestInfo = RequestInfoFor("PATCH", hasDocumentUuidSegment: false);
+            RequestInfo requestInfo = RequestInfoFor("PATCH", CollectionRoute());
             bool nextWasInvoked = false;
 
             await Middleware()

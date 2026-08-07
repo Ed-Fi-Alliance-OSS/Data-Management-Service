@@ -824,16 +824,15 @@ public class PipelineOrderingTests
             IPipelineStep terminal = GetSteps(BuildApiService(), factoryMethodName)
                 .Single(step => step is MethodNotAllowedMiddleware);
 
-            // Both parse steps leave HasDocumentUuidSegment false, which is why the terminal cannot
-            // read the route family off the request and has to be told at construction.
+            // Both parse steps classify their path as the Collection operation, which is why the
+            // terminal cannot read the route family off the request and has to be told at construction.
             RequestInfo requestInfo = No.RequestInfo("method-not-allowed-wiring-trace-id");
             requestInfo.Method = RequestMethod.UNSUPPORTED;
             requestInfo.UnsupportedMethodName = "PATCH";
             requestInfo.PathComponents = new(
                 ProjectEndpointName: new("ed-fi"),
                 EndpointName: new("schools"),
-                DocumentUuid: No.DocumentUuid,
-                HasDocumentUuidSegment: false
+                Operation: ResourcePathOperation.Collection.Instance
             );
 
             await terminal.Execute(requestInfo, TestHelper.NullNext);

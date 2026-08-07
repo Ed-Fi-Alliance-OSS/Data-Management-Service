@@ -226,6 +226,27 @@ public class ValidateRouteSemanticsMiddlewareTests
                     "Resource items can only be updated using PUT. To 'upsert' an item in the resource collection using POST, remove the 'id' from the route."
                 );
         }
+
+        [Test]
+        public async Task It_returns_an_allow_header_of_get_only()
+        {
+            // A partitions route is read-only, so none of the rejected write methods may appear in
+            // the set offered back. Naming the collection's set here would advertise the POST the
+            // arm above rejects. Cased in the body rather than by TestCase because RequestMethod is
+            // internal and so cannot be a parameter of a public test method.
+            foreach (
+                RequestMethod method in new[] { RequestMethod.DELETE, RequestMethod.PUT, RequestMethod.POST }
+            )
+            {
+                RequestInfo requestInfo = No.RequestInfo();
+                requestInfo.Method = method;
+                requestInfo.PathComponents = PathComponents(ResourcePathOperation.Partitions.Instance);
+
+                await Middleware().Execute(requestInfo, NullNext);
+
+                requestInfo.FrontendResponse.Headers.Should().Contain("Allow", "GET");
+            }
+        }
     }
 
     [TestFixture]
