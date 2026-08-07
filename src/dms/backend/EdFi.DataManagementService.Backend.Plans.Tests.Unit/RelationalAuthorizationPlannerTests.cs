@@ -401,6 +401,22 @@ public class Given_RelationalAuthorizationPlanner
         outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
     }
 
+    [Test]
+    public void It_does_not_yet_plan_custom_views_for_a_single_record_update()
+    {
+        // The proposed value source is wired but the repository does not plan it yet, so Update stays behind
+        // the enforcement gate: a configured custom view keeps its 501 rather than being silently dropped.
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(2, "PlainResource"), ResourceKey(3, "Student")),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.Update,
+            [Strategy("StudentWithCTECourseEnrollments", 0)],
+            new RelationalAuthorizationContext([])
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
+    }
+
     [TestCase(NamespaceAuthorizationOperation.ReadSingle, false)]
     [TestCase(NamespaceAuthorizationOperation.ReadSingle, true)]
     [TestCase(NamespaceAuthorizationOperation.Delete, false)]

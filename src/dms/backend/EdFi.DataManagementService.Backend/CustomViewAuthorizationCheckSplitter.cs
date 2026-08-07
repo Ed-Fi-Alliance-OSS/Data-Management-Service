@@ -37,22 +37,33 @@ internal static class CustomViewAuthorizationCheckSplitter
     ) PartitionByConfiguredIndex(
         IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks,
         int configuredIndex
+    ) => PartitionByConfiguredIndex(checks, static check => check, configuredIndex);
+
+    /// <summary>
+    /// Partitions items that carry a check — a check paired with an extracted proposed value, for instance —
+    /// by the same rule, so the tie rule has one definition.
+    /// </summary>
+    public static (IReadOnlyList<T> Before, IReadOnlyList<T> After) PartitionByConfiguredIndex<T>(
+        IReadOnlyList<T> items,
+        Func<T, SingleRecordCustomViewAuthorizationCheckSpec> checkSelector,
+        int configuredIndex
     )
     {
-        ArgumentNullException.ThrowIfNull(checks);
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(checkSelector);
 
-        List<SingleRecordCustomViewAuthorizationCheckSpec> before = [];
-        List<SingleRecordCustomViewAuthorizationCheckSpec> after = [];
+        List<T> before = [];
+        List<T> after = [];
 
-        foreach (var check in checks)
+        foreach (var item in items)
         {
-            if (check.ConfiguredStrategy.RawConfiguredIndex <= configuredIndex)
+            if (checkSelector(item).ConfiguredStrategy.RawConfiguredIndex <= configuredIndex)
             {
-                before.Add(check);
+                before.Add(item);
             }
             else
             {
-                after.Add(check);
+                after.Add(item);
             }
         }
 

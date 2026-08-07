@@ -31,6 +31,8 @@ internal static class AuthorizationSecurityConfigurationDiagnostics
         "RelationshipAuthorization.ProposedValueExtractionInvalid";
     public const string CustomViewAuth1PayloadMappingFailed =
         "CustomViewAuthorization.Auth1.PayloadMappingFailed";
+    public const string CustomViewProposedValueExtractionInvalid =
+        "CustomViewAuthorization.ProposedValueExtractionInvalid";
 
     public static SecurityConfigurationFailureDiagnostic[] ForNamespacePrefixParameterization(
         string providerOrPlannerFailureKind
@@ -65,6 +67,22 @@ internal static class AuthorizationSecurityConfigurationDiagnostics
         [
             new SecurityConfigurationFailureDiagnostic(
                 ProviderOrPlannerFailureKind: CustomViewAuth1PayloadMappingFailed,
+                ConfiguredStrategyNames: DistinctInFirstOccurrenceOrder(
+                    checks.Select(static check => check.ConfiguredStrategy.StrategyName)
+                ),
+                PhysicalPath: FormatCustomViewPhysicalPath(checks)
+            ),
+        ];
+
+    /// <summary>
+    /// Diagnostics for proposed custom-view checks that could not be reconciled with the finalized root row.
+    /// </summary>
+    public static SecurityConfigurationFailureDiagnostic[] ForCustomViewProposedValueExtraction(
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks
+    ) =>
+        [
+            new SecurityConfigurationFailureDiagnostic(
+                ProviderOrPlannerFailureKind: CustomViewProposedValueExtractionInvalid,
                 ConfiguredStrategyNames: DistinctInFirstOccurrenceOrder(
                     checks.Select(static check => check.ConfiguredStrategy.StrategyName)
                 ),

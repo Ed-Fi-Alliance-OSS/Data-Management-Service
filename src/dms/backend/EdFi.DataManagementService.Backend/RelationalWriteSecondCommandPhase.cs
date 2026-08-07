@@ -104,6 +104,20 @@ internal sealed class CompositeRelationalWriteSecondCommand(
 {
     private const string ProposedNamespaceAuthorizationLabel = "proposed-namespace-authorization";
     private const string ProposedRelationshipAuthorizationLabel = "proposed-relationship-authorization";
+
+    /// <summary>
+    /// The proposed custom-view run holding the views the CMS configured at or before <c>NamespaceBased</c>.
+    /// Also the only run when no namespace check participates.
+    /// </summary>
+    private const string ProposedCustomViewAuthorizationLabel = "proposed-custom-view-authorization";
+
+    /// <summary>
+    /// The proposed custom-view run holding the views configured after <c>NamespaceBased</c>. A separate label
+    /// because the two runs are separate statements with the namespace check between them, and the packer keys
+    /// units by label.
+    /// </summary>
+    private const string ProposedCustomViewAuthorizationAfterNamespaceLabel =
+        "proposed-custom-view-authorization-after-namespace";
     private const string DocumentInsertLabel = "document-insert";
     private const string ContentVersionReadLabel = "content-version-read";
 
@@ -146,6 +160,39 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             return new RelationalWriteSecondCommandResolution(mergeResult, null, namespacePlanFailure);
         }
 
+        if (
+            TryPlanCustomView(request, mergeResult, namespacePlan, out var customViewPlan) is
+            { } customViewPlanFailure
+        )
+        {
+            return new RelationalWriteSecondCommandResolution(mergeResult, null, customViewPlanFailure);
+        }
+
+        if (customViewPlan?.SuppressNamespace is true)
+        {
+            // A self-basis create denial is configured at or before NamespaceBased, so the namespace check
+            // never runs: the batch would have aborted at the earlier position.
+            namespacePlan = null;
+        }
+
+        if (customViewPlan?.SelfBasisDenial is not null)
+        {
+            // The denial is decided in C#, so no statement can carry it and nothing may be co-batched behind
+            // it. Only the filters configured before it can outrank it, and those are the only ones planned.
+            return new RelationalWriteSecondCommandResolution(
+                mergeResult,
+                null,
+                await ResolveSelfBasisDenialAsync(
+                        request,
+                        customViewPlan,
+                        namespacePlan,
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false)
+            );
+        }
+
         var relationshipPlan = PlanRelationship(request, mergeResult);
         mergeResult = relationshipPlan.MergeResult;
 
@@ -156,8 +203,9 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             // denial. So that check runs alone and nothing else is sent: no reserved collection key and no
             // data-modifying statement, which is what keeps a constraint violation from preempting the
             // authorization failure the caller must see, and keeps a denied create from leaving a row.
-            var namespaceDenial = await RunNamespaceOnlyAsync(
+            var precedingDenial = await RunProposedFiltersOnlyAsync(
                     request,
+                    customViewPlan,
                     namespacePlan,
                     writeSession,
                     cancellationToken
@@ -167,13 +215,14 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             return new RelationalWriteSecondCommandResolution(
                 mergeResult,
                 null,
-                namespaceDenial ?? deferredResult
+                precedingDenial ?? deferredResult
             );
         }
 
         if (
             mode is RelationalWriteSecondCommandMode.AuthorizationOnly
             && namespacePlan is null
+            && customViewPlan is null
             && relationshipPlan.RuntimeCheck is null
         )
         {
@@ -186,6 +235,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 mergeResult,
                 mode,
                 namespacePlan,
+                customViewPlan,
                 relationshipPlan.RuntimeCheck,
                 writeSession,
                 cancellationToken
@@ -224,13 +274,155 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 request,
                 builder,
                 namespacePlan,
+                customViewPlannedChecks: null,
                 runtimeCheck: null,
-                writeSession,
-                cancellationToken
+                writeSession: writeSession,
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
         return run.Denial;
+    }
+
+    /// <summary>
+    /// Runs the proposed AND filters that carry statements as commands of their own, in CMS-configured order,
+    /// answering with the first denial or <see langword="null"/>. Selected wherever a later statement must not
+    /// share the command: the relationship check could not be co-batched, or the request is already denied and
+    /// only these filters' precedence over that denial remains to be settled.
+    /// </summary>
+    private async Task<RelationalWriteExecutorResult?> RunProposedFiltersOnlyAsync(
+        RelationalWriteExecutorRequest request,
+        CustomViewStatementPlan? customViewPlan,
+        NamespaceStatementPlan? namespacePlan,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            await RunCustomViewOnlyAsync(
+                    request,
+                    customViewPlan,
+                    customViewPlan?.BeforeNamespace,
+                    ProposedCustomViewAuthorizationLabel,
+                    writeSession,
+                    cancellationToken
+                )
+                .ConfigureAwait(false) is
+            { } beforeDenial
+        )
+        {
+            return beforeDenial;
+        }
+
+        if (
+            await RunNamespaceOnlyAsync(request, namespacePlan, writeSession, cancellationToken)
+                .ConfigureAwait(false) is
+            { } namespaceDenial
+        )
+        {
+            return namespaceDenial;
+        }
+
+        return await RunCustomViewOnlyAsync(
+                request,
+                customViewPlan,
+                customViewPlan?.AfterNamespace,
+                ProposedCustomViewAuthorizationAfterNamespaceLabel,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task<RelationalWriteExecutorResult?> RunCustomViewOnlyAsync(
+        RelationalWriteExecutorRequest request,
+        CustomViewStatementPlan? customViewPlan,
+        IReadOnlyList<ProposedCustomViewRuntimeValue>? runValues,
+        string label,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        if (customViewPlan is null || runValues is null || runValues.Count == 0)
+        {
+            return null;
+        }
+
+        var builder = CreateBuilder(request);
+        var runtimeCheck = new ProposedCustomViewAuthorizationRuntimeCheck(
+            customViewPlan.PlannedChecks,
+            runValues
+        );
+        TryAppendCustomView(builder, request, runtimeCheck, label);
+
+        var run = await RunAsync(
+                request,
+                builder,
+                namespacePlan: null,
+                customViewPlannedChecks: customViewPlan.PlannedChecks,
+                runtimeCheck: null,
+                writeSession: writeSession,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return run.Denial;
+    }
+
+    /// <summary>
+    /// Settles a self-basis proposed check on a create. Everything configured before it runs first, because an
+    /// earlier failure outranks this one; then the view itself is validated, so a missing or nonconforming view
+    /// keeps its <c>urn:ed-fi:api:system</c> 500 rather than being reported as this denial.
+    /// </summary>
+    private async Task<RelationalWriteExecutorResult> ResolveSelfBasisDenialAsync(
+        RelationalWriteExecutorRequest request,
+        CustomViewStatementPlan customViewPlan,
+        NamespaceStatementPlan? namespacePlan,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        var denyingCheck =
+            customViewPlan.SelfBasisDenial
+            ?? throw new InvalidOperationException(
+                "Self-basis denial resolution requires a denying self-basis check."
+            );
+
+        if (
+            await RunProposedFiltersOnlyAsync(
+                    request,
+                    customViewPlan,
+                    namespacePlan,
+                    writeSession,
+                    cancellationToken
+                )
+                .ConfigureAwait(false) is
+            { } precedingDenial
+        )
+        {
+            return precedingDenial;
+        }
+
+        await CustomViewAuthorizationValidator
+            .ValidateSingleRecordAsync(
+                writeSession.CreateCommandExecutor(),
+                request.MappingSet.Key.Dialect,
+                [denyingCheck],
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return RelationalWriteExecutorResults.BuildCustomViewAuthorizationFailureResult(
+            request.OperationKind,
+            new CustomViewAuthorizationFailure(
+                CustomViewAuthorizationFailureKind.NoMatchingRow,
+                CustomViewAuthorizationFailureValueSource.Proposed,
+                denyingCheck.Index,
+                denyingCheck.ConfiguredStrategy.StrategyName,
+                [.. denyingCheck.ReadableSecurableElements],
+                denyingCheck.FailureHint
+            )
+        );
     }
 
     private sealed record SecondCommandExecution(
@@ -243,6 +435,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         RelationalWriteMergeResult mergeResult,
         RelationalWriteSecondCommandMode mode,
         NamespaceStatementPlan? namespacePlan,
+        CustomViewStatementPlan? customViewPlan,
         ProposedRelationshipAuthorizationRuntimeCheck? runtimeCheck,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
@@ -263,6 +456,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                     request,
                     mergeResult,
                     namespacePlan,
+                    customViewPlan,
                     runtimeCheck,
                     relationshipCommand,
                     writeSession,
@@ -272,18 +466,34 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         }
 
         var builder = CreateBuilder(request);
+        // Configured order, with the namespace check between the two custom-view runs.
+        var customViewBefore = TryAppendCustomViewRun(
+            builder,
+            request,
+            customViewPlan,
+            customViewPlan?.BeforeNamespace,
+            ProposedCustomViewAuthorizationLabel
+        );
         var namespaceEmitted = TryAppendNamespace(builder, request, namespacePlan);
+        var customViewAfter = TryAppendCustomViewRun(
+            builder,
+            request,
+            customViewPlan,
+            customViewPlan?.AfterNamespace,
+            ProposedCustomViewAuthorizationAfterNamespaceLabel
+        );
         var relationshipEmitted =
             relationshipCommand is not null
             && CanCoBatchRelationshipInto(builder, runtimeCheck!, relationshipCommand)
             && TryAppendRelationship(builder, relationshipCommand);
 
-        if (namespaceEmitted || relationshipEmitted)
+        if (namespaceEmitted || relationshipEmitted || customViewBefore || customViewAfter)
         {
             var run = await RunAsync(
                     request,
                     builder,
                     namespaceEmitted ? namespacePlan : null,
+                    customViewBefore || customViewAfter ? customViewPlan!.PlannedChecks : null,
                     relationshipEmitted ? runtimeCheck : null,
                     writeSession,
                     cancellationToken
@@ -325,6 +535,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         RelationalWriteExecutorRequest request,
         RelationalWriteMergeResult mergeResult,
         NamespaceStatementPlan? namespacePlan,
+        CustomViewStatementPlan? customViewPlan,
         ProposedRelationshipAuthorizationRuntimeCheck? runtimeCheck,
         RelationalCommand? relationshipCommand,
         IRelationalWriteSession writeSession,
@@ -348,12 +559,18 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             // Create artifacts only after proposed authorization: a check that cannot join the command has
             // to run, and pass, before the data-modifying statements are built at all.
             if (
-                await RunNamespaceOnlyAsync(request, namespacePlan, writeSession, cancellationToken)
+                await RunProposedFiltersOnlyAsync(
+                        request,
+                        customViewPlan,
+                        namespacePlan,
+                        writeSession,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false) is
-                { } namespaceDenial
+                { } precedingDenial
             )
             {
-                return new SecondCommandExecution(null, namespaceDenial);
+                return new SecondCommandExecution(null, precedingDenial);
             }
 
             var standaloneDenial = await ExecuteStandaloneRelationshipAsync(
@@ -371,11 +588,19 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             }
 
             namespacePlan = null;
+            customViewPlan = null;
             relationshipCommand = null;
             runtimeCheck = null;
         }
 
-        var units = BuildDmlUnits(request, preparation, namespacePlan, runtimeCheck, relationshipCommand);
+        var units = BuildDmlUnits(
+            request,
+            preparation,
+            namespacePlan,
+            customViewPlan,
+            runtimeCheck,
+            relationshipCommand
+        );
         var packedCommands = RelationalCompositeCommandPacker.Pack(
             [.. units.Select(static unit => unit.PackUnit)],
             budget
@@ -408,6 +633,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                     request,
                     builder,
                     context.EmittedNamespacePlan,
+                    context.EmittedCustomViewPlannedChecks,
                     context.EmittedRuntimeCheck,
                     writeSession,
                     cancellationToken
@@ -455,6 +681,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         RelationalWriteExecutorRequest request,
         RelationalCompositeCommandBuilder builder,
         NamespaceStatementPlan? namespacePlan,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? customViewPlannedChecks,
         ProposedRelationshipAuthorizationRuntimeCheck? runtimeCheck,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
@@ -473,7 +700,13 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         {
             return new CommandRun(
                 [],
-                MapAuthorizationFailure(request, namespacePlan, runtimeCheck, exception)
+                MapAuthorizationFailure(
+                    request,
+                    namespacePlan,
+                    customViewPlannedChecks,
+                    runtimeCheck,
+                    exception
+                )
             );
         }
     }
@@ -588,6 +821,12 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         public NamespaceStatementPlan? EmittedNamespacePlan { get; set; }
 
         public ProposedRelationshipAuthorizationRuntimeCheck? EmittedRuntimeCheck { get; set; }
+
+        /// <summary>
+        /// The request's full planned custom-view list, set once either run is emitted into this command. A
+        /// <c>cv1</c> payload is resolved against the whole list, so which run emitted it does not matter.
+        /// </summary>
+        public IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? EmittedCustomViewPlannedChecks { get; set; }
     }
 
     /// <summary>
@@ -642,6 +881,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         RelationalWriteExecutorRequest request,
         DmlPreparation preparation,
         NamespaceStatementPlan? namespacePlan,
+        CustomViewStatementPlan? customViewPlan,
         ProposedRelationshipAuthorizationRuntimeCheck? runtimeCheck,
         RelationalCommand? relationshipCommand
     )
@@ -649,6 +889,14 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         var targetContext = RequireTargetContext(request);
         var dialect = request.MappingSet.Key.Dialect;
         List<DmlEmitUnit> units = [];
+
+        AddCustomViewUnit(
+            units,
+            request,
+            customViewPlan,
+            customViewPlan?.BeforeNamespace,
+            ProposedCustomViewAuthorizationLabel
+        );
 
         if (namespacePlan is not null)
         {
@@ -668,6 +916,14 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 )
             );
         }
+
+        AddCustomViewUnit(
+            units,
+            request,
+            customViewPlan,
+            customViewPlan?.AfterNamespace,
+            ProposedCustomViewAuthorizationAfterNamespaceLabel
+        );
 
         if (relationshipCommand is not null)
         {
@@ -1082,7 +1338,13 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         }
         catch (DbException exception)
         {
-            return MapAuthorizationFailure(request, namespacePlan: null, runtimeCheck, exception);
+            return MapAuthorizationFailure(
+                request,
+                namespacePlan: null,
+                customViewPlannedChecks: null,
+                runtimeCheck,
+                exception
+            );
         }
     }
 
@@ -1128,6 +1390,301 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     ) =>
         CanCoBatchRelationshipShape(runtimeCheck)
         && relationshipCommand.Parameters.Count <= budget.MaxParametersPerCommand;
+
+    /// <param name="PlannedChecks">
+    /// The request's full planned custom-view list across both value sources. Every <c>cv1</c> payload is
+    /// resolved against this list, never against an emitted run.
+    /// </param>
+    /// <param name="BeforeNamespace">
+    /// The runs' checks configured at or before <c>NamespaceBased</c>, with their extracted basis values.
+    /// </param>
+    /// <param name="AfterNamespace">The checks configured after <c>NamespaceBased</c>.</param>
+    /// <param name="SelfBasisDenial">
+    /// The earliest self-basis check that denies, when the write resolved to a create. Decided in C#, so it
+    /// carries no statement and nothing configured at or after it is emitted.
+    /// </param>
+    /// <param name="SuppressNamespace">
+    /// Whether the namespace check is preempted by <paramref name="SelfBasisDenial"/>. True only when the
+    /// denial is configured at or before the namespace position, matching the tie rule that puts a custom view
+    /// first at an equal configured index.
+    /// </param>
+    private sealed record CustomViewStatementPlan(
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> PlannedChecks,
+        IReadOnlyList<ProposedCustomViewRuntimeValue> BeforeNamespace,
+        IReadOnlyList<ProposedCustomViewRuntimeValue> AfterNamespace,
+        SingleRecordCustomViewAuthorizationCheckSpec? SelfBasisDenial,
+        bool SuppressNamespace
+    );
+
+    /// <summary>
+    /// Extracts each proposed custom-view basis value from the finalized merged root row and splits the checks
+    /// into the runs the configured order requires. Returns the security-configuration failure when the plan
+    /// cannot be reconciled with that row.
+    /// </summary>
+    private static RelationalWriteExecutorResult? TryPlanCustomView(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteMergeResult mergeResult,
+        NamespaceStatementPlan? namespacePlan,
+        out CustomViewStatementPlan? statementPlan
+    )
+    {
+        statementPlan = null;
+
+        if (request.CustomViewAuthorization is not { ProposedChecks.Count: > 0 } customViewAuthorization)
+        {
+            return null;
+        }
+
+        var plannedChecks = customViewAuthorization.Checks;
+        var extraction = ProposedCustomViewValueExtractor.Extract(
+            customViewAuthorization.ProposedChecks,
+            RelationalWriteFinalizedRootRow.Build(request, mergeResult)
+        );
+
+        if (extraction is ProposedCustomViewExtractionResult.InvalidAuthorizationPlan invalid)
+        {
+            return InvalidCustomViewPlan(request, plannedChecks, invalid.FailureMessage);
+        }
+
+        var work = ((ProposedCustomViewExtractionResult.Ready)extraction).Work;
+
+        if (
+            ResolveSelfBasisChecks(request, plannedChecks, work.SelfBasisChecks, out var selfBasisDenial) is
+            { } selfBasisFailure
+        )
+        {
+            return selfBasisFailure;
+        }
+
+        var sqlValues = work.SqlValues;
+        var suppressNamespace = false;
+
+        if (selfBasisDenial is not null)
+        {
+            // The denial is deterministic at its configured position, so nothing configured at or after it can
+            // change the answer and none of it is emitted.
+            sqlValues = [.. sqlValues.Where(value => IsConfiguredBefore(value.Check, selfBasisDenial))];
+            suppressNamespace =
+                namespacePlan is not null
+                && namespacePlan.Checks[0].RawConfiguredIndex
+                    >= selfBasisDenial.ConfiguredStrategy.RawConfiguredIndex;
+        }
+
+        var (beforeNamespace, afterNamespace) =
+            namespacePlan is not null && !suppressNamespace
+                ? CustomViewAuthorizationCheckSplitter.PartitionByConfiguredIndex(
+                    sqlValues,
+                    static value => value.Check,
+                    namespacePlan.Checks[0].RawConfiguredIndex
+                )
+                : (sqlValues, (IReadOnlyList<ProposedCustomViewRuntimeValue>)[]);
+
+        statementPlan = new CustomViewStatementPlan(
+            plannedChecks,
+            beforeNamespace,
+            afterNamespace,
+            selfBasisDenial,
+            suppressNamespace
+        );
+
+        return null;
+    }
+
+    /// <summary>
+    /// Settles the self-basis checks that SQL cannot decide, reporting the earliest one that denies. A create
+    /// denies; an existing target is satisfied, but only when the same configured strategy also planned a
+    /// stored check — that check is what authorized the row whose immutable <c>DocumentId</c> is being reused
+    /// as the proposed basis value, so without it nothing has been proven and the plan fails closed.
+    /// </summary>
+    private static RelationalWriteExecutorResult? ResolveSelfBasisChecks(
+        RelationalWriteExecutorRequest request,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> plannedChecks,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> selfBasisChecks,
+        out SingleRecordCustomViewAuthorizationCheckSpec? denial
+    )
+    {
+        denial = null;
+
+        if (selfBasisChecks.Count == 0)
+        {
+            return null;
+        }
+
+        if (request.TargetContext is null)
+        {
+            return InvalidCustomViewPlan(
+                request,
+                plannedChecks,
+                "Proposed custom view authorization cannot settle a self-basis check without an executor-resolved target context."
+            );
+        }
+
+        if (request.TargetContext is RelationalWriteTargetContext.CreateNew)
+        {
+            foreach (var check in selfBasisChecks)
+            {
+                if (denial is null || IsConfiguredBefore(check, denial))
+                {
+                    denial = check;
+                }
+            }
+
+            return null;
+        }
+
+        foreach (var check in selfBasisChecks)
+        {
+            var hasPairedStoredCheck = plannedChecks.Any(planned =>
+                planned.ValueSource is CustomViewAuthorizationCheckValueSource.Stored
+                && planned.ConfiguredStrategy == check.ConfiguredStrategy
+            );
+
+            if (!hasPairedStoredCheck)
+            {
+                return InvalidCustomViewPlan(
+                    request,
+                    plannedChecks,
+                    $"Proposed custom view authorization cannot treat self-basis check '{check.Index}' as satisfied: strategy '{check.ConfiguredStrategy.StrategyName}' planned no stored check to authorize the existing row."
+                );
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Orders two checks the way the CMS configured them, breaking an equal configured index by planned index
+    /// so a tie resolves the same way every time.
+    /// </summary>
+    private static bool IsConfiguredBefore(
+        SingleRecordCustomViewAuthorizationCheckSpec left,
+        SingleRecordCustomViewAuthorizationCheckSpec right
+    ) =>
+        (left.ConfiguredStrategy.RawConfiguredIndex, left.Index).CompareTo(
+            (right.ConfiguredStrategy.RawConfiguredIndex, right.Index)
+        ) < 0;
+
+    private static RelationalWriteExecutorResult InvalidCustomViewPlan(
+        RelationalWriteExecutorRequest request,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> plannedChecks,
+        string failureMessage
+    ) =>
+        RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
+            request.OperationKind,
+            [failureMessage],
+            AuthorizationSecurityConfigurationDiagnostics.ForCustomViewProposedValueExtraction(plannedChecks)
+        );
+
+    /// <summary>
+    /// Appends one proposed custom-view run and reports whether it emitted a statement.
+    /// </summary>
+    private static bool TryAppendCustomViewRun(
+        RelationalCompositeCommandBuilder builder,
+        RelationalWriteExecutorRequest request,
+        CustomViewStatementPlan? customViewPlan,
+        IReadOnlyList<ProposedCustomViewRuntimeValue>? runValues,
+        string label
+    )
+    {
+        if (customViewPlan is null || runValues is null || runValues.Count == 0)
+        {
+            return false;
+        }
+
+        return TryAppendCustomView(
+            builder,
+            request,
+            new ProposedCustomViewAuthorizationRuntimeCheck(customViewPlan.PlannedChecks, runValues),
+            label
+        );
+    }
+
+    private static bool TryAppendCustomView(
+        RelationalCompositeCommandBuilder builder,
+        RelationalWriteExecutorRequest request,
+        ProposedCustomViewAuthorizationRuntimeCheck runtimeCheck,
+        string label
+    )
+    {
+        if (
+            ProposedCustomViewAuthorizationCommand.Build(request.MappingSet, runtimeCheck)
+            is not { } statement
+        )
+        {
+            return false;
+        }
+
+        AppendCustomViewStatement(builder, statement, label);
+
+        return true;
+    }
+
+    private static void AppendCustomViewStatement(
+        RelationalCompositeCommandBuilder builder,
+        ProposedCustomViewAuthorizationStatement statement,
+        string label
+    )
+    {
+        var rewritten = RelationalCompositeStatementRewriter.Rewrite(
+            statement.Command,
+            builder.Allocator,
+            builder.NextOrdinal
+        );
+        var resultSetCount = statement.ResultSetCount;
+
+        builder.Append(
+            label,
+            rewritten.Sql,
+            rewritten.Parameters,
+            RelationalCompositeResultShape.Rows,
+            (reader, readCancellation) =>
+                RelationalCompositeResultSetSpan.ConsumeAsync(reader, resultSetCount, readCancellation),
+            resultSetCount
+        );
+    }
+
+    private static void AddCustomViewUnit(
+        List<DmlEmitUnit> units,
+        RelationalWriteExecutorRequest request,
+        CustomViewStatementPlan? customViewPlan,
+        IReadOnlyList<ProposedCustomViewRuntimeValue>? runValues,
+        string label
+    )
+    {
+        if (customViewPlan is null || runValues is null || runValues.Count == 0)
+        {
+            return;
+        }
+
+        var runtimeCheck = new ProposedCustomViewAuthorizationRuntimeCheck(
+            customViewPlan.PlannedChecks,
+            runValues
+        );
+
+        if (
+            ProposedCustomViewAuthorizationCommand.Build(request.MappingSet, runtimeCheck)
+            is not { } statement
+        )
+        {
+            return;
+        }
+
+        units.Add(
+            new DmlEmitUnit(
+                new RelationalCompositePackUnit(
+                    label,
+                    RowCount: 0,
+                    ParametersPerRow: 0,
+                    FixedParameterCount: statement.Command.Parameters.Count
+                ),
+                (context, _, _) =>
+                {
+                    AppendCustomViewStatement(context.Builder, statement, label);
+                    context.EmittedCustomViewPlannedChecks = customViewPlan.PlannedChecks;
+                }
+            )
+        );
+    }
 
     private sealed record NamespaceStatementPlan(
         IReadOnlyList<NamespaceAuthorizationCheckSpec> Checks,
@@ -1345,11 +1902,59 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     private RelationalWriteExecutorResult MapAuthorizationFailure(
         RelationalWriteExecutorRequest request,
         NamespaceStatementPlan? namespacePlan,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? customViewPlannedChecks,
         ProposedRelationshipAuthorizationRuntimeCheck? runtimeCheck,
         DbException exception
     )
     {
         var dialect = request.MappingSet.Key.Dialect;
+
+        // Custom views are dispatched first because only they claim a cv1 payload; a payload from another
+        // family reaches its own mapper untouched. Mapping always uses the request's full planned list, so a
+        // payload from either emitted run resolves to the check the planner assigned that index to.
+        if (customViewPlannedChecks is not null)
+        {
+            if (
+                CustomViewAuthorizationProviderFailureMapper.TryMapCustomViewAuthorizationFailure(
+                    dialect,
+                    exception,
+                    _providerFailureExtractor,
+                    customViewPlannedChecks,
+                    out var customViewFailure
+                )
+            )
+            {
+                return RelationalWriteExecutorResults.BuildCustomViewAuthorizationFailureResult(
+                    request.OperationKind,
+                    customViewFailure!
+                );
+            }
+
+            if (
+                CustomViewAuthorizationProviderFailureMapper.IsUnmappableCustomViewPayload(
+                    dialect,
+                    exception,
+                    _providerFailureExtractor,
+                    customViewPlannedChecks
+                )
+            )
+            {
+                return RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
+                    request.OperationKind,
+                    [CustomViewAuthorizationSecurityConfigurationMessages.InvalidAuthorizationMetadata],
+                    AuthorizationSecurityConfigurationDiagnostics.ForCustomViewAuthorizationAuth1(
+                        customViewPlannedChecks
+                    )
+                );
+            }
+
+            // Proposed-value checks bind no stored DocumentId, so the stale stored-target kind cannot be
+            // raised here. A failure carrying no custom-view payload is deliberately NOT attributed to the
+            // view either: this command can also carry the document insert and the resource tables'
+            // statements, and PostgreSQL reports a batch-prepare failure without a usable statement
+            // position, so attributing by position would relabel a constraint violation as a security
+            // configuration error. Such failures fall through to the executor's existing handling.
+        }
 
         if (namespacePlan is not null)
         {
