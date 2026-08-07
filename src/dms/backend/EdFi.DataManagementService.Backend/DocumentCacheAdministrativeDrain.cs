@@ -266,12 +266,6 @@ internal sealed class DocumentCacheAdministrativeDrainer(
     ILogger<DocumentCacheAdministrativeDrainer> logger
 ) : IDocumentCacheAdministrativeDrainer
 {
-    private enum DocumentCacheAdministrativeUnproductivePassKind
-    {
-        NoDurableProgress,
-        PoisonSuppression,
-    }
-
     public async Task<DocumentCacheAdministrativeDrainSliceResult> DrainBackpressureReliefSliceAsync(
         DocumentCacheAdministrativeCommandExecutionContext context,
         CancellationToken cancellationToken = default
@@ -363,8 +357,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
         var currentPass = new DocumentCacheAdministrativeDrainPass(
             context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize
         );
-        var unproductiveRetryPassCount = 0;
-        DocumentCacheAdministrativeUnproductivePassKind? unproductiveRetryPassKind = null;
+        var poisonSuppressionRetryPassCount = 0;
 
         while (true)
         {
@@ -394,18 +387,11 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                     || drainResult.DocumentScopedFailureCount > 0
                 )
                 {
-                    ResetUnproductiveRetryPassCount(
-                        ref unproductiveRetryPassCount,
-                        ref unproductiveRetryPassKind
-                    );
+                    poisonSuppressionRetryPassCount = 0;
                 }
                 else if (currentPass.IsUnproductiveNoProgressPass)
                 {
-                    RecordUnproductiveRetryPass(
-                        DocumentCacheAdministrativeUnproductivePassKind.NoDurableProgress,
-                        ref unproductiveRetryPassCount,
-                        ref unproductiveRetryPassKind
-                    );
+                    poisonSuppressionRetryPassCount = 0;
                     logger.LogDebug(
                         "DocumentCache administrative drain for target {TargetKey} completed a cursor pass without acknowledging, removing, or recording failures and will poll again.",
                         LoggingSanitizer.SanitizeForLogging(context.TargetContext.TargetKey.ToString())
@@ -415,10 +401,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                 }
                 else if (currentPass.RecordedDurableProgress)
                 {
-                    ResetUnproductiveRetryPassCount(
-                        ref unproductiveRetryPassCount,
-                        ref unproductiveRetryPassKind
-                    );
+                    poisonSuppressionRetryPassCount = 0;
                 }
 
                 currentPass = NewPass(context);
@@ -446,29 +429,15 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                     {
                         if (currentPass.IsUnproductivePoisonPass || currentPass.ProcessedItemCount == 0)
                         {
-                            int retryPassCount = RecordUnproductiveRetryPass(
-                                DocumentCacheAdministrativeUnproductivePassKind.PoisonSuppression,
-                                ref unproductiveRetryPassCount,
-                                ref unproductiveRetryPassKind
-                            );
-                            if (retryPassCount >= 2)
+                            poisonSuppressionRetryPassCount++;
+                            if (poisonSuppressionRetryPassCount >= 2)
                             {
                                 return PersistentPoison(context, stats, currentPass.DiagnosticDocumentIds);
                             }
                         }
-                        else if (currentPass.RecordedDurableProgress)
-                        {
-                            ResetUnproductiveRetryPassCount(
-                                ref unproductiveRetryPassCount,
-                                ref unproductiveRetryPassKind
-                            );
-                        }
                         else
                         {
-                            ResetUnproductiveRetryPassCount(
-                                ref unproductiveRetryPassCount,
-                                ref unproductiveRetryPassKind
-                            );
+                            poisonSuppressionRetryPassCount = 0;
                         }
 
                         await DelayUntilAsync(drainResult.NextRetryAt.Value, effectiveCancellationToken)
@@ -477,22 +446,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                         continue;
                     }
 
-                    if (currentPass.IsUnproductiveNoProgressPass)
-                    {
-                        RecordUnproductiveRetryPass(
-                            DocumentCacheAdministrativeUnproductivePassKind.NoDurableProgress,
-                            ref unproductiveRetryPassCount,
-                            ref unproductiveRetryPassKind
-                        );
-                    }
-                    else
-                    {
-                        ResetUnproductiveRetryPassCount(
-                            ref unproductiveRetryPassCount,
-                            ref unproductiveRetryPassKind
-                        );
-                    }
-
+                    poisonSuppressionRetryPassCount = 0;
                     currentPass = NewPass(context);
                     logger.LogDebug(
                         "DocumentCache administrative drain for target {TargetKey} found durable work after an empty page and will poll again.",
@@ -576,31 +530,6 @@ internal sealed class DocumentCacheAdministrativeDrainer(
         && startingCursor is not null
         && endingCursor is not null
         && endingCursor.Value.CompareTo(startingCursor.Value) <= 0;
-
-    private static int RecordUnproductiveRetryPass(
-        DocumentCacheAdministrativeUnproductivePassKind kind,
-        ref int unproductiveRetryPassCount,
-        ref DocumentCacheAdministrativeUnproductivePassKind? unproductiveRetryPassKind
-    )
-    {
-        if (unproductiveRetryPassKind != kind)
-        {
-            unproductiveRetryPassCount = 0;
-            unproductiveRetryPassKind = kind;
-        }
-
-        unproductiveRetryPassCount++;
-        return unproductiveRetryPassCount;
-    }
-
-    private static void ResetUnproductiveRetryPassCount(
-        ref int unproductiveRetryPassCount,
-        ref DocumentCacheAdministrativeUnproductivePassKind? unproductiveRetryPassKind
-    )
-    {
-        unproductiveRetryPassCount = 0;
-        unproductiveRetryPassKind = null;
-    }
 
     private async Task<DocumentCacheProjectionDrainPageResult> RunDrainSliceAsync(
         DocumentCacheAdministrativeCommandExecutionContext context,
