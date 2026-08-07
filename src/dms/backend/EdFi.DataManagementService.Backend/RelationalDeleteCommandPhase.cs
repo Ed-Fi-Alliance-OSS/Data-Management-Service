@@ -26,8 +26,11 @@ internal sealed record RelationalDeleteCommandRequest(
     RelationshipAuthorizationResult StoredRelationshipAuthorization
 )
 {
-    /// <summary>The stored custom-view checks, or <see langword="null"/> when none are configured.</summary>
-    public RelationalCustomViewAuthorization? StoredCustomViewAuthorization { get; init; }
+    /// <summary>
+    /// Every custom-view check planned for this delete, or <see langword="null"/> when none are configured.
+    /// DELETE authorizes stored values only, so the proposed source is always empty here.
+    /// </summary>
+    public RelationalCustomViewAuthorization? CustomViewAuthorization { get; init; }
 
     public WritePrecondition WritePrecondition { get; init; } = new WritePrecondition.None();
 
@@ -332,12 +335,12 @@ internal sealed class CompositeRelationalDeleteCommand(
             ? (IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>)[]
             : customViewsAfterNamespace;
         var customViewPlan =
-            request.StoredCustomViewAuthorization is { } storedCustomViewAuthorization
+            request.CustomViewAuthorization is { } customViewAuthorization
             && (
                 customViewsBeforeNamespace.Count > 0
                 || (namespaceEmitted && customViewsAfterNamespace.Count > 0)
             )
-                ? new StoredCustomViewStatementPlan(storedCustomViewAuthorization.Checks)
+                ? new StoredCustomViewStatementPlan(customViewAuthorization.Checks)
                 : null;
         var relationshipPlan = classifiedRelationship;
         var relationshipEmitted =
@@ -396,17 +399,17 @@ internal sealed class CompositeRelationalDeleteCommand(
         IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> After
     ) PartitionCustomViewRuns(RelationalDeleteCommandRequest request)
     {
-        if (request.StoredCustomViewAuthorization is not { } storedCustomViewAuthorization)
+        if (request.CustomViewAuthorization is not { } customViewAuthorization)
         {
             return ([], []);
         }
 
         return request.StoredNamespaceAuthorization is { } storedNamespaceAuthorization
             ? CustomViewAuthorizationCheckSplitter.PartitionByConfiguredIndex(
-                storedCustomViewAuthorization.Checks,
+                customViewAuthorization.StoredChecks,
                 storedNamespaceAuthorization.Checks[0].RawConfiguredIndex
             )
-            : (storedCustomViewAuthorization.Checks, []);
+            : (customViewAuthorization.StoredChecks, []);
     }
 
     private static bool CanCoBatchDeletes(
@@ -466,7 +469,7 @@ internal sealed class CompositeRelationalDeleteCommand(
         CancellationToken cancellationToken
     )
     {
-        if (segmentChecks.Count == 0 || request.StoredCustomViewAuthorization is null)
+        if (segmentChecks.Count == 0 || request.CustomViewAuthorization is null)
         {
             return null;
         }
@@ -480,7 +483,7 @@ internal sealed class CompositeRelationalDeleteCommand(
                     request.MappingSet,
                     documentId,
                     segmentChecks,
-                    request.StoredCustomViewAuthorization.Checks
+                    request.CustomViewAuthorization.Checks
                 ),
                 cancellationToken
             )

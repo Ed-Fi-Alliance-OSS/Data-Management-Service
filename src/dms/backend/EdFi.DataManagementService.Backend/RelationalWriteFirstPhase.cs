@@ -291,10 +291,12 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             customViewsAfterNamespace
         );
 
+        // Mapping uses the request's full planned list, never the emitted slices, so a payload from either
+        // run resolves to the check the planner assigned that index to.
         var customViewPlan =
-            input.StoredCustomViewAuthorization is { } storedCustomViewAuthorization
+            input.CustomViewAuthorization is { } customViewAuthorization
             && (customViewsBeforeNamespace.Count > 0 || customViewsAfterNamespace.Count > 0)
-                ? new StoredCustomViewStatementPlan(storedCustomViewAuthorization.Checks)
+                ? new StoredCustomViewStatementPlan(customViewAuthorization.Checks)
                 : null;
 
         if (
@@ -625,7 +627,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         CancellationToken cancellationToken
     )
     {
-        if (segmentChecks.Count == 0 || executionRequest.StoredCustomViewAuthorization is null)
+        if (segmentChecks.Count == 0 || executionRequest.CustomViewAuthorization is null)
         {
             return null;
         }
@@ -639,7 +641,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                     executionRequest.MappingSet,
                     targetDocumentId,
                     segmentChecks,
-                    executionRequest.StoredCustomViewAuthorization.Checks
+                    executionRequest.CustomViewAuthorization.Checks
                 ),
                 cancellationToken
             )
@@ -1008,17 +1010,19 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> After
     ) PartitionCustomViewRuns(RelationalWriteExecutorInput input)
     {
-        if (input.StoredCustomViewAuthorization is not { } storedCustomViewAuthorization)
+        if (input.CustomViewAuthorization is not { } customViewAuthorization)
         {
             return ([], []);
         }
 
+        // Only the stored source belongs in this phase; the proposed source runs after merge finalizes the
+        // root row.
         return input.StoredNamespaceAuthorization is { } storedNamespaceAuthorization
             ? CustomViewAuthorizationCheckSplitter.PartitionByConfiguredIndex(
-                storedCustomViewAuthorization.Checks,
+                customViewAuthorization.StoredChecks,
                 storedNamespaceAuthorization.Checks[0].RawConfiguredIndex
             )
-            : (storedCustomViewAuthorization.Checks, []);
+            : (customViewAuthorization.StoredChecks, []);
     }
 
     /// <summary>

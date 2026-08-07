@@ -776,11 +776,12 @@ public sealed record RelationalWriteExecutorRequest
     public RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization { get; init; }
 
     /// <summary>
-    /// Stored-value custom view-based authorization for existing-target writes. Evaluated inside the
-    /// locked-target boundary before any precondition, interleaved with the namespace checks by configured
-    /// index. Null when no custom view participates.
+    /// Every custom view-based check planned for this write, across both value sources. Stored checks are
+    /// evaluated inside the locked-target boundary before any precondition, interleaved with the namespace
+    /// checks by configured index; proposed checks after merge finalizes the root row. Null when no custom
+    /// view participates.
     /// </summary>
-    public RelationalCustomViewAuthorization? StoredCustomViewAuthorization { get; init; }
+    public RelationalCustomViewAuthorization? CustomViewAuthorization { get; init; }
 
     /// <summary>
     /// POST-specific relationship authorization plans for target-dependent create-new vs upsert-as-update
@@ -888,8 +889,8 @@ public sealed record RelationalWriteExecutorInput
     /// <inheritdoc cref="RelationalWriteExecutorRequest.StoredNamespaceAuthorization"/>
     public RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization { get; init; }
 
-    /// <inheritdoc cref="RelationalWriteExecutorRequest.StoredCustomViewAuthorization"/>
-    public RelationalCustomViewAuthorization? StoredCustomViewAuthorization { get; init; }
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.CustomViewAuthorization"/>
+    public RelationalCustomViewAuthorization? CustomViewAuthorization { get; init; }
 
     /// <inheritdoc cref="RelationalWriteExecutorRequest.ProposedNamespaceAuthorization"/>
     public RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization { get; init; }
@@ -922,7 +923,7 @@ public sealed record RelationalWriteExecutorInput
         )
         {
             PostRelationshipAuthorizationPlans = PostRelationshipAuthorizationPlans,
-            StoredCustomViewAuthorization = StoredCustomViewAuthorization,
+            CustomViewAuthorization = CustomViewAuthorization,
         };
 }
 
@@ -943,26 +944,69 @@ public sealed record RelationalWriteNamespaceAuthorization(
 );
 
 /// <summary>
-/// The planned custom view-based checks for one value source of one operation.
+/// Every custom view-based check planned for one request, across both value sources.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Stored and proposed checks travel as separate instances. A compiled batch's row guard applies to every
-/// statement in it, so a create path needs its stored checks vacuous while its proposed checks still run —
-/// which is only expressible as separate batches.
+/// <see cref="Checks"/> is the request's single full planned list, and the only list a <c>cv1</c> failure may
+/// be mapped against. Execution slices it — by value source, and within the stored source by configured
+/// position relative to <c>NamespaceBased</c> — but no slice is ever the authority for resolving a payload.
+/// Indexes are request-wide for that reason: batches sharing a command also share one provider exception, so a
+/// per-slice index would leave two checks both reporting index 0. Each emitted slice need only be contiguous
+/// from its own starting index, which is all the compiler enforces.
 /// </para>
 /// <para>
-/// Indexes are request-wide, not per instance. A request can emit several batches — the views configured
-/// before and after a <c>NamespaceBased</c> check, and a stored batch and a proposed one — and batches sharing
-/// a command also share one provider exception, so a per-batch index would leave two checks both reporting
-/// index 0. Each emitted slice must be contiguous from its own starting index, which is all the compiler
-/// enforces, and every failure is mapped against the request's full planned list rather than against the
-/// slice that raised it.
+/// Stored and proposed checks must be compiled and executed as separate batches. A compiled batch's row guard
+/// applies to every statement in it, so a create path needs its stored checks vacuous while its proposed
+/// checks still run — which one batch cannot express.
 /// </para>
 /// </remarks>
-public sealed record RelationalCustomViewAuthorization(
-    IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> Checks
-);
+public sealed record RelationalCustomViewAuthorization
+{
+    public RelationalCustomViewAuthorization(
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks
+    )
+    {
+        ArgumentNullException.ThrowIfNull(checks);
+
+        // Copied, not aliased: IReadOnlyList is a read-only view, so a caller holding the underlying List
+        // could otherwise append or replace entries after construction and leave the slices describing
+        // contents this instance no longer reports.
+        Checks = [.. checks];
+        StoredChecks =
+        [
+            .. Checks.Where(static check =>
+                check.ValueSource is CustomViewAuthorizationCheckValueSource.Stored
+            ),
+        ];
+        ProposedChecks =
+        [
+            .. Checks.Where(static check =>
+                check.ValueSource is CustomViewAuthorizationCheckValueSource.Proposed
+            ),
+        ];
+    }
+
+    /// <summary>
+    /// The request's full planned list, and the only list a <c>cv1</c> failure may be mapped against.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not <c>init</c>-settable, and neither are the slices. A positional record would allow
+    /// <c>with { Checks = ... }</c> to replace this list while the copy constructor carried over slices
+    /// computed from the previous one, leaving them describing checks the instance no longer holds — which
+    /// would silently skip or mis-slice checks at execution. The constructor also copies its argument, since
+    /// a read-only view over a caller's mutable list would let the same divergence happen from outside.
+    /// Producing a different set therefore requires constructing a new instance, which recomputes both
+    /// slices from it.
+    /// </remarks>
+    public IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> Checks { get; }
+
+    /// <summary>The stored-value checks, in planned order. Always derived from <see cref="Checks"/>.</summary>
+    public IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> StoredChecks { get; }
+
+    /// <summary>The proposed-value checks, in planned order. Always derived from <see cref="Checks"/>.</summary>
+    public IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> ProposedChecks { get; }
+}
 
 /// <summary>
 /// Backend-local classification of one executor attempt.

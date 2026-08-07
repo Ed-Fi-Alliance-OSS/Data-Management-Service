@@ -223,7 +223,7 @@ public class Given_The_Composite_Relational_Delete_Command
         );
         var request = CreateRequest(dialect) with
         {
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
         };
 
         var result = await CreateSut().ExecuteAsync(request, session);
@@ -246,7 +246,7 @@ public class Given_The_Composite_Relational_Delete_Command
         var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("AUTH1", "AUTH1"));
         var request = CreateRequest(SqlDialect.Pgsql) with
         {
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
         };
 
         var result = await CreateSut(new StubProviderFailureExtractor("AUTH1", EncodeCustomViewPayload(0)))
@@ -265,7 +265,7 @@ public class Given_The_Composite_Relational_Delete_Command
         var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("AUTH1", "AUTH1"));
         var request = CreateRequest(SqlDialect.Pgsql) with
         {
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
         };
         var payload = EncodeCustomViewPayload(0, CustomViewAuthorizationAuth1FailureKind.StoredTargetMissing);
 
@@ -282,7 +282,7 @@ public class Given_The_Composite_Relational_Delete_Command
         var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("AUTH1", "AUTH1"));
         var request = CreateRequest(SqlDialect.Pgsql) with
         {
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
         };
 
         var result = await CreateSut(new StubProviderFailureExtractor("AUTH1", EncodeCustomViewPayload(4)))
@@ -300,7 +300,7 @@ public class Given_The_Composite_Relational_Delete_Command
         );
         var request = CreateRequest(SqlDialect.Pgsql) with
         {
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
             StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(SqlDialect.Pgsql),
         };
 
@@ -324,7 +324,7 @@ public class Given_The_Composite_Relational_Delete_Command
         );
         var request = CreateRequest(SqlDialect.Pgsql) with
         {
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 1)),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 1)),
             StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(SqlDialect.Pgsql),
         };
 
@@ -347,7 +347,7 @@ public class Given_The_Composite_Relational_Delete_Command
         var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("AUTH1", "AUTH1"));
         var request = CreateRequest(SqlDialect.Pgsql) with
         {
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(
                 ("SchoolWithAnEarlyTag", 0),
                 ("SchoolWithALateTag", 2)
             ),
@@ -373,7 +373,7 @@ public class Given_The_Composite_Relational_Delete_Command
         );
         var request = CreateRequest(SqlDialect.Pgsql) with
         {
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(
                 ("SchoolWithAnEarlyTag", 0),
                 ("SchoolWithALateTag", 2)
             ),
@@ -410,7 +410,7 @@ public class Given_The_Composite_Relational_Delete_Command
         var request = CreateRequest(SqlDialect.Pgsql) with
         {
             StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(SqlDialect.Pgsql),
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithALateTag", 1)),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithALateTag", 1)),
         };
 
         // A budget the capture's own two parameters consume, so the namespace statement cannot join it.
@@ -419,7 +419,11 @@ public class Given_The_Composite_Relational_Delete_Command
 
         result.Should().BeOfType<DeleteResult.DeleteSuccess>();
         session.Commands.Should().HaveCount(4);
-        session.Commands[0].CommandText.Should().NotContain("SchoolWithALateTag").And.NotContain("DELETE FROM");
+        session
+            .Commands[0]
+            .CommandText.Should()
+            .NotContain("SchoolWithALateTag")
+            .And.NotContain("DELETE FROM");
         session.Commands[1].CommandText.Should().Contain("namespacePrefixes");
         session.Commands[2].CommandText.Should().Contain("SchoolWithALateTag");
         session.Commands[3].CommandText.Should().Contain("DELETE FROM");
@@ -437,7 +441,7 @@ public class Given_The_Composite_Relational_Delete_Command
         var request = CreateRequest(SqlDialect.Pgsql) with
         {
             StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(SqlDialect.Pgsql),
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithALateTag", 1)),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithALateTag", 1)),
         };
 
         var result = await CreateSut(
@@ -452,7 +456,9 @@ public class Given_The_Composite_Relational_Delete_Command
             .Subject.CustomViewFailure.StrategyName.Should()
             .Be("SchoolWithALateTag");
         session.Commands.Should().HaveCount(3);
-        session.Commands.Should().AllSatisfy(command => command.CommandText.Should().NotContain("DELETE FROM"));
+        session
+            .Commands.Should()
+            .AllSatisfy(command => command.CommandText.Should().NotContain("DELETE FROM"));
     }
 
     [Test]
@@ -461,10 +467,13 @@ public class Given_The_Composite_Relational_Delete_Command
         // A dropped or revoked auth.{StrategyName} raises no AUTH1 payload. auth.md requires that to surface
         // as the urn:ed-fi:api:system 500, which the middleware derives from this exception, rather than as a
         // generic delete failure.
-        var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("relation does not exist", "42P01"));
+        var session = CreateSession(
+            SqlDialect.Pgsql,
+            new FakeDbException("relation does not exist", "42P01")
+        );
         var request = CreateRequest(SqlDialect.Pgsql) with
         {
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
         };
 
         var act = async () =>

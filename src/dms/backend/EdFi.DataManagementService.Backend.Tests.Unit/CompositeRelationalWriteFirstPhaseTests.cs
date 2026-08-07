@@ -574,7 +574,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
     {
         var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
         {
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
         };
         var session = new ScriptedWriteSession(
             CreateReader(
@@ -594,7 +594,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
     {
         var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
         {
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
         };
         // One composite command carries capture and checks, so the abort is that command's failure.
         var session = new ScriptedWriteSession(new FakeDbException("custom view denial"));
@@ -617,7 +617,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
     {
         var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: false) with
         {
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
         };
         // One composite command carries capture and checks, so the abort is that command's failure.
         var session = new ScriptedWriteSession(new FakeDbException("custom view denial"));
@@ -637,7 +637,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
     {
         var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
         {
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
         };
         // One composite command carries capture and checks, so the abort is that command's failure.
         var session = new ScriptedWriteSession(new FakeDbException("custom view denial"));
@@ -658,7 +658,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
     {
         var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
         {
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
         };
         var session = new ScriptedWriteSession(new FakeDbException("relation does not exist"));
 
@@ -675,7 +675,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
         var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
         {
             StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(
                 ("SchoolWithAnEarlyTag", 0),
                 ("SchoolWithALateTag", 2)
             ),
@@ -711,7 +711,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
         var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
         {
             StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(
                 ("SchoolWithAnEarlyTag", 0),
                 ("SchoolWithALateTag", 2)
             ),
@@ -740,7 +740,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
         var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
         {
             StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(
                 ("SchoolWithAnEarlyTag", 0),
                 ("SchoolWithALateTag", 2)
             ),
@@ -771,7 +771,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
         var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
         {
             StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(
                 ("SchoolWithAnEarlyTag", 0),
                 ("SchoolWithALateTag", 2)
             ),
@@ -806,7 +806,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
         var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
         {
             StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
-            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithAnEarlyTag", 0)),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithAnEarlyTag", 0)),
             StoredRelationshipAuthorization = new RelationshipAuthorizationResult.NoClaims([], []),
         };
         var session = new ScriptedWriteSession(

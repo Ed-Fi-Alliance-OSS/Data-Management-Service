@@ -509,7 +509,7 @@ public sealed class RelationalDocumentStoreRepository(
                             storedRelationshipAuthorization
                         )
                         {
-                            StoredCustomViewAuthorization = storedCustomViewAuthorization,
+                            CustomViewAuthorization = storedCustomViewAuthorization,
                             WritePrecondition = writePrecondition,
                             DeferredRelationshipDenial = BuildDeferredDeleteRelationshipDenial(
                                 storedRelationshipAuthorization,
