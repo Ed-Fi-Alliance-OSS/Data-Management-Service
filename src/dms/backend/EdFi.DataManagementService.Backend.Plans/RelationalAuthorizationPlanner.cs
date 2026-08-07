@@ -297,9 +297,10 @@ public static class RelationalAuthorizationPlanner
     /// </para>
     /// <list type="bullet">
     /// <item><description><c>ReadMany</c> — both storage kinds execute page filters (DMS-1062).</description></item>
-    /// <item><description><c>ReadSingle</c> and <c>Delete</c> — the regular-resource GET-by-id and DELETE
-    /// paths execute stored checks; their descriptor counterparts do not yet.</description></item>
-    /// <item><description><c>Update</c> — no caller executes them yet.</description></item>
+    /// <item><description><c>ReadSingle</c>, <c>Delete</c>, and <c>Update</c> — the regular-resource
+    /// GET-by-id, DELETE, and POST/PUT paths execute them; their descriptor counterparts do not yet.
+    /// <c>Update</c> covers both write verbs because a POST resolves to a create or an upsert-as-update only
+    /// in-session, so both value sources are planned the same way.</description></item>
     /// </list>
     /// <para>
     /// Each entry flips in the phase that wires that caller, and the corresponding
@@ -316,8 +317,9 @@ public static class RelationalAuthorizationPlanner
         return operation switch
         {
             NamespaceAuthorizationOperation.ReadMany => true,
-            NamespaceAuthorizationOperation.ReadSingle or NamespaceAuthorizationOperation.Delete =>
-                !isDescriptor,
+            NamespaceAuthorizationOperation.ReadSingle
+            or NamespaceAuthorizationOperation.Delete
+            or NamespaceAuthorizationOperation.Update => !isDescriptor,
             _ => false,
         };
     }

@@ -8364,7 +8364,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_post_not_implemented_for_custom_view_authorization_before_any_write_work()
+    public async Task It_plans_a_custom_view_alongside_relationship_authorization_for_a_post()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateRequestBody("Roosevelt High");
@@ -8388,16 +8388,20 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901]));
 
-        var result = await _sut.UpsertDocument(upsertRequest);
+        await _sut.UpsertDocument(upsertRequest);
 
-        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureNotImplemented>().Subject;
-        failure.Reason.Should().Be(UpsertFailureNotImplementedReason.StrategyNotEnabled);
-        failure.FailureMessage.Should().Contain("SchoolWithCustomAuthorization");
-        _capturedExecutorRequests.Should().BeEmpty();
-        A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
-            .MustNotHaveHappened();
-        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
-            .MustNotHaveHappened();
+        // The custom view is an AND filter that composes with the relationship OR group rather than
+        // disabling the write, so both are planned and handed to the executor.
+        var customViewAuthorization = _capturedExecutorRequest.CustomViewAuthorization;
+        customViewAuthorization.Should().NotBeNull();
+        customViewAuthorization!
+            .Checks.Should()
+            .OnlyContain(check => check.ConfiguredStrategy.StrategyName == "SchoolWithCustomAuthorization");
+        customViewAuthorization.StoredChecks.Should().ContainSingle();
+        customViewAuthorization.ProposedChecks.Should().ContainSingle();
+        // The relationship strategy is planned as usual: the custom view is excluded from that bucket, so the
+        // relationship planner cannot downgrade it back to unsupported.
+        _capturedExecutorRequest.PostRelationshipAuthorizationPlans.Should().NotBeNull();
     }
 
     [Test]
@@ -8479,6 +8483,235 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .MustNotHaveHappened();
         A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
             .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_plans_both_custom_view_value_sources_for_a_post()
+    {
+        // A POST resolves to create or upsert-as-update only in-session, so both sources are planned up front
+        // and the executor applies the stored ones only when a target was captured.
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-aaaaaaaaaa01"));
+        GivenWriteExecutorCaptures(
+            new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.InsertSuccess(documentUuid, ComposedWriteResultEtag)
+            )
+        );
+
+        await _sut.UpsertDocument(CreateCustomViewUpsertRequest(documentUuid));
+
+        var customViewAuthorization = _capturedExecutorRequest.CustomViewAuthorization;
+        customViewAuthorization.Should().NotBeNull();
+        customViewAuthorization!.StoredChecks.Select(check => check.Index).Should().Equal(0);
+        // The proposed slice starts above zero, which is what keeps the two sources' cv1 payloads distinct.
+        customViewAuthorization.ProposedChecks.Select(check => check.Index).Should().Equal(1);
+        customViewAuthorization
+            .Checks.Should()
+            .OnlyContain(check => check.ConfiguredStrategy.StrategyName == CustomViewStrategyName);
+    }
+
+    [Test]
+    public async Task It_plans_a_self_basis_proposed_check_carrying_both_execution_branches_for_a_post()
+    {
+        // School is its own basis here, so SQL cannot decide the proposed check: the target's DocumentId does
+        // not exist yet on a create and is immutable on an update. The planner records that rather than
+        // guessing which branch applies.
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-aaaaaaaaaa02"));
+        GivenWriteExecutorCaptures(
+            new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.InsertSuccess(documentUuid, ComposedWriteResultEtag)
+            )
+        );
+
+        await _sut.UpsertDocument(CreateCustomViewUpsertRequest(documentUuid));
+
+        _capturedExecutorRequest
+            .CustomViewAuthorization!.ProposedChecks.Should()
+            .ContainSingle()
+            .Which.CheckTarget.Should()
+            .BeOfType<CustomViewAuthorizationCheckTarget.ProposedSelfBasisUnavailable>();
+    }
+
+    [Test]
+    public async Task It_plans_both_custom_view_value_sources_for_a_put()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-aaaaaaaaaa03"));
+        GivenWriteExecutorCaptures(
+            new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateSuccess(documentUuid, ComposedWriteResultEtag)
+            )
+        );
+
+        await _sut.UpdateDocumentById(CreateCustomViewUpdateRequest(documentUuid));
+
+        var customViewAuthorization = _capturedExecutorRequest.CustomViewAuthorization;
+        customViewAuthorization.Should().NotBeNull();
+        customViewAuthorization!.StoredChecks.Select(check => check.Index).Should().Equal(0);
+        customViewAuthorization.ProposedChecks.Select(check => check.Index).Should().Equal(1);
+    }
+
+    [Test]
+    public async Task It_plans_no_custom_view_authorization_for_a_write_without_a_configured_custom_view()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-aaaaaaaaaa04"));
+        GivenWriteExecutorCaptures(
+            new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateSuccess(documentUuid, ComposedWriteResultEtag)
+            )
+        );
+
+        await _sut.UpdateDocumentById(
+            CreateCustomViewUpdateRequest(
+                documentUuid,
+                strategyNames: [AuthorizationStrategyNameConstants.NamespaceBased]
+            )
+        );
+
+        _capturedExecutorRequest.CustomViewAuthorization.Should().BeNull();
+    }
+
+    [Test]
+    public async Task It_surfaces_a_custom_view_denial_the_write_executor_reports_for_a_put()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-aaaaaaaaaa05"));
+        var customViewFailure = CreateCustomViewFailure();
+        GivenWriteExecutorCaptures(
+            new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureCustomViewNotAuthorized(customViewFailure)
+            )
+        );
+
+        var result = await _sut.UpdateDocumentById(CreateCustomViewUpdateRequest(documentUuid));
+
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureCustomViewNotAuthorized>()
+            .Subject.CustomViewFailure.Should()
+            .BeSameAs(customViewFailure);
+    }
+
+    [Test]
+    public async Task It_defers_a_post_relationship_no_claims_denial_when_a_custom_view_is_still_pending()
+    {
+        // A custom view is an AND filter that composes ahead of the relationship OR group, so it has to run
+        // before this denial is reported. Short-circuiting here would skip it entirely: there is no
+        // NamespaceBased strategy to keep the request going to the executor.
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-aaaaaaaaaa06"));
+        GivenWriteExecutorCaptures(
+            new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.InsertSuccess(documentUuid, ComposedWriteResultEtag)
+            )
+        );
+
+        var upsertRequest = CreateCustomViewUpsertRequest(
+            documentUuid,
+            strategyNames:
+            [
+                CustomViewStrategyName,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+            ],
+            namespacePrefixes: [],
+            claimEducationOrganizationIds: []
+        );
+
+        await _sut.UpsertDocument(upsertRequest);
+
+        _capturedExecutorRequests.Should().ContainSingle();
+        _capturedExecutorRequest.CustomViewAuthorization.Should().NotBeNull();
+        _capturedExecutorRequest
+            .ProposedRelationshipAuthorization.Should()
+            .BeOfType<RelationshipAuthorizationResult.NoClaims>();
+    }
+
+    [Test]
+    public async Task It_carries_the_custom_view_plan_through_the_post_create_new_relationship_branch()
+    {
+        // With claims present the existing-resource plan authorizes, which routes through the create-new
+        // proposed-value planning. Every result that method defers to the executor has to carry the plan, or
+        // the checks are dropped on the way.
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-aaaaaaaaaa07"));
+        GivenWriteExecutorCaptures(
+            new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.InsertSuccess(documentUuid, ComposedWriteResultEtag)
+            )
+        );
+
+        var upsertRequest = CreateCustomViewUpsertRequest(
+            documentUuid,
+            strategyNames:
+            [
+                CustomViewStrategyName,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+            ],
+            claimEducationOrganizationIds: [255901L]
+        );
+
+        await _sut.UpsertDocument(upsertRequest);
+
+        _capturedExecutorRequest.PostRelationshipAuthorizationPlans.Should().NotBeNull();
+        var customViewAuthorization = _capturedExecutorRequest.CustomViewAuthorization;
+        customViewAuthorization.Should().NotBeNull();
+        customViewAuthorization!.StoredChecks.Should().ContainSingle();
+        customViewAuthorization.ProposedChecks.Should().ContainSingle();
+    }
+
+    private void GivenWriteExecutorCaptures(RelationalWriteExecutorResult result) =>
+        A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorInput>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .Returns(Task.FromResult(result));
+
+    private static IUpsertRequest CreateCustomViewUpsertRequest(
+        DocumentUuid documentUuid,
+        string[]? strategyNames = null,
+        string[]? namespacePrefixes = null,
+        long[]? claimEducationOrganizationIds = null
+    )
+    {
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateNamespaceAndRelationshipWriteMappingSet(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Custom View"));
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                .. (strategyNames ?? [CustomViewStrategyName]).Select(CreateAuthorizationStrategyEvaluator),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(
+                new RelationalAuthorizationContext(
+                    claimEducationOrganizationIds ?? [],
+                    namespacePrefixes ?? ["uri://ed-fi.org/"]
+                )
+            );
+
+        return upsertRequest;
+    }
+
+    private static IUpdateRequest CreateCustomViewUpdateRequest(
+        DocumentUuid documentUuid,
+        string[]? strategyNames = null
+    )
+    {
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateNamespaceAndRelationshipWriteMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Custom View"));
+        A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                .. (strategyNames ?? [CustomViewStrategyName]).Select(CreateAuthorizationStrategyEvaluator),
+            ]);
+        A.CallTo(() => updateRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], ["uri://ed-fi.org/"]));
+
+        return updateRequest;
     }
 
     [Test]

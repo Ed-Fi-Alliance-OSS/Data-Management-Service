@@ -766,9 +766,51 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     /// <summary>
-    /// Plans the stored custom-view checks, or reports the security-configuration failure that stops the
-    /// delete.
+    /// Plans the custom-view checks a POST or PUT owes, across both value sources, or reports the
+    /// security-configuration failures that stop the write.
     /// </summary>
+    private static bool TryPlanWriteCustomViewAuthorization(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
+        out RelationalCustomViewAuthorization? customViewAuthorization,
+        out IReadOnlyList<RelationshipAuthorizationFailureMetadata>? securityConfigurationFailures
+    )
+    {
+        customViewAuthorization = null;
+        securityConfigurationFailures = null;
+
+        if (customViewStrategies.Count == 0)
+        {
+            return true;
+        }
+
+        var outcome = SingleRecordCustomViewAuthorizationPlanner.Plan(
+            mappingSet,
+            mappingSet.GetConcreteResourceModelOrThrow(resource),
+            customViewStrategies,
+            NamespaceAuthorizationOperation.Update
+        );
+
+        if (
+            outcome
+            is SingleRecordCustomViewAuthorizationPlanOutcome.SecurityConfiguration configurationFailure
+        )
+        {
+            securityConfigurationFailures = configurationFailure.Failures;
+            return false;
+        }
+
+        var checks = ((SingleRecordCustomViewAuthorizationPlanOutcome.Plan)outcome).Checks;
+
+        if (checks.Count > 0)
+        {
+            customViewAuthorization = new RelationalCustomViewAuthorization(checks);
+        }
+
+        return true;
+    }
+
     private static bool TryPlanDeleteCustomViewAuthorization(
         MappingSet mappingSet,
         QualifiedResourceName resource,
@@ -2126,6 +2168,23 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalAuthorizationContext authorizationContext
     )
     {
+        // A POST may resolve to create or upsert-as-update in-session, so both value sources are planned
+        // here; the executor applies the stored checks only when the write resolves to an existing target.
+        if (
+            !TryPlanWriteCustomViewAuthorization(
+                mappingSet,
+                resource,
+                plan.CustomViewStrategies,
+                out var customViewAuthorization,
+                out var customViewFailures
+            )
+        )
+        {
+            return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                BuildPostAuthorizationSecurityConfigurationFailure(mappingSet, customViewFailures!)
+            );
+        }
+
         if (plan.NamespaceChecks.Count == 0)
         {
             return AuthorizePostRelationshipBucket(
@@ -2135,7 +2194,8 @@ public sealed class RelationalDocumentStoreRepository(
                 plan.NonNamespaceConfiguredStrategies,
                 authorizationContext,
                 storedNamespaceAuthorization: null,
-                proposedNamespaceAuthorization: null
+                proposedNamespaceAuthorization: null,
+                customViewAuthorization: customViewAuthorization
             );
         }
 
@@ -2169,7 +2229,8 @@ public sealed class RelationalDocumentStoreRepository(
             plan.NonNamespaceConfiguredStrategies,
             authorizationContext,
             storedNamespaceAuthorization,
-            proposedNamespaceAuthorization
+            proposedNamespaceAuthorization,
+            customViewAuthorization
         );
     }
 
@@ -2208,7 +2269,8 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
         RelationalAuthorizationContext authorizationContext,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
-        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? customViewAuthorization = null
     )
     {
         var existingResourcePlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
@@ -2249,7 +2311,8 @@ public sealed class RelationalDocumentStoreRepository(
                     null,
                     null,
                     storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization
+                    proposedNamespaceAuthorization,
+                    customViewAuthorization: customViewAuthorization
                 ),
 
             RelationshipAuthorizationResult.Authorized => CreatePostRelationshipAuthorizationContinue(
@@ -2260,22 +2323,25 @@ public sealed class RelationalDocumentStoreRepository(
                 writePlan,
                 existingResourcePlan,
                 storedNamespaceAuthorization,
-                proposedNamespaceAuthorization
+                proposedNamespaceAuthorization,
+                customViewAuthorization
             ),
 
-            // NamespaceBased AND-composes before relationship OR strategies (auth.md). When a
-            // proposed namespace check is also planned, defer NoClaims through Continue so the
-            // namespace check gets to deny first; the write path's second command
-            // emits the NoClaims failure if namespace authorized. With no namespace check planned,
-            // short-circuit at preflight to avoid a needless executor roundtrip.
+            // NamespaceBased and custom view-based both AND-compose before relationship OR strategies
+            // (auth.md). When any of them is planned, defer NoClaims through Continue so those filters get to
+            // deny first; the write path's second command emits the NoClaims failure only once they have
+            // authorized. With no AND filter planned at all, short-circuit at preflight to avoid a needless
+            // executor roundtrip.
             RelationshipAuthorizationResult.NoClaims noClaims => proposedNamespaceAuthorization is null
             && storedNamespaceAuthorization is null
+            && customViewAuthorization is null
                 ? BuildNoClaimsPostRelationshipAuthorizationFailure(noClaims, authorizationContext)
                 : new WriteGuardRailPreflightResult<UpsertResult>.Continue(
                     null,
                     noClaims,
                     storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization
+                    proposedNamespaceAuthorization,
+                    customViewAuthorization: customViewAuthorization
                 ),
 
             RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
@@ -2311,7 +2377,8 @@ public sealed class RelationalDocumentStoreRepository(
         ResourceWritePlan writePlan,
         RelationshipAuthorizationUpdatePlan existingResourcePlan,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
-        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? customViewAuthorization = null
     )
     {
         var createNewProposedValues = _relationshipAuthorizationPlanner.PlanProposedValues(
@@ -2322,36 +2389,40 @@ public sealed class RelationalDocumentStoreRepository(
             writePlan
         );
 
+        // Every deferral out of this method owes the executor the same namespace and custom-view plans, and
+        // only the create-new relationship result varies. Building them here rather than at each arm keeps a
+        // new arm from silently dropping a planned check by omitting a trailing argument.
+        WriteGuardRailPreflightResult<UpsertResult> DeferToExecutor(
+            RelationshipAuthorizationResult? createNewProposedRelationshipAuthorization,
+            RelationalWriteExecutorResult? createNewImmediateResult = null
+        ) =>
+            new WriteGuardRailPreflightResult<UpsertResult>.Continue(
+                null,
+                null,
+                storedNamespaceAuthorization,
+                proposedNamespaceAuthorization,
+                new PostRelationshipAuthorizationPlans(
+                    existingResourcePlan,
+                    createNewProposedRelationshipAuthorization,
+                    createNewImmediateResult
+                ),
+                customViewAuthorization
+            );
+
         return createNewProposedValues switch
         {
             RelationshipAuthorizationResult.NoAuthorizationRequired
-            or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired =>
-                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
-                    null,
-                    null,
-                    storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization,
-                    new PostRelationshipAuthorizationPlans(existingResourcePlan, null, null)
-                ),
+            or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired => DeferToExecutor(null),
 
-            RelationshipAuthorizationResult.Authorized createNewAuthorized =>
-                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
-                    null,
-                    null,
-                    storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization,
-                    new PostRelationshipAuthorizationPlans(existingResourcePlan, createNewAuthorized, null)
-                ),
+            RelationshipAuthorizationResult.Authorized createNewAuthorized => DeferToExecutor(
+                createNewAuthorized
+            ),
 
+            // A pending custom view is an AND filter too, so it has to run before this denial is reported.
             RelationshipAuthorizationResult.NoClaims noClaims => proposedNamespaceAuthorization is null
+            && customViewAuthorization is null
                 ? BuildNoClaimsPostRelationshipAuthorizationFailure(noClaims, authorizationContext)
-                : new WriteGuardRailPreflightResult<UpsertResult>.Continue(
-                    null,
-                    null,
-                    storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization,
-                    new PostRelationshipAuthorizationPlans(existingResourcePlan, noClaims, null)
-                ),
+                : DeferToExecutor(noClaims),
 
             RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
                 new WriteGuardRailPreflightResult<UpsertResult>.Stop(
@@ -2365,19 +2436,12 @@ public sealed class RelationalDocumentStoreRepository(
                 ),
 
             RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
-                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
+                DeferToExecutor(
                     null,
-                    null,
-                    storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization,
-                    new PostRelationshipAuthorizationPlans(
-                        existingResourcePlan,
-                        null,
-                        new RelationalWriteExecutorResult.Upsert(
-                            BuildPostAuthorizationSecurityConfigurationFailure(
-                                mappingSet,
-                                securityConfigurationError.Failures
-                            )
+                    new RelationalWriteExecutorResult.Upsert(
+                        BuildPostAuthorizationSecurityConfigurationFailure(
+                            mappingSet,
+                            securityConfigurationError.Failures
                         )
                     )
                 ),
@@ -2469,6 +2533,21 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalAuthorizationContext authorizationContext
     )
     {
+        if (
+            !TryPlanWriteCustomViewAuthorization(
+                mappingSet,
+                resource,
+                plan.CustomViewStrategies,
+                out var customViewAuthorization,
+                out var customViewFailures
+            )
+        )
+        {
+            return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
+                BuildPutAuthorizationSecurityConfigurationFailure(mappingSet, customViewFailures!)
+            );
+        }
+
         if (plan.NamespaceChecks.Count == 0)
         {
             return AuthorizePutRelationshipBucket(
@@ -2478,7 +2557,8 @@ public sealed class RelationalDocumentStoreRepository(
                 plan.NonNamespaceConfiguredStrategies,
                 authorizationContext,
                 storedNamespaceAuthorization: null,
-                proposedNamespaceAuthorization: null
+                proposedNamespaceAuthorization: null,
+                customViewAuthorization: customViewAuthorization
             );
         }
 
@@ -2512,7 +2592,8 @@ public sealed class RelationalDocumentStoreRepository(
             plan.NonNamespaceConfiguredStrategies,
             authorizationContext,
             storedNamespaceAuthorization,
-            proposedNamespaceAuthorization
+            proposedNamespaceAuthorization,
+            customViewAuthorization
         );
     }
 
@@ -2523,7 +2604,8 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
         RelationalAuthorizationContext authorizationContext,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
-        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? customViewAuthorization = null
     )
     {
         var relationshipAuthorizationPlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
@@ -2563,7 +2645,8 @@ public sealed class RelationalDocumentStoreRepository(
                     null,
                     null,
                     storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization
+                    proposedNamespaceAuthorization,
+                    customViewAuthorization: customViewAuthorization
                 ),
 
             // NamespaceBased AND-composes before the relationship OR group (auth.md,
@@ -2579,13 +2662,15 @@ public sealed class RelationalDocumentStoreRepository(
                     noClaims,
                     null,
                     storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization
+                    proposedNamespaceAuthorization,
+                    customViewAuthorization: customViewAuthorization
                 )
                 : new WriteGuardRailPreflightResult<UpdateResult>.Continue(
                     null,
                     noClaims,
                     storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization
+                    proposedNamespaceAuthorization,
+                    customViewAuthorization: customViewAuthorization
                 ),
 
             RelationshipAuthorizationResult.Authorized authorized =>
@@ -2594,7 +2679,8 @@ public sealed class RelationalDocumentStoreRepository(
                     relationshipAuthorizationPlan.ProposedValues
                         as RelationshipAuthorizationResult.Authorized,
                     storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization
+                    proposedNamespaceAuthorization,
+                    customViewAuthorization: customViewAuthorization
                 ),
 
             _ => throw new InvalidOperationException(
@@ -2700,6 +2786,7 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null;
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null;
         PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null;
+        RelationalCustomViewAuthorization? customViewAuthorization = null;
 
         if (preflight is not null)
         {
@@ -2713,6 +2800,7 @@ public sealed class RelationalDocumentStoreRepository(
                     storedNamespaceAuthorization = continueResult.StoredNamespaceAuthorization;
                     proposedNamespaceAuthorization = continueResult.ProposedNamespaceAuthorization;
                     postRelationshipAuthorizationPlans = continueResult.PostRelationshipAuthorizationPlans;
+                    customViewAuthorization = continueResult.CustomViewAuthorization;
                     break;
 
                 case WriteGuardRailPreflightResult<TResult>.Stop stopResult:
@@ -2765,6 +2853,7 @@ public sealed class RelationalDocumentStoreRepository(
                     )
                     {
                         PostRelationshipAuthorizationPlans = postRelationshipAuthorizationPlans,
+                        CustomViewAuthorization = customViewAuthorization,
                     }
                 )
                 .ConfigureAwait(false);
@@ -2826,7 +2915,8 @@ public sealed class RelationalDocumentStoreRepository(
                 RelationshipAuthorizationResult? proposedRelationshipAuthorization,
                 RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
                 RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null,
-                PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null
+                PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null,
+                RelationalCustomViewAuthorization? customViewAuthorization = null
             )
             {
                 ValidateStoredRelationshipAuthorization(storedRelationshipAuthorization);
@@ -2836,6 +2926,7 @@ public sealed class RelationalDocumentStoreRepository(
                 StoredNamespaceAuthorization = storedNamespaceAuthorization;
                 ProposedNamespaceAuthorization = proposedNamespaceAuthorization;
                 PostRelationshipAuthorizationPlans = postRelationshipAuthorizationPlans;
+                CustomViewAuthorization = customViewAuthorization;
             }
 
             public RelationshipAuthorizationResult? StoredRelationshipAuthorization { get; }
@@ -2845,6 +2936,12 @@ public sealed class RelationalDocumentStoreRepository(
             public RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization { get; }
 
             public RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization { get; }
+
+            /// <summary>
+            /// Every custom-view check planned for this write, across both value sources. Null when no custom
+            /// view participates.
+            /// </summary>
+            public RelationalCustomViewAuthorization? CustomViewAuthorization { get; }
 
             public PostRelationshipAuthorizationPlans? PostRelationshipAuthorizationPlans { get; }
 

@@ -1658,9 +1658,6 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         );
 
     /// <summary>
-    /// Appends one proposed custom-view run and reports whether it emitted a statement.
-    /// </summary>
-    /// <summary>
     /// Appends one proposed custom-view run, answering with the checks it emitted or <see langword="null"/>
     /// when it emitted none.
     /// </summary>
