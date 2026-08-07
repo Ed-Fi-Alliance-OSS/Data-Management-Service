@@ -60,7 +60,7 @@ public class ArrayUniquenessValidationMiddlewareTests
             PathComponents = new(
                 ProjectEndpointName: new("ed-fi"),
                 EndpointName: new(endpointName),
-                DocumentUuid: No.DocumentUuid
+                Operation: ResourcePathOperation.Collection.Instance
             ),
         };
         requestInfo.ProjectSchema = requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
@@ -122,7 +122,7 @@ public class ArrayUniquenessValidationMiddlewareTests
             PathComponents = new(
                 ProjectEndpointName: new("ed-fi"),
                 EndpointName: new(endpointName),
-                DocumentUuid: No.DocumentUuid
+                Operation: ResourcePathOperation.Collection.Instance
             ),
         };
         requestInfo.ProjectSchema = requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
@@ -164,7 +164,7 @@ public class ArrayUniquenessValidationMiddlewareTests
             PathComponents = new(
                 ProjectEndpointName: new("ed-fi"),
                 EndpointName: new(endpointName),
-                DocumentUuid: No.DocumentUuid
+                Operation: ResourcePathOperation.Collection.Instance
             ),
         };
         requestInfo.ProjectSchema = requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(

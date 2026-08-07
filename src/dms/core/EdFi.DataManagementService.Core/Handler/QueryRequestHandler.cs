@@ -104,7 +104,7 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
         return new FrontendResponse(
             StatusCode: 200,
             Body: success.EdfiDocs,
-            Headers: requestInfo.PaginationParameters.TotalCount
+            Headers: requestInfo.CollectionPaging.IncludesTotalCount
                 ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
                 : [],
             ContentType: contentType
@@ -121,7 +121,7 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
             MappingSet: mappingSet,
             QueryElements: requestInfo.QueryElements,
             AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
-            Paging: new CollectionPaging.Traditional(requestInfo.PaginationParameters),
+            Paging: requestInfo.CollectionPaging,
             TraceId: requestInfo.FrontendRequest.TraceId,
             ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo),
             ChangeVersionRange: requestInfo.ChangeVersionRange,

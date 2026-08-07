@@ -412,19 +412,120 @@ public static class AspNetCoreFrontend
         return new TraceId(request.HttpContext.TraceIdentifier);
     }
 
-    private static string FromValidatedQueryParam(KeyValuePair<string, StringValues> queryParam)
+    /// <summary>
+    /// The route segment naming the partitions operation. Held here rather than shared with Core,
+    /// whose recognition constant is internal to a different assembly, and held to that constant by a
+    /// frontend unit test that builds its request from it, seeing it through <c>InternalsVisibleTo</c>.
+    /// Renaming the segment on one side alone fails that test: canonicalization would otherwise
+    /// stop reaching the operation Core recognizes, leaving the partition count to be validated under
+    /// the client's spelling.
+    /// </summary>
+    private const string PartitionsPathSegment = "partitions";
+
+    /// <summary>
+    /// Whether the path names the partitions operation, which is the only place the generic
+    /// <c>number</c> parameter is a paging control rather than a possible resource query field.
+    /// </summary>
+    /// <remarks>
+    /// The segment must be the third of the <c>{project}/{resource}/partitions</c> shape. Testing only
+    /// the final segment would also recognize a two-segment collection whose resource is itself named
+    /// <c>partitions</c>, where <c>number</c> is an ordinary query field and rewriting its spelling
+    /// would change which field is filtered on or which name an unknown-field error reports. The
+    /// position requirement is what makes that impossible rather than merely unlikely, so nothing
+    /// here rests on an assumption about which resource names a schema declares.
+    /// </remarks>
+    /// <remarks>
+    /// Trailing slashes are tolerated, and the shape check deliberately stops there rather than
+    /// re-implementing Core's path expression, which is stricter: it accepts a single trailing slash
+    /// and requires every segment to be non-empty. Core classifies the path before any query parameter
+    /// name is read, so a path it does not recognize is answered as not found whatever this returns for
+    /// it, and a name canonicalized here for such a path never reaches validation. A second definition
+    /// of path shape held in step with Core's would add drift without changing a served response.
+    /// </remarks>
+    private static bool IsPartitionsPath(string dmsPath)
     {
-        switch (queryParam.Key.ToLower())
+        ReadOnlySpan<char> path = dmsPath.AsSpan().TrimEnd('/');
+
+        int projectSeparator = path.IndexOf('/');
+        if (projectSeparator < 0)
         {
-            case "limit":
-                return "limit";
-            case "offset":
-                return "offset";
-            case "totalcount":
-                return "totalCount";
-            default:
-                return queryParam.Key;
+            return false;
         }
+
+        ReadOnlySpan<char> afterProject = path[(projectSeparator + 1)..];
+        int resourceSeparator = afterProject.IndexOf('/');
+        if (resourceSeparator < 0)
+        {
+            return false;
+        }
+
+        // Everything after the resource segment, not just the next segment: a longer path leaves the
+        // separators in this span, so it cannot equal the bare segment name.
+        return afterProject[(resourceSeparator + 1)..]
+            .Equals(PartitionsPathSegment, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The canonical spellings of the query parameter names recognized on every request: the
+    /// traditional paging and count controls and the cursor paging controls.
+    /// </summary>
+    private static readonly string[] QueryParameterNamesCanonicalizedEverywhere =
+    [
+        "limit",
+        "offset",
+        "totalCount",
+        "pageToken",
+        "pageSize",
+    ];
+
+    /// <summary>
+    /// The canonical spelling of the partition count, recognized only on the partitions operation.
+    /// </summary>
+    private const string PartitionNumberParameterName = "number";
+
+    /// <summary>
+    /// Canonicalizes the query parameter names Core matches exactly. A name that is not recognized is
+    /// returned exactly as supplied.
+    /// </summary>
+    /// <remarks>
+    /// The cursor parameters are canonicalized everywhere. The partition count is canonicalized only
+    /// on the partitions operation, because <c>number</c> is generic enough to collide with a
+    /// resource query field, and rewriting its spelling elsewhere would change resource filtering and
+    /// unknown-field error text on collections this feature does not otherwise touch.
+    /// </remarks>
+    /// <remarks>
+    /// Recognition is an ordinal case-insensitive comparison, which is the same relation the query
+    /// collection uses for its own keys. Matching it exactly is what keeps the result usable as a
+    /// dictionary key: a canonical spelling is produced only for a name ordinally case-insensitively
+    /// equal to it, so any two names producing it are equal to each other and are already a single
+    /// query collection entry, while an unrecognized name passes through and cannot equal a canonical
+    /// spelling without having been recognized. The comparison is also independent of the server's
+    /// culture, which these fixed protocol tokens require; a Turkish locale, for example, lowercases
+    /// <c>I</c> to a dotless <c>ı</c>, and a culture-sensitive fold would leave every name containing
+    /// that letter unrecognized.
+    /// </remarks>
+    private static string FromValidatedQueryParam(
+        KeyValuePair<string, StringValues> queryParam,
+        bool canonicalizePartitionNumber
+    )
+    {
+        string suppliedName = queryParam.Key;
+
+        string? canonicalName = Array.Find(
+            QueryParameterNamesCanonicalizedEverywhere,
+            name => string.Equals(name, suppliedName, StringComparison.OrdinalIgnoreCase)
+        );
+
+        if (canonicalName is not null)
+        {
+            return canonicalName;
+        }
+
+        return
+            canonicalizePartitionNumber
+            && string.Equals(suppliedName, PartitionNumberParameterName, StringComparison.OrdinalIgnoreCase)
+            ? PartitionNumberParameterName
+            : suppliedName;
     }
 
     /// <summary>
@@ -495,12 +596,21 @@ public static class AspNetCoreFrontend
                 : JsonBodyExtractionResult.Empty;
         string? rawBody = includeBody && !parseJsonBody ? await ExtractRawBodyFrom(httpRequest) : null;
 
+        bool canonicalizePartitionNumber = IsPartitionsPath(dmsPath);
+
         return new(
             Body: rawBody,
             Form: includeForm ? await ExtractFormFrom(httpRequest) : null,
             Headers: ExtractHeadersFrom(httpRequest),
             Path: $"/{dmsPath}",
-            QueryParameters: httpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
+            // Repeated exact names and case variants already collapse to one entry in the query
+            // collection, which retains every value in request order, so taking the final value is
+            // last-value-wins. Canonicalizing a name uses the same comparison as the query collection's
+            // own comparer, so two entries it holds separately cannot produce one canonical key.
+            QueryParameters: httpRequest.Query.ToDictionary(
+                queryParam => FromValidatedQueryParam(queryParam, canonicalizePartitionNumber),
+                x => x.Value[^1] ?? ""
+            ),
             TraceId: ExtractTraceIdFrom(httpRequest, appSettings),
             RouteQualifiers: ExtractRouteQualifiersFrom(httpRequest, appSettings),
             Tenant: ExtractTenantFrom(httpRequest, appSettings),

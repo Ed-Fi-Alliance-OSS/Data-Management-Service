@@ -36,7 +36,7 @@ public class ProvideAuthorizationFiltersMiddlewareTests
         new(
             ProjectEndpointName: new ProjectEndpointName("ed-fi"),
             EndpointName: new EndpointName("students"),
-            DocumentUuid: No.DocumentUuid
+            Operation: ResourcePathOperation.Collection.Instance
         );
 
     private static RequestInfo CreateAuthorizedRequestInfo()

@@ -433,7 +433,11 @@ public class DeadlockRetryPolicyTests
     }
 
     private static PathComponents WritePath(DocumentUuid documentUuid = default) =>
-        new(new ProjectEndpointName("ed-fi"), new EndpointName("schools"), documentUuid);
+        new(
+            ProjectEndpointName: new ProjectEndpointName("ed-fi"),
+            EndpointName: new EndpointName("schools"),
+            Operation: new ResourcePathOperation.ById(documentUuid)
+        );
 
     [TestFixture]
     [Parallelizable]

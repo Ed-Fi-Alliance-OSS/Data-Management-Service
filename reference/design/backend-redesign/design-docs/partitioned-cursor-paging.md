@@ -139,13 +139,20 @@ to continue.
 ### Query-parameter name canonicalization
 
 `pageToken`, `pageSize`, and the partition `number` parameter are case-insensitive at the HTTP
-boundary and are canonicalized before Core validation. Canonicalization is scoped to exactly those
-three names.
+boundary and are canonicalized before Core validation. The canonicalization this design adds is
+scoped to exactly those three names, and `number` only on the partitions operation.
 
-The existing case-sensitive matching of `limit`, `offset`, and `totalCount` is unchanged, so
-`?LIMIT=5` continues to return `The query field 'LIMIT' is not valid for this resource.` rather
-than silently becoming a working limit. Widening the existing parameters would be a behavior change
-to endpoints this design is not otherwise touching.
+`limit`, `offset`, and `totalCount` were already case-insensitive at the HTTP boundary before this
+design, and remain so. That is deliberate public contract: the frontend has folded their names since
+DMS-397, and three URL-validation scenarios lock it — `?liMIt=2`, `?OfFSeT=1`, and `?tOtAlCoUnT=trUE`
+all succeed. This design makes that fold culture-invariant, which restores recognition on a server
+whose culture is not the invariant one: the previous culture-sensitive fold left, for example,
+`LIMIT` unrecognized under a Turkish locale, which lowercases `I` to a dotless `ı`. It does not
+otherwise change which names are recognized.
+
+A consequence worth stating, because it decides a mixed-mode outcome: since `LIMIT` already reaches
+Core as `limit`, `?pageToken=<valid>&LIMIT=10` is a genuine traditional/cursor mixed-mode conflict
+and is reported as one. It is not an invalid query field.
 
 The frontend's existing last-value-wins behavior for repeated query parameters is preserved. Case
 variants such as `pageToken` and `PAGETOKEN` MUST collapse to one canonical key and retain only the
@@ -598,9 +605,9 @@ existing root, filter, and authorization indexes cannot serve.
 - **Frontend / path routing.** Replace the implicit "optional third segment means UUID" model with
   `ResourcePathOperation.Collection`, `.ById(DocumentUuid)`, and `.Partitions`. This recognizes
   `/{project}/{resource}/partitions` before UUID parsing. Unknown third segments retain the
-  existing invalid-UUID response, and additional segments remain unmatched. The frontend also
-  canonicalizes `pageToken`, `pageSize`, and partition `number` while preserving last-value-wins
-  semantics.
+  existing invalid-UUID response, and additional segments remain unmatched. The frontend
+  canonicalizes `pageToken`, `pageSize`, and partition `number` alongside the traditional names it
+  already folded, while preserving last-value-wins semantics.
 - **Core model.** Use the explicit traditional/cursor choice and the typed `Int64` range described
   above. Keep token text encoding and decoding at the HTTP contract boundary.
 - **Core pipelines.** Keep the existing GET-many pipeline for cursor pages. Add a dedicated

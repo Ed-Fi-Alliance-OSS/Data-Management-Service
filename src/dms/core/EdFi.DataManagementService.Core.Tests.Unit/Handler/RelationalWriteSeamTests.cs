@@ -797,9 +797,9 @@ actual: {requestInfo.FrontendResponse.Body}
                 MappingSet = mappingSet,
                 BackendProfileWriteContext = backendProfileWriteContext,
                 PathComponents = new PathComponents(
-                    new ProjectEndpointName("ed-fi"),
-                    new EndpointName("students"),
-                    documentUuid
+                    ProjectEndpointName: new ProjectEndpointName("ed-fi"),
+                    EndpointName: new EndpointName("students"),
+                    Operation: new ResourcePathOperation.ById(documentUuid)
                 ),
             };
         }

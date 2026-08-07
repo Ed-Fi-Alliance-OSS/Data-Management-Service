@@ -54,12 +54,20 @@ internal static class No
     public static readonly PaginationParameters PaginationParameters = new(0, 0, false, 0);
 
     /// <summary>
+    /// The null object for CollectionPaging. Traditional, because a request that has not reached
+    /// query validation has asked for no cursor.
+    /// </summary>
+    public static readonly CollectionPaging CollectionPaging = new CollectionPaging.Traditional(
+        PaginationParameters
+    );
+
+    /// <summary>
     /// The null object for PathComponents
     /// </summary>
     public static readonly PathComponents PathComponents = new(
         ProjectEndpointName: new(""),
         EndpointName: new(""),
-        DocumentUuid: DocumentUuid
+        Operation: ResourcePathOperation.Collection.Instance
     );
 
     /// <summary>

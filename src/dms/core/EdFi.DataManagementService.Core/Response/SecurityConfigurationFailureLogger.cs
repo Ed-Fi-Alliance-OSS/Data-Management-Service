@@ -108,7 +108,13 @@ internal static class SecurityConfigurationFailureLogger
     {
         string operation = requestInfo.Method switch
         {
-            RequestMethod.GET when requestInfo.PathComponents.HasDocumentUuidSegment => "GetById",
+            RequestMethod.GET when requestInfo.PathComponents.Operation is ResourcePathOperation.ById =>
+                "GetById",
+            // The partitions pipeline does not exist yet, so no request reaches this classification:
+            // path parsing answers a partitions path before authorization runs. Classified here so the
+            // surface a security-configuration failure reports is already correct when one serves them.
+            RequestMethod.GET when requestInfo.PathComponents.Operation is ResourcePathOperation.Partitions =>
+                "GetPartitions",
             RequestMethod.GET => "GetMany",
             RequestMethod.POST => "Create",
             RequestMethod.PUT => "Update",

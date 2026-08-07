@@ -21,16 +21,18 @@ internal record PathComponents(
     /// </summary>
     EndpointName EndpointName,
     /// <summary>
-    /// The optional resource identifier, which is a document uuid
+    /// Which operation the path names: the collection, one item by uuid, or partitions
     /// </summary>
-    DocumentUuid DocumentUuid,
-    /// <summary>
-    /// Indicates whether the request path included a third route segment for the item id.
-    /// This preserves route shape information even when the document UUID value is Guid.Empty.
-    /// </summary>
-    bool HasDocumentUuidSegment = false
+    ResourcePathOperation Operation
 )
 {
+    /// <summary>
+    /// The document uuid of an item route. No.DocumentUuid for every other operation, where no
+    /// identifier was supplied and none of the by-id handlers run.
+    /// </summary>
+    internal DocumentUuid DocumentUuid =>
+        Operation is ResourcePathOperation.ById byId ? byId.DocumentUuid : No.DocumentUuid;
+
     /// <summary>
     /// Return the path of the resource such as for location headers
     /// </summary>

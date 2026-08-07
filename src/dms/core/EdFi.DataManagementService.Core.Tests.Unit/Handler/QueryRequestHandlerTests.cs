@@ -45,6 +45,66 @@ public class QueryRequestHandlerTests
         return (handler, serviceProvider);
     }
 
+    /// <summary>
+    /// Collection paging reaches the backend as the typed choice request validation produced. Cursor
+    /// page selection itself is not implemented yet, so a cursor request is answered from the
+    /// backend's not-implemented seam; the story that adds cursor execution replaces that answer.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Cursor_Paged_Request : QueryRequestHandlerTests
+    {
+        private sealed class Repository : NotImplementedDocumentStoreRepository
+        {
+            public IQueryRequest? CapturedRequest { get; private set; }
+
+            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            {
+                CapturedRequest = queryRequest;
+
+                // Mirrors the relational repository's guard: any paging other than traditional is
+                // not yet selectable.
+                return Task.FromResult<QueryResult>(
+                    queryRequest.Paging is CollectionPaging.Traditional
+                        ? new QueryResult.QuerySuccess([], 0)
+                        : new QueryResult.QueryFailureNotImplemented(
+                            "Cursor paging is not yet supported for relational queries."
+                        )
+                );
+            }
+        }
+
+        private readonly Repository _repository = new();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
+
+        private static readonly CollectionPaging.Cursor _cursorPaging = new(
+            new CursorRange(7, 42),
+            new PageSize(25)
+        );
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.CollectionPaging = _cursorPaging;
+
+            var (queryHandler, serviceProvider) = Handler(_repository);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+            await queryHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_hands_the_typed_cursor_paging_to_the_backend()
+        {
+            _repository.CapturedRequest!.Paging.Should().Be(_cursorPaging);
+        }
+
+        [Test]
+        public void It_returns_not_implemented_until_cursor_execution_lands()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(501);
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Repository_That_Returns_Success : QueryRequestHandlerTests
@@ -272,9 +332,9 @@ public class QueryRequestHandlerTests
             };
             _requestInfo.ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []);
             _requestInfo.PathComponents = new PathComponents(
-                new ProjectEndpointName("ed-fi"),
-                new EndpointName("schools"),
-                new DocumentUuid()
+                ProjectEndpointName: new ProjectEndpointName("ed-fi"),
+                EndpointName: new EndpointName("schools"),
+                Operation: ResourcePathOperation.Collection.Instance
             );
             _requestInfo.ResourceInfo = new ResourceInfo(
                 ProjectName: new ProjectName("Ed-Fi"),
@@ -769,6 +829,7 @@ public class QueryRequestHandlerTests
             );
             _requestInfo.QueryElements = _queryElements;
             _requestInfo.PaginationParameters = _paginationParameters;
+            _requestInfo.CollectionPaging = new CollectionPaging.Traditional(_paginationParameters);
             _requestInfo.AuthorizationStrategyEvaluators = _authorizationStrategyEvaluators;
             _requestInfo.ChangeVersionRange = new ChangeVersionRange(100L, 200L);
             _requestInfo.ClientAuthorizations = new ClientAuthorizations(

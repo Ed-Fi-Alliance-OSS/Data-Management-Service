@@ -722,9 +722,11 @@ actual: {_requestInfo.FrontendResponse.Body}
                 NullLogger.Instance
             );
             _requestInfo.PathComponents = new PathComponents(
-                new ProjectEndpointName("ed-fi"),
-                new EndpointName("assessments"),
-                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                ProjectEndpointName: new ProjectEndpointName("ed-fi"),
+                EndpointName: new EndpointName("assessments"),
+                Operation: new ResourcePathOperation.ById(
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                )
             );
             _requestInfo.ResourceInfo = CreateResourceInfo();
             _requestInfo.ResourceSchema = GetResourceSchema();

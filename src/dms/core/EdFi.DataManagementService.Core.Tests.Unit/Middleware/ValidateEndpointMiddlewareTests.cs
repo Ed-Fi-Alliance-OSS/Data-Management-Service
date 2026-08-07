@@ -48,7 +48,7 @@ public class ValidateEndpointMiddlewareTests
             _requestInfo.PathComponents = new(
                 ProjectEndpointName: new("not-ed-fi"),
                 EndpointName: new("schools"),
-                DocumentUuid: No.DocumentUuid
+                Operation: ResourcePathOperation.Collection.Instance
             );
             await Middleware().Execute(_requestInfo, Next());
         }
@@ -100,7 +100,7 @@ public class ValidateEndpointMiddlewareTests
             _requestInfo.PathComponents = new(
                 ProjectEndpointName: new("ed-fi"),
                 EndpointName: new("notschools"),
-                DocumentUuid: No.DocumentUuid
+                Operation: ResourcePathOperation.Collection.Instance
             );
             await Middleware().Execute(_requestInfo, Next());
         }
@@ -159,7 +159,7 @@ public class ValidateEndpointMiddlewareTests
             _requestInfo.PathComponents = new(
                 ProjectEndpointName: new("schools"),
                 EndpointName: new("00000000-0000-4000-a000-000000000000"),
-                DocumentUuid: No.DocumentUuid
+                Operation: ResourcePathOperation.Collection.Instance
             );
             await Middleware().Execute(_requestInfo, Next());
         }
@@ -193,7 +193,7 @@ public class ValidateEndpointMiddlewareTests
             _requestInfo.PathComponents = new(
                 ProjectEndpointName: new("ed-fi"),
                 EndpointName: new("schools"),
-                DocumentUuid: No.DocumentUuid
+                Operation: ResourcePathOperation.Collection.Instance
             );
             await Middleware().Execute(_requestInfo, Next());
         }

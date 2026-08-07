@@ -24,15 +24,14 @@ public class ValidateRouteSemanticsMiddlewareTests
         return new ValidateRouteSemanticsMiddleware(NullLogger.Instance);
     }
 
-    private static PathComponents PathComponents(bool hasDocumentUuidSegment)
+    private static PathComponents PathComponents(ResourcePathOperation operation)
     {
-        return new(
-            ProjectEndpointName: new("ed-fi"),
-            EndpointName: new("schools"),
-            DocumentUuid: hasDocumentUuidSegment ? new(Guid.NewGuid()) : No.DocumentUuid,
-            HasDocumentUuidSegment: hasDocumentUuidSegment
-        );
+        return new(ProjectEndpointName: new("ed-fi"), EndpointName: new("schools"), Operation: operation);
     }
+
+    private static ResourcePathOperation ItemRoute() => new ResourcePathOperation.ById(new(Guid.NewGuid()));
+
+    private static ResourcePathOperation CollectionRoute() => ResourcePathOperation.Collection.Instance;
 
     [TestFixture]
     [Parallelizable]
@@ -44,7 +43,7 @@ public class ValidateRouteSemanticsMiddlewareTests
         public async Task Setup()
         {
             _requestInfo.Method = RequestMethod.POST;
-            _requestInfo.PathComponents = PathComponents(hasDocumentUuidSegment: true);
+            _requestInfo.PathComponents = PathComponents(ItemRoute());
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -83,7 +82,7 @@ public class ValidateRouteSemanticsMiddlewareTests
         public async Task Setup()
         {
             _requestInfo.Method = RequestMethod.PUT;
-            _requestInfo.PathComponents = PathComponents(hasDocumentUuidSegment: false);
+            _requestInfo.PathComponents = PathComponents(CollectionRoute());
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -122,7 +121,7 @@ public class ValidateRouteSemanticsMiddlewareTests
         public async Task Setup()
         {
             _requestInfo.Method = RequestMethod.DELETE;
-            _requestInfo.PathComponents = PathComponents(hasDocumentUuidSegment: false);
+            _requestInfo.PathComponents = PathComponents(CollectionRoute());
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -153,6 +152,65 @@ public class ValidateRouteSemanticsMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Write_Request_To_A_Partitions_Route : ValidateRouteSemanticsMiddlewareTests
+    {
+        [Test]
+        public async Task It_rejects_delete_with_the_collection_message()
+        {
+            RequestInfo requestInfo = No.RequestInfo();
+            requestInfo.Method = RequestMethod.DELETE;
+            requestInfo.PathComponents = PathComponents(ResourcePathOperation.Partitions.Instance);
+
+            await Middleware().Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(405);
+            JsonSerializer
+                .Serialize(requestInfo.FrontendResponse.Body, SerializerOptions)
+                .Should()
+                .Contain(
+                    "Resource collections cannot be deleted. To delete a specific item, use DELETE and include the 'id' in the route."
+                );
+        }
+
+        [Test]
+        public async Task It_rejects_put_with_the_collection_message()
+        {
+            RequestInfo requestInfo = No.RequestInfo();
+            requestInfo.Method = RequestMethod.PUT;
+            requestInfo.PathComponents = PathComponents(ResourcePathOperation.Partitions.Instance);
+
+            await Middleware().Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(405);
+            JsonSerializer
+                .Serialize(requestInfo.FrontendResponse.Body, SerializerOptions)
+                .Should()
+                .Contain(
+                    "Resource collections cannot be replaced. To 'upsert' an item in the collection, use POST. To update a specific item, use PUT and include the 'id' in the route."
+                );
+        }
+
+        [Test]
+        public async Task It_rejects_post_with_the_item_message()
+        {
+            RequestInfo requestInfo = No.RequestInfo();
+            requestInfo.Method = RequestMethod.POST;
+            requestInfo.PathComponents = PathComponents(ResourcePathOperation.Partitions.Instance);
+
+            await Middleware().Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(405);
+            JsonSerializer
+                .Serialize(requestInfo.FrontendResponse.Body, SerializerOptions)
+                .Should()
+                .Contain(
+                    "Resource items can only be updated using PUT. To 'upsert' an item in the resource collection using POST, remove the 'id' from the route."
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Write_Request_With_Valid_Route_Semantics : ValidateRouteSemanticsMiddlewareTests
     {
         [Test]
@@ -160,7 +218,7 @@ public class ValidateRouteSemanticsMiddlewareTests
         {
             RequestInfo requestInfo = No.RequestInfo();
             requestInfo.Method = RequestMethod.POST;
-            requestInfo.PathComponents = PathComponents(hasDocumentUuidSegment: false);
+            requestInfo.PathComponents = PathComponents(CollectionRoute());
 
             await Middleware().Execute(requestInfo, NullNext);
 
@@ -172,7 +230,7 @@ public class ValidateRouteSemanticsMiddlewareTests
         {
             RequestInfo requestInfo = No.RequestInfo();
             requestInfo.Method = RequestMethod.PUT;
-            requestInfo.PathComponents = PathComponents(hasDocumentUuidSegment: true);
+            requestInfo.PathComponents = PathComponents(ItemRoute());
 
             await Middleware().Execute(requestInfo, NullNext);
 
@@ -184,7 +242,7 @@ public class ValidateRouteSemanticsMiddlewareTests
         {
             RequestInfo requestInfo = No.RequestInfo();
             requestInfo.Method = RequestMethod.DELETE;
-            requestInfo.PathComponents = PathComponents(hasDocumentUuidSegment: true);
+            requestInfo.PathComponents = PathComponents(ItemRoute());
 
             await Middleware().Execute(requestInfo, NullNext);
 

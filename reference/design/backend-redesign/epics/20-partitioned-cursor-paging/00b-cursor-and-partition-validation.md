@@ -64,6 +64,14 @@ story assert a presence semantic the other owns.
   `/{project}/{resource}/partitions` through the existing invalid-UUID HTTP 400 behavior, including
   `"validationErrors":{"$.id":["The value 'partitions' is not valid."]}`; do not return an
   incomplete partition response.
+- Cursor parameter recognition on live GET-many is staged differently from `/partitions`, and
+  deliberately so: the names are recognized from this story onward, so a request that passes cursor
+  validation reaches the relational read path's cursor guard and is answered HTTP 501
+  `"Cursor paging is not yet supported for relational queries."` until DMS-1386 implements cursor
+  execution. No `Next-Page-Token` header is emitted before then. The alternative — withholding
+  recognition until execution lands — was not taken, because the parameter contract is what the
+  sibling stories and the public-contract suite build against, and a cursor request that is rejected
+  is answered by that contract either way.
 
 ## Acceptance Evidence and Test Expectations
 
@@ -78,14 +86,17 @@ story assert a presence semantic the other owns.
   and out-of-range `number`, including the blank case the design doc treats as malformed rather than
   absent, and prove resource-property and change-version filters are accepted rather than reported
   as unsupported.
-- Traditional-only pagination failures retain their current response shell and messages, and the
-  existing case-sensitive matching of `limit`, `offset`, and `totalCount` is unchanged.
+- Traditional-only pagination failures retain their current response shell and messages, and `limit`,
+  `offset`, and `totalCount` remain case-insensitive, with the fold made culture-invariant so a server
+  whose culture is not the invariant one recognizes them as well.
 - `/deletes` and `/keyChanges` tests prove `pageToken` and `pageSize` are rejected rather than
   ignored.
 - Unit tests cover every typed path case, unknown child segments, extra segments, route qualifiers,
   and tenant-prefixed paths.
 - Frontend tests prove repeated exact-name and case-variant query parameters choose the last value
-  in request order, and that the chosen value is what drives validator phase selection.
+  in request order, asserting the query parameters handed to Core. That the chosen value is what
+  drives validator phase selection is proven by an API-level integration scenario against the
+  assembled pipeline, because query validation is not reachable without a database.
 - Regression tests cover existing GET-many, GET-by-id, write, delete, and tracked-change routing.
 - Before DMS-1387, `/partitions` regression coverage locks the existing invalid-UUID HTTP 400; no
   incomplete endpoint is externally exposed.

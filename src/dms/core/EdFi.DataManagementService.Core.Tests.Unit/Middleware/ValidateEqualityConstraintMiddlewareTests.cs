@@ -61,7 +61,7 @@ public class ValidateEqualityConstraintMiddlewareTests
             PathComponents = new(
                 ProjectEndpointName: new("ed-fi"),
                 EndpointName: new("bellSchedules"),
-                DocumentUuid: No.DocumentUuid
+                Operation: ResourcePathOperation.Collection.Instance
             ),
         };
         _requestInfo.ProjectSchema = _requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(

@@ -313,7 +313,7 @@ public class ParsePathMiddlewareTests
 
             _requestInfo?.PathComponents.ProjectEndpointName.Value.Should().Be("ed-fi");
             _requestInfo?.PathComponents.EndpointName.Value.Should().Be("endpointName");
-            _requestInfo?.PathComponents.HasDocumentUuidSegment.Should().BeFalse();
+            _requestInfo?.PathComponents.Operation.Should().BeOfType<ResourcePathOperation.Collection>();
         }
     }
 
@@ -354,7 +354,7 @@ public class ParsePathMiddlewareTests
             _requestInfo?.PathComponents.ProjectEndpointName.Value.Should().Be("ed-fi");
             _requestInfo?.PathComponents.EndpointName.Value.Should().Be("endpointName");
             _requestInfo?.PathComponents.DocumentUuid.Value.Should().Be(documentUuid);
-            _requestInfo?.PathComponents.HasDocumentUuidSegment.Should().BeTrue();
+            _requestInfo?.PathComponents.Operation.Should().BeOfType<ResourcePathOperation.ById>();
         }
     }
 
@@ -405,6 +405,44 @@ public class ParsePathMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Path_Naming_The_Partitions_Operation : ParsePathMiddlewareTests
+    {
+        [TestCase("partitions")]
+        [TestCase("PARTITIONS")]
+        [TestCase("Partitions")]
+        public async Task It_records_the_partitions_operation_and_declines_to_serve_it(string segment)
+        {
+            FrontendRequest frontendRequest = new(
+                Body: "{}",
+                Form: null,
+                Headers: [],
+                Path: $"/ed-fi/endpointName/{segment}",
+                QueryParameters: [],
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
+            );
+            RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+
+            await Middleware().Execute(requestInfo, NullNext);
+
+            requestInfo
+                .PathComponents.Operation.Should()
+                .BeOfType<ResourcePathOperation.Partitions>(
+                    "the recognized operation belongs in request state even though the pipeline "
+                        + "declines to serve it"
+                );
+            requestInfo.PathComponents.EndpointName.Value.Should().Be("endpointName");
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+            string response = JsonSerializer.Serialize(requestInfo.FrontendResponse.Body, SerializerOptions);
+            response
+                .Should()
+                .Contain($"\"validationErrors\":{{\"$.id\":[\"The value '{segment}' is not valid.\"]}}");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Post_With_ResourceId : ParsePathMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
@@ -434,7 +472,7 @@ public class ParsePathMiddlewareTests
         [Test]
         public void It_marks_the_path_as_an_item_route()
         {
-            _requestInfo.PathComponents.HasDocumentUuidSegment.Should().BeTrue();
+            _requestInfo.PathComponents.Operation.Should().BeOfType<ResourcePathOperation.ById>();
         }
     }
 
@@ -469,7 +507,7 @@ public class ParsePathMiddlewareTests
         [Test]
         public void It_marks_the_path_as_a_collection_route()
         {
-            _requestInfo.PathComponents.HasDocumentUuidSegment.Should().BeFalse();
+            _requestInfo.PathComponents.Operation.Should().BeOfType<ResourcePathOperation.Collection>();
         }
     }
 
@@ -504,7 +542,7 @@ public class ParsePathMiddlewareTests
         [Test]
         public void It_marks_the_path_as_a_collection_route()
         {
-            _requestInfo.PathComponents.HasDocumentUuidSegment.Should().BeFalse();
+            _requestInfo.PathComponents.Operation.Should().BeOfType<ResourcePathOperation.Collection>();
         }
     }
 
