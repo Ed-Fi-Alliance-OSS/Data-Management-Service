@@ -399,7 +399,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                     await DelayForPollIntervalAsync(context, effectiveCancellationToken)
                         .ConfigureAwait(false);
                 }
-                else if (currentPass.RecordedDurableProgress)
+                else
                 {
                     poisonSuppressionRetryPassCount = 0;
                 }
