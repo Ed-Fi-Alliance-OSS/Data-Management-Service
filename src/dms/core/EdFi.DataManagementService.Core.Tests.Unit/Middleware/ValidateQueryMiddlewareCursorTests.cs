@@ -17,8 +17,8 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 /// <summary>
-/// Cursor recognition, the parameter-validation shell, the traditional shell it must not replace,
-/// and the collection paging applied to request state.
+/// Cursor recognition, the parameter-validation shell both paging modes answer a parameter fault
+/// with, and the collection paging applied to request state.
 /// </summary>
 [TestFixture]
 [Parallelizable]
@@ -97,6 +97,30 @@ public class ValidateQueryMiddlewareCursorTests
         return requestInfo;
     }
 
+    /// <summary>
+    /// The parameter-validation shell, asserted whole so a partial regression cannot pass. Shared by
+    /// the cursor and traditional fixtures, which answer a parameter fault identically. The expected
+    /// messages are ordered: a cursor fault reports exactly one, a traditional fault reports every
+    /// faulty parameter.
+    /// </summary>
+    private static void AssertParameterValidationShell(
+        RequestInfo requestInfo,
+        params string[] expectedErrors
+    )
+    {
+        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+        JsonNode body = requestInfo.FrontendResponse.Body!;
+
+        body["detail"]!.GetValue<string>().Should().Be("Parameters supplied to the request were invalid.");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter-validation-failed");
+        body["title"]!.GetValue<string>().Should().Be("Parameter Validation Failed");
+        body["status"]!.GetValue<int>().Should().Be(400);
+        body["correlationId"]!.GetValue<string>().Should().Be(TraceId);
+        body["validationErrors"]!.AsObject().Should().BeEmpty();
+        body["errors"]!.AsArray().Select(error => error!.GetValue<string>()).Should().Equal(expectedErrors);
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Rejected_Cursor_Request : ValidateQueryMiddlewareCursorTests
@@ -144,31 +168,6 @@ public class ValidateQueryMiddlewareCursorTests
             requestInfo
                 .CollectionPaging.Should()
                 .Be(No.CollectionPaging, "a rejected request must not leave partially applied paging behind");
-        }
-
-        private static void AssertParameterValidationShell(RequestInfo requestInfo, string expectedError)
-        {
-            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-
-            JsonNode body = requestInfo.FrontendResponse.Body!;
-
-            body["detail"]!
-                .GetValue<string>()
-                .Should()
-                .Be("Parameters supplied to the request were invalid.");
-            body["type"]!
-                .GetValue<string>()
-                .Should()
-                .Be("urn:ed-fi:api:bad-request:parameter-validation-failed");
-            body["title"]!.GetValue<string>().Should().Be("Parameter Validation Failed");
-            body["status"]!.GetValue<int>().Should().Be(400);
-            body["correlationId"]!.GetValue<string>().Should().Be(TraceId);
-            body["validationErrors"]!.AsObject().Should().BeEmpty();
-            body["errors"]!
-                .AsArray()
-                .Select(error => error!.GetValue<string>())
-                .Should()
-                .Equal(expectedError);
         }
     }
 
@@ -223,49 +222,100 @@ public class ValidateQueryMiddlewareCursorTests
         }
     }
 
+    /// <summary>
+    /// A traditional pagination fault answers with the same parameter-validation shell as a cursor
+    /// fault, while keeping the messages that predate cursor paging, and is answered ahead of the
+    /// change-version parameters.
+    /// </summary>
     [TestFixture]
     [Parallelizable]
     public class Given_A_Traditional_Request_With_A_Fault : ValidateQueryMiddlewareCursorTests
     {
-        [TestCase("limit", "-1", "Limit must be omitted or set to a numeric value between 0 and 500.")]
-        [TestCase("limit", "abc", "Limit must be omitted or set to a numeric value between 0 and 500.")]
-        [TestCase("offset", "-1", "Offset must be a numeric value greater than or equal to 0.")]
-        [TestCase("offset", "abc", "Offset must be a numeric value greater than or equal to 0.")]
-        [TestCase("totalCount", "x", "TotalCount must be a boolean value.")]
-        public async Task It_keeps_the_existing_bad_request_shell_and_message(
+        private const string LimitOutOfRange =
+            "Limit must be omitted or set to a numeric value between 0 and 500.";
+
+        private const string OffsetNegative = "Offset must be a numeric value greater than or equal to 0.";
+
+        private const string TotalCountNotABoolean = "TotalCount must be a boolean value.";
+
+        private const string MinChangeVersionNotNumeric =
+            "MinChangeVersion must be a numeric value greater than or equal to 0.";
+
+        [TestCase("limit", "-1", LimitOutOfRange)]
+        [TestCase("limit", "abc", LimitOutOfRange)]
+        [TestCase("offset", "-1", OffsetNegative)]
+        [TestCase("offset", "abc", OffsetNegative)]
+        [TestCase("totalCount", "x", TotalCountNotABoolean)]
+        public async Task It_returns_the_parameter_validation_shell_with_the_existing_message(
             string parameter,
             string value,
             string expectedError
         )
         {
-            RequestInfo requestInfo = await Execute(true, (parameter, value));
-
-            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-
-            JsonNode body = requestInfo.FrontendResponse.Body!;
-
-            body["detail"]!
-                .GetValue<string>()
-                .Should()
-                .Be("The request could not be processed. See 'errors' for details.");
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
-            body["title"]!.GetValue<string>().Should().Be("Bad Request");
-            body["errors"]!
-                .AsArray()
-                .Select(error => error!.GetValue<string>())
-                .Should()
-                .Contain(expectedError);
+            AssertParameterValidationShell(await Execute(true, (parameter, value)), expectedError);
         }
 
-        [Test]
-        public async Task It_does_not_acquire_the_parameter_validation_shell()
+        /// <summary>
+        /// The traditional branch runs in the Change Query composition as well, so a pagination
+        /// fault on /deletes or /keyChanges is answered the same way live GET-many answers it. All
+        /// three parameters are covered rather than one representative, because this composition has
+        /// no cursor path and the traditional branch is the only thing answering them.
+        /// </summary>
+        [TestCase("limit", "-1", LimitOutOfRange)]
+        [TestCase("offset", "-1", OffsetNegative)]
+        [TestCase("totalCount", "x", TotalCountNotABoolean)]
+        public async Task It_returns_the_parameter_validation_shell_without_cursor_recognition(
+            string parameter,
+            string value,
+            string expectedError
+        )
         {
-            RequestInfo requestInfo = await Execute(true, ("limit", "-1"));
+            AssertParameterValidationShell(await Execute(false, (parameter, value)), expectedError);
+        }
 
-            requestInfo.FrontendResponse.Body!["type"]!
-                .GetValue<string>()
-                .Should()
-                .NotBe("urn:ed-fi:api:bad-request:parameter-validation-failed");
+        /// <summary>
+        /// The pagination rules are evaluated together rather than exclusively, so all three faults
+        /// are reported in one response. Pinned on this composition because change-queries.md states
+        /// the ordering as a contract of /deletes and /keyChanges, which is what recognizes no cursor
+        /// parameters. See change-queries.md, "Parameter Validation Failures".
+        /// </summary>
+        [Test]
+        public async Task It_reports_every_pagination_fault_in_the_documented_order()
+        {
+            AssertParameterValidationShell(
+                await Execute(false, ("offset", "-1"), ("limit", "-1"), ("totalCount", "x")),
+                OffsetNegative,
+                LimitOutOfRange,
+                TotalCountNotABoolean
+            );
+        }
+
+        /// <summary>
+        /// Pagination is validated ahead of the change-version parameters and a fault there is
+        /// answered immediately, so the change-version values are never examined. Both families
+        /// answer with this same shell, so the reported messages are the only thing separating
+        /// "accepted" from "never reached".
+        /// </summary>
+        [Test]
+        public async Task It_reports_only_the_pagination_fault_when_change_version_is_also_invalid()
+        {
+            AssertParameterValidationShell(
+                await Execute(true, ("limit", "-1"), ("minChangeVersion", "abc")),
+                LimitOutOfRange
+            );
+        }
+
+        /// <summary>
+        /// The same change-version value on its own, so the test above cannot pass because the
+        /// parameter is ignored outright rather than deferred behind the pagination fault.
+        /// </summary>
+        [Test]
+        public async Task It_reports_the_change_version_fault_once_pagination_is_clean()
+        {
+            AssertParameterValidationShell(
+                await Execute(true, ("minChangeVersion", "abc")),
+                MinChangeVersionNotNumeric
+            );
         }
     }
 
