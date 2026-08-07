@@ -733,7 +733,7 @@ not using snapshots, key changes observed without a `maxChangeVersion` filter, o
 newly accessible behind the client's change window. The mitigations recorded in
 [change-queries.md](change-queries.md) continue to apply to those.
 
-**Interim behavior for conditional change-window ordering (DMS-1298).** Traditional offset
+**Conditional change-window ordering.** Traditional offset
 paging orders max-bearing change-version windows by `ContentVersion`; see "Page-selection
 ordering" in [change-queries.md](change-queries.md).
 
@@ -742,10 +742,11 @@ based on `HighestSelectedDocumentId` is unsafe when that query orders by `Conten
 Replaying such a token could skip qualifying rows that have a smaller `DocumentId` but a later
 `ContentVersion`.
 
-As an interim safeguard, cursor execution does not emit `Next-Page-Token` when the page-selection
-order is anything other than `DocumentId`. Max-bearing extractions must use offset paging until
-[`14-contentversion-windowed-cursor-anchoring.md`](../epics/20-partitioned-cursor-paging/14-contentversion-windowed-cursor-anchoring.md)
-anchors windowed cursor walks, partitions, and tokens on `ContentVersion`.
+Windowed (max-bearing) requests therefore anchor cursor pages, partition boundaries, and
+continuation tokens on `ContentVersion`, delivered by DMS-1394
+([`14-contentversion-windowed-cursor-anchoring.md`](../epics/20-partitioned-cursor-paging/14-contentversion-windowed-cursor-anchoring.md))
+in the same release as cursor execution. Invariant: a page emits a continuation token only when
+the token's anchor is the page's ordering key.
 
 ## Performance Invariants
 
