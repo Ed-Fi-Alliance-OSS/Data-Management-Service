@@ -763,6 +763,44 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     [Test]
+    public async Task It_denies_from_a_segmented_after_namespace_custom_view_run_with_a_request_wide_index()
+    {
+        // The after-namespace run is its own segment carrying a non-zero request-wide index. The namespace
+        // segment has already passed, so the reported denial must be the later view's, resolved against the
+        // full planned list, and nothing downstream may run.
+        var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
+            StoredCustomViewAuthorization = CreateStoredCustomViewAuthorization(
+                ("SchoolWithAnEarlyTag", 0),
+                ("SchoolWithALateTag", 2)
+            ),
+            StoredRelationshipAuthorization = new RelationshipAuthorizationResult.NoClaims([], []),
+        };
+        var session = new ScriptedWriteSession(
+            CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
+            CreateReader(CreateAuthorizationTable()),
+            CreateReader(CreateAuthorizationTable()),
+            new FakeDbException("late custom view denial")
+        );
+
+        var resolution = await CreateSut(providerFailureExtractor: CustomViewFailureExtractor(1))
+            .ResolveAsync(input, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureCustomViewNotAuthorized>()
+            .Subject.CustomViewFailure.StrategyName.Should()
+            .Be("SchoolWithALateTag");
+        // Capture, the early view, the namespace segment, then the denying late view — and nothing after it,
+        // so the deferred relationship denial, reference lookup, and hydration never ran.
+        session.Commands.Should().HaveCount(4);
+        session.Commands[3].CommandText.Should().Contain("SchoolWithALateTag");
+    }
+
+    [Test]
     public async Task It_denies_from_a_segmented_custom_view_run_before_the_namespace_segment_runs()
     {
         var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
