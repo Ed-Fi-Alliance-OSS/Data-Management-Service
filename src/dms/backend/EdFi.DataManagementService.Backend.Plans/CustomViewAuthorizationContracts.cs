@@ -68,10 +68,24 @@ public abstract record CustomViewAuthorizationCheckTarget
     /// subject resource and the operation is a POST that resolves to a create.
     /// </summary>
     /// <remarks>
-    /// ODS reaches the same dead end — the basis row does not exist yet, so no view row can reference it —
-    /// and denies. DMS denies too, and does so without issuing the membership SQL. The custom view is still
-    /// validated for existence and contract, so a misconfigured view keeps its 500 instead of being
+    /// <para>
+    /// The planner cannot tell a create from an update: a POST resolves to one or the other only when the
+    /// target capture runs. So this target is planned for every proposed check on a self-basis strategy, and
+    /// carries both execution branches:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><description>
+    /// <b>No captured target (create).</b> Deny with §2.4. ODS reaches the same dead end — the basis row does
+    /// not exist yet, so no view row can reference it. The membership SQL is not issued; the custom view is
+    /// still validated for existence and contract, so a misconfigured view keeps its 500 rather than being
     /// reported as this 403.
+    /// </description></item>
+    /// <item><description>
+    /// <b>Captured target (update).</b> Satisfied. A document's own <c>DocumentId</c> is immutable, so the
+    /// proposed basis value is the very value the paired stored check already authorized against this view;
+    /// re-checking it could only produce the same answer.
+    /// </description></item>
+    /// </list>
     /// </remarks>
     public sealed record ProposedSelfBasisUnavailable(DbTableName RootTable)
         : CustomViewAuthorizationCheckTarget;
