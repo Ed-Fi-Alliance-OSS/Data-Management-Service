@@ -1171,6 +1171,91 @@ public class Given_DocumentCacheProjectionSupervisor
     }
 
     [Test]
+    [NonParallelizable]
+    public async Task It_logs_a_failed_scheduled_refresh_and_retries_at_the_next_poll_interval()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            DocumentCacheTargetKey.Create("TenantA", 7),
+            generation: 1
+        );
+        RecordingObservationSink observationSink = new();
+        RecordingTargetContextFactory targetContextFactory = new(observationSink);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(executionContext)]),
+            RuntimeSnapshot([executionContext])
+        );
+        var refreshException = new InvalidOperationException("scheduled CMS refresh failed");
+        registry.QueueRefreshException(refreshException);
+        RecordingTargetRegistry.BlockingRefreshControl retryRefresh = registry.QueueBlockingRefresh(
+            Snapshot([EligibleObservation(executionContext)]),
+            RuntimeSnapshot([executionContext])
+        );
+        ControlledTimeProvider timeProvider = new(ObservedAt);
+        RecordingProjectionScheduler scheduler = new(
+            contexts => DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.NoEligibleWork),
+            contexts => DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.NoEligibleWork),
+            contexts => DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.NoEligibleWork)
+        );
+        RecordingLogger<DocumentCacheProjectionSupervisor> logger = new();
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationSink,
+            OptionsFor([executionContext.TargetKey]),
+            scheduler,
+            timeProvider,
+            logger: logger
+        );
+
+        try
+        {
+            await supervisor.StartAsync(CancellationToken.None);
+            await scheduler.WaitForCallCountAsync(1);
+            await timeProvider.WaitForTimerCountAsync(1);
+
+            timeProvider.Advance(TimeSpan.FromSeconds(5));
+            await logger.WaitForWarningAsync();
+            await scheduler.WaitForCallCountAsync(2);
+
+            Task retryStartedBeforeNextPoll = retryRefresh.WaitForStartedAsync();
+            Task completedBeforeNextPoll = await Task.WhenAny(
+                retryStartedBeforeNextPoll,
+                Task.Delay(TimeSpan.FromMilliseconds(100))
+            );
+            completedBeforeNextPoll.Should().NotBe(retryStartedBeforeNextPoll);
+
+            await timeProvider.WaitForTimerCountAsync(2);
+            timeProvider.Advance(TimeSpan.FromSeconds(5));
+            await retryStartedBeforeNextPoll;
+
+            registry
+                .RefreshReasons.Should()
+                .Equal(
+                    DocumentCacheTargetRefreshReason.Startup,
+                    DocumentCacheTargetRefreshReason.SupervisorTriggered,
+                    DocumentCacheTargetRefreshReason.SupervisorTriggered
+                );
+            logger
+                .WarningEntries.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<RecordingLogger<DocumentCacheProjectionSupervisor>.Entry>(entry =>
+                    ReferenceEquals(entry.Exception, refreshException)
+                    && entry.Message.Contains("scheduled supervisor refresh", StringComparison.Ordinal)
+                );
+
+            retryRefresh.Release();
+            await scheduler.WaitForCallCountAsync(3);
+        }
+        finally
+        {
+            retryRefresh.Release();
+            await supervisor.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Test]
     public async Task It_reconsiders_ready_targets_immediately_after_a_page_is_processed()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(

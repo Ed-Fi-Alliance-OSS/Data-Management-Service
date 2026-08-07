@@ -1208,8 +1208,7 @@ public sealed class DocumentCacheProjectionSupervisor(
             }
             else if (wakeObservedAt >= nextPollTickAt)
             {
-                await RefreshAsync(DocumentCacheTargetRefreshReason.SupervisorTriggered, stoppingToken)
-                    .ConfigureAwait(false);
+                await ProcessScheduledRefreshAsync(stoppingToken).ConfigureAwait(false);
                 nextPollTickAt = timeProvider.GetUtcNow() + pollInterval;
             }
 
@@ -1256,6 +1255,26 @@ public sealed class DocumentCacheProjectionSupervisor(
                 "DocumentCache target refresh failed while processing a data store metadata change signal. A later signal or scheduled supervisor refresh can retry."
             );
             return false;
+        }
+    }
+
+    private async Task ProcessScheduledRefreshAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await RefreshAsync(DocumentCacheTargetRefreshReason.SupervisorTriggered, stoppingToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "DocumentCache target refresh failed during a scheduled supervisor refresh. A later scheduled supervisor refresh or data store metadata change signal can retry."
+            );
         }
     }
 
