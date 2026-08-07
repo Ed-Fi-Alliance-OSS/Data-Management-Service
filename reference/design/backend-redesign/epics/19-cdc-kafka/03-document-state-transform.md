@@ -111,7 +111,7 @@ Connect plugin without changing the completed generic transform.
   the key schema with `Schema.STRING_SCHEMA`.
 - Reject a missing key, missing `DocumentUuid`, invalid UUID text, or a value that cannot
   be parsed through the provider adapter. Do not derive the public key from the unwrapped
-  value because delete values may be null.
+  value because delete values are valid with a null record value.
 - For cache upserts, also validate that the row's `DocumentUuid` equals the normalized
   public key. A mismatch fails transformation.
 - For progress records, ignore the source key shape and always emit
@@ -177,34 +177,34 @@ Connect plugin without changing the completed generic transform.
 
 ### Failure, Diagnostics, and Runtime Compatibility
 
-- Use Kafka Connect configuration/data exceptions for deterministic failures and include
-  only bounded metadata such as provider, source table, operation, source topic, and reason
-  code. Do not log `DocumentJson`, full public values, credentials, tenant names, or
-  unbounded document metadata.
-- Rely on connector-level `errors.tolerance=none`; the transform does not implement a
-  dead-letter queue, skip list, fallback route, or best-effort publication mode.
+- Use Kafka Connect `ConfigException` for invalid transform configuration and
+  `DataException` for deterministic retained-record transformation failures. Include only
+  bounded metadata such as provider, source table, operation, source topic, and reason code.
+  Do not log `DocumentJson`, full public values, credentials, tenant names, or unbounded
+  document metadata.
+- Rely on connector-level `errors.tolerance=none`; the transform implements no secondary
+  failure publication path.
 - Support only the raw record shapes emitted by the pinned Debezium 3.6 / Kafka Connect
   4.3 image. If a provider or Debezium upgrade changes keys, source metadata, temporal
   logical types, delete shapes, or unavailable-value behavior, fixtures and image
   qualification must be updated before accepting the new shape.
-- Keep the implementation Java 17 and Kafka Connect 4.3 compatible. Reuse the existing
-  plugin JSON dependencies where practical; do not add BSON, RedHat `expandjsonsmt`, or a
-  second generic JSON-expansion dependency.
+- Keep the implementation Java 17 and Kafka Connect 4.3 compatible. Reuse the plugin's
+  existing JSON dependencies and add no JSON-expansion dependency.
 
 ### Story-Owned Test Scope
 
 - Add fast JUnit tests for pure classification, key normalization, output shaping,
   timestamp normalization, routing, and failure reasons.
 - Add provider raw-record fixtures for PostgreSQL and SQL Server that match the pinned
-  Debezium 3.6 image. Fixtures should be minimal `SourceRecord` builders or captured
-  canonicalized record JSON, not connector-template assertions.
+  Debezium 3.6 image. Fixtures are minimal `SourceRecord` builders locked to the pinned
+  Debezium field and schema shapes, not connector-template assertions.
 - Cover every source and operation class listed above, including recognized dropped
   operations, `DocumentProjectionWork` fail-closed behavior, unexpected source failure,
   malformed retained records, and both heartbeat key shapes required by readiness.
 - Cover representative public upserts from the E18 materialized-document fixture set:
   ordinary link-bearing resource, descriptor/no-link stream context, and one nested or
-  extension case. E19 may derive raw Debezium fixtures from those files, but should not
-  copy or redefine the cache-row JSON or expected public document body.
+  extension case. Derive the raw Debezium fixtures from those files; do not copy or
+  redefine the cache-row JSON or expected public document body.
 - Cover invalid `DocumentJson`, non-object JSON, pre-existing `_etag`, missing or
   mismatched `DocumentUuid`, invalid `ContentVersion`, SQL Server unavailable marker,
   non-UTC timestamp, fractional-second truncation, timestamp/document mismatch, and
