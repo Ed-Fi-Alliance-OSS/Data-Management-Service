@@ -637,6 +637,17 @@ states fall back to relational reconstitution. Readable-profile projection, link
 stripping, and served `_etag` composition run identically for cached and relational paths.
 Optional direct fill uses the shared cache-write/acknowledgement component.
 
+Request-scoped snapshot and read-replica selection remains authoritative over this
+optimization. Cache lookup, lifecycle-state reads, the canonical `ContentVersion`
+comparison, and relational fallback all use the selected physical database. A derivative
+request may use `DocumentCache` only from that same database; if the cache adapter cannot
+bind every required read to the selected effective target, it bypasses cache acceleration
+for the request. It never reads cache JSON through the parent primary connection.
+Optional direct fill is bypassed for snapshot and read-replica targets because it writes
+`dms.DocumentCache` and those requests remain read-only. The process-local
+`DocumentCache:Targets` and `ReadAcceleration:Enabled` settings enable execution and cache
+use only; they do not replace or reinterpret the API request's selected target.
+
 API deletion remains independent of projection:
 
 1. resolve and authorize the canonical target;

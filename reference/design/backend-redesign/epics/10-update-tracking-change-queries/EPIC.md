@@ -20,7 +20,9 @@ Deliverables include:
   `_lastModifiedDate` and per-item `ChangeVersion` from stored stamps,
 - ensuring successful no-op updates leave stored stamps and journal rows unchanged,
 - `If-Match` enforcement using stored representation stamps,
-- ChangeQueries feature does not introduce any breaking changes to its API interface
+- the DMS v1.0 ChangeQueries feature does not introduce any breaking changes to its API
+  interface; the deliberate post-v1.0 snapshot and read-replica behavior changes and their
+  release-note requirements are specified in `29-snapshot-support.md`
 - Ideally, being able to support the feature without requiring DB snapshots
 
 ## Stories
@@ -59,7 +61,7 @@ Deliverables include:
 These spikes investigate features explicitly deferred in `change-queries.md`. Each spike's deliverable is a design proposal plus the implementation tickets it spawns.
 
 - `DMS-1185` — `22-auth-check-indexes-on-tracked-changes.md` — Spike: auth-check indexes on `tracked_changes_*` tables (findings and proposed design: `22-spike-findings.md`)
-- `DMS-1190` — `29-snapshot-support.md` — Spike: snapshot support (`Use-Snapshot` header) for Change Queries
+- `DMS-1190` — `29-snapshot-support.md` — Spike: snapshot (`Use-Snapshot` header) and read-replica support for Change Queries
 - `DMS-1191` — `30-disable-change-queries-feature.md` — Spike: runtime feature flag to disable Change Queries
 - `DMS-1193` — `31-custom-view-based-readchanges-authorization.md` — Spike: custom view-based authorization for `ReadChanges`
 
@@ -72,6 +74,20 @@ Release disposition: none of the follow-ons is must-have for 8.1. Stories 33 and
 - `DMS-1359` - `35-mssql-descriptor-identity-index.md` - Emit the SQL Server live descriptor identity index selected by DMS-1185 (8.1 stretch)
 - `DMS-1360` - `36-per-resource-edorg-person-index-emission.md` - After Stories 33 and 34, emit per-resource EdOrg/person tracked-change indexes (post-8.1)
 - `DMS-1361` - `37-tracked-namespace-index-emission.md` - After Story 33 and Authorization Story 22, adapt tracked Namespace predicates and emit tracked namespace indexes (post-8.1)
+
+## Follow-on Stories (spawned by DMS-1190)
+
+**Authoritative release disposition:** Story dependencies and the snapshot release gate are deliberately different. Story 42 may be scheduled and closed after Stories 38–40 and the external Publisher build are available; it does not depend on Story 41 or on the upstream MetaEd/ApiSchema publication, so Publisher validation, operator guidance, and release-note preparation can finish independently. That independence does **not** authorize runtime rollout. The runtime changes delivered by Stories 39 and 40 must not ship in any release until Story 41 is complete in that release using the published upstream packages and the served OpenAPI documents advertise the matching `Use-Snapshot`, `404`, and `405` contract. If Story 41 or its upstream publication misses the release cut, hold the Stories 39/40 runtime changes from that release; Story 42 may remain closed and its validation and documentation artifacts carry forward.
+
+- `DMS-1366` — `38-cms-data-store-derivative-invariants.md` — Enforce CMS data-store derivative cardinality and type invariants
+- `DMS-1367` — `39-snapshot-read-replica-runtime-routing.md` — Route eligible DMS reads to snapshots and read replicas
+- `DMS-1368` — `40-snapshot-problem-details.md` — Implement snapshot ProblemDetails and connection-unavailable translation
+- `DMS-1369` — `41-snapshot-openapi-surface.md` — Add the snapshot contract to served OpenAPI documents (DMS half; depends on Story 40 and on the upstream MetaEd ticket below)
+- `DMS-1370` — `42-api-publisher-snapshot-interoperability.md` — Validate API Publisher snapshot interoperability and document operator workflow (depends on Stories 38-40 only; deliberately not on Story 41, so validation and release-note preparation are not blocked on upstream package publication; runtime release remains subject to the gate above)
+
+One prerequisite has no story file in this epic because the work is authored in the MetaEd/ApiSchema repository rather than in DMS:
+
+- `DMS-1371` — *upstream MetaEd/ApiSchema* — Author the `Use-Snapshot` parameter and snapshot response components in the served base documents and publish the ApiSchema packages. `41-snapshot-openapi-surface.md` consumes the published packages and cannot be scheduled before this is delivered.
 
 ## Cross-Epic Prerequisite
 
