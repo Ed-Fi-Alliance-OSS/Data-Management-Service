@@ -161,8 +161,9 @@ last value in request order. Collapsing case variants MUST NOT throw.
 ### Cursor validation and ProblemDetails
 
 The presence of either `pageToken` or `pageSize` — including a blank or malformed value — selects
-the cursor validation path and its parameter-validation ProblemDetails shell. Traditional-only
-`limit`/`offset` failures retain the existing generic bad-request response and messages.
+the cursor validation path. Both that path and traditional-only `limit`/`offset` parsing answer a
+parameter fault with the parameter-validation ProblemDetails shell; the traditional failures retain
+their existing messages, which predate this design.
 
 A cursor request returns **exactly one** error. Evaluate the following four phases in order, use the
 exact message shown for each rule, and stop at the first match.
