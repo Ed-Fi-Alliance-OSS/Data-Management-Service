@@ -651,9 +651,9 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
               And the response body path "0.oldKeyValues.staffUniqueId" should have value "SSECA-CO-STAFF"
               And the response body path "0.newKeyValues.staffUniqueId" should have value "SSECA-CO-STAFF"
 
-        # NOTE: Expected body copied verbatim from DMS's actual ProblemDetails response. DMS reports
-        # invalid limit/offset on /keyChanges as a generic bad-request (urn:ed-fi:api:bad-request),
-        # lists Offset before Limit, and phrases the bounds as "numeric value between 0 and 500".
+        # NOTE: Expected body copied verbatim from DMS's actual ProblemDetails response. The envelope
+        # matches ODS's parameter-validation-failed shape; DMS still lists Offset before Limit and
+        # phrases the bounds as "numeric value between 0 and 500".
         @ods-migrated
         @e2e-ci-shard-4
         Scenario: 07 KeyChanges response rejects invalid limit and offset
@@ -662,9 +662,9 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
               And the response body is
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
+                    "detail": "Parameters supplied to the request were invalid.",
+                    "type": "urn:ed-fi:api:bad-request:parameter-validation-failed",
+                    "title": "Parameter Validation Failed",
                     "status": 400,
                     "correlationId": null,
                     "validationErrors": {},
