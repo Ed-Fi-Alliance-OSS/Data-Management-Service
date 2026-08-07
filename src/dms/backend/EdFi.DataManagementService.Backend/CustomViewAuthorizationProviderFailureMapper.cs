@@ -19,9 +19,10 @@ namespace EdFi.DataManagementService.Backend;
 /// <c>1|...</c> or namespace <c>ns1|...</c> payload sharing the same command is never claimed here — the
 /// mirror of the yields those families make for <c>cv1</c>.
 /// <para>
-/// Every method takes the same planned check list that produced the batch. The payload carries only an index,
-/// and resolution is positional, so passing a differently-ordered or differently-indexed list would report a
-/// denial as some other check's category.
+/// Every method takes the request's full planned check list, not just the batch that raised the failure. The
+/// payload carries only an index and resolution is positional, so a request that emits several batches keeps
+/// its indexes unique across all of them and resolves any of their payloads against that one list. Passing a
+/// batch-local or reordered list would report a denial as some other check's category.
 /// </para>
 /// </remarks>
 internal static class CustomViewAuthorizationProviderFailureMapper

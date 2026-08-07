@@ -383,8 +383,6 @@ public class Given_RelationalAuthorizationPlanner
 
     [TestCase(NamespaceAuthorizationOperation.Update, false)]
     [TestCase(NamespaceAuthorizationOperation.Update, true)]
-    [TestCase(NamespaceAuthorizationOperation.Delete, false)]
-    [TestCase(NamespaceAuthorizationOperation.Delete, true)]
     public void It_returns_still_unsupported_for_custom_views_on_operations_that_do_not_execute_them(
         NamespaceAuthorizationOperation operation,
         bool hasEducationOrganizationClaims
@@ -403,14 +401,19 @@ public class Given_RelationalAuthorizationPlanner
         outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
     }
 
-    [TestCase(false)]
-    [TestCase(true)]
-    public void It_plans_custom_views_for_a_regular_resource_read_single(bool hasEducationOrganizationClaims)
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle, false)]
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle, true)]
+    [TestCase(NamespaceAuthorizationOperation.Delete, false)]
+    [TestCase(NamespaceAuthorizationOperation.Delete, true)]
+    public void It_plans_custom_views_for_a_regular_resource_single_record_operation(
+        NamespaceAuthorizationOperation operation,
+        bool hasEducationOrganizationClaims
+    )
     {
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(ResourceKey(2, "PlainResource"), ResourceKey(3, "Student")),
             ResourceWithoutSecurableElements(),
-            NamespaceAuthorizationOperation.ReadSingle,
+            operation,
             [Strategy("StudentWithCTECourseEnrollments", 0)],
             new RelationalAuthorizationContext(hasEducationOrganizationClaims ? [255901L] : [])
         );
@@ -425,15 +428,18 @@ public class Given_RelationalAuthorizationPlanner
         plan.NonNamespaceConfiguredStrategies.Should().BeEmpty();
     }
 
-    [Test]
-    public void It_returns_still_unsupported_for_custom_views_on_a_descriptor_read_single()
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.Delete)]
+    public void It_returns_still_unsupported_for_custom_views_on_a_descriptor_single_record_operation(
+        NamespaceAuthorizationOperation operation
+    )
     {
-        // The descriptor GET-by-id path does not execute custom-view checks yet, so it must keep failing
-        // closed even though the regular-resource path for the same operation now enforces them.
+        // The descriptor single-record paths do not execute custom-view checks yet, so they must keep failing
+        // closed even though the regular-resource paths for the same operations now enforce them.
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor"), ResourceKey(3, "Student")),
             DescriptorResource(),
-            NamespaceAuthorizationOperation.ReadSingle,
+            operation,
             [Strategy("StudentWithCTECourseEnrollments", 0)],
             TwoPrefixContext()
         );

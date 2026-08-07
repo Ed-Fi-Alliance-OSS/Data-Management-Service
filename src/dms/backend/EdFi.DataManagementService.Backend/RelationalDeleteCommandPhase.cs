@@ -26,6 +26,9 @@ internal sealed record RelationalDeleteCommandRequest(
     RelationshipAuthorizationResult StoredRelationshipAuthorization
 )
 {
+    /// <summary>The stored custom-view checks, or <see langword="null"/> when none are configured.</summary>
+    public RelationalCustomViewAuthorization? StoredCustomViewAuthorization { get; init; }
+
     public WritePrecondition WritePrecondition { get; init; } = new WritePrecondition.None();
 
     /// <summary>
@@ -116,7 +119,23 @@ internal sealed class CompositeRelationalDeleteCommand(
         RelationalWriteNamespaceAuthorization? NamespaceSegmentAuthorization,
         StoredRelationshipStatementPlan RelationshipPlan,
         int? DocumentDeleteOrdinal
-    );
+    )
+    {
+        /// <summary>
+        /// The custom-view checks the command carried, or <see langword="null"/> when it carried none — so a
+        /// provider failure is mapped only against checks that command actually sent.
+        /// </summary>
+        public StoredCustomViewStatementPlan? CustomViewPlan { get; init; }
+
+        /// <summary>
+        /// The custom-view checks still owed as their own ordered segment, empty when none are. Only the run
+        /// configured after <c>NamespaceBased</c> can land here, and only when the namespace check itself was
+        /// pushed onto a segment: the run has to follow that check, so it cannot ride the opening command
+        /// which precedes it.
+        /// </summary>
+        public IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> CustomViewSegmentChecks { get; init; } =
+        [];
+    }
 
     public async Task<DeleteResult> ExecuteAsync(
         RelationalDeleteCommandRequest request,
@@ -133,16 +152,24 @@ internal sealed class CompositeRelationalDeleteCommand(
         var plan = BuildPlan(request, relationshipPlan);
 
         IReadOnlyList<RelationalCompositeStatementOutcome> outcomes;
+        var execution = new RelationalCompositeCommandExecution();
 
         try
         {
-            outcomes = await new RelationalCompositeCommandExecution()
+            outcomes = await execution
                 .ExecuteAsync(writeSession, plan.Command, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (DbException exception)
         {
-            return MapProviderFailure(request, plan.NamespacePlan, plan.RelationshipPlan, exception);
+            return MapProviderFailure(
+                request,
+                plan.NamespacePlan,
+                plan.CustomViewPlan,
+                plan.RelationshipPlan,
+                exception,
+                execution.Failure
+            );
         }
 
         if (outcomes[0].Value is not RelationalCompositeCapturedTarget capturedTarget)
@@ -163,6 +190,21 @@ internal sealed class CompositeRelationalDeleteCommand(
         )
         {
             return namespaceResult;
+        }
+
+        if (
+            await ExecuteSegmentedCustomViewAsync(
+                    request,
+                    plan.CustomViewSegmentChecks,
+                    capturedTarget.DocumentId,
+                    writeSession,
+                    cancellationToken
+                )
+                .ConfigureAwait(false) is
+            { } customViewResult
+        )
+        {
+            return customViewResult;
         }
 
         if (
@@ -251,6 +293,19 @@ internal sealed class CompositeRelationalDeleteCommand(
 
         AppendCaptureTarget(builder, request);
 
+        // Custom views and NamespaceBased are AND filters executing in CMS-configured order, and the
+        // command aborts at its first failure, so the namespace statement is emitted between the views
+        // configured before it and those configured after. Both runs' indexes come from one planned list, so
+        // a cv1 payload still identifies exactly one check.
+        var (customViewsBeforeNamespace, customViewsAfterNamespace) = PartitionCustomViewRuns(request);
+
+        RelationalCompositeStoredAuthorization.AppendCustomViewRun(
+            builder,
+            carrier,
+            request.MappingSet,
+            customViewsBeforeNamespace
+        );
+
         var namespaceEmitted = RelationalCompositeStoredAuthorization.TryAppendNamespace(
             builder,
             carrier,
@@ -258,6 +313,32 @@ internal sealed class CompositeRelationalDeleteCommand(
             request.StoredNamespaceAuthorization,
             out var namespacePlan
         );
+
+        // The after-run may only ride this command when the namespace check it must follow rides it too.
+        // Otherwise the namespace check runs as a later segment, and appending the run here would place it
+        // ahead of the check it is configured after — so it becomes a segment of its own instead of being
+        // dropped, which would delete a row without enforcing a configured view.
+        if (namespaceEmitted)
+        {
+            RelationalCompositeStoredAuthorization.AppendCustomViewRun(
+                builder,
+                carrier,
+                request.MappingSet,
+                customViewsAfterNamespace
+            );
+        }
+
+        var customViewSegmentChecks = namespaceEmitted
+            ? (IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>)[]
+            : customViewsAfterNamespace;
+        var customViewPlan =
+            request.StoredCustomViewAuthorization is { } storedCustomViewAuthorization
+            && (
+                customViewsBeforeNamespace.Count > 0
+                || (namespaceEmitted && customViewsAfterNamespace.Count > 0)
+            )
+                ? new StoredCustomViewStatementPlan(storedCustomViewAuthorization.Checks)
+                : null;
         var relationshipPlan = classifiedRelationship;
         var relationshipEmitted =
             namespaceEmitted
@@ -283,7 +364,11 @@ internal sealed class CompositeRelationalDeleteCommand(
 
         int? documentDeleteOrdinal = null;
 
-        if (namespaceEmitted && CanCoBatchDeletes(request, relationshipPlan.Disposition))
+        if (
+            namespaceEmitted
+            && customViewSegmentChecks.Count == 0
+            && CanCoBatchDeletes(request, relationshipPlan.Disposition)
+        )
         {
             AppendResourceRootDelete(builder, carrier, request);
             documentDeleteOrdinal = AppendDocumentDelete(builder, carrier, request.MappingSet.Key.Dialect);
@@ -295,7 +380,33 @@ internal sealed class CompositeRelationalDeleteCommand(
             namespaceEmitted ? null : request.StoredNamespaceAuthorization,
             relationshipPlan,
             documentDeleteOrdinal
-        );
+        )
+        {
+            CustomViewPlan = customViewPlan,
+            CustomViewSegmentChecks = customViewSegmentChecks,
+        };
+    }
+
+    /// <summary>
+    /// Splits the planned custom-view checks around the configured position of <c>NamespaceBased</c>. With no
+    /// namespace check every view runs ahead of the relationship group, so the whole list is the first run.
+    /// </summary>
+    private static (
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> Before,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> After
+    ) PartitionCustomViewRuns(RelationalDeleteCommandRequest request)
+    {
+        if (request.StoredCustomViewAuthorization is not { } storedCustomViewAuthorization)
+        {
+            return ([], []);
+        }
+
+        return request.StoredNamespaceAuthorization is { } storedNamespaceAuthorization
+            ? CustomViewAuthorizationCheckSplitter.PartitionByConfiguredIndex(
+                storedCustomViewAuthorization.Checks,
+                storedNamespaceAuthorization.Checks[0].RawConfiguredIndex
+            )
+            : (storedCustomViewAuthorization.Checks, []);
     }
 
     private static bool CanCoBatchDeletes(
@@ -339,6 +450,58 @@ internal sealed class CompositeRelationalDeleteCommand(
                 cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs the custom-view checks configured after <c>NamespaceBased</c> as their own ordered segment, for
+    /// the case where the namespace check they follow could not fit the opening command. Authorization
+    /// therefore still executes in configured order and strictly precedes the relationship check and any
+    /// deletion, at the cost of one more command on that path.
+    /// </summary>
+    private async Task<DeleteResult?> ExecuteSegmentedCustomViewAsync(
+        RelationalDeleteCommandRequest request,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> segmentChecks,
+        long documentId,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        if (segmentChecks.Count == 0 || request.StoredCustomViewAuthorization is null)
+        {
+            return null;
+        }
+
+        var executionResult = await new CustomViewAuthorizationExecutor(
+            writeSession.CreateCommandExecutor(),
+            _providerFailureExtractor
+        )
+            .ExecuteAsync(
+                new CustomViewAuthorizationExecutionRequest(
+                    request.MappingSet,
+                    documentId,
+                    segmentChecks,
+                    request.StoredCustomViewAuthorization.Checks
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return executionResult switch
+        {
+            CustomViewAuthorizationExecutionResult.Authorized => null,
+            CustomViewAuthorizationExecutionResult.NotAuthorized notAuthorized =>
+                new DeleteResult.DeleteFailureCustomViewNotAuthorized(notAuthorized.Failure),
+            CustomViewAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
+                new DeleteResult.DeleteFailureSecurityConfiguration(
+                    [invalidFailure.FailureMessage],
+                    invalidFailure.Diagnostics
+                ),
+            // Unreachable while the capture lock holds; the same defensive mapping the namespace segment uses.
+            CustomViewAuthorizationExecutionResult.StaleTarget => new DeleteResult.DeleteFailureNotExists(),
+            _ => throw new InvalidOperationException(
+                $"Unsupported custom view authorization execution result '{executionResult.GetType().Name}'."
+            ),
+        };
     }
 
     /// <summary>
@@ -606,8 +769,10 @@ internal sealed class CompositeRelationalDeleteCommand(
     private DeleteResult MapProviderFailure(
         RelationalDeleteCommandRequest request,
         StoredNamespaceStatementPlan? namespacePlan,
+        StoredCustomViewStatementPlan? customViewPlan,
         StoredRelationshipStatementPlan relationshipPlan,
-        DbException exception
+        DbException exception,
+        RelationalCompositeFailureContext? failureContext
     ) =>
         RelationalCompositeStoredAuthorization.TryClassifyDenial(
             request.MappingSet.Key.Dialect,
@@ -616,7 +781,8 @@ internal sealed class CompositeRelationalDeleteCommand(
             relationshipPlan,
             RelationshipAuthorizationAuth1Index,
             _providerFailureExtractor,
-            _logger
+            _logger,
+            customViewPlan
         ) switch
         {
             // Stale is unreachable while the capture lock holds; kept as the same defensive mapping the
@@ -624,10 +790,20 @@ internal sealed class CompositeRelationalDeleteCommand(
             StoredAuthorizationDenial.StaleTarget => new DeleteResult.DeleteFailureNotExists(),
             StoredAuthorizationDenial.NamespaceNotAuthorized(var failure) =>
                 new DeleteResult.DeleteFailureNamespaceNotAuthorized(failure),
+            StoredAuthorizationDenial.CustomViewNotAuthorized(var failure) =>
+                new DeleteResult.DeleteFailureCustomViewNotAuthorized(failure),
             StoredAuthorizationDenial.RelationshipNotAuthorized(var failure) =>
                 new DeleteResult.DeleteFailureRelationshipNotAuthorized(failure),
             StoredAuthorizationDenial.SecurityConfiguration(var messages, var diagnostics) =>
                 new DeleteResult.DeleteFailureSecurityConfiguration(messages, diagnostics),
+            // A failure in a command carrying custom-view statements that arrives without an AUTH1 payload is
+            // attributed to the configured view. The only object those statements reference that is created
+            // outside the generated schema is auth.{StrategyName}, which can be dropped, replaced, or revoked
+            // between requests, and auth.md requires that to surface as the urn:ed-fi:api:system 500 rather
+            // than as a generic delete failure. Authorization payloads are classified above, so a denial is
+            // never relabelled.
+            _ when IsAttributableToCustomView(customViewPlan, failureContext) =>
+                throw new CustomViewAuthorizationValidationException(exception),
             _ => RelationalDeleteExecution.MapFailure(
                 exception,
                 _exceptionClassifier,
@@ -639,6 +815,42 @@ internal sealed class CompositeRelationalDeleteCommand(
                 DeleteTargetKind.Document
             ),
         };
+
+    /// <summary>
+    /// Whether a provider failure with no authorization payload should be attributed to a configured custom
+    /// view rather than to the delete.
+    /// </summary>
+    /// <remarks>
+    /// An explicit custom-view label settles it. Otherwise the stage decides: a failure raised while opening
+    /// the reader, or one that is unattributable, cannot name a statement — PostgreSQL prepares the whole
+    /// batch before executing any of it, so a missing view surfaces there, nominally against statement 0. A
+    /// failure genuinely attributed to some other statement is left alone.
+    /// </remarks>
+    private static bool IsAttributableToCustomView(
+        StoredCustomViewStatementPlan? customViewPlan,
+        RelationalCompositeFailureContext? failureContext
+    )
+    {
+        if (customViewPlan is null)
+        {
+            return false;
+        }
+
+        if (
+            string.Equals(
+                failureContext?.Label,
+                RelationalCompositeStoredAuthorization.CustomViewLabel,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return true;
+        }
+
+        return failureContext?.Stage
+            is RelationalCompositeFailureStage.OpeningReader
+                or RelationalCompositeFailureStage.Unattributable;
+    }
 
     /// <summary>
     /// Whether the <c>dms.Document</c> delete returned a row, which is how delete success is decided; the

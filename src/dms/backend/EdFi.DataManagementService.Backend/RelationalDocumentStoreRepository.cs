@@ -435,6 +435,7 @@ public sealed class RelationalDocumentStoreRepository(
                 resource,
                 writePrecondition,
                 proceed.StoredNamespaceAuthorization,
+                proceed.StoredCustomViewAuthorization,
                 proceed.StoredRelationshipAuthorization
             ),
             _ => throw new InvalidOperationException(
@@ -449,6 +450,7 @@ public sealed class RelationalDocumentStoreRepository(
         QualifiedResourceName resource,
         WritePrecondition writePrecondition,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? storedCustomViewAuthorization,
         RelationshipAuthorizationResult storedRelationshipAuthorization
     )
     {
@@ -507,6 +509,7 @@ public sealed class RelationalDocumentStoreRepository(
                             storedRelationshipAuthorization
                         )
                         {
+                            StoredCustomViewAuthorization = storedCustomViewAuthorization,
                             WritePrecondition = writePrecondition,
                             DeferredRelationshipDenial = BuildDeferredDeleteRelationshipDenial(
                                 storedRelationshipAuthorization,
@@ -659,18 +662,24 @@ public sealed class RelationalDocumentStoreRepository(
                 );
 
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
+                // Validating the custom views configured ahead of this terminal needs the eager view
+                // probe, which no single-record path has yet, so the terminal is reported as-is.
                 return AuthorizeDeleteRelationshipPreflight(
                     mappingSet,
                     resource,
+                    null,
                     null,
                     securityConfigurationError.NonNamespaceConfiguredStrategies,
                     relationalDeleteRequest.AuthorizationContext
                 );
 
             case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
+                // Validating the custom views configured ahead of this terminal needs the eager view
+                // probe, which no single-record path has yet, so the terminal is reported as-is.
                 return AuthorizeDeleteRelationshipPreflight(
                     mappingSet,
                     resource,
+                    null,
                     null,
                     stillUnsupported.NonNamespaceConfiguredStrategies,
                     relationalDeleteRequest.AuthorizationContext
@@ -698,12 +707,26 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalAuthorizationContext authorizationContext
     )
     {
+        if (
+            !TryPlanDeleteCustomViewAuthorization(
+                mappingSet,
+                resource,
+                plan.CustomViewStrategies,
+                out var storedCustomViewAuthorization,
+                out var customViewSecurityConfigurationFailure
+            )
+        )
+        {
+            return new DeleteAuthorizationPreflightResult.Stop(customViewSecurityConfigurationFailure!);
+        }
+
         if (plan.NamespaceChecks.Count == 0)
         {
             return AuthorizeDeleteRelationshipPreflight(
                 mappingSet,
                 resource,
                 null,
+                storedCustomViewAuthorization,
                 plan.NonNamespaceConfiguredStrategies,
                 authorizationContext
             );
@@ -736,15 +759,67 @@ public sealed class RelationalDocumentStoreRepository(
             mappingSet,
             resource,
             storedNamespaceAuthorization,
+            storedCustomViewAuthorization,
             plan.NonNamespaceConfiguredStrategies,
             authorizationContext
         );
+    }
+
+    /// <summary>
+    /// Plans the stored custom-view checks, or reports the security-configuration failure that stops the
+    /// delete.
+    /// </summary>
+    private static bool TryPlanDeleteCustomViewAuthorization(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
+        out RelationalCustomViewAuthorization? storedCustomViewAuthorization,
+        out DeleteResult? securityConfigurationFailure
+    )
+    {
+        storedCustomViewAuthorization = null;
+        securityConfigurationFailure = null;
+
+        if (customViewStrategies.Count == 0)
+        {
+            return true;
+        }
+
+        var outcome = SingleRecordCustomViewAuthorizationPlanner.Plan(
+            mappingSet,
+            mappingSet.GetConcreteResourceModelOrThrow(resource),
+            customViewStrategies,
+            NamespaceAuthorizationOperation.Delete
+        );
+
+        if (
+            outcome
+            is SingleRecordCustomViewAuthorizationPlanOutcome.SecurityConfiguration configurationFailure
+        )
+        {
+            securityConfigurationFailure = BuildDeleteAuthorizationSecurityConfigurationFailure(
+                mappingSet,
+                resource,
+                configurationFailure.Failures
+            );
+            return false;
+        }
+
+        var checks = ((SingleRecordCustomViewAuthorizationPlanOutcome.Plan)outcome).Checks;
+
+        if (checks.Count > 0)
+        {
+            storedCustomViewAuthorization = new RelationalCustomViewAuthorization(checks);
+        }
+
+        return true;
     }
 
     private DeleteAuthorizationPreflightResult AuthorizeDeleteRelationshipPreflight(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? storedCustomViewAuthorization,
         IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
         RelationalAuthorizationContext authorizationContext
     )
@@ -779,6 +854,7 @@ public sealed class RelationalDocumentStoreRepository(
 
             _ => new DeleteAuthorizationPreflightResult.Proceed(
                 storedNamespaceAuthorization,
+                storedCustomViewAuthorization,
                 storedRelationshipAuthorization
             ),
         };
@@ -792,6 +868,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         public sealed record Proceed(
             RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization,
+            RelationalCustomViewAuthorization? StoredCustomViewAuthorization,
             RelationshipAuthorizationResult StoredRelationshipAuthorization
         ) : DeleteAuthorizationPreflightResult;
     }
