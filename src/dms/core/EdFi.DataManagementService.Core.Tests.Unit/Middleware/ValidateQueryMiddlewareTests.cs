@@ -53,6 +53,10 @@ public class ValidateQueryMiddlewareTests
     /// on purpose: a null body or a missing key must fail the test rather than short-circuit the
     /// assertion that follows it. The reported messages are asserted separately by each fixture,
     /// which supplies its own faulty parameters.
+    ///
+    /// Every key of the shell is covered, including the two the shell carries empty, so a change
+    /// that stopped emitting one of them cannot pass here and be caught only by the cursor fixtures.
+    /// Every caller builds its request with an empty TraceId, which is what correlationId echoes.
     /// </summary>
     private static void AssertParameterValidationShell(RequestInfo requestInfo)
     {
@@ -62,6 +66,8 @@ public class ValidateQueryMiddlewareTests
         body["title"]!.GetValue<string>().Should().Be("Parameter Validation Failed");
         body["detail"]!.GetValue<string>().Should().Be("Parameters supplied to the request were invalid.");
         body["status"]!.GetValue<int>().Should().Be(400);
+        body["correlationId"]!.GetValue<string>().Should().BeEmpty();
+        body["validationErrors"]!.AsObject().Should().BeEmpty();
     }
 
     [TestFixture]
@@ -135,11 +141,14 @@ public class ValidateQueryMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
+            // Only limit is at fault. A second faulty parameter here would satisfy the shell
+            // assertion below on its own, leaving the limit bound pinned by nothing but the
+            // message check.
             var queryParameters = new Dictionary<string, string>
             {
                 { "offset", "0" },
                 { "limit", "800" },
-                { "totalCount", "100" },
+                { "totalCount", "true" },
             };
 
             FrontendRequest frontendRequest = new(
