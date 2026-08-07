@@ -94,6 +94,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private ISingleRecordRelationshipAuthorizationExecutor _singleRecordRelationshipAuthorizationExecutor =
         null!;
     private INamespaceAuthorizationExecutor _namespaceAuthorizationExecutor = null!;
+    private ICustomViewAuthorizationExecutor _customViewAuthorizationExecutor = null!;
     private RelationalWriteExecutorInput _capturedExecutorRequest = null!;
     private List<RelationalWriteExecutorInput> _capturedExecutorRequests = null!;
 
@@ -120,6 +121,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _singleRecordRelationshipAuthorizationExecutor =
             A.Fake<ISingleRecordRelationshipAuthorizationExecutor>();
         _namespaceAuthorizationExecutor = A.Fake<INamespaceAuthorizationExecutor>();
+        _customViewAuthorizationExecutor = A.Fake<ICustomViewAuthorizationExecutor>();
         _capturedExecutorRequests = [];
         A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
             .Invokes(call =>
@@ -177,6 +179,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -201,6 +204,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -723,6 +727,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -1741,6 +1746,300 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .MustNotHaveHappened();
+    }
+
+    private const string CustomViewStrategyName = "SchoolWithATag";
+
+    private static CustomViewAuthorizationFailure CreateCustomViewFailure(
+        CustomViewAuthorizationFailureKind failureKind = CustomViewAuthorizationFailureKind.NoMatchingRow
+    ) =>
+        new(
+            failureKind,
+            CustomViewAuthorizationFailureValueSource.Stored,
+            EmittedAuth1Index: 0,
+            CustomViewStrategyName,
+            ReadableSecurableElements: ["School"],
+            Hint: "You may need a School with A Tag."
+        );
+
+    private void GivenCustomViewAuthorizationReturns(CustomViewAuthorizationExecutionResult result) =>
+        A.CallTo(() =>
+                _customViewAuthorizationExecutor.ExecuteAsync(
+                    A<CustomViewAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(Task.FromResult(result));
+
+    private void GivenNamespaceAuthorizationReturns(NamespaceAuthorizationExecutionResult result) =>
+        A.CallTo(() =>
+                _namespaceAuthorizationExecutor.ExecuteAsync(
+                    A<NamespaceAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(Task.FromResult(result));
+
+    private void ThenHydrationMustNotHaveHappened() =>
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+
+    [Test]
+    public async Task It_returns_a_custom_view_403_and_skips_hydration_when_the_stored_basis_is_not_in_the_view()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-cccccccccc01"));
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var customViewFailure = CreateCustomViewFailure();
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators: [CreateAuthorizationStrategyEvaluator(CustomViewStrategyName)]
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+        GivenCustomViewAuthorizationReturns(
+            new CustomViewAuthorizationExecutionResult.NotAuthorized(customViewFailure)
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureCustomViewNotAuthorized>()
+            .Subject.CustomViewFailure.Should()
+            .BeSameAs(customViewFailure);
+        // "no reconstitution occurs" is the acceptance criterion, so the denial has to precede hydration.
+        ThenHydrationMustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_a_security_configuration_500_when_a_custom_view_check_reports_an_unmappable_payload()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-cccccccccc02"));
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators: [CreateAuthorizationStrategyEvaluator(CustomViewStrategyName)]
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+        GivenCustomViewAuthorizationReturns(
+            new CustomViewAuthorizationExecutionResult.InvalidAuthorizationFailure("bad payload", null)
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureSecurityConfiguration>()
+            .Subject.Errors.Should()
+            .Equal("bad payload");
+        ThenHydrationMustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_reresolves_the_target_and_returns_not_exists_when_a_custom_view_check_reports_a_stale_target()
+    {
+        // The row was deleted between the unlocked target lookup and the check, so the read boundary
+        // re-resolves rather than reporting a denial for a row that no longer exists.
+        var documentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-cccccccccc03"));
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators: [CreateAuthorizationStrategyEvaluator(CustomViewStrategyName)]
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsNextFromSequence(
+                new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L),
+                new RelationalReadTargetLookupResult.NotFound()
+            );
+        GivenCustomViewAuthorizationReturns(new CustomViewAuthorizationExecutionResult.StaleTarget());
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetFailureNotExists>();
+        ThenHydrationMustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_runs_a_custom_view_configured_before_NamespaceBased_first()
+    {
+        // Both are AND filters executing in CMS-configured order and the first failure is reported, so the
+        // namespace check must not run once the earlier custom view has denied.
+        var documentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-cccccccccc04"));
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ],
+            namespacePrefixes: ["uri://ed-fi.org/"]
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+        GivenCustomViewAuthorizationReturns(
+            new CustomViewAuthorizationExecutionResult.NotAuthorized(CreateCustomViewFailure())
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetFailureCustomViewNotAuthorized>();
+        A.CallTo(() =>
+                _namespaceAuthorizationExecutor.ExecuteAsync(
+                    A<NamespaceAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_runs_NamespaceBased_first_when_it_is_configured_before_the_custom_view()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-cccccccccc05"));
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var namespaceFailure = new NamespaceAuthorizationFailure(
+            NamespaceAuthorizationFailureKind.NamespaceMismatch,
+            NamespaceAuthorizationFailureValueSource.Stored,
+            EmittedAuth1Index: 0,
+            AuthorizationStrategyNameConstants.NamespaceBased,
+            ConfiguredNamespacePrefixes: ["uri://ed-fi.org/"]
+        );
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+            ],
+            namespacePrefixes: ["uri://ed-fi.org/"]
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+        GivenNamespaceAuthorizationReturns(
+            new NamespaceAuthorizationExecutionResult.NotAuthorized(namespaceFailure)
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetFailureNamespaceNotAuthorized>();
+        A.CallTo(() =>
+                _customViewAuthorizationExecutor.ExecuteAsync(
+                    A<CustomViewAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_passes_the_resolved_target_document_id_and_a_contiguously_indexed_check_list_to_the_custom_view_executor()
+    {
+        // The cv1 payload reports only an index and the failure mapper resolves it positionally, so the
+        // executor must receive a list whose indexes match their positions.
+        var documentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-cccccccccc06"));
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators: [CreateAuthorizationStrategyEvaluator(CustomViewStrategyName)]
+        );
+        CustomViewAuthorizationExecutionRequest? observedRequest = null;
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+        A.CallTo(() =>
+                _customViewAuthorizationExecutor.ExecuteAsync(
+                    A<CustomViewAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => observedRequest = call.GetArgument<CustomViewAuthorizationExecutionRequest>(0))
+            .Returns(
+                Task.FromResult<CustomViewAuthorizationExecutionResult>(
+                    new CustomViewAuthorizationExecutionResult.NotAuthorized(CreateCustomViewFailure())
+                )
+            );
+
+        await _sut.GetDocumentById(getRequest);
+
+        observedRequest.Should().NotBeNull();
+        observedRequest!.DocumentId.Should().Be(345L);
+        observedRequest
+            .Checks.Select(check => check.Index)
+            .Should()
+            .Equal(Enumerable.Range(0, observedRequest.Checks.Count));
+        observedRequest
+            .Checks.Should()
+            .AllSatisfy(check =>
+                check.ValueSource.Should().Be(CustomViewAuthorizationCheckValueSource.Stored)
+            );
     }
 
     [Test]
@@ -3916,6 +4215,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -4035,6 +4335,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -4108,6 +4409,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -9612,6 +9914,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -9668,6 +9971,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -9709,6 +10013,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -9765,6 +10070,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -9820,6 +10126,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -9885,6 +10192,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -9985,6 +10293,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -10047,6 +10356,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -10086,6 +10396,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );

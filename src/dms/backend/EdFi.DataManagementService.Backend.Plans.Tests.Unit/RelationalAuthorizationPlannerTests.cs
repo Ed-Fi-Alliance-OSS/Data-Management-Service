@@ -81,6 +81,29 @@ public class Given_RelationalAuthorizationPlanner
         );
     }
 
+    /// <summary>
+    /// A descriptor-storage resource. The descriptor GET-by-id path is wired independently of the
+    /// regular-resource one, so the planner distinguishes them by storage kind.
+    /// </summary>
+    private static ConcreteResourceModel DescriptorResource()
+    {
+        var root = RootTable("SchoolTypeDescriptor", []);
+        var model = new RelationalResourceModel(
+            new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"),
+            _edfiSchema,
+            ResourceStorageKind.SharedDescriptorTable,
+            root,
+            [root],
+            [],
+            []
+        );
+        return new ConcreteResourceModel(
+            ResourceKey(4, "SchoolTypeDescriptor"),
+            ResourceStorageKind.SharedDescriptorTable,
+            model
+        );
+    }
+
     private static MappingSet EmptyMappingSet(params ResourceKeyEntry[] resourceKeysInIdOrder) =>
         new(
             Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
@@ -358,17 +381,17 @@ public class Given_RelationalAuthorizationPlanner
         outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
     }
 
-    [TestCase(NamespaceAuthorizationOperation.ReadSingle, false)]
-    [TestCase(NamespaceAuthorizationOperation.ReadSingle, true)]
     [TestCase(NamespaceAuthorizationOperation.Update, false)]
     [TestCase(NamespaceAuthorizationOperation.Update, true)]
     [TestCase(NamespaceAuthorizationOperation.Delete, false)]
     [TestCase(NamespaceAuthorizationOperation.Delete, true)]
-    public void It_returns_still_unsupported_for_custom_views_on_non_ReadMany_operations(
+    public void It_returns_still_unsupported_for_custom_views_on_operations_that_do_not_execute_them(
         NamespaceAuthorizationOperation operation,
         bool hasEducationOrganizationClaims
     )
     {
+        // Dropping the checks and serving the request would ignore a configured restriction, so a caller
+        // that cannot execute them fails closed instead.
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(ResourceKey(2, "PlainResource"), ResourceKey(3, "Student")),
             ResourceWithoutSecurableElements(),
@@ -380,12 +403,69 @@ public class Given_RelationalAuthorizationPlanner
         outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
     }
 
-    [Test]
-    public void It_returns_no_prefixes_for_non_ReadMany_ahead_of_an_unsupported_custom_view()
+    [TestCase(false)]
+    [TestCase(true)]
+    public void It_plans_custom_views_for_a_regular_resource_read_single(bool hasEducationOrganizationClaims)
     {
-        // Custom views are implemented for ReadMany only, so for other operations they fail closed
-        // with 501 — but like OwnershipBased they rank after the namespace terminals, so the
-        // no-prefixes 403 is still the reported outcome.
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(2, "PlainResource"), ResourceKey(3, "Student")),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.ReadSingle,
+            [Strategy("StudentWithCTECourseEnrollments", 0)],
+            new RelationalAuthorizationContext(hasEducationOrganizationClaims ? [255901L] : [])
+        );
+
+        var plan = outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.Plan>().Subject;
+        plan.CustomViewStrategies.Should().ContainSingle();
+        plan.CustomViewStrategies[0]
+            .ConfiguredStrategy.StrategyName.Should()
+            .Be("StudentWithCTECourseEnrollments");
+        // Excluded from the relationship bucket so the relationship planner never re-classifies it and
+        // downgrades it back to unsupported.
+        plan.NonNamespaceConfiguredStrategies.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_returns_still_unsupported_for_custom_views_on_a_descriptor_read_single()
+    {
+        // The descriptor GET-by-id path does not execute custom-view checks yet, so it must keep failing
+        // closed even though the regular-resource path for the same operation now enforces them.
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor"), ResourceKey(3, "Student")),
+            DescriptorResource(),
+            NamespaceAuthorizationOperation.ReadSingle,
+            [Strategy("StudentWithCTECourseEnrollments", 0)],
+            TwoPrefixContext()
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
+    }
+
+    [Test]
+    public void It_plans_custom_views_for_a_descriptor_read_many()
+    {
+        // Descriptor GET-many was wired with the rest of GET-many, so storage kind only gates ReadSingle.
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor"), ResourceKey(3, "Student")),
+            DescriptorResource(),
+            NamespaceAuthorizationOperation.ReadMany,
+            [Strategy("StudentWithCTECourseEnrollments", 0)],
+            TwoPrefixContext()
+        );
+
+        outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.Plan>()
+            .Subject.CustomViewStrategies.Should()
+            .ContainSingle();
+    }
+
+    [Test]
+    public void It_returns_no_prefixes_for_read_single_ahead_of_a_later_configured_custom_view()
+    {
+        // Namespace terminals rank ahead of custom-view handling, so the no-prefixes 403 is still the
+        // reported outcome. The resolved views are carried on it so a caller can validate the ones
+        // configured before the terminal; here the view is configured after it, so none qualify.
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(ResourceKey(1, "AcademicWeek"), ResourceKey(3, "Student")),
             RootNamespaceResource(),
@@ -402,11 +482,19 @@ public class Given_RelationalAuthorizationPlanner
             .BeOfType<RelationalAuthorizationPlanOutcome.NoPrefixesConfigured>()
             .Subject;
         noPrefixes.StrategyName.Should().Be(AuthorizationStrategyNameConstants.NamespaceBased);
-        noPrefixes.CustomViewStrategies.Should().BeEmpty();
+        noPrefixes.RawConfiguredIndex.Should().Be(0);
+        noPrefixes.CustomViewStrategies.Should().ContainSingle();
+        noPrefixes
+            .CustomViewStrategies.Should()
+            .AllSatisfy(strategy =>
+                strategy
+                    .ConfiguredStrategy.RawConfiguredIndex.Should()
+                    .BeGreaterThan(noPrefixes.RawConfiguredIndex)
+            );
     }
 
     [Test]
-    public void It_returns_no_usable_root_column_for_non_ReadMany_ahead_of_an_unsupported_custom_view()
+    public void It_returns_no_usable_root_column_for_read_single_ahead_of_a_later_configured_custom_view()
     {
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(ResourceKey(2, "PlainResource"), ResourceKey(3, "Student")),
@@ -423,7 +511,8 @@ public class Given_RelationalAuthorizationPlanner
             .Should()
             .BeOfType<RelationalAuthorizationPlanOutcome.NoUsableRootColumn>()
             .Subject;
-        noUsableRootColumn.CustomViewStrategies.Should().BeEmpty();
+        noUsableRootColumn.RawConfiguredIndex.Should().Be(0);
+        noUsableRootColumn.CustomViewStrategies.Should().ContainSingle();
     }
 
     [Test]

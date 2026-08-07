@@ -932,6 +932,20 @@ public sealed record RelationalWriteNamespaceAuthorization(
 );
 
 /// <summary>
+/// The planned custom view-based checks for one value source of one operation.
+/// </summary>
+/// <remarks>
+/// Stored and proposed checks travel as separate instances. A compiled batch's row guard applies to every
+/// statement in it, so a create path needs its stored checks vacuous while its proposed checks still run —
+/// which is only expressible as separate batches. Splitting also means each instance's indexes must be
+/// contiguous from zero, since the compiler enforces index-equals-position and the failure mapper resolves the
+/// <c>cv1</c> payload positionally against the very list that produced the batch.
+/// </remarks>
+public sealed record RelationalCustomViewAuthorization(
+    IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> Checks
+);
+
+/// <summary>
 /// Backend-local classification of one executor attempt.
 /// </summary>
 public abstract record RelationalWriteExecutorAttemptOutcome
