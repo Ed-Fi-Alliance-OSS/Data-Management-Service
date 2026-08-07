@@ -35,7 +35,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     IDocumentCacheWriterTelemetry? documentCacheWriterTelemetry = null,
     IDataStoreSelection? dataStoreSelection = null,
     IRelationalWriteFirstPhase? writeFirstPhase = null,
-    IRelationalWriteSecondCommandPhase? secondCommandPhase = null
+    IRelationalWriteSecondCommandPhase? secondCommandPhase = null,
+    IRelationalCommandExecutor? customViewValidationCommandExecutor = null
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -86,7 +87,9 @@ internal sealed class DefaultRelationalWriteExecutor(
         ?? new CompositeRelationalWriteSecondCommand(
             relationalParameterConfigurator,
             relationshipAuthorizationProviderFailureExtractor,
-            logger
+            logger,
+            commandBudget: null,
+            customViewValidationCommandExecutor
         );
 
     private readonly RelationalWriteDatabaseFailureResultMapper _databaseFailureResultMapper = new(

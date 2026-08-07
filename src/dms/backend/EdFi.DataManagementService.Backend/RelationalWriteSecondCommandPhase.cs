@@ -99,7 +99,8 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
     ILogger? logger = null,
-    RelationalCommandBudget? commandBudget = null
+    RelationalCommandBudget? commandBudget = null,
+    IRelationalCommandExecutor? customViewValidationCommandExecutor = null
 ) : IRelationalWriteSecondCommandPhase
 {
     private const string ProposedNamespaceAuthorizationLabel = "proposed-namespace-authorization";
@@ -140,6 +141,14 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     private readonly ILogger _logger = logger ?? NullLogger.Instance;
 
     private readonly RelationalCommandBudget? _commandBudget = commandBudget;
+
+    /// <summary>
+    /// Executes the custom-view validation probe. Every implementation opens its own connection per command,
+    /// which is what makes it usable after a provider failure has already aborted the write session's
+    /// transaction. Null leaves the failure unattributed rather than probing on the aborted session.
+    /// </summary>
+    private readonly IRelationalCommandExecutor? _customViewValidationCommandExecutor =
+        customViewValidationCommandExecutor;
 
     public async Task<RelationalWriteSecondCommandResolution> ResolveAsync(
         RelationalWriteExecutorRequest request,
@@ -274,7 +283,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 request,
                 builder,
                 namespacePlan,
-                customViewPlannedChecks: null,
+                customViewRuns: null,
                 runtimeCheck: null,
                 writeSession: writeSession,
                 cancellationToken: cancellationToken
@@ -353,13 +362,15 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             customViewPlan.PlannedChecks,
             runValues
         );
-        TryAppendCustomView(builder, request, runtimeCheck, label);
+        var emittedChecks = TryAppendCustomView(builder, request, runtimeCheck, label);
 
         var run = await RunAsync(
                 request,
                 builder,
                 namespacePlan: null,
-                customViewPlannedChecks: customViewPlan.PlannedChecks,
+                customViewRuns: emittedChecks is null
+                    ? null
+                    : new EmittedCustomViewRuns(customViewPlan.PlannedChecks, emittedChecks),
                 runtimeCheck: null,
                 writeSession: writeSession,
                 cancellationToken: cancellationToken
@@ -487,13 +498,15 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             && CanCoBatchRelationshipInto(builder, runtimeCheck!, relationshipCommand)
             && TryAppendRelationship(builder, relationshipCommand);
 
-        if (namespaceEmitted || relationshipEmitted || customViewBefore || customViewAfter)
+        var customViewRuns = ComposeEmittedCustomViewRuns(customViewPlan, customViewBefore, customViewAfter);
+
+        if (namespaceEmitted || relationshipEmitted || customViewRuns is not null)
         {
             var run = await RunAsync(
                     request,
                     builder,
                     namespaceEmitted ? namespacePlan : null,
-                    customViewBefore || customViewAfter ? customViewPlan!.PlannedChecks : null,
+                    customViewRuns,
                     relationshipEmitted ? runtimeCheck : null,
                     writeSession,
                     cancellationToken
@@ -633,7 +646,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                     request,
                     builder,
                     context.EmittedNamespacePlan,
-                    context.EmittedCustomViewPlannedChecks,
+                    context.EmittedCustomViewRuns,
                     context.EmittedRuntimeCheck,
                     writeSession,
                     cancellationToken
@@ -668,6 +681,19 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     private RelationalCompositeCommandBuilder CreateBuilder(RelationalWriteExecutorRequest request) =>
         new(IRelationalCompositeCommandDialect.Create(request.MappingSet.Key.Dialect), _commandBudget);
 
+    /// <param name="PlannedChecks">
+    /// The request's full planned custom-view list. Mapping resolves a <c>cv1</c> payload against this, since
+    /// the payload carries only an index and several runs can share one command.
+    /// </param>
+    /// <param name="EmittedChecks">
+    /// Exactly the checks whose statements this command carries. Validation probes these views and no others,
+    /// so a failure is never attributed to a view the command never touched.
+    /// </param>
+    private sealed record EmittedCustomViewRuns(
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> PlannedChecks,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> EmittedChecks
+    );
+
     private sealed record CommandRun(
         IReadOnlyList<RelationalCompositeStatementOutcome> Outcomes,
         RelationalWriteExecutorResult? Denial
@@ -681,7 +707,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         RelationalWriteExecutorRequest request,
         RelationalCompositeCommandBuilder builder,
         NamespaceStatementPlan? namespacePlan,
-        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? customViewPlannedChecks,
+        EmittedCustomViewRuns? customViewRuns,
         ProposedRelationshipAuthorizationRuntimeCheck? runtimeCheck,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
@@ -700,13 +726,15 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         {
             return new CommandRun(
                 [],
-                MapAuthorizationFailure(
-                    request,
-                    namespacePlan,
-                    customViewPlannedChecks,
-                    runtimeCheck,
-                    exception
-                )
+                await MapAuthorizationFailureAsync(
+                        request,
+                        namespacePlan,
+                        customViewRuns,
+                        runtimeCheck,
+                        exception,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false)
             );
         }
     }
@@ -823,10 +851,19 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         public ProposedRelationshipAuthorizationRuntimeCheck? EmittedRuntimeCheck { get; set; }
 
         /// <summary>
-        /// The request's full planned custom-view list, set once either run is emitted into this command. A
-        /// <c>cv1</c> payload is resolved against the whole list, so which run emitted it does not matter.
+        /// The custom-view runs emitted into this command. Both runs can land in one command, so a run's
+        /// checks are added to whatever is already recorded rather than replacing it.
         /// </summary>
-        public IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? EmittedCustomViewPlannedChecks { get; set; }
+        public EmittedCustomViewRuns? EmittedCustomViewRuns { get; private set; }
+
+        public void RecordEmittedCustomViewRun(
+            IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> plannedChecks,
+            IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> emittedChecks
+        ) =>
+            EmittedCustomViewRuns = new EmittedCustomViewRuns(
+                plannedChecks,
+                [.. EmittedCustomViewRuns?.EmittedChecks ?? [], .. emittedChecks]
+            );
     }
 
     /// <summary>
@@ -1338,13 +1375,15 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         }
         catch (DbException exception)
         {
-            return MapAuthorizationFailure(
-                request,
-                namespacePlan: null,
-                customViewPlannedChecks: null,
-                runtimeCheck,
-                exception
-            );
+            return await MapAuthorizationFailureAsync(
+                    request,
+                    namespacePlan: null,
+                    customViewRuns: null,
+                    runtimeCheck,
+                    exception,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
     }
 
@@ -1564,6 +1603,49 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             (right.ConfiguredStrategy.RawConfiguredIndex, right.Index)
         ) < 0;
 
+    /// <summary>
+    /// Probes the views this command's custom-view statements referenced, and throws
+    /// <see cref="CustomViewAuthorizationValidationException"/> when one is missing or does not meet the
+    /// <c>DocumentId</c> contract. <c>auth.{StrategyName}</c> is the only object a request touches that lives
+    /// outside the generated schema, so it can be dropped, replaced, or revoked between requests, and auth.md
+    /// requires that to surface as the <c>urn:ed-fi:api:system</c> 500 rather than as an unhandled provider
+    /// error.
+    /// </summary>
+    /// <remarks>
+    /// The probe runs on a command executor that opens its own connection, never on the write session: the
+    /// failure being classified has already aborted that session's transaction, so a statement issued there
+    /// could only fail for that reason and would prove nothing about the view.
+    /// </remarks>
+    private async Task ThrowIfEmittedCustomViewsAreInvalidAsync(
+        RelationalWriteExecutorRequest request,
+        EmittedCustomViewRuns customViewRuns,
+        DbException exception,
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            _customViewValidationCommandExecutor is null
+            || customViewRuns.EmittedChecks.Count == 0
+            || !CustomViewAuthorizationProviderFailureMapper.IsUnrecognizedProviderFailure(
+                request.MappingSet.Key.Dialect,
+                exception,
+                _providerFailureExtractor
+            )
+        )
+        {
+            return;
+        }
+
+        await CustomViewAuthorizationValidator
+            .ValidateSingleRecordAsync(
+                _customViewValidationCommandExecutor,
+                request.MappingSet.Key.Dialect,
+                customViewRuns.EmittedChecks,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
     private static RelationalWriteExecutorResult InvalidCustomViewPlan(
         RelationalWriteExecutorRequest request,
         IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> plannedChecks,
@@ -1578,7 +1660,11 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     /// <summary>
     /// Appends one proposed custom-view run and reports whether it emitted a statement.
     /// </summary>
-    private static bool TryAppendCustomViewRun(
+    /// <summary>
+    /// Appends one proposed custom-view run, answering with the checks it emitted or <see langword="null"/>
+    /// when it emitted none.
+    /// </summary>
+    private static IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? TryAppendCustomViewRun(
         RelationalCompositeCommandBuilder builder,
         RelationalWriteExecutorRequest request,
         CustomViewStatementPlan? customViewPlan,
@@ -1588,7 +1674,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     {
         if (customViewPlan is null || runValues is null || runValues.Count == 0)
         {
-            return false;
+            return null;
         }
 
         return TryAppendCustomView(
@@ -1599,7 +1685,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         );
     }
 
-    private static bool TryAppendCustomView(
+    private static IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? TryAppendCustomView(
         RelationalCompositeCommandBuilder builder,
         RelationalWriteExecutorRequest request,
         ProposedCustomViewAuthorizationRuntimeCheck runtimeCheck,
@@ -1611,12 +1697,12 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             is not { } statement
         )
         {
-            return false;
+            return null;
         }
 
         AppendCustomViewStatement(builder, statement, label);
 
-        return true;
+        return runtimeCheck.Checks;
     }
 
     private static void AppendCustomViewStatement(
@@ -1641,6 +1727,20 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 RelationalCompositeResultSetSpan.ConsumeAsync(reader, resultSetCount, readCancellation),
             resultSetCount
         );
+    }
+
+    private static EmittedCustomViewRuns? ComposeEmittedCustomViewRuns(
+        CustomViewStatementPlan? customViewPlan,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? before,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? after
+    )
+    {
+        if (customViewPlan is null || (before is null && after is null))
+        {
+            return null;
+        }
+
+        return new EmittedCustomViewRuns(customViewPlan.PlannedChecks, [.. before ?? [], .. after ?? []]);
     }
 
     private static void AddCustomViewUnit(
@@ -1680,7 +1780,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 (context, _, _) =>
                 {
                     AppendCustomViewStatement(context.Builder, statement, label);
-                    context.EmittedCustomViewPlannedChecks = customViewPlan.PlannedChecks;
+                    context.RecordEmittedCustomViewRun(customViewPlan.PlannedChecks, runtimeCheck.Checks);
                 }
             )
         );
@@ -1899,12 +1999,13 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     /// A failure that is no authorization denial at all propagates to the executor's database failure
     /// handling unchanged.
     /// </summary>
-    private RelationalWriteExecutorResult MapAuthorizationFailure(
+    private async Task<RelationalWriteExecutorResult> MapAuthorizationFailureAsync(
         RelationalWriteExecutorRequest request,
         NamespaceStatementPlan? namespacePlan,
-        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? customViewPlannedChecks,
+        EmittedCustomViewRuns? customViewRuns,
         ProposedRelationshipAuthorizationRuntimeCheck? runtimeCheck,
-        DbException exception
+        DbException exception,
+        CancellationToken cancellationToken
     )
     {
         var dialect = request.MappingSet.Key.Dialect;
@@ -1912,14 +2013,14 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         // Custom views are dispatched first because only they claim a cv1 payload; a payload from another
         // family reaches its own mapper untouched. Mapping always uses the request's full planned list, so a
         // payload from either emitted run resolves to the check the planner assigned that index to.
-        if (customViewPlannedChecks is not null)
+        if (customViewRuns is not null)
         {
             if (
                 CustomViewAuthorizationProviderFailureMapper.TryMapCustomViewAuthorizationFailure(
                     dialect,
                     exception,
                     _providerFailureExtractor,
-                    customViewPlannedChecks,
+                    customViewRuns.PlannedChecks,
                     out var customViewFailure
                 )
             )
@@ -1935,7 +2036,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                     dialect,
                     exception,
                     _providerFailureExtractor,
-                    customViewPlannedChecks
+                    customViewRuns.PlannedChecks
                 )
             )
             {
@@ -1943,17 +2044,27 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                     request.OperationKind,
                     [CustomViewAuthorizationSecurityConfigurationMessages.InvalidAuthorizationMetadata],
                     AuthorizationSecurityConfigurationDiagnostics.ForCustomViewAuthorizationAuth1(
-                        customViewPlannedChecks
+                        customViewRuns.PlannedChecks
                     )
                 );
             }
 
             // Proposed-value checks bind no stored DocumentId, so the stale stored-target kind cannot be
-            // raised here. A failure carrying no custom-view payload is deliberately NOT attributed to the
-            // view either: this command can also carry the document insert and the resource tables'
-            // statements, and PostgreSQL reports a batch-prepare failure without a usable statement
-            // position, so attributing by position would relabel a constraint violation as a security
-            // configuration error. Such failures fall through to the executor's existing handling.
+            // raised here.
+            //
+            // A failure carrying no authorization payload cannot be attributed by position: this command can
+            // also carry the document insert and the resource tables' statements, and PostgreSQL reports a
+            // batch-prepare failure without a usable statement position, so a constraint violation would be
+            // relabelled as a security configuration error. Instead the emitted views are probed directly.
+            // Only a view that actually fails its contract produces the documented 500; anything else leaves
+            // the original failure to the executor's existing handling.
+            await ThrowIfEmittedCustomViewsAreInvalidAsync(
+                    request,
+                    customViewRuns,
+                    exception,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         if (namespacePlan is not null)

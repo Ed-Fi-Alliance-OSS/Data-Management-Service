@@ -7,6 +7,7 @@ using System.Data;
 using System.Data.Common;
 using System.Linq;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Composite;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -415,6 +416,193 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
         session.Commands.Should().BeEmpty();
     }
 
+    [Test]
+    public async Task It_reports_an_invalid_view_behind_a_failure_that_carries_no_authorization_payload()
+    {
+        // The command aborted with something that is not an AUTH1 payload. Position cannot say whether the
+        // custom-view statement caused it, so the emitted views are probed instead; this one is broken, so the
+        // documented configuration 500 is what the caller must see.
+        var request = CreateRequest(CreateProposedOnlyPlan(("SchoolWithATag", 0)));
+        var session = new ScriptedWriteSession(new FakeDbException("relation does not exist", "42P01"));
+        var validationExecutor = new StubValidationCommandExecutor(
+            new FakeDbException("missing authorization view", "42P01")
+        );
+
+        var act = async () =>
+            await CreateSut(
+                    new StubProviderFailureExtractor("42P01", "relation does not exist"),
+                    validationExecutor
+                )
+                .ResolveAsync(
+                    request,
+                    CreateMergeResult(request),
+                    RelationalWriteSecondCommandMode.AuthorizationOnly,
+                    session
+                );
+
+        await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+        validationExecutor.ExecutedCommands.Should().ContainSingle();
+        validationExecutor.ExecutedCommands[0].CommandText.Should().Contain("SchoolWithATag");
+    }
+
+    [Test]
+    public async Task It_probes_only_the_views_the_failing_command_actually_emitted()
+    {
+        // The self-basis view is configured after the early one and carries no statement, so this command
+        // never touched it. Probing it anyway could blame an unrelated view for the failure.
+        var request = CreateRequest(
+            CreateSelfBasisPlan(("SchoolWithASelfTag", 2), ("SchoolWithAnEarlyTag", 0)),
+            resolveToCreate: true
+        );
+        var session = new ScriptedWriteSession(new FakeDbException("relation does not exist", "42P01"));
+        var validationExecutor = new StubValidationCommandExecutor();
+
+        var act = async () =>
+            await CreateSut(
+                    new StubProviderFailureExtractor("42P01", "relation does not exist"),
+                    validationExecutor
+                )
+                .ResolveAsync(
+                    request,
+                    CreateMergeResult(request),
+                    RelationalWriteSecondCommandMode.AuthorizationOnly,
+                    session
+                );
+
+        await act.Should().ThrowAsync<DbException>();
+        var probed = validationExecutor.ExecutedCommands.Should().ContainSingle().Subject.CommandText;
+        probed.Should().Contain("SchoolWithAnEarlyTag").And.NotContain("SchoolWithASelfTag");
+    }
+
+    [Test]
+    public async Task It_leaves_a_non_authorization_failure_alone_when_the_emitted_views_are_valid()
+    {
+        // A constraint violation must not be relabelled as a security configuration error just because a
+        // custom-view statement shared the command.
+        var request = CreateRequest(CreateProposedOnlyPlan(("SchoolWithATag", 0)));
+        var originalFailure = new FakeDbException("duplicate key value", "23505");
+        var session = new ScriptedWriteSession(originalFailure);
+        var validationExecutor = new StubValidationCommandExecutor();
+
+        var act = async () =>
+            await CreateSut(
+                    new StubProviderFailureExtractor("23505", "duplicate key value"),
+                    validationExecutor
+                )
+                .ResolveAsync(
+                    request,
+                    CreateMergeResult(request),
+                    RelationalWriteSecondCommandMode.AuthorizationOnly,
+                    session
+                );
+
+        (await act.Should().ThrowAsync<DbException>()).Which.Should().BeSameAs(originalFailure);
+        validationExecutor.ExecutedCommands.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_does_not_probe_the_views_for_a_recognized_custom_view_denial()
+    {
+        // A cv1 payload already names the failing check, so probing would be a wasted round trip.
+        var request = CreateRequest(CreateProposedOnlyPlan(("SchoolWithATag", 0)));
+        var session = new ScriptedWriteSession(CreateAuth1Failure());
+        var validationExecutor = new StubValidationCommandExecutor();
+
+        await CreateSut(CustomViewFailureExtractor(0), validationExecutor)
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
+
+        validationExecutor.ExecutedCommands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_does_not_probe_the_views_for_another_families_authorization_payload()
+    {
+        // A namespace denial shares the command with a custom-view statement. It is a recognized authorization
+        // answer, so it belongs to the namespace mapper: probing the views here would be a wasted round trip,
+        // and a view that happened to be broken would replace the denial the caller must see with a 500.
+        var request = CreateRequest(CreateProposedOnlyPlan(("SchoolWithATag", 0)), withNamespace: true);
+        var session = new ScriptedWriteSession(CreateAuth1Failure());
+        var validationExecutor = new StubValidationCommandExecutor(
+            new FakeDbException("missing authorization view", "42P01")
+        );
+
+        var resolution = await CreateSut(NamespaceFailureExtractor(), validationExecutor)
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureNamespaceNotAuthorized>();
+        validationExecutor.ExecutedCommands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_emits_the_proposed_custom_view_check_before_the_document_and_resource_dml()
+    {
+        var request = CreateRequest(CreateProposedOnlyPlan(("SchoolWithATag", 0)));
+        var session = new ScriptedWriteSession(CreateDmlReader(Authorized(), Sentinel(1), Scalar(77L)));
+
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateChangedMergeResult(request),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        resolution.ImmediateResult.Should().BeNull();
+        var commandText = session.Commands.Should().ContainSingle().Subject.CommandText;
+        var checkPosition = commandText.IndexOf("SchoolWithATag", StringComparison.Ordinal);
+        var updatePosition = commandText.IndexOf(
+            "update edfi.\"School\"",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        checkPosition.Should().BePositive();
+        updatePosition.Should().BePositive();
+        checkPosition.Should().BeLessThan(updatePosition);
+    }
+
+    [Test]
+    public async Task It_issues_no_dml_when_a_custom_view_run_placed_in_an_earlier_command_denies()
+    {
+        // A budget of three fits the root row's own parameters but not the check alongside them, so the check
+        // becomes its own earlier command. Its denial has to stop the write before any row is touched.
+        var request = CreateRequest(CreateProposedOnlyPlan(("SchoolWithATag", 0)));
+        var session = new ScriptedWriteSession(CreateAuth1Failure());
+
+        var resolution = await CreateSut(
+                CustomViewFailureExtractor(0),
+                commandBudget: new RelationalCommandBudget(3, 1000)
+            )
+            .ResolveAsync(
+                request,
+                CreateChangedMergeResult(request),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        FailureOf(resolution).StrategyName.Should().Be("SchoolWithATag");
+        resolution.PersistResult.Should().BeNull();
+        session.Commands.Should().ContainSingle();
+        session
+            .Commands[0]
+            .CommandText.Should()
+            .NotContainEquivalentOf("update edfi.\"School\"")
+            .And.NotContainEquivalentOf("insert into edfi.\"School\"");
+    }
+
     private static CustomViewAuthorizationFailure FailureOf(
         RelationalWriteSecondCommandResolution resolution
     ) =>
@@ -540,8 +728,16 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
         ]);
 
     private static CompositeRelationalWriteSecondCommand CreateSut(
-        IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null
-    ) => new(relationalParameterConfigurator: null, providerFailureExtractor);
+        IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
+        IRelationalCommandExecutor? customViewValidationCommandExecutor = null,
+        RelationalCommandBudget? commandBudget = null
+    ) =>
+        new(
+            relationalParameterConfigurator: null,
+            providerFailureExtractor,
+            commandBudget: commandBudget,
+            customViewValidationCommandExecutor: customViewValidationCommandExecutor
+        );
 
     private static StubProviderFailureExtractor CustomViewFailureExtractor(
         int index,
@@ -552,6 +748,17 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
             CustomViewAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
             CustomViewAuthorizationAuth1FailurePayloadCodec.Encode(
                 new CustomViewAuthorizationAuth1FailurePayload(index, failureKind)
+            )
+        );
+
+    private static StubProviderFailureExtractor NamespaceFailureExtractor() =>
+        new(
+            NamespaceAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+            NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+                new NamespaceAuthorizationAuth1FailurePayload(
+                    0,
+                    NamespaceAuthorizationAuth1FailureKind.ProposedNamespaceMissing
+                )
             )
         );
 
@@ -633,6 +840,64 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
         );
 
     private static FakeDbException CreateAuth1Failure() => new("custom view denial", "P0001");
+
+    /// <summary>A root row whose merged Name differs from the stored one, so DML mode has a row to write.</summary>
+    private static RelationalWriteMergeResult CreateChangedMergeResult(
+        RelationalWriteExecutorRequest request
+    ) =>
+        Given_Default_Relational_Write_Executor.CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "uri://ed-fi.org/Survey",
+            mergedName: "uri://ed-fi.org/Renamed"
+        );
+
+    private static DbDataReader CreateDmlReader(params IReadOnlyList<object?[]>[] resultSets) =>
+        new ScriptedDbDataReader(
+            resultSets,
+            [.. resultSets.Select(static _ => new[] { "AuthorizationResult" })]
+        );
+
+    private static IReadOnlyList<object?[]> Authorized() =>
+        [
+            [1],
+        ];
+
+    private static IReadOnlyList<object?[]> Sentinel(int ordinal) =>
+        [
+            [ordinal],
+        ];
+
+    private static IReadOnlyList<object?[]> Scalar(object? value) =>
+        [
+            [value],
+        ];
+
+    /// <summary>
+    /// Stands in for the fresh-connection executor the validation probe uses, recording what it was asked to
+    /// run and optionally failing the way a missing view would.
+    /// </summary>
+    private sealed class StubValidationCommandExecutor(DbException? failure = null)
+        : IRelationalCommandExecutor
+    {
+        public SqlDialect Dialect => SqlDialect.Pgsql;
+
+        public List<RelationalCommand> ExecutedCommands { get; } = [];
+
+        public Task<TResult> ExecuteReaderAsync<TResult>(
+            RelationalCommand command,
+            Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ExecutedCommands.Add(command);
+
+            return failure is null
+                ? Task.FromResult(default(TResult)!)
+                : Task.FromException<TResult>(failure);
+        }
+    }
 
     private static DbDataReader CreateReader(params DataTable[] tables) => new DataTableReader(tables);
 
