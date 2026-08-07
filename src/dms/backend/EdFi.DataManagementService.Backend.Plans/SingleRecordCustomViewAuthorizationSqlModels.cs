@@ -11,8 +11,9 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// Input for compiling the co-batched single-record custom view-based authorization SQL.
 /// </summary>
 /// <param name="Checks">
-/// The planned checks in emission order. Each check's <c>Index</c> must equal its position, because the
-/// <c>cv1</c> AUTH1 payload reports that index and the failure mapper resolves it positionally.
+/// The checks this batch emits, in emission order. Their <c>Index</c> values must run contiguously, but need
+/// not start at zero: one request can emit several batches, and an index has to identify a check uniquely
+/// across all of them because batches sharing a command also share one provider exception.
 /// </param>
 /// <param name="DocumentIdParameterName">
 /// Bare parameter name carrying the stored row's <c>DocumentId</c>. Bound only when a stored check is present.

@@ -578,16 +578,22 @@ public class Given_SingleRecordCustomViewAuthorizationSqlCompiler
     }
 
     [Test]
-    public void It_should_reject_a_check_whose_index_does_not_match_its_emission_position()
+    public void It_should_reject_a_gap_in_the_check_indexes()
     {
-        // The cv1 payload reports only an index and the failure mapper resolves it positionally, so a
-        // mismatch would report a denial as some other check's category.
+        // The cv1 payload reports only an index and the failure mapper resolves it positionally against the
+        // request's planned list, so a gap would report a denial as some other check's category.
         var act = () =>
             Compile(
                 SqlDialect.Pgsql,
                 [
                     Check(
-                        3,
+                        0,
+                        CustomViewAuthorizationCheckValueSource.Stored,
+                        DirectPath(),
+                        StoredTarget("CourseTranscript")
+                    ),
+                    Check(
+                        2,
                         CustomViewAuthorizationCheckValueSource.Stored,
                         DirectPath(),
                         StoredTarget("CourseTranscript")
@@ -595,7 +601,56 @@ public class Given_SingleRecordCustomViewAuthorizationSqlCompiler
                 ]
             );
 
-        act.Should().Throw<ArgumentException>().WithMessage("*indexes must match emission position*");
+        act.Should().Throw<ArgumentException>().WithMessage("*must run contiguously from 0*");
+    }
+
+    [Test]
+    public void It_should_accept_a_batch_whose_indexes_start_above_zero()
+    {
+        // One request can emit several batches — views configured before and after a namespace check, or a
+        // stored batch and a proposed one. Batches sharing a command share one provider exception, so their
+        // indexes stay unique across the request instead of restarting at zero per batch.
+        var plan = Compile(
+            SqlDialect.Pgsql,
+            [
+                Check(
+                    2,
+                    CustomViewAuthorizationCheckValueSource.Stored,
+                    DirectPath(),
+                    StoredTarget("CourseTranscript")
+                ),
+                Check(
+                    3,
+                    CustomViewAuthorizationCheckValueSource.Stored,
+                    TransitivePath(),
+                    StoredTarget("CourseTranscript"),
+                    "StudentWithAnIep"
+                ),
+            ]
+        );
+
+        plan.EmittedCheckIndexesInOrder.Should().Equal(2, 3);
+        plan.AuthorizationSql.Should().Contain("cv1|2|n").And.Contain("cv1|3|n");
+        plan.AuthorizationSql.Should().NotContain("cv1|0").And.NotContain("cv1|1");
+    }
+
+    [Test]
+    public void It_should_reject_a_negative_first_check_index()
+    {
+        var act = () =>
+            Compile(
+                SqlDialect.Pgsql,
+                [
+                    Check(
+                        -1,
+                        CustomViewAuthorizationCheckValueSource.Stored,
+                        DirectPath(),
+                        StoredTarget("CourseTranscript")
+                    ),
+                ]
+            );
+
+        act.Should().Throw<ArgumentException>().WithMessage("*cannot be negative*");
     }
 
     [Test]

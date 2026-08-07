@@ -115,24 +115,41 @@ public sealed class SingleRecordCustomViewAuthorizationSqlCompiler(SqlDialect di
     }
 
     /// <summary>
-    /// Enforces the invariants the payload contract and the emitted SQL depend on: index equals position, a
-    /// resolved path exists, every check addresses the same root table, and every proposed binding names a
-    /// usable parameter.
+    /// Enforces the invariants the payload contract and the emitted SQL depend on: indexes run contiguously
+    /// from the first check's index, a resolved path exists, every check addresses the same root table, and
+    /// every proposed binding names a usable parameter.
     /// </summary>
+    /// <remarks>
+    /// Indexes are contiguous rather than zero-based because one request can emit several batches — custom
+    /// views configured before and after a <c>NamespaceBased</c> check, or a stored batch and a proposed one.
+    /// When those batches share a command they also share one provider exception, so a zero-based index in
+    /// each would name two different checks. Keeping the index unique across the request lets the failure
+    /// mapper resolve it against the request's whole planned list.
+    /// </remarks>
     private static void ValidateChecks(SingleRecordCustomViewAuthorizationSqlSpec spec)
     {
         DbTableName? rootTable = null;
+        var firstCheckIndex = spec.Checks[0].Index;
+
+        if (firstCheckIndex < 0)
+        {
+            throw new ArgumentException(
+                $"Custom view authorization check indexes cannot be negative; the first check carries index {firstCheckIndex}.",
+                nameof(spec)
+            );
+        }
 
         for (var position = 0; position < spec.Checks.Count; position++)
         {
             var check = spec.Checks[position];
 
             // The cv1 payload reports only an index, and the failure mapper resolves it positionally against
-            // this same list. A gap or reorder here would report a denial as some other check's category.
-            if (check.Index != position)
+            // the request's planned list. A gap or reorder here would report a denial as some other check's
+            // category.
+            if (check.Index != firstCheckIndex + position)
             {
                 throw new ArgumentException(
-                    $"Custom view authorization check at position {position} carries index {check.Index}; indexes must match emission position.",
+                    $"Custom view authorization check at position {position} carries index {check.Index}; indexes must run contiguously from {firstCheckIndex}.",
                     nameof(spec)
                 );
             }

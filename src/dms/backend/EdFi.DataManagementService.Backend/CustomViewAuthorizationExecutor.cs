@@ -11,15 +11,23 @@ using EdFi.DataManagementService.Core.External.Backend;
 
 namespace EdFi.DataManagementService.Backend;
 
-/// <param name="Checks">
-/// The planned checks that produced the batch. The <c>cv1</c> payload carries only an index and resolution is
-/// positional, so this must be the same list, in the same order, that the compiler was given.
+/// <param name="Checks">The checks this batch executes, in emission order.</param>
+/// <param name="PlannedChecks">
+/// Every custom-view check planned for the request, indexed as the planner assigned them. The <c>cv1</c>
+/// payload carries only an index, so a failure is resolved against this list rather than against the batch —
+/// which is what lets one request run several batches without their indexes colliding. Defaults to
+/// <paramref name="Checks"/> for a request that runs a single batch.
 /// </param>
 public sealed record CustomViewAuthorizationExecutionRequest(
     MappingSet MappingSet,
     long DocumentId,
-    IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> Checks
-);
+    IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> Checks,
+    IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? PlannedChecks = null
+)
+{
+    public IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> PlannedChecksOrBatch =>
+        PlannedChecks ?? Checks;
+}
 
 public abstract record CustomViewAuthorizationExecutionResult
 {
@@ -131,7 +139,7 @@ internal sealed class CustomViewAuthorizationExecutor(
                     dialect,
                     ex,
                     _providerFailureExtractor,
-                    request.Checks
+                    request.PlannedChecksOrBatch
                 )
             )
         {
@@ -142,7 +150,7 @@ internal sealed class CustomViewAuthorizationExecutor(
                     dialect,
                     ex,
                     _providerFailureExtractor,
-                    request.Checks,
+                    request.PlannedChecksOrBatch,
                     out var customViewFailure
                 )
             )
@@ -154,13 +162,15 @@ internal sealed class CustomViewAuthorizationExecutor(
                     dialect,
                     ex,
                     _providerFailureExtractor,
-                    request.Checks
+                    request.PlannedChecksOrBatch
                 )
             )
         {
             return new CustomViewAuthorizationExecutionResult.InvalidAuthorizationFailure(
                 CustomViewAuthorizationSecurityConfigurationMessages.InvalidAuthorizationMetadata,
-                AuthorizationSecurityConfigurationDiagnostics.ForCustomViewAuthorizationAuth1(request.Checks)
+                AuthorizationSecurityConfigurationDiagnostics.ForCustomViewAuthorizationAuth1(
+                    request.PlannedChecksOrBatch
+                )
             );
         }
         catch (DbException ex)

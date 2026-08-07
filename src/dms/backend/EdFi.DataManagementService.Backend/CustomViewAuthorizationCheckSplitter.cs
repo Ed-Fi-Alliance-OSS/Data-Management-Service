@@ -8,32 +8,20 @@ using EdFi.DataManagementService.Backend.Plans;
 namespace EdFi.DataManagementService.Backend;
 
 /// <summary>
-/// Splits a planned custom-view check list into independently executable batches, reindexing each so it can be
-/// compiled and mapped on its own.
+/// Splits a planned custom-view check list into independently executable batches.
 /// </summary>
 /// <remarks>
-/// Reindexing is mandatory, not cosmetic. The SQL compiler requires each check's index to equal its emission
-/// position, and the failure mapper resolves a <c>cv1</c> payload positionally against the list it was given.
-/// A batch therefore has to be handed the same contiguous list that produced it; passing a sliced list with
-/// its original indexes would either fail compilation or resolve a denial to the wrong check.
+/// Each slice keeps the indexes the planner assigned across the whole request, so an index still identifies
+/// one check no matter which slice raised it. That matters because slices co-batched into one command share a
+/// single provider exception: zero-basing each slice would make two different checks both report index 0. The
+/// compiler accepts a slice whose indexes run contiguously from any starting value, and the failure mapper is
+/// always given the request's full planned list.
 /// </remarks>
 internal static class CustomViewAuthorizationCheckSplitter
 {
     /// <summary>
-    /// Reindexes <paramref name="checks"/> to <c>0..n-1</c> in their current order.
-    /// </summary>
-    public static IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> Reindex(
-        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks
-    )
-    {
-        ArgumentNullException.ThrowIfNull(checks);
-
-        return [.. checks.Select(static (check, position) => check with { Index = position })];
-    }
-
-    /// <summary>
-    /// Partitions <paramref name="checks"/} by whether the CMS configured them before
-    /// <paramref name="configuredIndex"/>, reindexing both sides.
+    /// Partitions <paramref name="checks"/> by whether the CMS configured them at or before
+    /// <paramref name="configuredIndex"/>.
     /// </summary>
     /// <remarks>
     /// Custom views and <c>NamespaceBased</c> are AND filters that execute in CMS-configured order, and the
@@ -68,6 +56,6 @@ internal static class CustomViewAuthorizationCheckSplitter
             }
         }
 
-        return (Reindex(before), Reindex(after));
+        return (before, after);
     }
 }

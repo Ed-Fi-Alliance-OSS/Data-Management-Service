@@ -3577,6 +3577,7 @@ public sealed class RelationalDocumentStoreRepository(
                 : await ExecuteGetCustomViewAuthorizationAsync(
                         mappingSet,
                         documentId,
+                        storedCustomViewAuthorization.Checks,
                         storedCustomViewAuthorization.Checks
                     )
                     .ConfigureAwait(false);
@@ -3594,7 +3595,8 @@ public sealed class RelationalDocumentStoreRepository(
             var beforeOutcome = await ExecuteGetCustomViewAuthorizationAsync(
                     mappingSet,
                     documentId,
-                    customViewsBeforeNamespace
+                    customViewsBeforeNamespace,
+                    storedCustomViewAuthorization!.Checks
                 )
                 .ConfigureAwait(false);
 
@@ -3618,18 +3620,26 @@ public sealed class RelationalDocumentStoreRepository(
 
         return customViewsAfterNamespace.Count == 0
             ? null
-            : await ExecuteGetCustomViewAuthorizationAsync(mappingSet, documentId, customViewsAfterNamespace)
+            : await ExecuteGetCustomViewAuthorizationAsync(
+                    mappingSet,
+                    documentId,
+                    customViewsAfterNamespace,
+                    storedCustomViewAuthorization!.Checks
+                )
                 .ConfigureAwait(false);
     }
 
     private async Task<GetAuthorizationOutcome?> ExecuteGetCustomViewAuthorizationAsync(
         MappingSet mappingSet,
         long documentId,
-        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> plannedChecks
     )
     {
         var executionResult = await _customViewAuthorizationExecutor
-            .ExecuteAsync(new CustomViewAuthorizationExecutionRequest(mappingSet, documentId, checks))
+            .ExecuteAsync(
+                new CustomViewAuthorizationExecutionRequest(mappingSet, documentId, checks, plannedChecks)
+            )
             .ConfigureAwait(false);
 
         return executionResult switch
