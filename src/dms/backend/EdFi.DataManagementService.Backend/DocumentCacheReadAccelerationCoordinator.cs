@@ -452,32 +452,21 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 .ConfigureAwait(false);
         }
 
-        if (
-            !TryResolveTarget(
-                request.TenantKey,
-                out var targetContext,
-                out var fallbackReason,
-                out var directFillSkipOutcome,
-                out var directFillTelemetryTargetContext
-            )
-        )
+        if (!_options.Value.ReadAcceleration.Enabled)
         {
             RecordFallback(
                 DocumentCacheReadAccelerationOperation.GetById,
                 request.ResourceKind,
                 targetContext: null,
-                fallbackReason
-            );
-            RecordDirectFillSkipIfNeeded(
-                DocumentCacheReadAccelerationOperation.GetById,
-                request.ResourceKind,
-                directFillTelemetryTargetContext,
-                directFillSkipOutcome
+                DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled
             );
 
             return await request
                 .RelationalFallback(
-                    new DocumentCacheReadAccelerationFallbackContext(fallbackReason, TargetContext: null),
+                    new DocumentCacheReadAccelerationFallbackContext(
+                        DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled,
+                        TargetContext: null
+                    ),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -490,7 +479,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 RecordFallback(
                     DocumentCacheReadAccelerationOperation.GetById,
                     request.ResourceKind,
-                    targetContext,
+                    targetContext: null,
                     DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable
                 );
 
@@ -498,7 +487,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                     .RelationalFallback(
                         new DocumentCacheReadAccelerationFallbackContext(
                             DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable,
-                            targetContext
+                            TargetContext: null
                         ),
                         cancellationToken
                     )
@@ -535,7 +524,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             RecordFallback(
                 DocumentCacheReadAccelerationOperation.GetById,
                 request.ResourceKind,
-                targetContext,
+                targetContext: null,
                 DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable
             );
 
@@ -543,8 +532,39 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 .RelationalFallback(
                     new DocumentCacheReadAccelerationFallbackContext(
                         DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable,
-                        targetContext
+                        TargetContext: null
                     ),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        if (
+            !TryResolveTarget(
+                request.TenantKey,
+                out var targetContext,
+                out var fallbackReason,
+                out var directFillSkipOutcome,
+                out var directFillTelemetryTargetContext
+            )
+        )
+        {
+            RecordFallback(
+                DocumentCacheReadAccelerationOperation.GetById,
+                request.ResourceKind,
+                targetContext: null,
+                fallbackReason
+            );
+            RecordDirectFillSkipIfNeeded(
+                DocumentCacheReadAccelerationOperation.GetById,
+                request.ResourceKind,
+                directFillTelemetryTargetContext,
+                directFillSkipOutcome
+            );
+
+            return await request
+                .RelationalFallback(
+                    new DocumentCacheReadAccelerationFallbackContext(fallbackReason, TargetContext: null),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -605,32 +625,21 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (
-            !TryResolveTarget(
-                request.TenantKey,
-                out var targetContext,
-                out var fallbackReason,
-                out var directFillSkipOutcome,
-                out var directFillTelemetryTargetContext
-            )
-        )
+        if (!_options.Value.ReadAcceleration.Enabled)
         {
             RecordFallback(
                 DocumentCacheReadAccelerationOperation.Query,
                 request.ResourceKind,
                 targetContext: null,
-                fallbackReason
-            );
-            RecordDirectFillSkipIfNeeded(
-                DocumentCacheReadAccelerationOperation.Query,
-                request.ResourceKind,
-                directFillTelemetryTargetContext,
-                directFillSkipOutcome
+                DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled
             );
 
             return await request
                 .RelationalFallback(
-                    new DocumentCacheReadAccelerationFallbackContext(fallbackReason, TargetContext: null),
+                    new DocumentCacheReadAccelerationFallbackContext(
+                        DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled,
+                        TargetContext: null
+                    ),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -643,7 +652,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 RecordFallback(
                     DocumentCacheReadAccelerationOperation.Query,
                     request.ResourceKind,
-                    targetContext,
+                    targetContext: null,
                     DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable
                 );
 
@@ -651,7 +660,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                     .RelationalFallback(
                         new DocumentCacheReadAccelerationFallbackContext(
                             DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable,
-                            targetContext
+                            TargetContext: null
                         ),
                         cancellationToken
                     )
@@ -688,7 +697,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             RecordFallback(
                 DocumentCacheReadAccelerationOperation.Query,
                 request.ResourceKind,
-                targetContext,
+                targetContext: null,
                 DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable
             );
 
@@ -696,7 +705,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 .RelationalFallback(
                     new DocumentCacheReadAccelerationFallbackContext(
                         DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable,
-                        targetContext
+                        TargetContext: null
                     ),
                     cancellationToken
                 )
@@ -716,6 +725,37 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                     ),
                 request.AuthorizedCandidatePage.HighestSelectedDocumentId
             );
+        }
+
+        if (
+            !TryResolveTarget(
+                request.TenantKey,
+                out var targetContext,
+                out var fallbackReason,
+                out var directFillSkipOutcome,
+                out var directFillTelemetryTargetContext
+            )
+        )
+        {
+            RecordFallback(
+                DocumentCacheReadAccelerationOperation.Query,
+                request.ResourceKind,
+                targetContext: null,
+                fallbackReason
+            );
+            RecordDirectFillSkipIfNeeded(
+                DocumentCacheReadAccelerationOperation.Query,
+                request.ResourceKind,
+                directFillTelemetryTargetContext,
+                directFillSkipOutcome
+            );
+
+            return await request
+                .RelationalFallback(
+                    new DocumentCacheReadAccelerationFallbackContext(fallbackReason, TargetContext: null),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         DocumentCacheReadLookupResult<QueryResult> lookupResult = await LookupQueryAsync(
