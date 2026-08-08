@@ -127,6 +127,17 @@ public abstract record PageKeysetSpec
     public sealed record Single(long DocumentId) : PageKeysetSpec;
 
     /// <summary>
+    /// GET by already-selected page: the keyset is the authorized page of <c>DocumentId</c>s selected
+    /// before response-body hydration.
+    /// </summary>
+    /// <param name="DocumentIds">The selected document ids to hydrate.</param>
+    public sealed record SelectedPage(IReadOnlyList<long> DocumentIds) : PageKeysetSpec
+    {
+        public IReadOnlyList<long> DocumentIds { get; init; } =
+            DocumentIds ?? throw new ArgumentNullException(nameof(DocumentIds));
+    }
+
+    /// <summary>
     /// GET by query: the keyset comes from a compiled page-selection SQL plan.
     /// </summary>
     /// <param name="Plan">The compiled page document-id SQL plan.</param>

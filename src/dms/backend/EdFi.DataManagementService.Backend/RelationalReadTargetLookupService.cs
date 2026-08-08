@@ -22,8 +22,12 @@ public abstract record RelationalReadTargetLookupResult
 {
     private RelationalReadTargetLookupResult() { }
 
-    public sealed record ExistingDocument(long DocumentId, DocumentUuid DocumentUuid, long ContentVersion)
-        : RelationalReadTargetLookupResult;
+    public sealed record ExistingDocument(
+        long DocumentId,
+        DocumentUuid DocumentUuid,
+        long ContentVersion,
+        DateTimeOffset ContentLastModifiedAt = default
+    ) : RelationalReadTargetLookupResult;
 
     public sealed record NotFound() : RelationalReadTargetLookupResult;
 
@@ -69,7 +73,11 @@ internal sealed class RelationalReadTargetLookupService(IRelationalCommandExecut
             return new RelationalReadTargetLookupResult.ExistingDocument(
                 resolvedDocument.DocumentId,
                 resolvedDocument.DocumentUuid,
-                resolvedDocument.ContentVersion.Value
+                resolvedDocument.ContentVersion.Value,
+                resolvedDocument.ContentLastModifiedAt
+                    ?? throw new InvalidOperationException(
+                        $"Relational GET target lookup for document uuid '{documentUuid.Value}' returned a row without ContentLastModifiedAt."
+                    )
             );
         }
 

@@ -69,6 +69,65 @@ public class Given_DescriptorReadHandler
     }
 
     [Test]
+    public async Task It_exposes_an_authorized_descriptor_get_candidate_to_read_acceleration()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-111111111111"));
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid.Value, documentId: 205L)),
+            ]),
+        ]);
+        DocumentCacheReadAccelerationGetByIdRequest capturedRequest = null!;
+        var fallbackContext = new DocumentCacheReadAccelerationFallbackContext(
+            DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
+            TargetContext: null
+        );
+
+        A.CallTo(() =>
+                readAccelerationCoordinator.GetByIdAsync(
+                    A<DocumentCacheReadAccelerationGetByIdRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call =>
+                capturedRequest = call.GetArgument<DocumentCacheReadAccelerationGetByIdRequest>(0)!
+            )
+            .ReturnsLazily(
+                (DocumentCacheReadAccelerationGetByIdRequest request, CancellationToken cancellationToken) =>
+                    request.RelationalFallback(fallbackContext, cancellationToken)
+            );
+
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        var result = await sut.HandleGetByIdAsync(CreateRequest(SqlDialect.Pgsql, documentUuid));
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+        capturedRequest.ResourceKind.Should().Be(DocumentCacheReadAccelerationResourceKind.Descriptor);
+        capturedRequest
+            .LookupReadiness.Should()
+            .Be(DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate);
+        capturedRequest
+            .AuthorizedCandidate.Should()
+            .Be(
+                new DocumentCacheReadAccelerationCandidate(
+                    205L,
+                    documentUuid,
+                    13,
+                    42L,
+                    new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)
+                )
+            );
+        A.CallTo(() =>
+                readAccelerationCoordinator.GetByIdAsync(
+                    A<DocumentCacheReadAccelerationGetByIdRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
     public async Task It_returns_not_exists_when_document_uuid_is_missing_or_is_for_the_wrong_resource()
     {
         var commandExecutor = new InMemoryRelationalCommandExecutor([
@@ -1327,6 +1386,83 @@ public class Given_DescriptorReadHandler
     }
 
     [Test]
+    public async Task It_exposes_an_authorized_descriptor_query_candidate_page_to_read_acceleration()
+    {
+        var firstDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-999999999991");
+        var secondDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-999999999992");
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(firstDocumentUuid, documentId: 101L, codeValue: "Alternative"),
+                    CreateDescriptorRow(secondDocumentUuid, documentId: 205L, codeValue: "Charter")
+                ),
+            ]),
+        ]);
+        DocumentCacheReadAccelerationQueryRequest capturedRequest = null!;
+        var fallbackContext = new DocumentCacheReadAccelerationFallbackContext(
+            DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
+            TargetContext: null
+        );
+
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call =>
+                capturedRequest = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!
+            )
+            .ReturnsLazily(
+                (DocumentCacheReadAccelerationQueryRequest request, CancellationToken cancellationToken) =>
+                    request.RelationalFallback(fallbackContext, cancellationToken)
+            );
+
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql, totalCount: true));
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        capturedRequest.ResourceKind.Should().Be(DocumentCacheReadAccelerationResourceKind.Descriptor);
+        capturedRequest
+            .LookupReadiness.Should()
+            .Be(DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate);
+        capturedRequest
+            .AuthorizedCandidatePage.Should()
+            .BeEquivalentTo(
+                new DocumentCacheReadAccelerationCandidatePage(
+                    [
+                        new DocumentCacheReadAccelerationCandidate(
+                            101L,
+                            new DocumentUuid(firstDocumentUuid),
+                            13,
+                            42L,
+                            new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)
+                        ),
+                        new DocumentCacheReadAccelerationCandidate(
+                            205L,
+                            new DocumentUuid(secondDocumentUuid),
+                            13,
+                            42L,
+                            new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)
+                        ),
+                    ],
+                    TotalCount: 7,
+                    HighestSelectedDocumentId: null
+                )
+            );
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
     public async Task It_applies_readable_profile_projection_and_varies_the_etag_by_profile_for_query_items()
     {
         var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-888888888888");
@@ -1477,14 +1613,16 @@ public class Given_DescriptorReadHandler
 
     private static DescriptorReadHandler CreateHandler(
         IRelationalCommandExecutor commandExecutor,
-        IReadableProfileProjector? readableProfileProjector = null
+        IReadableProfileProjector? readableProfileProjector = null,
+        IDocumentCacheReadAccelerationCoordinator? readAccelerationCoordinator = null
     )
     {
         return new DescriptorReadHandler(
             commandExecutor,
             readableProfileProjector ?? A.Fake<IReadableProfileProjector>(),
             _servedEtagComposer,
-            NullLogger<DescriptorReadHandler>.Instance
+            NullLogger<DescriptorReadHandler>.Instance,
+            readAccelerationCoordinator
         );
     }
 

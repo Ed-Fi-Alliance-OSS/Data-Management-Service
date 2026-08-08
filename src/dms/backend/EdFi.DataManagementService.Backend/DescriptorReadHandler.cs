@@ -25,7 +25,8 @@ internal sealed class DescriptorReadHandler(
     IReadableProfileProjector readableProfileProjector,
     IServedEtagComposer servedEtagComposer,
     ILogger<DescriptorReadHandler> logger,
-    ChangeQueryPageOrderingPolicy? orderingPolicy = null
+    ChangeQueryPageOrderingPolicy? orderingPolicy = null,
+    IDocumentCacheReadAccelerationCoordinator? readAccelerationCoordinator = null
 ) : IDescriptorReadHandler
 {
     private const string DocumentUuidParameterName = "@documentUuid";
@@ -44,6 +45,8 @@ internal sealed class DescriptorReadHandler(
         logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly ChangeQueryPageOrderingPolicy _orderingPolicy =
         orderingPolicy ?? ChangeQueryPageOrderingPolicy.Default;
+    private readonly IDocumentCacheReadAccelerationCoordinator _readAccelerationCoordinator =
+        readAccelerationCoordinator ?? PassthroughDocumentCacheReadAccelerationCoordinator.Instance;
 
     public async Task<GetResult> HandleGetByIdAsync(
         DescriptorGetByIdRequest request,
@@ -183,12 +186,37 @@ internal sealed class DescriptorReadHandler(
 
         LogDiscriminatorMismatchIfPresent(request, descriptorRow);
 
-        return new GetResult.GetSuccess(
-            new DocumentUuid(descriptorRow.DocumentUuid),
-            MaterializeDescriptorDocument(request, descriptorRow),
-            descriptorRow.ContentLastModifiedAt.UtcDateTime,
-            null
-        );
+        GetResult.GetSuccess relationalSuccess() =>
+            new(
+                new DocumentUuid(descriptorRow.DocumentUuid),
+                MaterializeDescriptorDocument(request, descriptorRow),
+                descriptorRow.ContentLastModifiedAt.UtcDateTime,
+                null
+            );
+
+        if (request.ReadMode != RelationalGetRequestReadMode.ExternalResponse)
+        {
+            return relationalSuccess();
+        }
+
+        var candidate = CreateDescriptorReadAccelerationCandidate(descriptorRow);
+
+        return await _readAccelerationCoordinator
+            .GetByIdAsync(
+                new DocumentCacheReadAccelerationGetByIdRequest(
+                    request.TenantKey,
+                    request.MappingSet,
+                    request.Resource,
+                    request.DocumentUuid,
+                    request.ReadMode,
+                    DocumentCacheReadAccelerationResourceKind.Descriptor,
+                    DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                    (_, _) => Task.FromResult<GetResult>(relationalSuccess()),
+                    candidate
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     public async Task<QueryResult> HandleQueryAsync(
@@ -342,16 +370,43 @@ internal sealed class DescriptorReadHandler(
             return new QueryResult.UnknownFailure(ex.Message);
         }
 
-        return new QueryResult.QuerySuccess(
-            MaterializeDescriptorQueryDocuments(request, queryRowsPage.Rows),
-            request.PaginationParameters.TotalCount
-                ? RelationalReadGuardrails.ConvertTotalCountOrThrow(
-                    request.Resource,
-                    queryRowsPage.TotalCount,
-                    "descriptor query"
-                )
-                : null
+        QueryResult.QuerySuccess relationalSuccess() =>
+            new(
+                MaterializeDescriptorQueryDocuments(request, queryRowsPage.Rows),
+                request.PaginationParameters.TotalCount
+                    ? RelationalReadGuardrails.ConvertTotalCountOrThrow(
+                        request.Resource,
+                        queryRowsPage.TotalCount,
+                        "descriptor query"
+                    )
+                    : null
+            );
+
+        if (queryRowsPage.Rows.Count == 0)
+        {
+            return relationalSuccess();
+        }
+
+        var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
+            [.. queryRowsPage.Rows.Select(CreateDescriptorReadAccelerationCandidate)],
+            queryRowsPage.TotalCount,
+            HighestSelectedDocumentId: null
         );
+
+        return await _readAccelerationCoordinator
+            .QueryAsync(
+                new DocumentCacheReadAccelerationQueryRequest(
+                    request.TenantKey,
+                    request.MappingSet,
+                    request.Resource,
+                    DocumentCacheReadAccelerationResourceKind.Descriptor,
+                    DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                    (_, _) => Task.FromResult<QueryResult>(relationalSuccess()),
+                    candidatePage
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -563,6 +618,17 @@ internal sealed class DescriptorReadHandler(
 
         return edfiDocs;
     }
+
+    private static DocumentCacheReadAccelerationCandidate CreateDescriptorReadAccelerationCandidate(
+        DescriptorReadRow descriptorRow
+    ) =>
+        new(
+            descriptorRow.DocumentId,
+            new DocumentUuid(descriptorRow.DocumentUuid),
+            descriptorRow.ResourceKeyId,
+            descriptorRow.ContentVersion,
+            descriptorRow.ContentLastModifiedAt
+        );
 
     // Descriptors carry no reference links and are always served as JSON, so the served etag's
     // linkFlag/format components are the fixed descriptor values ("n" / "j"). Profile varies only

@@ -42,6 +42,55 @@ public sealed record DocumentCacheReadAccelerationFallbackContext(
     DocumentCacheTargetExecutionContext? TargetContext
 );
 
+public sealed record DocumentCacheReadAccelerationCandidate(
+    long DocumentId,
+    DocumentUuid DocumentUuid,
+    short ResourceKeyId,
+    long ContentVersion,
+    DateTimeOffset ContentLastModifiedAt
+);
+
+public sealed record DocumentCacheReadAccelerationCandidatePage(
+    IReadOnlyList<DocumentCacheReadAccelerationCandidate> Candidates,
+    long? TotalCount,
+    long? HighestSelectedDocumentId
+)
+{
+    public bool IsEmpty => Candidates.Count == 0;
+}
+
+public abstract record DocumentCacheReadAccelerationGetByIdSelectionResult
+{
+    private DocumentCacheReadAccelerationGetByIdSelectionResult() { }
+
+    public sealed record Complete(GetResult Result) : DocumentCacheReadAccelerationGetByIdSelectionResult;
+
+    public sealed record Candidate(
+        DocumentCacheReadAccelerationCandidate AuthorizedCandidate,
+        Func<
+            DocumentCacheReadAccelerationFallbackContext,
+            CancellationToken,
+            Task<GetResult>
+        > RelationalFallback
+    ) : DocumentCacheReadAccelerationGetByIdSelectionResult;
+}
+
+public abstract record DocumentCacheReadAccelerationQuerySelectionResult
+{
+    private DocumentCacheReadAccelerationQuerySelectionResult() { }
+
+    public sealed record Complete(QueryResult Result) : DocumentCacheReadAccelerationQuerySelectionResult;
+
+    public sealed record CandidatePage(
+        DocumentCacheReadAccelerationCandidatePage AuthorizedCandidatePage,
+        Func<
+            DocumentCacheReadAccelerationFallbackContext,
+            CancellationToken,
+            Task<QueryResult>
+        > RelationalFallback
+    ) : DocumentCacheReadAccelerationQuerySelectionResult;
+}
+
 public sealed record DocumentCacheReadAccelerationGetByIdRequest(
     string TenantKey,
     MappingSet MappingSet,
@@ -50,7 +99,12 @@ public sealed record DocumentCacheReadAccelerationGetByIdRequest(
     RelationalGetRequestReadMode ReadMode,
     DocumentCacheReadAccelerationResourceKind ResourceKind,
     DocumentCacheReadAccelerationLookupReadiness LookupReadiness,
-    Func<DocumentCacheReadAccelerationFallbackContext, CancellationToken, Task<GetResult>> RelationalFallback
+    Func<DocumentCacheReadAccelerationFallbackContext, CancellationToken, Task<GetResult>> RelationalFallback,
+    DocumentCacheReadAccelerationCandidate? AuthorizedCandidate = null,
+    Func<
+        CancellationToken,
+        Task<DocumentCacheReadAccelerationGetByIdSelectionResult>
+    >? SelectAuthorizedCandidate = null
 );
 
 public sealed record DocumentCacheReadAccelerationQueryRequest(
@@ -63,7 +117,12 @@ public sealed record DocumentCacheReadAccelerationQueryRequest(
         DocumentCacheReadAccelerationFallbackContext,
         CancellationToken,
         Task<QueryResult>
-    > RelationalFallback
+    > RelationalFallback,
+    DocumentCacheReadAccelerationCandidatePage? AuthorizedCandidatePage = null,
+    Func<
+        CancellationToken,
+        Task<DocumentCacheReadAccelerationQuerySelectionResult>
+    >? SelectAuthorizedCandidatePage = null
 );
 
 internal sealed record DocumentCacheReadLookupResult<TResult>(
@@ -220,6 +279,46 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
         if (request.LookupReadiness != DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate)
         {
+            if (request.SelectAuthorizedCandidate is null)
+            {
+                return await request
+                    .RelationalFallback(
+                        new DocumentCacheReadAccelerationFallbackContext(
+                            DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable,
+                            targetContext
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            var selectionResult = await request
+                .SelectAuthorizedCandidate(cancellationToken)
+                .ConfigureAwait(false);
+
+            switch (selectionResult)
+            {
+                case DocumentCacheReadAccelerationGetByIdSelectionResult.Complete complete:
+                    return complete.Result;
+
+                case DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate candidate:
+                    request = request with
+                    {
+                        LookupReadiness = DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                        AuthorizedCandidate = candidate.AuthorizedCandidate,
+                        RelationalFallback = candidate.RelationalFallback,
+                    };
+                    break;
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Unsupported GET-by-id candidate selection result '{selectionResult.GetType().Name}'."
+                    );
+            }
+        }
+
+        if (request.AuthorizedCandidate is null)
+        {
             return await request
                 .RelationalFallback(
                     new DocumentCacheReadAccelerationFallbackContext(
@@ -266,6 +365,59 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         }
 
         if (request.LookupReadiness != DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate)
+        {
+            if (request.SelectAuthorizedCandidatePage is null)
+            {
+                return await request
+                    .RelationalFallback(
+                        new DocumentCacheReadAccelerationFallbackContext(
+                            DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable,
+                            targetContext
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            var selectionResult = await request
+                .SelectAuthorizedCandidatePage(cancellationToken)
+                .ConfigureAwait(false);
+
+            switch (selectionResult)
+            {
+                case DocumentCacheReadAccelerationQuerySelectionResult.Complete complete:
+                    return complete.Result;
+
+                case DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage candidatePage:
+                    request = request with
+                    {
+                        LookupReadiness = DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                        AuthorizedCandidatePage = candidatePage.AuthorizedCandidatePage,
+                        RelationalFallback = candidatePage.RelationalFallback,
+                    };
+                    break;
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Unsupported query candidate selection result '{selectionResult.GetType().Name}'."
+                    );
+            }
+        }
+
+        if (request.AuthorizedCandidatePage is null)
+        {
+            return await request
+                .RelationalFallback(
+                    new DocumentCacheReadAccelerationFallbackContext(
+                        DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable,
+                        targetContext
+                    ),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        if (request.AuthorizedCandidatePage.IsEmpty)
         {
             return await request
                 .RelationalFallback(

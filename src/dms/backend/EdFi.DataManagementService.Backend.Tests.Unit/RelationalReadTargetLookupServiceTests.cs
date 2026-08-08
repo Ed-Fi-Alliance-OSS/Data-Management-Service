@@ -53,6 +53,7 @@ public class Given_RelationalReadTargetLookupService
     )
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var contentLastModifiedAt = new DateTimeOffset(2026, 4, 11, 12, 30, 45, TimeSpan.Zero);
         var commandExecutor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
@@ -60,7 +61,8 @@ public class Given_RelationalReadTargetLookupService
                         ("DocumentId", 404L),
                         ("DocumentUuid", documentUuid.Value),
                         ("ResourceKeyId", (short)1),
-                        ("ContentVersion", 907L)
+                        ("ContentVersion", 907L),
+                        ("ContentLastModifiedAt", contentLastModifiedAt)
                     )
                 ),
             ]),
@@ -75,7 +77,14 @@ public class Given_RelationalReadTargetLookupService
 
         result
             .Should()
-            .BeEquivalentTo(new RelationalReadTargetLookupResult.ExistingDocument(404L, documentUuid, 907L));
+            .BeEquivalentTo(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    404L,
+                    documentUuid,
+                    907L,
+                    contentLastModifiedAt
+                )
+            );
         commandExecutor.Commands.Should().ContainSingle();
         commandExecutor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
         commandExecutor
@@ -100,7 +109,8 @@ public class Given_RelationalReadTargetLookupService
                         ("DocumentId", 808L),
                         ("DocumentUuid", documentUuid.Value),
                         ("ResourceKeyId", (short)11),
-                        ("ContentVersion", 1234L)
+                        ("ContentVersion", 1234L),
+                        ("ContentLastModifiedAt", new DateTimeOffset(2026, 4, 11, 12, 30, 45, TimeSpan.Zero))
                     )
                 ),
             ]),

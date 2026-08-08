@@ -195,6 +195,145 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
     }
 
+    private void UseReadAccelerationCoordinator(
+        IDocumentCacheReadAccelerationCoordinator readAccelerationCoordinator
+    )
+    {
+        _sut = new RelationalDocumentStoreRepository(
+            _logger,
+            _writeExecutor,
+            _currentEtagPreconditionChecker,
+            new ThrowingDescriptorWriteHandler(),
+            _descriptorReadHandler,
+            _referenceResolver,
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector,
+            _writeExceptionClassifier,
+            _deleteConstraintResolver,
+            _writeSessionFactory,
+            CreateAuthorizationSubjectSelector(),
+            _singleRecordRelationshipAuthorizationExecutor,
+            _namespaceAuthorizationExecutor,
+            _commandExecutor,
+            readAccelerationCoordinator: readAccelerationCoordinator
+        );
+    }
+
+    private sealed class RecordingReadAccelerationCoordinator : IDocumentCacheReadAccelerationCoordinator
+    {
+        private static readonly DocumentCacheReadAccelerationFallbackContext FallbackContext = new(
+            DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
+            TargetContext: null
+        );
+
+        public int GetByIdAttempts { get; private set; }
+        public int QueryAttempts { get; private set; }
+        public DocumentCacheReadAccelerationGetByIdRequest? SelectedGetByIdRequest { get; private set; }
+        public DocumentCacheReadAccelerationQueryRequest? SelectedQueryRequest { get; private set; }
+
+        public async Task<GetResult> GetByIdAsync(
+            DocumentCacheReadAccelerationGetByIdRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            GetByIdAttempts++;
+
+            if (request.LookupReadiness == DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate)
+            {
+                SelectedGetByIdRequest = request;
+                return await request
+                    .RelationalFallback(FallbackContext, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (request.SelectAuthorizedCandidate is null)
+            {
+                return await request
+                    .RelationalFallback(FallbackContext, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            var selection = await request.SelectAuthorizedCandidate(cancellationToken).ConfigureAwait(false);
+
+            switch (selection)
+            {
+                case DocumentCacheReadAccelerationGetByIdSelectionResult.Complete complete:
+                    return complete.Result;
+
+                case DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate candidate:
+                    SelectedGetByIdRequest = request with
+                    {
+                        LookupReadiness = DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                        AuthorizedCandidate = candidate.AuthorizedCandidate,
+                        RelationalFallback = candidate.RelationalFallback,
+                    };
+                    return await candidate
+                        .RelationalFallback(FallbackContext, cancellationToken)
+                        .ConfigureAwait(false);
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Unsupported GET candidate selection result '{selection.GetType().Name}'."
+                    );
+            }
+        }
+
+        public async Task<QueryResult> QueryAsync(
+            DocumentCacheReadAccelerationQueryRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            QueryAttempts++;
+
+            if (request.LookupReadiness == DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate)
+            {
+                SelectedQueryRequest = request;
+                return await request
+                    .RelationalFallback(FallbackContext, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (request.SelectAuthorizedCandidatePage is null)
+            {
+                return await request
+                    .RelationalFallback(FallbackContext, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            var selection = await request
+                .SelectAuthorizedCandidatePage(cancellationToken)
+                .ConfigureAwait(false);
+
+            switch (selection)
+            {
+                case DocumentCacheReadAccelerationQuerySelectionResult.Complete complete:
+                    return complete.Result;
+
+                case DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage candidatePage:
+                    SelectedQueryRequest = request with
+                    {
+                        LookupReadiness = DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                        AuthorizedCandidatePage = candidatePage.AuthorizedCandidatePage,
+                        RelationalFallback = candidatePage.RelationalFallback,
+                    };
+                    return await candidatePage
+                        .RelationalFallback(FallbackContext, cancellationToken)
+                        .ConfigureAwait(false);
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Unsupported query candidate selection result '{selection.GetType().Name}'."
+                    );
+            }
+        }
+    }
+
     [Test]
     public async Task It_materializes_successful_get_requests_through_the_single_document_read_path()
     {
@@ -266,6 +405,81 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_exposes_an_authorized_get_candidate_to_read_acceleration_before_hydration()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-cccccccccccc"));
+        var contentLastModifiedAt = new DateTimeOffset(2026, 6, 1, 10, 15, 30, TimeSpan.Zero);
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var readPlan = mappingSet.ReadPlansByResource[resource];
+        var expectedResourceKeyId = mappingSet.ResourceKeyIdByResource[resource];
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
+        var getRequest = CreateGetRequest(documentUuid, mappingSet, _schoolResourceInfo);
+        var hydratedPage = CreateHydratedPage(
+            readPlan,
+            CreateDocumentMetadataRow(documentUuid, 345L, 91L),
+            (345L, "Lincoln High")
+        );
+        var materializedDocument = JsonNode.Parse("""{"id":"hydrated","name":"Lincoln High"}""")!;
+        HydrationExecutionOptions? capturedExecutionOptions = null;
+
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    resource,
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    contentLastModifiedAt
+                )
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.Single(345L),
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedExecutionOptions = call.GetArgument<HydrationExecutionOptions>(2))
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Returns(materializedDocument);
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+        readAccelerationCoordinator.GetByIdAttempts.Should().Be(1);
+        readAccelerationCoordinator.SelectedGetByIdRequest.Should().NotBeNull();
+        readAccelerationCoordinator
+            .SelectedGetByIdRequest!.LookupReadiness.Should()
+            .Be(DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate);
+        readAccelerationCoordinator
+            .SelectedGetByIdRequest.AuthorizedCandidate.Should()
+            .Be(
+                new DocumentCacheReadAccelerationCandidate(
+                    345L,
+                    documentUuid,
+                    expectedResourceKeyId,
+                    91L,
+                    contentLastModifiedAt
+                )
+            );
+        capturedExecutionOptions.Should().NotBeNull();
+        capturedExecutionOptions!
+            .UseSingleDocumentFastPath.Should()
+            .BeTrue("the cache-miss fallback still hydrates only the selected candidate body");
     }
 
     [Test]
@@ -2580,6 +2794,162 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _descriptorReadHandler.HandleQueryAsync(A<DescriptorQueryRequest>._, A<CancellationToken>._)
             )
             .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_exposes_an_authorized_query_candidate_page_to_read_acceleration_before_hydration()
+    {
+        var firstDocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-eeeeeeeeeeee"));
+        var secondDocumentUuid = new DocumentUuid(Guid.Parse("eeeeeeee-1111-2222-3333-ffffffffffff"));
+        var firstContentLastModifiedAt = new DateTimeOffset(2026, 6, 2, 9, 0, 0, TimeSpan.Zero);
+        var secondContentLastModifiedAt = new DateTimeOffset(2026, 6, 2, 9, 5, 0, TimeSpan.Zero);
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "name",
+                "$.name",
+                "string",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Name"))
+            )
+        );
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var readPlan = mappingSet.ReadPlansByResource[resource];
+        var expectedResourceKeyId = mappingSet.ResourceKeyIdByResource[resource];
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [CreateQueryElement("name", "$.name", "Lincoln High", "string")],
+            totalCount: false
+        );
+        var hydratedPage = new HydratedPage(
+            null,
+            [
+                CreateDocumentMetadataRow(firstDocumentUuid, 345L, 91L),
+                CreateDocumentMetadataRow(secondDocumentUuid, 678L, 92L),
+            ],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, "Lincoln High"],
+                        [678L, "Lincoln High Annex"],
+                    ]
+                ),
+            ],
+            []
+        );
+        PageKeysetSpec.SelectedPage capturedSelectedPage = null!;
+
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<
+                        Func<
+                            IRelationalCommandReader,
+                            CancellationToken,
+                            Task<DocumentCacheReadAccelerationCandidatePage>
+                        >
+                    >._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                (
+                    RelationalCommand _,
+                    Func<
+                        IRelationalCommandReader,
+                        CancellationToken,
+                        Task<DocumentCacheReadAccelerationCandidatePage>
+                    > readAsync,
+                    CancellationToken cancellationToken
+                ) =>
+                    readAsync(
+                        new InMemoryRelationalCommandReader([
+                            InMemoryRelationalResultSet.Create(
+                                RelationalAccessTestData.CreateRow(
+                                    ("DocumentId", 345L),
+                                    ("DocumentUuid", firstDocumentUuid.Value),
+                                    ("ContentVersion", 91L),
+                                    ("ContentLastModifiedAt", firstContentLastModifiedAt)
+                                ),
+                                RelationalAccessTestData.CreateRow(
+                                    ("DocumentId", 678L),
+                                    ("DocumentUuid", secondDocumentUuid.Value),
+                                    ("ContentVersion", 92L),
+                                    ("ContentLastModifiedAt", secondContentLastModifiedAt)
+                                )
+                            ),
+                        ]),
+                        cancellationToken
+                    )
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call =>
+            {
+                capturedSelectedPage =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.SelectedPage
+                    ?? throw new AssertionException(
+                        "Cache-miss fallback should hydrate the already selected candidate page."
+                    );
+            })
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[0],
+                    JsonNode.Parse($$"""{"id":"{{firstDocumentUuid.Value}}"}""")!
+                ),
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[1],
+                    JsonNode.Parse($$"""{"id":"{{secondDocumentUuid.Value}}"}""")!
+                ),
+            ]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.EdfiDocs.Should().HaveCount(2);
+        success.TotalCount.Should().BeNull();
+        success.HighestSelectedDocumentId.Should().Be(678L);
+        capturedSelectedPage.DocumentIds.Should().Equal(345L, 678L);
+        readAccelerationCoordinator.QueryAttempts.Should().Be(1);
+        readAccelerationCoordinator.SelectedQueryRequest.Should().NotBeNull();
+        readAccelerationCoordinator
+            .SelectedQueryRequest!.LookupReadiness.Should()
+            .Be(DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate);
+        readAccelerationCoordinator
+            .SelectedQueryRequest.AuthorizedCandidatePage.Should()
+            .BeEquivalentTo(
+                new DocumentCacheReadAccelerationCandidatePage(
+                    [
+                        new DocumentCacheReadAccelerationCandidate(
+                            345L,
+                            firstDocumentUuid,
+                            expectedResourceKeyId,
+                            91L,
+                            firstContentLastModifiedAt
+                        ),
+                        new DocumentCacheReadAccelerationCandidate(
+                            678L,
+                            secondDocumentUuid,
+                            expectedResourceKeyId,
+                            92L,
+                            secondContentLastModifiedAt
+                        ),
+                    ],
+                    TotalCount: null,
+                    HighestSelectedDocumentId: 678L
+                )
+            );
     }
 
     [Test]

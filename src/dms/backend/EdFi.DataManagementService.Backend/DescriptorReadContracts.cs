@@ -24,7 +24,8 @@ public sealed record DescriptorGetByIdRequest
         ReadableProfileProjectionContext? readableProfileProjectionContext,
         TraceId traceId,
         RelationalAuthorizationContext? relationalAuthorizationContext = null,
-        ResponseContentCoding responseContentCoding = ResponseContentCoding.Identity
+        ResponseContentCoding responseContentCoding = ResponseContentCoding.Identity,
+        string tenantKey = ""
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -39,6 +40,7 @@ public sealed record DescriptorGetByIdRequest
         RelationalAuthorizationContext =
             relationalAuthorizationContext ?? new RelationalAuthorizationContext([]);
         ResponseContentCoding = responseContentCoding;
+        TenantKey = tenantKey;
     }
 
     /// <summary>
@@ -86,6 +88,9 @@ public sealed record DescriptorGetByIdRequest
 
     /// <summary>The content coding selected for the external response.</summary>
     public ResponseContentCoding ResponseContentCoding { get; init; }
+
+    /// <summary>The normalized request tenant key used for target-scoped read acceleration.</summary>
+    public string TenantKey { get; init; }
 }
 
 /// <summary>
@@ -104,7 +109,8 @@ public sealed record DescriptorQueryRequest
         TraceId traceId,
         RelationalAuthorizationContext? relationalAuthorizationContext = null,
         ChangeVersionRange? changeVersionRange = null,
-        ResponseContentCoding responseContentCoding = ResponseContentCoding.Identity
+        ResponseContentCoding responseContentCoding = ResponseContentCoding.Identity,
+        string tenantKey = ""
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -121,6 +127,7 @@ public sealed record DescriptorQueryRequest
             relationalAuthorizationContext ?? new RelationalAuthorizationContext([]);
         ChangeVersionRange = changeVersionRange ?? ChangeVersionRange.None;
         ResponseContentCoding = responseContentCoding;
+        TenantKey = tenantKey;
     }
 
     /// <summary>
@@ -174,6 +181,9 @@ public sealed record DescriptorQueryRequest
 
     /// <summary>The content coding selected for the external response.</summary>
     public ResponseContentCoding ResponseContentCoding { get; init; }
+
+    /// <summary>The normalized request tenant key used for target-scoped read acceleration.</summary>
+    public string TenantKey { get; init; }
 }
 
 /// <summary>

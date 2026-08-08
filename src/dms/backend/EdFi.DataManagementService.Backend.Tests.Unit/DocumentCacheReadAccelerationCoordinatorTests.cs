@@ -186,6 +186,78 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         lookupAdapter.QueryAttempts.Should().Be(0);
     }
 
+    [Test]
+    public async Task It_selects_an_authorized_get_candidate_after_target_resolution_before_lookup()
+    {
+        var lookupAdapter = new RecordingLookupAdapter();
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(executionContext)
+        );
+        var selectedCandidate = Candidate() with { DocumentId = 987, ContentVersion = 654 };
+        var selectionAttempts = 0;
+
+        await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly,
+                (_, _) => Task.FromResult<GetResult>(new GetResult.GetFailureNotExists()),
+                selectAuthorizedCandidate: _ =>
+                {
+                    selectionAttempts++;
+                    return Task.FromResult<DocumentCacheReadAccelerationGetByIdSelectionResult>(
+                        new DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate(
+                            selectedCandidate,
+                            (_, _) => Task.FromResult<GetResult>(new GetResult.GetFailureNotExists())
+                        )
+                    );
+                }
+            )
+        );
+
+        selectionAttempts.Should().Be(1);
+        lookupAdapter.GetByIdAttempts.Should().Be(1);
+        lookupAdapter
+            .LastGetByIdRequest!.LookupReadiness.Should()
+            .Be(DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate);
+        lookupAdapter.LastGetByIdRequest.AuthorizedCandidate.Should().Be(selectedCandidate);
+        lookupAdapter.LastGetByIdTargetContext.Should().BeSameAs(executionContext);
+    }
+
+    [Test]
+    public async Task It_does_not_select_a_candidate_when_read_acceleration_is_disabled()
+    {
+        var lookupAdapter = new RecordingLookupAdapter();
+        var fallbackResult = new GetResult.GetFailureNotExists();
+        var selectionAttempts = 0;
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: false,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext())
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly,
+                (_, _) => Task.FromResult<GetResult>(fallbackResult),
+                selectAuthorizedCandidate: _ =>
+                {
+                    selectionAttempts++;
+                    return Task.FromResult<DocumentCacheReadAccelerationGetByIdSelectionResult>(
+                        new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(
+                            new GetResult.UnknownFailure("should not select")
+                        )
+                    );
+                }
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        selectionAttempts.Should().Be(0);
+        lookupAdapter.GetByIdAttempts.Should().Be(0);
+    }
+
     private static DocumentCacheReadAccelerationCoordinator CreateCoordinator(
         bool readAccelerationEnabled,
         RecordingLookupAdapter lookupAdapter,
@@ -229,7 +301,11 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     private static DocumentCacheReadAccelerationGetByIdRequest CreateGetByIdRequest(
         DocumentCacheReadAccelerationLookupReadiness lookupReadiness,
         Func<DocumentCacheReadAccelerationFallbackContext, CancellationToken, Task<GetResult>> fallback,
-        RelationalGetRequestReadMode readMode = RelationalGetRequestReadMode.ExternalResponse
+        RelationalGetRequestReadMode readMode = RelationalGetRequestReadMode.ExternalResponse,
+        Func<
+            CancellationToken,
+            Task<DocumentCacheReadAccelerationGetByIdSelectionResult>
+        >? selectAuthorizedCandidate = null
     ) =>
         new(
             TargetKey.TenantKey,
@@ -239,7 +315,11 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             readMode,
             DocumentCacheReadAccelerationResourceKind.Resource,
             lookupReadiness,
-            fallback
+            fallback,
+            lookupReadiness == DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate
+                ? Candidate()
+                : null,
+            selectAuthorizedCandidate
         );
 
     private static DocumentCacheReadAccelerationQueryRequest CreateQueryRequest(
@@ -252,8 +332,17 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             Resource,
             DocumentCacheReadAccelerationResourceKind.Resource,
             lookupReadiness,
-            fallback
+            fallback,
+            lookupReadiness == DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate
+                ? CandidatePage()
+                : null
         );
+
+    private static DocumentCacheReadAccelerationCandidate Candidate() =>
+        new(345, DocumentUuid, ResourceKeyId: 1, ContentVersion: 91, ContentLastModifiedAt: ObservedAt);
+
+    private static DocumentCacheReadAccelerationCandidatePage CandidatePage() =>
+        new([Candidate()], TotalCount: 1, HighestSelectedDocumentId: null);
 
     private static StaticTargetRegistry CreateRegistry(
         DocumentCacheTargetExecutionContext? executionContext = null
@@ -327,6 +416,10 @@ public class Given_DocumentCacheReadAccelerationCoordinator
 
         public CancellationToken LastGetByIdCancellationToken { get; private set; }
 
+        public DocumentCacheReadAccelerationGetByIdRequest? LastGetByIdRequest { get; private set; }
+
+        public DocumentCacheReadAccelerationQueryRequest? LastQueryRequest { get; private set; }
+
         public DocumentCacheReadLookupResult<GetResult> GetByIdResult { get; init; } =
             DocumentCacheReadLookupResult<GetResult>.Fallback();
 
@@ -342,6 +435,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             GetByIdAttempts++;
             LastGetByIdTargetContext = targetContext;
             LastGetByIdCancellationToken = cancellationToken;
+            LastGetByIdRequest = request;
             return Task.FromResult(GetByIdResult);
         }
 
@@ -352,6 +446,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         )
         {
             QueryAttempts++;
+            LastQueryRequest = request;
             return Task.FromResult(QueryResult);
         }
     }

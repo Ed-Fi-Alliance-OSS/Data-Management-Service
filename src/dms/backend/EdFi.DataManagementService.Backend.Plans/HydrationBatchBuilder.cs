@@ -102,6 +102,41 @@ public static class HydrationBatchBuilder
     }
 
     /// <summary>
+    /// Builds a metadata-only batch for an already-planned query page. The batch materializes the
+    /// query keyset and returns only optional total count plus <c>dms.Document</c> metadata for the
+    /// selected candidates.
+    /// </summary>
+    public static string BuildCandidateMetadataBatch(
+        ResourceReadPlan plan,
+        PageKeysetSpec.Query keyset,
+        SqlDialect dialect
+    )
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(keyset);
+
+        var sqlDialect = SqlDialectFactory.Create(dialect);
+        var planDialect = PlanSqlDialectFactory.Create(dialect);
+        var writer = new SqlWriter(sqlDialect);
+
+        planDialect.AppendCreateKeysetTempTable(writer, plan.KeysetTable);
+        writer.AppendLine();
+
+        AppendKeysetMaterialization(writer, plan.KeysetTable, keyset);
+        writer.AppendLine();
+
+        if (keyset.Plan.TotalCountSql is not null)
+        {
+            writer.AppendLine(EnsureTrailingSemicolon(keyset.Plan.TotalCountSql));
+            writer.AppendLine();
+        }
+
+        planDialect.AppendDocumentMetadataSelect(writer, plan.KeysetTable);
+
+        return writer.ToString();
+    }
+
+    /// <summary>
     /// Builds the single-document hydration batch for a document id that is not client-known at build
     /// time. The id is still referenced through the single-document parameter token — callers
     /// co-batching this batch substitute that token with their captured-target expression — but a
@@ -376,6 +411,10 @@ public static class HydrationBatchBuilder
                 );
                 break;
 
+            case PageKeysetSpec.SelectedPage selectedPage:
+                AddSelectedPageParameters(command, selectedPage);
+                break;
+
             case PageKeysetSpec.Query query:
                 AddQueryParameters(command, query);
                 break;
@@ -425,6 +464,14 @@ public static class HydrationBatchBuilder
                     .Append(") VALUES (")
                     .AppendParameter(HydrationSqlConventions.SingleDocumentIdParameterName)
                     .AppendLine(");");
+                break;
+
+            case PageKeysetSpec.SelectedPage { DocumentIds.Count: 0 }:
+                AppendEmptyKeysetMaterialization(writer, keyset, quotedDocIdCol);
+                break;
+
+            case PageKeysetSpec.SelectedPage selectedPage:
+                AppendSelectedPageKeysetMaterialization(writer, keyset, selectedPage, quotedDocIdCol);
                 break;
 
             case PageKeysetSpec.Query query when HasZeroLimit(query):
@@ -482,6 +529,28 @@ public static class HydrationBatchBuilder
             .AppendLine(" WHERE 1 = 0;");
     }
 
+    private static void AppendSelectedPageKeysetMaterialization(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        PageKeysetSpec.SelectedPage selectedPage,
+        string quotedDocIdCol
+    )
+    {
+        writer
+            .Append("INSERT INTO ")
+            .AppendRelation(keyset.Table)
+            .Append(" (")
+            .Append(quotedDocIdCol)
+            .AppendLine(")")
+            .AppendLine("VALUES");
+
+        for (var index = 0; index < selectedPage.DocumentIds.Count; index++)
+        {
+            writer.Append("    (").AppendParameter(SelectedPageDocumentIdParameterName(index)).Append(")");
+            writer.AppendLine(index + 1 < selectedPage.DocumentIds.Count ? "," : ";");
+        }
+    }
+
     private static bool HasZeroLimit(PageKeysetSpec.Query query)
     {
         foreach (var parameter in query.Plan.PageParametersInOrder)
@@ -527,6 +596,20 @@ public static class HydrationBatchBuilder
             AddParameter(command, parameter, query.ParameterValues[parameter.ParameterName]);
         }
     }
+
+    private static void AddSelectedPageParameters(DbCommand command, PageKeysetSpec.SelectedPage selectedPage)
+    {
+        for (var index = 0; index < selectedPage.DocumentIds.Count; index++)
+        {
+            AddScalarParameter(
+                command,
+                SelectedPageDocumentIdParameterName(index),
+                selectedPage.DocumentIds[index]
+            );
+        }
+    }
+
+    private static string SelectedPageDocumentIdParameterName(int index) => $"selectedDocumentId_{index}";
 
     private static QuerySqlParameter[] GetRequiredParameters(PageDocumentIdSqlPlan plan)
     {
