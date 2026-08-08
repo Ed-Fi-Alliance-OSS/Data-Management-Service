@@ -219,6 +219,16 @@ For `dms.DocumentCache`, `DocumentUuid` is a non-indexed custom message-key colu
 than the relational primary key. Database validation triggers enforce that it equals the
 canonical UUID for the row's compact `DocumentId` primary/foreign key.
 
+For public document keys, the transform accepts only a schema-backed Kafka Connect
+`Struct` key with a required `DocumentUuid` field. PostgreSQL accepts only the pinned
+Debezium `STRING` field with semantic name `io.debezium.data.Uuid` and Java `String`
+UUID text. SQL Server accepts only the pinned `uniqueidentifier` key shape captured by
+provider fixtures: a required Kafka Connect `STRING` field with Java `String` UUID text
+and no alternate logical type. Both providers parse to UUID and emit lowercase
+`D`-format text. Otherwise parseable UUID text arriving through a raw string key,
+schemaless map, Java UUID object, bytes, missing field, invalid UUID text, or non-pinned
+schema shape is non-conforming.
+
 ### Internal Progress Key
 
 Every record routed to the binding-scoped CDC progress topic has the non-null Kafka
@@ -233,6 +243,15 @@ without JSON quoting or a Kafka Connect schema wrapper. Before routing any retai
 `dms.CdcHeartbeat` operation or Debezium heartbeat record, the `DocumentState` transform
 replaces the source key and key schema with this internal progress key. It never passes
 through a provider-specific structured key or a null heartbeat key.
+
+Native Debezium heartbeat recognition happens before relational source-metadata
+validation and is topic-only: the raw source record topic must start with
+`__debezium-heartbeat.` and have a non-empty suffix. A non-heartbeat record with missing
+source metadata still fails transformation.
+
+Progress output preserves the input value schema, value, headers, source partition,
+source offset, and Connect record timestamp, including a null native-heartbeat value or
+value schema. It replaces only the output topic, key schema, and key.
 
 The progress topic is binding-scoped and has one partition, so its key does not repeat
 instance, generation, provider, or source-partition identity. The fixed non-null key makes
@@ -284,6 +303,12 @@ the signed 64-bit range. A non-integral number or out-of-range integer in
 round decimals to `double`, preserve exact decimals, or convert numeric values to
 strings.
 
+Public upserts and public tombstones emit with an empty Kafka Connect header set and a
+null Connect record timestamp. Raw Debezium headers and source-record timestamps are
+connector metadata, not consumer-visible contract fields. Consumers use `contentVersion`
+for non-null state ordering and `lastModifiedAt` for the DMS document timestamp; Kafka
+record timestamps remain outside the public document-state contract.
+
 The physical temporal representation is not part of the public contract. One Ed-Fi-owned
 `DocumentState` SMT consumes each raw Debezium record and produces the complete public
 upsert, public tombstone, or drop result; the connector does not compose that contract
@@ -305,6 +330,19 @@ For SQL Server `nvarchar(max)` source data, including `DocumentJson`, the connec
 Debezium 3.6's unavailable-value marker. A required retained value carrying that marker is
 a transformation failure; it is never interpreted as JSON `null` or emitted in the public
 record.
+
+The transform validates every required retained `dms.DocumentCache` field against the
+pinned provider fixture schema as well as its semantic content. `DocumentJson` is a
+schema-backed Kafka Connect `STRING`: PostgreSQL `jsonb` uses Debezium's
+`io.debezium.data.Json` logical string shape, and SQL Server `nvarchar(max)` uses the
+pinned string shape plus the unavailable-marker check above. `ContentVersion` is the
+pinned `INT64`/Java `Long` shape. `ProjectName`, `ResourceName`, `ResourceVersion`, and
+`StreamEtag` are pinned schema-backed string fields. `LastModifiedAt` is PostgreSQL's
+pinned `io.debezium.time.ZonedTimestamp` string shape for `TIMESTAMPTZ` or SQL Server's
+pinned `io.debezium.time.IsoTimestamp` string shape for `datetime2(7)`, and the value
+must represent UTC before fractional seconds are truncated for public output. Schemaless
+values, alternate logical names, numeric/string coercions, bytes, maps, Java objects, and
+otherwise parseable values arriving through non-pinned schemas fail transformation.
 
 The stream `variantKey` uses the API five-component shape
 `{schemaEpoch}.j._.{linkFlag}.i`: JSON, no readable profile, the published document's link
@@ -466,11 +504,12 @@ configurable mapping language.
 1. Capture both document tables with `DocumentUuid` in each Debezium key and capture the
    internal heartbeat singleton for source-position progress.
 2. Inspect the original Debezium source table and operation before discarding the
-   envelope. Retain Debezium heartbeat records as internal progress. For relational
-   records, reject every unexpected source table, including
+   envelope. Retain Debezium heartbeat records as internal progress only when the raw
+   source topic starts with `__debezium-heartbeat.` and has a non-empty suffix. For
+   relational records, reject every unexpected source table, including
    `dms.DocumentProjectionWork`, which provider capture and connector include lists must
    already exclude. Among the three recognized relational sources, retain
-   `dms.CdcHeartbeat` operations as internal progress records; accept cache create,
+   every `dms.CdcHeartbeat` operation as an internal progress record; accept cache create,
    update, and snapshot/read records as public upserts; accept canonical document deletes
    as authoritative public deletes; and intentionally drop every other recognized source
    operation.
@@ -513,6 +552,15 @@ replacing the connector so the retained record is processed under the contract. 
 transform behavior and does not use the error-tolerance path; readiness never depends on
 such a record advancing the committed source offset.
 
+Invalid transform configuration fails with Kafka Connect `ConfigException`.
+Deterministic retained-record failures use a small custom exception subtype assignable to
+Kafka Connect `DataException`. That exception exposes a stable reason-code value and a
+bounded metadata map through structured accessors; the log message includes the same
+sanitized reason and metadata. Diagnostics include only bounded fields such as provider,
+source topic, source category, source schema, source table, and operation. They do not
+include `DocumentJson`, full public values, credentials, tenant names, or unbounded
+document metadata.
+
 Kafka Connect does not calculate `schemaEpoch`, interpret
 `DataManagement:ResourceLinks:Enabled`, or reproduce DMS ETag encoding. `StreamEtag` is
 opaque connector input; the transform only copies it to `document._etag`. The connector
@@ -544,6 +592,15 @@ value bytes = Kafka null
 Kafka null is not a JSON document containing `null`. V1 publishes no `deleted=true`
 envelope and promises no deleted document body. Resource-specific consumers retain
 enough prior local state to route a tombstone.
+
+The Debezium key is the sole authority for the emitted public tombstone key. The transform
+does not derive the key from the delete value and does not require `before.DocumentUuid`
+when `before` is absent, null, unavailable, or missing that field in an otherwise valid
+pinned delete record. If a pinned provider delete value includes an available
+`before.DocumentUuid`, the transform validates it through the same provider UUID adapter
+and fails the retained record when it does not equal the normalized key. For SQL Server
+pinned delete records, the configured unavailable-value marker on `before.DocumentUuid`
+is treated as absent; outside that pinned delete shape it is malformed input.
 
 The authoritative `dms.Document` delete produces the tombstone. Cache deletion,
 cascade, truncation, rebuild, and cleanup produce no public record. A canonical delete

@@ -452,11 +452,11 @@ ms. Deployments may lower it or raise it within their readiness timeout, but tem
 live-configuration validation reject zero, a negative value, a missing/conflicting action
 query, or, for SQL Server, `poll.interval.ms > heartbeat.interval.ms`.
 
-`dms.CdcHeartbeat` is an internal progress source. Its snapshot, create, update, and delete
-records and Debezium heartbeat records are routed by the `DocumentState` transform to the
-binding-scoped CDC progress topic before public-record validation; they are never routed to
-the instance document topic. Before routing, the transform replaces every source key,
-whether structured, scalar, or null, with the fixed non-null
+`dms.CdcHeartbeat` is an internal progress source. Its snapshot, create, update, delete,
+and truncate records and Debezium heartbeat records are routed by the `DocumentState`
+transform to the binding-scoped CDC progress topic before public-record validation; they
+are never routed to the instance document topic. Before routing, the transform replaces
+every source key, whether structured, scalar, or null, with the fixed non-null
 [internal progress key](0002-kafka-topic-and-message-contract.md#internal-progress-key)
 required by the shared `StringConverter` and compacted progress topic. The progress topic
 is a transport acknowledgement boundary, not a status store: deployment automation does
@@ -983,6 +983,11 @@ Every connector also emits and live-validates the provider source-position heart
 settings defined above. `heartbeat.action.query` is generated from the emitted
 `dms.CdcHeartbeat` identifiers and is not free-form operator input. Heartbeat timing is an
 operational readiness setting rather than an immutable stream-contract or binding field.
+Template generation sets `topic.heartbeat.prefix=__debezium-heartbeat` and leaves
+`topic.heartbeat.name` unset or empty. Rendering and live validation reject a non-empty
+`topic.heartbeat.name` or any conflicting heartbeat topic prefix, because the
+`DocumentState` SMT recognizes native Debezium heartbeat topics only as
+`__debezium-heartbeat.<topic-prefix>` before relational source-metadata validation.
 
 Every connector explicitly sets `statistics.metrics.enabled=true`. Debezium 3.6 then
 exposes minimum, maximum, average, P50, P95, and P99 statistics for
