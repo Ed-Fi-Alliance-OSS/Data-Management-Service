@@ -109,8 +109,8 @@ internal sealed class DocumentCacheReadResponseShaper(
 
                 if (documentLookupResult is not DocumentCacheReadDocumentLookupResult.FreshHit hit)
                 {
-                    return DocumentCacheReadLookupResult<QueryResult>.Fallback(
-                        DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+                    return DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                        documentLookupResult.Outcome
                     );
                 }
 
@@ -174,7 +174,8 @@ internal sealed class DocumentCacheReadResponseShaper(
                 DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure,
                 invariantDiagnostic: DocumentCacheReadInvariantDiagnostic.CacheHitResponseShaping(
                     exception.Reason
-                )
+                ),
+                rawLookupOutcome: DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
             );
         }
         catch (Exception)
@@ -184,7 +185,8 @@ internal sealed class DocumentCacheReadResponseShaper(
             LogShapingFailure(reason);
             return DocumentCacheReadLookupResult<TResult>.Fallback(
                 DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure,
-                invariantDiagnostic: DocumentCacheReadInvariantDiagnostic.CacheHitResponseShaping(reason)
+                invariantDiagnostic: DocumentCacheReadInvariantDiagnostic.CacheHitResponseShaping(reason),
+                rawLookupOutcome: DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
             );
         }
     }

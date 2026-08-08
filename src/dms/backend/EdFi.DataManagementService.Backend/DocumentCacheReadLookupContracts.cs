@@ -49,7 +49,8 @@ internal abstract record DocumentCacheReadDocumentLookupResult
 {
     private DocumentCacheReadDocumentLookupResult(
         DocumentCacheReadLookupOutcome outcome,
-        DocumentCacheReadAccelerationCandidate candidate
+        DocumentCacheReadAccelerationCandidate candidate,
+        bool isAdapterAcquisitionFailure = false
     )
     {
         Outcome = DocumentCacheMaterializerGuards.RequireDefined(
@@ -58,11 +59,22 @@ internal abstract record DocumentCacheReadDocumentLookupResult
             "Unsupported DocumentCache read lookup outcome."
         );
         Candidate = candidate ?? throw new ArgumentNullException(nameof(candidate));
+        IsAdapterAcquisitionFailure = isAdapterAcquisitionFailure;
+
+        if (IsAdapterAcquisitionFailure && Outcome != DocumentCacheReadLookupOutcome.CacheUnavailable)
+        {
+            throw new ArgumentException(
+                "Adapter acquisition failures must be reported as cache-unavailable lookup outcomes.",
+                nameof(isAdapterAcquisitionFailure)
+            );
+        }
     }
 
     public DocumentCacheReadLookupOutcome Outcome { get; }
 
     public DocumentCacheReadAccelerationCandidate Candidate { get; }
+
+    public bool IsAdapterAcquisitionFailure { get; }
 
     public bool IsFreshHit => Outcome == DocumentCacheReadLookupOutcome.FreshHit;
 
@@ -96,9 +108,10 @@ internal abstract record DocumentCacheReadDocumentLookupResult
         public Fallback(
             DocumentCacheReadLookupOutcome outcome,
             DocumentCacheReadAccelerationCandidate candidate,
-            string message
+            string message,
+            bool isAdapterAcquisitionFailure = false
         )
-            : base(outcome, candidate)
+            : base(outcome, candidate, isAdapterAcquisitionFailure)
         {
             if (outcome == DocumentCacheReadLookupOutcome.FreshHit)
             {
@@ -120,7 +133,8 @@ internal sealed record DocumentCacheReadBatchLookupResult
     public DocumentCacheReadBatchLookupResult(
         DocumentCacheReadLookupOutcome outcome,
         IReadOnlyList<DocumentCacheReadDocumentLookupResult> Documents,
-        string message
+        string message,
+        bool isAdapterAcquisitionFailure = false
     )
     {
         Outcome = DocumentCacheMaterializerGuards.RequireDefined(
@@ -130,10 +144,19 @@ internal sealed record DocumentCacheReadBatchLookupResult
         );
         this.Documents = Documents ?? throw new ArgumentNullException(nameof(Documents));
         Message = DocumentCacheReadLookupDiagnosticText.Sanitize(message);
+        IsAdapterAcquisitionFailure = isAdapterAcquisitionFailure;
 
         if (outcome == DocumentCacheReadLookupOutcome.FreshHit && !AllDocumentsFresh(this.Documents))
         {
             throw new ArgumentException("Fresh batch lookup results require all documents to be fresh.");
+        }
+
+        if (IsAdapterAcquisitionFailure && Outcome != DocumentCacheReadLookupOutcome.CacheUnavailable)
+        {
+            throw new ArgumentException(
+                "Adapter acquisition failures must be reported as cache-unavailable lookup outcomes.",
+                nameof(isAdapterAcquisitionFailure)
+            );
         }
     }
 
@@ -142,6 +165,8 @@ internal sealed record DocumentCacheReadBatchLookupResult
     public IReadOnlyList<DocumentCacheReadDocumentLookupResult> Documents { get; }
 
     public string Message { get; }
+
+    public bool IsAdapterAcquisitionFailure { get; }
 
     public bool IsFreshHit => Outcome == DocumentCacheReadLookupOutcome.FreshHit;
 
@@ -165,13 +190,19 @@ internal sealed record DocumentCacheReadBatchLookupResult
 
         return firstFallback is null
             ? new(DocumentCacheReadLookupOutcome.FreshHit, documents, "All cache rows are fresh.")
-            : new(firstFallback.Outcome, documents, "One or more cache rows were not fresh.");
+            : new(
+                firstFallback.Outcome,
+                documents,
+                "One or more cache rows were not fresh.",
+                firstFallback.IsAdapterAcquisitionFailure
+            );
     }
 
     public static DocumentCacheReadBatchLookupResult PageFallback(
         DocumentCacheReadLookupOutcome outcome,
         IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates,
-        string message
+        string message,
+        bool isAdapterAcquisitionFailure = false
     )
     {
         ArgumentNullException.ThrowIfNull(candidates);
@@ -182,10 +213,12 @@ internal sealed record DocumentCacheReadBatchLookupResult
                 .Select(candidate => new DocumentCacheReadDocumentLookupResult.Fallback(
                     outcome,
                     candidate,
-                    message
+                    message,
+                    isAdapterAcquisitionFailure
                 ))
                 .ToArray(),
-            message
+            message,
+            isAdapterAcquisitionFailure
         );
     }
 
@@ -283,9 +316,10 @@ internal abstract class DocumentCacheReadLookupAdapterBase
 
         return lookupResult is DocumentCacheReadDocumentLookupResult.FreshHit freshHit
             ? _responseShaper.ShapeGetById(request, freshHit)
-            : DocumentCacheReadLookupResult<GetResult>.Fallback(
-                MapFallbackReason(lookupResult.Outcome),
-                SelectDirectFillCandidates([lookupResult])
+            : DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                lookupResult.Outcome,
+                SelectDirectFillCandidates([lookupResult]),
+                isAdapterAcquisitionFailure: lookupResult.IsAdapterAcquisitionFailure
             );
     }
 
@@ -316,9 +350,10 @@ internal abstract class DocumentCacheReadLookupAdapterBase
 
         return lookupResult.IsFreshHit
             ? _responseShaper.ShapeQuery(request, lookupResult)
-            : DocumentCacheReadLookupResult<QueryResult>.Fallback(
-                MapFallbackReason(lookupResult.Outcome),
-                SelectDirectFillCandidates(lookupResult.Documents)
+            : DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                lookupResult.Outcome,
+                SelectDirectFillCandidates(lookupResult.Documents),
+                isAdapterAcquisitionFailure: lookupResult.IsAdapterAcquisitionFailure
             );
     }
 
@@ -401,10 +436,16 @@ internal abstract class DocumentCacheReadLookupAdapterBase
                 exception.Message
             );
         }
-        catch (Exception exception)
-            when (exception is DocumentCacheReadAcquisitionUnavailableException
-                || IsCacheUnavailable(exception)
-            )
+        catch (DocumentCacheReadAcquisitionUnavailableException)
+        {
+            return DocumentCacheReadBatchLookupResult.PageFallback(
+                DocumentCacheReadLookupOutcome.CacheUnavailable,
+                request.Candidates,
+                "DocumentCache read lookup provider availability failure.",
+                isAdapterAcquisitionFailure: true
+            );
+        }
+        catch (Exception exception) when (IsCacheUnavailable(exception))
         {
             return DocumentCacheReadBatchLookupResult.PageFallback(
                 DocumentCacheReadLookupOutcome.CacheUnavailable,
@@ -459,7 +500,23 @@ internal abstract class DocumentCacheReadLookupAdapterBase
         return null;
     }
 
-    private static DocumentCacheReadAccelerationFallbackReason MapFallbackReason(
+    private static IReadOnlyList<DocumentCacheReadAccelerationCandidate> SelectDirectFillCandidates(
+        IReadOnlyList<DocumentCacheReadDocumentLookupResult> lookupResults
+    ) =>
+        lookupResults
+            .Where(lookupResult =>
+                lookupResult.Outcome
+                    is DocumentCacheReadLookupOutcome.MissingCacheRow
+                        or DocumentCacheReadLookupOutcome.StaleCacheRow
+                        or DocumentCacheReadLookupOutcome.SourceDrift
+            )
+            .Select(lookupResult => lookupResult.Candidate)
+            .ToArray();
+}
+
+internal static class DocumentCacheReadLookupOutcomeMapper
+{
+    public static DocumentCacheReadAccelerationFallbackReason MapFallbackReason(
         DocumentCacheReadLookupOutcome outcome
     ) =>
         outcome switch
@@ -485,19 +542,6 @@ internal abstract class DocumentCacheReadLookupAdapterBase
                 DocumentCacheReadAccelerationFallbackReason.CacheLookupStale,
             _ => DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
         };
-
-    private static IReadOnlyList<DocumentCacheReadAccelerationCandidate> SelectDirectFillCandidates(
-        IReadOnlyList<DocumentCacheReadDocumentLookupResult> lookupResults
-    ) =>
-        lookupResults
-            .Where(lookupResult =>
-                lookupResult.Outcome
-                    is DocumentCacheReadLookupOutcome.MissingCacheRow
-                        or DocumentCacheReadLookupOutcome.StaleCacheRow
-                        or DocumentCacheReadLookupOutcome.SourceDrift
-            )
-            .Select(lookupResult => lookupResult.Candidate)
-            .ToArray();
 }
 
 public sealed class DocumentCacheReadLookupInvariantException : Exception

@@ -153,13 +153,34 @@ internal sealed record DocumentCacheReadLookupResult<TResult>
         TResult? cachedResult,
         DocumentCacheReadAccelerationFallbackReason fallbackReason,
         IReadOnlyList<DocumentCacheReadAccelerationCandidate>? directFillCandidates = null,
-        DocumentCacheReadInvariantDiagnostic? invariantDiagnostic = null
+        DocumentCacheReadInvariantDiagnostic? invariantDiagnostic = null,
+        DocumentCacheReadLookupOutcome? rawLookupOutcome = null,
+        bool isAdapterAcquisitionFailure = false
     )
     {
         CachedResult = cachedResult;
         FallbackReason = fallbackReason;
         DirectFillCandidates = directFillCandidates ?? [];
         InvariantDiagnostic = invariantDiagnostic;
+        RawLookupOutcome = rawLookupOutcome is null
+            ? null
+            : DocumentCacheMaterializerGuards.RequireDefined(
+                rawLookupOutcome.Value,
+                nameof(rawLookupOutcome),
+                "Unsupported DocumentCache read lookup outcome."
+            );
+        IsAdapterAcquisitionFailure = isAdapterAcquisitionFailure;
+
+        if (
+            IsAdapterAcquisitionFailure
+            && RawLookupOutcome != DocumentCacheReadLookupOutcome.CacheUnavailable
+        )
+        {
+            throw new ArgumentException(
+                "Adapter acquisition failures must be reported as cache-unavailable lookup outcomes.",
+                nameof(isAdapterAcquisitionFailure)
+            );
+        }
     }
 
     public TResult? CachedResult { get; }
@@ -170,6 +191,10 @@ internal sealed record DocumentCacheReadLookupResult<TResult>
 
     public DocumentCacheReadInvariantDiagnostic? InvariantDiagnostic { get; }
 
+    public DocumentCacheReadLookupOutcome? RawLookupOutcome { get; }
+
+    public bool IsAdapterAcquisitionFailure { get; }
+
     public bool HasCachedResult => CachedResult is not null;
 
     public static DocumentCacheReadLookupResult<TResult> Hit(TResult result)
@@ -178,7 +203,8 @@ internal sealed record DocumentCacheReadLookupResult<TResult>
 
         return new DocumentCacheReadLookupResult<TResult>(
             result,
-            DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+            DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
+            rawLookupOutcome: DocumentCacheReadLookupOutcome.FreshHit
         );
     }
 
@@ -186,8 +212,32 @@ internal sealed record DocumentCacheReadLookupResult<TResult>
         DocumentCacheReadAccelerationFallbackReason reason =
             DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
         IReadOnlyList<DocumentCacheReadAccelerationCandidate>? directFillCandidates = null,
-        DocumentCacheReadInvariantDiagnostic? invariantDiagnostic = null
-    ) => new(null, reason, directFillCandidates, invariantDiagnostic);
+        DocumentCacheReadInvariantDiagnostic? invariantDiagnostic = null,
+        DocumentCacheReadLookupOutcome? rawLookupOutcome = null,
+        bool isAdapterAcquisitionFailure = false
+    ) =>
+        new(
+            null,
+            reason,
+            directFillCandidates,
+            invariantDiagnostic,
+            rawLookupOutcome,
+            isAdapterAcquisitionFailure
+        );
+
+    public static DocumentCacheReadLookupResult<TResult> FallbackFromLookupOutcome(
+        DocumentCacheReadLookupOutcome outcome,
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate>? directFillCandidates = null,
+        DocumentCacheReadInvariantDiagnostic? invariantDiagnostic = null,
+        bool isAdapterAcquisitionFailure = false
+    ) =>
+        Fallback(
+            DocumentCacheReadLookupOutcomeMapper.MapFallbackReason(outcome),
+            directFillCandidates,
+            invariantDiagnostic,
+            outcome,
+            isAdapterAcquisitionFailure
+        );
 }
 
 internal sealed record DocumentCacheReadInvariantDiagnostic
@@ -500,6 +550,8 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             request.ResourceKind,
             targetContext,
             lookupResult.FallbackReason,
+            lookupResult.RawLookupOutcome,
+            lookupResult.IsAdapterAcquisitionFailure,
             lookupResult.InvariantDiagnostic
         );
 
@@ -652,6 +704,8 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             request.ResourceKind,
             targetContext,
             lookupResult.FallbackReason,
+            lookupResult.RawLookupOutcome,
+            lookupResult.IsAdapterAcquisitionFailure,
             lookupResult.InvariantDiagnostic
         );
 
@@ -694,9 +748,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                     targetContext,
                     DocumentCacheReadAccelerationOperation.GetById,
                     request.ResourceKind,
-                    result.CachedResult is not null
-                        ? DocumentCacheReadTelemetryLabel.Hit
-                        : result.FallbackReason.ToString()
+                    GetLookupTelemetryOutcome(result, DocumentCacheReadTelemetryLabel.Hit)
                 ),
                 DocumentCacheReadTelemetry.GetElapsedTime(lookupStartTimestamp)
             );
@@ -740,9 +792,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                     targetContext,
                     DocumentCacheReadAccelerationOperation.Query,
                     request.ResourceKind,
-                    result.CachedResult is not null
-                        ? DocumentCacheReadTelemetryLabel.PageHit
-                        : result.FallbackReason.ToString()
+                    GetLookupTelemetryOutcome(result, DocumentCacheReadTelemetryLabel.PageHit)
                 ),
                 DocumentCacheReadTelemetry.GetElapsedTime(lookupStartTimestamp)
             );
@@ -806,12 +856,28 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         DocumentCacheReadAccelerationResourceKind resourceKind,
         DocumentCacheTargetExecutionContext targetContext,
         DocumentCacheReadAccelerationFallbackReason fallbackReason,
+        DocumentCacheReadLookupOutcome? rawLookupOutcome,
+        bool isAdapterAcquisitionFailure,
         DocumentCacheReadInvariantDiagnostic? invariantDiagnostic = null
     )
     {
-        _readTelemetry.RecordMiss(
-            CreateReadTelemetryContext(targetContext, operation, resourceKind, fallbackReason.ToString())
+        DocumentCacheReadTelemetryContext lookupContext = CreateReadTelemetryContext(
+            targetContext,
+            operation,
+            resourceKind,
+            rawLookupOutcome?.ToString() ?? fallbackReason.ToString()
         );
+        _readTelemetry.RecordMiss(lookupContext);
+
+        if (fallbackReason == DocumentCacheReadAccelerationFallbackReason.CacheLookupUnavailable)
+        {
+            _readTelemetry.RecordCacheUnavailable(lookupContext);
+            if (isAdapterAcquisitionFailure)
+            {
+                _readTelemetry.RecordAdapterAcquisitionFailure(lookupContext);
+            }
+        }
+
         if (fallbackReason == DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure)
         {
             RecordTargetInvariantDiagnostic(
@@ -838,11 +904,6 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         );
 
         _readTelemetry.RecordFallback(context);
-        if (fallbackReason == DocumentCacheReadAccelerationFallbackReason.CacheLookupUnavailable)
-        {
-            _readTelemetry.RecordCacheUnavailable(context);
-            _readTelemetry.RecordAdapterAcquisitionFailure(context);
-        }
     }
 
     private void RecordUnexpectedLookupException(
@@ -892,6 +953,15 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         targetContext is null
             ? DocumentCacheReadTelemetryContext.ForNoTarget(operation, resourceKind, outcome)
             : DocumentCacheReadTelemetryContext.ForTarget(targetContext, operation, resourceKind, outcome);
+
+    private static string GetLookupTelemetryOutcome<TResult>(
+        DocumentCacheReadLookupResult<TResult> lookupResult,
+        string hitOutcome
+    )
+        where TResult : class =>
+        lookupResult.CachedResult is not null
+            ? hitOutcome
+            : lookupResult.RawLookupOutcome?.ToString() ?? lookupResult.FallbackReason.ToString();
 
     private bool TryResolveTarget(
         string tenantKey,
@@ -1132,7 +1202,10 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             {
                 if (directFillTimeout.IsCancellationRequested)
                 {
-                    directFillDurationOutcome = DocumentCacheReadTelemetryLabel.TimedOut;
+                    directFillDurationOutcome = SelectDirectFillCancellationReason(
+                        cancellationToken,
+                        directFillTimeout
+                    );
                     RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
                     return;
                 }

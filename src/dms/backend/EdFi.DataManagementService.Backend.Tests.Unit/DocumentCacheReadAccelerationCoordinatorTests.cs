@@ -327,7 +327,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         if (fallbackReason == DocumentCacheReadAccelerationFallbackReason.CacheLookupUnavailable)
         {
             telemetry.Events.Should().Contain(("cacheUnavailable", fallbackReason.ToString()));
-            telemetry.Events.Should().Contain(("adapterAcquisitionFailure", fallbackReason.ToString()));
+            telemetry.Events.Should().NotContain(("adapterAcquisitionFailure", fallbackReason.ToString()));
         }
     }
 
@@ -878,6 +878,101 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         durationMetrics.Should().Contain(DocumentCacheReadTelemetry.DirectFillDurationName);
     }
 
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.LifecycleDisabled))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.LifecycleResetting))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.LifecycleRebuilding))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.CacheAheadRecoveryRequired))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.MissingCacheRow))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.MissingSourceRow))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.SourceDrift))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.StaleCacheRow))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.MissingLifecycleState))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.InvalidLifecycleState))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.ProjectionTargetIneligible))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.ProviderPrerequisiteIneligible))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.CacheUnavailable))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure))]
+    public async Task It_records_raw_lookup_outcomes_for_cache_miss_telemetry(string rawLookupOutcomeName)
+    {
+        var rawLookupOutcome = Enum.Parse<DocumentCacheReadLookupOutcome>(rawLookupOutcomeName);
+        DocumentCacheReadAccelerationFallbackReason expectedFallbackReason =
+            DocumentCacheReadLookupOutcomeMapper.MapFallbackReason(rawLookupOutcome);
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                rawLookupOutcome,
+                [Candidate()]
+            ),
+        };
+        var telemetry = new RecordingReadTelemetry();
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext()),
+            readTelemetry: telemetry
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<GetResult>(new GetResult.GetFailureNotExists());
+                }
+            )
+        );
+
+        result.Should().BeOfType<GetResult.GetFailureNotExists>();
+        fallbackContext.Reason.Should().Be(expectedFallbackReason);
+        telemetry.Events.Should().Contain(("miss", rawLookupOutcome.ToString()));
+        telemetry.Events.Should().Contain(("fallback", expectedFallbackReason.ToString()));
+        telemetry
+            .DurationEvents.Should()
+            .Contain((DocumentCacheReadTelemetry.CacheLookupDurationName, rawLookupOutcome.ToString()));
+    }
+
+    [Test]
+    public async Task It_records_adapter_acquisition_failure_only_for_cache_acquisition_failures()
+    {
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                DocumentCacheReadLookupOutcome.CacheUnavailable,
+                [Candidate()],
+                isAdapterAcquisitionFailure: true
+            ),
+        };
+        var telemetry = new RecordingReadTelemetry();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext()),
+            readTelemetry: telemetry
+        );
+
+        await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<GetResult>(new GetResult.GetFailureNotExists())
+            )
+        );
+
+        telemetry.Events.Should().Contain(("miss", nameof(DocumentCacheReadLookupOutcome.CacheUnavailable)));
+        telemetry
+            .Events.Should()
+            .Contain(("cacheUnavailable", nameof(DocumentCacheReadLookupOutcome.CacheUnavailable)));
+        telemetry
+            .Events.Should()
+            .Contain(("adapterAcquisitionFailure", nameof(DocumentCacheReadLookupOutcome.CacheUnavailable)));
+        telemetry
+            .Events.Should()
+            .Contain(
+                ("fallback", nameof(DocumentCacheReadAccelerationFallbackReason.CacheLookupUnavailable))
+            );
+    }
+
     [Test]
     public async Task It_skips_direct_fill_when_relational_get_fallback_is_not_successful()
     {
@@ -1385,6 +1480,69 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         writer.Requests.Should().BeEmpty();
         telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.Attempted));
         telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.CallerCanceled));
+    }
+
+    [Test]
+    public async Task It_records_caller_cancellation_when_query_direct_fill_is_canceled_between_candidates()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: SecondDocumentUuid
+        );
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [
+                new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+                new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() },
+            ],
+            2,
+            HighestSelectedDocumentId: 346
+        );
+        using var cancellationSource = new CancellationTokenSource();
+        var materializationAttempts = 0;
+        var materializer = new RecordingMaterializer
+        {
+            OnMaterialize = _ =>
+            {
+                materializationAttempts++;
+                if (materializationAttempts == 1)
+                {
+                    cancellationSource.Cancel();
+                }
+            },
+        };
+        var writer = new RecordingCacheWriter();
+        var telemetry = new RecordingReadTelemetry();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            new RecordingLookupAdapter
+            {
+                QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                    DocumentCacheReadLookupOutcome.MissingCacheRow,
+                    [first, second]
+                ),
+            },
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer,
+            telemetry
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<QueryResult>(fallbackResult),
+                CandidatePage([first, second], totalCount: 2, highestSelectedDocumentId: 346)
+            ),
+            cancellationSource.Token
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Select(request => request.DocumentId).Should().Equal(345);
+        writer.Requests.Select(request => request.DocumentId).Should().Equal(345);
+        telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.CallerCanceled));
+        telemetry.Events.Should().NotContain(("directFill", DocumentCacheReadTelemetryLabel.TimedOut));
     }
 
     [Test]

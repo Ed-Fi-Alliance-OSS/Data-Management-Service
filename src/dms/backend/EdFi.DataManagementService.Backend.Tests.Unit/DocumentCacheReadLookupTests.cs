@@ -389,6 +389,7 @@ public class Given_DocumentCacheReadLookup
 
         result.CachedResult.Should().BeNull();
         result.FallbackReason.Should().Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupStale);
+        result.RawLookupOutcome.Should().Be(DocumentCacheReadLookupOutcome.StaleCacheRow);
         result.DirectFillCandidates.Should().Equal(second);
         adapter.ExecuteAttempts.Should().Be(1);
         responseShaper.QueryShapeAttempts.Should().Be(0);
@@ -430,6 +431,7 @@ public class Given_DocumentCacheReadLookup
         );
 
         result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheUnavailable);
+        result.IsAdapterAcquisitionFailure.Should().BeFalse();
         result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
         adapter.ExecuteAttempts.Should().Be(1);
     }
@@ -451,6 +453,7 @@ public class Given_DocumentCacheReadLookup
         );
 
         result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheUnavailable);
+        result.IsAdapterAcquisitionFailure.Should().BeTrue();
         result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
     }
 
@@ -470,6 +473,7 @@ public class Given_DocumentCacheReadLookup
         );
 
         result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheUnavailable);
+        result.IsAdapterAcquisitionFailure.Should().BeTrue();
         result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
     }
 
@@ -489,6 +493,7 @@ public class Given_DocumentCacheReadLookup
         );
 
         result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheUnavailable);
+        result.IsAdapterAcquisitionFailure.Should().BeTrue();
         result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
     }
 
@@ -530,6 +535,7 @@ public class Given_DocumentCacheReadLookup
         );
 
         result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheUnavailable);
+        result.IsAdapterAcquisitionFailure.Should().BeTrue();
         result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
     }
 
@@ -552,6 +558,7 @@ public class Given_DocumentCacheReadLookup
         );
 
         result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheUnavailable);
+        result.IsAdapterAcquisitionFailure.Should().BeTrue();
         result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
     }
 
@@ -574,6 +581,7 @@ public class Given_DocumentCacheReadLookup
         );
 
         result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheUnavailable);
+        result.IsAdapterAcquisitionFailure.Should().BeTrue();
         result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
     }
 

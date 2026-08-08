@@ -208,6 +208,49 @@ public class Given_DocumentCacheReadTelemetry
         joinedLabels.Should().NotContain("Namespace");
     }
 
+    [Test]
+    public void It_records_raw_bounded_lookup_outcome_labels_for_miss_metrics()
+    {
+        using MetricCollector collector = new();
+        DocumentCacheReadTelemetry telemetry = collector.CreateTelemetry();
+        DocumentCacheTargetExecutionContext targetContext = ExecutionContext();
+        DocumentCacheReadLookupOutcome[] rawOutcomes =
+        [
+            DocumentCacheReadLookupOutcome.LifecycleDisabled,
+            DocumentCacheReadLookupOutcome.LifecycleResetting,
+            DocumentCacheReadLookupOutcome.LifecycleRebuilding,
+            DocumentCacheReadLookupOutcome.CacheAheadRecoveryRequired,
+            DocumentCacheReadLookupOutcome.MissingCacheRow,
+            DocumentCacheReadLookupOutcome.MissingSourceRow,
+            DocumentCacheReadLookupOutcome.SourceDrift,
+            DocumentCacheReadLookupOutcome.StaleCacheRow,
+            DocumentCacheReadLookupOutcome.MissingLifecycleState,
+            DocumentCacheReadLookupOutcome.InvalidLifecycleState,
+            DocumentCacheReadLookupOutcome.ProjectionTargetIneligible,
+            DocumentCacheReadLookupOutcome.ProviderPrerequisiteIneligible,
+            DocumentCacheReadLookupOutcome.CacheUnavailable,
+            DocumentCacheReadLookupOutcome.DeterministicInvariantFailure,
+        ];
+
+        foreach (DocumentCacheReadLookupOutcome rawOutcome in rawOutcomes)
+        {
+            telemetry.RecordMiss(
+                DocumentCacheReadTelemetryContext.ForTarget(
+                    targetContext,
+                    DocumentCacheReadAccelerationOperation.GetById,
+                    DocumentCacheReadAccelerationResourceKind.Resource,
+                    rawOutcome.ToString()
+                )
+            );
+        }
+
+        collector
+            .MeasurementsFor(DocumentCacheReadTelemetry.MissCounterName)
+            .Select(measurement => measurement.Tags["outcome"])
+            .Should()
+            .BeEquivalentTo(rawOutcomes.Select(static outcome => outcome.ToString()));
+    }
+
     private static void AssertAllowedTelemetryTags(MetricMeasurement measurement)
     {
         measurement

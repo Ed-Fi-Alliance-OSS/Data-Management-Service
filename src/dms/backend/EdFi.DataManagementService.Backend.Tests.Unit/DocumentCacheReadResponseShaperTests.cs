@@ -77,6 +77,7 @@ public class Given_DocumentCacheReadResponseShaper
         result
             .FallbackReason.Should()
             .Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure);
+        result.RawLookupOutcome.Should().Be(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure);
         result.InvariantDiagnostic.Should().NotBeNull();
         result.InvariantDiagnostic!.Message.Should().Contain("response shaping");
     }
@@ -194,6 +195,7 @@ public class Given_DocumentCacheReadResponseShaper
         result
             .FallbackReason.Should()
             .Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure);
+        result.RawLookupOutcome.Should().Be(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure);
         result.InvariantDiagnostic.Should().NotBeNull();
         result
             .InvariantDiagnostic!.Message.Should()
@@ -227,7 +229,8 @@ public class Given_DocumentCacheReadResponseShaper
         );
 
         result.CachedResult.Should().BeNull();
-        result.FallbackReason.Should().Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss);
+        result.FallbackReason.Should().Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupStale);
+        result.RawLookupOutcome.Should().Be(DocumentCacheReadLookupOutcome.StaleCacheRow);
     }
 
     private static IEnumerable<TestCaseData> InvalidCachedDocumentJsonScenarios()

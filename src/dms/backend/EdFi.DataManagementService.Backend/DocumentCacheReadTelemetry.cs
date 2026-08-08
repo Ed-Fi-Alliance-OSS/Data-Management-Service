@@ -301,7 +301,7 @@ internal sealed class DocumentCacheReadTelemetry : IDocumentCacheReadTelemetry
         _adapterAcquisitionFailureCounter = meter.CreateCounter<long>(
             AdapterAcquisitionFailureCounterName,
             unit: "{failure}",
-            description: "DocumentCache read-acceleration expected adapter acquisition or availability failures."
+            description: "DocumentCache read-acceleration expected adapter acquisition failures."
         );
         _unexpectedExceptionCounter = meter.CreateCounter<long>(
             UnexpectedExceptionCounterName,
