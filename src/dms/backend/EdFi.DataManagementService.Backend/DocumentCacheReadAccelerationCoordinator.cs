@@ -1558,10 +1558,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
         }
 
-        if (
-            targetContext.Lifecycle.State == DocumentCacheLifecycleState.Rebuilding
-            && lookupResult.RawLookupOutcome == DocumentCacheReadLookupOutcome.LifecycleRebuilding
-        )
+        if (lookupResult.RawLookupOutcome == DocumentCacheReadLookupOutcome.LifecycleRebuilding)
         {
             return DirectFillCandidateSelection.For([request.AuthorizedCandidate]);
         }
@@ -1592,10 +1589,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
         }
 
-        if (
-            targetContext.Lifecycle.State == DocumentCacheLifecycleState.Rebuilding
-            && lookupResult.RawLookupOutcome == DocumentCacheReadLookupOutcome.LifecycleRebuilding
-        )
+        if (lookupResult.RawLookupOutcome == DocumentCacheReadLookupOutcome.LifecycleRebuilding)
         {
             return DirectFillCandidateSelection.For(request.AuthorizedCandidatePage.Candidates);
         }
