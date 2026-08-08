@@ -218,9 +218,7 @@ public sealed class RelationalDocumentStoreRepository(
                 resource,
                 getRequest.DocumentUuid,
                 getRequest.ReadMode,
-                getRequest.ResourceInfo.IsDescriptor
-                    ? DocumentCacheReadAccelerationResourceKind.Descriptor
-                    : DocumentCacheReadAccelerationResourceKind.Resource,
+                DocumentCacheReadAccelerationResourceKind.Resource,
                 DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly,
                 (_, fallbackCancellationToken) =>
                     GetDocumentByIdRelationalAsync(getRequest, fallbackCancellationToken),
@@ -809,9 +807,7 @@ public sealed class RelationalDocumentStoreRepository(
                     queryRequest.TenantKey,
                     queryRequest.MappingSet,
                     resource,
-                    queryRequest.ResourceInfo.IsDescriptor
-                        ? DocumentCacheReadAccelerationResourceKind.Descriptor
-                        : DocumentCacheReadAccelerationResourceKind.Resource,
+                    DocumentCacheReadAccelerationResourceKind.Resource,
                     DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly,
                     (_, fallbackCancellationToken) =>
                         QueryDocumentsRelationalAsync(

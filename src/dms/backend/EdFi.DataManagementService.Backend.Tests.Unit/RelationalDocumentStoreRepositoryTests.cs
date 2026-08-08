@@ -463,7 +463,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
         readAccelerationCoordinator.GetByIdAttempts.Should().Be(1);
         readAccelerationCoordinator.SelectedGetByIdRequest.Should().NotBeNull();
         readAccelerationCoordinator
-            .SelectedGetByIdRequest!.LookupReadiness.Should()
+            .SelectedGetByIdRequest!.ResourceKind.Should()
+            .Be(DocumentCacheReadAccelerationResourceKind.Resource);
+        readAccelerationCoordinator
+            .SelectedGetByIdRequest.LookupReadiness.Should()
             .Be(DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate);
         readAccelerationCoordinator
             .SelectedGetByIdRequest.AuthorizedCandidate.Should()
@@ -2924,7 +2927,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
         readAccelerationCoordinator.QueryAttempts.Should().Be(1);
         readAccelerationCoordinator.SelectedQueryRequest.Should().NotBeNull();
         readAccelerationCoordinator
-            .SelectedQueryRequest!.LookupReadiness.Should()
+            .SelectedQueryRequest!.ResourceKind.Should()
+            .Be(DocumentCacheReadAccelerationResourceKind.Resource);
+        readAccelerationCoordinator
+            .SelectedQueryRequest.LookupReadiness.Should()
             .Be(DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate);
         readAccelerationCoordinator
             .SelectedQueryRequest.AuthorizedCandidatePage.Should()
