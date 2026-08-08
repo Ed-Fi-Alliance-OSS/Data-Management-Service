@@ -175,8 +175,6 @@ internal interface IDocumentCacheReadTelemetry
     void RecordCacheLookupDuration(DocumentCacheReadTelemetryContext context, TimeSpan duration);
 
     void RecordDirectFillDuration(DocumentCacheReadTelemetryContext context, TimeSpan duration);
-
-    void RecordDerivativeTargetBypass(DocumentCacheReadTelemetryContext context);
 }
 
 internal sealed class NoOpDocumentCacheReadTelemetry : IDocumentCacheReadTelemetry
@@ -211,9 +209,6 @@ internal sealed class NoOpDocumentCacheReadTelemetry : IDocumentCacheReadTelemet
     public void RecordDirectFillDuration(DocumentCacheReadTelemetryContext context, TimeSpan duration) =>
         ValidateDuration(context, duration);
 
-    public void RecordDerivativeTargetBypass(DocumentCacheReadTelemetryContext context) =>
-        ValidateContext(context);
-
     private static void ValidateContext(DocumentCacheReadTelemetryContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -247,8 +242,6 @@ internal sealed class DocumentCacheReadTelemetry : IDocumentCacheReadTelemetry
     internal const string UnexpectedExceptionCounterName =
         "edfi.dms.document_cache.read.unexpected_exceptions";
     internal const string DirectFillCounterName = "edfi.dms.document_cache.read.direct_fill";
-    internal const string DerivativeTargetBypassCounterName =
-        "edfi.dms.document_cache.read.derivative_target_bypass";
     internal const string CacheLookupDurationName = "edfi.dms.document_cache.read.lookup.duration";
     internal const string DirectFillDurationName = "edfi.dms.document_cache.read.direct_fill.duration";
 
@@ -263,7 +256,6 @@ internal sealed class DocumentCacheReadTelemetry : IDocumentCacheReadTelemetry
     private readonly Counter<long> _adapterAcquisitionFailureCounter;
     private readonly Counter<long> _unexpectedExceptionCounter;
     private readonly Counter<long> _directFillCounter;
-    private readonly Counter<long> _derivativeTargetBypassCounter;
     private readonly Histogram<double> _cacheLookupDuration;
     private readonly Histogram<double> _directFillDuration;
     private readonly ILogger<DocumentCacheReadTelemetry> _logger;
@@ -320,11 +312,6 @@ internal sealed class DocumentCacheReadTelemetry : IDocumentCacheReadTelemetry
             DirectFillCounterName,
             unit: "{outcome}",
             description: "DocumentCache read-acceleration direct-fill outcomes."
-        );
-        _derivativeTargetBypassCounter = meter.CreateCounter<long>(
-            DerivativeTargetBypassCounterName,
-            unit: "{bypass}",
-            description: "DocumentCache read-acceleration derivative-target bypass outcomes."
         );
         _cacheLookupDuration = meter.CreateHistogram<double>(
             CacheLookupDurationName,
@@ -397,12 +384,6 @@ internal sealed class DocumentCacheReadTelemetry : IDocumentCacheReadTelemetry
 
     public void RecordDirectFillDuration(DocumentCacheReadTelemetryContext context, TimeSpan duration) =>
         _directFillDuration.Record(RequireNonNegativeMilliseconds(duration), context.ToTags());
-
-    public void RecordDerivativeTargetBypass(DocumentCacheReadTelemetryContext context)
-    {
-        _derivativeTargetBypassCounter.Add(1, context.ToTags());
-        LogDebug("derivative-target-bypass", context);
-    }
 
     internal static TimeSpan GetElapsedTime(long startTimestamp) => Stopwatch.GetElapsedTime(startTimestamp);
 

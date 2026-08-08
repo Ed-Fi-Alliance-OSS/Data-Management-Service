@@ -23,7 +23,7 @@ public class Given_DocumentCacheReadTelemetry
     );
 
     [Test]
-    public void It_records_bounded_read_lookup_fallback_direct_fill_and_derivative_metrics()
+    public void It_records_bounded_read_lookup_fallback_and_direct_fill_metrics()
     {
         using MetricCollector collector = new();
         DocumentCacheReadTelemetry telemetry = collector.CreateTelemetry();
@@ -104,15 +104,6 @@ public class Given_DocumentCacheReadTelemetry
         );
         telemetry.RecordCacheLookupDuration(attemptContext, TimeSpan.FromMilliseconds(11));
         telemetry.RecordDirectFillDuration(attemptContext, TimeSpan.FromMilliseconds(12));
-        telemetry.RecordDerivativeTargetBypass(
-            DocumentCacheReadTelemetryContext.ForTarget(
-                targetContext,
-                DocumentCacheReadAccelerationOperation.Query,
-                DocumentCacheReadAccelerationResourceKind.Resource,
-                "Snapshot"
-            )
-        );
-
         MetricMeasurement attempt = collector
             .MeasurementsFor(DocumentCacheReadTelemetry.AttemptCounterName)
             .Should()
@@ -165,10 +156,6 @@ public class Given_DocumentCacheReadTelemetry
             .ContainSingle()
             .Which.DoubleValue.Should()
             .Be(12);
-        collector
-            .MeasurementsFor(DocumentCacheReadTelemetry.DerivativeTargetBypassCounterName)
-            .Should()
-            .ContainSingle();
 
         AssertAllowedTelemetryTags(attempt);
     }

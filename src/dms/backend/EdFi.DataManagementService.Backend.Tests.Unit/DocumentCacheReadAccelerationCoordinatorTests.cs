@@ -2869,9 +2869,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
 
         public void RecordDirectFillDuration(DocumentCacheReadTelemetryContext context, TimeSpan duration) =>
             DurationEvents.Add((DocumentCacheReadTelemetry.DirectFillDurationName, context.Outcome));
-
-        public void RecordDerivativeTargetBypass(DocumentCacheReadTelemetryContext context) =>
-            Events.Add(("derivativeTargetBypass", context.Outcome));
     }
 
     private sealed class ThrowingDataStoreSelection : IDataStoreSelection
