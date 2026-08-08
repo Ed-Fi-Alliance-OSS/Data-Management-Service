@@ -31,6 +31,8 @@ internal static class DocumentCacheReadTelemetryLabel
     public const string SkippedFallbackNotSuccessful = "SkippedFallbackNotSuccessful";
     public const string SkippedNoCandidates = "SkippedNoCandidates";
     public const string SkippedNoServedCandidate = "SkippedNoServedCandidate";
+    public const string SkippedCacheUnavailable = "SkippedCacheUnavailable";
+    public const string SkippedTargetMismatch = "SkippedTargetMismatch";
     public const string SkippedServicesUnavailable = "SkippedServicesUnavailable";
     public const string SkippedRequestCanceled = "SkippedRequestCanceled";
     public const string SkippedTargetIneligible = "SkippedTargetIneligible";

@@ -266,6 +266,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
+        var telemetry = new RecordingReadTelemetry();
         DataStore selectedDataStore =
             mismatch == "provider"
                 ? SelectedDataStore(RelationalProviderToken.SqlServer, "Host=localhost")
@@ -277,6 +278,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Rebuilding)),
             materializer,
             writer,
+            readTelemetry: telemetry,
             selectedDataStore: selectedDataStore
         );
 
@@ -297,6 +299,9 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         lookupAdapter.GetByIdAttempts.Should().Be(0);
         materializer.Requests.Should().BeEmpty();
         writer.Requests.Should().BeEmpty();
+        telemetry
+            .Events.Should()
+            .Contain(("directFill", DocumentCacheReadTelemetryLabel.SkippedTargetMismatch));
     }
 
     [Test]
@@ -318,6 +323,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
+        var telemetry = new RecordingReadTelemetry();
         DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
         var sut = CreateCoordinator(
             readAccelerationEnabled: true,
@@ -325,6 +331,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Rebuilding)),
             materializer,
             writer,
+            readTelemetry: telemetry,
             selectedDataStore: SelectedDataStore(RelationalProviderToken.Postgresql, "Host=changed")
         );
 
@@ -345,6 +352,9 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         lookupAdapter.QueryAttempts.Should().Be(0);
         materializer.Requests.Should().BeEmpty();
         writer.Requests.Should().BeEmpty();
+        telemetry
+            .Events.Should()
+            .Contain(("directFill", DocumentCacheReadTelemetryLabel.SkippedTargetMismatch));
     }
 
     [Test]
@@ -1076,6 +1086,121 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             .Contain(
                 ("fallback", nameof(DocumentCacheReadAccelerationFallbackReason.CacheLookupUnavailable))
             );
+    }
+
+    [Test]
+    public async Task It_records_cache_unavailable_direct_fill_skip_after_get_adapter_acquisition_failure()
+    {
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                DocumentCacheReadLookupOutcome.CacheUnavailable,
+                [Candidate()],
+                isAdapterAcquisitionFailure: true
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var telemetry = new RecordingReadTelemetry();
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer,
+            telemetry
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<GetResult>(fallbackResult);
+                }
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext
+            .Reason.Should()
+            .Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupUnavailable);
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+        telemetry
+            .Events.Should()
+            .Contain(("adapterAcquisitionFailure", nameof(DocumentCacheReadLookupOutcome.CacheUnavailable)));
+        telemetry
+            .Events.Should()
+            .Contain(("directFill", DocumentCacheReadTelemetryLabel.SkippedCacheUnavailable));
+        telemetry
+            .Events.Should()
+            .NotContain(("directFill", DocumentCacheReadTelemetryLabel.SkippedNoCandidates));
+    }
+
+    [Test]
+    public async Task It_records_cache_unavailable_direct_fill_skip_after_query_adapter_acquisition_failure()
+    {
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [new JsonObject { ["id"] = DocumentUuid.Value.ToString() }],
+            1,
+            HighestSelectedDocumentId: 345
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                DocumentCacheReadLookupOutcome.CacheUnavailable,
+                [Candidate()],
+                isAdapterAcquisitionFailure: true
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var telemetry = new RecordingReadTelemetry();
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer,
+            telemetry
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<QueryResult>(fallbackResult);
+                }
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext
+            .Reason.Should()
+            .Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupUnavailable);
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+        telemetry
+            .Events.Should()
+            .Contain(("adapterAcquisitionFailure", nameof(DocumentCacheReadLookupOutcome.CacheUnavailable)));
+        telemetry
+            .Events.Should()
+            .Contain(("directFill", DocumentCacheReadTelemetryLabel.SkippedCacheUnavailable));
+        telemetry
+            .Events.Should()
+            .NotContain(("directFill", DocumentCacheReadTelemetryLabel.SkippedNoCandidates));
     }
 
     [Test]

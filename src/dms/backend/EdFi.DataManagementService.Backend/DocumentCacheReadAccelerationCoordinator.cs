@@ -412,6 +412,19 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     private readonly ILogger<DocumentCacheReadAccelerationCoordinator> _logger =
         logger ?? NullLogger<DocumentCacheReadAccelerationCoordinator>.Instance;
 
+    private sealed record DirectFillCandidateSelection(
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> Candidates,
+        string EmptyCandidateOutcome
+    )
+    {
+        public static DirectFillCandidateSelection For(
+            IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates
+        ) => new(candidates, DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
+
+        public static DirectFillCandidateSelection Skip(string emptyCandidateOutcome) =>
+            new([], emptyCandidateOutcome);
+    }
+
     public async Task<GetResult> GetByIdAsync(
         DocumentCacheReadAccelerationGetByIdRequest request,
         CancellationToken cancellationToken = default
@@ -439,13 +452,27 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 .ConfigureAwait(false);
         }
 
-        if (!TryResolveTarget(request.TenantKey, out var targetContext, out var fallbackReason))
+        if (
+            !TryResolveTarget(
+                request.TenantKey,
+                out var targetContext,
+                out var fallbackReason,
+                out var directFillSkipOutcome,
+                out var directFillTelemetryTargetContext
+            )
+        )
         {
             RecordFallback(
                 DocumentCacheReadAccelerationOperation.GetById,
                 request.ResourceKind,
                 targetContext: null,
                 fallbackReason
+            );
+            RecordDirectFillSkipIfNeeded(
+                DocumentCacheReadAccelerationOperation.GetById,
+                request.ResourceKind,
+                directFillTelemetryTargetContext,
+                directFillSkipOutcome
             );
 
             return await request
@@ -578,13 +605,27 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (!TryResolveTarget(request.TenantKey, out var targetContext, out var fallbackReason))
+        if (
+            !TryResolveTarget(
+                request.TenantKey,
+                out var targetContext,
+                out var fallbackReason,
+                out var directFillSkipOutcome,
+                out var directFillTelemetryTargetContext
+            )
+        )
         {
             RecordFallback(
                 DocumentCacheReadAccelerationOperation.Query,
                 request.ResourceKind,
                 targetContext: null,
                 fallbackReason
+            );
+            RecordDirectFillSkipIfNeeded(
+                DocumentCacheReadAccelerationOperation.Query,
+                request.ResourceKind,
+                directFillTelemetryTargetContext,
+                directFillSkipOutcome
             );
 
             return await request
@@ -932,7 +973,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     }
 
     private void RecordDirectFill(
-        DocumentCacheTargetExecutionContext targetContext,
+        DocumentCacheTargetExecutionContext? targetContext,
         DocumentCacheReadAccelerationOperation operation,
         DocumentCacheReadAccelerationResourceKind resourceKind,
         string outcome
@@ -940,6 +981,21 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         _readTelemetry.RecordDirectFill(
             CreateReadTelemetryContext(targetContext, operation, resourceKind, outcome)
         );
+
+    private void RecordDirectFillSkipIfNeeded(
+        DocumentCacheReadAccelerationOperation operation,
+        DocumentCacheReadAccelerationResourceKind resourceKind,
+        DocumentCacheTargetExecutionContext? targetContext,
+        string? outcome
+    )
+    {
+        if (outcome is null)
+        {
+            return;
+        }
+
+        RecordDirectFill(targetContext, operation, resourceKind, outcome);
+    }
 
     private static DocumentCacheReadTelemetryContext CreateReadTelemetryContext(
         DocumentCacheTargetExecutionContext? targetContext,
@@ -963,10 +1019,14 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     private bool TryResolveTarget(
         string tenantKey,
         out DocumentCacheTargetExecutionContext targetContext,
-        out DocumentCacheReadAccelerationFallbackReason fallbackReason
+        out DocumentCacheReadAccelerationFallbackReason fallbackReason,
+        out string? directFillSkipOutcome,
+        out DocumentCacheTargetExecutionContext? directFillTelemetryTargetContext
     )
     {
         targetContext = null!;
+        directFillSkipOutcome = null;
+        directFillTelemetryTargetContext = null;
 
         if (!_options.Value.ReadAcceleration.Enabled)
         {
@@ -1027,6 +1087,8 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             );
 
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.UnresolvedTarget;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedTargetMismatch;
+            directFillTelemetryTargetContext = resolvedTargetContext;
             return false;
         }
 
@@ -1056,7 +1118,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     private async Task TryDirectFillAsync(
         DocumentCacheReadAccelerationGetByIdRequest request,
         DocumentCacheTargetExecutionContext targetContext,
-        IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates,
+        DirectFillCandidateSelection candidateSelection,
         GetResult fallbackResult,
         CancellationToken cancellationToken
     )
@@ -1072,14 +1134,15 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return;
         }
 
-        IReadOnlyList<DocumentCacheReadAccelerationCandidate> survivingCandidates = candidates
-            .Where(candidate => candidate.DocumentUuid == success.DocumentUuid)
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> survivingCandidates = candidateSelection
+            .Candidates.Where(candidate => candidate.DocumentUuid == success.DocumentUuid)
             .ToArray();
 
         await TryDirectFillAsync(
                 request.MappingSet,
                 targetContext,
                 survivingCandidates,
+                candidateSelection.EmptyCandidateOutcome,
                 DocumentCacheReadAccelerationOperation.GetById,
                 request.ResourceKind,
                 cancellationToken
@@ -1090,7 +1153,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     private async Task TryDirectFillAsync(
         DocumentCacheReadAccelerationQueryRequest request,
         DocumentCacheTargetExecutionContext targetContext,
-        IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates,
+        DirectFillCandidateSelection candidateSelection,
         QueryResult fallbackResult,
         CancellationToken cancellationToken
     )
@@ -1118,14 +1181,15 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return;
         }
 
-        IReadOnlyList<DocumentCacheReadAccelerationCandidate> survivingCandidates = candidates
-            .Where(candidate => servedDocumentUuids.Contains(candidate.DocumentUuid.Value))
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> survivingCandidates = candidateSelection
+            .Candidates.Where(candidate => servedDocumentUuids.Contains(candidate.DocumentUuid.Value))
             .ToArray();
 
         await TryDirectFillAsync(
                 request.MappingSet,
                 targetContext,
                 survivingCandidates,
+                candidateSelection.EmptyCandidateOutcome,
                 DocumentCacheReadAccelerationOperation.Query,
                 request.ResourceKind,
                 cancellationToken
@@ -1137,6 +1201,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         MappingSet mappingSet,
         DocumentCacheTargetExecutionContext targetContext,
         IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates,
+        string emptyCandidateOutcome,
         DocumentCacheReadAccelerationOperation operation,
         DocumentCacheReadAccelerationResourceKind resourceKind,
         CancellationToken cancellationToken
@@ -1144,12 +1209,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     {
         if (candidates.Count == 0)
         {
-            RecordDirectFill(
-                targetContext,
-                operation,
-                resourceKind,
-                DocumentCacheReadTelemetryLabel.SkippedNoCandidates
-            );
+            RecordDirectFill(targetContext, operation, resourceKind, emptyCandidateOutcome);
             return;
         }
 
@@ -1422,15 +1482,20 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         );
     }
 
-    private static IReadOnlyList<DocumentCacheReadAccelerationCandidate> SelectGetByIdDirectFillCandidates(
+    private static DirectFillCandidateSelection SelectGetByIdDirectFillCandidates(
         DocumentCacheReadAccelerationGetByIdRequest request,
         DocumentCacheTargetExecutionContext targetContext,
         DocumentCacheReadLookupResult<GetResult> lookupResult
     )
     {
+        if (lookupResult.IsAdapterAcquisitionFailure)
+        {
+            return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedCacheUnavailable);
+        }
+
         if (!IsDirectFillTargetEligible(targetContext) || request.AuthorizedCandidate is null)
         {
-            return [];
+            return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
         }
 
         if (
@@ -1438,28 +1503,33 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             && lookupResult.FallbackReason == DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced
         )
         {
-            return [request.AuthorizedCandidate];
+            return DirectFillCandidateSelection.For([request.AuthorizedCandidate]);
         }
 
         return IsDocumentLevelDirectFillReason(lookupResult.FallbackReason)
-            ? [request.AuthorizedCandidate]
-            : [];
+            ? DirectFillCandidateSelection.For([request.AuthorizedCandidate])
+            : DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
     }
 
-    private static IReadOnlyList<DocumentCacheReadAccelerationCandidate> SelectQueryDirectFillCandidates(
+    private static DirectFillCandidateSelection SelectQueryDirectFillCandidates(
         DocumentCacheReadAccelerationQueryRequest request,
         DocumentCacheTargetExecutionContext targetContext,
         DocumentCacheReadLookupResult<QueryResult> lookupResult,
         QueryResult fallbackResult
     )
     {
+        if (lookupResult.IsAdapterAcquisitionFailure)
+        {
+            return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedCacheUnavailable);
+        }
+
         if (
             !IsDirectFillTargetEligible(targetContext)
             || request.AuthorizedCandidatePage is null
             || fallbackResult is not QueryResult.QuerySuccess
         )
         {
-            return [];
+            return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
         }
 
         if (
@@ -1467,12 +1537,12 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             && lookupResult.FallbackReason == DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced
         )
         {
-            return request.AuthorizedCandidatePage.Candidates;
+            return DirectFillCandidateSelection.For(request.AuthorizedCandidatePage.Candidates);
         }
 
         return IsDocumentLevelDirectFillReason(lookupResult.FallbackReason)
-            ? lookupResult.DirectFillCandidates
-            : [];
+            ? DirectFillCandidateSelection.For(lookupResult.DirectFillCandidates)
+            : DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
     }
 
     private static bool IsDirectFillTargetEligible(DocumentCacheTargetExecutionContext targetContext) =>
