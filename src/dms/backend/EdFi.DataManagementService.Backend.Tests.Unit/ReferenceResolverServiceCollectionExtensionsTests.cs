@@ -81,6 +81,10 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IDocumentCacheDescriptorHydrator>();
         var documentCacheMaterializer =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializer>();
+        var documentCacheReadLookupAdapter =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheReadLookupAdapter>();
+        var documentCacheReadAccelerationCoordinator =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheReadAccelerationCoordinator>();
         var documentCacheWriterRetryAdapter =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheWriterRetryAdapter>();
         var readTargetLookupService =
@@ -137,6 +141,10 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         documentCacheSourceMetadataReader.Should().BeOfType<DocumentCacheSourceMetadataReader>();
         documentCacheDescriptorHydrator.Should().BeOfType<DocumentCacheDescriptorHydrator>();
         documentCacheMaterializer.Should().BeOfType<DocumentCacheMaterializer>();
+        documentCacheReadLookupAdapter.Should().BeOfType<NoOpDocumentCacheReadLookupAdapter>();
+        documentCacheReadAccelerationCoordinator
+            .Should()
+            .BeOfType<DocumentCacheReadAccelerationCoordinator>();
         documentCacheWriterRetryAdapter.Should().BeOfType<DocumentCacheWriterRetryAdapter>();
         scope.ServiceProvider.GetService<IDocumentCacheWriter>().Should().BeNull();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();

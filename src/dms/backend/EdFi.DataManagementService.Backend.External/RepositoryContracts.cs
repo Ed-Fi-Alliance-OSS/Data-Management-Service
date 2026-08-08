@@ -20,7 +20,7 @@ public interface IDocumentStoreRepository
     /// <summary>
     /// Entry point for get document by id requests.
     /// </summary>
-    Task<GetResult> GetDocumentById(IGetRequest getRequest);
+    Task<GetResult> GetDocumentById(IGetRequest getRequest, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Entry point for update document by id requests.
@@ -41,5 +41,8 @@ public interface IQueryHandler
     /// <summary>
     /// Entry point for query documents requests.
     /// </summary>
-    Task<QueryResult> QueryDocuments(IQueryRequest queryRequest);
+    Task<QueryResult> QueryDocuments(
+        IQueryRequest queryRequest,
+        CancellationToken cancellationToken = default
+    );
 }

@@ -103,6 +103,12 @@ public interface IQueryRequest : IRequestWithMappingSet
     TraceId TraceId { get; }
 
     /// <summary>
+    /// The normalized request tenant key used for target-scoped read acceleration.
+    /// Empty string identifies the default/non-tenant target.
+    /// </summary>
+    string TenantKey { get; }
+
+    /// <summary>
     /// Typed request-scoped authorization inputs for relational authorization planning/execution.
     /// </summary>
     RelationalAuthorizationContext AuthorizationContext { get; }

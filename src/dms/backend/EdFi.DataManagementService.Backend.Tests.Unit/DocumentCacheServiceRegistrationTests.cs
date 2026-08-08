@@ -71,6 +71,10 @@ public class Given_DocumentCacheServiceRegistration
         AssertSingleton<IDocumentCacheBaselineSeeder, DocumentCacheBaselineSeeder>(services);
         AssertSingleton<IDocumentCacheAdministrativeDrainer, DocumentCacheAdministrativeDrainer>(services);
         AssertScoped<IDocumentCacheWriterRetryAdapter, DocumentCacheWriterRetryAdapter>(services);
+        AssertSingleton<IDocumentCacheReadLookupAdapter, NoOpDocumentCacheReadLookupAdapter>(services);
+        AssertScoped<IDocumentCacheReadAccelerationCoordinator, DocumentCacheReadAccelerationCoordinator>(
+            services
+        );
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IHostedService));
     }
 

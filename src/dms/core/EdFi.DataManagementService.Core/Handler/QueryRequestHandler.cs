@@ -38,7 +38,7 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
             requestInfo.FrontendRequest.TraceId,
             r => IsRetryableResult(r),
             r => r is QuerySuccess,
-            async ct => await queryHandler.QueryDocuments(CreateQueryRequest(requestInfo)),
+            async ct => await queryHandler.QueryDocuments(CreateQueryRequest(requestInfo), ct),
             requestInfo
         );
         _logger.LogDebug(
@@ -123,6 +123,7 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
             AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
             Paging: requestInfo.CollectionPaging,
             TraceId: requestInfo.FrontendRequest.TraceId,
+            TenantKey: requestInfo.FrontendRequest.Tenant ?? string.Empty,
             ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo),
             ChangeVersionRange: requestInfo.ChangeVersionRange,
             ResponseContentCoding: GetServedEtagContentCoding(requestInfo)

@@ -37,7 +37,10 @@ public class GetByIdHandlerTests
 
         public IGetRequest? CapturedRequest { get; private set; }
 
-        public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+        public override Task<GetResult> GetDocumentById(
+            IGetRequest getRequest,
+            CancellationToken cancellationToken = default
+        )
         {
             CapturedRequest = getRequest;
             return Task.FromResult<GetResult>(
@@ -168,7 +171,10 @@ public class GetByIdHandlerTests
         private sealed class Repository(InvalidEtagValue invalidEtagValue)
             : NotImplementedDocumentStoreRepository
         {
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 JsonObject responseBody = invalidEtagValue switch
                 {
@@ -234,7 +240,10 @@ public class GetByIdHandlerTests
         {
             public IGetRequest? CapturedRequest { get; private set; }
 
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 CapturedRequest = getRequest;
                 return Task.FromResult<GetResult>(
@@ -347,7 +356,10 @@ public class GetByIdHandlerTests
                 ["_etag"] = "5-a1b2c3d4.j._.l.i",
             };
 
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<GetResult>(
                     new GetSuccess(No.DocumentUuid, ResponseBody, DateTime.UtcNow, null)
@@ -379,7 +391,10 @@ public class GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<GetResult>(new GetFailureNotExists());
             }
@@ -409,7 +424,10 @@ public class GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<GetResult>(
                     new GetFailureRelationshipNotAuthorized(CreateRelationshipFailure())
@@ -467,7 +485,10 @@ public class GetByIdHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<GetResult>(new GetFailureNotImplemented(ResponseBody));
             }
@@ -516,7 +537,10 @@ public class GetByIdHandlerTests
                 "Resource 'Ed-Fi.School' has relationship authorization metadata that cannot be resolved.",
             ];
 
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<GetResult>(new GetFailureSecurityConfiguration(ResponseErrors));
             }
@@ -573,7 +597,10 @@ public class GetByIdHandlerTests
 
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<GetResult>(new GetFailureNamespaceNotAuthorized(Failure));
             }
@@ -627,7 +654,10 @@ public class GetByIdHandlerTests
                 + "authorization strategies or with 'NamespaceBased' and/or "
                 + "'NoFurtherAuthorizationRequired' are currently supported.";
 
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<GetResult>(new GetFailureNotImplemented(ResponseBody));
             }
@@ -703,7 +733,10 @@ public class GetByIdHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<GetResult>(new UnknownFailure(ResponseBody));
             }
@@ -769,7 +802,10 @@ actual: {requestInfo.FrontendResponse.Body}
         {
             public IGetRequest? CapturedRequest { get; private set; }
 
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 CapturedRequest = getRequest;
 
@@ -921,7 +957,10 @@ actual: {requestInfo.FrontendResponse.Body}
         {
             public IGetRequest? CapturedRequest { get; private set; }
 
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 CapturedRequest = getRequest;
 
@@ -1077,7 +1116,10 @@ actual: {requestInfo.FrontendResponse.Body}
         {
             public IGetRequest? CapturedRequest { get; private set; }
 
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 CapturedRequest = getRequest;
 

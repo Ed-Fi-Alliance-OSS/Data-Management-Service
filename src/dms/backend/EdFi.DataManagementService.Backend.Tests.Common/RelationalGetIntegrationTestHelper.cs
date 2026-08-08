@@ -20,7 +20,8 @@ public sealed record IntegrationRelationalGetRequest(
     TraceId TraceId,
     RelationalGetRequestReadMode ReadMode = RelationalGetRequestReadMode.ExternalResponse,
     ReadableProfileProjectionContext? ReadableProfileProjectionContext = null,
-    ResponseContentCoding ResponseContentCoding = ResponseContentCoding.Identity
+    ResponseContentCoding ResponseContentCoding = ResponseContentCoding.Identity,
+    string TenantKey = ""
 ) : IGetRequest
 {
     public ResourceName ResourceName => ResourceInfo.ResourceName;

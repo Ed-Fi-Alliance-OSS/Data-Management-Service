@@ -445,7 +445,10 @@ public class DeadlockRetryPolicyTests
     {
         private class AlwaysRetryableRepository : NotImplementedDocumentStoreRepository
         {
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<GetResult>(new GetResult.GetFailureRetryable());
             }
@@ -499,7 +502,10 @@ public class DeadlockRetryPolicyTests
         {
             private int _callCount;
 
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 _callCount++;
                 if (_callCount < 3)
