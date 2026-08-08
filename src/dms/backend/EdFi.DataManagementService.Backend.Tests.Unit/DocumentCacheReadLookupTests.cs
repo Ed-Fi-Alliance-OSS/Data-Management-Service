@@ -1,0 +1,567 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.External.Model;
+using FluentAssertions;
+using FluentAssertions.Execution;
+using NUnit.Framework;
+
+namespace EdFi.DataManagementService.Backend.Tests.Unit;
+
+[TestFixture]
+[Parallelizable]
+[Category("DocumentCacheReadLookup")]
+public class Given_DocumentCacheReadLookup
+{
+    private const short ResourceKeyId = 1;
+
+    private static readonly Guid DocumentGuid = Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb");
+    private static readonly DateTimeOffset LastModifiedAt = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
+    private static readonly QualifiedResourceName Resource = new("Ed-Fi", "Student");
+    private static readonly MappingSet MappingSet = RelationalAccessTestData.CreateMappingSet(Resource);
+    private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("TenantA", 7);
+    private static readonly DocumentCachePhysicalSourceFingerprint Fingerprint = new(
+        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    );
+
+    [Test]
+    public void It_classifies_a_fresh_cache_hit()
+    {
+        DocumentCacheReadAccelerationCandidate candidate = Candidate();
+
+        DocumentCacheReadBatchLookupResult result = Classify(candidate, Observation(candidate));
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.FreshHit);
+        result.IsFreshHit.Should().BeTrue();
+        var hit = result
+            .Documents.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeOfType<DocumentCacheReadDocumentLookupResult.FreshHit>()
+            .Subject;
+        hit.Candidate.Should().Be(candidate);
+        hit.DocumentJson.Should().Be("""{"id":"cached"}""");
+        hit.StreamEtag.Should().Be("stream-91");
+        hit.CacheLastModifiedAt.Should().Be(candidate.ContentLastModifiedAt);
+    }
+
+    [Test]
+    public void It_classifies_bounded_document_fallback_outcomes()
+    {
+        foreach (DocumentFallbackScenario scenario in DocumentFallbackScenarios())
+        {
+            using var scope = new AssertionScope(scenario.Name);
+            DocumentCacheReadAccelerationCandidate candidate = Candidate();
+
+            DocumentCacheReadBatchLookupResult result = Classify(
+                candidate,
+                scenario.Mutate(Observation(candidate))
+            );
+
+            result.Outcome.Should().Be(scenario.ExpectedOutcome);
+            result.IsFreshHit.Should().BeFalse();
+            var fallback = result
+                .Documents.Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<DocumentCacheReadDocumentLookupResult.Fallback>()
+                .Subject;
+            fallback.Outcome.Should().Be(scenario.ExpectedOutcome);
+            fallback.Candidate.Should().Be(candidate);
+            fallback.Message.Should().NotBeNullOrWhiteSpace();
+        }
+    }
+
+    [Test]
+    public void It_returns_an_invariant_fallback_when_the_candidate_resource_key_is_not_in_the_mapping_set()
+    {
+        DocumentCacheReadAccelerationCandidate baseCandidate = Candidate();
+        DocumentCacheReadAccelerationCandidate candidate = baseCandidate with { ResourceKeyId = 99 };
+        DocumentCacheReadLookupObservation observation = Observation(baseCandidate) with
+        {
+            ExpectedResourceKeyId = candidate.ResourceKeyId,
+            SourceResourceKeyId = candidate.ResourceKeyId,
+        };
+
+        DocumentCacheReadBatchLookupResult result = Classify(candidate, observation);
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure);
+        result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
+    }
+
+    [Test]
+    public void It_rejects_lookup_rows_that_do_not_match_the_requested_candidate_batch()
+    {
+        DocumentCacheReadAccelerationCandidate candidate = Candidate();
+        DocumentCacheReadLookupObservation mismatched = Observation(candidate) with
+        {
+            ExpectedContentVersion = candidate.ContentVersion + 1,
+        };
+
+        Action act = () => Classify(candidate, mismatched);
+
+        act.Should()
+            .Throw<DocumentCacheReadLookupInvariantException>()
+            .WithMessage("DocumentCache read lookup returned rows that do not match*");
+    }
+
+    [Test]
+    public void It_builds_one_postgresql_lookup_command_for_the_candidate_batch()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+        );
+
+        RelationalCommand command = DocumentCacheReadLookupSql.BuildCommand(
+            SqlDialect.Pgsql,
+            [first, second]
+        );
+
+        command.CommandText.Should().Contain("\"dms\".\"DocumentCache\"");
+        command.CommandText.Should().Contain("CAST(@documentUuid0 AS uuid)");
+        command.CommandText.Should().Contain("ORDER BY requested.\"Ordinal\"");
+        command
+            .Parameters.Select(parameter => parameter.Name)
+            .Should()
+            .Equal(
+                "@ordinal0",
+                "@documentId0",
+                "@documentUuid0",
+                "@resourceKeyId0",
+                "@contentVersion0",
+                "@ordinal1",
+                "@documentId1",
+                "@documentUuid1",
+                "@resourceKeyId1",
+                "@contentVersion1"
+            );
+        command
+            .Parameters.Select(parameter => parameter.Value)
+            .Should()
+            .Equal(
+                0,
+                first.DocumentId,
+                first.DocumentUuid.Value,
+                first.ResourceKeyId,
+                first.ContentVersion,
+                1,
+                second.DocumentId,
+                second.DocumentUuid.Value,
+                second.ResourceKeyId,
+                second.ContentVersion
+            );
+    }
+
+    [Test]
+    public void It_builds_one_mssql_lookup_command_for_the_candidate_batch()
+    {
+        RelationalCommand command = DocumentCacheReadLookupSql.BuildCommand(SqlDialect.Mssql, [Candidate()]);
+
+        command.CommandText.Should().Contain("[dms].[DocumentCache]");
+        command.CommandText.Should().Contain("CAST(@documentUuid0 AS uniqueidentifier)");
+        command.CommandText.Should().Contain("ORDER BY [requested].[Ordinal]");
+        command.Parameters.Should().HaveCount(5);
+    }
+
+    [Test]
+    public async Task It_returns_target_ineligible_without_opening_the_cache_lookup()
+    {
+        var adapter = new ThrowingLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            new InvalidOperationException("Cache lookup should not execute.")
+        );
+
+        DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
+            new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+            ExecutionContext(inventoryStatus: DocumentCacheInventoryStatus.Missing)
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.ProjectionTargetIneligible);
+        result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
+        adapter.ExecuteAttempts.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_provider_prerequisite_ineligible_without_opening_the_cache_lookup()
+    {
+        var adapter = new ThrowingLookupAdapter(
+            RelationalProviderToken.SqlServer,
+            new InvalidOperationException("Cache lookup should not execute.")
+        );
+
+        DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
+            new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+            ExecutionContext(
+                providerToken: RelationalProviderToken.SqlServer,
+                sqlServerPrerequisites: FailedSqlServerPrerequisites()
+            )
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.ProviderPrerequisiteIneligible);
+        result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
+        adapter.ExecuteAttempts.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_cache_unavailable_for_provider_classified_availability_failures()
+    {
+        var adapter = new ThrowingLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            new TimeoutException("timeout"),
+            classifyAsCacheUnavailable: true
+        );
+
+        DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
+            new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+            ExecutionContext()
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheUnavailable);
+        result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
+        adapter.ExecuteAttempts.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_deterministic_invariant_for_result_shape_failures()
+    {
+        var adapter = new ThrowingLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            new DocumentCacheReadLookupInvariantException("missing column")
+        );
+
+        DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
+            new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+            ExecutionContext()
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure);
+        result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
+        adapter.ExecuteAttempts.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_propagates_target_binding_bugs()
+    {
+        var adapter = new ThrowingLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            new InvalidOperationException("Cache lookup should not execute.")
+        );
+
+        Func<Task> act = async () =>
+            await adapter.LookupBatchAsync(
+                new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+                ExecutionContext(providerToken: RelationalProviderToken.SqlServer)
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*cannot bind target*");
+        adapter.ExecuteAttempts.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_propagates_caller_cancellation()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        await cancellationSource.CancelAsync();
+        var adapter = new ThrowingLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            new OperationCanceledException(cancellationSource.Token),
+            classifyAsCacheUnavailable: true
+        );
+
+        Func<Task> act = async () =>
+            await adapter.LookupBatchAsync(
+                new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+                ExecutionContext(),
+                cancellationSource.Token
+            );
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Test]
+    public async Task It_propagates_request_abort_disposal()
+    {
+        var adapter = new ThrowingLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            new ObjectDisposedException("request"),
+            classifyAsCacheUnavailable: true
+        );
+
+        Func<Task> act = async () =>
+            await adapter.LookupBatchAsync(
+                new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+                ExecutionContext()
+            );
+
+        await act.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Test]
+    public async Task It_propagates_unclassified_programming_exceptions()
+    {
+        var adapter = new ThrowingLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            new InvalidOperationException("programming failure")
+        );
+
+        Func<Task> act = async () =>
+            await adapter.LookupBatchAsync(
+                new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+                ExecutionContext()
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("programming failure");
+    }
+
+    private static IEnumerable<DocumentFallbackScenario> DocumentFallbackScenarios()
+    {
+        yield return new(
+            "Missing lifecycle",
+            observation =>
+                observation with
+                {
+                    LifecycleRowCount = 0,
+                    LifecycleState = null,
+                    CacheAheadRecoveryRequired = null,
+                },
+            DocumentCacheReadLookupOutcome.MissingLifecycleState
+        );
+        yield return new(
+            "Invalid lifecycle",
+            observation => observation with { LifecycleRowCount = 1, LifecycleState = "Invalid" },
+            DocumentCacheReadLookupOutcome.InvalidLifecycleState
+        );
+        yield return new(
+            "Disabled lifecycle",
+            observation => observation with { LifecycleState = "Disabled" },
+            DocumentCacheReadLookupOutcome.LifecycleDisabled
+        );
+        yield return new(
+            "Resetting lifecycle",
+            observation => observation with { LifecycleState = "Resetting" },
+            DocumentCacheReadLookupOutcome.LifecycleResetting
+        );
+        yield return new(
+            "Rebuilding lifecycle",
+            observation => observation with { LifecycleState = "Rebuilding" },
+            DocumentCacheReadLookupOutcome.LifecycleRebuilding
+        );
+        yield return new(
+            "Cache-ahead latch",
+            observation => observation with { CacheAheadRecoveryRequired = true },
+            DocumentCacheReadLookupOutcome.CacheAheadRecoveryRequired
+        );
+        yield return new(
+            "Missing source row",
+            observation => observation with { SourceDocumentId = null },
+            DocumentCacheReadLookupOutcome.MissingSourceRow
+        );
+        yield return new(
+            "Source row identity mismatch",
+            observation => observation with { SourceDocumentId = 999 },
+            DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+        );
+        yield return new(
+            "Source drift",
+            observation => observation with { SourceContentVersion = observation.SourceContentVersion + 1 },
+            DocumentCacheReadLookupOutcome.SourceDrift
+        );
+        yield return new(
+            "Missing cache row",
+            observation => observation with { CacheDocumentId = null },
+            DocumentCacheReadLookupOutcome.MissingCacheRow
+        );
+        yield return new(
+            "Cache row identity mismatch",
+            observation => observation with { CacheDocumentId = 999 },
+            DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+        );
+        yield return new(
+            "Cache row resource mismatch",
+            observation => observation with { CacheResourceName = "School" },
+            DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+        );
+        yield return new(
+            "Stale cache row",
+            observation => observation with { CacheContentVersion = observation.CacheContentVersion - 1 },
+            DocumentCacheReadLookupOutcome.StaleCacheRow
+        );
+        yield return new(
+            "Cache row ahead of source",
+            observation => observation with { CacheContentVersion = observation.CacheContentVersion + 1 },
+            DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+        );
+        yield return new(
+            "Missing stream etag",
+            observation => observation with { StreamEtag = "" },
+            DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+        );
+        yield return new(
+            "Missing cached JSON",
+            observation => observation with { DocumentJson = "" },
+            DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+        );
+        yield return new(
+            "Last modified mismatch",
+            observation =>
+                observation with
+                {
+                    CacheLastModifiedAt = observation.CacheLastModifiedAt!.Value.AddTicks(1),
+                },
+            DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+        );
+    }
+
+    private static DocumentCacheReadBatchLookupResult Classify(
+        DocumentCacheReadAccelerationCandidate candidate,
+        DocumentCacheReadLookupObservation observation
+    ) =>
+        DocumentCacheReadLookupClassifier.Classify(
+            new DocumentCacheReadBatchLookupRequest(MappingSet, [candidate]),
+            [observation]
+        );
+
+    private static DocumentCacheReadAccelerationCandidate Candidate(
+        long documentId = 345,
+        long contentVersion = 91,
+        Guid? documentUuid = null
+    ) =>
+        new(
+            documentId,
+            new DocumentUuid(documentUuid ?? DocumentGuid),
+            ResourceKeyId,
+            contentVersion,
+            LastModifiedAt.AddSeconds(documentId)
+        );
+
+    private static DocumentCacheReadLookupObservation Observation(
+        DocumentCacheReadAccelerationCandidate candidate
+    )
+    {
+        ResourceKeyEntry resourceKey = MappingSet.ResourceKeyById[candidate.ResourceKeyId];
+
+        return new DocumentCacheReadLookupObservation(
+            Ordinal: 0,
+            RequestedDocumentId: candidate.DocumentId,
+            ExpectedDocumentUuid: candidate.DocumentUuid.Value,
+            ExpectedResourceKeyId: candidate.ResourceKeyId,
+            ExpectedContentVersion: candidate.ContentVersion,
+            LifecycleRowCount: 1,
+            LifecycleState: "Tracking",
+            CacheAheadRecoveryRequired: false,
+            SourceDocumentId: candidate.DocumentId,
+            SourceDocumentUuid: candidate.DocumentUuid.Value,
+            SourceResourceKeyId: candidate.ResourceKeyId,
+            SourceContentVersion: candidate.ContentVersion,
+            SourceContentLastModifiedAt: candidate.ContentLastModifiedAt,
+            CacheDocumentId: candidate.DocumentId,
+            CacheDocumentUuid: candidate.DocumentUuid.Value,
+            CacheProjectName: resourceKey.Resource.ProjectName,
+            CacheResourceName: resourceKey.Resource.ResourceName,
+            CacheResourceVersion: resourceKey.ResourceVersion,
+            CacheContentVersion: candidate.ContentVersion,
+            StreamEtag: $"stream-{candidate.ContentVersion}",
+            CacheLastModifiedAt: candidate.ContentLastModifiedAt,
+            DocumentJson: """{"id":"cached"}"""
+        );
+    }
+
+    private static DocumentCacheTargetExecutionContext ExecutionContext(
+        RelationalProviderToken? providerToken = null,
+        DocumentCacheInventoryStatus inventoryStatus = DocumentCacheInventoryStatus.Satisfied,
+        DocumentCacheSqlServerPrerequisiteDetails? sqlServerPrerequisites = null
+    )
+    {
+        RelationalProviderToken resolvedProviderToken = providerToken ?? RelationalProviderToken.Postgresql;
+
+        return new DocumentCacheTargetExecutionContext(
+            TargetKey,
+            new DocumentCacheTargetContextGeneration(1),
+            EffectiveSettings(),
+            new DocumentCacheTargetDataStoreMetadata(TargetKey.DataStoreId, resolvedProviderToken.Value),
+            new DocumentCacheTargetConnectionInput(resolvedProviderToken, "connection"),
+            Fingerprint,
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
+            new DocumentCacheInventoryValidationResult(inventoryStatus, "Inventory."),
+            new DocumentCacheEnqueueTriggerValidationResult(
+                DocumentCacheEnqueueTriggerStatus.Satisfied,
+                "Trigger."
+            ),
+            sqlServerPrerequisites ?? DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
+        );
+    }
+
+    private static DocumentCacheTargetEffectiveSettings EffectiveSettings() =>
+        new(
+            readAccelerationEnabled: true,
+            directFillTimeout: TimeSpan.FromMilliseconds(250),
+            projectorPollInterval: TimeSpan.FromSeconds(5),
+            projectorPageSize: 3,
+            projectorMaxConcurrentTargets: 2,
+            projectorFailureBackoff: TimeSpan.FromSeconds(10),
+            projectorBaselineHighWaterMark: 1000,
+            administrationWorkflowTimeout: TimeSpan.FromHours(24)
+        );
+
+    private static DocumentCacheSqlServerPrerequisiteDetails FailedSqlServerPrerequisites() =>
+        new(
+            new DocumentCacheProviderPrerequisiteResult(
+                DocumentCacheProviderPrerequisiteName.ReadCommittedSnapshot,
+                DocumentCacheProviderPrerequisiteStatus.Disabled,
+                "RCSI disabled."
+            ),
+            new DocumentCacheProviderPrerequisiteResult(
+                DocumentCacheProviderPrerequisiteName.NestedTriggers,
+                DocumentCacheProviderPrerequisiteStatus.Satisfied,
+                "Nested triggers enabled."
+            )
+        );
+
+    private sealed record DocumentFallbackScenario(
+        string Name,
+        Func<DocumentCacheReadLookupObservation, DocumentCacheReadLookupObservation> Mutate,
+        DocumentCacheReadLookupOutcome ExpectedOutcome
+    )
+    {
+        public override string ToString() => Name;
+    }
+
+    private sealed class ThrowingLookupAdapter(
+        RelationalProviderToken providerToken,
+        Exception exception,
+        bool classifyAsCacheUnavailable = false
+    ) : DocumentCacheReadLookupAdapterBase
+    {
+        private readonly RelationalProviderToken _providerToken = providerToken;
+        private readonly Exception _exception = exception;
+        private readonly bool _classifyAsCacheUnavailable = classifyAsCacheUnavailable;
+
+        public int ExecuteAttempts { get; private set; }
+
+        protected override SqlDialect Dialect =>
+            _providerToken == RelationalProviderToken.SqlServer ? SqlDialect.Mssql : SqlDialect.Pgsql;
+
+        protected override RelationalProviderToken ProviderToken => _providerToken;
+
+        protected override Task<TResult> ExecuteReaderAsync<TResult>(
+            DocumentCacheTargetExecutionContext targetContext,
+            RelationalCommand command,
+            Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ExecuteAttempts++;
+            return Task.FromException<TResult>(_exception);
+        }
+
+        protected override bool IsCacheUnavailable(Exception exception) => _classifyAsCacheUnavailable;
+    }
+}

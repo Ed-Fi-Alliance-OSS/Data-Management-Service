@@ -35,6 +35,12 @@ public enum DocumentCacheReadAccelerationFallbackReason
     TargetReadAccelerationDisabled,
     CandidateSelectionUnavailable,
     CacheLookupMiss,
+    CacheLookupStale,
+    CacheLookupSourceDrift,
+    CacheLookupFenced,
+    CacheLookupUnavailable,
+    CacheLookupInvariantFailure,
+    CacheHitResponseShapingUnavailable,
 }
 
 public sealed record DocumentCacheReadAccelerationFallbackContext(

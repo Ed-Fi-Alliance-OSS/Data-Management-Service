@@ -80,6 +80,18 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
             PostgresqlDocumentHydrator,
             PostgresqlSessionDocumentHydrator
         >();
+        services.Replace(
+            ServiceDescriptor.Scoped<
+                IDocumentCacheReadLookupAdapter,
+                PostgresqlDocumentCacheReadLookupAdapter
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IDocumentCacheReadFreshnessLookupAdapter>(serviceProvider =>
+                (IDocumentCacheReadFreshnessLookupAdapter)
+                    serviceProvider.GetRequiredService<IDocumentCacheReadLookupAdapter>()
+            )
+        );
 
         return services;
     }

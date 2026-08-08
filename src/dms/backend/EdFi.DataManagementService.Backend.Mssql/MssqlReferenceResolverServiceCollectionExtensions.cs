@@ -77,6 +77,15 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
             MssqlDocumentHydrator,
             MssqlSessionDocumentHydrator
         >();
+        services.Replace(
+            ServiceDescriptor.Scoped<IDocumentCacheReadLookupAdapter, MssqlDocumentCacheReadLookupAdapter>()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IDocumentCacheReadFreshnessLookupAdapter>(serviceProvider =>
+                (IDocumentCacheReadFreshnessLookupAdapter)
+                    serviceProvider.GetRequiredService<IDocumentCacheReadLookupAdapter>()
+            )
+        );
 
         return services;
     }

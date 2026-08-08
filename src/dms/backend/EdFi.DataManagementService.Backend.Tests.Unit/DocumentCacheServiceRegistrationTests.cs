@@ -24,7 +24,7 @@ public class Given_DocumentCacheServiceRegistration
     {
         IServiceCollection services = new ServiceCollection();
 
-        services.AddPostgresqlReferenceResolver();
+        AddSharedReferenceResolverForTest(services);
 
         AssertSingleton<DocumentCacheProjectionObservationStore, DocumentCacheProjectionObservationStore>(
             services
@@ -72,6 +72,11 @@ public class Given_DocumentCacheServiceRegistration
         AssertSingleton<IDocumentCacheAdministrativeDrainer, DocumentCacheAdministrativeDrainer>(services);
         AssertScoped<IDocumentCacheWriterRetryAdapter, DocumentCacheWriterRetryAdapter>(services);
         AssertSingleton<IDocumentCacheReadLookupAdapter, NoOpDocumentCacheReadLookupAdapter>(services);
+        services
+            .Should()
+            .NotContain(descriptor =>
+                descriptor.ServiceType == typeof(IDocumentCacheReadFreshnessLookupAdapter)
+            );
         AssertScoped<IDocumentCacheReadAccelerationCoordinator, DocumentCacheReadAccelerationCoordinator>(
             services
         );
@@ -118,6 +123,8 @@ public class Given_DocumentCacheServiceRegistration
             IDocumentCacheProjectionDrainPageProcessor,
             DocumentCacheProjectionDrainPageProcessor
         >(services);
+        AssertScoped<IDocumentCacheReadLookupAdapter, PostgresqlDocumentCacheReadLookupAdapter>(services);
+        AssertScopedFactory<IDocumentCacheReadFreshnessLookupAdapter>(services);
     }
 
     [Test]
@@ -140,6 +147,19 @@ public class Given_DocumentCacheServiceRegistration
         AssertSingleton<
             IDocumentCacheProjectionDrainPageProcessor,
             DocumentCacheProjectionDrainPageProcessor
+        >(services);
+        AssertScoped<IDocumentCacheReadLookupAdapter, MssqlDocumentCacheReadLookupAdapter>(services);
+        AssertScopedFactory<IDocumentCacheReadFreshnessLookupAdapter>(services);
+    }
+
+    private static void AddSharedReferenceResolverForTest(IServiceCollection services)
+    {
+        ReferenceResolverServiceCollectionExtensions.AddReferenceResolver<
+            PostgresqlReferenceResolverAdapterFactory,
+            PostgresqlRelationalCommandExecutor,
+            PostgresqlRelationalWriteSessionFactory,
+            PostgresqlDocumentHydrator,
+            PostgresqlSessionDocumentHydrator
         >(services);
     }
 
