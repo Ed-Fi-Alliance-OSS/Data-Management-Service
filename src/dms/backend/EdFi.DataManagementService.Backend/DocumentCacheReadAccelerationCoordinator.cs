@@ -1666,6 +1666,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         Exception exception
     ) =>
         _logger.LogWarning(
+            exception,
             "DocumentCache direct fill failed for target {TargetKey}. ExceptionType: {ExceptionType}",
             targetContext.TargetKey,
             exception.GetType().Name

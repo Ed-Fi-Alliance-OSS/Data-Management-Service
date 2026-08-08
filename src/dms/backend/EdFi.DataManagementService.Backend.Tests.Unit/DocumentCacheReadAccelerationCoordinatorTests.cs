@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -2365,6 +2366,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         {
             ExceptionToThrow = new InvalidOperationException("writer failure"),
         };
+        var logger = new CapturingLogger<DocumentCacheReadAccelerationCoordinator>();
         var sut = CreateCoordinator(
             readAccelerationEnabled: true,
             new RecordingLookupAdapter
@@ -2376,7 +2378,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             },
             CreateRegistry(ExecutionContext()),
             materializer,
-            writer
+            writer,
+            logger: logger
         );
 
         GetResult result = await sut.GetByIdAsync(
@@ -2389,6 +2392,14 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         result.Should().BeSameAs(fallbackResult);
         materializer.Requests.Should().ContainSingle();
         writer.Requests.Should().ContainSingle();
+        CapturedLogEntry logEntry = logger.Entries.Should().ContainSingle().Subject;
+        logEntry.Level.Should().Be(LogLevel.Warning);
+        logEntry.Exception.Should().BeSameAs(writer.ExceptionToThrow);
+        logEntry.Message.Should().Contain(nameof(InvalidOperationException));
+        logEntry.Message.Should().NotContain(DocumentUuid.Value.ToString());
+        logEntry.Message.Should().NotContain("DocumentId");
+        logEntry.Message.Should().NotContain("DocumentJson");
+        logEntry.Message.Should().NotContain("Host=localhost");
     }
 
     [Test]
@@ -2648,7 +2659,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         IDocumentCacheProjectionObservationProvider? projectionObservationProvider = null,
         TimeProvider? timeProvider = null,
         DataStore? selectedDataStore = null,
-        IDataStoreSelection? dataStoreSelection = null
+        IDataStoreSelection? dataStoreSelection = null,
+        ILogger<DocumentCacheReadAccelerationCoordinator>? logger = null
     )
     {
         IDataStoreSelection requestDataStoreSelection = dataStoreSelection ?? CreateDataStoreSelection();
@@ -2676,7 +2688,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             readTelemetry,
             projectionObservationSink,
             projectionObservationProvider,
-            timeProvider
+            timeProvider,
+            logger
         );
 
         IDataStoreSelection CreateDataStoreSelection()
@@ -3144,6 +3157,29 @@ public class Given_DocumentCacheReadAccelerationCoordinator
 
         public void RecordDirectFillDuration(DocumentCacheReadTelemetryContext context, TimeSpan duration) =>
             DurationEvents.Add((DocumentCacheReadTelemetry.DirectFillDurationName, context.Outcome));
+    }
+
+    private sealed record CapturedLogEntry(LogLevel Level, string Message, Exception? Exception);
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<CapturedLogEntry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            Entries.Add(new CapturedLogEntry(logLevel, formatter(state, exception), exception));
+        }
     }
 
     private sealed class ThrowingDataStoreSelection : IDataStoreSelection
