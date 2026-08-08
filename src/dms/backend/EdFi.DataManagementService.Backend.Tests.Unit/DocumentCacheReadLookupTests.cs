@@ -413,6 +413,53 @@ public class Given_DocumentCacheReadLookup
         responseShaper.QueryShapeAttempts.Should().Be(0);
     }
 
+    [TestCaseSource(nameof(GetByIdDirectFillCandidateScenarios))]
+    public async Task It_selects_get_by_id_direct_fill_candidates_for_document_level_outcomes(
+        string scenarioName,
+        object mutateValue,
+        object expectedOutcomeValue
+    )
+    {
+        using var scope = new AssertionScope(scenarioName);
+        var mutate =
+            (Func<DocumentCacheReadLookupObservation, DocumentCacheReadLookupObservation>)mutateValue;
+        var expectedOutcome = (DocumentCacheReadLookupOutcome)expectedOutcomeValue;
+        DocumentCacheReadAccelerationCandidate candidate = Candidate();
+        var adapter = new ObservationLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            [mutate(Observation(candidate))]
+        );
+
+        DocumentCacheReadLookupResult<GetResult> result = await adapter.TryGetByIdAsync(
+            GetByIdRequest(candidate),
+            ExecutionContext()
+        );
+
+        result.CachedResult.Should().BeNull();
+        result.RawLookupOutcome.Should().Be(expectedOutcome);
+        result.DirectFillCandidates.Should().Equal(candidate);
+    }
+
+    [Test]
+    public async Task It_excludes_missing_source_row_from_get_by_id_direct_fill_candidates()
+    {
+        DocumentCacheReadAccelerationCandidate candidate = Candidate();
+        var adapter = new ObservationLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            [Observation(candidate) with { SourceDocumentId = null }]
+        );
+
+        DocumentCacheReadLookupResult<GetResult> result = await adapter.TryGetByIdAsync(
+            GetByIdRequest(candidate),
+            ExecutionContext()
+        );
+
+        result.CachedResult.Should().BeNull();
+        result.FallbackReason.Should().Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss);
+        result.RawLookupOutcome.Should().Be(DocumentCacheReadLookupOutcome.MissingSourceRow);
+        result.DirectFillCandidates.Should().BeEmpty();
+    }
+
     [Test]
     public async Task It_returns_provider_prerequisite_ineligible_without_opening_the_cache_lookup()
     {
@@ -829,6 +876,21 @@ public class Given_DocumentCacheReadLookup
             candidatePage
         );
 
+    private static DocumentCacheReadAccelerationGetByIdRequest GetByIdRequest(
+        DocumentCacheReadAccelerationCandidate candidate
+    ) =>
+        new(
+            "TenantA",
+            MappingSet,
+            Resource,
+            candidate.DocumentUuid,
+            RelationalGetRequestReadMode.ExternalResponse,
+            DocumentCacheReadAccelerationResourceKind.Resource,
+            DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+            (_, _) => Task.FromResult<GetResult>(new GetResult.GetFailureNotExists()),
+            candidate
+        );
+
     private static DocumentCacheReadBatchLookupResult Classify(
         DocumentCacheReadAccelerationCandidate candidate,
         DocumentCacheReadLookupObservation observation
@@ -962,6 +1024,35 @@ public class Given_DocumentCacheReadLookup
     )
     {
         public override string ToString() => Name;
+    }
+
+    private static IEnumerable<TestCaseData> GetByIdDirectFillCandidateScenarios()
+    {
+        yield return new TestCaseData(
+            "Missing cache row",
+            (Func<DocumentCacheReadLookupObservation, DocumentCacheReadLookupObservation>)(
+                observation => observation with { CacheDocumentId = null }
+            ),
+            DocumentCacheReadLookupOutcome.MissingCacheRow
+        );
+        yield return new TestCaseData(
+            "Stale cache row",
+            (Func<DocumentCacheReadLookupObservation, DocumentCacheReadLookupObservation>)(
+                observation => observation with { CacheContentVersion = observation.CacheContentVersion - 1 }
+            ),
+            DocumentCacheReadLookupOutcome.StaleCacheRow
+        );
+        yield return new TestCaseData(
+            "Source drift",
+            (Func<DocumentCacheReadLookupObservation, DocumentCacheReadLookupObservation>)(
+                observation =>
+                    observation with
+                    {
+                        SourceContentVersion = observation.SourceContentVersion + 1,
+                    }
+            ),
+            DocumentCacheReadLookupOutcome.SourceDrift
+        );
     }
 
     private sealed class ObservationLookupAdapter(

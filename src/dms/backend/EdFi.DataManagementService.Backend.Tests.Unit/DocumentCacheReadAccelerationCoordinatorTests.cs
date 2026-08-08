@@ -1088,8 +1088,9 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
-            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
-                DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                DocumentCacheReadLookupOutcome.MissingCacheRow,
+                [Candidate()]
             ),
         };
         var materializer = new RecordingMaterializer();
@@ -1125,6 +1126,101 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         writerRequest.Candidate!.DocumentId.Should().Be(345);
     }
 
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.MissingCacheRow))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.StaleCacheRow))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.SourceDrift))]
+    public async Task It_direct_fills_get_by_id_only_when_lookup_supplies_a_direct_fill_candidate(
+        string rawLookupOutcomeName
+    )
+    {
+        var rawLookupOutcome = Enum.Parse<DocumentCacheReadLookupOutcome>(rawLookupOutcomeName);
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                rawLookupOutcome,
+                [Candidate()]
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var telemetry = new RecordingReadTelemetry();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer,
+            telemetry
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<GetResult>(fallbackResult)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Should().ContainSingle().Which.DocumentId.Should().Be(345);
+        writer.Requests.Should().ContainSingle().Which.DocumentId.Should().Be(345);
+        telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.Attempted));
+    }
+
+    [Test]
+    public async Task It_skips_get_by_id_direct_fill_for_missing_source_row()
+    {
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                DocumentCacheReadLookupOutcome.MissingSourceRow
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var telemetry = new RecordingReadTelemetry();
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer,
+            telemetry
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<GetResult>(fallbackResult);
+                }
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext.Reason.Should().Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss);
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+        telemetry
+            .Events.Should()
+            .Contain(("directFill", DocumentCacheReadTelemetryLabel.SkippedNoCandidates));
+        telemetry.Events.Should().NotContain(("directFill", DocumentCacheReadTelemetryLabel.Attempted));
+    }
+
     [Test]
     public async Task It_records_read_telemetry_for_lookup_fallback_and_direct_fill()
     {
@@ -1136,8 +1232,9 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
-            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
-                DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                DocumentCacheReadLookupOutcome.MissingCacheRow,
+                [Candidate()]
             ),
         };
         var telemetry = new RecordingReadTelemetry();
@@ -1159,9 +1256,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
 
         result.Should().BeSameAs(fallbackResult);
         telemetry.Events.Should().Contain(("attempt", DocumentCacheReadTelemetryLabel.Attempted));
-        telemetry
-            .Events.Should()
-            .Contain(("miss", nameof(DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss)));
+        telemetry.Events.Should().Contain(("miss", nameof(DocumentCacheReadLookupOutcome.MissingCacheRow)));
         telemetry
             .Events.Should()
             .Contain(("fallback", nameof(DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss)));
@@ -1826,8 +1921,9 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             readAccelerationEnabled: true,
             new RecordingLookupAdapter
             {
-                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
-                    DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                    DocumentCacheReadLookupOutcome.MissingCacheRow,
+                    [Candidate()]
                 ),
             },
             CreateRegistry(ExecutionContext()),
@@ -1870,8 +1966,9 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             readAccelerationEnabled: true,
             new RecordingLookupAdapter
             {
-                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
-                    DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                    DocumentCacheReadLookupOutcome.MissingCacheRow,
+                    [Candidate()]
                 ),
             },
             CreateRegistry(executionContext),
@@ -1916,8 +2013,9 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             readAccelerationEnabled: true,
             new RecordingLookupAdapter
             {
-                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
-                    DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                    DocumentCacheReadLookupOutcome.MissingCacheRow,
+                    [Candidate()]
                 ),
             },
             CreateRegistry(ExecutionContext()),
@@ -1962,8 +2060,9 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             readAccelerationEnabled: true,
             new RecordingLookupAdapter
             {
-                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
-                    DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                    DocumentCacheReadLookupOutcome.MissingCacheRow,
+                    [Candidate()]
                 ),
             },
             CreateRegistry(executionContext),
@@ -2013,8 +2112,9 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             readAccelerationEnabled: true,
             new RecordingLookupAdapter
             {
-                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
-                    DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                    DocumentCacheReadLookupOutcome.MissingCacheRow,
+                    [Candidate()]
                 ),
             },
             CreateRegistry(ExecutionContext()),
@@ -2153,8 +2253,9 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             readAccelerationEnabled: true,
             new RecordingLookupAdapter
             {
-                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
-                    DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                    DocumentCacheReadLookupOutcome.MissingCacheRow,
+                    [Candidate()]
                 ),
             },
             CreateRegistry(ExecutionContext()),

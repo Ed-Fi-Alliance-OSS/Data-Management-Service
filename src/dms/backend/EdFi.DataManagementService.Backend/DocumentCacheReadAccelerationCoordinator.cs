@@ -1547,7 +1547,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         }
 
         return IsDocumentLevelDirectFillReason(lookupResult.FallbackReason)
-            ? DirectFillCandidateSelection.For([request.AuthorizedCandidate])
+            ? DirectFillCandidateSelection.For(lookupResult.DirectFillCandidates)
             : DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
     }
 
