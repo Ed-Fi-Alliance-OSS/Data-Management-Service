@@ -326,6 +326,7 @@ public class Given_DocumentCacheReadLookup
 
         result.CachedResult.Should().BeNull();
         result.FallbackReason.Should().Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupStale);
+        result.DirectFillCandidates.Should().Equal(second);
         adapter.ExecuteAttempts.Should().Be(1);
         responseShaper.QueryShapeAttempts.Should().Be(0);
     }

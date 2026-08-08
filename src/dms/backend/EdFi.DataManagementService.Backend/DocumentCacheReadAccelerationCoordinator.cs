@@ -3,11 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Backend;
@@ -141,12 +144,26 @@ public sealed record DocumentCacheReadAccelerationQueryRequest(
     public ResponseContentCoding ResponseContentCoding { get; init; } = ResponseContentCoding.Identity;
 }
 
-internal sealed record DocumentCacheReadLookupResult<TResult>(
-    TResult? CachedResult,
-    DocumentCacheReadAccelerationFallbackReason FallbackReason
-)
+internal sealed record DocumentCacheReadLookupResult<TResult>
     where TResult : class
 {
+    public DocumentCacheReadLookupResult(
+        TResult? cachedResult,
+        DocumentCacheReadAccelerationFallbackReason fallbackReason,
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate>? directFillCandidates = null
+    )
+    {
+        CachedResult = cachedResult;
+        FallbackReason = fallbackReason;
+        DirectFillCandidates = directFillCandidates ?? [];
+    }
+
+    public TResult? CachedResult { get; }
+
+    public DocumentCacheReadAccelerationFallbackReason FallbackReason { get; }
+
+    public IReadOnlyList<DocumentCacheReadAccelerationCandidate> DirectFillCandidates { get; }
+
     public bool HasCachedResult => CachedResult is not null;
 
     public static DocumentCacheReadLookupResult<TResult> Hit(TResult result)
@@ -161,8 +178,9 @@ internal sealed record DocumentCacheReadLookupResult<TResult>(
 
     public static DocumentCacheReadLookupResult<TResult> Fallback(
         DocumentCacheReadAccelerationFallbackReason reason =
-            DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
-    ) => new(null, reason);
+            DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate>? directFillCandidates = null
+    ) => new(null, reason, directFillCandidates);
 }
 
 internal interface IDocumentCacheReadLookupAdapter
@@ -251,7 +269,8 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     IDocumentCacheTargetRegistry? targetRegistry = null,
     IDocumentCacheReadLookupAdapter? lookupAdapter = null,
     IDocumentCacheMaterializer? materializer = null,
-    IDocumentCacheWriter? cacheWriter = null
+    IDocumentCacheWriter? cacheWriter = null,
+    ILogger<DocumentCacheReadAccelerationCoordinator>? logger = null
 ) : IDocumentCacheReadAccelerationCoordinator
 {
     private readonly IOptions<DocumentCacheOptions> _options =
@@ -262,6 +281,8 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         lookupAdapter ?? NoOpDocumentCacheReadLookupAdapter.Instance;
     private readonly IDocumentCacheMaterializer? _materializer = materializer;
     private readonly IDocumentCacheWriter? _cacheWriter = cacheWriter;
+    private readonly ILogger<DocumentCacheReadAccelerationCoordinator> _logger =
+        logger ?? NullLogger<DocumentCacheReadAccelerationCoordinator>.Instance;
 
     public async Task<GetResult> GetByIdAsync(
         DocumentCacheReadAccelerationGetByIdRequest request,
@@ -355,12 +376,23 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return lookupResult.CachedResult;
         }
 
-        return await request
+        GetResult fallbackResult = await request
             .RelationalFallback(
                 new DocumentCacheReadAccelerationFallbackContext(lookupResult.FallbackReason, targetContext),
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        await TryDirectFillAsync(
+                request,
+                targetContext,
+                SelectGetByIdDirectFillCandidates(request, targetContext, lookupResult),
+                fallbackResult,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return fallbackResult;
     }
 
     public async Task<QueryResult> QueryAsync(
@@ -457,12 +489,23 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return lookupResult.CachedResult;
         }
 
-        return await request
+        QueryResult fallbackResult = await request
             .RelationalFallback(
                 new DocumentCacheReadAccelerationFallbackContext(lookupResult.FallbackReason, targetContext),
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        await TryDirectFillAsync(
+                request,
+                targetContext,
+                SelectQueryDirectFillCandidates(request, targetContext, lookupResult, fallbackResult),
+                fallbackResult,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return fallbackResult;
     }
 
     private bool TryResolveTarget(
@@ -532,8 +575,266 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
         targetContext = resolvedTargetContext;
         fallbackReason = DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss;
-        _ = _materializer;
-        _ = _cacheWriter;
         return true;
     }
+
+    private async Task TryDirectFillAsync(
+        DocumentCacheReadAccelerationGetByIdRequest request,
+        DocumentCacheTargetExecutionContext targetContext,
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates,
+        GetResult fallbackResult,
+        CancellationToken cancellationToken
+    )
+    {
+        if (fallbackResult is not GetResult.GetSuccess success)
+        {
+            return;
+        }
+
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> survivingCandidates = candidates
+            .Where(candidate => candidate.DocumentUuid == success.DocumentUuid)
+            .ToArray();
+
+        await TryDirectFillAsync(request.MappingSet, targetContext, survivingCandidates, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task TryDirectFillAsync(
+        DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheTargetExecutionContext targetContext,
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates,
+        QueryResult fallbackResult,
+        CancellationToken cancellationToken
+    )
+    {
+        if (fallbackResult is not QueryResult.QuerySuccess success)
+        {
+            return;
+        }
+
+        ISet<Guid> servedDocumentUuids = GetServedDocumentUuids(success.EdfiDocs);
+        if (servedDocumentUuids.Count == 0)
+        {
+            return;
+        }
+
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> survivingCandidates = candidates
+            .Where(candidate => servedDocumentUuids.Contains(candidate.DocumentUuid.Value))
+            .ToArray();
+
+        await TryDirectFillAsync(request.MappingSet, targetContext, survivingCandidates, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task TryDirectFillAsync(
+        MappingSet mappingSet,
+        DocumentCacheTargetExecutionContext targetContext,
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates,
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            candidates.Count == 0
+            || _materializer is null
+            || _cacheWriter is null
+            || cancellationToken.IsCancellationRequested
+            || !IsDirectFillTargetEligible(targetContext)
+        )
+        {
+            return;
+        }
+
+        TimeSpan timeout = targetContext.EffectiveSettings.DirectFillTimeout;
+        if (timeout <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        using CancellationTokenSource directFillTimeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken
+        );
+        directFillTimeout.CancelAfter(timeout);
+
+        var materializationTargetContext = new DocumentCacheMaterializationTargetContext(
+            new DocumentCacheProjectionTargetKey(
+                targetContext.TargetKey.TenantKey,
+                new DataStoreId(targetContext.TargetKey.DataStoreId)
+            ),
+            mappingSet,
+            DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated,
+            targetContext.ConnectionInput.Value
+        );
+
+        foreach (DocumentCacheReadAccelerationCandidate candidate in candidates)
+        {
+            if (directFillTimeout.IsCancellationRequested)
+            {
+                return;
+            }
+
+            try
+            {
+                DocumentCacheMaterializationResult materializationResult = await _materializer
+                    .MaterializeAsync(
+                        new DocumentCacheMaterializationRequest(
+                            materializationTargetContext,
+                            candidate.DocumentId,
+                            selectedRequiredContentVersion: candidate.ContentVersion,
+                            DocumentCacheMaterializationPurpose.DirectFill,
+                            directFillTimeout.Token
+                        )
+                    )
+                    .ConfigureAwait(false);
+
+                if (materializationResult is not DocumentCacheMaterializationResult.Success success)
+                {
+                    continue;
+                }
+
+                await _cacheWriter
+                    .WriteAsync(
+                        new DocumentCacheWriterRequest(
+                            materializationTargetContext,
+                            candidate.DocumentId,
+                            selectedRequiredContentVersion: success.Candidate.ContentVersion,
+                            DocumentCacheWriterPurpose.DirectFill,
+                            success.Candidate,
+                            directFillTimeout.Token
+                        )
+                    )
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                LogDirectFillSkipped(
+                    targetContext,
+                    SelectDirectFillCancellationReason(cancellationToken, directFillTimeout)
+                );
+                return;
+            }
+            catch (Exception exception)
+            {
+                LogDirectFillFailure(targetContext, exception);
+            }
+        }
+    }
+
+    private static IReadOnlyList<DocumentCacheReadAccelerationCandidate> SelectGetByIdDirectFillCandidates(
+        DocumentCacheReadAccelerationGetByIdRequest request,
+        DocumentCacheTargetExecutionContext targetContext,
+        DocumentCacheReadLookupResult<GetResult> lookupResult
+    )
+    {
+        if (!IsDirectFillTargetEligible(targetContext) || request.AuthorizedCandidate is null)
+        {
+            return [];
+        }
+
+        if (
+            targetContext.Lifecycle.State == DocumentCacheLifecycleState.Rebuilding
+            && lookupResult.FallbackReason == DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced
+        )
+        {
+            return [request.AuthorizedCandidate];
+        }
+
+        return IsDocumentLevelDirectFillReason(lookupResult.FallbackReason)
+            ? [request.AuthorizedCandidate]
+            : [];
+    }
+
+    private static IReadOnlyList<DocumentCacheReadAccelerationCandidate> SelectQueryDirectFillCandidates(
+        DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheTargetExecutionContext targetContext,
+        DocumentCacheReadLookupResult<QueryResult> lookupResult,
+        QueryResult fallbackResult
+    )
+    {
+        if (
+            !IsDirectFillTargetEligible(targetContext)
+            || request.AuthorizedCandidatePage is null
+            || fallbackResult is not QueryResult.QuerySuccess
+        )
+        {
+            return [];
+        }
+
+        if (
+            targetContext.Lifecycle.State == DocumentCacheLifecycleState.Rebuilding
+            && lookupResult.FallbackReason == DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced
+        )
+        {
+            return request.AuthorizedCandidatePage.Candidates;
+        }
+
+        return IsDocumentLevelDirectFillReason(lookupResult.FallbackReason)
+            ? lookupResult.DirectFillCandidates
+            : [];
+    }
+
+    private static bool IsDirectFillTargetEligible(DocumentCacheTargetExecutionContext targetContext) =>
+        targetContext.Lifecycle
+            is { CacheAheadRecoveryRequired: false }
+                and { State: DocumentCacheLifecycleState.Tracking or DocumentCacheLifecycleState.Rebuilding }
+        && targetContext.Inventory.Status == DocumentCacheInventoryStatus.Satisfied
+        && targetContext.SqlServerPrerequisites?.HasFailure != true;
+
+    private static bool IsDocumentLevelDirectFillReason(
+        DocumentCacheReadAccelerationFallbackReason fallbackReason
+    ) =>
+        fallbackReason
+            is DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+                or DocumentCacheReadAccelerationFallbackReason.CacheLookupStale
+                or DocumentCacheReadAccelerationFallbackReason.CacheLookupSourceDrift;
+
+    private static ISet<Guid> GetServedDocumentUuids(JsonArray edfiDocs)
+    {
+        HashSet<Guid> documentUuids = [];
+
+        foreach (JsonNode? edfiDoc in edfiDocs)
+        {
+            if (
+                edfiDoc is JsonObject jsonObject
+                && jsonObject.TryGetPropertyValue("id", out JsonNode? idNode)
+                && idNode is JsonValue idValue
+                && idValue.TryGetValue(out string? id)
+                && Guid.TryParse(id, out Guid documentUuid)
+            )
+            {
+                documentUuids.Add(documentUuid);
+            }
+        }
+
+        return documentUuids;
+    }
+
+    private static string SelectDirectFillCancellationReason(
+        CancellationToken requestCancellationToken,
+        CancellationTokenSource directFillTimeout
+    )
+    {
+        if (requestCancellationToken.IsCancellationRequested)
+        {
+            return "CallerCanceled";
+        }
+
+        return directFillTimeout.IsCancellationRequested ? "TimedOut" : "Canceled";
+    }
+
+    private void LogDirectFillSkipped(DocumentCacheTargetExecutionContext targetContext, string reason) =>
+        _logger.LogDebug(
+            "DocumentCache direct fill stopped for target {TargetKey}. Reason: {Reason}",
+            targetContext.TargetKey,
+            reason
+        );
+
+    private void LogDirectFillFailure(
+        DocumentCacheTargetExecutionContext targetContext,
+        Exception exception
+    ) =>
+        _logger.LogWarning(
+            "DocumentCache direct fill failed for target {TargetKey}. ExceptionType: {ExceptionType}",
+            targetContext.TargetKey,
+            exception.GetType().Name
+        );
 }

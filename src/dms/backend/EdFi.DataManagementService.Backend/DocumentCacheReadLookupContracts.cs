@@ -281,7 +281,10 @@ internal abstract class DocumentCacheReadLookupAdapterBase
 
         return lookupResult is DocumentCacheReadDocumentLookupResult.FreshHit freshHit
             ? _responseShaper.ShapeGetById(request, freshHit)
-            : DocumentCacheReadLookupResult<GetResult>.Fallback(MapFallbackReason(lookupResult.Outcome));
+            : DocumentCacheReadLookupResult<GetResult>.Fallback(
+                MapFallbackReason(lookupResult.Outcome),
+                SelectDirectFillCandidates([lookupResult])
+            );
     }
 
     public async Task<DocumentCacheReadLookupResult<QueryResult>> TryQueryAsync(
@@ -311,7 +314,10 @@ internal abstract class DocumentCacheReadLookupAdapterBase
 
         return lookupResult.IsFreshHit
             ? _responseShaper.ShapeQuery(request, lookupResult)
-            : DocumentCacheReadLookupResult<QueryResult>.Fallback(MapFallbackReason(lookupResult.Outcome));
+            : DocumentCacheReadLookupResult<QueryResult>.Fallback(
+                MapFallbackReason(lookupResult.Outcome),
+                SelectDirectFillCandidates(lookupResult.Documents)
+            );
     }
 
     public async Task<DocumentCacheReadDocumentLookupResult> LookupDocumentAsync(
@@ -474,6 +480,19 @@ internal abstract class DocumentCacheReadLookupAdapterBase
                 DocumentCacheReadAccelerationFallbackReason.CacheLookupStale,
             _ => DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
         };
+
+    private static IReadOnlyList<DocumentCacheReadAccelerationCandidate> SelectDirectFillCandidates(
+        IReadOnlyList<DocumentCacheReadDocumentLookupResult> lookupResults
+    ) =>
+        lookupResults
+            .Where(lookupResult =>
+                lookupResult.Outcome
+                    is DocumentCacheReadLookupOutcome.MissingCacheRow
+                        or DocumentCacheReadLookupOutcome.StaleCacheRow
+                        or DocumentCacheReadLookupOutcome.SourceDrift
+            )
+            .Select(lookupResult => lookupResult.Candidate)
+            .ToArray();
 }
 
 public sealed class DocumentCacheReadLookupInvariantException : Exception

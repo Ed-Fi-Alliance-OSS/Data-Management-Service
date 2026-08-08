@@ -25,6 +25,9 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     private static readonly DocumentUuid DocumentUuid = new(
         Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")
     );
+    private static readonly DocumentUuid SecondDocumentUuid = new(
+        Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+    );
     private static readonly QualifiedResourceName Resource = new("Ed-Fi", "Student");
     private static readonly MappingSet MappingSet = RelationalAccessTestData.CreateMappingSet(Resource);
     private static readonly DocumentCachePhysicalSourceFingerprint Fingerprint = new(
@@ -427,10 +430,449 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         lookupAdapter.GetByIdAttempts.Should().Be(0);
     }
 
+    [Test]
+    public async Task It_direct_fills_get_by_id_after_successful_relational_fallback_for_a_document_miss()
+    {
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<GetResult>(fallbackResult)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        DocumentCacheMaterializationRequest materializationRequest = materializer
+            .Requests.Should()
+            .ContainSingle()
+            .Which;
+        materializationRequest.DocumentId.Should().Be(345);
+        materializationRequest.Purpose.Should().Be(DocumentCacheMaterializationPurpose.DirectFill);
+        materializationRequest.SelectedRequiredContentVersion.Should().Be(91);
+
+        DocumentCacheWriterRequest writerRequest = writer.Requests.Should().ContainSingle().Which;
+        writerRequest.DocumentId.Should().Be(345);
+        writerRequest.Purpose.Should().Be(DocumentCacheWriterPurpose.DirectFill);
+        writerRequest.Candidate.Should().NotBeNull();
+        writerRequest.Candidate!.DocumentId.Should().Be(345);
+    }
+
+    [Test]
+    public async Task It_skips_direct_fill_when_relational_get_fallback_is_not_successful()
+    {
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<GetResult>(new GetResult.GetFailureNotExists())
+            )
+        );
+
+        result.Should().BeOfType<GetResult.GetFailureNotExists>();
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_direct_fills_only_query_miss_candidates_that_survive_relational_fallback()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: SecondDocumentUuid
+        );
+        var candidatePage = CandidatePage([first, second], totalCount: 2, highestSelectedDocumentId: 346);
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() }],
+            2,
+            HighestSelectedDocumentId: 346
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.Fallback(
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
+                [first, second]
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<QueryResult>(fallbackResult),
+                candidatePage
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Select(request => request.DocumentId).Should().Equal(346);
+        writer.Requests.Select(request => request.DocumentId).Should().Equal(346);
+    }
+
+    [Test]
+    public async Task It_skips_tracking_query_direct_fill_for_page_level_fallback()
+    {
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [new JsonObject { ["id"] = DocumentUuid.Value.ToString() }],
+            1,
+            HighestSelectedDocumentId: 345
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.Fallback(
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<QueryResult>(fallbackResult)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_direct_fills_get_by_id_in_rebuilding_after_a_fenced_cache_read()
+    {
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Rebuilding)),
+            materializer,
+            writer
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<GetResult>(fallbackResult)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Select(request => request.DocumentId).Should().Equal(345);
+        writer.Requests.Select(request => request.DocumentId).Should().Equal(345);
+    }
+
+    [Test]
+    public async Task It_skips_direct_fill_after_cache_unavailable_fallback()
+    {
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupUnavailable
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<GetResult>(fallbackResult)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+    }
+
+    [TestCase(DocumentCacheLifecycleState.Disabled, false)]
+    [TestCase(DocumentCacheLifecycleState.Resetting, false)]
+    [TestCase(DocumentCacheLifecycleState.Tracking, true)]
+    public async Task It_skips_direct_fill_when_target_lifecycle_is_not_write_eligible(
+        DocumentCacheLifecycleState lifecycleState,
+        bool cacheAheadRecoveryRequired
+    )
+    {
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(
+                ExecutionContext(
+                    lifecycleState: lifecycleState,
+                    cacheAheadRecoveryRequired: cacheAheadRecoveryRequired
+                )
+            ),
+            materializer,
+            writer
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<GetResult>(fallbackResult)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_returns_relational_result_when_direct_fill_materializer_fails()
+    {
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var materializer = new RecordingMaterializer
+        {
+            ExceptionToThrow = new InvalidOperationException("projection failure"),
+        };
+        var writer = new RecordingCacheWriter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            new RecordingLookupAdapter
+            {
+                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
+                    DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+                ),
+            },
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<GetResult>(fallbackResult)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Should().ContainSingle();
+        writer.Requests.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_returns_relational_result_when_direct_fill_writer_fails()
+    {
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter
+        {
+            ExceptionToThrow = new InvalidOperationException("writer failure"),
+        };
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            new RecordingLookupAdapter
+            {
+                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
+                    DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+                ),
+            },
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<GetResult>(fallbackResult)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Should().ContainSingle();
+        writer.Requests.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_stops_query_direct_fill_when_timeout_budget_is_exhausted()
+    {
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [new JsonObject { ["id"] = DocumentUuid.Value.ToString() }],
+            1,
+            HighestSelectedDocumentId: 345
+        );
+        var materializer = new RecordingMaterializer { DelayUntilCancellation = TimeSpan.FromSeconds(30) };
+        var writer = new RecordingCacheWriter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            new RecordingLookupAdapter
+            {
+                QueryResult = DocumentCacheReadLookupResult<QueryResult>.Fallback(
+                    DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
+                    [Candidate()]
+                ),
+            },
+            CreateRegistry(ExecutionContext(directFillTimeout: TimeSpan.FromMilliseconds(10))),
+            materializer,
+            writer
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<QueryResult>(fallbackResult)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Should().ContainSingle();
+        writer.Requests.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_skips_direct_fill_when_request_is_canceled_before_fill_starts()
+    {
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        using var cancellationSource = new CancellationTokenSource();
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            new RecordingLookupAdapter
+            {
+                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
+                    DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+                ),
+            },
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) =>
+                {
+                    cancellationSource.Cancel();
+                    return Task.FromResult<GetResult>(fallbackResult);
+                }
+            ),
+            cancellationSource.Token
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+    }
+
     private static DocumentCacheReadAccelerationCoordinator CreateCoordinator(
         bool readAccelerationEnabled,
         RecordingLookupAdapter lookupAdapter,
-        IDocumentCacheTargetRegistry registry
+        IDocumentCacheTargetRegistry registry,
+        IDocumentCacheMaterializer? materializer = null,
+        IDocumentCacheWriter? cacheWriter = null
     )
     {
         DataStoreSelection dataStoreSelection = new();
@@ -463,7 +905,9 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             Options.Create(options),
             dataStoreSelection,
             registry,
-            lookupAdapter
+            lookupAdapter,
+            materializer,
+            cacheWriter
         );
     }
 
@@ -515,11 +959,12 @@ public class Given_DocumentCacheReadAccelerationCoordinator
 
     private static DocumentCacheReadAccelerationCandidate Candidate(
         long documentId = 345,
-        long contentVersion = 91
+        long contentVersion = 91,
+        DocumentUuid? documentUuid = null
     ) =>
         new(
             documentId,
-            DocumentUuid,
+            documentUuid ?? DocumentUuid,
             ResourceKeyId: 1,
             ContentVersion: contentVersion,
             ContentLastModifiedAt: ObservedAt
@@ -561,13 +1006,17 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         return new StaticTargetRegistry(snapshot, runtimeSnapshot);
     }
 
-    private static DocumentCacheTargetExecutionContext ExecutionContext() =>
+    private static DocumentCacheTargetExecutionContext ExecutionContext(
+        DocumentCacheLifecycleState lifecycleState = DocumentCacheLifecycleState.Tracking,
+        bool cacheAheadRecoveryRequired = false,
+        TimeSpan? directFillTimeout = null
+    ) =>
         new(
             TargetKey,
             new DocumentCacheTargetContextGeneration(1),
             new DocumentCacheTargetEffectiveSettings(
                 readAccelerationEnabled: true,
-                directFillTimeout: TimeSpan.FromMilliseconds(250),
+                directFillTimeout: directFillTimeout ?? TimeSpan.FromMilliseconds(250),
                 projectorPollInterval: TimeSpan.FromSeconds(5),
                 projectorPageSize: 3,
                 projectorMaxConcurrentTargets: 2,
@@ -578,10 +1027,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             new DocumentCacheTargetDataStoreMetadata(TargetKey.DataStoreId, "postgresql"),
             new DocumentCacheTargetConnectionInput(RelationalProviderToken.Postgresql, "Host=localhost"),
             Fingerprint,
-            new DocumentCacheLifecycleObservation(
-                DocumentCacheLifecycleState.Tracking,
-                CacheAheadRecoveryRequired: false
-            ),
+            new DocumentCacheLifecycleObservation(lifecycleState, cacheAheadRecoveryRequired),
             new DocumentCacheInventoryValidationResult(
                 DocumentCacheInventoryStatus.Satisfied,
                 "Inventory satisfied."
@@ -641,6 +1087,72 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             LastQueryCancellationToken = cancellationToken;
             LastQueryRequest = request;
             return Task.FromResult(QueryResult);
+        }
+    }
+
+    private sealed class RecordingMaterializer : IDocumentCacheMaterializer
+    {
+        public List<DocumentCacheMaterializationRequest> Requests { get; } = [];
+
+        public Exception? ExceptionToThrow { get; init; }
+
+        public TimeSpan? DelayUntilCancellation { get; init; }
+
+        public async Task<DocumentCacheMaterializationResult> MaterializeAsync(
+            DocumentCacheMaterializationRequest request
+        )
+        {
+            Requests.Add(request);
+            if (DelayUntilCancellation is { } delay)
+            {
+                await Task.Delay(delay, request.CancellationToken).ConfigureAwait(false);
+                return DocumentCacheMaterializationResult.MissingSource.Instance;
+            }
+
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
+
+            return new DocumentCacheMaterializationResult.Success(MaterializedCandidate(request));
+        }
+
+        private static DocumentCacheMaterializationCandidate MaterializedCandidate(
+            DocumentCacheMaterializationRequest request
+        ) =>
+            new(
+                request.DocumentId,
+                DocumentUuid,
+                Resource.ProjectName,
+                Resource.ResourceName,
+                "1.0",
+                request.SelectedRequiredContentVersion ?? 91,
+                ObservedAt,
+                $"stream-{request.DocumentId}",
+                new JsonObject { ["id"] = DocumentUuid.Value.ToString() }
+            );
+    }
+
+    private sealed class RecordingCacheWriter : IDocumentCacheWriter
+    {
+        public List<DocumentCacheWriterRequest> Requests { get; } = [];
+
+        public Exception? ExceptionToThrow { get; init; }
+
+        public Task<DocumentCacheWriterResult> WriteAsync(DocumentCacheWriterRequest request)
+        {
+            Requests.Add(request);
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
+
+            return Task.FromResult<DocumentCacheWriterResult>(
+                new DocumentCacheWriterResult.CandidateWrittenAcknowledged(
+                    request.Candidate!,
+                    request.Candidate!.ContentVersion
+                )
+            );
         }
     }
 
