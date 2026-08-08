@@ -399,7 +399,8 @@ public sealed record DocumentCacheProjectionTargetHealthSnapshot
         DocumentCacheProjectionFailureDiagnostics? failureDiagnostics = null,
         DocumentCacheAdministrativeCommandExecutionId? activeCommandExecutionId = null,
         DocumentCacheAdministrativeCommand? activeAdministrativeCommand = null,
-        DocumentCacheAdministrativeCommandPhase? activeAdministrativePhase = null
+        DocumentCacheAdministrativeCommandPhase? activeAdministrativePhase = null,
+        IEnumerable<DocumentCacheTargetDiagnostic>? targetDiagnostics = null
     )
     {
         EffectiveProjectorPageSize = DocumentCacheProjectionObservationGuard.RequirePositive(
@@ -446,6 +447,10 @@ public sealed record DocumentCacheProjectionTargetHealthSnapshot
         ActiveCommandExecutionId = activeCommandExecutionId;
         ActiveAdministrativeCommand = activeAdministrativeCommand;
         ActiveAdministrativePhase = activeAdministrativePhase;
+        TargetDiagnostics = DocumentCacheProjectionObservationBounds.CapLatest(
+            targetDiagnostics,
+            EffectiveProjectorPageSize
+        );
     }
 
     public DocumentCacheProjectionTargetContextKey ContextKey { get; }
@@ -481,6 +486,8 @@ public sealed record DocumentCacheProjectionTargetHealthSnapshot
     public DocumentCacheAdministrativeCommand? ActiveAdministrativeCommand { get; }
 
     public DocumentCacheAdministrativeCommandPhase? ActiveAdministrativePhase { get; }
+
+    public ImmutableArray<DocumentCacheTargetDiagnostic> TargetDiagnostics { get; }
 
     private static DocumentCacheProjectionPoisonTraversalSnapshot EnsureMatchingPageSize(
         DocumentCacheProjectionPoisonTraversalSnapshot snapshot,
@@ -996,6 +1003,9 @@ internal static class DocumentCacheProjectionObservationBounds
 {
     public static ImmutableArray<T> Cap<T>(IEnumerable<T>? values, int maximumCount) =>
         (values ?? []).Take(maximumCount).ToImmutableArray();
+
+    public static ImmutableArray<T> CapLatest<T>(IEnumerable<T>? values, int maximumCount) =>
+        (values ?? []).TakeLast(maximumCount).ToImmutableArray();
 
     public static ImmutableArray<long> CapPositiveIds(
         IEnumerable<long>? values,

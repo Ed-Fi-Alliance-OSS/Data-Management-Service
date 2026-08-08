@@ -332,6 +332,49 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     [Test]
+    public async Task It_records_target_health_diagnostic_for_cache_lookup_invariant_fallback()
+    {
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure,
+                invariantDiagnostic: DocumentCacheReadInvariantDiagnostic.CacheHitResponseShaping(
+                    DocumentCacheReadResponseShapingFailureReason.InvalidDocumentJson
+                )
+            ),
+        };
+        DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(executionContext),
+            projectionObservationSink: observationStore,
+            projectionObservationProvider: observationStore,
+            timeProvider: new FixedTimeProvider(ObservedAt)
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<GetResult>(fallbackResult)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        DocumentCacheProjectionTargetHealthSnapshot? health =
+            observationStore.CurrentSnapshot.GetCurrentTarget(executionContext.TargetKey);
+        health.Should().NotBeNull();
+        AssertTargetInvariantDiagnostic(health!, "InvalidCachedJson");
+    }
+
+    [Test]
     public async Task It_propagates_caller_cancellation_from_cache_lookup()
     {
         using var cancellationSource = new CancellationTokenSource();
@@ -1154,6 +1197,57 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     [Test]
+    public async Task It_records_target_health_diagnostic_for_direct_fill_materializer_target_failure()
+    {
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        var materializer = new RecordingMaterializer
+        {
+            ExceptionToThrow = new DocumentCacheTargetMappingException(
+                DocumentCacheTargetMappingFailureReason.ResourceKeyMetadataMismatch,
+                FailureMetadata(documentId: 345)
+            ),
+        };
+        var writer = new RecordingCacheWriter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            new RecordingLookupAdapter
+            {
+                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
+                    DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+                ),
+            },
+            CreateRegistry(executionContext),
+            materializer,
+            writer,
+            projectionObservationSink: observationStore,
+            projectionObservationProvider: observationStore,
+            timeProvider: new FixedTimeProvider(ObservedAt)
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<GetResult>(fallbackResult)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Should().ContainSingle();
+        writer.Requests.Should().BeEmpty();
+        AssertTargetInvariantDiagnostic(
+            observationStore.CurrentSnapshot.GetCurrentTarget(executionContext.TargetKey)!,
+            nameof(DocumentCacheTargetMappingFailureReason.ResourceKeyMetadataMismatch)
+        );
+    }
+
+    [Test]
     public async Task It_returns_relational_result_when_direct_fill_writer_fails()
     {
         var fallbackResult = new GetResult.GetSuccess(
@@ -1190,6 +1284,61 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         result.Should().BeSameAs(fallbackResult);
         materializer.Requests.Should().ContainSingle();
         writer.Requests.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_records_target_health_diagnostic_for_direct_fill_writer_invariant_outcome()
+    {
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter
+        {
+            Result = new DocumentCacheWriterResult.DeterministicInvariantOrTargetFailure(
+                DocumentCacheWriterInvariantFailureReason.TargetMappingMismatch,
+                currentContentVersion: 91,
+                candidateContentVersion: 91
+            ),
+        };
+        var telemetry = new RecordingReadTelemetry();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            new RecordingLookupAdapter
+            {
+                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
+                    DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+                ),
+            },
+            CreateRegistry(executionContext),
+            materializer,
+            writer,
+            telemetry,
+            projectionObservationSink: observationStore,
+            projectionObservationProvider: observationStore,
+            timeProvider: new FixedTimeProvider(ObservedAt)
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<GetResult>(fallbackResult)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Should().ContainSingle();
+        writer.Requests.Should().ContainSingle();
+        telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.Failed));
+        AssertTargetInvariantDiagnostic(
+            observationStore.CurrentSnapshot.GetCurrentTarget(executionContext.TargetKey)!,
+            nameof(DocumentCacheWriterInvariantFailureReason.TargetMappingMismatch)
+        );
     }
 
     [Test]
@@ -1323,7 +1472,10 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         IDocumentCacheMaterializer? materializer = null,
         IDocumentCacheWriter? cacheWriter = null,
         IDocumentCacheReadTelemetry? readTelemetry = null,
-        bool selectDataStore = true
+        bool selectDataStore = true,
+        IDocumentCacheProjectionObservationSink? projectionObservationSink = null,
+        IDocumentCacheProjectionObservationProvider? projectionObservationProvider = null,
+        TimeProvider? timeProvider = null
     )
     {
         DataStoreSelection dataStoreSelection = new();
@@ -1362,8 +1514,41 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             lookupAdapter,
             materializer,
             cacheWriter,
-            readTelemetry
+            readTelemetry,
+            projectionObservationSink,
+            projectionObservationProvider,
+            timeProvider
         );
+    }
+
+    private static DocumentCacheMaterializerFailureMetadata FailureMetadata(long documentId) =>
+        new(
+            new DocumentCacheProjectionTargetKey(TargetKey.TenantKey, new DataStoreId(TargetKey.DataStoreId)),
+            MappingSet.Key,
+            DocumentCacheMaterializationPurpose.DirectFill,
+            documentId
+        )
+        {
+            ResourceKeyId = 1,
+            ProjectName = Resource.ProjectName,
+            ResourceName = Resource.ResourceName,
+            ResourceVersion = "1.0",
+        };
+
+    private static void AssertTargetInvariantDiagnostic(
+        DocumentCacheProjectionTargetHealthSnapshot health,
+        string expectedReason
+    )
+    {
+        DocumentCacheTargetDiagnostic diagnostic = health.TargetDiagnostics.Should().ContainSingle().Subject;
+        diagnostic.Category.Should().Be(DocumentCacheTargetDiagnosticCategory.DeterministicInvariantFailure);
+        diagnostic.Message.Should().Contain(expectedReason);
+        diagnostic.Message.Should().NotContain(DocumentUuid.Value.ToString());
+        diagnostic.Message.Should().NotContain(SecondDocumentUuid.Value.ToString());
+        diagnostic.Message.Should().NotContain("DocumentId");
+        diagnostic.Message.Should().NotContain("DocumentJson");
+        diagnostic.Message.Should().NotContain("Host=localhost");
+        health.FailureDiagnostics.DocumentIds.Should().BeEmpty();
     }
 
     private static DocumentCacheReadAccelerationGetByIdRequest CreateGetByIdRequest(
@@ -1612,6 +1797,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
 
         public Exception? ExceptionToThrow { get; init; }
 
+        public DocumentCacheWriterResult? Result { get; init; }
+
         public Task<DocumentCacheWriterResult> WriteAsync(DocumentCacheWriterRequest request)
         {
             Requests.Add(request);
@@ -1621,12 +1808,18 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             }
 
             return Task.FromResult<DocumentCacheWriterResult>(
-                new DocumentCacheWriterResult.CandidateWrittenAcknowledged(
-                    request.Candidate!,
-                    request.Candidate!.ContentVersion
-                )
+                Result
+                    ?? new DocumentCacheWriterResult.CandidateWrittenAcknowledged(
+                        request.Candidate!,
+                        request.Candidate!.ContentVersion
+                    )
             );
         }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
     private sealed class RecordingReadTelemetry : IDocumentCacheReadTelemetry

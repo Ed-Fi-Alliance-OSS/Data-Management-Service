@@ -129,6 +129,7 @@ public enum DocumentCacheAdministrativeDiagnosticCategory
     BaselineHighWaterBackpressure,
     SessionLoss,
     PersistentPoison,
+    DeterministicInvariantFailure,
     UnexpectedProviderFailure,
 }
 
@@ -853,6 +854,8 @@ file static class DocumentCacheAdministrativeDiagnosticCategoryMapper
                 DocumentCacheAdministrativeDiagnosticCategory.ResourceKeyCompatibilityFailure,
             DocumentCacheTargetDiagnosticCategory.ExpectedSourceMismatch =>
                 DocumentCacheAdministrativeDiagnosticCategory.ExpectedSourceMismatch,
+            DocumentCacheTargetDiagnosticCategory.DeterministicInvariantFailure =>
+                DocumentCacheAdministrativeDiagnosticCategory.DeterministicInvariantFailure,
             DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure =>
                 DocumentCacheAdministrativeDiagnosticCategory.UnexpectedProviderFailure,
             _ => throw new ArgumentOutOfRangeException(nameof(category), category, null),

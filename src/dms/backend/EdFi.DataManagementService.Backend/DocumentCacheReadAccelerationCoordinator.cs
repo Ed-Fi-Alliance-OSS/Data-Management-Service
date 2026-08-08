@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -151,12 +152,14 @@ internal sealed record DocumentCacheReadLookupResult<TResult>
     public DocumentCacheReadLookupResult(
         TResult? cachedResult,
         DocumentCacheReadAccelerationFallbackReason fallbackReason,
-        IReadOnlyList<DocumentCacheReadAccelerationCandidate>? directFillCandidates = null
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate>? directFillCandidates = null,
+        DocumentCacheReadInvariantDiagnostic? invariantDiagnostic = null
     )
     {
         CachedResult = cachedResult;
         FallbackReason = fallbackReason;
         DirectFillCandidates = directFillCandidates ?? [];
+        InvariantDiagnostic = invariantDiagnostic;
     }
 
     public TResult? CachedResult { get; }
@@ -164,6 +167,8 @@ internal sealed record DocumentCacheReadLookupResult<TResult>
     public DocumentCacheReadAccelerationFallbackReason FallbackReason { get; }
 
     public IReadOnlyList<DocumentCacheReadAccelerationCandidate> DirectFillCandidates { get; }
+
+    public DocumentCacheReadInvariantDiagnostic? InvariantDiagnostic { get; }
 
     public bool HasCachedResult => CachedResult is not null;
 
@@ -180,8 +185,72 @@ internal sealed record DocumentCacheReadLookupResult<TResult>
     public static DocumentCacheReadLookupResult<TResult> Fallback(
         DocumentCacheReadAccelerationFallbackReason reason =
             DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
-        IReadOnlyList<DocumentCacheReadAccelerationCandidate>? directFillCandidates = null
-    ) => new(null, reason, directFillCandidates);
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate>? directFillCandidates = null,
+        DocumentCacheReadInvariantDiagnostic? invariantDiagnostic = null
+    ) => new(null, reason, directFillCandidates, invariantDiagnostic);
+}
+
+internal sealed record DocumentCacheReadInvariantDiagnostic
+{
+    private const int MaximumMessageLength = 512;
+
+    public DocumentCacheReadInvariantDiagnostic(string message)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+
+        string sanitizedMessage = LoggingSanitizer.SanitizeForLogging(message);
+        Message =
+            sanitizedMessage.Length <= MaximumMessageLength
+                ? sanitizedMessage
+                : sanitizedMessage[..MaximumMessageLength];
+    }
+
+    public string Message { get; }
+
+    public static DocumentCacheReadInvariantDiagnostic CacheLookupInvariant() =>
+        new("DocumentCache read lookup observed a deterministic cache invariant failure.");
+
+    public static DocumentCacheReadInvariantDiagnostic CacheHitResponseShaping(
+        DocumentCacheReadResponseShapingFailureReason reason
+    ) =>
+        new(
+            "DocumentCache cache-hit response shaping observed deterministic failure "
+                + $"'{FormatResponseShapingReason(reason)}'."
+        );
+
+    public static DocumentCacheReadInvariantDiagnostic DirectFillMaterializerProjectionFailure(
+        DocumentCacheProjectionProcessingFailureReason reason
+    ) => new($"DocumentCache direct-fill materializer observed deterministic projection failure '{reason}'.");
+
+    public static DocumentCacheReadInvariantDiagnostic DirectFillMaterializerTargetFailure(
+        DocumentCacheTargetMappingFailureReason reason
+    ) => new($"DocumentCache direct-fill materializer observed target mapping failure '{reason}'.");
+
+    public static DocumentCacheReadInvariantDiagnostic DirectFillWriterFailure(
+        DocumentCacheWriterInvariantFailureReason reason
+    ) =>
+        new(
+            $"DocumentCache direct-fill writer observed deterministic invariant or target failure '{reason}'."
+        );
+
+    private static string FormatResponseShapingReason(DocumentCacheReadResponseShapingFailureReason reason) =>
+        reason switch
+        {
+            DocumentCacheReadResponseShapingFailureReason.InvalidDocumentJson => "InvalidCachedJson",
+            DocumentCacheReadResponseShapingFailureReason.DocumentJsonNotObject => "CachedJsonNotObject",
+            DocumentCacheReadResponseShapingFailureReason.DocumentJsonContainsEtag =>
+                "CachedJsonContainsServedEtag",
+            DocumentCacheReadResponseShapingFailureReason.DocumentJsonIdMismatch => "CachedJsonIdMismatch",
+            DocumentCacheReadResponseShapingFailureReason.DocumentJsonLastModifiedDateMismatch =>
+                "CachedJsonLastModifiedDateMismatch",
+            DocumentCacheReadResponseShapingFailureReason.QueryHitCandidateMismatch => nameof(
+                DocumentCacheReadResponseShapingFailureReason.QueryHitCandidateMismatch
+            ),
+            DocumentCacheReadResponseShapingFailureReason.UnexpectedResponseShapingFailure => nameof(
+                DocumentCacheReadResponseShapingFailureReason.UnexpectedResponseShapingFailure
+            ),
+            _ => "UnsupportedResponseShapingFailure",
+        };
 }
 
 internal interface IDocumentCacheReadLookupAdapter
@@ -272,6 +341,9 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     IDocumentCacheMaterializer? materializer = null,
     IDocumentCacheWriter? cacheWriter = null,
     IDocumentCacheReadTelemetry? readTelemetry = null,
+    IDocumentCacheProjectionObservationSink? projectionObservationSink = null,
+    IDocumentCacheProjectionObservationProvider? projectionObservationProvider = null,
+    TimeProvider? timeProvider = null,
     ILogger<DocumentCacheReadAccelerationCoordinator>? logger = null
 ) : IDocumentCacheReadAccelerationCoordinator
 {
@@ -285,6 +357,11 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     private readonly IDocumentCacheWriter? _cacheWriter = cacheWriter;
     private readonly IDocumentCacheReadTelemetry _readTelemetry =
         readTelemetry ?? NoOpDocumentCacheReadTelemetry.Instance;
+    private readonly IDocumentCacheProjectionObservationSink? _projectionObservationSink =
+        projectionObservationSink;
+    private readonly IDocumentCacheProjectionObservationProvider? _projectionObservationProvider =
+        projectionObservationProvider;
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly ILogger<DocumentCacheReadAccelerationCoordinator> _logger =
         logger ?? NullLogger<DocumentCacheReadAccelerationCoordinator>.Instance;
 
@@ -422,7 +499,8 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             DocumentCacheReadAccelerationOperation.GetById,
             request.ResourceKind,
             targetContext,
-            lookupResult.FallbackReason
+            lookupResult.FallbackReason,
+            lookupResult.InvariantDiagnostic
         );
 
         GetResult fallbackResult = await request
@@ -573,7 +651,8 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             DocumentCacheReadAccelerationOperation.Query,
             request.ResourceKind,
             targetContext,
-            lookupResult.FallbackReason
+            lookupResult.FallbackReason,
+            lookupResult.InvariantDiagnostic
         );
 
         QueryResult fallbackResult = await request
@@ -726,12 +805,21 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         DocumentCacheReadAccelerationOperation operation,
         DocumentCacheReadAccelerationResourceKind resourceKind,
         DocumentCacheTargetExecutionContext targetContext,
-        DocumentCacheReadAccelerationFallbackReason fallbackReason
+        DocumentCacheReadAccelerationFallbackReason fallbackReason,
+        DocumentCacheReadInvariantDiagnostic? invariantDiagnostic = null
     )
     {
         _readTelemetry.RecordMiss(
             CreateReadTelemetryContext(targetContext, operation, resourceKind, fallbackReason.ToString())
         );
+        if (fallbackReason == DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure)
+        {
+            RecordTargetInvariantDiagnostic(
+                targetContext,
+                invariantDiagnostic ?? DocumentCacheReadInvariantDiagnostic.CacheLookupInvariant()
+            );
+        }
+
         RecordFallback(operation, resourceKind, targetContext, fallbackReason);
     }
 
@@ -1090,6 +1178,19 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                         )
                         .ConfigureAwait(false);
 
+                    if (
+                        writerResult
+                        is DocumentCacheWriterResult.DeterministicInvariantOrTargetFailure invariantFailure
+                    )
+                    {
+                        RecordTargetInvariantDiagnostic(
+                            targetContext,
+                            DocumentCacheReadInvariantDiagnostic.DirectFillWriterFailure(
+                                invariantFailure.Reason
+                            )
+                        );
+                    }
+
                     directFillDurationOutcome = IsDirectFillWriterSuccess(writerResult)
                         ? DocumentCacheReadTelemetryLabel.Succeeded
                         : DocumentCacheReadTelemetryLabel.Failed;
@@ -1104,6 +1205,30 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                     RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
                     LogDirectFillSkipped(targetContext, directFillDurationOutcome);
                     return;
+                }
+                catch (DocumentCacheProjectionProcessingException exception)
+                {
+                    directFillDurationOutcome = DocumentCacheReadTelemetryLabel.Failed;
+                    RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+                    RecordTargetInvariantDiagnostic(
+                        targetContext,
+                        DocumentCacheReadInvariantDiagnostic.DirectFillMaterializerProjectionFailure(
+                            exception.Reason
+                        )
+                    );
+                    LogDirectFillFailure(targetContext, exception);
+                }
+                catch (DocumentCacheTargetMappingException exception)
+                {
+                    directFillDurationOutcome = DocumentCacheReadTelemetryLabel.Failed;
+                    RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+                    RecordTargetInvariantDiagnostic(
+                        targetContext,
+                        DocumentCacheReadInvariantDiagnostic.DirectFillMaterializerTargetFailure(
+                            exception.Reason
+                        )
+                    );
+                    LogDirectFillFailure(targetContext, exception);
                 }
                 catch (Exception exception)
                 {
@@ -1120,6 +1245,88 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 DocumentCacheReadTelemetry.GetElapsedTime(directFillStartTimestamp)
             );
         }
+    }
+
+    private void RecordTargetInvariantDiagnostic(
+        DocumentCacheTargetExecutionContext targetContext,
+        DocumentCacheReadInvariantDiagnostic invariantDiagnostic
+    )
+    {
+        if (_projectionObservationSink is null)
+        {
+            return;
+        }
+
+        DateTimeOffset observedAt = _timeProvider.GetUtcNow();
+        DocumentCacheTargetDiagnostic targetDiagnostic = new(
+            targetContext.TargetKey,
+            DocumentCacheTargetResolutionState.Resolved,
+            targetContext.ProviderToken,
+            targetContext.Generation,
+            physicalSourceFingerprint: null,
+            lifecycle: null,
+            inventory: null,
+            enqueueTrigger: null,
+            sqlServerPrerequisites: null,
+            retryState: null,
+            DocumentCacheTargetDiagnosticCategory.DeterministicInvariantFailure,
+            invariantDiagnostic.Message
+        );
+
+        _projectionObservationSink.ObserveTarget(
+            CreateTargetInvariantHealthSnapshot(targetContext, observedAt, targetDiagnostic)
+        );
+    }
+
+    private DocumentCacheProjectionTargetHealthSnapshot CreateTargetInvariantHealthSnapshot(
+        DocumentCacheTargetExecutionContext targetContext,
+        DateTimeOffset observedAt,
+        DocumentCacheTargetDiagnostic targetDiagnostic
+    )
+    {
+        var contextKey = new DocumentCacheProjectionTargetContextKey(
+            targetContext.TargetKey,
+            targetContext.Generation
+        );
+        DocumentCacheProjectionTargetHealthSnapshot? currentSnapshot =
+            _projectionObservationProvider?.CurrentSnapshot.GetCurrentTarget(contextKey);
+
+        if (currentSnapshot is not null)
+        {
+            return new DocumentCacheProjectionTargetHealthSnapshot(
+                currentSnapshot.TargetKey,
+                currentSnapshot.Generation,
+                currentSnapshot.EffectiveProjectorPageSize,
+                observedAt,
+                providerToken: currentSnapshot.ProviderToken,
+                physicalSourceFingerprint: currentSnapshot.PhysicalSourceFingerprint,
+                executionState: currentSnapshot.ExecutionState,
+                lastSuccess: currentSnapshot.LastSuccess,
+                pageThroughput: currentSnapshot.PageThroughput,
+                drainThroughput: currentSnapshot.DrainThroughput,
+                lifecycleFence: currentSnapshot.LifecycleFence,
+                poisonTraversal: currentSnapshot.PoisonTraversal,
+                failureDiagnostics: currentSnapshot.FailureDiagnostics,
+                activeCommandExecutionId: currentSnapshot.ActiveCommandExecutionId,
+                activeAdministrativeCommand: currentSnapshot.ActiveAdministrativeCommand,
+                activeAdministrativePhase: currentSnapshot.ActiveAdministrativePhase,
+                targetDiagnostics: [.. currentSnapshot.TargetDiagnostics, targetDiagnostic]
+            );
+        }
+
+        return new DocumentCacheProjectionTargetHealthSnapshot(
+            targetContext.TargetKey,
+            targetContext.Generation,
+            targetContext.EffectiveSettings.ProjectorPageSize,
+            observedAt,
+            providerToken: targetContext.ProviderToken,
+            physicalSourceFingerprint: targetContext.PhysicalSourceFingerprint,
+            lifecycleFence: DocumentCacheProjectionLifecycleFenceSnapshotFactory.FromLifecycle(
+                targetContext.Lifecycle,
+                observedAt
+            ),
+            targetDiagnostics: [targetDiagnostic]
+        );
     }
 
     private static IReadOnlyList<DocumentCacheReadAccelerationCandidate> SelectGetByIdDirectFillCandidates(

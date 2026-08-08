@@ -171,14 +171,20 @@ internal sealed class DocumentCacheReadResponseShaper(
         {
             LogShapingFailure(exception.Reason);
             return DocumentCacheReadLookupResult<TResult>.Fallback(
-                DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure,
+                invariantDiagnostic: DocumentCacheReadInvariantDiagnostic.CacheHitResponseShaping(
+                    exception.Reason
+                )
             );
         }
         catch (Exception)
         {
-            LogShapingFailure(DocumentCacheReadResponseShapingFailureReason.UnexpectedResponseShapingFailure);
+            const DocumentCacheReadResponseShapingFailureReason reason =
+                DocumentCacheReadResponseShapingFailureReason.UnexpectedResponseShapingFailure;
+            LogShapingFailure(reason);
             return DocumentCacheReadLookupResult<TResult>.Fallback(
-                DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure,
+                invariantDiagnostic: DocumentCacheReadInvariantDiagnostic.CacheHitResponseShaping(reason)
             );
         }
     }

@@ -264,6 +264,11 @@ internal sealed record DocumentCacheProjectionTelemetryContext
             return DocumentCacheProjectionDocumentDiagnosticCategory.PoisonSuppressed.ToString();
         }
 
+        if (!snapshot.TargetDiagnostics.IsEmpty)
+        {
+            return snapshot.TargetDiagnostics[^1].Category.ToString();
+        }
+
         if (snapshot.LifecycleFence.State != DocumentCacheProjectionLifecycleFenceState.Eligible)
         {
             return snapshot.LifecycleFence.DiagnosticCategory?.ToString()

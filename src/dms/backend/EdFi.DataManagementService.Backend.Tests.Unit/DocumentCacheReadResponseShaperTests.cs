@@ -77,6 +77,8 @@ public class Given_DocumentCacheReadResponseShaper
         result
             .FallbackReason.Should()
             .Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure);
+        result.InvariantDiagnostic.Should().NotBeNull();
+        result.InvariantDiagnostic!.Message.Should().Contain("response shaping");
     }
 
     [Test]
@@ -192,6 +194,10 @@ public class Given_DocumentCacheReadResponseShaper
         result
             .FallbackReason.Should()
             .Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure);
+        result.InvariantDiagnostic.Should().NotBeNull();
+        result
+            .InvariantDiagnostic!.Message.Should()
+            .Contain(nameof(DocumentCacheReadResponseShapingFailureReason.QueryHitCandidateMismatch));
     }
 
     [Test]

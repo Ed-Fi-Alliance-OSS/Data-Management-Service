@@ -126,6 +126,34 @@ public class Given_DocumentCacheProjectionObservationProvider
     }
 
     [Test]
+    public void It_caps_target_level_diagnostics_without_document_ids()
+    {
+        const int effectiveProjectorPageSize = 2;
+        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
+
+        store.ObserveTarget(
+            TargetHealth(
+                generation: 1,
+                effectiveProjectorPageSize,
+                targetDiagnostics:
+                [
+                    TargetDiagnostic("first"),
+                    TargetDiagnostic("second"),
+                    TargetDiagnostic("third"),
+                ],
+                observedAt: ObservedAt
+            )
+        );
+
+        DocumentCacheProjectionTargetHealthSnapshot current = store.CurrentSnapshot.GetCurrentTarget(
+            TargetKey
+        )!;
+
+        current.TargetDiagnostics.Select(diagnostic => diagnostic.Message).Should().Equal("second", "third");
+        current.FailureDiagnostics.DocumentIds.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_retains_only_one_last_ended_diagnostic_snapshot_per_target()
     {
         DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
@@ -252,7 +280,8 @@ public class Given_DocumentCacheProjectionObservationProvider
         DocumentCacheProjectionSuccessSnapshot? lastSuccess = null,
         DocumentCacheAdministrativeCommandExecutionId? activeCommandExecutionId = null,
         DocumentCacheAdministrativeCommand? activeAdministrativeCommand = null,
-        DocumentCacheAdministrativeCommandPhase? activeAdministrativePhase = null
+        DocumentCacheAdministrativeCommandPhase? activeAdministrativePhase = null,
+        DocumentCacheTargetDiagnostic[]? targetDiagnostics = null
     )
     {
         DateTimeOffset observationTime = observedAt ?? ObservedAt;
@@ -327,9 +356,26 @@ public class Given_DocumentCacheProjectionObservationProvider
             ),
             activeCommandExecutionId: activeCommandExecutionId,
             activeAdministrativeCommand: activeAdministrativeCommand,
-            activeAdministrativePhase: activeAdministrativePhase
+            activeAdministrativePhase: activeAdministrativePhase,
+            targetDiagnostics: targetDiagnostics
         );
     }
+
+    private static DocumentCacheTargetDiagnostic TargetDiagnostic(string message) =>
+        new(
+            TargetKey,
+            DocumentCacheTargetResolutionState.Resolved,
+            RelationalProviderToken.Postgresql,
+            new DocumentCacheTargetContextGeneration(1),
+            physicalSourceFingerprint: null,
+            lifecycle: null,
+            inventory: null,
+            enqueueTrigger: null,
+            sqlServerPrerequisites: null,
+            retryState: null,
+            DocumentCacheTargetDiagnosticCategory.DeterministicInvariantFailure,
+            message
+        );
 
     private static DocumentCacheAdministrativeCommandObservationSnapshot CommandObservation(
         DocumentCacheAdministrativeCommandExecutionId executionId,
