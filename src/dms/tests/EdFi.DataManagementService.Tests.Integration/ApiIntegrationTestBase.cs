@@ -5,6 +5,8 @@
 
 using System.Data.Common;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
@@ -79,6 +81,12 @@ public abstract class ApiIntegrationTestBase
     /// <summary>Enables ASP.NET Core response compression for scenarios that exercise coding variants.</summary>
     protected virtual bool EnableAspNetCompression => false;
 
+    /// <summary>Enables the DMS DocumentCache read-acceleration path for cache-backed read scenarios.</summary>
+    protected virtual bool EnableDocumentCacheReadAcceleration => false;
+
+    /// <summary>Controls the public ResourceLinks response flag for scenarios that exercise link stripping.</summary>
+    protected virtual bool ResourceLinksEnabled => true;
+
     /// <summary>
     /// Builds the claim set provider used by the in-process host.
     /// </summary>
@@ -133,6 +141,27 @@ public abstract class ApiIntegrationTestBase
                 "AppSettings:EnableAspNetCompression",
                 EnableAspNetCompression ? "true" : "false"
             );
+            builder.UseSetting(
+                "DataManagement:ResourceLinks:Enabled",
+                ResourceLinksEnabled ? "true" : "false"
+            );
+            builder.UseSetting(
+                "DataManagement:DocumentCache:ReadAcceleration:Enabled",
+                EnableDocumentCacheReadAcceleration ? "true" : "false"
+            );
+            if (EnableDocumentCacheReadAcceleration)
+            {
+                builder.UseSetting("DataManagement:DocumentCache:Targets:0:TenantKey", "");
+                builder.UseSetting(
+                    "DataManagement:DocumentCache:Targets:0:DataStoreId",
+                    ExternalDoublesConstants.StableDataStoreId.ToString()
+                );
+                builder.UseSetting(
+                    "DataManagement:DocumentCache:ReadAcceleration:DirectFillTimeout",
+                    "00:00:00.250"
+                );
+                builder.UseSetting("DataManagement:DocumentCache:Projector:PollInterval", "01:00:00");
+            }
             builder.UseSetting("ConfigurationServiceSettings:BaseUrl", "http://localhost/test-cms");
             builder.UseSetting("ConfigurationServiceSettings:ClientId", "test-cms-client");
             builder.UseSetting("ConfigurationServiceSettings:ClientSecret", "test-cms-secret");
@@ -148,7 +177,8 @@ public abstract class ApiIntegrationTestBase
                     ClientEducationOrganizationIds,
                     clientNamespacePrefixes,
                     providerFailureTransform,
-                    providerFailureRecorder
+                    providerFailureRecorder,
+                    EnableDocumentCacheReadAcceleration ? GetRelationalProviderToken() : null
                 );
 
                 if (queryRecorder is not null)
@@ -161,6 +191,13 @@ public abstract class ApiIntegrationTestBase
 
         _assertionConnection = await OpenAssertionConnectionAsync(_leasedConnectionString);
         var httpClient = _factory.CreateClient();
+        if (EnableDocumentCacheReadAcceleration)
+        {
+            await _factory
+                .Services.GetRequiredService<IDocumentCacheProjectionSupervisor>()
+                .RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+        }
+
         Harness = new ApiIntegrationHarness(
             httpClient,
             _assertionConnection,
@@ -216,4 +253,9 @@ public abstract class ApiIntegrationTestBase
             _startupStatusFilePath = null;
         }
     }
+
+    private RelationalProviderToken GetRelationalProviderToken() =>
+        string.Equals(Datastore, "postgresql", StringComparison.OrdinalIgnoreCase)
+            ? RelationalProviderToken.Postgresql
+            : RelationalProviderToken.SqlServer;
 }

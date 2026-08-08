@@ -5,12 +5,15 @@
 
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
@@ -47,7 +50,8 @@ internal static class ExternalDoublesRegistration
             RelationshipAuthorizationProviderFailure,
             RelationshipAuthorizationProviderFailure
         >? providerFailureTransform = null,
-        ApiIntegrationProviderFailureRecorder? providerFailureRecorder = null
+        ApiIntegrationProviderFailureRecorder? providerFailureRecorder = null,
+        RelationalProviderToken? relationalProviderToken = null
     )
     {
         services.RemoveAll<IJwtValidationService>();
@@ -87,9 +91,23 @@ internal static class ExternalDoublesRegistration
         services.AddSingleton<IDataStoreProvider>(
             FakeDataStoreProvider.WithSingleInstance(
                 id: ExternalDoublesConstants.StableDataStoreId,
-                connectionString: leasedConnectionString
+                connectionString: leasedConnectionString,
+                relationalProviderToken
             )
         );
+        if (relationalProviderToken is not null)
+        {
+            services.RemoveAll<IDocumentCacheTargetRegistry>();
+            services.AddSingleton<IDocumentCacheTargetRegistry>(
+                serviceProvider => new DocumentCacheTargetRegistry(
+                    serviceProvider.GetRequiredService<IDataStoreProvider>(),
+                    serviceProvider.GetRequiredService<IDocumentCacheTargetContextBuilder>(),
+                    serviceProvider.GetRequiredService<IOptions<DocumentCacheOptions>>(),
+                    serviceProvider.GetRequiredService<TimeProvider>(),
+                    serviceProvider.GetRequiredService<ILogger<DocumentCacheTargetRegistry>>()
+                )
+            );
+        }
         services.AddSingleton<IProfileCmsProvider>(FakeProfileCmsProvider.FromFixture(fixture));
         services.AddSingleton<IStartupProcessExit, NonExitingStartupProcessExit>();
     }

@@ -1,0 +1,617 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Data;
+using System.Data.Common;
+using System.Globalization;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Security;
+using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Security.Model;
+using EdFi.DataManagementService.Tests.Integration.Doubles;
+using FluentAssertions;
+using Microsoft.Data.SqlClient;
+
+namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
+
+internal static class DocumentCacheReadAccelerationScenario
+{
+    private const string StudentsEndpoint = "/data/ed-fi/students";
+    private const string ProfileRootOnlyMergeItemsEndpoint = "/data/ed-fi/profileRootOnlyMergeItems";
+    private const string SchoolTypeDescriptorsEndpoint = "/data/ed-fi/schoolTypeDescriptors";
+    private const string StandardJsonContentType = "application/json";
+    private const string VisibleReadableContentType =
+        "application/vnd.ed-fi.profilerootonlymergeitem.profilerootonlymergeitem-visible.readable+json";
+    private const string LastModifiedDateFormat = "yyyy-MM-ddTHH:mm:ss'Z'";
+
+    public static IClaimSetProvider CreateStudentCreateOnlyClaimSetProvider() =>
+        new StaticClaimSetProvider([
+            new ClaimSet(
+                ExternalDoublesConstants.SmokeClaimSetName,
+                [
+                    new ResourceClaim(
+                        $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/student",
+                        "Create",
+                        [
+                            new AuthorizationStrategy(
+                                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+        ]);
+
+    public static async Task It_serves_cached_get_and_query_for_ordinary_resources(
+        ApiIntegrationHarness harness
+    )
+    {
+        await SetTrackingLifecycleAsync(harness);
+
+        CreatedDocument getStudent = await CreateStudentAsync(harness, "cache-get-001", "Relational Get");
+        DocumentMetadata getMetadata = await ReadDocumentMetadataAsync(harness, getStudent.DocumentUuid);
+        JsonObject getCacheDocument = CacheDocumentFrom(getStudent.Body, getMetadata);
+        getCacheDocument["firstName"] = "Cached Get";
+        await InsertCacheRowAsync(harness, getMetadata, getCacheDocument);
+
+        JsonObject cachedGet = await GetJsonObjectAsync(harness, getStudent.LocationPath);
+        cachedGet["studentUniqueId"]!.GetValue<string>().Should().Be("cache-get-001");
+        cachedGet["firstName"]!.GetValue<string>().Should().Be("Cached Get");
+
+        CreatedDocument firstQueryStudent = await CreateStudentAsync(
+            harness,
+            "cache-query-001",
+            "Relational Query One"
+        );
+        CreatedDocument secondQueryStudent = await CreateStudentAsync(
+            harness,
+            "cache-query-002",
+            "Relational Query Two"
+        );
+
+        DocumentMetadata firstQueryMetadata = await ReadDocumentMetadataAsync(
+            harness,
+            firstQueryStudent.DocumentUuid
+        );
+        JsonObject firstQueryCacheDocument = CacheDocumentFrom(firstQueryStudent.Body, firstQueryMetadata);
+        firstQueryCacheDocument["firstName"] = "Cached Query One";
+        await InsertCacheRowAsync(harness, firstQueryMetadata, firstQueryCacheDocument);
+
+        DocumentMetadata secondQueryMetadata = await ReadDocumentMetadataAsync(
+            harness,
+            secondQueryStudent.DocumentUuid
+        );
+        JsonObject secondQueryCacheDocument = CacheDocumentFrom(secondQueryStudent.Body, secondQueryMetadata);
+        secondQueryCacheDocument["firstName"] = "Cached Query Two";
+        await InsertCacheRowAsync(harness, secondQueryMetadata, secondQueryCacheDocument);
+
+        using HttpResponseMessage queryResponse = await harness.HttpClient.GetAsync(
+            $"{StudentsEndpoint}?offset=1&limit=2&totalCount=true"
+        );
+        string queryBody = await queryResponse.Content.ReadAsStringAsync();
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, queryBody);
+        queryResponse.Content.Headers.ContentType?.MediaType.Should().Be(StandardJsonContentType);
+        queryResponse.Headers.GetValues("Total-Count").Single().Should().Be("3");
+
+        JsonArray cachedQuery = JsonNode.Parse(queryBody)!.AsArray();
+        cachedQuery
+            .Select(node => node!["firstName"]!.GetValue<string>())
+            .Should()
+            .Equal("Cached Query One", "Cached Query Two");
+        cachedQuery
+            .Select(node => node!["_etag"]!.GetValue<string>())
+            .Should()
+            .OnlyContain(etag => !string.IsNullOrWhiteSpace(etag));
+    }
+
+    public static async Task It_falls_back_relationally_when_cache_row_is_stale(ApiIntegrationHarness harness)
+    {
+        await SetTrackingLifecycleAsync(harness);
+
+        CreatedDocument student = await CreateStudentAsync(
+            harness,
+            "cache-fallback-001",
+            "Relational Fallback"
+        );
+        DocumentMetadata metadata = await ReadDocumentMetadataAsync(harness, student.DocumentUuid);
+        JsonObject cacheDocument = CacheDocumentFrom(student.Body, metadata);
+        cacheDocument["firstName"] = "Cached Stale";
+        await InsertCacheRowAsync(harness, metadata, cacheDocument, metadata.ContentVersion + 1);
+
+        JsonObject fallback = await GetJsonObjectAsync(harness, student.LocationPath);
+
+        fallback["studentUniqueId"]!.GetValue<string>().Should().Be("cache-fallback-001");
+        fallback["firstName"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Relational Fallback", "a stale cache row must not replace relational fallback");
+    }
+
+    public static async Task It_shapes_cached_profile_and_descriptor_conditional_get(
+        ApiIntegrationHarness harness
+    )
+    {
+        await SetTrackingLifecycleAsync(harness);
+
+        CreatedDocument profileItem = await CreateProfileRootOnlyMergeItemAsync(
+            harness,
+            itemId: 6101,
+            displayName: "Relational Profile",
+            clearableText: "relational-clearable",
+            preservedText: "relational-preserved"
+        );
+        DocumentMetadata profileMetadata = await ReadDocumentMetadataAsync(harness, profileItem.DocumentUuid);
+        JsonObject profileCacheDocument = CacheDocumentFrom(profileItem.Body, profileMetadata);
+        profileCacheDocument["displayName"] = "Cached Profile";
+        profileCacheDocument["profileScope"] = new JsonObject
+        {
+            ["clearableText"] = "cached-clearable",
+            ["preservedText"] = "cached-preserved",
+        };
+        await InsertCacheRowAsync(harness, profileMetadata, profileCacheDocument);
+
+        using HttpResponseMessage profiledResponse = await SendProfiledGetAsync(
+            harness,
+            profileItem.LocationPath
+        );
+        string profiledBody = await profiledResponse.Content.ReadAsStringAsync();
+        profiledResponse.StatusCode.Should().Be(HttpStatusCode.OK, profiledBody);
+        JsonObject profiled = JsonNode.Parse(profiledBody)!.AsObject();
+        profiled["displayName"]!.GetValue<string>().Should().Be("Cached Profile");
+        JsonObject profiledScope = profiled["profileScope"]!.AsObject();
+        profiledScope["clearableText"]!.GetValue<string>().Should().Be("cached-clearable");
+        profiledScope
+            .ContainsKey("preservedText")
+            .Should()
+            .BeFalse("readable profile projection must run over cached JSON");
+        profiledResponse.TryReadRawEtag(out string profiledHeaderEtag).Should().BeTrue();
+        profiled["_etag"]!.GetValue<string>().Should().Be(profiledHeaderEtag);
+
+        CreatedDocument descriptor = await CreateSchoolTypeDescriptorAsync(harness);
+        DocumentMetadata descriptorMetadata = await ReadDocumentMetadataAsync(
+            harness,
+            descriptor.DocumentUuid
+        );
+        JsonObject descriptorCacheDocument = CacheDocumentFrom(descriptor.Body, descriptorMetadata);
+        descriptorCacheDocument["shortDescription"] = "Cached school type";
+        await InsertCacheRowAsync(harness, descriptorMetadata, descriptorCacheDocument);
+
+        using HttpResponseMessage descriptorGetResponse = await harness.HttpClient.GetAsync(
+            descriptor.LocationPath
+        );
+        string descriptorGetBody = await descriptorGetResponse.Content.ReadAsStringAsync();
+        descriptorGetResponse.StatusCode.Should().Be(HttpStatusCode.OK, descriptorGetBody);
+        descriptorGetResponse.TryReadRawEtag(out string descriptorEtag).Should().BeTrue();
+        JsonObject descriptorGet = JsonNode.Parse(descriptorGetBody)!.AsObject();
+        descriptorGet["shortDescription"]!.GetValue<string>().Should().Be("Cached school type");
+        descriptorGet["_etag"]!.GetValue<string>().Should().Be(descriptorEtag);
+
+        using var conditionalRequest = new HttpRequestMessage(HttpMethod.Get, descriptor.LocationPath);
+        conditionalRequest.Headers.TryAddWithoutValidation("If-None-Match", $"\"{descriptorEtag}\"");
+        using HttpResponseMessage conditionalResponse = await harness.HttpClient.SendAsync(
+            conditionalRequest
+        );
+
+        conditionalResponse.StatusCode.Should().Be(HttpStatusCode.NotModified);
+        (await conditionalResponse.Content.ReadAsStringAsync()).Should().BeEmpty();
+        conditionalResponse.TryReadRawEtag(out string notModifiedEtag).Should().BeTrue();
+        notModifiedEtag.Should().Be(descriptorEtag);
+    }
+
+    public static async Task It_strips_links_from_cached_resource_when_resource_links_are_disabled(
+        ApiIntegrationHarness harness
+    )
+    {
+        await SetTrackingLifecycleAsync(harness);
+
+        CreatedDocument student = await CreateStudentAsync(harness, "cache-links-student", "Link Target");
+        CreatedDocument mergeItem = await CreateProfileRootOnlyMergeItemAsync(
+            harness,
+            itemId: 6201,
+            displayName: "Relational Links",
+            clearableText: "links-clearable",
+            preservedText: "links-preserved",
+            studentUniqueId: student.Body["studentUniqueId"]!.GetValue<string>()
+        );
+        DocumentMetadata metadata = await ReadDocumentMetadataAsync(harness, mergeItem.DocumentUuid);
+        JsonObject cacheDocument = CacheDocumentFrom(mergeItem.Body, metadata);
+        cacheDocument["displayName"] = "Cached Links";
+        cacheDocument["studentReference"] = new JsonObject
+        {
+            ["studentUniqueId"] = "cache-links-student",
+            ["link"] = new JsonObject
+            {
+                ["rel"] = "Student",
+                ["href"] = "/data/ed-fi/students/not-public-from-cache",
+            },
+        };
+        await InsertCacheRowAsync(harness, metadata, cacheDocument);
+
+        JsonObject returned = await GetJsonObjectAsync(harness, mergeItem.LocationPath);
+
+        returned["displayName"]!.GetValue<string>().Should().Be("Cached Links");
+        JsonObject studentReference = returned["studentReference"]!.AsObject();
+        studentReference["studentUniqueId"]!.GetValue<string>().Should().Be("cache-links-student");
+        studentReference
+            .ContainsKey("link")
+            .Should()
+            .BeFalse("ResourceLinks disabled must strip link subtrees from cached JSON");
+    }
+
+    public static async Task It_does_not_serve_cached_body_when_read_authorization_is_denied(
+        ApiIntegrationHarness harness
+    )
+    {
+        await SetTrackingLifecycleAsync(harness);
+
+        string locationPath = await PostStudentAsync(harness, "cache-denied-001", "Relational Denied");
+        var documentUuid = Guid.Parse(locationPath.Split('/')[^1]);
+        DocumentMetadata metadata = await ReadDocumentMetadataAsync(harness, documentUuid);
+        JsonObject cacheDocument = new()
+        {
+            ["id"] = documentUuid.ToString(),
+            ["studentUniqueId"] = "cache-denied-001",
+            ["firstName"] = "Cached Denied",
+            ["_lastModifiedDate"] = FormatLastModifiedDate(metadata.ContentLastModifiedAt),
+        };
+        await InsertCacheRowAsync(harness, metadata, cacheDocument);
+
+        using HttpResponseMessage deniedResponse = await harness.HttpClient.GetAsync(locationPath);
+        string deniedBody = await deniedResponse.Content.ReadAsStringAsync();
+
+        deniedResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden, deniedBody);
+        deniedResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        deniedBody.Should().NotContain("Cached Denied");
+    }
+
+    private static async Task<CreatedDocument> CreateStudentAsync(
+        ApiIntegrationHarness harness,
+        string studentUniqueId,
+        string firstName
+    )
+    {
+        string locationPath = await PostStudentAsync(harness, studentUniqueId, firstName);
+        return await ReadCreatedDocumentAsync(harness, locationPath);
+    }
+
+    private static async Task<string> PostStudentAsync(
+        ApiIntegrationHarness harness,
+        string studentUniqueId,
+        string firstName
+    )
+    {
+        var payload = new JsonObject { ["studentUniqueId"] = studentUniqueId, ["firstName"] = firstName };
+        using HttpResponseMessage createResponse = await PostJsonAsync(harness, StudentsEndpoint, payload);
+        string createBody = await createResponse.Content.ReadAsStringAsync();
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created, createBody);
+        createResponse.Headers.Location.Should().NotBeNull();
+        return ToPath(createResponse.Headers.Location!);
+    }
+
+    private static async Task<CreatedDocument> CreateProfileRootOnlyMergeItemAsync(
+        ApiIntegrationHarness harness,
+        int itemId,
+        string displayName,
+        string clearableText,
+        string preservedText,
+        string? studentUniqueId = null
+    )
+    {
+        var payload = new JsonObject
+        {
+            ["profileRootOnlyMergeItemId"] = itemId,
+            ["displayName"] = displayName,
+            ["profileScope"] = new JsonObject
+            {
+                ["clearableText"] = clearableText,
+                ["preservedText"] = preservedText,
+            },
+        };
+
+        if (studentUniqueId is not null)
+        {
+            payload["studentReference"] = new JsonObject { ["studentUniqueId"] = studentUniqueId };
+        }
+
+        using HttpResponseMessage createResponse = await PostJsonAsync(
+            harness,
+            ProfileRootOnlyMergeItemsEndpoint,
+            payload
+        );
+        string createBody = await createResponse.Content.ReadAsStringAsync();
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created, createBody);
+        createResponse.Headers.Location.Should().NotBeNull();
+
+        return await ReadCreatedDocumentAsync(harness, ToPath(createResponse.Headers.Location!));
+    }
+
+    private static async Task<CreatedDocument> CreateSchoolTypeDescriptorAsync(ApiIntegrationHarness harness)
+    {
+        string suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var payload = new JsonObject
+        {
+            ["namespace"] = $"uri://ed-fi.org/SchoolTypeDescriptor/DMS-1315/{suffix}",
+            ["codeValue"] = $"DMS-1315-{suffix[..12]}",
+            ["shortDescription"] = "Relational school type",
+        };
+
+        using HttpResponseMessage createResponse = await PostJsonAsync(
+            harness,
+            SchoolTypeDescriptorsEndpoint,
+            payload
+        );
+        string createBody = await createResponse.Content.ReadAsStringAsync();
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created, createBody);
+        createResponse.Headers.Location.Should().NotBeNull();
+
+        return await ReadCreatedDocumentAsync(harness, ToPath(createResponse.Headers.Location!));
+    }
+
+    private static async Task<CreatedDocument> ReadCreatedDocumentAsync(
+        ApiIntegrationHarness harness,
+        string locationPath
+    )
+    {
+        using HttpResponseMessage response = await harness.HttpClient.GetAsync(locationPath);
+        string body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        response.Content.Headers.ContentType?.MediaType.Should().Be(StandardJsonContentType);
+        JsonObject document = JsonNode.Parse(body)!.AsObject();
+        var documentUuid = Guid.Parse(document["id"]!.GetValue<string>());
+        return new CreatedDocument(locationPath, documentUuid, document);
+    }
+
+    private static async Task<JsonObject> GetJsonObjectAsync(
+        ApiIntegrationHarness harness,
+        string locationPath
+    )
+    {
+        using HttpResponseMessage response = await harness.HttpClient.GetAsync(locationPath);
+        string body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        response.Content.Headers.ContentType?.MediaType.Should().Be(StandardJsonContentType);
+        JsonObject document = JsonNode.Parse(body)!.AsObject();
+        AssertHeaderAndBodyEtagMatch(document, response);
+        return document;
+    }
+
+    private static async Task<HttpResponseMessage> SendProfiledGetAsync(
+        ApiIntegrationHarness harness,
+        string locationPath
+    )
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, locationPath);
+        request.Headers.Accept.Clear();
+        request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse(VisibleReadableContentType));
+        return await harness.HttpClient.SendAsync(request);
+    }
+
+    private static async Task<HttpResponseMessage> PostJsonAsync(
+        ApiIntegrationHarness harness,
+        string endpoint,
+        JsonObject payload
+    )
+    {
+        using var content = new StringContent(payload.ToJsonString(), Encoding.UTF8, StandardJsonContentType);
+        return await harness.HttpClient.PostAsync(endpoint, content);
+    }
+
+    private static async Task SetTrackingLifecycleAsync(ApiIntegrationHarness harness)
+    {
+        await ExecuteNonQueryAsync(
+            harness,
+            """
+            UPDATE "dms"."DocumentCacheState"
+            SET "ProjectionLifecycleState" = @lifecycleState,
+                "CacheAheadRecoveryRequired" = @cacheAheadRecoveryRequired
+            WHERE "StateId" = 1;
+            """,
+            ("@lifecycleState", "Tracking"),
+            ("@cacheAheadRecoveryRequired", false)
+        );
+    }
+
+    private static async Task<DocumentMetadata> ReadDocumentMetadataAsync(
+        ApiIntegrationHarness harness,
+        Guid documentUuid
+    )
+    {
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        command.CommandText = """
+            SELECT d."DocumentId",
+                   d."DocumentUuid",
+                   d."ResourceKeyId",
+                   d."ContentVersion",
+                   d."ContentLastModifiedAt",
+                   rk."ProjectName",
+                   rk."ResourceName",
+                   rk."ResourceVersion"
+            FROM "dms"."Document" d
+            INNER JOIN "dms"."ResourceKey" rk
+                ON rk."ResourceKeyId" = d."ResourceKeyId"
+            WHERE d."DocumentUuid" = @documentUuid;
+            """;
+        command.Parameters.Add(CreateParameter(command, "@documentUuid", documentUuid));
+
+        await using DbDataReader reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue("the created document row must exist");
+
+        var metadata = new DocumentMetadata(
+            Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),
+            (Guid)reader.GetValue(1),
+            Convert.ToInt16(reader.GetValue(2), CultureInfo.InvariantCulture),
+            Convert.ToInt64(reader.GetValue(3), CultureInfo.InvariantCulture),
+            ToUtcDateTimeOffset(reader.GetValue(4)),
+            reader.GetString(5),
+            reader.GetString(6),
+            reader.GetString(7)
+        );
+
+        (await reader.ReadAsync()).Should().BeFalse("DocumentUuid is unique");
+        return metadata;
+    }
+
+    private static async Task InsertCacheRowAsync(
+        ApiIntegrationHarness harness,
+        DocumentMetadata metadata,
+        JsonObject documentJson,
+        long? contentVersionOverride = null
+    )
+    {
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        command.CommandText = UsesPostgresql(harness)
+            ? """
+                INSERT INTO "dms"."DocumentCache" (
+                    "DocumentId",
+                    "DocumentUuid",
+                    "ProjectName",
+                    "ResourceName",
+                    "ResourceVersion",
+                    "ContentVersion",
+                    "StreamEtag",
+                    "LastModifiedAt",
+                    "DocumentJson",
+                    "ComputedAt"
+                )
+                VALUES (
+                    @documentId,
+                    @documentUuid,
+                    @projectName,
+                    @resourceName,
+                    @resourceVersion,
+                    @contentVersion,
+                    @streamEtag,
+                    @lastModifiedAt,
+                    CAST(@documentJson AS jsonb),
+                    @computedAt
+                );
+                """
+            : """
+                INSERT INTO "dms"."DocumentCache" (
+                    "DocumentId",
+                    "DocumentUuid",
+                    "ProjectName",
+                    "ResourceName",
+                    "ResourceVersion",
+                    "ContentVersion",
+                    "StreamEtag",
+                    "LastModifiedAt",
+                    "DocumentJson",
+                    "ComputedAt"
+                )
+                VALUES (
+                    @documentId,
+                    @documentUuid,
+                    @projectName,
+                    @resourceName,
+                    @resourceVersion,
+                    @contentVersion,
+                    @streamEtag,
+                    @lastModifiedAt,
+                    @documentJson,
+                    @computedAt
+                );
+                """;
+
+        long contentVersion = contentVersionOverride ?? metadata.ContentVersion;
+        command.Parameters.Add(CreateParameter(command, "@documentId", metadata.DocumentId));
+        command.Parameters.Add(CreateParameter(command, "@documentUuid", metadata.DocumentUuid));
+        command.Parameters.Add(CreateParameter(command, "@projectName", metadata.ProjectName));
+        command.Parameters.Add(CreateParameter(command, "@resourceName", metadata.ResourceName));
+        command.Parameters.Add(CreateParameter(command, "@resourceVersion", metadata.ResourceVersion));
+        command.Parameters.Add(CreateParameter(command, "@contentVersion", contentVersion));
+        command.Parameters.Add(CreateParameter(command, "@streamEtag", $"test-stream-{contentVersion}"));
+        command.Parameters.Add(CreateParameter(command, "@lastModifiedAt", metadata.ContentLastModifiedAt));
+        command.Parameters.Add(CreateParameter(command, "@documentJson", documentJson.ToJsonString()));
+        command.Parameters.Add(CreateParameter(command, "@computedAt", DateTimeOffset.UtcNow));
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static JsonObject CacheDocumentFrom(JsonObject publicDocument, DocumentMetadata metadata)
+    {
+        JsonObject cacheDocument = JsonNode.Parse(publicDocument.ToJsonString())!.AsObject();
+        cacheDocument.Remove("_etag");
+        cacheDocument["_lastModifiedDate"] = FormatLastModifiedDate(metadata.ContentLastModifiedAt);
+        return cacheDocument;
+    }
+
+    private static async Task ExecuteNonQueryAsync(
+        ApiIntegrationHarness harness,
+        string commandText,
+        params (string Name, object? Value)[] parameters
+    )
+    {
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        command.CommandText = commandText;
+        foreach ((string name, object? value) in parameters)
+        {
+            command.Parameters.Add(CreateParameter(command, name, value));
+        }
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static DbParameter CreateParameter(DbCommand command, string name, object? value)
+    {
+        DbParameter parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+
+        if (parameter is SqlParameter sqlParameter && value is DateTimeOffset dateTimeOffset)
+        {
+            sqlParameter.SqlDbType = SqlDbType.DateTime2;
+            sqlParameter.Value = dateTimeOffset.UtcDateTime;
+            return parameter;
+        }
+
+        parameter.Value = value switch
+        {
+            null => DBNull.Value,
+            _ => value,
+        };
+        return parameter;
+    }
+
+    private static bool UsesPostgresql(ApiIntegrationHarness harness) =>
+        harness.DbConnection.GetType().Namespace?.Contains("Npgsql", StringComparison.Ordinal) == true;
+
+    private static DateTimeOffset ToUtcDateTimeOffset(object value) =>
+        value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset.ToUniversalTime(),
+            DateTime dateTime => new DateTimeOffset(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)),
+            _ => throw new InvalidOperationException(
+                $"Unsupported ContentLastModifiedAt value type '{value.GetType().Name}'."
+            ),
+        };
+
+    private static string FormatLastModifiedDate(DateTimeOffset lastModifiedAt) =>
+        lastModifiedAt.UtcDateTime.ToString(LastModifiedDateFormat, CultureInfo.InvariantCulture);
+
+    private static string ToPath(Uri location) =>
+        location.IsAbsoluteUri ? location.AbsolutePath : location.OriginalString;
+
+    private static void AssertHeaderAndBodyEtagMatch(JsonObject document, HttpResponseMessage response)
+    {
+        response.TryReadRawEtag(out string headerEtag).Should().BeTrue("successful reads must emit ETag");
+        document["_etag"]!.GetValue<string>().Should().Be(headerEtag);
+    }
+
+    private sealed record CreatedDocument(string LocationPath, Guid DocumentUuid, JsonObject Body);
+
+    private sealed record DocumentMetadata(
+        long DocumentId,
+        Guid DocumentUuid,
+        short ResourceKeyId,
+        long ContentVersion,
+        DateTimeOffset ContentLastModifiedAt,
+        string ProjectName,
+        string ResourceName,
+        string ResourceVersion
+    );
+}
