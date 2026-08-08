@@ -242,6 +242,111 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         lookupAdapter.GetByIdAttempts.Should().Be(0);
     }
 
+    [TestCase("provider")]
+    [TestCase("connection")]
+    public async Task It_bypasses_cache_when_the_resolved_target_signature_does_not_match_the_selected_data_store(
+        string mismatch
+    )
+    {
+        var cachedResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            JsonNode.Parse("""{"id":"old-cache"}""")!,
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            JsonNode.Parse("""{"id":"selected-store"}""")!,
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Hit(cachedResult),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        DataStore selectedDataStore =
+            mismatch == "provider"
+                ? SelectedDataStore(RelationalProviderToken.SqlServer, "Host=localhost")
+                : SelectedDataStore(RelationalProviderToken.Postgresql, "Host=changed");
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Rebuilding)),
+            materializer,
+            writer,
+            selectedDataStore: selectedDataStore
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<GetResult>(fallbackResult);
+                }
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext.Reason.Should().Be(DocumentCacheReadAccelerationFallbackReason.UnresolvedTarget);
+        fallbackContext.TargetContext.Should().BeNull();
+        lookupAdapter.GetByIdAttempts.Should().Be(0);
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_hydrates_query_fallback_when_the_resolved_target_connection_does_not_match_the_selected_data_store()
+    {
+        var cachedResult = new QueryResult.QuerySuccess(
+            [JsonNode.Parse("""{"id":"old-cache"}""")!],
+            1,
+            HighestSelectedDocumentId: 345
+        );
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [JsonNode.Parse("""{"id":"selected-store"}""")!],
+            1,
+            HighestSelectedDocumentId: 345
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.Hit(cachedResult),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Rebuilding)),
+            materializer,
+            writer,
+            selectedDataStore: SelectedDataStore(RelationalProviderToken.Postgresql, "Host=changed")
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<QueryResult>(fallbackResult);
+                }
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext.Reason.Should().Be(DocumentCacheReadAccelerationFallbackReason.UnresolvedTarget);
+        fallbackContext.TargetContext.Should().BeNull();
+        lookupAdapter.QueryAttempts.Should().Be(0);
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+    }
+
     [Test]
     public async Task It_uses_the_cache_lookup_adapter_for_an_authorized_external_get_on_an_exact_target()
     {
@@ -1633,23 +1738,14 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         bool selectDataStore = true,
         IDocumentCacheProjectionObservationSink? projectionObservationSink = null,
         IDocumentCacheProjectionObservationProvider? projectionObservationProvider = null,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        DataStore? selectedDataStore = null
     )
     {
         DataStoreSelection dataStoreSelection = new();
         if (selectDataStore)
         {
-            dataStoreSelection.SetSelectedDataStore(
-                new DataStore(
-                    TargetKey.DataStoreId,
-                    "postgresql",
-                    "Primary",
-                    "Host=localhost",
-                    [],
-                    RelationalProviderToken.Postgresql,
-                    RelationalProviderMetadataStatus.Supported
-                )
-            );
+            dataStoreSelection.SetSelectedDataStore(selectedDataStore ?? SelectedDataStore());
         }
 
         DocumentCacheOptions options = new()
@@ -1678,6 +1774,20 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             timeProvider
         );
     }
+
+    private static DataStore SelectedDataStore(
+        RelationalProviderToken? providerToken = null,
+        string connectionString = "Host=localhost"
+    ) =>
+        new(
+            TargetKey.DataStoreId,
+            providerToken == RelationalProviderToken.SqlServer ? "sqlserver" : "postgresql",
+            "Primary",
+            connectionString,
+            [],
+            providerToken ?? RelationalProviderToken.Postgresql,
+            RelationalProviderMetadataStatus.Supported
+        );
 
     private static DocumentCacheMaterializerFailureMetadata FailureMetadata(long documentId) =>
         new(

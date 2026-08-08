@@ -1022,6 +1022,17 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return false;
         }
 
+        if (!TargetMatchesSelectedDataStore(selectedDataStore, resolvedTargetContext))
+        {
+            _logger.LogDebug(
+                "DocumentCache read acceleration bypassed for target {TargetKey} because the resolved target signature does not match the selected data store.",
+                targetKey
+            );
+
+            fallbackReason = DocumentCacheReadAccelerationFallbackReason.UnresolvedTarget;
+            return false;
+        }
+
         if (!resolvedTargetContext.EffectiveSettings.ReadAccelerationEnabled)
         {
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.TargetReadAccelerationDisabled;
@@ -1032,6 +1043,18 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         fallbackReason = DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss;
         return true;
     }
+
+    private static bool TargetMatchesSelectedDataStore(
+        DataStore selectedDataStore,
+        DocumentCacheTargetExecutionContext targetContext
+    ) =>
+        selectedDataStore.RelationalProviderToken is not null
+        && selectedDataStore.RelationalProviderToken.Equals(targetContext.ProviderToken)
+        && string.Equals(
+            selectedDataStore.ConnectionString,
+            targetContext.ConnectionInput.Value,
+            StringComparison.Ordinal
+        );
 
     private async Task TryDirectFillAsync(
         DocumentCacheReadAccelerationGetByIdRequest request,
