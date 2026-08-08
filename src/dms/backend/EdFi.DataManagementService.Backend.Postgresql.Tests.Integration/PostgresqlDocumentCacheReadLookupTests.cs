@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -29,6 +30,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/minimal";
 
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
+    private static readonly QualifiedResourceName DescriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
     private static readonly DateTimeOffset LastModifiedAt = new(2026, 7, 31, 12, 0, 0, TimeSpan.Zero);
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create(
         "tenant-cache-read",
@@ -42,12 +44,14 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
     private PostgresqlGeneratedDdlBaselineDatabase _baseline = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private NpgsqlDataSourceCache _dataSourceCache = null!;
+    private MappingSet _descriptorMappingSet = null!;
     private PostgresqlDocumentCacheReadLookupAdapter _adapter = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _descriptorMappingSet = DocumentCacheMaterializerDescriptorMappingSet.Create(SqlDialect.Pgsql);
         _baseline = await PostgresqlGeneratedDdlBaselineDatabase.CreateAsync(
             $"{nameof(Given_A_Postgresql_DocumentCacheReadLookupAdapter)}:{_fixture.MappingSet.Key.EffectiveSchemaHash}",
             _fixture.GeneratedDdl
@@ -102,6 +106,30 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
         hit.StreamEtag.Should().Be("etag-10");
         hit.CacheLastModifiedAt.Should().Be(LastModifiedAt);
         JsonNode.Parse(hit.DocumentJson)!["value"]!.GetValue<string>().Should().Be("cache-10");
+    }
+
+    [Test]
+    public async Task It_returns_a_fresh_descriptor_hit_from_real_descriptor_source_rows()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        await InsertDescriptorResourceKeyAsync();
+        SourceDocument descriptor = await InsertSourceDocumentAsync(
+            resourceKeyId: DescriptorResourceKeyId(),
+            contentVersion: 30
+        );
+        await InsertDescriptorRowAsync(descriptor);
+        await InsertCacheRowAsync(descriptor, contentVersion: 30, _descriptorMappingSet);
+
+        DocumentCacheReadDocumentLookupResult result = await LookupAsync(
+            Candidate(descriptor),
+            _descriptorMappingSet
+        );
+
+        var hit = result.Should().BeOfType<DocumentCacheReadDocumentLookupResult.FreshHit>().Subject;
+        hit.Outcome.Should().Be(DocumentCacheReadLookupOutcome.FreshHit);
+        hit.Candidate.DocumentId.Should().Be(descriptor.DocumentId);
+        hit.StreamEtag.Should().Be("etag-30");
+        JsonNode.Parse(hit.DocumentJson)!["value"]!.GetValue<string>().Should().Be("cache-30");
     }
 
     [Test]
@@ -273,10 +301,11 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
     }
 
     private async Task<DocumentCacheReadDocumentLookupResult> LookupAsync(
-        DocumentCacheReadAccelerationCandidate candidate
+        DocumentCacheReadAccelerationCandidate candidate,
+        MappingSet? mappingSet = null
     ) =>
         await _adapter.LookupDocumentAsync(
-            new DocumentCacheReadDocumentLookupRequest(_fixture.MappingSet, candidate),
+            new DocumentCacheReadDocumentLookupRequest(mappingSet ?? _fixture.MappingSet, candidate),
             ExecutionContext()
         );
 
@@ -296,6 +325,9 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
             source.ContentVersion,
             LastModifiedAt
         );
+
+    private short DescriptorResourceKeyId() =>
+        _descriptorMappingSet.ResourceKeyIdByResource[DescriptorResource];
 
     private DocumentCacheTargetExecutionContext ExecutionContext() =>
         new(
@@ -376,10 +408,54 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
         );
     }
 
+    private async Task InsertDescriptorResourceKeyAsync()
+    {
+        ResourceKeyEntry descriptorKey = _descriptorMappingSet.ResourceKeyById[DescriptorResourceKeyId()];
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "dms"."ResourceKey" (
+                "ResourceKeyId",
+                "ProjectName",
+                "ResourceName",
+                "ResourceVersion"
+            )
+            VALUES (
+                @resourceKeyId,
+                @projectName,
+                @resourceName,
+                @resourceVersion
+            )
+            ON CONFLICT ("ResourceKeyId") DO NOTHING;
+            """,
+            new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint)
+            {
+                Value = descriptorKey.ResourceKeyId,
+            },
+            new NpgsqlParameter("projectName", NpgsqlDbType.Varchar)
+            {
+                Value = descriptorKey.Resource.ProjectName,
+            },
+            new NpgsqlParameter("resourceName", NpgsqlDbType.Varchar)
+            {
+                Value = descriptorKey.Resource.ResourceName,
+            },
+            new NpgsqlParameter("resourceVersion", NpgsqlDbType.Varchar)
+            {
+                Value = descriptorKey.ResourceVersion,
+            }
+        );
+    }
+
     private async Task<SourceDocument> InsertSourceDocumentAsync(long contentVersion)
     {
-        var documentUuid = Guid.NewGuid();
         short resourceKeyId = _fixture.MappingSet.ResourceKeyIdByResource[PersonResource];
+        return await InsertSourceDocumentAsync(resourceKeyId, contentVersion);
+    }
+
+    private async Task<SourceDocument> InsertSourceDocumentAsync(short resourceKeyId, long contentVersion)
+    {
+        var documentUuid = Guid.NewGuid();
         IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await _database.QueryRowsAsync(
             """
             INSERT INTO "dms"."Document" (
@@ -410,13 +486,70 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
         );
     }
 
+    private async Task InsertDescriptorRowAsync(SourceDocument descriptor)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "dms"."Descriptor" (
+                "DocumentId",
+                "ResourceKeyId",
+                "Namespace",
+                "CodeValue",
+                "ShortDescription",
+                "Description",
+                "EffectiveBeginDate",
+                "EffectiveEndDate",
+                "Discriminator",
+                "Uri"
+            )
+            VALUES (
+                @documentId,
+                @resourceKeyId,
+                @namespace,
+                @codeValue,
+                @shortDescription,
+                @description,
+                @effectiveBeginDate,
+                @effectiveEndDate,
+                @discriminator,
+                @uri
+            );
+            """,
+            new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = descriptor.DocumentId },
+            new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = descriptor.ResourceKeyId },
+            new NpgsqlParameter("namespace", NpgsqlDbType.Varchar)
+            {
+                Value = "uri://ed-fi.org/SchoolTypeDescriptor",
+            },
+            new NpgsqlParameter("codeValue", NpgsqlDbType.Varchar) { Value = "Alternative" },
+            new NpgsqlParameter("shortDescription", NpgsqlDbType.Varchar) { Value = "Alternative" },
+            new NpgsqlParameter("description", NpgsqlDbType.Varchar) { Value = "Alternative school type" },
+            new NpgsqlParameter("effectiveBeginDate", NpgsqlDbType.Date)
+            {
+                Value = new DateOnly(2025, 1, 15),
+            },
+            new NpgsqlParameter("effectiveEndDate", NpgsqlDbType.Date) { Value = new DateOnly(2025, 12, 31) },
+            new NpgsqlParameter("discriminator", NpgsqlDbType.Varchar)
+            {
+                Value = DescriptorResource.ResourceName,
+            },
+            new NpgsqlParameter("uri", NpgsqlDbType.Varchar)
+            {
+                Value = "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
+            }
+        );
+    }
+
     private async Task InsertCacheRowAsync(
         SourceDocument source,
         long contentVersion,
+        MappingSet? mappingSet = null,
         string? resourceNameOverride = null
     )
     {
-        ResourceKeyEntry resourceKey = _fixture.MappingSet.ResourceKeyById[source.ResourceKeyId];
+        ResourceKeyEntry resourceKey = (mappingSet ?? _fixture.MappingSet).ResourceKeyById[
+            source.ResourceKeyId
+        ];
 
         await _database.ExecuteNonQueryAsync(
             """
