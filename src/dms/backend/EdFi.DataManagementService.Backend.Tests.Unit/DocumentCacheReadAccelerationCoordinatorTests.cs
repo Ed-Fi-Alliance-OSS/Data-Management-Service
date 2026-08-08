@@ -155,6 +155,129 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     [Test]
+    public async Task It_uses_one_cache_lookup_for_an_authorized_query_page_on_an_exact_target()
+    {
+        var cachedResult = new QueryResult.QuerySuccess(
+            [JsonNode.Parse("""{"id":"cached"}""")!],
+            2,
+            HighestSelectedDocumentId: 346
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.Hit(cachedResult),
+        };
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(executionContext)
+        );
+        using var cancellationSource = new CancellationTokenSource();
+        var candidatePage = CandidatePage(
+            [Candidate(documentId: 345, contentVersion: 91), Candidate(documentId: 346, contentVersion: 92)],
+            totalCount: 2,
+            highestSelectedDocumentId: 346
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<QueryResult>(new QueryResult.QueryFailureKnownError("fallback")),
+                candidatePage
+            ),
+            cancellationSource.Token
+        );
+
+        result.Should().BeSameAs(cachedResult);
+        lookupAdapter.QueryAttempts.Should().Be(1);
+        lookupAdapter.LastQueryRequest!.AuthorizedCandidatePage.Should().Be(candidatePage);
+        lookupAdapter.LastQueryTargetContext.Should().BeSameAs(executionContext);
+        lookupAdapter.LastQueryCancellationToken.Should().Be(cancellationSource.Token);
+    }
+
+    [Test]
+    public async Task It_hydrates_the_complete_authorized_query_page_when_lookup_falls_back()
+    {
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [JsonNode.Parse("""{"id":"relational"}""")!],
+            2,
+            HighestSelectedDocumentId: 346
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.Fallback(
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupStale
+            ),
+        };
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(executionContext)
+        );
+        var candidatePage = CandidatePage(
+            [Candidate(documentId: 345, contentVersion: 91), Candidate(documentId: 346, contentVersion: 92)],
+            totalCount: 2,
+            highestSelectedDocumentId: 346
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<QueryResult>(fallbackResult);
+                },
+                candidatePage
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        lookupAdapter.QueryAttempts.Should().Be(1);
+        fallbackContext.Reason.Should().Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupStale);
+        fallbackContext.TargetContext.Should().BeSameAs(executionContext);
+    }
+
+    [Test]
+    public async Task It_returns_an_empty_authorized_query_page_without_lookup_or_relational_fallback()
+    {
+        var lookupAdapter = new RecordingLookupAdapter();
+        var fallbackAttempts = 0;
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext())
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) =>
+                {
+                    fallbackAttempts++;
+                    return Task.FromResult<QueryResult>(
+                        new QueryResult.QueryFailureKnownError("fallback should not run")
+                    );
+                },
+                new DocumentCacheReadAccelerationCandidatePage(
+                    [],
+                    TotalCount: 0,
+                    HighestSelectedDocumentId: null
+                )
+            )
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.EdfiDocs.Should().BeEmpty();
+        success.TotalCount.Should().Be(0);
+        success.HighestSelectedDocumentId.Should().BeNull();
+        lookupAdapter.QueryAttempts.Should().Be(0);
+        fallbackAttempts.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_preserves_relational_fallback_when_lookup_is_not_candidate_ready()
     {
         var lookupAdapter = new RecordingLookupAdapter();
@@ -223,6 +346,52 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             .Be(DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate);
         lookupAdapter.LastGetByIdRequest.AuthorizedCandidate.Should().Be(selectedCandidate);
         lookupAdapter.LastGetByIdTargetContext.Should().BeSameAs(executionContext);
+    }
+
+    [Test]
+    public async Task It_selects_an_authorized_query_candidate_page_after_target_resolution_before_lookup()
+    {
+        var lookupAdapter = new RecordingLookupAdapter();
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(executionContext)
+        );
+        var selectedCandidatePage = CandidatePage(
+            [Candidate(documentId: 987, contentVersion: 654)],
+            totalCount: 1,
+            highestSelectedDocumentId: 987
+        );
+        var selectionAttempts = 0;
+
+        await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly,
+                (_, _) => Task.FromResult<QueryResult>(new QueryResult.QueryFailureKnownError("fallback")),
+                selectAuthorizedCandidatePage: _ =>
+                {
+                    selectionAttempts++;
+                    return Task.FromResult<DocumentCacheReadAccelerationQuerySelectionResult>(
+                        new DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage(
+                            selectedCandidatePage,
+                            (_, _) =>
+                                Task.FromResult<QueryResult>(
+                                    new QueryResult.QueryFailureKnownError("fallback")
+                                )
+                        )
+                    );
+                }
+            )
+        );
+
+        selectionAttempts.Should().Be(1);
+        lookupAdapter.QueryAttempts.Should().Be(1);
+        lookupAdapter
+            .LastQueryRequest!.LookupReadiness.Should()
+            .Be(DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate);
+        lookupAdapter.LastQueryRequest.AuthorizedCandidatePage.Should().Be(selectedCandidatePage);
+        lookupAdapter.LastQueryTargetContext.Should().BeSameAs(executionContext);
     }
 
     [Test]
@@ -324,7 +493,12 @@ public class Given_DocumentCacheReadAccelerationCoordinator
 
     private static DocumentCacheReadAccelerationQueryRequest CreateQueryRequest(
         DocumentCacheReadAccelerationLookupReadiness lookupReadiness,
-        Func<DocumentCacheReadAccelerationFallbackContext, CancellationToken, Task<QueryResult>> fallback
+        Func<DocumentCacheReadAccelerationFallbackContext, CancellationToken, Task<QueryResult>> fallback,
+        DocumentCacheReadAccelerationCandidatePage? candidatePage = null,
+        Func<
+            CancellationToken,
+            Task<DocumentCacheReadAccelerationQuerySelectionResult>
+        >? selectAuthorizedCandidatePage = null
     ) =>
         new(
             TargetKey.TenantKey,
@@ -334,15 +508,28 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             lookupReadiness,
             fallback,
             lookupReadiness == DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate
-                ? CandidatePage()
-                : null
+                ? candidatePage ?? CandidatePage()
+                : null,
+            selectAuthorizedCandidatePage
         );
 
-    private static DocumentCacheReadAccelerationCandidate Candidate() =>
-        new(345, DocumentUuid, ResourceKeyId: 1, ContentVersion: 91, ContentLastModifiedAt: ObservedAt);
+    private static DocumentCacheReadAccelerationCandidate Candidate(
+        long documentId = 345,
+        long contentVersion = 91
+    ) =>
+        new(
+            documentId,
+            DocumentUuid,
+            ResourceKeyId: 1,
+            ContentVersion: contentVersion,
+            ContentLastModifiedAt: ObservedAt
+        );
 
-    private static DocumentCacheReadAccelerationCandidatePage CandidatePage() =>
-        new([Candidate()], TotalCount: 1, HighestSelectedDocumentId: null);
+    private static DocumentCacheReadAccelerationCandidatePage CandidatePage(
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate>? candidates = null,
+        long? totalCount = 1,
+        long? highestSelectedDocumentId = null
+    ) => new(candidates ?? [Candidate()], totalCount, highestSelectedDocumentId);
 
     private static StaticTargetRegistry CreateRegistry(
         DocumentCacheTargetExecutionContext? executionContext = null
@@ -414,7 +601,11 @@ public class Given_DocumentCacheReadAccelerationCoordinator
 
         public DocumentCacheTargetExecutionContext? LastGetByIdTargetContext { get; private set; }
 
+        public DocumentCacheTargetExecutionContext? LastQueryTargetContext { get; private set; }
+
         public CancellationToken LastGetByIdCancellationToken { get; private set; }
+
+        public CancellationToken LastQueryCancellationToken { get; private set; }
 
         public DocumentCacheReadAccelerationGetByIdRequest? LastGetByIdRequest { get; private set; }
 
@@ -446,6 +637,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         )
         {
             QueryAttempts++;
+            LastQueryTargetContext = targetContext;
+            LastQueryCancellationToken = cancellationToken;
             LastQueryRequest = request;
             return Task.FromResult(QueryResult);
         }

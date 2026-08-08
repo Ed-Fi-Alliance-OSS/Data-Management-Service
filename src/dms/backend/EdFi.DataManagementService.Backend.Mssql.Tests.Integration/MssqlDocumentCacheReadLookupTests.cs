@@ -107,6 +107,59 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
     }
 
     [Test]
+    public async Task It_returns_a_fresh_batch_hit_in_candidate_order()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument first = await InsertSourceDocumentAsync(contentVersion: 10);
+        SourceDocument second = await InsertSourceDocumentAsync(contentVersion: 11);
+        await InsertCacheRowAsync(first, contentVersion: 10);
+        await InsertCacheRowAsync(second, contentVersion: 11);
+
+        DocumentCacheReadBatchLookupResult result = await LookupBatchAsync([
+            Candidate(second),
+            Candidate(first),
+        ]);
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.FreshHit);
+        result.IsFreshHit.Should().BeTrue();
+        result
+            .Documents.Select(static document => document.Candidate.DocumentId)
+            .Should()
+            .Equal(second.DocumentId, first.DocumentId);
+        result
+            .Documents.Cast<DocumentCacheReadDocumentLookupResult.FreshHit>()
+            .Select(hit => JsonNode.Parse(hit.DocumentJson)!["value"]!.GetValue<string>())
+            .Should()
+            .Equal("cache-11", "cache-10");
+    }
+
+    [Test]
+    public async Task It_returns_a_non_fresh_batch_when_one_candidate_is_stale()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument first = await InsertSourceDocumentAsync(contentVersion: 10);
+        SourceDocument second = await InsertSourceDocumentAsync(contentVersion: 11);
+        await InsertCacheRowAsync(first, contentVersion: 10);
+        await InsertCacheRowAsync(second, contentVersion: 10);
+
+        DocumentCacheReadBatchLookupResult result = await LookupBatchAsync([
+            Candidate(first),
+            Candidate(second),
+        ]);
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.StaleCacheRow);
+        result.IsFreshHit.Should().BeFalse();
+        result.Documents[0].Should().BeOfType<DocumentCacheReadDocumentLookupResult.FreshHit>();
+        var fallback = result
+            .Documents[1]
+            .Should()
+            .BeOfType<DocumentCacheReadDocumentLookupResult.Fallback>()
+            .Subject;
+        fallback.Outcome.Should().Be(DocumentCacheReadLookupOutcome.StaleCacheRow);
+        fallback.Candidate.DocumentId.Should().Be(second.DocumentId);
+    }
+
+    [Test]
     public async Task It_returns_bounded_fallback_outcomes_from_real_provider_rows()
     {
         foreach (ProviderLookupScenario scenario in ProviderLookupScenarios())
@@ -226,6 +279,14 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
     ) =>
         await _adapter.LookupDocumentAsync(
             new DocumentCacheReadDocumentLookupRequest(_fixture.MappingSet, candidate),
+            ExecutionContext()
+        );
+
+    private async Task<DocumentCacheReadBatchLookupResult> LookupBatchAsync(
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates
+    ) =>
+        await _adapter.LookupBatchAsync(
+            new DocumentCacheReadBatchLookupRequest(_fixture.MappingSet, candidates),
             ExecutionContext()
         );
 

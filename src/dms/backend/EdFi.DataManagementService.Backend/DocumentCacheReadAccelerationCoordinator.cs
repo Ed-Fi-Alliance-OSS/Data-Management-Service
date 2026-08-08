@@ -435,15 +435,17 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
         if (request.AuthorizedCandidatePage.IsEmpty)
         {
-            return await request
-                .RelationalFallback(
-                    new DocumentCacheReadAccelerationFallbackContext(
-                        DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable,
-                        targetContext
+            return new QueryResult.QuerySuccess(
+                [],
+                request.AuthorizedCandidatePage.TotalCount is null
+                    ? null
+                    : RelationalReadGuardrails.ConvertTotalCountOrThrow(
+                        request.Resource,
+                        request.AuthorizedCandidatePage.TotalCount,
+                        "cache query empty-page response"
                     ),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+                request.AuthorizedCandidatePage.HighestSelectedDocumentId
+            );
         }
 
         DocumentCacheReadLookupResult<QueryResult> lookupResult = await _lookupAdapter

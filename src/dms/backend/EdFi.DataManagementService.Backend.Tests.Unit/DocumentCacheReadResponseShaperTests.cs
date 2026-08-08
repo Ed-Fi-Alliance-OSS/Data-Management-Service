@@ -194,6 +194,36 @@ public class Given_DocumentCacheReadResponseShaper
             .Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure);
     }
 
+    [Test]
+    public void It_falls_back_without_mixing_when_a_query_page_contains_a_non_fresh_document()
+    {
+        var sut = CreateShaper();
+        var first = Candidate(documentId: 345, documentUuid: DocumentUuid);
+        var second = Candidate(documentId: 346, documentUuid: SecondDocumentUuid, contentVersion: 92);
+        var hitPage = DocumentCacheReadBatchLookupResult.FromDocuments([
+            FreshHit(first, CachedDocumentJson(first, "Lincoln High")),
+            new DocumentCacheReadDocumentLookupResult.Fallback(
+                DocumentCacheReadLookupOutcome.StaleCacheRow,
+                second,
+                "DocumentCache row is stale."
+            ),
+        ]);
+
+        DocumentCacheReadLookupResult<QueryResult> result = sut.ShapeQuery(
+            CreateQueryRequest(
+                new DocumentCacheReadAccelerationCandidatePage(
+                    [first, second],
+                    TotalCount: 2,
+                    HighestSelectedDocumentId: 346
+                )
+            ),
+            hitPage
+        );
+
+        result.CachedResult.Should().BeNull();
+        result.FallbackReason.Should().Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss);
+    }
+
     private static IEnumerable<TestCaseData> InvalidCachedDocumentJsonScenarios()
     {
         var candidate = Candidate();

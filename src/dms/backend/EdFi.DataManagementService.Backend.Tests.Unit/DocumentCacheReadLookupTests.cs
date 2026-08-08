@@ -3,9 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using FluentAssertions.Execution;
@@ -48,6 +50,60 @@ public class Given_DocumentCacheReadLookup
         hit.DocumentJson.Should().Be("""{"id":"cached"}""");
         hit.StreamEtag.Should().Be("stream-91");
         hit.CacheLastModifiedAt.Should().Be(candidate.ContentLastModifiedAt);
+    }
+
+    [Test]
+    public void It_classifies_a_fresh_batch_hit_in_candidate_order()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+        );
+
+        DocumentCacheReadBatchLookupResult result = Classify(
+            [first, second],
+            [Observation(first, ordinal: 0), Observation(second, ordinal: 1)]
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.FreshHit);
+        result.IsFreshHit.Should().BeTrue();
+        result.Documents.Select(static document => document.Candidate).Should().Equal(first, second);
+        result.Documents.Should().AllBeOfType<DocumentCacheReadDocumentLookupResult.FreshHit>();
+    }
+
+    [Test]
+    public void It_classifies_a_batch_as_non_fresh_when_one_document_is_stale()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+        );
+
+        DocumentCacheReadBatchLookupResult result = Classify(
+            [first, second],
+            [
+                Observation(first, ordinal: 0),
+                Observation(second, ordinal: 1) with
+                {
+                    CacheContentVersion = second.ContentVersion - 1,
+                },
+            ]
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.StaleCacheRow);
+        result.IsFreshHit.Should().BeFalse();
+        result.Documents[0].Should().BeOfType<DocumentCacheReadDocumentLookupResult.FreshHit>();
+        var fallback = result
+            .Documents[1]
+            .Should()
+            .BeOfType<DocumentCacheReadDocumentLookupResult.Fallback>()
+            .Subject;
+        fallback.Outcome.Should().Be(DocumentCacheReadLookupOutcome.StaleCacheRow);
+        fallback.Candidate.Should().Be(second);
     }
 
     [Test]
@@ -187,6 +243,91 @@ public class Given_DocumentCacheReadLookup
         result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.ProjectionTargetIneligible);
         result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
         adapter.ExecuteAttempts.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_an_empty_batch_without_opening_the_cache_lookup()
+    {
+        var adapter = new ObservationLookupAdapter(RelationalProviderToken.Postgresql, []);
+
+        DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
+            new DocumentCacheReadBatchLookupRequest(MappingSet, []),
+            ExecutionContext()
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.FreshHit);
+        result.Documents.Should().BeEmpty();
+        adapter.ExecuteAttempts.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_shapes_query_results_only_when_the_full_batch_is_fresh()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+        );
+        var cachedResult = new QueryResult.QuerySuccess(
+            [JsonNode.Parse("""{"id":"cached"}""")!],
+            TotalCount: 2
+        );
+        var responseShaper = new RecordingResponseShaper
+        {
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.Hit(cachedResult),
+        };
+        var adapter = new ObservationLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            [Observation(first, ordinal: 0), Observation(second, ordinal: 1)],
+            responseShaper
+        );
+
+        DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            ExecutionContext()
+        );
+
+        result.CachedResult.Should().BeSameAs(cachedResult);
+        adapter.ExecuteAttempts.Should().Be(1);
+        responseShaper.QueryShapeAttempts.Should().Be(1);
+        responseShaper
+            .LastHitPage!.Documents.Select(static document => document.Candidate)
+            .Should()
+            .Equal(first, second);
+    }
+
+    [Test]
+    public async Task It_falls_back_for_the_whole_query_page_when_any_batch_document_is_not_fresh()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+        );
+        var responseShaper = new RecordingResponseShaper();
+        var adapter = new ObservationLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            [
+                Observation(first, ordinal: 0),
+                Observation(second, ordinal: 1) with
+                {
+                    CacheContentVersion = second.ContentVersion - 1,
+                },
+            ],
+            responseShaper
+        );
+
+        DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            ExecutionContext()
+        );
+
+        result.CachedResult.Should().BeNull();
+        result.FallbackReason.Should().Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupStale);
+        adapter.ExecuteAttempts.Should().Be(1);
+        responseShaper.QueryShapeAttempts.Should().Be(0);
     }
 
     [Test]
@@ -420,13 +561,31 @@ public class Given_DocumentCacheReadLookup
         );
     }
 
+    private static DocumentCacheReadAccelerationQueryRequest QueryRequest(
+        DocumentCacheReadAccelerationCandidatePage candidatePage
+    ) =>
+        new(
+            "TenantA",
+            MappingSet,
+            Resource,
+            DocumentCacheReadAccelerationResourceKind.Resource,
+            DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+            (_, _) => Task.FromResult<QueryResult>(new QueryResult.QueryFailureKnownError("fallback")),
+            candidatePage
+        );
+
     private static DocumentCacheReadBatchLookupResult Classify(
         DocumentCacheReadAccelerationCandidate candidate,
         DocumentCacheReadLookupObservation observation
+    ) => Classify([candidate], [observation]);
+
+    private static DocumentCacheReadBatchLookupResult Classify(
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates,
+        IReadOnlyList<DocumentCacheReadLookupObservation> observations
     ) =>
         DocumentCacheReadLookupClassifier.Classify(
-            new DocumentCacheReadBatchLookupRequest(MappingSet, [candidate]),
-            [observation]
+            new DocumentCacheReadBatchLookupRequest(MappingSet, candidates),
+            observations
         );
 
     private static DocumentCacheReadAccelerationCandidate Candidate(
@@ -443,13 +602,14 @@ public class Given_DocumentCacheReadLookup
         );
 
     private static DocumentCacheReadLookupObservation Observation(
-        DocumentCacheReadAccelerationCandidate candidate
+        DocumentCacheReadAccelerationCandidate candidate,
+        int ordinal = 0
     )
     {
         ResourceKeyEntry resourceKey = MappingSet.ResourceKeyById[candidate.ResourceKeyId];
 
         return new DocumentCacheReadLookupObservation(
-            Ordinal: 0,
+            Ordinal: ordinal,
             RequestedDocumentId: candidate.DocumentId,
             ExpectedDocumentUuid: candidate.DocumentUuid.Value,
             ExpectedResourceKeyId: candidate.ResourceKeyId,
@@ -532,6 +692,74 @@ public class Given_DocumentCacheReadLookup
     )
     {
         public override string ToString() => Name;
+    }
+
+    private sealed class ObservationLookupAdapter(
+        RelationalProviderToken providerToken,
+        IReadOnlyList<DocumentCacheReadLookupObservation> observations,
+        IDocumentCacheReadResponseShaper? responseShaper = null
+    ) : DocumentCacheReadLookupAdapterBase(responseShaper)
+    {
+        private readonly RelationalProviderToken _providerToken = providerToken;
+        private readonly IReadOnlyList<DocumentCacheReadLookupObservation> _observations = observations;
+
+        public int ExecuteAttempts { get; private set; }
+
+        protected override SqlDialect Dialect =>
+            _providerToken == RelationalProviderToken.SqlServer ? SqlDialect.Mssql : SqlDialect.Pgsql;
+
+        protected override RelationalProviderToken ProviderToken => _providerToken;
+
+        protected override Task<TResult> ExecuteReaderAsync<TResult>(
+            DocumentCacheTargetExecutionContext targetContext,
+            RelationalCommand command,
+            Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ExecuteAttempts++;
+
+            if (_observations is TResult typedObservations)
+            {
+                return Task.FromResult(typedObservations);
+            }
+
+            throw new InvalidOperationException(
+                $"Unexpected DocumentCache read lookup test result type '{typeof(TResult).Name}'."
+            );
+        }
+
+        protected override bool IsCacheUnavailable(Exception exception) => false;
+    }
+
+    private sealed class RecordingResponseShaper : IDocumentCacheReadResponseShaper
+    {
+        public int QueryShapeAttempts { get; private set; }
+
+        public DocumentCacheReadBatchLookupResult? LastHitPage { get; private set; }
+
+        public DocumentCacheReadLookupResult<QueryResult> QueryResult { get; init; } =
+            DocumentCacheReadLookupResult<QueryResult>.Fallback(
+                DocumentCacheReadAccelerationFallbackReason.CacheHitResponseShapingUnavailable
+            );
+
+        public DocumentCacheReadLookupResult<GetResult> ShapeGetById(
+            DocumentCacheReadAccelerationGetByIdRequest request,
+            DocumentCacheReadDocumentLookupResult.FreshHit hit
+        ) =>
+            DocumentCacheReadLookupResult<GetResult>.Fallback(
+                DocumentCacheReadAccelerationFallbackReason.CacheHitResponseShapingUnavailable
+            );
+
+        public DocumentCacheReadLookupResult<QueryResult> ShapeQuery(
+            DocumentCacheReadAccelerationQueryRequest request,
+            DocumentCacheReadBatchLookupResult hitPage
+        )
+        {
+            QueryShapeAttempts++;
+            LastHitPage = hitPage;
+            return QueryResult;
+        }
     }
 
     private sealed class ThrowingLookupAdapter(
