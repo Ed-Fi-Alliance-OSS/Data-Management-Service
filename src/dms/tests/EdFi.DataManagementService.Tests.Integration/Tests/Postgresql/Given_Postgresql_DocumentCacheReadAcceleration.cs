@@ -67,6 +67,24 @@ public sealed class Given_Postgresql_DocumentCacheReadAcceleration_With_Resource
 }
 
 [Category("DocumentCacheReadAcceleration")]
+public sealed class Given_Postgresql_DocumentCacheReadAcceleration_With_Unavailable_Cache_Connection
+    : PostgresqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.ProfileRootOnlyMerge;
+
+    protected override bool EnableDocumentCacheReadAcceleration => true;
+
+    protected override string DocumentCacheReadLookupConnectionStringOverride =>
+        "UnknownKeyword=not-supported";
+
+    [Test]
+    public Task It_falls_back_relationally_when_cache_connection_acquisition_fails() =>
+        DocumentCacheReadAccelerationScenario.It_falls_back_relationally_when_cache_connection_acquisition_fails(
+            Harness
+        );
+}
+
+[Category("DocumentCacheReadAcceleration")]
 public sealed class Given_Postgresql_DocumentCacheReadAcceleration_With_Read_Authorization_Denied
     : PostgresqlApiIntegrationTestBase
 {

@@ -12,23 +12,49 @@ using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
-internal sealed class PostgresqlDocumentCacheReadLookupAdapter(
-    NpgsqlDataSourceCache dataSourceCache,
-    IRelationalWriteExceptionClassifier writeExceptionClassifier,
-    IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
-    ILogger<PostgresqlDocumentCacheReadLookupAdapter> logger,
-    IDocumentCacheReadResponseShaper? responseShaper = null
-) : DocumentCacheReadLookupAdapterBase(responseShaper)
+internal sealed class PostgresqlDocumentCacheReadLookupAdapter : DocumentCacheReadLookupAdapterBase
 {
-    private readonly NpgsqlDataSourceCache _dataSourceCache =
-        dataSourceCache ?? throw new ArgumentNullException(nameof(dataSourceCache));
-    private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
-        writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
-    private readonly IDocumentCacheProviderCommandTimeoutClassifier _providerCommandTimeoutClassifier =
-        providerCommandTimeoutClassifier
-        ?? throw new ArgumentNullException(nameof(providerCommandTimeoutClassifier));
-    private readonly ILogger<PostgresqlDocumentCacheReadLookupAdapter> _logger =
-        logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly Func<string, CancellationToken, Task<NpgsqlConnection>> _openConnectionAsync;
+    private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier;
+    private readonly IDocumentCacheProviderCommandTimeoutClassifier _providerCommandTimeoutClassifier;
+    private readonly ILogger<PostgresqlDocumentCacheReadLookupAdapter> _logger;
+
+    public PostgresqlDocumentCacheReadLookupAdapter(
+        NpgsqlDataSourceCache dataSourceCache,
+        IRelationalWriteExceptionClassifier writeExceptionClassifier,
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
+        ILogger<PostgresqlDocumentCacheReadLookupAdapter> logger,
+        IDocumentCacheReadResponseShaper? responseShaper = null
+    )
+        : base(responseShaper)
+    {
+        _openConnectionAsync = OpenConnectionFromCacheAsync(dataSourceCache);
+        _writeExceptionClassifier =
+            writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
+        _providerCommandTimeoutClassifier =
+            providerCommandTimeoutClassifier
+            ?? throw new ArgumentNullException(nameof(providerCommandTimeoutClassifier));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    internal PostgresqlDocumentCacheReadLookupAdapter(
+        Func<string, CancellationToken, Task<NpgsqlConnection>> openConnectionAsync,
+        IRelationalWriteExceptionClassifier writeExceptionClassifier,
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
+        ILogger<PostgresqlDocumentCacheReadLookupAdapter> logger,
+        IDocumentCacheReadResponseShaper? responseShaper = null
+    )
+        : base(responseShaper)
+    {
+        _openConnectionAsync =
+            openConnectionAsync ?? throw new ArgumentNullException(nameof(openConnectionAsync));
+        _writeExceptionClassifier =
+            writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
+        _providerCommandTimeoutClassifier =
+            providerCommandTimeoutClassifier
+            ?? throw new ArgumentNullException(nameof(providerCommandTimeoutClassifier));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
 
     protected override SqlDialect Dialect => SqlDialect.Pgsql;
 
@@ -51,9 +77,10 @@ internal sealed class PostgresqlDocumentCacheReadLookupAdapter(
             command.Parameters.Count
         );
 
-        NpgsqlDataSource dataSource = _dataSourceCache.GetOrCreate(targetContext.ConnectionInput.Value);
-        await using NpgsqlConnection connection = await dataSource
-            .OpenConnectionAsync(cancellationToken)
+        await using NpgsqlConnection connection = await OpenTargetConnectionAsync(
+                targetContext.ConnectionInput.Value,
+                cancellationToken
+            )
             .ConfigureAwait(false);
         await using NpgsqlCommand dbCommand = connection.CreateCommand();
         dbCommand.CommandText = command.CommandText;
@@ -75,6 +102,53 @@ internal sealed class PostgresqlDocumentCacheReadLookupAdapter(
             || exception is DbException dbException
                 && _writeExceptionClassifier.IsTransientFailure(dbException);
     }
+
+    private async Task<NpgsqlConnection> OpenTargetConnectionAsync(
+        string connectionString,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return await _openConnectionAsync(connectionString, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ObjectDisposedException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedConnectionAcquisitionFailure(exception))
+        {
+            throw new DocumentCacheReadAcquisitionUnavailableException(
+                "PostgreSQL DocumentCache read lookup connection acquisition failed.",
+                exception
+            );
+        }
+    }
+
+    private static Func<string, CancellationToken, Task<NpgsqlConnection>> OpenConnectionFromCacheAsync(
+        NpgsqlDataSourceCache dataSourceCache
+    )
+    {
+        ArgumentNullException.ThrowIfNull(dataSourceCache);
+
+        return async (connectionString, cancellationToken) =>
+        {
+            NpgsqlDataSource dataSource = dataSourceCache.GetOrCreate(connectionString);
+            return await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        };
+    }
+
+    private static bool IsExpectedConnectionAcquisitionFailure(Exception exception) =>
+        exception
+            is NpgsqlException
+                or TimeoutException
+                or FormatException
+                or ArgumentException
+                and not ArgumentNullException;
 
     private static void AddParameters(NpgsqlCommand dbCommand, IReadOnlyList<RelationalParameter> parameters)
     {

@@ -157,6 +157,74 @@ internal static class DocumentCacheReadAccelerationScenario
             .Be("Relational Fallback", "a stale cache row must not replace relational fallback");
     }
 
+    public static async Task It_falls_back_relationally_when_cache_connection_acquisition_fails(
+        ApiIntegrationHarness harness
+    )
+    {
+        await SetTrackingLifecycleAsync(harness);
+
+        CreatedDocument getStudent = await CreateStudentAsync(
+            harness,
+            "cache-unavailable-get-001",
+            "Relational Unavailable Get"
+        );
+        DocumentMetadata getMetadata = await ReadDocumentMetadataAsync(harness, getStudent.DocumentUuid);
+
+        JsonObject getFallback = await GetJsonObjectAsync(harness, getStudent.LocationPath);
+
+        getFallback["studentUniqueId"]!.GetValue<string>().Should().Be("cache-unavailable-get-001");
+        getFallback["firstName"]!
+            .GetValue<string>()
+            .Should()
+            .Be(
+                "Relational Unavailable Get",
+                "cache connection acquisition failure must use relational GET fallback"
+            );
+        (await CountCacheRowsAsync(harness, getMetadata.DocumentId))
+            .Should()
+            .Be(0, "cache-unavailable lookup must skip direct fill for the same request");
+
+        CreatedDocument firstQueryStudent = await CreateStudentAsync(
+            harness,
+            "cache-unavailable-query-001",
+            "Relational Unavailable Query One"
+        );
+        CreatedDocument secondQueryStudent = await CreateStudentAsync(
+            harness,
+            "cache-unavailable-query-002",
+            "Relational Unavailable Query Two"
+        );
+        DocumentMetadata firstQueryMetadata = await ReadDocumentMetadataAsync(
+            harness,
+            firstQueryStudent.DocumentUuid
+        );
+        DocumentMetadata secondQueryMetadata = await ReadDocumentMetadataAsync(
+            harness,
+            secondQueryStudent.DocumentUuid
+        );
+
+        using HttpResponseMessage queryResponse = await harness.HttpClient.GetAsync(
+            $"{StudentsEndpoint}?offset=1&limit=2&totalCount=true"
+        );
+        string queryBody = await queryResponse.Content.ReadAsStringAsync();
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, queryBody);
+        queryResponse.Content.Headers.ContentType?.MediaType.Should().Be(StandardJsonContentType);
+        queryResponse.Headers.GetValues("Total-Count").Single().Should().Be("3");
+        AssertNoCacheAccelerationDisclosure(queryResponse, queryBody);
+
+        JsonArray queryFallback = JsonNode.Parse(queryBody)!.AsArray();
+        queryFallback
+            .Select(node => node!["firstName"]!.GetValue<string>())
+            .Should()
+            .Equal("Relational Unavailable Query One", "Relational Unavailable Query Two");
+        (await CountCacheRowsAsync(harness, firstQueryMetadata.DocumentId))
+            .Should()
+            .Be(0, "cache-unavailable query fallback must not direct-fill selected page documents");
+        (await CountCacheRowsAsync(harness, secondQueryMetadata.DocumentId))
+            .Should()
+            .Be(0, "cache-unavailable query fallback must not direct-fill selected page documents");
+    }
+
     public static async Task It_serves_descriptor_query_from_cache_and_falls_back_for_incomplete_pages(
         ApiIntegrationHarness harness
     )

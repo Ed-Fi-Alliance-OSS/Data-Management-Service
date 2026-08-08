@@ -84,6 +84,9 @@ public abstract class ApiIntegrationTestBase
     /// <summary>Enables the DMS DocumentCache read-acceleration path for cache-backed read scenarios.</summary>
     protected virtual bool EnableDocumentCacheReadAcceleration => false;
 
+    /// <summary>Overrides only the cache read lookup target connection after normal target validation.</summary>
+    protected virtual string? DocumentCacheReadLookupConnectionStringOverride => null;
+
     /// <summary>Controls the public ResourceLinks response flag for scenarios that exercise link stripping.</summary>
     protected virtual bool ResourceLinksEnabled => true;
 
@@ -178,7 +181,8 @@ public abstract class ApiIntegrationTestBase
                     clientNamespacePrefixes,
                     providerFailureTransform,
                     providerFailureRecorder,
-                    EnableDocumentCacheReadAcceleration ? GetRelationalProviderToken() : null
+                    EnableDocumentCacheReadAcceleration ? GetRelationalProviderToken() : null,
+                    DocumentCacheReadLookupConnectionStringOverride
                 );
 
                 if (queryRecorder is not null)
@@ -196,6 +200,7 @@ public abstract class ApiIntegrationTestBase
             await _factory
                 .Services.GetRequiredService<IDocumentCacheProjectionSupervisor>()
                 .RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+            _factory.Services.GetService<DocumentCacheReadLookupTargetConnectionOverride>()?.Enable();
         }
 
         Harness = new ApiIntegrationHarness(

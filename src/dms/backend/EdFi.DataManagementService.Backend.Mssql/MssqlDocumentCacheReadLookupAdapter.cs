@@ -75,8 +75,8 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
             command.Parameters.Count
         );
 
-        await using DbConnection connection = _createConnection(targetContext.ConnectionInput.Value);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using DbConnection connection = CreateTargetConnection(targetContext.ConnectionInput.Value);
+        await OpenTargetConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
         await using DbCommand dbCommand = connection.CreateCommand();
         dbCommand.CommandText = command.CommandText;
 
@@ -97,6 +97,59 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
             || exception is DbException dbException
                 && _writeExceptionClassifier.IsTransientFailure(dbException);
     }
+
+    private DbConnection CreateTargetConnection(string connectionString)
+    {
+        try
+        {
+            return _createConnection(connectionString);
+        }
+        catch (ObjectDisposedException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedConnectionAcquisitionFailure(exception))
+        {
+            throw new DocumentCacheReadAcquisitionUnavailableException(
+                "SQL Server DocumentCache read lookup connection construction failed.",
+                exception
+            );
+        }
+    }
+
+    private static async Task OpenTargetConnectionAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ObjectDisposedException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedConnectionAcquisitionFailure(exception))
+        {
+            throw new DocumentCacheReadAcquisitionUnavailableException(
+                "SQL Server DocumentCache read lookup connection open failed.",
+                exception
+            );
+        }
+    }
+
+    private static bool IsExpectedConnectionAcquisitionFailure(Exception exception) =>
+        exception
+            is DbException
+                or TimeoutException
+                or FormatException
+                or ArgumentException
+                and not ArgumentNullException;
 
     private static void AddParameters(DbCommand dbCommand, IReadOnlyList<RelationalParameter> parameters)
     {

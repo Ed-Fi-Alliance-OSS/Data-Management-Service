@@ -399,7 +399,10 @@ internal abstract class DocumentCacheReadLookupAdapterBase
                 exception.Message
             );
         }
-        catch (Exception exception) when (IsCacheUnavailable(exception))
+        catch (Exception exception)
+            when (exception is DocumentCacheReadAcquisitionUnavailableException
+                || IsCacheUnavailable(exception)
+            )
         {
             return DocumentCacheReadBatchLookupResult.PageFallback(
                 DocumentCacheReadLookupOutcome.CacheUnavailable,
@@ -499,6 +502,12 @@ public sealed class DocumentCacheReadLookupInvariantException : Exception
 {
     public DocumentCacheReadLookupInvariantException(string message)
         : base(message) { }
+}
+
+public sealed class DocumentCacheReadAcquisitionUnavailableException : Exception
+{
+    public DocumentCacheReadAcquisitionUnavailableException(string message, Exception innerException)
+        : base(message, innerException) { }
 }
 
 internal static class DocumentCacheReadLookupDiagnosticText

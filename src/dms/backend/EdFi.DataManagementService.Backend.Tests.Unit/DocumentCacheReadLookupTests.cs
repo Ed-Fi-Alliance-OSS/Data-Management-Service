@@ -3,14 +3,21 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
+using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Mssql;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using FluentAssertions.Execution;
+using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -372,6 +379,171 @@ public class Given_DocumentCacheReadLookup
     }
 
     [Test]
+    public async Task It_returns_cache_unavailable_for_postgresql_connection_string_parse_failures()
+    {
+        using var dataSourceCache = new NpgsqlDataSourceCache(NullLogger<NpgsqlDataSourceCache>.Instance);
+        var adapter = new PostgresqlDocumentCacheReadLookupAdapter(
+            dataSourceCache,
+            new PostgresqlRelationalWriteExceptionClassifier(),
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
+            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance
+        );
+
+        DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
+            new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+            ExecutionContext(connectionString: "UnknownKeyword=not-supported")
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheUnavailable);
+        result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
+    }
+
+    [Test]
+    public async Task It_returns_cache_unavailable_for_postgresql_connection_construction_failures()
+    {
+        var adapter = new PostgresqlDocumentCacheReadLookupAdapter(
+            (_, _) => Task.FromException<NpgsqlConnection>(new ArgumentException("bad target")),
+            new PostgresqlRelationalWriteExceptionClassifier(),
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
+            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance
+        );
+
+        DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
+            new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+            ExecutionContext()
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheUnavailable);
+        result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
+    }
+
+    [Test]
+    public async Task It_returns_cache_unavailable_for_postgresql_connection_open_failures()
+    {
+        var adapter = new PostgresqlDocumentCacheReadLookupAdapter(
+            (_, _) => Task.FromException<NpgsqlConnection>(new NpgsqlException("open failed")),
+            new PostgresqlRelationalWriteExceptionClassifier(),
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
+            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance
+        );
+
+        DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
+            new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+            ExecutionContext()
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheUnavailable);
+        result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
+    }
+
+    [Test]
+    public async Task It_propagates_postgresql_connection_acquisition_programming_exceptions()
+    {
+        var adapter = new PostgresqlDocumentCacheReadLookupAdapter(
+            (_, _) => Task.FromException<NpgsqlConnection>(new InvalidOperationException("programming")),
+            new PostgresqlRelationalWriteExceptionClassifier(),
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
+            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance
+        );
+
+        Func<Task> act = async () =>
+            await adapter.LookupBatchAsync(
+                new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+                ExecutionContext()
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("programming");
+    }
+
+    [Test]
+    public async Task It_returns_cache_unavailable_for_mssql_connection_string_parse_failures()
+    {
+        var adapter = new MssqlDocumentCacheReadLookupAdapter(
+            new MssqlRelationalWriteExceptionClassifier(),
+            new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
+            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance
+        );
+
+        DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
+            new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+            ExecutionContext(
+                providerToken: RelationalProviderToken.SqlServer,
+                sqlServerPrerequisites: SatisfiedSqlServerPrerequisites(),
+                connectionString: "UnknownKeyword=not-supported"
+            )
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheUnavailable);
+        result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
+    }
+
+    [Test]
+    public async Task It_returns_cache_unavailable_for_mssql_connection_construction_failures()
+    {
+        var adapter = new MssqlDocumentCacheReadLookupAdapter(
+            _ => throw new ArgumentException("bad target"),
+            new MssqlRelationalWriteExceptionClassifier(),
+            new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
+            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance
+        );
+
+        DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
+            new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+            ExecutionContext(
+                providerToken: RelationalProviderToken.SqlServer,
+                sqlServerPrerequisites: SatisfiedSqlServerPrerequisites()
+            )
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheUnavailable);
+        result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
+    }
+
+    [Test]
+    public async Task It_returns_cache_unavailable_for_mssql_connection_open_failures()
+    {
+        var adapter = new MssqlDocumentCacheReadLookupAdapter(
+            _ => new ThrowingOpenDbConnection(new TestDbException("open failed")),
+            new MssqlRelationalWriteExceptionClassifier(),
+            new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
+            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance
+        );
+
+        DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
+            new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+            ExecutionContext(
+                providerToken: RelationalProviderToken.SqlServer,
+                sqlServerPrerequisites: SatisfiedSqlServerPrerequisites()
+            )
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheUnavailable);
+        result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
+    }
+
+    [Test]
+    public async Task It_propagates_mssql_connection_acquisition_programming_exceptions()
+    {
+        var adapter = new MssqlDocumentCacheReadLookupAdapter(
+            _ => throw new InvalidOperationException("programming"),
+            new MssqlRelationalWriteExceptionClassifier(),
+            new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
+            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance
+        );
+
+        Func<Task> act = async () =>
+            await adapter.LookupBatchAsync(
+                new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+                ExecutionContext(
+                    providerToken: RelationalProviderToken.SqlServer,
+                    sqlServerPrerequisites: SatisfiedSqlServerPrerequisites()
+                )
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("programming");
+    }
+
+    [Test]
     public async Task It_returns_deterministic_invariant_for_result_shape_failures()
     {
         var adapter = new ThrowingLookupAdapter(
@@ -638,7 +810,8 @@ public class Given_DocumentCacheReadLookup
     private static DocumentCacheTargetExecutionContext ExecutionContext(
         RelationalProviderToken? providerToken = null,
         DocumentCacheInventoryStatus inventoryStatus = DocumentCacheInventoryStatus.Satisfied,
-        DocumentCacheSqlServerPrerequisiteDetails? sqlServerPrerequisites = null
+        DocumentCacheSqlServerPrerequisiteDetails? sqlServerPrerequisites = null,
+        string connectionString = "connection"
     )
     {
         RelationalProviderToken resolvedProviderToken = providerToken ?? RelationalProviderToken.Postgresql;
@@ -648,7 +821,7 @@ public class Given_DocumentCacheReadLookup
             new DocumentCacheTargetContextGeneration(1),
             EffectiveSettings(),
             new DocumentCacheTargetDataStoreMetadata(TargetKey.DataStoreId, resolvedProviderToken.Value),
-            new DocumentCacheTargetConnectionInput(resolvedProviderToken, "connection"),
+            new DocumentCacheTargetConnectionInput(resolvedProviderToken, connectionString),
             Fingerprint,
             new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
             new DocumentCacheInventoryValidationResult(inventoryStatus, "Inventory."),
@@ -678,6 +851,20 @@ public class Given_DocumentCacheReadLookup
                 DocumentCacheProviderPrerequisiteName.ReadCommittedSnapshot,
                 DocumentCacheProviderPrerequisiteStatus.Disabled,
                 "RCSI disabled."
+            ),
+            new DocumentCacheProviderPrerequisiteResult(
+                DocumentCacheProviderPrerequisiteName.NestedTriggers,
+                DocumentCacheProviderPrerequisiteStatus.Satisfied,
+                "Nested triggers enabled."
+            )
+        );
+
+    private static DocumentCacheSqlServerPrerequisiteDetails SatisfiedSqlServerPrerequisites() =>
+        new(
+            new DocumentCacheProviderPrerequisiteResult(
+                DocumentCacheProviderPrerequisiteName.ReadCommittedSnapshot,
+                DocumentCacheProviderPrerequisiteStatus.Satisfied,
+                "RCSI enabled."
             ),
             new DocumentCacheProviderPrerequisiteResult(
                 DocumentCacheProviderPrerequisiteName.NestedTriggers,
@@ -793,4 +980,35 @@ public class Given_DocumentCacheReadLookup
 
         protected override bool IsCacheUnavailable(Exception exception) => _classifyAsCacheUnavailable;
     }
+
+    private sealed class ThrowingOpenDbConnection(Exception exception) : DbConnection
+    {
+        private readonly Exception _exception = exception;
+
+        [AllowNull]
+        public override string ConnectionString { get; set; } = "";
+
+        public override string Database => "";
+
+        public override string DataSource => "";
+
+        public override string ServerVersion => "";
+
+        public override ConnectionState State => ConnectionState.Closed;
+
+        public override void ChangeDatabase(string databaseName) { }
+
+        public override void Close() { }
+
+        public override void Open() => throw _exception;
+
+        public override Task OpenAsync(CancellationToken cancellationToken) => Task.FromException(_exception);
+
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
+            throw new NotSupportedException();
+
+        protected override DbCommand CreateDbCommand() => throw new NotSupportedException();
+    }
+
+    private sealed class TestDbException(string message) : DbException(message);
 }
