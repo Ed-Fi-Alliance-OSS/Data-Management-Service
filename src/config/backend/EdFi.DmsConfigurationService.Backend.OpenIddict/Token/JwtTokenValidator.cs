@@ -11,6 +11,14 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
     public static class JwtTokenValidator
     {
         /// <summary>
+        /// Grace period accepted past a token's stated expiration to absorb clock drift.
+        /// Anything that removes token state (such as the expired-token cleanup sweep) must
+        /// keep rows until expiration plus this skew, or tokens the validator still accepts
+        /// would fail their status lookup.
+        /// </summary>
+        public static readonly TimeSpan TokenValidationClockSkew = TimeSpan.FromMinutes(5);
+
+        /// <summary>
         /// Validates a JWT token using a dictionary of public keys, selecting the correct key by 'kid' in the JWT header.
         /// </summary>
         /// <param name="token">JWT token string</param>
@@ -54,7 +62,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                     ValidateAudience = true,
                     ValidAudience = audience,
                     ValidateLifetime = true,
-                    ClockSkew = TimeSpan.FromMinutes(5),
+                    ClockSkew = TokenValidationClockSkew,
                 };
                 tokenHandler.ValidateToken(token, validationParameters, out var validatedToken);
                 jwtToken = validatedToken as JwtSecurityToken;

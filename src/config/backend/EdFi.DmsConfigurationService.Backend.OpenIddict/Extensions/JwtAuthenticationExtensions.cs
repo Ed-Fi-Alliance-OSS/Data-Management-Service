@@ -5,6 +5,7 @@
 
 using System.Security.Claims;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
@@ -62,7 +63,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                             ValidateAudience = true,
                             ValidAudience = jwtSettings.Audience,
                             ValidateLifetime = true,
-                            ClockSkew = TimeSpan.FromMinutes(5),
+                            ClockSkew = JwtTokenValidator.TokenValidationClockSkew,
                             RequireExpirationTime = true,
                             RequireSignedTokens = true,
                         };

@@ -71,5 +71,15 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         /// Recommended minimum: 100,000 for SHA-256.
         /// </summary>
         public int HashingIterations { get; set; } = 210000;
+
+        /// <summary>
+        /// Whether the background sweep that deletes expired OpenIddict tokens runs.
+        /// </summary>
+        public bool TokenCleanupEnabled { get; set; } = true;
+
+        /// <summary>
+        /// Interval, in minutes, between expired-token cleanup sweeps.
+        /// </summary>
+        public int TokenCleanupIntervalMinutes { get; set; } = 30;
     }
 }

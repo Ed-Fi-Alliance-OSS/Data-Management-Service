@@ -8,4 +8,5 @@ Detailed design notes:
 
 * [Authorization in the Configuration Service](./CS-AUTH.md)
 * [Claimset Management](./CLAIMSET-MGMT.md)
+* [Expired Access Token Cleanup](./TOKEN-CLEANUP.md)
 * [Secret Management](./SECRET-MANAGEMENT.md)

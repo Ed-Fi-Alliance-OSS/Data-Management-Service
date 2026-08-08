@@ -444,6 +444,14 @@ UPDATE dmscs.OpenIddictApplication
             return result > 0;
         }
 
+        public async Task<int> DeleteExpiredTokensAsync(DateTimeOffset expiredBefore)
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+            const string sql = "DELETE FROM dmscs.OpenIddictToken WHERE ExpirationDate <= @ExpiredBefore";
+            return await connection.ExecuteAsync(sql, new { ExpiredBefore = expiredBefore.UtcDateTime });
+        }
+
         public async Task<(string PrivateKey, string KeyId)?> GetActivePrivateKeyInternalAsync(
             string encryptionKey
         )
