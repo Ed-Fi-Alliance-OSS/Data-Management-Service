@@ -582,6 +582,98 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     [Test]
+    public async Task It_records_query_target_diagnostic_and_skips_direct_fill_for_mixed_page_invariant()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: SecondDocumentUuid
+        );
+        DocumentCacheReadBatchLookupResult batchResult = DocumentCacheReadBatchLookupResult.FromDocuments([
+            new DocumentCacheReadDocumentLookupResult.Fallback(
+                DocumentCacheReadLookupOutcome.MissingCacheRow,
+                first,
+                "DocumentCache row is missing."
+            ),
+            new DocumentCacheReadDocumentLookupResult.Fallback(
+                DocumentCacheReadLookupOutcome.DeterministicInvariantFailure,
+                second,
+                "DocumentCache row has invalid matching-version metadata."
+            ),
+        ]);
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [
+                new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+                new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() },
+            ],
+            2,
+            HighestSelectedDocumentId: 346
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                batchResult.Outcome,
+                [first]
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var telemetry = new RecordingReadTelemetry();
+        DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(executionContext),
+            materializer,
+            writer,
+            telemetry,
+            projectionObservationSink: observationStore,
+            projectionObservationProvider: observationStore,
+            timeProvider: new FixedTimeProvider(ObservedAt)
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<QueryResult>(fallbackResult);
+                },
+                CandidatePage([first, second], totalCount: 2, highestSelectedDocumentId: 346)
+            )
+        );
+
+        batchResult.Outcome.Should().Be(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure);
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext
+            .Reason.Should()
+            .Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure);
+        lookupAdapter.QueryAttempts.Should().Be(1);
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+        telemetry
+            .Events.Should()
+            .Contain(("miss", nameof(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure)));
+        telemetry
+            .Events.Should()
+            .Contain(
+                ("fallback", nameof(DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure))
+            );
+        telemetry
+            .Events.Should()
+            .Contain(("directFill", DocumentCacheReadTelemetryLabel.SkippedNoCandidates));
+        telemetry.Events.Should().NotContain(("directFill", DocumentCacheReadTelemetryLabel.Attempted));
+        AssertTargetInvariantDiagnostic(
+            observationStore.CurrentSnapshot.GetCurrentTarget(executionContext.TargetKey)!,
+            "deterministic cache invariant failure"
+        );
+    }
+
+    [Test]
     public async Task It_propagates_caller_cancellation_from_cache_lookup()
     {
         using var cancellationSource = new CancellationTokenSource();

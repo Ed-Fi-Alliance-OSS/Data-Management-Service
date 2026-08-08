@@ -115,6 +115,41 @@ public class Given_DocumentCacheReadLookup
     }
 
     [Test]
+    public void It_prioritizes_deterministic_invariant_failure_when_batch_also_has_document_miss()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+        );
+
+        DocumentCacheReadBatchLookupResult result = Classify(
+            [first, second],
+            [
+                Observation(first, ordinal: 0) with
+                {
+                    CacheDocumentId = null,
+                },
+                Observation(second, ordinal: 1) with
+                {
+                    CacheContentVersion = second.ContentVersion + 1,
+                },
+            ]
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure);
+        result.IsFreshHit.Should().BeFalse();
+        result
+            .Documents.Select(static document => document.Outcome)
+            .Should()
+            .Equal(
+                DocumentCacheReadLookupOutcome.MissingCacheRow,
+                DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+            );
+    }
+
+    [Test]
     public void It_classifies_bounded_document_fallback_outcomes()
     {
         foreach (DocumentFallbackScenario scenario in DocumentFallbackScenarios())
@@ -411,6 +446,127 @@ public class Given_DocumentCacheReadLookup
         result.DirectFillCandidates.Should().Equal(second);
         adapter.ExecuteAttempts.Should().Be(1);
         responseShaper.QueryShapeAttempts.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_reports_query_batch_invariant_when_mixed_with_an_earlier_document_miss()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+        );
+        var responseShaper = new RecordingResponseShaper();
+        var adapter = new ObservationLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            [
+                Observation(first, ordinal: 0) with
+                {
+                    CacheDocumentId = null,
+                },
+                Observation(second, ordinal: 1) with
+                {
+                    CacheContentVersion = second.ContentVersion + 1,
+                },
+            ],
+            responseShaper
+        );
+
+        DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            ExecutionContext()
+        );
+
+        result.CachedResult.Should().BeNull();
+        result
+            .FallbackReason.Should()
+            .Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure);
+        result.RawLookupOutcome.Should().Be(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure);
+        result.DirectFillCandidates.Should().BeEmpty();
+        adapter.ExecuteAttempts.Should().Be(1);
+        responseShaper.QueryShapeAttempts.Should().Be(0);
+    }
+
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.MissingCacheRow))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.StaleCacheRow))]
+    [TestCase(nameof(DocumentCacheReadLookupOutcome.SourceDrift))]
+    public async Task It_preserves_query_direct_fill_candidates_for_pure_document_level_pages(
+        string rawLookupOutcomeName
+    )
+    {
+        var rawLookupOutcome = Enum.Parse<DocumentCacheReadLookupOutcome>(rawLookupOutcomeName);
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+        );
+        var adapter = new ObservationLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            [Mutate(Observation(first, ordinal: 0)), Mutate(Observation(second, ordinal: 1))]
+        );
+
+        DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            ExecutionContext()
+        );
+
+        result.CachedResult.Should().BeNull();
+        result
+            .FallbackReason.Should()
+            .Be(DocumentCacheReadLookupOutcomeMapper.MapFallbackReason(rawLookupOutcome));
+        result.RawLookupOutcome.Should().Be(rawLookupOutcome);
+        result.DirectFillCandidates.Should().Equal(first, second);
+
+        DocumentCacheReadLookupObservation Mutate(DocumentCacheReadLookupObservation observation) =>
+            rawLookupOutcome switch
+            {
+                DocumentCacheReadLookupOutcome.MissingCacheRow => observation with { CacheDocumentId = null },
+                DocumentCacheReadLookupOutcome.StaleCacheRow => observation with
+                {
+                    CacheContentVersion = observation.CacheContentVersion - 1,
+                },
+                DocumentCacheReadLookupOutcome.SourceDrift => observation with
+                {
+                    SourceContentVersion = observation.SourceContentVersion + 1,
+                },
+                _ => throw new InvalidOperationException("Unsupported pure document-level query outcome."),
+            };
+    }
+
+    [Test]
+    public async Task It_preserves_rebuilding_query_fallback_without_adapter_direct_fill_candidates()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+        );
+        var adapter = new ObservationLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            [
+                Observation(first, ordinal: 0) with
+                {
+                    LifecycleState = "Rebuilding",
+                },
+                Observation(second, ordinal: 1) with
+                {
+                    LifecycleState = "Rebuilding",
+                },
+            ]
+        );
+
+        DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            ExecutionContext()
+        );
+
+        result.CachedResult.Should().BeNull();
+        result.FallbackReason.Should().Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced);
+        result.RawLookupOutcome.Should().Be(DocumentCacheReadLookupOutcome.LifecycleRebuilding);
+        result.DirectFillCandidates.Should().BeEmpty();
     }
 
     [TestCaseSource(nameof(GetByIdDirectFillCandidateScenarios))]

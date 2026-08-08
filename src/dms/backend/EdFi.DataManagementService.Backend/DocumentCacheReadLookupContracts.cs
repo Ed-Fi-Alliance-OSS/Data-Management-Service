@@ -184,9 +184,10 @@ internal sealed record DocumentCacheReadBatchLookupResult
             return EmptyFresh();
         }
 
-        DocumentCacheReadDocumentLookupResult? firstFallback = documents.FirstOrDefault(document =>
-            !document.IsFreshHit
-        );
+        DocumentCacheReadDocumentLookupResult? firstFallback =
+            documents.FirstOrDefault(static document =>
+                document.Outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+            ) ?? documents.FirstOrDefault(static document => !document.IsFreshHit);
 
         return firstFallback is null
             ? new(DocumentCacheReadLookupOutcome.FreshHit, documents, "All cache rows are fresh.")
@@ -352,7 +353,7 @@ internal abstract class DocumentCacheReadLookupAdapterBase
             ? _responseShaper.ShapeQuery(request, lookupResult)
             : DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
                 lookupResult.Outcome,
-                SelectDirectFillCandidates(lookupResult.Documents),
+                SelectQueryDirectFillCandidates(lookupResult),
                 isAdapterAcquisitionFailure: lookupResult.IsAdapterAcquisitionFailure
             );
     }
@@ -512,6 +513,16 @@ internal abstract class DocumentCacheReadLookupAdapterBase
             )
             .Select(lookupResult => lookupResult.Candidate)
             .ToArray();
+
+    private static IReadOnlyList<DocumentCacheReadAccelerationCandidate> SelectQueryDirectFillCandidates(
+        DocumentCacheReadBatchLookupResult lookupResult
+    ) =>
+        lookupResult.Outcome
+            is DocumentCacheReadLookupOutcome.MissingCacheRow
+                or DocumentCacheReadLookupOutcome.StaleCacheRow
+                or DocumentCacheReadLookupOutcome.SourceDrift
+            ? SelectDirectFillCandidates(lookupResult.Documents)
+            : [];
 }
 
 internal static class DocumentCacheReadLookupOutcomeMapper
