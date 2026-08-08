@@ -357,6 +357,98 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             .Contain(("directFill", DocumentCacheReadTelemetryLabel.SkippedTargetMismatch));
     }
 
+    [TestCaseSource(nameof(TargetResolutionDirectFillSkipCases))]
+    public async Task It_records_get_by_id_direct_fill_skip_telemetry_for_target_resolution_fallbacks(
+        TargetResolutionFallbackScenario scenario,
+        DocumentCacheReadAccelerationFallbackReason expectedFallbackReason,
+        string expectedDirectFillOutcome
+    )
+    {
+        var lookupAdapter = new RecordingLookupAdapter();
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var telemetry = new RecordingReadTelemetry();
+        var fallbackResult = new GetResult.GetFailureNotExists();
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        var sut = CreateCoordinatorForTargetResolutionScenario(
+            scenario,
+            lookupAdapter,
+            materializer,
+            writer,
+            telemetry
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<GetResult>(fallbackResult);
+                },
+                tenantKey: TenantKeyForTargetResolutionScenario(scenario)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext.Reason.Should().Be(expectedFallbackReason);
+        fallbackContext.TargetContext.Should().BeNull();
+        lookupAdapter.GetByIdAttempts.Should().Be(0);
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+        telemetry.Events.Should().Contain(("fallback", expectedFallbackReason.ToString()));
+        telemetry.Events.Should().Contain(("directFill", expectedDirectFillOutcome));
+        telemetry.Events.Should().NotContain(("directFill", DocumentCacheReadTelemetryLabel.Attempted));
+    }
+
+    [TestCaseSource(nameof(TargetResolutionDirectFillSkipCases))]
+    public async Task It_records_query_direct_fill_skip_telemetry_for_target_resolution_fallbacks(
+        TargetResolutionFallbackScenario scenario,
+        DocumentCacheReadAccelerationFallbackReason expectedFallbackReason,
+        string expectedDirectFillOutcome
+    )
+    {
+        var lookupAdapter = new RecordingLookupAdapter();
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var telemetry = new RecordingReadTelemetry();
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [JsonNode.Parse("""{"id":"relational"}""")!],
+            1,
+            HighestSelectedDocumentId: 345
+        );
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        var sut = CreateCoordinatorForTargetResolutionScenario(
+            scenario,
+            lookupAdapter,
+            materializer,
+            writer,
+            telemetry
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<QueryResult>(fallbackResult);
+                },
+                tenantKey: TenantKeyForTargetResolutionScenario(scenario)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext.Reason.Should().Be(expectedFallbackReason);
+        fallbackContext.TargetContext.Should().BeNull();
+        lookupAdapter.QueryAttempts.Should().Be(0);
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+        telemetry.Events.Should().Contain(("fallback", expectedFallbackReason.ToString()));
+        telemetry.Events.Should().Contain(("directFill", expectedDirectFillOutcome));
+        telemetry.Events.Should().NotContain(("directFill", DocumentCacheReadTelemetryLabel.Attempted));
+    }
+
     [Test]
     public async Task It_uses_the_cache_lookup_adapter_for_an_authorized_external_get_on_an_exact_target()
     {
@@ -2411,10 +2503,11 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         Func<
             CancellationToken,
             Task<DocumentCacheReadAccelerationQuerySelectionResult>
-        >? selectAuthorizedCandidatePage = null
+        >? selectAuthorizedCandidatePage = null,
+        string? tenantKey = null
     ) =>
         new(
-            TargetKey.TenantKey,
+            tenantKey ?? TargetKey.TenantKey,
             MappingSet,
             Resource,
             DocumentCacheReadAccelerationResourceKind.Resource,
@@ -2455,6 +2548,83 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         yield return DocumentCacheReadLookupOutcome.ProjectionTargetIneligible;
         yield return DocumentCacheReadLookupOutcome.ProviderPrerequisiteIneligible;
     }
+
+    public enum TargetResolutionFallbackScenario
+    {
+        ReadAccelerationDisabled,
+        SelectedDataStoreUnavailable,
+        UnresolvedTarget,
+        TargetRegistryUnavailable,
+        InvalidTargetKey,
+        TargetReadAccelerationDisabled,
+    }
+
+    private static IEnumerable<TestCaseData> TargetResolutionDirectFillSkipCases()
+    {
+        yield return new TestCaseData(
+            TargetResolutionFallbackScenario.ReadAccelerationDisabled,
+            DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled,
+            DocumentCacheReadTelemetryLabel.SkippedReadAccelerationDisabled
+        );
+        yield return new TestCaseData(
+            TargetResolutionFallbackScenario.SelectedDataStoreUnavailable,
+            DocumentCacheReadAccelerationFallbackReason.SelectedDataStoreUnavailable,
+            DocumentCacheReadTelemetryLabel.SkippedSelectedDataStoreUnavailable
+        );
+        yield return new TestCaseData(
+            TargetResolutionFallbackScenario.UnresolvedTarget,
+            DocumentCacheReadAccelerationFallbackReason.UnresolvedTarget,
+            DocumentCacheReadTelemetryLabel.SkippedUnresolvedTarget
+        );
+        yield return new TestCaseData(
+            TargetResolutionFallbackScenario.TargetRegistryUnavailable,
+            DocumentCacheReadAccelerationFallbackReason.TargetRegistryUnavailable,
+            DocumentCacheReadTelemetryLabel.SkippedTargetRegistryUnavailable
+        );
+        yield return new TestCaseData(
+            TargetResolutionFallbackScenario.InvalidTargetKey,
+            DocumentCacheReadAccelerationFallbackReason.InvalidTargetKey,
+            DocumentCacheReadTelemetryLabel.SkippedInvalidTargetKey
+        );
+        yield return new TestCaseData(
+            TargetResolutionFallbackScenario.TargetReadAccelerationDisabled,
+            DocumentCacheReadAccelerationFallbackReason.TargetReadAccelerationDisabled,
+            DocumentCacheReadTelemetryLabel.SkippedTargetReadAccelerationDisabled
+        );
+    }
+
+    private static DocumentCacheReadAccelerationCoordinator CreateCoordinatorForTargetResolutionScenario(
+        TargetResolutionFallbackScenario scenario,
+        RecordingLookupAdapter lookupAdapter,
+        RecordingMaterializer materializer,
+        RecordingCacheWriter writer,
+        RecordingReadTelemetry telemetry
+    ) =>
+        CreateCoordinator(
+            scenario != TargetResolutionFallbackScenario.ReadAccelerationDisabled,
+            lookupAdapter,
+            RegistryForTargetResolutionScenario(scenario),
+            materializer,
+            writer,
+            readTelemetry: telemetry,
+            selectDataStore: scenario != TargetResolutionFallbackScenario.SelectedDataStoreUnavailable
+        );
+
+    private static IDocumentCacheTargetRegistry? RegistryForTargetResolutionScenario(
+        TargetResolutionFallbackScenario scenario
+    ) =>
+        scenario switch
+        {
+            TargetResolutionFallbackScenario.TargetRegistryUnavailable => null,
+            TargetResolutionFallbackScenario.UnresolvedTarget => CreateRegistry(),
+            TargetResolutionFallbackScenario.TargetReadAccelerationDisabled => CreateRegistry(
+                ExecutionContext(targetReadAccelerationEnabled: false)
+            ),
+            _ => CreateRegistry(ExecutionContext()),
+        };
+
+    private static string? TenantKeyForTargetResolutionScenario(TargetResolutionFallbackScenario scenario) =>
+        scenario == TargetResolutionFallbackScenario.InvalidTargetKey ? " TenantA" : null;
 
     private static StaticTargetRegistry CreateRegistry(
         DocumentCacheTargetExecutionContext? executionContext = null

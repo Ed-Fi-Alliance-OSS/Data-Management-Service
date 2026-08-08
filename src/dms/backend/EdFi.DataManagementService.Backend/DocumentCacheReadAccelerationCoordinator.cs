@@ -460,6 +460,12 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 targetContext: null,
                 DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled
             );
+            RecordDirectFillSkipIfNeeded(
+                DocumentCacheReadAccelerationOperation.GetById,
+                request.ResourceKind,
+                targetContext: null,
+                DocumentCacheReadTelemetryLabel.SkippedReadAccelerationDisabled
+            );
 
             return await request
                 .RelationalFallback(
@@ -632,6 +638,12 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 request.ResourceKind,
                 targetContext: null,
                 DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled
+            );
+            RecordDirectFillSkipIfNeeded(
+                DocumentCacheReadAccelerationOperation.Query,
+                request.ResourceKind,
+                targetContext: null,
+                DocumentCacheReadTelemetryLabel.SkippedReadAccelerationDisabled
             );
 
             return await request
@@ -1071,12 +1083,14 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         if (!_options.Value.ReadAcceleration.Enabled)
         {
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedReadAccelerationDisabled;
             return false;
         }
 
         if (_dataStoreSelection is null || !_dataStoreSelection.IsSet)
         {
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.SelectedDataStoreUnavailable;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedSelectedDataStoreUnavailable;
             return false;
         }
 
@@ -1088,6 +1102,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         catch (InvalidOperationException)
         {
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.SelectedDataStoreUnavailable;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedSelectedDataStoreUnavailable;
             return false;
         }
 
@@ -1101,12 +1116,14 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         )
         {
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.InvalidTargetKey;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedInvalidTargetKey;
             return false;
         }
 
         if (_targetRegistry is null)
         {
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.TargetRegistryUnavailable;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedTargetRegistryUnavailable;
             return false;
         }
 
@@ -1116,6 +1133,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         if (resolvedTargetContext is null)
         {
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.UnresolvedTarget;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedUnresolvedTarget;
             return false;
         }
 
@@ -1135,6 +1153,8 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         if (!resolvedTargetContext.EffectiveSettings.ReadAccelerationEnabled)
         {
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.TargetReadAccelerationDisabled;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedTargetReadAccelerationDisabled;
+            directFillTelemetryTargetContext = resolvedTargetContext;
             return false;
         }
 
