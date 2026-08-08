@@ -79,10 +79,7 @@ public class Given_DescriptorReadHandler
             ]),
         ]);
         DocumentCacheReadAccelerationGetByIdRequest capturedRequest = null!;
-        var fallbackContext = new DocumentCacheReadAccelerationFallbackContext(
-            DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
-            TargetContext: null
-        );
+        DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate capturedSelection = null!;
 
         A.CallTo(() =>
                 readAccelerationCoordinator.GetByIdAsync(
@@ -90,13 +87,21 @@ public class Given_DescriptorReadHandler
                     A<CancellationToken>._
                 )
             )
-            .Invokes(call =>
-                capturedRequest = call.GetArgument<DocumentCacheReadAccelerationGetByIdRequest>(0)!
-            )
-            .ReturnsLazily(
-                (DocumentCacheReadAccelerationGetByIdRequest request, CancellationToken cancellationToken) =>
-                    request.RelationalFallback(fallbackContext, cancellationToken)
-            );
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationGetByIdRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                capturedRequest = request;
+                var selectionResult = await request
+                    .SelectAuthorizedCandidate!(cancellationToken)
+                    .ConfigureAwait(false);
+                capturedSelection = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate>()
+                    .Subject;
+
+                return new GetResult.GetSuccess(documentUuid, new JsonObject(), DateTime.UnixEpoch, null);
+            });
 
         var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
 
@@ -106,8 +111,10 @@ public class Given_DescriptorReadHandler
         capturedRequest.ResourceKind.Should().Be(DocumentCacheReadAccelerationResourceKind.Descriptor);
         capturedRequest
             .LookupReadiness.Should()
-            .Be(DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate);
-        capturedRequest
+            .Be(DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly);
+        capturedRequest.AuthorizedCandidate.Should().BeNull();
+        capturedRequest.SelectAuthorizedCandidate.Should().NotBeNull();
+        capturedSelection
             .AuthorizedCandidate.Should()
             .Be(
                 new DocumentCacheReadAccelerationCandidate(
@@ -125,6 +132,71 @@ public class Given_DescriptorReadHandler
                 )
             )
             .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_reexecutes_descriptor_get_relational_fallback_after_cache_lookup_miss()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-121212121212"));
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        documentUuid.Value,
+                        documentId: 205L,
+                        shortDescription: "Before fallback",
+                        contentVersion: 42L
+                    )
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        documentUuid.Value,
+                        documentId: 205L,
+                        shortDescription: "After fallback",
+                        contentVersion: 84L
+                    )
+                ),
+            ]),
+        ]);
+        var fallbackContext = new DocumentCacheReadAccelerationFallbackContext(
+            DocumentCacheReadAccelerationFallbackReason.CacheLookupStale,
+            TargetContext: null
+        );
+
+        A.CallTo(() =>
+                readAccelerationCoordinator.GetByIdAsync(
+                    A<DocumentCacheReadAccelerationGetByIdRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationGetByIdRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                var selectionResult = await request
+                    .SelectAuthorizedCandidate!(cancellationToken)
+                    .ConfigureAwait(false);
+                var candidateSelection = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate>()
+                    .Subject;
+
+                return await candidateSelection
+                    .RelationalFallback(fallbackContext, cancellationToken)
+                    .ConfigureAwait(false);
+            });
+
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        var result = await sut.HandleGetByIdAsync(CreateRequest(SqlDialect.Pgsql, documentUuid));
+
+        var success = result.Should().BeOfType<GetResult.GetSuccess>().Subject;
+        success.EdfiDoc["shortDescription"]!.GetValue<string>().Should().Be("After fallback");
+        success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(84L));
+        commandExecutor.Commands.Should().HaveCount(2);
     }
 
     [Test]
@@ -1401,10 +1473,7 @@ public class Given_DescriptorReadHandler
             ]),
         ]);
         DocumentCacheReadAccelerationQueryRequest capturedRequest = null!;
-        var fallbackContext = new DocumentCacheReadAccelerationFallbackContext(
-            DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
-            TargetContext: null
-        );
+        DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage capturedSelection = null!;
 
         A.CallTo(() =>
                 readAccelerationCoordinator.QueryAsync(
@@ -1412,13 +1481,21 @@ public class Given_DescriptorReadHandler
                     A<CancellationToken>._
                 )
             )
-            .Invokes(call =>
-                capturedRequest = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!
-            )
-            .ReturnsLazily(
-                (DocumentCacheReadAccelerationQueryRequest request, CancellationToken cancellationToken) =>
-                    request.RelationalFallback(fallbackContext, cancellationToken)
-            );
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                capturedRequest = request;
+                var selectionResult = await request
+                    .SelectAuthorizedCandidatePage!(cancellationToken)
+                    .ConfigureAwait(false);
+                capturedSelection = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>()
+                    .Subject;
+
+                return new QueryResult.QuerySuccess([], TotalCount: null);
+            });
 
         var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
 
@@ -1428,8 +1505,10 @@ public class Given_DescriptorReadHandler
         capturedRequest.ResourceKind.Should().Be(DocumentCacheReadAccelerationResourceKind.Descriptor);
         capturedRequest
             .LookupReadiness.Should()
-            .Be(DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate);
-        capturedRequest
+            .Be(DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly);
+        capturedRequest.AuthorizedCandidatePage.Should().BeNull();
+        capturedRequest.SelectAuthorizedCandidatePage.Should().NotBeNull();
+        capturedSelection
             .AuthorizedCandidatePage.Should()
             .BeEquivalentTo(
                 new DocumentCacheReadAccelerationCandidatePage(
@@ -1460,6 +1539,73 @@ public class Given_DescriptorReadHandler
                 )
             )
             .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_reexecutes_descriptor_query_relational_fallback_after_cache_lookup_miss()
+    {
+        var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-343434343434");
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        documentUuid,
+                        documentId: 101L,
+                        shortDescription: "Before fallback",
+                        contentVersion: 42L
+                    )
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        documentUuid,
+                        documentId: 101L,
+                        shortDescription: "After fallback",
+                        contentVersion: 84L
+                    )
+                ),
+            ]),
+        ]);
+        var fallbackContext = new DocumentCacheReadAccelerationFallbackContext(
+            DocumentCacheReadAccelerationFallbackReason.CacheLookupStale,
+            TargetContext: null
+        );
+
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                var selectionResult = await request
+                    .SelectAuthorizedCandidatePage!(cancellationToken)
+                    .ConfigureAwait(false);
+                var candidateSelection = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>()
+                    .Subject;
+
+                return await candidateSelection
+                    .RelationalFallback(fallbackContext, cancellationToken)
+                    .ConfigureAwait(false);
+            });
+
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql));
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.EdfiDocs.Should().HaveCount(1);
+        JsonNode descriptor = success.EdfiDocs[0]!;
+        descriptor["shortDescription"]!.GetValue<string>().Should().Be("After fallback");
+        descriptor["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(84L));
+        commandExecutor.Commands.Should().HaveCount(2);
     }
 
     [Test]
@@ -1772,6 +1918,8 @@ public class Given_DescriptorReadHandler
     private static IReadOnlyDictionary<string, object?> CreateDescriptorRow(
         Guid documentUuid,
         long documentId = 101L,
+        long contentVersion = 42L,
+        DateTimeOffset? contentLastModifiedAt = null,
         string? ns = "uri://ed-fi.org/SchoolTypeDescriptor",
         string? codeValue = "Alternative",
         string? shortDescription = "Alternative",
@@ -1784,8 +1932,11 @@ public class Given_DescriptorReadHandler
         return RelationalAccessTestData.CreateRow(
             ("DocumentId", documentId),
             ("DocumentUuid", documentUuid),
-            ("ContentVersion", 42L),
-            ("ContentLastModifiedAt", new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)),
+            ("ContentVersion", contentVersion),
+            (
+                "ContentLastModifiedAt",
+                contentLastModifiedAt ?? new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)
+            ),
             ("ResourceKeyId", (short)13),
             ("Namespace", ns),
             ("CodeValue", codeValue),
