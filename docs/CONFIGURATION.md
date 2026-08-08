@@ -50,6 +50,41 @@ is `false`. See the
 | FailureCooldownSeconds      | Seconds a faulted cache entry is retained before eviction. `0` (default) evicts immediately.                                                |
 | CacheMode                   | Cache strategy for compiled mapping sets. Currently only `InMemory` (default).                                                              |
 
+## DataManagement:DocumentCache
+
+`DataManagement:DocumentCache` configures optional DocumentCache projection and
+cache-backed read acceleration. The fixed database inventory is always provisioned, but
+runtime cache reads are opt-in and target-gated: DMS considers cached bodies only when
+`ReadAcceleration:Enabled` is `true`, the request is an external resource or descriptor
+GET/read, and the request's tenant/data-store pair has an exact `Targets` entry.
+
+The relational read path remains the correctness path. Cache misses, stale cache rows,
+lifecycle fences, target ineligibility, expected cache-read availability failures, and
+direct-fill failures fall back to relational reads without changing the public response.
+For the authoritative behavior, see the
+[cache-backed read story](../reference/design/backend-redesign/epics/18-document-cache/05-cache-backed-read-path.md),
+[cache-backed reads and lifecycle](../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle),
+and
+[configuration and projection target selection](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection).
+
+| Parameter                               | Description                                                                                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Targets                                 | Explicit cache target list. Each entry contains `TenantKey` and positive `DataStoreId`; duplicate entries after tenant normalization are invalid.             |
+| ReadAcceleration:Enabled                | When `true`, eligible external GET-by-id and GET-many responses may use fresh `dms.DocumentCache` rows. Default: `false`.                                    |
+| ReadAcceleration:DirectFillTimeout      | Positive duration that bounds optional best-effort direct fill after a successful relational fallback. Default: `00:00:00.250`.                              |
+| Projector:PollInterval                  | Positive projector polling interval. Default: `00:00:05`.                                                                                                    |
+| Projector:PageSize                      | Positive projector page size. Default: `100`.                                                                                                                |
+| Projector:MaxConcurrentTargets          | Positive maximum number of cache targets a process may project concurrently. Default: `2`.                                                                    |
+| Projector:FailureBackoff                | Positive delay before retrying projector work after a target-level failure. Default: `00:00:30`.                                                             |
+| Projector:BaselineHighWaterMark         | Positive high-water mark used during baseline projection. Must be less than `int.MaxValue`. Default: `1000`.                                                  |
+| Administration:WorkflowTimeout          | Positive timeout for cache administrative workflows. Default: `1.00:00:00`.                                                                                   |
+
+Direct fill uses the shared cache materializer/writer with purpose `DirectFill`; it does
+not build cache rows from the shaped API response and it does not replace the response
+already selected by relational fallback. Snapshot and read-replica requests are read-only
+for this purpose, so direct fill is skipped for those targets when derivative routing is
+available.
+
 ## Configuration Service AppSettings
 
 The following parameters apply to the DMS Configuration Service (`appsettings.json`).
