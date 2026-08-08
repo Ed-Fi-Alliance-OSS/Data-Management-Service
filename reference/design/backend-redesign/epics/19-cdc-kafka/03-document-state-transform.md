@@ -93,8 +93,8 @@ Connect plugin without changing the completed generic transform.
   - `dms.DocumentCache` delete and truncate are dropped.
   - `dms.Document` delete produces one public tombstone.
   - `dms.Document` create, update, snapshot/read, and truncate are dropped.
-  - `dms.CdcHeartbeat` create, update, snapshot/read, and delete route to the progress
-    topic.
+  - `dms.CdcHeartbeat` create, update, snapshot/read, delete, and truncate route to the
+    progress topic.
   - Debezium heartbeat records route to the progress topic.
 - Dropped operations return `null` only after source and operation are recognized as an
   excluded case. They do not validate `DocumentUuid`, `DocumentJson`, temporal fields, or
@@ -219,7 +219,7 @@ Connect plugin without changing the completed generic transform.
 ## Acceptance Evidence
 
 - JUnit provider fixtures cover every source-operation class and output category defined by
-  the source and message ADRs.
+  the source and message ADRs for both PostgreSQL and SQL Server source shapes.
 - JUnit fixtures prove a schema-backed heartbeat key and a Debezium heartbeat with a null
   source key both produce the fixed Kafka Connect string progress key, with no source-key
   pass-through.
