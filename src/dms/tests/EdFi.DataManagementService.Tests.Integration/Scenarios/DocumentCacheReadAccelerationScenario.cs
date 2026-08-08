@@ -157,20 +157,28 @@ internal static class DocumentCacheReadAccelerationScenario
             .Be("Relational Fallback", "a stale cache row must not replace relational fallback");
     }
 
-    public static async Task It_falls_back_relationally_when_cache_connection_acquisition_fails(
+    public static async Task It_falls_back_relationally_when_cache_adapter_acquisition_fails(
         ApiIntegrationHarness harness
     )
     {
         await SetTrackingLifecycleAsync(harness);
+        DocumentCacheReadAcquisitionFailureRecorder recorder =
+            harness.DocumentCacheReadAcquisitionFailureRecorder
+            ?? throw new InvalidOperationException(
+                "The unavailable-cache scenario requires the cache read acquisition failure recorder."
+            );
 
-        CreatedDocument getStudent = await CreateStudentAsync(
+        string getStudentLocationPath = await PostStudentAsync(
             harness,
             "cache-unavailable-get-001",
             "Relational Unavailable Get"
         );
-        DocumentMetadata getMetadata = await ReadDocumentMetadataAsync(harness, getStudent.DocumentUuid);
+        DocumentMetadata getMetadata = await ReadDocumentMetadataAsync(
+            harness,
+            Guid.Parse(getStudentLocationPath.Split('/')[^1])
+        );
 
-        JsonObject getFallback = await GetJsonObjectAsync(harness, getStudent.LocationPath);
+        JsonObject getFallback = await GetJsonObjectAsync(harness, getStudentLocationPath);
 
         getFallback["studentUniqueId"]!.GetValue<string>().Should().Be("cache-unavailable-get-001");
         getFallback["firstName"]!
@@ -178,29 +186,29 @@ internal static class DocumentCacheReadAccelerationScenario
             .Should()
             .Be(
                 "Relational Unavailable Get",
-                "cache connection acquisition failure must use relational GET fallback"
+                "cache adapter acquisition failure must use relational GET fallback"
             );
         (await CountCacheRowsAsync(harness, getMetadata.DocumentId))
             .Should()
             .Be(0, "cache-unavailable lookup must skip direct fill for the same request");
 
-        CreatedDocument firstQueryStudent = await CreateStudentAsync(
+        string firstQueryStudentLocationPath = await PostStudentAsync(
             harness,
             "cache-unavailable-query-001",
             "Relational Unavailable Query One"
         );
-        CreatedDocument secondQueryStudent = await CreateStudentAsync(
+        string secondQueryStudentLocationPath = await PostStudentAsync(
             harness,
             "cache-unavailable-query-002",
             "Relational Unavailable Query Two"
         );
         DocumentMetadata firstQueryMetadata = await ReadDocumentMetadataAsync(
             harness,
-            firstQueryStudent.DocumentUuid
+            Guid.Parse(firstQueryStudentLocationPath.Split('/')[^1])
         );
         DocumentMetadata secondQueryMetadata = await ReadDocumentMetadataAsync(
             harness,
-            secondQueryStudent.DocumentUuid
+            Guid.Parse(secondQueryStudentLocationPath.Split('/')[^1])
         );
 
         using HttpResponseMessage queryResponse = await harness.HttpClient.GetAsync(
@@ -223,6 +231,26 @@ internal static class DocumentCacheReadAccelerationScenario
         (await CountCacheRowsAsync(harness, secondQueryMetadata.DocumentId))
             .Should()
             .Be(0, "cache-unavailable query fallback must not direct-fill selected page documents");
+
+        recorder.CountLookupAttempts("GetById").Should().Be(1);
+        recorder.CountLookupAttempts("Query").Should().Be(1);
+        recorder
+            .CountTelemetryRecords("RecordAdapterAcquisitionFailure", "CacheUnavailable")
+            .Should()
+            .Be(2, "both GET-by-id and GET-many should observe adapter acquisition failure");
+        recorder
+            .CountTelemetryRecords("RecordDirectFill", "SkippedCacheUnavailable")
+            .Should()
+            .Be(2, "adapter acquisition failure must skip direct fill for both operations");
+        recorder
+            .CountTelemetryRecords("RecordDirectFill", "SkippedTargetMismatch")
+            .Should()
+            .Be(0, "the target signature must remain matched for this scenario");
+        recorder
+            .CountTelemetryRecords("RecordFallback", "UnresolvedTarget")
+            .Should()
+            .Be(0, "this scenario must not exercise the unresolved-target bypass path");
+        recorder.CountTelemetryRecords("RecordFallback", "CacheLookupUnavailable").Should().Be(2);
     }
 
     public static async Task It_serves_descriptor_query_from_cache_and_falls_back_for_incomplete_pages(

@@ -67,19 +67,18 @@ public sealed class Given_Mssql_DocumentCacheReadAcceleration_With_ResourceLinks
 }
 
 [Category("DocumentCacheReadAcceleration")]
-public sealed class Given_Mssql_DocumentCacheReadAcceleration_With_Unavailable_Cache_Connection
+public sealed class Given_Mssql_DocumentCacheReadAcceleration_With_Unavailable_Cache_Acquisition
     : MssqlApiIntegrationTestBase
 {
     protected override FixtureKey Fixture => FixtureKey.ProfileRootOnlyMerge;
 
     protected override bool EnableDocumentCacheReadAcceleration => true;
 
-    protected override string DocumentCacheReadLookupConnectionStringOverride =>
-        "UnknownKeyword=not-supported";
+    protected override bool ForceDocumentCacheReadLookupAdapterAcquisitionFailure => true;
 
     [Test]
-    public Task It_falls_back_relationally_when_cache_connection_acquisition_fails() =>
-        DocumentCacheReadAccelerationScenario.It_falls_back_relationally_when_cache_connection_acquisition_fails(
+    public Task It_falls_back_relationally_when_cache_adapter_acquisition_fails() =>
+        DocumentCacheReadAccelerationScenario.It_falls_back_relationally_when_cache_adapter_acquisition_fails(
             Harness
         );
 }

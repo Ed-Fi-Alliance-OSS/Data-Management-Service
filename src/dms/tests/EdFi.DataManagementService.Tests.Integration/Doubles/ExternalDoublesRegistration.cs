@@ -52,7 +52,7 @@ internal static class ExternalDoublesRegistration
         >? providerFailureTransform = null,
         ApiIntegrationProviderFailureRecorder? providerFailureRecorder = null,
         RelationalProviderToken? relationalProviderToken = null,
-        string? documentCacheReadLookupConnectionStringOverride = null
+        DocumentCacheReadAcquisitionFailureRecorder? documentCacheReadAcquisitionFailureRecorder = null
     )
     {
         services.RemoveAll<IJwtValidationService>();
@@ -99,90 +99,28 @@ internal static class ExternalDoublesRegistration
         if (relationalProviderToken is not null)
         {
             services.RemoveAll<IDocumentCacheTargetRegistry>();
-            if (!string.IsNullOrWhiteSpace(documentCacheReadLookupConnectionStringOverride))
-            {
-                services.AddSingleton(
-                    new DocumentCacheReadLookupTargetConnectionOverride(
-                        relationalProviderToken,
-                        documentCacheReadLookupConnectionStringOverride
-                    )
-                );
-            }
-            services.AddSingleton<IDocumentCacheTargetRegistry>(serviceProvider =>
-            {
-                var registry = new DocumentCacheTargetRegistry(
+            services.AddSingleton<IDocumentCacheTargetRegistry>(
+                serviceProvider => new DocumentCacheTargetRegistry(
                     serviceProvider.GetRequiredService<IDataStoreProvider>(),
                     serviceProvider.GetRequiredService<IDocumentCacheTargetContextBuilder>(),
                     serviceProvider.GetRequiredService<IOptions<DocumentCacheOptions>>(),
                     serviceProvider.GetRequiredService<TimeProvider>(),
                     serviceProvider.GetRequiredService<ILogger<DocumentCacheTargetRegistry>>()
-                );
-
-                DocumentCacheReadLookupTargetConnectionOverride? connectionOverride =
-                    serviceProvider.GetService<DocumentCacheReadLookupTargetConnectionOverride>();
-
-                return connectionOverride is null
-                    ? registry
-                    : new OverridingDocumentCacheTargetRegistry(registry, connectionOverride);
-            });
+                )
+            );
+        }
+        if (documentCacheReadAcquisitionFailureRecorder is not null)
+        {
+            services.RemoveAll<IDocumentCacheReadLookupAdapter>();
+            services.RemoveAll<IDocumentCacheReadTelemetry>();
+            services.AddSingleton(documentCacheReadAcquisitionFailureRecorder);
+            services.AddScoped<
+                IDocumentCacheReadLookupAdapter,
+                AcquisitionFailureDocumentCacheReadLookupAdapter
+            >();
+            services.AddSingleton<IDocumentCacheReadTelemetry, RecordingDocumentCacheReadTelemetry>();
         }
         services.AddSingleton<IProfileCmsProvider>(FakeProfileCmsProvider.FromFixture(fixture));
         services.AddSingleton<IStartupProcessExit, NonExitingStartupProcessExit>();
     }
-
-    private sealed class OverridingDocumentCacheTargetRegistry(
-        IDocumentCacheTargetRegistry inner,
-        DocumentCacheReadLookupTargetConnectionOverride connectionOverride
-    ) : IDocumentCacheTargetRegistry
-    {
-        public DocumentCacheTargetRegistrySnapshot CurrentSnapshot => inner.CurrentSnapshot;
-
-        public DocumentCacheTargetRuntimeSnapshot CurrentRuntimeSnapshot =>
-            connectionOverride.Apply(inner.CurrentRuntimeSnapshot);
-
-        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
-            DocumentCacheTargetRefreshReason reason,
-            CancellationToken cancellationToken = default
-        ) => inner.RefreshAsync(reason, cancellationToken);
-    }
-}
-
-internal sealed class DocumentCacheReadLookupTargetConnectionOverride(
-    RelationalProviderToken providerToken,
-    string connectionString
-)
-{
-    private int _enabled;
-
-    public void Enable() => Interlocked.Exchange(ref _enabled, 1);
-
-    public DocumentCacheTargetRuntimeSnapshot Apply(DocumentCacheTargetRuntimeSnapshot snapshot)
-    {
-        ArgumentNullException.ThrowIfNull(snapshot);
-
-        return Volatile.Read(ref _enabled) == 0
-            ? snapshot
-            : new DocumentCacheTargetRuntimeSnapshot(
-                snapshot.ExecutionContexts.Select(OverrideConnection),
-                snapshot.ObservedAt
-            );
-    }
-
-    private DocumentCacheTargetExecutionContext OverrideConnection(
-        DocumentCacheTargetExecutionContext context
-    ) =>
-        context.ProviderToken != providerToken
-            ? context
-            : new DocumentCacheTargetExecutionContext(
-                context.TargetKey,
-                context.Generation,
-                context.EffectiveSettings,
-                context.DataStore,
-                new DocumentCacheTargetConnectionInput(providerToken, connectionString),
-                context.PhysicalSourceFingerprint,
-                context.Lifecycle,
-                context.Inventory,
-                context.EnqueueTrigger,
-                context.SqlServerPrerequisites
-            );
 }

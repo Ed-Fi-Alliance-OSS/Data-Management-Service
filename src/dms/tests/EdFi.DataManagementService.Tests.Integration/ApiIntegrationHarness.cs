@@ -23,7 +23,8 @@ public sealed class ApiIntegrationHarness : IAsyncDisposable
         DbConnection dbConnection,
         FixtureContext fixture,
         ApiIntegrationQueryRecorder? queryRecorder = null,
-        ApiIntegrationProviderFailureRecorder? providerFailureRecorder = null
+        ApiIntegrationProviderFailureRecorder? providerFailureRecorder = null,
+        DocumentCacheReadAcquisitionFailureRecorder? documentCacheReadAcquisitionFailureRecorder = null
     )
     {
         HttpClient = httpClient;
@@ -31,6 +32,7 @@ public sealed class ApiIntegrationHarness : IAsyncDisposable
         Fixture = fixture;
         QueryRecorder = queryRecorder;
         ProviderFailureRecorder = providerFailureRecorder;
+        DocumentCacheReadAcquisitionFailureRecorder = documentCacheReadAcquisitionFailureRecorder;
 
         HttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer",
@@ -48,6 +50,8 @@ public sealed class ApiIntegrationHarness : IAsyncDisposable
     /// a <c>ProviderFailureTransform</c>. Null otherwise.
     /// </summary>
     public ApiIntegrationProviderFailureRecorder? ProviderFailureRecorder { get; }
+
+    public DocumentCacheReadAcquisitionFailureRecorder? DocumentCacheReadAcquisitionFailureRecorder { get; }
 
     public async ValueTask DisposeAsync()
     {

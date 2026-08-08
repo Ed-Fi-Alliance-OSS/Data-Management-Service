@@ -34,6 +34,7 @@ public abstract class ApiIntegrationTestBase
     private string? _startupStatusFilePath;
     private ApiIntegrationQueryRecorder? _queryRecorder;
     private ApiIntegrationProviderFailureRecorder? _providerFailureRecorder;
+    private DocumentCacheReadAcquisitionFailureRecorder? _documentCacheReadAcquisitionFailureRecorder;
 
     protected ApiIntegrationHarness Harness { get; private set; } = null!;
 
@@ -84,8 +85,8 @@ public abstract class ApiIntegrationTestBase
     /// <summary>Enables the DMS DocumentCache read-acceleration path for cache-backed read scenarios.</summary>
     protected virtual bool EnableDocumentCacheReadAcceleration => false;
 
-    /// <summary>Overrides only the cache read lookup target connection after normal target validation.</summary>
-    protected virtual string? DocumentCacheReadLookupConnectionStringOverride => null;
+    /// <summary>Forces cache read lookup to report an expected adapter acquisition failure.</summary>
+    protected virtual bool ForceDocumentCacheReadLookupAdapterAcquisitionFailure => false;
 
     /// <summary>Controls the public ResourceLinks response flag for scenarios that exercise link stripping.</summary>
     protected virtual bool ResourceLinksEnabled => true;
@@ -116,6 +117,9 @@ public abstract class ApiIntegrationTestBase
         _leasedConnectionString = await LeaseDatabaseAsync(_fixtureContext);
         _startupStatusFilePath = Path.Combine(Path.GetTempPath(), $"api-int-startup-{Guid.NewGuid():N}.json");
         _queryRecorder = CaptureQueryPlans ? new ApiIntegrationQueryRecorder() : null;
+        _documentCacheReadAcquisitionFailureRecorder = ForceDocumentCacheReadLookupAdapterAcquisitionFailure
+            ? new DocumentCacheReadAcquisitionFailureRecorder()
+            : null;
         var providerFailureTransform = ProviderFailureTransform;
         _providerFailureRecorder = providerFailureTransform is null
             ? null
@@ -125,6 +129,7 @@ public abstract class ApiIntegrationTestBase
         var leasedConnectionString = _leasedConnectionString;
         var startupStatusFilePath = _startupStatusFilePath;
         var queryRecorder = _queryRecorder;
+        var documentCacheReadAcquisitionFailureRecorder = _documentCacheReadAcquisitionFailureRecorder;
         var providerFailureRecorder = _providerFailureRecorder;
         var clientNamespacePrefixes = ClientNamespacePrefixes;
 
@@ -182,7 +187,7 @@ public abstract class ApiIntegrationTestBase
                     providerFailureTransform,
                     providerFailureRecorder,
                     EnableDocumentCacheReadAcceleration ? GetRelationalProviderToken() : null,
-                    DocumentCacheReadLookupConnectionStringOverride
+                    documentCacheReadAcquisitionFailureRecorder
                 );
 
                 if (queryRecorder is not null)
@@ -200,7 +205,6 @@ public abstract class ApiIntegrationTestBase
             await _factory
                 .Services.GetRequiredService<IDocumentCacheProjectionSupervisor>()
                 .RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
-            _factory.Services.GetService<DocumentCacheReadLookupTargetConnectionOverride>()?.Enable();
         }
 
         Harness = new ApiIntegrationHarness(
@@ -208,7 +212,8 @@ public abstract class ApiIntegrationTestBase
             _assertionConnection,
             _fixtureContext,
             _queryRecorder,
-            _providerFailureRecorder
+            _providerFailureRecorder,
+            _documentCacheReadAcquisitionFailureRecorder
         );
     }
 
@@ -244,6 +249,7 @@ public abstract class ApiIntegrationTestBase
         _fixtureContext = null;
         _queryRecorder = null;
         _providerFailureRecorder = null;
+        _documentCacheReadAcquisitionFailureRecorder = null;
 
         if (_startupStatusFilePath is not null && File.Exists(_startupStatusFilePath))
         {
