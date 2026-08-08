@@ -733,6 +733,21 @@ not using snapshots, key changes observed without a `maxChangeVersion` filter, o
 newly accessible behind the client's change window. The mitigations recorded in
 [change-queries.md](change-queries.md) continue to apply to those.
 
+**Conditional change-window ordering.** Traditional offset
+paging orders max-bearing change-version windows by `ContentVersion`; see "Page-selection
+ordering" in [change-queries.md](change-queries.md).
+
+The first page of a cursor walk uses the same page-selection query as an offset request. A token
+based on `HighestSelectedDocumentId` is unsafe when that query orders by `ContentVersion`.
+Replaying such a token could skip qualifying rows that have a smaller `DocumentId` but a later
+`ContentVersion`.
+
+Windowed (max-bearing) requests therefore anchor cursor pages, partition boundaries, and
+continuation tokens on `ContentVersion`, delivered by DMS-1394
+([`14-contentversion-windowed-cursor-anchoring.md`](../epics/20-partitioned-cursor-paging/14-contentversion-windowed-cursor-anchoring.md))
+in the same release as cursor execution. Invariant: a page emits a continuation token only when
+the token's anchor is the page's ordering key.
+
 ## Performance Invariants
 
 These are properties of the running system. A change that preserves the contract above but
@@ -742,9 +757,9 @@ violates one of these has not implemented this design.
 
 - Cursor SQL contains no `OFFSET`, no row-number skip, and no count query, and uses the root
   `DocumentId` key as a range predicate.
-- Existing `limit`/`offset` page-selection SQL is behaviorally and textually unchanged. The
-  selected-id result set added to collection hydration batches is the one deliberate exception, and
-  it does not alter traditional response behavior.
+- Cursor implementation does not otherwise change traditional `limit`/`offset` page-selection
+  SQL. The DMS-1298 conditional ordering rule and the selected-id result set added to collection
+  hydration batches are the explicit exceptions.
 - Cursor hydration performs one database command and adds no roundtrip over the existing
   single-command page-keyset architecture.
 - `/partitions` performs one database command and returns identifiers only.

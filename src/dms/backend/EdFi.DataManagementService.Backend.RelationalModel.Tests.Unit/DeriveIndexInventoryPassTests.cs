@@ -332,6 +332,15 @@ public class Given_Concrete_Resource_Roots_For_ContentVersion_Index_Derivation
             .Should()
             .BeEmpty();
     }
+
+    /// <summary>
+    /// It should not derive shared descriptor indexes when the schema has no descriptor resources.
+    /// </summary>
+    [Test]
+    public void It_should_not_derive_shared_descriptor_indexes_without_descriptor_resources()
+    {
+        _indexes.Where(i => i.Table.Schema.Value == "dms" && i.Table.Name == "Descriptor").Should().BeEmpty();
+    }
 }
 
 /// <summary>
@@ -376,6 +385,25 @@ public class Given_Descriptor_Resources_With_Mirror_Active_For_Index_Derivation
         index.Table.Schema.Value.Should().Be("dms");
         index.Table.Name.Should().Be("Descriptor");
         index.KeyColumns.Select(c => c.Value).Should().Equal("Discriminator", "ContentVersion");
+        index.IsUnique.Should().BeFalse();
+        index.Kind.Should().Be(DbIndexKind.Explicit);
+    }
+
+    /// <summary>
+    /// It should derive exactly one shared descriptor change-version page-selection index.
+    /// </summary>
+    [Test]
+    public void It_should_derive_single_descriptor_page_selection_ContentVersion_index()
+    {
+        var descriptorIndexes = _indexes
+            .Where(i => i.Name.Value == "IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId")
+            .ToArray();
+
+        descriptorIndexes.Should().ContainSingle();
+        var index = descriptorIndexes.Single();
+        index.Table.Schema.Value.Should().Be("dms");
+        index.Table.Name.Should().Be("Descriptor");
+        index.KeyColumns.Select(c => c.Value).Should().Equal("ResourceKeyId", "ContentVersion", "DocumentId");
         index.IsUnique.Should().BeFalse();
         index.Kind.Should().Be(DbIndexKind.Explicit);
     }

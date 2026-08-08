@@ -20,6 +20,8 @@ services:
       AppSettings__MaskRequestBodyInLogs: ${MASK_REQUEST_BODY_IN_LOGS:-true}
       AppSettings__MaximumPageSize: ${MAXIMUM_PAGE_SIZE:-500}
       AppSettings__DefaultPartitionCount: ${DEFAULT_PARTITION_COUNT:-10}
+      # Restores legacy DocumentId ordering for change-version-filtered queries (deployment rollback switch)
+      AppSettings__UseLegacyDocumentIdOrderingForChangeQueries: ${USE_LEGACY_DOCUMENT_ID_ORDERING_FOR_CHANGE_QUERIES:-false}
       # Segment of the url to use as base for all request. The default path base is deliberately blank on the following line
       AppSettings__PathBase: ${PATH_BASE:-}
       AppSettings__ReverseProxy__UseForwardedHeaders: ${USE_REVERSE_PROXY_HEADERS:-false}

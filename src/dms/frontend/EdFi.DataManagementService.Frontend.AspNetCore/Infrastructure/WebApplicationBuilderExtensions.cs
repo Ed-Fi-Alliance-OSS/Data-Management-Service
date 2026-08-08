@@ -319,6 +319,13 @@ public static class WebApplicationBuilderExtensions
         }
 
         logger.Information("Injecting relational document store repository surface");
+        webAppBuilder.Services.AddSingleton(
+            new ChangeQueryPageOrderingPolicy(
+                webAppBuilder
+                    .Configuration.GetSection("AppSettings")
+                    .GetValue<bool>("UseLegacyDocumentIdOrderingForChangeQueries")
+            )
+        );
         webAppBuilder.Services.AddScoped<IDocumentStoreRepository, RelationalDocumentStoreRepository>();
         webAppBuilder.Services.AddScoped<IQueryHandler, RelationalDocumentStoreRepository>();
         webAppBuilder.Services.Replace(

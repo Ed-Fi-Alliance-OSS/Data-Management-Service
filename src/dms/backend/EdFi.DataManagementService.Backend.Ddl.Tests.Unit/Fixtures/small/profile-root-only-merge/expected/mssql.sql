@@ -810,6 +810,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId'
+)
+CREATE INDEX [IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId] ON [dms].[Descriptor] ([ResourceKeyId], [ContentVersion], [DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'ProfileRootOnlyMergeItem' AND i.name = N'IX_ProfileRootOnlyMergeItem_ContentVersion'
 )
 CREATE INDEX [IX_ProfileRootOnlyMergeItem_ContentVersion] ON [edfi].[ProfileRootOnlyMergeItem] ([ContentVersion]);

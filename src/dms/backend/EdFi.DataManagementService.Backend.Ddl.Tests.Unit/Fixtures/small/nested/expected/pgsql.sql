@@ -1082,6 +1082,8 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_Descriptor_Discriminator_ContentVersion" ON "dms"."Descriptor" ("Discriminator", "ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId" ON "dms"."Descriptor" ("ResourceKeyId", "ContentVersion", "DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolAddressPhoneNumber_ParentCollectionItemId_S_9002c7691c" ON "edfi"."SchoolAddressPhoneNumber" ("ParentCollectionItemId", "School_DocumentId");

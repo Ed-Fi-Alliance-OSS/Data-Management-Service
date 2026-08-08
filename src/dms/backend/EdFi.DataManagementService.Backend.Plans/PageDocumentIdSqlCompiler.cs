@@ -19,6 +19,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 {
     private const string DocumentIdColumnName = "DocumentId";
+    private const string ContentVersionColumnName = "ContentVersion";
     private const string DocumentUuidColumnName = "DocumentUuid";
     private const string MissingPresenceColumnSortValue = "";
     private static readonly string _rootAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root);
@@ -527,7 +528,18 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             authorizationClaimParameterization
         );
 
-        writer.Append($"ORDER BY {_rootAlias}.").AppendQuoted(DocumentIdColumnName).AppendLine(" ASC");
+        var orderingColumnName = spec.OrderingMode switch
+        {
+            PageOrderingMode.DocumentId => DocumentIdColumnName,
+            PageOrderingMode.ContentVersion => ContentVersionColumnName,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(spec),
+                spec.OrderingMode,
+                "Unsupported page ordering mode."
+            ),
+        };
+
+        writer.Append($"ORDER BY {_rootAlias}.").AppendQuoted(orderingColumnName).AppendLine(" ASC");
 
         _planSqlDialect.AppendPagingClause(writer, spec.OffsetParameterName, spec.LimitParameterName);
         writer.AppendLine(";");

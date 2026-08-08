@@ -2607,6 +2607,45 @@ public class Given_PageDocumentIdSqlCompiler
             );
     }
 
+    [Test]
+    public void It_should_order_by_content_version_when_the_ordering_mode_is_content_version()
+    {
+        var plan = _compiler.Compile(
+            CreateSpec([], [], includeTotalCountSql: true) with
+            {
+                OrderingMode = PageOrderingMode.ContentVersion,
+            }
+        );
+
+        plan.PageDocumentIdSql.Should().Contain("ORDER BY r.\"ContentVersion\" ASC");
+        plan.PageDocumentIdSql.Should().NotContain("ORDER BY r.\"DocumentId\"");
+        plan.TotalCountSql.Should().NotContain("ORDER BY");
+    }
+
+    [Test]
+    public void It_should_order_by_document_id_when_the_ordering_mode_is_omitted()
+    {
+        var plan = _compiler.Compile(CreateSpec([], []));
+
+        plan.PageDocumentIdSql.Should().Contain("ORDER BY r.\"DocumentId\" ASC");
+        plan.PageDocumentIdSql.Should().NotContain("ContentVersion");
+    }
+
+    [Test]
+    public void It_should_order_by_bracket_quoted_content_version_for_mssql()
+    {
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
+        var plan = compiler.Compile(
+            CreateSpec([], []) with
+            {
+                OrderingMode = PageOrderingMode.ContentVersion,
+            }
+        );
+
+        plan.PageDocumentIdSql.Should().Contain("ORDER BY r.[ContentVersion] ASC");
+        plan.PageDocumentIdSql.Should().Contain("OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY");
+    }
+
     private static PageDocumentIdQuerySpec CreateSpec(
         IReadOnlyList<QueryValuePredicate> predicates,
         IReadOnlyList<KeyValuePair<DbColumnName, ColumnStorage.UnifiedAlias>> unifiedAliasMappings,

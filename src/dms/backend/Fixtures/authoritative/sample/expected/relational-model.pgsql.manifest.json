@@ -3292,6 +3292,20 @@
       ]
     },
     {
+      "name": "IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId",
+      "table": {
+        "schema": "dms",
+        "name": "Descriptor"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "ResourceKeyId",
+        "ContentVersion",
+        "DocumentId"
+      ]
+    },
+    {
       "name": "IX_AcademicWeek_ContentVersion",
       "table": {
         "schema": "edfi",

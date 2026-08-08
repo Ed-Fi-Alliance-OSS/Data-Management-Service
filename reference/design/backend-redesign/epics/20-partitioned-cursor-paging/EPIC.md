@@ -446,6 +446,10 @@ package is referred to everywhere else in this epic.
     narrow reused fixture set, full provider-plan evidence, thresholds, and regression reporting.
 11. **[DMS-1393: Bounded cursor and partition telemetry](12-bounded-cursor-and-partition-telemetry.md)** —
     production paging metrics with bounded dimensions and explicit privacy constraints.
+12. **[DMS-1394: ContentVersion-anchored windowed cursor paging](14-contentversion-windowed-cursor-anchoring.md)** —
+    post-epic follow-up that anchors max-bearing cursor walks, partition boundaries, and tokens
+    on `ContentVersion`. This work removes the interim `Next-Page-Token` suppression and follows
+    DMS-1386 and DMS-1387.
 
 DMS-1384 follows DMS-1383 because its validators consume the typed contracts and token codec, and it
 owns the request boundary end to end: the query-key presence its phase selection depends on is
@@ -461,6 +465,8 @@ path until DMS-1386 and DMS-1387 provide the corresponding runtime behavior, as 
 `OpenAPI Publication Gating`. DMS-1389 and DMS-1390 both consume DMS-1386 and DMS-1387, DMS-1390
 additionally consumes DMS-1388, and the two may proceed in parallel. DMS-1392 runs after DMS-1385
 through DMS-1391, while DMS-1393 may proceed independently after DMS-1386 and DMS-1387.
+DMS-1394 follows DMS-1386 and DMS-1387 because it changes both cursor execution and partition
+boundary planning for max-bearing change-version windows.
 
 ## Completion Evidence
 

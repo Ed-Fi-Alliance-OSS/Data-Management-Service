@@ -45,11 +45,15 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Derives the shared <c>dms.Descriptor</c> composite change-version index
-    /// (<c>IX_Descriptor_Discriminator_ContentVersion</c>) once, when the content-version mirror feature is
-    /// active and the schema contains any descriptor resource. The columns themselves live on the
-    /// core-owned <c>dms.Descriptor</c> table; this index is derived into the inventory and rendered by the
-    /// relational DDL emitter against <c>dms.Descriptor</c>.
+    /// Derives the shared <c>dms.Descriptor</c> composite change-version indexes once, when the
+    /// content-version mirror feature is active and the schema contains any descriptor resource:
+    /// <c>IX_Descriptor_Discriminator_ContentVersion</c> serves tracked-change probes, which qualify by
+    /// <c>Discriminator</c> (tracked-change tables carry no <c>ResourceKeyId</c>), and
+    /// <c>IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId</c> serves live change-version-windowed
+    /// page selection (<c>ResourceKeyId</c> equality plus ordered <c>ContentVersion</c> range, with
+    /// <c>DocumentId</c> included for index-only page/count reads). The columns themselves live on the
+    /// core-owned <c>dms.Descriptor</c> table; these indexes are derived into the inventory and rendered
+    /// by the relational DDL emitter against <c>dms.Descriptor</c>.
     /// </summary>
     private static void DeriveDescriptorContentVersionIndex(RelationalModelSetBuilderContext context)
     {
@@ -79,6 +83,25 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
                 new DbIndexName(ConstraintNaming.BuildExplicitIndexName(descriptorTable, keyColumns)),
                 descriptorTable,
                 keyColumns,
+                IsUnique: false,
+                DbIndexKind.Explicit
+            )
+        );
+
+        IReadOnlyList<DbColumnName> pageSelectionKeyColumns =
+        [
+            new DbColumnName("ResourceKeyId"),
+            RelationalNameConventions.ContentVersionColumnName,
+            RelationalNameConventions.DocumentIdColumnName,
+        ];
+
+        context.IndexInventory.Add(
+            new DbIndexInfo(
+                new DbIndexName(
+                    ConstraintNaming.BuildExplicitIndexName(descriptorTable, pageSelectionKeyColumns)
+                ),
+                descriptorTable,
+                pageSelectionKeyColumns,
                 IsUnique: false,
                 DbIndexKind.Explicit
             )

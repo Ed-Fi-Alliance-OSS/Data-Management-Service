@@ -43,6 +43,8 @@ x-dms-common-env: &dms-common-env
   AppSettings__MaskRequestBodyInLogs: "true"
   AppSettings__MaximumPageSize: "500"
   AppSettings__DefaultPartitionCount: "${DEFAULT_PARTITION_COUNT:-10}"
+  # Restores legacy DocumentId ordering for change-version-filtered queries (deployment rollback switch)
+  AppSettings__UseLegacyDocumentIdOrderingForChangeQueries: "${USE_LEGACY_DOCUMENT_ID_ORDERING_FOR_CHANGE_QUERIES:-false}"
   RateLimit__PermitLimit: "${DMS_RATE_LIMIT_PERMIT_LIMIT:-20000}"
   RateLimit__QueueLimit: "${DMS_RATE_LIMIT_QUEUE_LIMIT:-0}"
   RateLimit__Window: "${DMS_RATE_LIMIT_WINDOW:-10}"

@@ -34531,6 +34531,8 @@ CREATE INDEX IF NOT EXISTS "IX_Descriptor_Discriminator_ContentVersion" ON "dms"
 
 CREATE INDEX IF NOT EXISTS "IX_Descriptor_Namespace_Auth" ON "dms"."Descriptor" ("Namespace");
 
+CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId" ON "dms"."Descriptor" ("ResourceKeyId", "ContentVersion", "DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_AcademicWeek_ContentVersion" ON "edfi"."AcademicWeek" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_AcademicWeek_School_SchoolId_School_DocumentId" ON "edfi"."AcademicWeek" ("School_SchoolId", "School_DocumentId");
