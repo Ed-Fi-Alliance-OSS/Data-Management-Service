@@ -132,6 +132,10 @@ Connect plugin without changing the completed generic transform.
   facilities. Reject null, non-string/unparseable provider values, invalid JSON,
   non-object JSON, and the SQL Server unavailable-value marker
   `__debezium_unavailable_value`.
+- Because v1 emits schemaless `JsonConverter` output, reject every non-integral
+  `DocumentJson` number and every integer outside the signed 64-bit range before
+  returning a public record. Do not round decimals, add decimal-preservation machinery,
+  or convert `DocumentJson` numbers to strings in this story.
 - Treat a pre-existing `_etag` field in `DocumentJson` as an invariant failure. The E18
   materializer stores the value separately as `StreamEtag`, and this transform injects
   that opaque value into the public `document._etag`.

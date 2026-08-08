@@ -277,7 +277,12 @@ contractual; Avro, Protobuf, and Schema Registry subjects are outside v1.
 | `document` | Expanded structured full API resource body, never an escaped JSON string |
 
 Database Pascal-case columns are renamed to lower camel case. `contractVersion` and
-`contentVersion` are JSON numbers.
+`contentVersion` are JSON numbers. Within `document`, v1 schemaless
+`JsonConverter` output emits only `DocumentJson` number tokens that are integral and fit
+the signed 64-bit range. A non-integral number or out-of-range integer in
+`DocumentJson` fails transformation before any public record is emitted; v1 does not
+round decimals to `double`, preserve exact decimals, or convert numeric values to
+strings.
 
 The physical temporal representation is not part of the public contract. One Ed-Fi-owned
 `DocumentState` SMT consumes each raw Debezium record and produces the complete public
