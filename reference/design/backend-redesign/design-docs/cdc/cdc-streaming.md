@@ -149,7 +149,7 @@ claim exact readiness in v1.
 ### Pinned Connector Runtime
 
 The v1 Ed-Fi Kafka Connect image must be rebuilt from the immutable Debezium 3.6 base
-`quay.io/debezium/connect:3.6.0.Final@sha256:6f3fe6407bae8f2a7714b9fc174d545d52d81044b4f4add1565854f020943d47`.
+`quay.io/debezium/connect:3.6.0.Final@sha256:698f0559e667a242f962221079e75917b2b7a3ad4de62661e977628da0e33b45`.
 The tag documents the qualified version and the digest prevents a registry update from
 silently changing it. The resulting `edfialliance/ed-fi-kafka-connect` image adds the
 Ed-Fi transforms and is itself selected by immutable digest in deployment; an unqualified
