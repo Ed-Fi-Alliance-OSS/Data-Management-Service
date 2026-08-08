@@ -1540,7 +1540,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
         if (
             targetContext.Lifecycle.State == DocumentCacheLifecycleState.Rebuilding
-            && lookupResult.FallbackReason == DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced
+            && lookupResult.RawLookupOutcome == DocumentCacheReadLookupOutcome.LifecycleRebuilding
         )
         {
             return DirectFillCandidateSelection.For([request.AuthorizedCandidate]);
@@ -1574,7 +1574,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
         if (
             targetContext.Lifecycle.State == DocumentCacheLifecycleState.Rebuilding
-            && lookupResult.FallbackReason == DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced
+            && lookupResult.RawLookupOutcome == DocumentCacheReadLookupOutcome.LifecycleRebuilding
         )
         {
             return DirectFillCandidateSelection.For(request.AuthorizedCandidatePage.Candidates);

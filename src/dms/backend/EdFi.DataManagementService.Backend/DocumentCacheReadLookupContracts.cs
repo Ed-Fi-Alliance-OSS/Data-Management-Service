@@ -670,6 +670,17 @@ internal static class DocumentCacheReadLookupClassifier
             );
         }
 
+        if (
+            lifecycle == DocumentCacheLifecycleState.Rebuilding
+            && observation.CacheAheadRecoveryRequired.Value
+        )
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.CacheAheadRecoveryRequired,
+                "DocumentCache cache-ahead recovery latch is set."
+            );
+        }
+
         if (lifecycle != DocumentCacheLifecycleState.Tracking)
         {
             return Fallback(

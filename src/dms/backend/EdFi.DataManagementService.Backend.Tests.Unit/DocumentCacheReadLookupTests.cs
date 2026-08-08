@@ -142,6 +142,24 @@ public class Given_DocumentCacheReadLookup
     }
 
     [Test]
+    public void It_classifies_rebuilding_with_cache_ahead_latch_as_cache_ahead_recovery_required()
+    {
+        DocumentCacheReadAccelerationCandidate candidate = Candidate();
+
+        DocumentCacheReadBatchLookupResult result = Classify(
+            candidate,
+            Observation(candidate) with
+            {
+                LifecycleState = "Rebuilding",
+                CacheAheadRecoveryRequired = true,
+            }
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheAheadRecoveryRequired);
+        result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
+    }
+
+    [Test]
     public void It_returns_an_invariant_fallback_when_the_candidate_resource_key_is_not_in_the_mapping_set()
     {
         DocumentCacheReadAccelerationCandidate baseCandidate = Candidate();

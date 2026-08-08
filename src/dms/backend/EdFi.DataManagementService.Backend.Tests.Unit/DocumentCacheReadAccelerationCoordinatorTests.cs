@@ -1508,8 +1508,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
-            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
-                DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                DocumentCacheReadLookupOutcome.LifecycleRebuilding
             ),
         };
         var materializer = new RecordingMaterializer();
@@ -1553,8 +1553,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
-            QueryResult = DocumentCacheReadLookupResult<QueryResult>.Fallback(
-                DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                DocumentCacheReadLookupOutcome.LifecycleRebuilding
             ),
         };
         var materializer = new RecordingMaterializer();
@@ -1578,6 +1578,150 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         result.Should().BeSameAs(fallbackResult);
         materializer.Requests.Select(request => request.DocumentId).Should().Equal(345, 346);
         writer.Requests.Select(request => request.DocumentId).Should().Equal(345, 346);
+    }
+
+    [TestCaseSource(nameof(FencedLookupOutcomesExceptRebuilding))]
+    public async Task It_skips_get_by_id_direct_fill_in_rebuilding_when_raw_lookup_outcome_is_not_rebuilding(
+        object rawLookupOutcomeValue
+    )
+    {
+        var rawLookupOutcome = (DocumentCacheReadLookupOutcome)rawLookupOutcomeValue;
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                rawLookupOutcome
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var telemetry = new RecordingReadTelemetry();
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Rebuilding)),
+            materializer,
+            writer,
+            telemetry
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<GetResult>(fallbackResult);
+                }
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext.Reason.Should().Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced);
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+        telemetry
+            .Events.Should()
+            .Contain(("directFill", DocumentCacheReadTelemetryLabel.SkippedNoCandidates));
+    }
+
+    [TestCaseSource(nameof(FencedLookupOutcomesExceptRebuilding))]
+    public async Task It_skips_query_direct_fill_in_rebuilding_when_raw_lookup_outcome_is_not_rebuilding(
+        object rawLookupOutcomeValue
+    )
+    {
+        var rawLookupOutcome = (DocumentCacheReadLookupOutcome)rawLookupOutcomeValue;
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [new JsonObject { ["id"] = DocumentUuid.Value.ToString() }],
+            1,
+            HighestSelectedDocumentId: 345
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                rawLookupOutcome
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var telemetry = new RecordingReadTelemetry();
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Rebuilding)),
+            materializer,
+            writer,
+            telemetry
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<QueryResult>(fallbackResult);
+                }
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext.Reason.Should().Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced);
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+        telemetry
+            .Events.Should()
+            .Contain(("directFill", DocumentCacheReadTelemetryLabel.SkippedNoCandidates));
+    }
+
+    [Test]
+    public async Task It_direct_fills_only_rebuilding_query_candidates_that_survive_relational_fallback()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: SecondDocumentUuid
+        );
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() }],
+            2,
+            HighestSelectedDocumentId: 346
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                DocumentCacheReadLookupOutcome.LifecycleRebuilding
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Rebuilding)),
+            materializer,
+            writer
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<QueryResult>(fallbackResult),
+                CandidatePage([first, second], totalCount: 2, highestSelectedDocumentId: 346)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Select(request => request.DocumentId).Should().Equal(346);
+        writer.Requests.Select(request => request.DocumentId).Should().Equal(346);
     }
 
     [Test]
@@ -2199,6 +2343,17 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         long? totalCount = 1,
         long? highestSelectedDocumentId = null
     ) => new(candidates ?? [Candidate()], totalCount, highestSelectedDocumentId);
+
+    private static IEnumerable<DocumentCacheReadLookupOutcome> FencedLookupOutcomesExceptRebuilding()
+    {
+        yield return DocumentCacheReadLookupOutcome.LifecycleDisabled;
+        yield return DocumentCacheReadLookupOutcome.LifecycleResetting;
+        yield return DocumentCacheReadLookupOutcome.CacheAheadRecoveryRequired;
+        yield return DocumentCacheReadLookupOutcome.MissingLifecycleState;
+        yield return DocumentCacheReadLookupOutcome.InvalidLifecycleState;
+        yield return DocumentCacheReadLookupOutcome.ProjectionTargetIneligible;
+        yield return DocumentCacheReadLookupOutcome.ProviderPrerequisiteIneligible;
+    }
 
     private static StaticTargetRegistry CreateRegistry(
         DocumentCacheTargetExecutionContext? executionContext = null
