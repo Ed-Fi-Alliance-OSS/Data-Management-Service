@@ -22,8 +22,10 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
     public MssqlDocumentCacheReadLookupAdapter(
         IRelationalWriteExceptionClassifier writeExceptionClassifier,
         IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
-        ILogger<MssqlDocumentCacheReadLookupAdapter> logger
+        ILogger<MssqlDocumentCacheReadLookupAdapter> logger,
+        IDocumentCacheReadResponseShaper? responseShaper = null
     )
+        : base(responseShaper)
     {
         _createConnection = connectionString => new SqlConnection(connectionString);
         _writeExceptionClassifier =
@@ -38,8 +40,10 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
         Func<string, DbConnection> createConnection,
         IRelationalWriteExceptionClassifier writeExceptionClassifier,
         IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
-        ILogger<MssqlDocumentCacheReadLookupAdapter> logger
+        ILogger<MssqlDocumentCacheReadLookupAdapter> logger,
+        IDocumentCacheReadResponseShaper? responseShaper = null
     )
+        : base(responseShaper)
     {
         _createConnection = createConnection ?? throw new ArgumentNullException(nameof(createConnection));
         _writeExceptionClassifier =

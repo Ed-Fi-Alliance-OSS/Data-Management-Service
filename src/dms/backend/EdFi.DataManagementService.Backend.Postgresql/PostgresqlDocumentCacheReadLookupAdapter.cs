@@ -16,8 +16,9 @@ internal sealed class PostgresqlDocumentCacheReadLookupAdapter(
     NpgsqlDataSourceCache dataSourceCache,
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
-    ILogger<PostgresqlDocumentCacheReadLookupAdapter> logger
-) : DocumentCacheReadLookupAdapterBase
+    ILogger<PostgresqlDocumentCacheReadLookupAdapter> logger,
+    IDocumentCacheReadResponseShaper? responseShaper = null
+) : DocumentCacheReadLookupAdapterBase(responseShaper)
 {
     private readonly NpgsqlDataSourceCache _dataSourceCache =
         dataSourceCache ?? throw new ArgumentNullException(nameof(dataSourceCache));

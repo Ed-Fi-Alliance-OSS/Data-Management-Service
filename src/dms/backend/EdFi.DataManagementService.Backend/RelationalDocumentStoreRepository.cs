@@ -230,7 +230,11 @@ public sealed class RelationalDocumentStoreRepository(
                         resource,
                         selectionCancellationToken
                     )
-            ),
+            )
+            {
+                ReadableProfileProjectionContext = getRequest.ReadableProfileProjectionContext,
+                ResponseContentCoding = getRequest.ResponseContentCoding,
+            },
             cancellationToken
         );
     }
@@ -821,7 +825,11 @@ public sealed class RelationalDocumentStoreRepository(
                             traditionalPaging,
                             selectionCancellationToken
                         )
-                ),
+                )
+                {
+                    ReadableProfileProjectionContext = queryRequest.ReadableProfileProjectionContext,
+                    ResponseContentCoding = queryRequest.ResponseContentCoding,
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);

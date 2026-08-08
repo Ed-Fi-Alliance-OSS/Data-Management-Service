@@ -206,10 +206,53 @@ internal interface IDocumentCacheReadFreshnessLookupAdapter
     );
 }
 
+internal interface IDocumentCacheReadResponseShaper
+{
+    DocumentCacheReadLookupResult<GetResult> ShapeGetById(
+        DocumentCacheReadAccelerationGetByIdRequest request,
+        DocumentCacheReadDocumentLookupResult.FreshHit hit
+    );
+
+    DocumentCacheReadLookupResult<QueryResult> ShapeQuery(
+        DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheReadBatchLookupResult hitPage
+    );
+}
+
+internal sealed class NoOpDocumentCacheReadResponseShaper : IDocumentCacheReadResponseShaper
+{
+    public static NoOpDocumentCacheReadResponseShaper Instance { get; } = new();
+
+    private NoOpDocumentCacheReadResponseShaper() { }
+
+    public DocumentCacheReadLookupResult<GetResult> ShapeGetById(
+        DocumentCacheReadAccelerationGetByIdRequest request,
+        DocumentCacheReadDocumentLookupResult.FreshHit hit
+    ) =>
+        DocumentCacheReadLookupResult<GetResult>.Fallback(
+            DocumentCacheReadAccelerationFallbackReason.CacheHitResponseShapingUnavailable
+        );
+
+    public DocumentCacheReadLookupResult<QueryResult> ShapeQuery(
+        DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheReadBatchLookupResult hitPage
+    ) =>
+        DocumentCacheReadLookupResult<QueryResult>.Fallback(
+            DocumentCacheReadAccelerationFallbackReason.CacheHitResponseShapingUnavailable
+        );
+}
+
 internal abstract class DocumentCacheReadLookupAdapterBase
     : IDocumentCacheReadLookupAdapter,
         IDocumentCacheReadFreshnessLookupAdapter
 {
+    private readonly IDocumentCacheReadResponseShaper _responseShaper;
+
+    protected DocumentCacheReadLookupAdapterBase(IDocumentCacheReadResponseShaper? responseShaper = null)
+    {
+        _responseShaper = responseShaper ?? NoOpDocumentCacheReadResponseShaper.Instance;
+    }
+
     protected abstract SqlDialect Dialect { get; }
 
     protected abstract RelationalProviderToken ProviderToken { get; }
@@ -236,7 +279,9 @@ internal abstract class DocumentCacheReadLookupAdapterBase
             )
             .ConfigureAwait(false);
 
-        return DocumentCacheReadLookupResult<GetResult>.Fallback(MapFallbackReason(lookupResult.Outcome));
+        return lookupResult is DocumentCacheReadDocumentLookupResult.FreshHit freshHit
+            ? _responseShaper.ShapeGetById(request, freshHit)
+            : DocumentCacheReadLookupResult<GetResult>.Fallback(MapFallbackReason(lookupResult.Outcome));
     }
 
     public async Task<DocumentCacheReadLookupResult<QueryResult>> TryQueryAsync(
@@ -264,7 +309,9 @@ internal abstract class DocumentCacheReadLookupAdapterBase
             )
             .ConfigureAwait(false);
 
-        return DocumentCacheReadLookupResult<QueryResult>.Fallback(MapFallbackReason(lookupResult.Outcome));
+        return lookupResult.IsFreshHit
+            ? _responseShaper.ShapeQuery(request, lookupResult)
+            : DocumentCacheReadLookupResult<QueryResult>.Fallback(MapFallbackReason(lookupResult.Outcome));
     }
 
     public async Task<DocumentCacheReadDocumentLookupResult> LookupDocumentAsync(

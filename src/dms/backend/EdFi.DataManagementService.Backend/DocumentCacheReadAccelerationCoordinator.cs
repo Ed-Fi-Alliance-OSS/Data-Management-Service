@@ -111,7 +111,12 @@ public sealed record DocumentCacheReadAccelerationGetByIdRequest(
         CancellationToken,
         Task<DocumentCacheReadAccelerationGetByIdSelectionResult>
     >? SelectAuthorizedCandidate = null
-);
+)
+{
+    public ReadableProfileProjectionContext? ReadableProfileProjectionContext { get; init; }
+
+    public ResponseContentCoding ResponseContentCoding { get; init; } = ResponseContentCoding.Identity;
+}
 
 public sealed record DocumentCacheReadAccelerationQueryRequest(
     string TenantKey,
@@ -129,7 +134,12 @@ public sealed record DocumentCacheReadAccelerationQueryRequest(
         CancellationToken,
         Task<DocumentCacheReadAccelerationQuerySelectionResult>
     >? SelectAuthorizedCandidatePage = null
-);
+)
+{
+    public ReadableProfileProjectionContext? ReadableProfileProjectionContext { get; init; }
+
+    public ResponseContentCoding ResponseContentCoding { get; init; } = ResponseContentCoding.Identity;
+}
 
 internal sealed record DocumentCacheReadLookupResult<TResult>(
     TResult? CachedResult,

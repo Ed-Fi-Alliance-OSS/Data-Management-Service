@@ -213,7 +213,11 @@ internal sealed class DescriptorReadHandler(
                     DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
                     (_, _) => Task.FromResult<GetResult>(relationalSuccess()),
                     candidate
-                ),
+                )
+                {
+                    ReadableProfileProjectionContext = request.ReadableProfileProjectionContext,
+                    ResponseContentCoding = request.ResponseContentCoding,
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -403,7 +407,11 @@ internal sealed class DescriptorReadHandler(
                     DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
                     (_, _) => Task.FromResult<QueryResult>(relationalSuccess()),
                     candidatePage
-                ),
+                )
+                {
+                    ReadableProfileProjectionContext = request.ReadableProfileProjectionContext,
+                    ResponseContentCoding = request.ResponseContentCoding,
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
