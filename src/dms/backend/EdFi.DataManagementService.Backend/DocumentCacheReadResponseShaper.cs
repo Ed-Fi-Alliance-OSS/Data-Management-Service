@@ -159,14 +159,6 @@ internal sealed class DocumentCacheReadResponseShaper(
         {
             return shape();
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (ObjectDisposedException)
-        {
-            throw;
-        }
         catch (DocumentCacheReadResponseShapingException exception)
         {
             LogShapingFailure(exception.Reason);
@@ -175,17 +167,6 @@ internal sealed class DocumentCacheReadResponseShaper(
                 invariantDiagnostic: DocumentCacheReadInvariantDiagnostic.CacheHitResponseShaping(
                     exception.Reason
                 ),
-                rawLookupOutcome: DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
-            );
-        }
-        catch (Exception)
-        {
-            const DocumentCacheReadResponseShapingFailureReason reason =
-                DocumentCacheReadResponseShapingFailureReason.UnexpectedResponseShapingFailure;
-            LogShapingFailure(reason);
-            return DocumentCacheReadLookupResult<TResult>.Fallback(
-                DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure,
-                invariantDiagnostic: DocumentCacheReadInvariantDiagnostic.CacheHitResponseShaping(reason),
                 rawLookupOutcome: DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
             );
         }
@@ -372,5 +353,4 @@ public enum DocumentCacheReadResponseShapingFailureReason
     DocumentJsonIdMismatch,
     DocumentJsonLastModifiedDateMismatch,
     QueryHitCandidateMismatch,
-    UnexpectedResponseShapingFailure,
 }

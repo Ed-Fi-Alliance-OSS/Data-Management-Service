@@ -83,6 +83,57 @@ public class Given_DocumentCacheReadResponseShaper
     }
 
     [Test]
+    public void It_propagates_unexpected_exceptions_from_served_etag_composition()
+    {
+        var exception = new InvalidOperationException("served etag composition failed");
+        var sut = CreateShaper(servedEtagComposer: new ThrowingServedEtagComposer(exception));
+        var candidate = Candidate();
+
+        Action act = () =>
+            sut.ShapeGetById(
+                CreateGetByIdRequest(candidate),
+                FreshHit(candidate, CachedDocumentJson(candidate))
+            );
+
+        act.Should().Throw<InvalidOperationException>().Which.Should().BeSameAs(exception);
+    }
+
+    [Test]
+    public void It_propagates_unexpected_exceptions_from_readable_profile_projection()
+    {
+        var exception = new InvalidOperationException("readable profile projection failed");
+        var sut = CreateShaper(readableProfileProjector: new ThrowingReadableProfileProjector(exception));
+        var candidate = Candidate();
+
+        Action act = () =>
+            sut.ShapeGetById(
+                CreateGetByIdRequest(
+                    candidate,
+                    readableProfileProjectionContext: CreateReadableProfileProjectionContext()
+                ),
+                FreshHit(candidate, CachedDocumentJson(candidate))
+            );
+
+        act.Should().Throw<InvalidOperationException>().Which.Should().BeSameAs(exception);
+    }
+
+    [Test]
+    public void It_propagates_unexpected_exceptions_from_resource_link_stripping()
+    {
+        var exception = new InvalidOperationException("resource link stripping failed");
+        var sut = CreateShaper(readMaterializer: new ThrowingReadMaterializer(exception));
+        var candidate = Candidate();
+
+        Action act = () =>
+            sut.ShapeGetById(
+                CreateGetByIdRequest(candidate),
+                FreshHit(candidate, CachedDocumentJson(candidate))
+            );
+
+        act.Should().Throw<InvalidOperationException>().Which.Should().BeSameAs(exception);
+    }
+
+    [Test]
     public void It_injects_the_served_etag_before_profile_projection_and_strips_links_after_projection()
     {
         var linksOptions = new ResourceLinksOptions { Enabled = false };
@@ -251,15 +302,16 @@ public class Given_DocumentCacheReadResponseShaper
     }
 
     private static DocumentCacheReadResponseShaper CreateShaper(
-        RecordingReadMaterializer? readMaterializer = null,
+        IRelationalReadMaterializer? readMaterializer = null,
         bool linksEnabled = true,
-        IReadableProfileProjector? readableProfileProjector = null
+        IReadableProfileProjector? readableProfileProjector = null,
+        IServedEtagComposer? servedEtagComposer = null
     ) =>
         new(
             readMaterializer
                 ?? new RecordingReadMaterializer(new ResourceLinksOptions { Enabled = linksEnabled }),
             readableProfileProjector ?? new PassthroughReadableProfileProjector(),
-            new ServedEtagComposer(),
+            servedEtagComposer ?? new ServedEtagComposer(),
             Options.Create(new ResourceLinksOptions { Enabled = linksEnabled }),
             NullLogger<DocumentCacheReadResponseShaper>.Instance
         );
@@ -410,6 +462,23 @@ public class Given_DocumentCacheReadResponseShaper
         }
     }
 
+    private sealed class ThrowingReadMaterializer(Exception exception) : IRelationalReadMaterializer
+    {
+        public JsonNode Materialize(RelationalReadMaterializationRequest request) =>
+            throw new InvalidOperationException(
+                "Materialization is not used by cache response shaping tests."
+            );
+
+        public IReadOnlyList<MaterializedDocument> MaterializePage(
+            RelationalReadPageMaterializationRequest request
+        ) =>
+            throw new InvalidOperationException(
+                "Materialization is not used by cache response shaping tests."
+            );
+
+        public void StripReferenceLinks(JsonNode document, ResourceReadPlan readPlan) => throw exception;
+    }
+
     private sealed class PassthroughReadableProfileProjector : IReadableProfileProjector
     {
         public JsonNode Project(
@@ -440,5 +509,19 @@ public class Given_DocumentCacheReadResponseShaper
                 ["schoolReference"] = reconstitutedDocument["schoolReference"]!.DeepClone(),
             };
         }
+    }
+
+    private sealed class ThrowingReadableProfileProjector(Exception exception) : IReadableProfileProjector
+    {
+        public JsonNode Project(
+            JsonNode reconstitutedDocument,
+            ContentTypeDefinition readContentType,
+            IReadOnlySet<string> identityPropertyNames
+        ) => throw exception;
+    }
+
+    private sealed class ThrowingServedEtagComposer(Exception exception) : IServedEtagComposer
+    {
+        public string Compose(ServedEtagContext context) => throw exception;
     }
 }

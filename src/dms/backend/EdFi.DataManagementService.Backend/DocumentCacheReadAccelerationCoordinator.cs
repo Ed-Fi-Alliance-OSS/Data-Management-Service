@@ -296,9 +296,6 @@ internal sealed record DocumentCacheReadInvariantDiagnostic
             DocumentCacheReadResponseShapingFailureReason.QueryHitCandidateMismatch => nameof(
                 DocumentCacheReadResponseShapingFailureReason.QueryHitCandidateMismatch
             ),
-            DocumentCacheReadResponseShapingFailureReason.UnexpectedResponseShapingFailure => nameof(
-                DocumentCacheReadResponseShapingFailureReason.UnexpectedResponseShapingFailure
-            ),
             _ => "UnsupportedResponseShapingFailure",
         };
 }
