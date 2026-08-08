@@ -22,12 +22,29 @@ public sealed class Given_Mssql_DocumentCacheReadAcceleration : MssqlApiIntegrat
         DocumentCacheReadAccelerationScenario.It_serves_cached_get_and_query_for_ordinary_resources(Harness);
 
     [Test]
-    public Task It_falls_back_relationally_when_cache_row_is_stale() =>
-        DocumentCacheReadAccelerationScenario.It_falls_back_relationally_when_cache_row_is_stale(Harness);
+    public Task It_falls_back_relationally_when_cache_row_is_missing_or_stale() =>
+        DocumentCacheReadAccelerationScenario.It_falls_back_relationally_when_cache_row_is_missing_or_stale(
+            Harness
+        );
 
     [Test]
     public Task It_shapes_cached_profile_and_descriptor_conditional_get() =>
         DocumentCacheReadAccelerationScenario.It_shapes_cached_profile_and_descriptor_conditional_get(
+            Harness
+        );
+}
+
+[Category("DocumentCacheReadAcceleration")]
+public sealed class Given_Mssql_DocumentCacheReadAcceleration_With_DescriptorRuntime
+    : MssqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.DescriptorRuntime;
+
+    protected override bool EnableDocumentCacheReadAcceleration => true;
+
+    [Test]
+    public Task It_serves_descriptor_query_from_cache_and_falls_back_for_incomplete_pages() =>
+        DocumentCacheReadAccelerationScenario.It_serves_descriptor_query_from_cache_and_falls_back_for_incomplete_pages(
             Harness
         );
 }

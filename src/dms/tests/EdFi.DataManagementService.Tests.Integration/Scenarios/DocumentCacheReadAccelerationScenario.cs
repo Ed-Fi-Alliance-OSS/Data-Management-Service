@@ -109,9 +109,34 @@ internal static class DocumentCacheReadAccelerationScenario
             .OnlyContain(etag => !string.IsNullOrWhiteSpace(etag));
     }
 
-    public static async Task It_falls_back_relationally_when_cache_row_is_stale(ApiIntegrationHarness harness)
+    public static async Task It_falls_back_relationally_when_cache_row_is_missing_or_stale(
+        ApiIntegrationHarness harness
+    )
     {
         await SetTrackingLifecycleAsync(harness);
+
+        string missingStudentLocationPath = await PostStudentAsync(
+            harness,
+            "cache-missing-001",
+            "Relational Missing"
+        );
+        var missingStudentDocumentUuid = Guid.Parse(missingStudentLocationPath.Split('/')[^1]);
+        DocumentMetadata missingStudentMetadata = await ReadDocumentMetadataAsync(
+            harness,
+            missingStudentDocumentUuid
+        );
+        await DeleteCacheRowsAsync(harness, missingStudentMetadata.DocumentId);
+        (await CountCacheRowsAsync(harness, missingStudentMetadata.DocumentId))
+            .Should()
+            .Be(0, "the first successful GET must prove the cache-miss fallback path");
+
+        JsonObject missingFallback = await GetJsonObjectAsync(harness, missingStudentLocationPath);
+
+        missingFallback["studentUniqueId"]!.GetValue<string>().Should().Be("cache-missing-001");
+        missingFallback["firstName"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Relational Missing", "a missing cache row must use relational fallback");
 
         CreatedDocument student = await CreateStudentAsync(
             harness,
@@ -130,6 +155,96 @@ internal static class DocumentCacheReadAccelerationScenario
             .GetValue<string>()
             .Should()
             .Be("Relational Fallback", "a stale cache row must not replace relational fallback");
+    }
+
+    public static async Task It_serves_descriptor_query_from_cache_and_falls_back_for_incomplete_pages(
+        ApiIntegrationHarness harness
+    )
+    {
+        await SetTrackingLifecycleAsync(harness);
+
+        string namespaceName = $"uri://ed-fi.org/SchoolTypeDescriptor/DMS-1315/query/{Guid.NewGuid():N}";
+        CreatedDocument cachedDescriptor = await CreateSchoolTypeDescriptorAsync(
+            harness,
+            namespaceName,
+            codeValue: "DMS-1315-query-a",
+            shortDescription: "Relational descriptor query cached"
+        );
+        CreatedDocument missingDescriptor = await CreateSchoolTypeDescriptorAsync(
+            harness,
+            namespaceName,
+            codeValue: "DMS-1315-query-b",
+            shortDescription: "Relational descriptor query missing"
+        );
+        CreatedDocument staleDescriptor = await CreateSchoolTypeDescriptorAsync(
+            harness,
+            namespaceName,
+            codeValue: "DMS-1315-query-c",
+            shortDescription: "Relational descriptor query stale"
+        );
+
+        DocumentMetadata cachedMetadata = await ReadDocumentMetadataAsync(
+            harness,
+            cachedDescriptor.DocumentUuid
+        );
+        DocumentMetadata missingMetadata = await ReadDocumentMetadataAsync(
+            harness,
+            missingDescriptor.DocumentUuid
+        );
+        DocumentMetadata staleMetadata = await ReadDocumentMetadataAsync(
+            harness,
+            staleDescriptor.DocumentUuid
+        );
+        await DeleteCacheRowsAsync(
+            harness,
+            cachedMetadata.DocumentId,
+            missingMetadata.DocumentId,
+            staleMetadata.DocumentId
+        );
+
+        JsonObject cachedDocument = CacheDocumentFrom(cachedDescriptor.Body, cachedMetadata);
+        cachedDocument["shortDescription"] = "Cached descriptor query";
+        await InsertCacheRowAsync(harness, cachedMetadata, cachedDocument);
+
+        JsonObject staleDocument = CacheDocumentFrom(staleDescriptor.Body, staleMetadata);
+        staleDocument["shortDescription"] = "Cached stale descriptor query";
+        await InsertCacheRowAsync(harness, staleMetadata, staleDocument, staleMetadata.ContentVersion + 1);
+        (await CountCacheRowsAsync(harness, missingMetadata.DocumentId))
+            .Should()
+            .Be(0, "the descriptor page must include one true missing cache row");
+
+        JsonArray cachedQuery = await GetJsonArrayAsync(
+            harness,
+            $"{SchoolTypeDescriptorsEndpoint}?namespace={Escape(namespaceName)}&codeValue=DMS-1315-query-a&totalCount=true",
+            expectedTotalCount: 1
+        );
+
+        cachedQuery.Count.Should().Be(1);
+        cachedQuery[0]!["shortDescription"]!.GetValue<string>().Should().Be("Cached descriptor query");
+        cachedQuery[0]!["_etag"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+
+        JsonArray fallbackPage = await GetJsonArrayAsync(
+            harness,
+            $"{SchoolTypeDescriptorsEndpoint}?namespace={Escape(namespaceName)}&offset=0&limit=3&totalCount=true",
+            expectedTotalCount: 3
+        );
+
+        fallbackPage
+            .Select(node => node!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(
+                cachedDescriptor.DocumentUuid.ToString(),
+                missingDescriptor.DocumentUuid.ToString(),
+                staleDescriptor.DocumentUuid.ToString()
+            );
+        fallbackPage
+            .Select(node => node!["shortDescription"]!.GetValue<string>())
+            .Should()
+            .Equal(
+                "Relational descriptor query cached",
+                "Relational descriptor query missing",
+                "Relational descriptor query stale"
+            );
     }
 
     public static async Task It_shapes_cached_profile_and_descriptor_conditional_get(
@@ -330,14 +445,20 @@ internal static class DocumentCacheReadAccelerationScenario
         return await ReadCreatedDocumentAsync(harness, ToPath(createResponse.Headers.Location!));
     }
 
-    private static async Task<CreatedDocument> CreateSchoolTypeDescriptorAsync(ApiIntegrationHarness harness)
+    private static async Task<CreatedDocument> CreateSchoolTypeDescriptorAsync(
+        ApiIntegrationHarness harness,
+        string? namespaceName = null,
+        string? codeValue = null,
+        string shortDescription = "Relational school type"
+    )
     {
         string suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        string resolvedNamespace = namespaceName ?? $"uri://ed-fi.org/SchoolTypeDescriptor/DMS-1315/{suffix}";
         var payload = new JsonObject
         {
-            ["namespace"] = $"uri://ed-fi.org/SchoolTypeDescriptor/DMS-1315/{suffix}",
-            ["codeValue"] = $"DMS-1315-{suffix[..12]}",
-            ["shortDescription"] = "Relational school type",
+            ["namespace"] = resolvedNamespace,
+            ["codeValue"] = codeValue ?? $"DMS-1315-{suffix[..12]}",
+            ["shortDescription"] = shortDescription,
         };
 
         using HttpResponseMessage createResponse = await PostJsonAsync(
@@ -375,9 +496,34 @@ internal static class DocumentCacheReadAccelerationScenario
         string body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         response.Content.Headers.ContentType?.MediaType.Should().Be(StandardJsonContentType);
+        AssertNoCacheAccelerationDisclosure(response, body);
         JsonObject document = JsonNode.Parse(body)!.AsObject();
         AssertHeaderAndBodyEtagMatch(document, response);
         return document;
+    }
+
+    private static async Task<JsonArray> GetJsonArrayAsync(
+        ApiIntegrationHarness harness,
+        string endpoint,
+        int? expectedTotalCount = null
+    )
+    {
+        using HttpResponseMessage response = await harness.HttpClient.GetAsync(endpoint);
+        string body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        response.Content.Headers.ContentType?.MediaType.Should().Be(StandardJsonContentType);
+        AssertNoCacheAccelerationDisclosure(response, body);
+
+        if (expectedTotalCount is not null)
+        {
+            response
+                .Headers.GetValues("Total-Count")
+                .Single()
+                .Should()
+                .Be(expectedTotalCount.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        return JsonNode.Parse(body)!.AsArray();
     }
 
     private static async Task<HttpResponseMessage> SendProfiledGetAsync(
@@ -557,6 +703,42 @@ internal static class DocumentCacheReadAccelerationScenario
         await command.ExecuteNonQueryAsync();
     }
 
+    private static async Task DeleteCacheRowsAsync(ApiIntegrationHarness harness, params long[] documentIds)
+    {
+        if (documentIds.Length == 0)
+        {
+            return;
+        }
+
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        string parameterList = string.Join(", ", documentIds.Select((_, index) => $"@documentId{index}"));
+        command.CommandText = $"""
+            DELETE FROM "dms"."DocumentCache"
+            WHERE "DocumentId" IN ({parameterList});
+            """;
+
+        for (int index = 0; index < documentIds.Length; index++)
+        {
+            command.Parameters.Add(CreateParameter(command, $"@documentId{index}", documentIds[index]));
+        }
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<int> CountCacheRowsAsync(ApiIntegrationHarness harness, long documentId)
+    {
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM "dms"."DocumentCache"
+            WHERE "DocumentId" = @documentId;
+            """;
+        command.Parameters.Add(CreateParameter(command, "@documentId", documentId));
+
+        object? result = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
     private static DbParameter CreateParameter(DbCommand command, string name, object? value)
     {
         DbParameter parameter = command.CreateParameter();
@@ -596,10 +778,27 @@ internal static class DocumentCacheReadAccelerationScenario
     private static string ToPath(Uri location) =>
         location.IsAbsoluteUri ? location.AbsolutePath : location.OriginalString;
 
+    private static string Escape(string value) => Uri.EscapeDataString(value);
+
     private static void AssertHeaderAndBodyEtagMatch(JsonObject document, HttpResponseMessage response)
     {
         response.TryReadRawEtag(out string headerEtag).Should().BeTrue("successful reads must emit ETag");
         document["_etag"]!.GetValue<string>().Should().Be(headerEtag);
+    }
+
+    private static void AssertNoCacheAccelerationDisclosure(HttpResponseMessage response, string body)
+    {
+        response
+            .Headers.Select(header => header.Key)
+            .Concat(response.Content.Headers.Select(header => header.Key))
+            .Should()
+            .NotContain(
+                header =>
+                    header.Contains("DocumentCache", StringComparison.OrdinalIgnoreCase)
+                    || header.Contains("ReadAcceleration", StringComparison.OrdinalIgnoreCase),
+                "public response headers must not reveal whether the read was cache-backed"
+            );
+        body.Should().NotContain("DocumentCache").And.NotContain("ReadAcceleration");
     }
 
     private sealed record CreatedDocument(string LocationPath, Guid DocumentUuid, JsonObject Body);
