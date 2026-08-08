@@ -1750,6 +1750,258 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private const string CustomViewStrategyName = "SchoolWithATag";
 
+    /// <summary>
+    /// Records the custom-view validation probes a GET-by-id terminal issues.
+    /// </summary>
+    private List<string> GivenCustomViewValidationIsRecorded()
+    {
+        List<string> capturedValidationSql = [];
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+
+        return capturedValidationSql;
+    }
+
+    [Test]
+    public async Task It_validates_a_get_by_id_custom_view_configured_before_a_namespace_no_prefixes_terminal()
+    {
+        // The namespace 403 resolves before any target lookup, but a custom view configured ahead of it
+        // executes first, so a missing or non-conforming view keeps its own 500.
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var getRequest = CreateGetRequest(
+            new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-aaaaaaaaaa01")),
+            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ],
+            namespacePrefixes: []
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
+        capturedValidationSql.Should().ContainSingle().Which.Should().Contain(CustomViewStrategyName);
+    }
+
+    [Test]
+    public async Task It_does_not_validate_a_get_by_id_custom_view_configured_after_a_namespace_no_prefixes_terminal()
+    {
+        // The run would have aborted at the namespace position, so a view configured after it never executes
+        // and must not be probed either.
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var getRequest = CreateGetRequest(
+            new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-aaaaaaaaaa02")),
+            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+            ],
+            namespacePrefixes: []
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetFailureNamespaceNotAuthorized>();
+        capturedValidationSql.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_validates_a_get_by_id_custom_view_configured_before_a_no_usable_root_column_terminal()
+    {
+        // The no-usable-root-column 500 resolves before any target lookup, but a custom view configured ahead
+        // of it executes first, so it is probed before that terminal.
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var getRequest = CreateGetRequest(
+            new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-aaaaaaaaaa06")),
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ],
+            namespacePrefixes: ["uri://ed-fi.org/"]
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("no Namespace securable element resolves to a root table column");
+        capturedValidationSql.Should().ContainSingle().Which.Should().Contain(CustomViewStrategyName);
+    }
+
+    [Test]
+    public async Task It_validates_a_delete_custom_view_configured_before_a_no_usable_root_column_terminal()
+    {
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var deleteRequest = CreateCustomViewDeleteRequest(
+            new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-aaaaaaaaaa07")),
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            namespacePrefixes: ["uri://ed-fi.org/"]
+        );
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("no Namespace securable element resolves to a root table column");
+        capturedValidationSql.Should().ContainSingle().Which.Should().Contain(CustomViewStrategyName);
+    }
+
+    [Test]
+    public async Task It_validates_a_delete_custom_view_configured_before_a_namespace_parameterization_terminal()
+    {
+        // An empty prefix cannot be parameterized into a LIKE predicate, so the plan fails as a configuration
+        // error after namespace checks were planned. The view configured ahead of NamespaceBased still runs.
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var deleteRequest = CreateCustomViewDeleteRequest(
+            new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-aaaaaaaaaa08")),
+            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            namespacePrefixes: [""]
+        );
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>();
+        capturedValidationSql.Should().ContainSingle().Which.Should().Contain(CustomViewStrategyName);
+    }
+
+    /// <summary>
+    /// A DELETE request with a custom view configured ahead of <c>NamespaceBased</c>.
+    /// </summary>
+    private static IDeleteRequest CreateCustomViewDeleteRequest(
+        DocumentUuid documentUuid,
+        MappingSet mappingSet,
+        IReadOnlyList<string> namespacePrefixes
+    )
+    {
+        var deleteRequest = A.Fake<IDeleteRequest>();
+        A.CallTo(() => deleteRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => deleteRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => deleteRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => deleteRequest.TraceId).Returns(new TraceId("delete-terminal-trace"));
+        A.CallTo(() => deleteRequest.WritePrecondition).Returns(new WritePrecondition.None());
+        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ]);
+        A.CallTo(() => deleteRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], namespacePrefixes));
+
+        return deleteRequest;
+    }
+
+    [Test]
+    public async Task It_validates_a_delete_custom_view_configured_before_a_namespace_no_prefixes_terminal()
+    {
+        // DELETE has the same terminal shape as GET-by-id and the same obligation: a view configured ahead of
+        // the terminal executes first, so it is probed before the 403.
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var deleteRequest = A.Fake<IDeleteRequest>();
+        A.CallTo(() => deleteRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => deleteRequest.MappingSet)
+            .Returns(CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo));
+        A.CallTo(() => deleteRequest.DocumentUuid)
+            .Returns(new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-aaaaaaaaaa05")));
+        A.CallTo(() => deleteRequest.TraceId).Returns(new TraceId("delete-terminal-trace"));
+        A.CallTo(() => deleteRequest.WritePrecondition).Returns(new WritePrecondition.None());
+        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ]);
+        A.CallTo(() => deleteRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], []));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
+        capturedValidationSql.Should().ContainSingle().Which.Should().Contain(CustomViewStrategyName);
+    }
+
+    [Test]
+    public async Task It_validates_a_get_by_id_custom_view_configured_before_an_ownership_based_terminal()
+    {
+        // OwnershipBased executes last per auth.md regardless of configured position, so every resolved view
+        // runs before its 501.
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var getRequest = CreateGetRequest(
+            new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-aaaaaaaaaa03")),
+            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            namespacePrefixes: ["uri://ed-fi.org/"]
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureNotImplemented>()
+            .Which.FailureMessage.Should()
+            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        capturedValidationSql.Should().ContainSingle().Which.Should().Contain(CustomViewStrategyName);
+    }
+
+    [Test]
+    public async Task It_validates_a_get_by_id_custom_view_configured_before_an_unknown_strategy_terminal()
+    {
+        // An unrecognized strategy is a 500 from the relationship classifier. A custom view configured ahead of
+        // it executes first, so its own configuration failure must not be masked.
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var getRequest = CreateGetRequest(
+            new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-aaaaaaaaaa04")),
+            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+                CreateAuthorizationStrategyEvaluator("UnknownGetByIdStrategy"),
+            ],
+            namespacePrefixes: ["uri://ed-fi.org/"]
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>();
+        capturedValidationSql.Should().ContainSingle().Which.Should().Contain(CustomViewStrategyName);
+    }
+
     private static CustomViewAuthorizationFailure CreateCustomViewFailure(
         CustomViewAuthorizationFailureKind failureKind = CustomViewAuthorizationFailureKind.NoMatchingRow
     ) =>
