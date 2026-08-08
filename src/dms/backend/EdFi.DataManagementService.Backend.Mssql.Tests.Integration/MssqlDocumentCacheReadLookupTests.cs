@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -159,6 +160,42 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
             .Select(hit => JsonNode.Parse(hit.DocumentJson)!["value"]!.GetValue<string>())
             .Should()
             .Equal("cache-11", "cache-10");
+    }
+
+    [Test]
+    public async Task It_executes_a_maximum_page_size_batch_lookup_without_exceeding_mssql_parameter_limits()
+    {
+        const int maximumPageSize = 500;
+
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        IReadOnlyList<SourceDocument> sources = await InsertSourceDocumentsAsync(
+            maximumPageSize,
+            firstContentVersion: 1000
+        );
+        await InsertCacheRowsAsync(sources);
+
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates = sources
+            .Select(Candidate)
+            .ToArray();
+
+        DocumentCacheReadBatchLookupResult result = await LookupBatchAsync(candidates);
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.FreshHit);
+        result.IsFreshHit.Should().BeTrue();
+        result.Documents.Should().HaveCount(maximumPageSize);
+        result
+            .Documents.Select(static document => document.Candidate.DocumentId)
+            .Should()
+            .Equal(candidates.Select(static candidate => candidate.DocumentId));
+
+        DocumentCacheReadDocumentLookupResult.FreshHit[] hits = result
+            .Documents.Cast<DocumentCacheReadDocumentLookupResult.FreshHit>()
+            .ToArray();
+        JsonNode.Parse(hits[0].DocumentJson)!["value"]!.GetValue<string>().Should().Be("cache-1000");
+        JsonNode.Parse(hits[^1].DocumentJson)!["value"]!
+            .GetValue<string>()
+            .Should()
+            .Be($"cache-{1000 + maximumPageSize - 1}");
     }
 
     [Test]
@@ -495,6 +532,89 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
         );
     }
 
+    private async Task<IReadOnlyList<SourceDocument>> InsertSourceDocumentsAsync(
+        int count,
+        long firstContentVersion
+    )
+    {
+        short resourceKeyId = _fixture.MappingSet.ResourceKeyIdByResource[PersonResource];
+        SourceDocumentSeed[] seeds = Enumerable
+            .Range(0, count)
+            .Select(index => new SourceDocumentSeed(
+                index,
+                Guid.NewGuid(),
+                resourceKeyId,
+                firstContentVersion + index
+            ))
+            .ToArray();
+
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await _database.QueryRowsAsync(
+            """
+            DECLARE @requested TABLE (
+                [Ordinal] int NOT NULL,
+                [DocumentUuid] uniqueidentifier NOT NULL,
+                [ResourceKeyId] smallint NOT NULL,
+                [ContentVersion] bigint NOT NULL
+            );
+
+            INSERT INTO @requested (
+                [Ordinal],
+                [DocumentUuid],
+                [ResourceKeyId],
+                [ContentVersion]
+            )
+            SELECT
+                [source].[Ordinal],
+                [source].[DocumentUuid],
+                [source].[ResourceKeyId],
+                [source].[ContentVersion]
+            FROM OPENJSON(@sourceDocumentsJson)
+            WITH (
+                [Ordinal] int '$.Ordinal',
+                [DocumentUuid] uniqueidentifier '$.DocumentUuid',
+                [ResourceKeyId] smallint '$.ResourceKeyId',
+                [ContentVersion] bigint '$.ContentVersion'
+            ) AS [source];
+
+            INSERT INTO [dms].[Document] (
+                [DocumentUuid],
+                [ResourceKeyId],
+                [ContentVersion],
+                [ContentLastModifiedAt]
+            )
+            SELECT
+                [requested].[DocumentUuid],
+                [requested].[ResourceKeyId],
+                [requested].[ContentVersion],
+                @lastModifiedAt
+            FROM @requested AS [requested];
+
+            SELECT
+                [document].[DocumentId],
+                [document].[DocumentUuid],
+                [document].[ResourceKeyId],
+                [document].[ContentVersion]
+            FROM @requested AS [requested]
+            INNER JOIN [dms].[Document] AS [document]
+                ON [document].[DocumentUuid] = [requested].[DocumentUuid]
+            ORDER BY [requested].[Ordinal];
+            """,
+            new SqlParameter("@sourceDocumentsJson", SqlDbType.NVarChar, -1)
+            {
+                Value = JsonSerializer.Serialize(seeds),
+            },
+            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt.UtcDateTime }
+        );
+
+        return rows.Select(row => new SourceDocument(
+                Convert.ToInt64(row["DocumentId"]),
+                (Guid)row["DocumentUuid"]!,
+                Convert.ToInt16(row["ResourceKeyId"]),
+                Convert.ToInt64(row["ContentVersion"])
+            ))
+            .ToArray();
+    }
+
     private async Task InsertDescriptorRowAsync(SourceDocument descriptor)
     {
         await _database.ExecuteNonQueryAsync(
@@ -612,6 +732,78 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
         );
     }
 
+    private async Task InsertCacheRowsAsync(IReadOnlyList<SourceDocument> sources)
+    {
+        short resourceKeyId = sources.Select(static source => source.ResourceKeyId).Distinct().Single();
+        ResourceKeyEntry resourceKey = _fixture.MappingSet.ResourceKeyById[resourceKeyId];
+        CacheRowSeed[] seeds = sources
+            .Select(source => new CacheRowSeed(
+                source.DocumentId,
+                source.DocumentUuid,
+                source.ContentVersion,
+                $"etag-{source.ContentVersion}",
+                new JsonObject { ["value"] = $"cache-{source.ContentVersion}" }.ToJsonString()
+            ))
+            .ToArray();
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [dms].[DocumentCache] (
+                [DocumentId],
+                [DocumentUuid],
+                [ProjectName],
+                [ResourceName],
+                [ResourceVersion],
+                [ContentVersion],
+                [StreamEtag],
+                [LastModifiedAt],
+                [DocumentJson],
+                [ComputedAt]
+            )
+            SELECT
+                [cache].[DocumentId],
+                [cache].[DocumentUuid],
+                @projectName,
+                @resourceName,
+                @resourceVersion,
+                [cache].[ContentVersion],
+                [cache].[StreamEtag],
+                @lastModifiedAt,
+                [cache].[DocumentJson],
+                @computedAt
+            FROM OPENJSON(@cacheRowsJson)
+            WITH (
+                [DocumentId] bigint '$.DocumentId',
+                [DocumentUuid] uniqueidentifier '$.DocumentUuid',
+                [ContentVersion] bigint '$.ContentVersion',
+                [StreamEtag] varchar(64) '$.StreamEtag',
+                [DocumentJson] nvarchar(max) '$.DocumentJson'
+            ) AS [cache];
+            """,
+            new SqlParameter("@cacheRowsJson", SqlDbType.NVarChar, -1)
+            {
+                Value = JsonSerializer.Serialize(seeds),
+            },
+            new SqlParameter("@projectName", SqlDbType.NVarChar, 256)
+            {
+                Value = resourceKey.Resource.ProjectName,
+            },
+            new SqlParameter("@resourceName", SqlDbType.NVarChar, 256)
+            {
+                Value = resourceKey.Resource.ResourceName,
+            },
+            new SqlParameter("@resourceVersion", SqlDbType.NVarChar, 32)
+            {
+                Value = resourceKey.ResourceVersion,
+            },
+            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt.UtcDateTime },
+            new SqlParameter("@computedAt", SqlDbType.DateTime2)
+            {
+                Value = LastModifiedAt.AddMinutes(1).UtcDateTime,
+            }
+        );
+    }
+
     private async Task UpdateSourceContentVersionAsync(long documentId, long contentVersion)
     {
         await _database.ExecuteNonQueryAsync(
@@ -665,6 +857,21 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
         Guid DocumentUuid,
         short ResourceKeyId,
         long ContentVersion
+    );
+
+    private sealed record SourceDocumentSeed(
+        int Ordinal,
+        Guid DocumentUuid,
+        short ResourceKeyId,
+        long ContentVersion
+    );
+
+    private sealed record CacheRowSeed(
+        long DocumentId,
+        Guid DocumentUuid,
+        long ContentVersion,
+        string StreamEtag,
+        string DocumentJson
     );
 
     private sealed record ProviderLookupScenario(

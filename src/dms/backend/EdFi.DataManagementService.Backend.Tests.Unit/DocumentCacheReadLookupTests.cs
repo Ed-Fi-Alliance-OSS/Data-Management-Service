@@ -16,6 +16,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using FluentAssertions.Execution;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
@@ -226,12 +227,67 @@ public class Given_DocumentCacheReadLookup
     [Test]
     public void It_builds_one_mssql_lookup_command_for_the_candidate_batch()
     {
-        RelationalCommand command = DocumentCacheReadLookupSql.BuildCommand(SqlDialect.Mssql, [Candidate()]);
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+        );
+
+        RelationalCommand command = DocumentCacheReadLookupSql.BuildCommand(
+            SqlDialect.Mssql,
+            [first, second]
+        );
 
         command.CommandText.Should().Contain("[dms].[DocumentCache]");
-        command.CommandText.Should().Contain("CAST(@documentUuid0 AS uniqueidentifier)");
+        command.CommandText.Should().Contain("OPENJSON(@candidatePageJson)");
+        command
+            .CommandText.Should()
+            .Contain("[ExpectedDocumentUuid] uniqueidentifier '$.ExpectedDocumentUuid'");
         command.CommandText.Should().Contain("ORDER BY [requested].[Ordinal]");
-        command.Parameters.Should().HaveCount(5);
+        command.CommandText.Should().NotContain("@documentUuid0");
+        command.Parameters.Should().ContainSingle();
+        command.Parameters[0].Name.Should().Be("@candidatePageJson");
+
+        var sqlParameter = new SqlParameter();
+        command.Parameters[0].ConfigureParameter.Should().NotBeNull();
+        command.Parameters[0].ConfigureParameter!(sqlParameter);
+        sqlParameter.SqlDbType.Should().Be(SqlDbType.NVarChar);
+        sqlParameter.Size.Should().Be(-1);
+
+        var candidatePage = JsonNode
+            .Parse(command.Parameters[0].Value.Should().BeOfType<string>().Subject)!
+            .AsArray();
+        candidatePage.Should().HaveCount(2);
+        candidatePage[0]!["Ordinal"]!.GetValue<int>().Should().Be(0);
+        candidatePage[0]!["DocumentId"]!.GetValue<long>().Should().Be(first.DocumentId);
+        candidatePage[0]!["ExpectedDocumentUuid"]!.GetValue<Guid>().Should().Be(first.DocumentUuid.Value);
+        candidatePage[0]!["ExpectedResourceKeyId"]!.GetValue<short>().Should().Be(first.ResourceKeyId);
+        candidatePage[0]!["ExpectedContentVersion"]!.GetValue<long>().Should().Be(first.ContentVersion);
+        candidatePage[1]!["Ordinal"]!.GetValue<int>().Should().Be(1);
+        candidatePage[1]!["DocumentId"]!.GetValue<long>().Should().Be(second.DocumentId);
+    }
+
+    [Test]
+    public void It_builds_one_mssql_lookup_parameter_for_a_maximum_page_size_batch()
+    {
+        DocumentCacheReadAccelerationCandidate[] candidates = Enumerable
+            .Range(0, 500)
+            .Select(index => Candidate(documentId: 1000 + index, contentVersion: 2000 + index))
+            .ToArray();
+
+        RelationalCommand command = DocumentCacheReadLookupSql.BuildCommand(SqlDialect.Mssql, candidates);
+
+        command.CommandText.Should().Contain("OPENJSON(@candidatePageJson)");
+        command.CommandText.Should().NotContain("@documentId499");
+        command.Parameters.Should().ContainSingle();
+
+        var candidatePage = JsonNode
+            .Parse(command.Parameters[0].Value.Should().BeOfType<string>().Subject)!
+            .AsArray();
+        candidatePage.Should().HaveCount(500);
+        candidatePage[499]!["Ordinal"]!.GetValue<int>().Should().Be(499);
+        candidatePage[499]!["DocumentId"]!.GetValue<long>().Should().Be(candidates[499].DocumentId);
     }
 
     [Test]
