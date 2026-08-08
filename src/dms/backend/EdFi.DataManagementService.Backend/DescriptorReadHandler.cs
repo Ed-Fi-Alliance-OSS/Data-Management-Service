@@ -31,6 +31,7 @@ internal sealed class DescriptorReadHandler(
 {
     private const string DocumentUuidParameterName = "@documentUuid";
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
+    private const string SelectedDocumentIdParameterPrefix = "@selectedDocumentId";
 
     // The descriptor page query binds a single ResourceKeyId discriminator parameter on top of the paging
     // parameters; see DescriptorQueryPageKeysetPlanner. Counted into the non-authorization parameter budget.
@@ -396,7 +397,90 @@ internal sealed class DescriptorReadHandler(
         return new DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage(
             candidatePage,
             (_, fallbackCancellationToken) =>
-                HandleQueryNoCacheResultAsync(request, fallbackCancellationToken)
+                HydrateSelectedDescriptorQueryCandidatePageAsync(
+                    request,
+                    candidatePage,
+                    fallbackCancellationToken
+                )
+        );
+    }
+
+    private async Task<QueryResult> HydrateSelectedDescriptorQueryCandidatePageAsync(
+        DescriptorQueryRequest request,
+        DocumentCacheReadAccelerationCandidatePage candidatePage,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(candidatePage);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var selectedDocumentIds = candidatePage
+            .Candidates.Select(static candidate => candidate.DocumentId)
+            .ToArray();
+
+        if (selectedDocumentIds.Length == 0)
+        {
+            return MaterializeDescriptorQuerySuccess(
+                request,
+                new DescriptorQueryRowsPage(candidatePage.TotalCount, [])
+            );
+        }
+
+        RelationalCommand command;
+
+        try
+        {
+            command = BuildSelectedQueryRowsCommand(request.MappingSet.Key.Dialect, selectedDocumentIds);
+        }
+        catch (NotSupportedException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+
+        IReadOnlyList<DescriptorReadRow> descriptorRows;
+
+        try
+        {
+            descriptorRows = await _commandExecutor
+                .ExecuteReaderAsync(command, DescriptorReadRowReader.ReadAllAsync, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (DescriptorReadInvariantException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+
+        var descriptorRowsByDocumentId = descriptorRows.ToDictionary(
+            static row => row.DocumentId,
+            static row => row
+        );
+        DescriptorReadRow[] orderedRows =
+        [
+            .. selectedDocumentIds
+                .Where(descriptorRowsByDocumentId.ContainsKey)
+                .Select(documentId => descriptorRowsByDocumentId[documentId]),
+        ];
+
+        return MaterializeDescriptorQuerySuccess(
+            request,
+            new DescriptorQueryRowsPage(candidatePage.TotalCount, orderedRows)
         );
     }
 
@@ -1074,6 +1158,116 @@ internal sealed class DescriptorReadHandler(
                 $"Relational descriptor GET-many row retrieval does not support SQL dialect '{dialect}'."
             ),
         };
+    }
+
+    private static RelationalCommand BuildSelectedQueryRowsCommand(
+        SqlDialect dialect,
+        IReadOnlyList<long> selectedDocumentIds
+    )
+    {
+        ArgumentNullException.ThrowIfNull(selectedDocumentIds);
+
+        if (selectedDocumentIds.Count == 0)
+        {
+            throw new ArgumentException(
+                "Descriptor selected-page fallback requires at least one selected DocumentId.",
+                nameof(selectedDocumentIds)
+            );
+        }
+
+        IReadOnlyList<RelationalParameter> parameters =
+        [
+            .. selectedDocumentIds.Select(
+                static (documentId, index) =>
+                    new RelationalParameter($"{SelectedDocumentIdParameterPrefix}{index}", documentId)
+            ),
+        ];
+
+        string selectedDocumentIdsSql = string.Join(
+            $",{Environment.NewLine}",
+            selectedDocumentIds.Select(
+                static (_, index) => $"({SelectedDocumentIdParameterPrefix}{index}, {index})"
+            )
+        );
+
+        return dialect switch
+        {
+            SqlDialect.Pgsql => new RelationalCommand(
+                $$"""
+                SELECT
+                    selected_document_ids."DocumentId" AS "DocumentId",
+                    document."DocumentUuid" AS "DocumentUuid",
+                    document."ContentVersion" AS "ContentVersion",
+                    document."ContentLastModifiedAt" AS "ContentLastModifiedAt",
+                    document."ResourceKeyId" AS "ResourceKeyId",
+                    descriptor."Namespace" AS "Namespace",
+                    descriptor."CodeValue" AS "CodeValue",
+                    descriptor."ShortDescription" AS "ShortDescription",
+                    descriptor."Description" AS "Description",
+                    descriptor."EffectiveBeginDate" AS "EffectiveBeginDate",
+                    descriptor."EffectiveEndDate" AS "EffectiveEndDate",
+                    descriptor."Discriminator" AS "Discriminator"
+                FROM (
+                    VALUES
+                    {{selectedDocumentIdsSql}}
+                ) AS selected_document_ids("DocumentId", "Ordinal")
+                INNER JOIN dms."Document" document
+                    ON document."DocumentId" = selected_document_ids."DocumentId"
+                LEFT JOIN dms."Descriptor" descriptor
+                    ON descriptor."DocumentId" = selected_document_ids."DocumentId"
+                ORDER BY selected_document_ids."Ordinal" ASC;
+                """,
+                parameters
+            ),
+            SqlDialect.Mssql => new RelationalCommand(
+                $$"""
+                SELECT
+                    selected_document_ids.[DocumentId] AS [DocumentId],
+                    document.[DocumentUuid] AS [DocumentUuid],
+                    document.[ContentVersion] AS [ContentVersion],
+                    document.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
+                    document.[ResourceKeyId] AS [ResourceKeyId],
+                    descriptor.[Namespace] AS [Namespace],
+                    descriptor.[CodeValue] AS [CodeValue],
+                    descriptor.[ShortDescription] AS [ShortDescription],
+                    descriptor.[Description] AS [Description],
+                    descriptor.[EffectiveBeginDate] AS [EffectiveBeginDate],
+                    descriptor.[EffectiveEndDate] AS [EffectiveEndDate],
+                    descriptor.[Discriminator] AS [Discriminator]
+                FROM (
+                    VALUES
+                    {{selectedDocumentIdsSql}}
+                ) AS selected_document_ids([DocumentId], [Ordinal])
+                INNER JOIN [dms].[Document] document
+                    ON document.[DocumentId] = selected_document_ids.[DocumentId]
+                LEFT JOIN [dms].[Descriptor] descriptor
+                    ON descriptor.[DocumentId] = selected_document_ids.[DocumentId]
+                ORDER BY selected_document_ids.[Ordinal] ASC;
+                """,
+                parameters
+            ),
+            _ => throw new NotSupportedException(
+                $"Relational descriptor selected-page fallback does not support SQL dialect '{dialect}'."
+            ),
+        };
+    }
+
+    private static string EnsureTrailingSemicolon(string sql)
+    {
+        var trimmed = sql.AsSpan().TrimEnd();
+        return trimmed.Length > 0 && trimmed[^1] == ';' ? sql : $"{trimmed};";
+    }
+
+    private static string StripTrailingSemicolon(string sql)
+    {
+        var trimmed = sql.AsSpan().TrimEnd();
+
+        if (trimmed.Length > 0 && trimmed[^1] == ';')
+        {
+            trimmed = trimmed[..^1].TrimEnd();
+        }
+
+        return trimmed.ToString();
     }
 
     /// <summary>

@@ -1541,28 +1541,53 @@ public class Given_DescriptorReadHandler
             .MustHaveHappenedOnceExactly();
     }
 
-    [Test]
-    public async Task It_reexecutes_descriptor_query_relational_fallback_after_cache_lookup_miss()
+    [TestCase(SqlDialect.Pgsql, """ORDER BY selected_document_ids."Ordinal" ASC""")]
+    [TestCase(SqlDialect.Mssql, "ORDER BY selected_document_ids.[Ordinal] ASC")]
+    public async Task It_hydrates_only_selected_descriptor_query_candidates_on_relational_fallback(
+        SqlDialect dialect,
+        string expectedOrderByFragment
+    )
     {
-        var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-343434343434");
+        var firstDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-343434343434");
+        var secondDocumentUuid = Guid.Parse("bbbbbbbb-1111-2222-3333-343434343434");
+        var newlyMatchingDocumentUuid = Guid.Parse("cccccccc-1111-2222-3333-343434343434");
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
         var commandExecutor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(
-                        documentUuid,
+                        firstDocumentUuid,
                         documentId: 101L,
-                        shortDescription: "Before fallback",
+                        shortDescription: "First before fallback",
                         contentVersion: 42L
+                    ),
+                    CreateDescriptorRow(
+                        secondDocumentUuid,
+                        documentId: 205L,
+                        shortDescription: "Second before fallback",
+                        contentVersion: 43L
                     )
                 ),
             ]),
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(
-                        documentUuid,
+                        secondDocumentUuid,
+                        documentId: 205L,
+                        shortDescription: "Second after fallback",
+                        contentVersion: 85L
+                    ),
+                    CreateDescriptorRow(
+                        newlyMatchingDocumentUuid,
+                        documentId: 999L,
+                        shortDescription: "Newly matching row",
+                        contentVersion: 999L
+                    ),
+                    CreateDescriptorRow(
+                        firstDocumentUuid,
                         documentId: 101L,
-                        shortDescription: "After fallback",
+                        shortDescription: "First after fallback",
                         contentVersion: 84L
                     )
                 ),
@@ -1598,14 +1623,32 @@ public class Given_DescriptorReadHandler
 
         var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
 
-        var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql));
+        var result = await sut.HandleQueryAsync(CreateQueryRequest(dialect, totalCount: true));
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.EdfiDocs.Should().HaveCount(1);
-        JsonNode descriptor = success.EdfiDocs[0]!;
-        descriptor["shortDescription"]!.GetValue<string>().Should().Be("After fallback");
-        descriptor["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(84L));
+        success.TotalCount.Should().Be(7);
+        success.EdfiDocs.Should().HaveCount(2);
+        success
+            .EdfiDocs.Select(document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(firstDocumentUuid.ToString(), secondDocumentUuid.ToString());
+        success
+            .EdfiDocs.Select(document => document!["shortDescription"]!.GetValue<string>())
+            .Should()
+            .Equal("First after fallback", "Second after fallback");
+        success.EdfiDocs[0]!["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(84L));
+        success.EdfiDocs[1]!["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(85L));
         commandExecutor.Commands.Should().HaveCount(2);
+        commandExecutor.Commands[1].CommandText.Should().Contain("VALUES");
+        commandExecutor.Commands[1].CommandText.Should().Contain("@selectedDocumentId0");
+        commandExecutor.Commands[1].CommandText.Should().Contain("@selectedDocumentId1");
+        commandExecutor.Commands[1].CommandText.Should().Contain(expectedOrderByFragment);
+        commandExecutor.Commands[1].CommandText.Should().NotContain("COUNT(1)");
+        commandExecutor
+            .Commands[1]
+            .Parameters.Select(parameter => parameter.Value)
+            .Should()
+            .Equal(101L, 205L);
     }
 
     [Test]
