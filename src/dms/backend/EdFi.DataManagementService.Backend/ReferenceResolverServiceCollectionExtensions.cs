@@ -86,6 +86,9 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Scoped<IDocumentCacheReadResponseShaper, DocumentCacheReadResponseShaper>()
         );
         services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheReadTelemetry, DocumentCacheReadTelemetry>()
+        );
+        services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentCacheReadLookupAdapter, NoOpDocumentCacheReadLookupAdapter>()
         );
         services.TryAdd(

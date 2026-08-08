@@ -479,6 +479,56 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     [Test]
+    public async Task It_records_read_telemetry_for_lookup_fallback_and_direct_fill()
+    {
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+            ),
+        };
+        var telemetry = new RecordingReadTelemetry();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext()),
+            new RecordingMaterializer(),
+            new RecordingCacheWriter(),
+            telemetry
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<GetResult>(fallbackResult)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        telemetry.Events.Should().Contain(("attempt", DocumentCacheReadTelemetryLabel.Attempted));
+        telemetry
+            .Events.Should()
+            .Contain(("miss", nameof(DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss)));
+        telemetry
+            .Events.Should()
+            .Contain(("fallback", nameof(DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss)));
+        telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.Attempted));
+        telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.Succeeded));
+        string[] durationMetrics =
+        [
+            .. telemetry.DurationEvents.Select(durationEvent => durationEvent.Metric),
+        ];
+        durationMetrics.Should().Contain(DocumentCacheReadTelemetry.CacheLookupDurationName);
+        durationMetrics.Should().Contain(DocumentCacheReadTelemetry.DirectFillDurationName);
+    }
+
+    [Test]
     public async Task It_skips_direct_fill_when_relational_get_fallback_is_not_successful()
     {
         var lookupAdapter = new RecordingLookupAdapter
@@ -872,7 +922,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         RecordingLookupAdapter lookupAdapter,
         IDocumentCacheTargetRegistry registry,
         IDocumentCacheMaterializer? materializer = null,
-        IDocumentCacheWriter? cacheWriter = null
+        IDocumentCacheWriter? cacheWriter = null,
+        IDocumentCacheReadTelemetry? readTelemetry = null
     )
     {
         DataStoreSelection dataStoreSelection = new();
@@ -907,7 +958,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             registry,
             lookupAdapter,
             materializer,
-            cacheWriter
+            cacheWriter,
+            readTelemetry
         );
     }
 
@@ -1154,6 +1206,49 @@ public class Given_DocumentCacheReadAccelerationCoordinator
                 )
             );
         }
+    }
+
+    private sealed class RecordingReadTelemetry : IDocumentCacheReadTelemetry
+    {
+        public List<(string Metric, string Outcome)> Events { get; } = [];
+
+        public List<(string Metric, string Outcome)> DurationEvents { get; } = [];
+
+        public void RecordAttempt(DocumentCacheReadTelemetryContext context) =>
+            Events.Add(("attempt", context.Outcome));
+
+        public void RecordHit(DocumentCacheReadTelemetryContext context) =>
+            Events.Add(("hit", context.Outcome));
+
+        public void RecordPageHit(DocumentCacheReadTelemetryContext context) =>
+            Events.Add(("pageHit", context.Outcome));
+
+        public void RecordMiss(DocumentCacheReadTelemetryContext context) =>
+            Events.Add(("miss", context.Outcome));
+
+        public void RecordFallback(DocumentCacheReadTelemetryContext context) =>
+            Events.Add(("fallback", context.Outcome));
+
+        public void RecordCacheUnavailable(DocumentCacheReadTelemetryContext context) =>
+            Events.Add(("cacheUnavailable", context.Outcome));
+
+        public void RecordAdapterAcquisitionFailure(DocumentCacheReadTelemetryContext context) =>
+            Events.Add(("adapterAcquisitionFailure", context.Outcome));
+
+        public void RecordUnexpectedException(DocumentCacheReadTelemetryContext context) =>
+            Events.Add(("unexpectedException", context.Outcome));
+
+        public void RecordDirectFill(DocumentCacheReadTelemetryContext context) =>
+            Events.Add(("directFill", context.Outcome));
+
+        public void RecordCacheLookupDuration(DocumentCacheReadTelemetryContext context, TimeSpan duration) =>
+            DurationEvents.Add((DocumentCacheReadTelemetry.CacheLookupDurationName, context.Outcome));
+
+        public void RecordDirectFillDuration(DocumentCacheReadTelemetryContext context, TimeSpan duration) =>
+            DurationEvents.Add((DocumentCacheReadTelemetry.DirectFillDurationName, context.Outcome));
+
+        public void RecordDerivativeTargetBypass(DocumentCacheReadTelemetryContext context) =>
+            Events.Add(("derivativeTargetBypass", context.Outcome));
     }
 
     private sealed class StaticTargetRegistry(

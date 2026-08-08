@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
@@ -270,6 +271,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     IDocumentCacheReadLookupAdapter? lookupAdapter = null,
     IDocumentCacheMaterializer? materializer = null,
     IDocumentCacheWriter? cacheWriter = null,
+    IDocumentCacheReadTelemetry? readTelemetry = null,
     ILogger<DocumentCacheReadAccelerationCoordinator>? logger = null
 ) : IDocumentCacheReadAccelerationCoordinator
 {
@@ -281,6 +283,8 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         lookupAdapter ?? NoOpDocumentCacheReadLookupAdapter.Instance;
     private readonly IDocumentCacheMaterializer? _materializer = materializer;
     private readonly IDocumentCacheWriter? _cacheWriter = cacheWriter;
+    private readonly IDocumentCacheReadTelemetry _readTelemetry =
+        readTelemetry ?? NoOpDocumentCacheReadTelemetry.Instance;
     private readonly ILogger<DocumentCacheReadAccelerationCoordinator> _logger =
         logger ?? NullLogger<DocumentCacheReadAccelerationCoordinator>.Instance;
 
@@ -293,6 +297,13 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
         if (request.ReadMode != RelationalGetRequestReadMode.ExternalResponse)
         {
+            RecordFallback(
+                DocumentCacheReadAccelerationOperation.GetById,
+                request.ResourceKind,
+                targetContext: null,
+                DocumentCacheReadAccelerationFallbackReason.NotExternalRead
+            );
+
             return await request
                 .RelationalFallback(
                     new DocumentCacheReadAccelerationFallbackContext(
@@ -306,6 +317,13 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
         if (!TryResolveTarget(request.TenantKey, out var targetContext, out var fallbackReason))
         {
+            RecordFallback(
+                DocumentCacheReadAccelerationOperation.GetById,
+                request.ResourceKind,
+                targetContext: null,
+                fallbackReason
+            );
+
             return await request
                 .RelationalFallback(
                     new DocumentCacheReadAccelerationFallbackContext(fallbackReason, TargetContext: null),
@@ -318,6 +336,13 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         {
             if (request.SelectAuthorizedCandidate is null)
             {
+                RecordFallback(
+                    DocumentCacheReadAccelerationOperation.GetById,
+                    request.ResourceKind,
+                    targetContext,
+                    DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable
+                );
+
                 return await request
                     .RelationalFallback(
                         new DocumentCacheReadAccelerationFallbackContext(
@@ -356,6 +381,13 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
         if (request.AuthorizedCandidate is null)
         {
+            RecordFallback(
+                DocumentCacheReadAccelerationOperation.GetById,
+                request.ResourceKind,
+                targetContext,
+                DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable
+            );
+
             return await request
                 .RelationalFallback(
                     new DocumentCacheReadAccelerationFallbackContext(
@@ -367,14 +399,31 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 .ConfigureAwait(false);
         }
 
-        DocumentCacheReadLookupResult<GetResult> lookupResult = await _lookupAdapter
-            .TryGetByIdAsync(request, targetContext, cancellationToken)
+        DocumentCacheReadLookupResult<GetResult> lookupResult = await LookupGetByIdAsync(
+                request,
+                targetContext,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (lookupResult.CachedResult is not null)
         {
+            RecordHit(
+                DocumentCacheReadAccelerationOperation.GetById,
+                request.ResourceKind,
+                targetContext,
+                pageHit: false
+            );
+
             return lookupResult.CachedResult;
         }
+
+        RecordLookupFallback(
+            DocumentCacheReadAccelerationOperation.GetById,
+            request.ResourceKind,
+            targetContext,
+            lookupResult.FallbackReason
+        );
 
         GetResult fallbackResult = await request
             .RelationalFallback(
@@ -404,6 +453,13 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
         if (!TryResolveTarget(request.TenantKey, out var targetContext, out var fallbackReason))
         {
+            RecordFallback(
+                DocumentCacheReadAccelerationOperation.Query,
+                request.ResourceKind,
+                targetContext: null,
+                fallbackReason
+            );
+
             return await request
                 .RelationalFallback(
                     new DocumentCacheReadAccelerationFallbackContext(fallbackReason, TargetContext: null),
@@ -416,6 +472,13 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         {
             if (request.SelectAuthorizedCandidatePage is null)
             {
+                RecordFallback(
+                    DocumentCacheReadAccelerationOperation.Query,
+                    request.ResourceKind,
+                    targetContext,
+                    DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable
+                );
+
                 return await request
                     .RelationalFallback(
                         new DocumentCacheReadAccelerationFallbackContext(
@@ -454,6 +517,13 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
         if (request.AuthorizedCandidatePage is null)
         {
+            RecordFallback(
+                DocumentCacheReadAccelerationOperation.Query,
+                request.ResourceKind,
+                targetContext,
+                DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable
+            );
+
             return await request
                 .RelationalFallback(
                     new DocumentCacheReadAccelerationFallbackContext(
@@ -480,14 +550,31 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             );
         }
 
-        DocumentCacheReadLookupResult<QueryResult> lookupResult = await _lookupAdapter
-            .TryQueryAsync(request, targetContext, cancellationToken)
+        DocumentCacheReadLookupResult<QueryResult> lookupResult = await LookupQueryAsync(
+                request,
+                targetContext,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (lookupResult.CachedResult is not null)
         {
+            RecordHit(
+                DocumentCacheReadAccelerationOperation.Query,
+                request.ResourceKind,
+                targetContext,
+                pageHit: true
+            );
+
             return lookupResult.CachedResult;
         }
+
+        RecordLookupFallback(
+            DocumentCacheReadAccelerationOperation.Query,
+            request.ResourceKind,
+            targetContext,
+            lookupResult.FallbackReason
+        );
 
         QueryResult fallbackResult = await request
             .RelationalFallback(
@@ -507,6 +594,216 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
         return fallbackResult;
     }
+
+    private async Task<DocumentCacheReadLookupResult<GetResult>> LookupGetByIdAsync(
+        DocumentCacheReadAccelerationGetByIdRequest request,
+        DocumentCacheTargetExecutionContext targetContext,
+        CancellationToken cancellationToken
+    )
+    {
+        RecordAttempt(DocumentCacheReadAccelerationOperation.GetById, request.ResourceKind, targetContext);
+        long lookupStartTimestamp = Stopwatch.GetTimestamp();
+
+        try
+        {
+            DocumentCacheReadLookupResult<GetResult> result = await _lookupAdapter
+                .TryGetByIdAsync(request, targetContext, cancellationToken)
+                .ConfigureAwait(false);
+
+            _readTelemetry.RecordCacheLookupDuration(
+                CreateReadTelemetryContext(
+                    targetContext,
+                    DocumentCacheReadAccelerationOperation.GetById,
+                    request.ResourceKind,
+                    result.CachedResult is not null
+                        ? DocumentCacheReadTelemetryLabel.Hit
+                        : result.FallbackReason.ToString()
+                ),
+                DocumentCacheReadTelemetry.GetElapsedTime(lookupStartTimestamp)
+            );
+
+            return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            RecordUnexpectedLookupException(
+                DocumentCacheReadAccelerationOperation.GetById,
+                request.ResourceKind,
+                targetContext,
+                lookupStartTimestamp,
+                exception
+            );
+            throw;
+        }
+    }
+
+    private async Task<DocumentCacheReadLookupResult<QueryResult>> LookupQueryAsync(
+        DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheTargetExecutionContext targetContext,
+        CancellationToken cancellationToken
+    )
+    {
+        RecordAttempt(DocumentCacheReadAccelerationOperation.Query, request.ResourceKind, targetContext);
+        long lookupStartTimestamp = Stopwatch.GetTimestamp();
+
+        try
+        {
+            DocumentCacheReadLookupResult<QueryResult> result = await _lookupAdapter
+                .TryQueryAsync(request, targetContext, cancellationToken)
+                .ConfigureAwait(false);
+
+            _readTelemetry.RecordCacheLookupDuration(
+                CreateReadTelemetryContext(
+                    targetContext,
+                    DocumentCacheReadAccelerationOperation.Query,
+                    request.ResourceKind,
+                    result.CachedResult is not null
+                        ? DocumentCacheReadTelemetryLabel.PageHit
+                        : result.FallbackReason.ToString()
+                ),
+                DocumentCacheReadTelemetry.GetElapsedTime(lookupStartTimestamp)
+            );
+
+            return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            RecordUnexpectedLookupException(
+                DocumentCacheReadAccelerationOperation.Query,
+                request.ResourceKind,
+                targetContext,
+                lookupStartTimestamp,
+                exception
+            );
+            throw;
+        }
+    }
+
+    private void RecordAttempt(
+        DocumentCacheReadAccelerationOperation operation,
+        DocumentCacheReadAccelerationResourceKind resourceKind,
+        DocumentCacheTargetExecutionContext targetContext
+    ) =>
+        _readTelemetry.RecordAttempt(
+            CreateReadTelemetryContext(
+                targetContext,
+                operation,
+                resourceKind,
+                DocumentCacheReadTelemetryLabel.Attempted
+            )
+        );
+
+    private void RecordHit(
+        DocumentCacheReadAccelerationOperation operation,
+        DocumentCacheReadAccelerationResourceKind resourceKind,
+        DocumentCacheTargetExecutionContext targetContext,
+        bool pageHit
+    )
+    {
+        DocumentCacheReadTelemetryContext context = CreateReadTelemetryContext(
+            targetContext,
+            operation,
+            resourceKind,
+            pageHit ? DocumentCacheReadTelemetryLabel.PageHit : DocumentCacheReadTelemetryLabel.Hit
+        );
+
+        _readTelemetry.RecordHit(context);
+        if (pageHit)
+        {
+            _readTelemetry.RecordPageHit(context);
+        }
+    }
+
+    private void RecordLookupFallback(
+        DocumentCacheReadAccelerationOperation operation,
+        DocumentCacheReadAccelerationResourceKind resourceKind,
+        DocumentCacheTargetExecutionContext targetContext,
+        DocumentCacheReadAccelerationFallbackReason fallbackReason
+    )
+    {
+        _readTelemetry.RecordMiss(
+            CreateReadTelemetryContext(targetContext, operation, resourceKind, fallbackReason.ToString())
+        );
+        RecordFallback(operation, resourceKind, targetContext, fallbackReason);
+    }
+
+    private void RecordFallback(
+        DocumentCacheReadAccelerationOperation operation,
+        DocumentCacheReadAccelerationResourceKind resourceKind,
+        DocumentCacheTargetExecutionContext? targetContext,
+        DocumentCacheReadAccelerationFallbackReason fallbackReason
+    )
+    {
+        DocumentCacheReadTelemetryContext context = CreateReadTelemetryContext(
+            targetContext,
+            operation,
+            resourceKind,
+            fallbackReason.ToString()
+        );
+
+        _readTelemetry.RecordFallback(context);
+        if (fallbackReason == DocumentCacheReadAccelerationFallbackReason.CacheLookupUnavailable)
+        {
+            _readTelemetry.RecordCacheUnavailable(context);
+            _readTelemetry.RecordAdapterAcquisitionFailure(context);
+        }
+    }
+
+    private void RecordUnexpectedLookupException(
+        DocumentCacheReadAccelerationOperation operation,
+        DocumentCacheReadAccelerationResourceKind resourceKind,
+        DocumentCacheTargetExecutionContext targetContext,
+        long lookupStartTimestamp,
+        Exception exception
+    )
+    {
+        DocumentCacheReadTelemetryContext context = CreateReadTelemetryContext(
+            targetContext,
+            operation,
+            resourceKind,
+            DocumentCacheReadTelemetryLabel.UnexpectedException
+        );
+
+        _readTelemetry.RecordCacheLookupDuration(
+            context,
+            DocumentCacheReadTelemetry.GetElapsedTime(lookupStartTimestamp)
+        );
+        _readTelemetry.RecordUnexpectedException(context);
+        _logger.LogWarning(
+            exception,
+            "DocumentCache read lookup failed unexpectedly for target {TargetKey}. ExceptionType: {ExceptionType}",
+            targetContext.TargetKey,
+            exception.GetType().Name
+        );
+    }
+
+    private void RecordDirectFill(
+        DocumentCacheTargetExecutionContext targetContext,
+        DocumentCacheReadAccelerationOperation operation,
+        DocumentCacheReadAccelerationResourceKind resourceKind,
+        string outcome
+    ) =>
+        _readTelemetry.RecordDirectFill(
+            CreateReadTelemetryContext(targetContext, operation, resourceKind, outcome)
+        );
+
+    private static DocumentCacheReadTelemetryContext CreateReadTelemetryContext(
+        DocumentCacheTargetExecutionContext? targetContext,
+        DocumentCacheReadAccelerationOperation operation,
+        DocumentCacheReadAccelerationResourceKind resourceKind,
+        string outcome
+    ) =>
+        targetContext is null
+            ? DocumentCacheReadTelemetryContext.ForNoTarget(operation, resourceKind, outcome)
+            : DocumentCacheReadTelemetryContext.ForTarget(targetContext, operation, resourceKind, outcome);
 
     private bool TryResolveTarget(
         string tenantKey,
@@ -588,6 +885,12 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     {
         if (fallbackResult is not GetResult.GetSuccess success)
         {
+            RecordDirectFill(
+                targetContext,
+                DocumentCacheReadAccelerationOperation.GetById,
+                request.ResourceKind,
+                DocumentCacheReadTelemetryLabel.SkippedFallbackNotSuccessful
+            );
             return;
         }
 
@@ -595,7 +898,14 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             .Where(candidate => candidate.DocumentUuid == success.DocumentUuid)
             .ToArray();
 
-        await TryDirectFillAsync(request.MappingSet, targetContext, survivingCandidates, cancellationToken)
+        await TryDirectFillAsync(
+                request.MappingSet,
+                targetContext,
+                survivingCandidates,
+                DocumentCacheReadAccelerationOperation.GetById,
+                request.ResourceKind,
+                cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -609,12 +919,24 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     {
         if (fallbackResult is not QueryResult.QuerySuccess success)
         {
+            RecordDirectFill(
+                targetContext,
+                DocumentCacheReadAccelerationOperation.Query,
+                request.ResourceKind,
+                DocumentCacheReadTelemetryLabel.SkippedFallbackNotSuccessful
+            );
             return;
         }
 
         ISet<Guid> servedDocumentUuids = GetServedDocumentUuids(success.EdfiDocs);
         if (servedDocumentUuids.Count == 0)
         {
+            RecordDirectFill(
+                targetContext,
+                DocumentCacheReadAccelerationOperation.Query,
+                request.ResourceKind,
+                DocumentCacheReadTelemetryLabel.SkippedNoServedCandidate
+            );
             return;
         }
 
@@ -622,7 +944,14 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             .Where(candidate => servedDocumentUuids.Contains(candidate.DocumentUuid.Value))
             .ToArray();
 
-        await TryDirectFillAsync(request.MappingSet, targetContext, survivingCandidates, cancellationToken)
+        await TryDirectFillAsync(
+                request.MappingSet,
+                targetContext,
+                survivingCandidates,
+                DocumentCacheReadAccelerationOperation.Query,
+                request.ResourceKind,
+                cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -630,23 +959,64 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         MappingSet mappingSet,
         DocumentCacheTargetExecutionContext targetContext,
         IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates,
+        DocumentCacheReadAccelerationOperation operation,
+        DocumentCacheReadAccelerationResourceKind resourceKind,
         CancellationToken cancellationToken
     )
     {
-        if (
-            candidates.Count == 0
-            || _materializer is null
-            || _cacheWriter is null
-            || cancellationToken.IsCancellationRequested
-            || !IsDirectFillTargetEligible(targetContext)
-        )
+        if (candidates.Count == 0)
         {
+            RecordDirectFill(
+                targetContext,
+                operation,
+                resourceKind,
+                DocumentCacheReadTelemetryLabel.SkippedNoCandidates
+            );
+            return;
+        }
+
+        if (_materializer is null || _cacheWriter is null)
+        {
+            RecordDirectFill(
+                targetContext,
+                operation,
+                resourceKind,
+                DocumentCacheReadTelemetryLabel.SkippedServicesUnavailable
+            );
+            return;
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            RecordDirectFill(
+                targetContext,
+                operation,
+                resourceKind,
+                DocumentCacheReadTelemetryLabel.SkippedRequestCanceled
+            );
+            return;
+        }
+
+        if (!IsDirectFillTargetEligible(targetContext))
+        {
+            RecordDirectFill(
+                targetContext,
+                operation,
+                resourceKind,
+                DocumentCacheReadTelemetryLabel.SkippedTargetIneligible
+            );
             return;
         }
 
         TimeSpan timeout = targetContext.EffectiveSettings.DirectFillTimeout;
         if (timeout <= TimeSpan.Zero)
         {
+            RecordDirectFill(
+                targetContext,
+                operation,
+                resourceKind,
+                DocumentCacheReadTelemetryLabel.SkippedTimeoutDisabled
+            );
             return;
         }
 
@@ -665,57 +1035,90 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             targetContext.ConnectionInput.Value
         );
 
-        foreach (DocumentCacheReadAccelerationCandidate candidate in candidates)
+        long directFillStartTimestamp = Stopwatch.GetTimestamp();
+        string directFillDurationOutcome = DocumentCacheReadTelemetryLabel.Completed;
+
+        try
         {
-            if (directFillTimeout.IsCancellationRequested)
+            foreach (DocumentCacheReadAccelerationCandidate candidate in candidates)
             {
-                return;
-            }
-
-            try
-            {
-                DocumentCacheMaterializationResult materializationResult = await _materializer
-                    .MaterializeAsync(
-                        new DocumentCacheMaterializationRequest(
-                            materializationTargetContext,
-                            candidate.DocumentId,
-                            selectedRequiredContentVersion: candidate.ContentVersion,
-                            DocumentCacheMaterializationPurpose.DirectFill,
-                            directFillTimeout.Token
-                        )
-                    )
-                    .ConfigureAwait(false);
-
-                if (materializationResult is not DocumentCacheMaterializationResult.Success success)
+                if (directFillTimeout.IsCancellationRequested)
                 {
-                    continue;
+                    directFillDurationOutcome = DocumentCacheReadTelemetryLabel.TimedOut;
+                    RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+                    return;
                 }
 
-                await _cacheWriter
-                    .WriteAsync(
-                        new DocumentCacheWriterRequest(
-                            materializationTargetContext,
-                            candidate.DocumentId,
-                            selectedRequiredContentVersion: success.Candidate.ContentVersion,
-                            DocumentCacheWriterPurpose.DirectFill,
-                            success.Candidate,
-                            directFillTimeout.Token
-                        )
-                    )
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                LogDirectFillSkipped(
+                RecordDirectFill(
                     targetContext,
-                    SelectDirectFillCancellationReason(cancellationToken, directFillTimeout)
+                    operation,
+                    resourceKind,
+                    DocumentCacheReadTelemetryLabel.Attempted
                 );
-                return;
+
+                try
+                {
+                    DocumentCacheMaterializationResult materializationResult = await _materializer
+                        .MaterializeAsync(
+                            new DocumentCacheMaterializationRequest(
+                                materializationTargetContext,
+                                candidate.DocumentId,
+                                selectedRequiredContentVersion: candidate.ContentVersion,
+                                DocumentCacheMaterializationPurpose.DirectFill,
+                                directFillTimeout.Token
+                            )
+                        )
+                        .ConfigureAwait(false);
+
+                    if (materializationResult is not DocumentCacheMaterializationResult.Success success)
+                    {
+                        directFillDurationOutcome = DocumentCacheReadTelemetryLabel.Failed;
+                        RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+                        continue;
+                    }
+
+                    DocumentCacheWriterResult writerResult = await _cacheWriter
+                        .WriteAsync(
+                            new DocumentCacheWriterRequest(
+                                materializationTargetContext,
+                                candidate.DocumentId,
+                                selectedRequiredContentVersion: success.Candidate.ContentVersion,
+                                DocumentCacheWriterPurpose.DirectFill,
+                                success.Candidate,
+                                directFillTimeout.Token
+                            )
+                        )
+                        .ConfigureAwait(false);
+
+                    directFillDurationOutcome = IsDirectFillWriterSuccess(writerResult)
+                        ? DocumentCacheReadTelemetryLabel.Succeeded
+                        : DocumentCacheReadTelemetryLabel.Failed;
+                    RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+                }
+                catch (OperationCanceledException)
+                {
+                    directFillDurationOutcome = SelectDirectFillCancellationReason(
+                        cancellationToken,
+                        directFillTimeout
+                    );
+                    RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+                    LogDirectFillSkipped(targetContext, directFillDurationOutcome);
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    directFillDurationOutcome = DocumentCacheReadTelemetryLabel.Failed;
+                    RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+                    LogDirectFillFailure(targetContext, exception);
+                }
             }
-            catch (Exception exception)
-            {
-                LogDirectFillFailure(targetContext, exception);
-            }
+        }
+        finally
+        {
+            _readTelemetry.RecordDirectFillDuration(
+                CreateReadTelemetryContext(targetContext, operation, resourceKind, directFillDurationOutcome),
+                DocumentCacheReadTelemetry.GetElapsedTime(directFillStartTimestamp)
+            );
         }
     }
 
@@ -807,6 +1210,12 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
         return documentUuids;
     }
+
+    private static bool IsDirectFillWriterSuccess(DocumentCacheWriterResult result) =>
+        result
+            is DocumentCacheWriterResult.CandidateWrittenAcknowledged
+                or DocumentCacheWriterResult.AlreadyCurrentAcknowledged
+                or DocumentCacheWriterResult.AlreadyCurrentNoWork;
 
     private static string SelectDirectFillCancellationReason(
         CancellationToken requestCancellationToken,
