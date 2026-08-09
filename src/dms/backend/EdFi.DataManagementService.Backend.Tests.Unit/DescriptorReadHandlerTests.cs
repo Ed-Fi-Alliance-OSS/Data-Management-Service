@@ -1576,7 +1576,7 @@ public class Given_DescriptorReadHandler
                         secondDocumentUuid,
                         documentId: 205L,
                         shortDescription: "Second after fallback",
-                        contentVersion: 85L
+                        contentVersion: 43L
                     ),
                     CreateDescriptorRow(
                         newlyMatchingDocumentUuid,
@@ -1588,7 +1588,7 @@ public class Given_DescriptorReadHandler
                         firstDocumentUuid,
                         documentId: 101L,
                         shortDescription: "First after fallback",
-                        contentVersion: 84L
+                        contentVersion: 42L
                     )
                 ),
             ]),
@@ -1636,8 +1636,8 @@ public class Given_DescriptorReadHandler
             .EdfiDocs.Select(document => document!["shortDescription"]!.GetValue<string>())
             .Should()
             .Equal("First after fallback", "Second after fallback");
-        success.EdfiDocs[0]!["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(84L));
-        success.EdfiDocs[1]!["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(85L));
+        success.EdfiDocs[0]!["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(42L));
+        success.EdfiDocs[1]!["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(43L));
         commandExecutor.Commands.Should().HaveCount(2);
         commandExecutor.Commands[1].CommandText.Should().Contain("VALUES");
         commandExecutor.Commands[1].CommandText.Should().Contain("@selectedDocumentId0");
@@ -1649,6 +1649,88 @@ public class Given_DescriptorReadHandler
             .Parameters.Select(parameter => parameter.Value)
             .Should()
             .Equal(101L, 205L);
+    }
+
+    [Test]
+    public async Task It_reruns_descriptor_query_when_selected_page_fallback_metadata_drifts()
+    {
+        var selectedDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-343434343434");
+        var rerunDocumentUuid = Guid.Parse("bbbbbbbb-1111-2222-3333-343434343434");
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        selectedDocumentUuid,
+                        documentId: 101L,
+                        shortDescription: "Before fallback",
+                        contentVersion: 42L
+                    )
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        selectedDocumentUuid,
+                        documentId: 101L,
+                        shortDescription: "Drifted selected row",
+                        contentVersion: 84L
+                    )
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 8))),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        rerunDocumentUuid,
+                        documentId: 205L,
+                        shortDescription: "No-cache rerun row",
+                        contentVersion: 95L
+                    )
+                ),
+            ]),
+        ]);
+        var fallbackContext = new DocumentCacheReadAccelerationFallbackContext(
+            DocumentCacheReadAccelerationFallbackReason.CacheLookupStale,
+            TargetContext: null
+        );
+
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                var selectionResult = await request
+                    .SelectAuthorizedCandidatePage!(cancellationToken)
+                    .ConfigureAwait(false);
+                var candidateSelection = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>()
+                    .Subject;
+
+                return await candidateSelection
+                    .RelationalFallback(fallbackContext, cancellationToken)
+                    .ConfigureAwait(false);
+            });
+
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql, totalCount: true));
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.TotalCount.Should().Be(8);
+        success.EdfiDocs.Should().ContainSingle();
+        success.EdfiDocs[0]!["id"]!.GetValue<string>().Should().Be(rerunDocumentUuid.ToString());
+        success.EdfiDocs[0]!["shortDescription"]!.GetValue<string>().Should().Be("No-cache rerun row");
+        commandExecutor.Commands.Should().HaveCount(3);
+        commandExecutor.Commands[1].CommandText.Should().Contain("VALUES");
+        commandExecutor.Commands[2].CommandText.Should().Contain("COUNT(1)");
     }
 
     [Test]

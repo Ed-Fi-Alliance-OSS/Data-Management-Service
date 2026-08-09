@@ -29,7 +29,8 @@ public class Given_HydrationReader_With_Document_Metadata_Result_Sets
                     101L,
                     201L,
                     firstContentLastModifiedAt,
-                    firstIdentityLastModifiedAt
+                    firstIdentityLastModifiedAt,
+                    7
                 ),
                 (
                     84L,
@@ -37,7 +38,8 @@ public class Given_HydrationReader_With_Document_Metadata_Result_Sets
                     102L,
                     202L,
                     secondContentLastModifiedAt,
-                    secondIdentityLastModifiedAt
+                    secondIdentityLastModifiedAt,
+                    9
                 )
             )
         );
@@ -53,7 +55,8 @@ public class Given_HydrationReader_With_Document_Metadata_Result_Sets
                     ContentVersion: 101L,
                     IdentityVersion: 201L,
                     ContentLastModifiedAt: firstContentLastModifiedAt,
-                    IdentityLastModifiedAt: firstIdentityLastModifiedAt
+                    IdentityLastModifiedAt: firstIdentityLastModifiedAt,
+                    ResourceKeyId: 7
                 ),
                 new DocumentMetadataRow(
                     DocumentId: 84L,
@@ -61,7 +64,8 @@ public class Given_HydrationReader_With_Document_Metadata_Result_Sets
                     ContentVersion: 102L,
                     IdentityVersion: 202L,
                     ContentLastModifiedAt: secondContentLastModifiedAt,
-                    IdentityLastModifiedAt: secondIdentityLastModifiedAt
+                    IdentityLastModifiedAt: secondIdentityLastModifiedAt,
+                    ResourceKeyId: 9
                 )
             );
     }
@@ -94,7 +98,8 @@ public class Given_HydrationReader_With_Document_Metadata_Result_Sets
             long ContentVersion,
             long IdentityVersion,
             DateTimeOffset ContentLastModifiedAt,
-            DateTimeOffset IdentityLastModifiedAt
+            DateTimeOffset IdentityLastModifiedAt,
+            short ResourceKeyId
         )[] rows
     )
     {
@@ -105,6 +110,7 @@ public class Given_HydrationReader_With_Document_Metadata_Result_Sets
         table.Columns.Add("IdentityVersion", typeof(long));
         table.Columns.Add("ContentLastModifiedAt", typeof(DateTimeOffset));
         table.Columns.Add("IdentityLastModifiedAt", typeof(DateTimeOffset));
+        table.Columns.Add("ResourceKeyId", typeof(short));
 
         foreach (var row in rows)
         {
@@ -114,7 +120,8 @@ public class Given_HydrationReader_With_Document_Metadata_Result_Sets
                 row.ContentVersion,
                 row.IdentityVersion,
                 row.ContentLastModifiedAt,
-                row.IdentityLastModifiedAt
+                row.IdentityLastModifiedAt,
+                row.ResourceKeyId
             );
         }
 

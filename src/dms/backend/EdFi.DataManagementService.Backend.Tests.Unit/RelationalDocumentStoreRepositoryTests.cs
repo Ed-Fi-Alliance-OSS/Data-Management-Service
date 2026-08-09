@@ -2827,8 +2827,20 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var hydratedPage = new HydratedPage(
             null,
             [
-                CreateDocumentMetadataRow(firstDocumentUuid, 345L, 91L),
-                CreateDocumentMetadataRow(secondDocumentUuid, 678L, 92L),
+                CreateDocumentMetadataRow(
+                    firstDocumentUuid,
+                    345L,
+                    91L,
+                    firstContentLastModifiedAt,
+                    expectedResourceKeyId
+                ),
+                CreateDocumentMetadataRow(
+                    secondDocumentUuid,
+                    678L,
+                    92L,
+                    secondContentLastModifiedAt,
+                    expectedResourceKeyId
+                ),
             ],
             [
                 new HydratedTableRows(
@@ -2956,6 +2968,149 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     HighestSelectedDocumentId: 678L
                 )
             );
+    }
+
+    [Test]
+    public async Task It_reruns_the_no_cache_query_when_selected_page_fallback_metadata_drifts()
+    {
+        var selectedDocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-eeeeeeeeeeee"));
+        var rerunDocumentUuid = new DocumentUuid(Guid.Parse("ffffffff-1111-2222-3333-eeeeeeeeeeee"));
+        var selectedContentLastModifiedAt = new DateTimeOffset(2026, 6, 2, 9, 0, 0, TimeSpan.Zero);
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "name",
+                "$.name",
+                "string",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Name"))
+            )
+        );
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var readPlan = mappingSet.ReadPlansByResource[resource];
+        var resourceKeyId = mappingSet.ResourceKeyIdByResource[resource];
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [CreateQueryElement("name", "$.name", "Lincoln High", "string")],
+            totalCount: true
+        );
+        var selectedFallbackHydratedPage = new HydratedPage(
+            null,
+            [
+                CreateDocumentMetadataRow(
+                    selectedDocumentUuid,
+                    345L,
+                    92L,
+                    selectedContentLastModifiedAt,
+                    resourceKeyId
+                ),
+            ],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, "Drifted selected row"],
+                    ]
+                ),
+            ],
+            []
+        );
+        var rerunHydratedPage = new HydratedPage(
+            9,
+            [CreateDocumentMetadataRow(rerunDocumentUuid, 999L, 105L, resourceKeyId: resourceKeyId)],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [999L, "No-cache rerun row"],
+                    ]
+                ),
+            ],
+            []
+        );
+        List<PageKeysetSpec> hydratedKeysets = [];
+        RelationalReadPageMaterializationRequest materializationRequest = null!;
+
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<
+                        Func<
+                            IRelationalCommandReader,
+                            CancellationToken,
+                            Task<DocumentCacheReadAccelerationCandidatePage>
+                        >
+                    >._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                (
+                    RelationalCommand _,
+                    Func<
+                        IRelationalCommandReader,
+                        CancellationToken,
+                        Task<DocumentCacheReadAccelerationCandidatePage>
+                    > readAsync,
+                    CancellationToken cancellationToken
+                ) =>
+                    readAsync(
+                        new InMemoryRelationalCommandReader([
+                            InMemoryRelationalResultSet.Create(
+                                RelationalAccessTestData.CreateRow(("TotalCount", 7L))
+                            ),
+                            InMemoryRelationalResultSet.Create(
+                                RelationalAccessTestData.CreateRow(
+                                    ("DocumentId", 345L),
+                                    ("DocumentUuid", selectedDocumentUuid.Value),
+                                    ("ContentVersion", 91L),
+                                    ("ContentLastModifiedAt", selectedContentLastModifiedAt)
+                                )
+                            ),
+                        ]),
+                        cancellationToken
+                    )
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => hydratedKeysets.Add(call.GetArgument<PageKeysetSpec>(1)!))
+            .ReturnsLazily(
+                (
+                    ResourceReadPlan _,
+                    PageKeysetSpec keyset,
+                    HydrationExecutionOptions _,
+                    CancellationToken _
+                ) => keyset is PageKeysetSpec.SelectedPage ? selectedFallbackHydratedPage : rerunHydratedPage
+            );
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Invokes(call =>
+                materializationRequest = call.GetArgument<RelationalReadPageMaterializationRequest>(0)!
+            )
+            .Returns([
+                new MaterializedDocument(
+                    rerunHydratedPage.DocumentMetadata[0],
+                    JsonNode.Parse($$"""{"id":"{{rerunDocumentUuid.Value}}"}""")!
+                ),
+            ]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.TotalCount.Should().Be(9);
+        success.EdfiDocs.Should().ContainSingle();
+        success.EdfiDocs[0]!["id"]!.GetValue<string>().Should().Be(rerunDocumentUuid.Value.ToString());
+        hydratedKeysets.Should().HaveCount(2);
+        hydratedKeysets[0].Should().BeOfType<PageKeysetSpec.SelectedPage>();
+        hydratedKeysets[1].Should().BeOfType<PageKeysetSpec.Query>();
+        materializationRequest.HydratedPage.Should().BeSameAs(rerunHydratedPage);
     }
 
     [Test]
@@ -10739,16 +10894,22 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private static DocumentMetadataRow CreateDocumentMetadataRow(
         DocumentUuid documentUuid,
         long documentId,
-        long contentVersion
+        long contentVersion,
+        DateTimeOffset? contentLastModifiedAt = null,
+        short resourceKeyId = 1
     )
     {
+        var lastModifiedAt =
+            contentLastModifiedAt ?? new DateTimeOffset(2026, 4, 11, 12, 30, 45, TimeSpan.FromHours(-5));
+
         return new DocumentMetadataRow(
             documentId,
             documentUuid.Value,
             contentVersion,
             contentVersion,
-            new DateTimeOffset(2026, 4, 11, 12, 30, 45, TimeSpan.FromHours(-5)),
-            new DateTimeOffset(2026, 4, 11, 12, 30, 45, TimeSpan.FromHours(-5))
+            lastModifiedAt,
+            lastModifiedAt,
+            resourceKeyId
         );
     }
 

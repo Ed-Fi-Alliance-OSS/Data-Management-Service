@@ -227,7 +227,8 @@ public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path
                     d."ContentVersion",
                     d."IdentityVersion",
                     d."ContentLastModifiedAt",
-                    d."IdentityLastModifiedAt"
+                    d."IdentityLastModifiedAt",
+                    d."ResourceKeyId"
                 FROM "dms"."Document" d
                 WHERE d."DocumentId" = @DocumentId
                 ORDER BY d."DocumentId";

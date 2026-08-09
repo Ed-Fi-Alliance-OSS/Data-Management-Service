@@ -68,7 +68,8 @@ public class Given_PgsqlPlanDialect
                     d."ContentVersion",
                     d."IdentityVersion",
                     d."ContentLastModifiedAt",
-                    d."IdentityLastModifiedAt"
+                    d."IdentityLastModifiedAt",
+                    d."ResourceKeyId"
                 FROM "dms"."Document" d
                 INNER JOIN "page" k ON d."DocumentId" = k."DocumentId"
                 ORDER BY d."DocumentId";
@@ -96,7 +97,8 @@ public class Given_PgsqlPlanDialect
                     d."ContentVersion",
                     d."IdentityVersion",
                     d."ContentLastModifiedAt",
-                    d."IdentityLastModifiedAt"
+                    d."IdentityLastModifiedAt",
+                    d."ResourceKeyId"
                 FROM "dms"."Document" d
                 WHERE d."DocumentId" = @DocumentId
                 ORDER BY d."DocumentId";

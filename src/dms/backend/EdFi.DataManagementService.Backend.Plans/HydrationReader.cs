@@ -45,6 +45,7 @@ public static class HydrationReader
     private static readonly int ExpectedDocumentMetadataColumnCount = DocumentMetadataColumns
         .ColumnsInOrdinalOrder
         .Length;
+    private const int LegacyDocumentMetadataColumnCount = 6;
 
     /// <summary>
     /// Reads <c>dms.Document</c> metadata rows from the current result set.
@@ -52,7 +53,7 @@ public static class HydrationReader
     /// <remarks>
     /// Expects columns at fixed ordinals aligned to <see cref="DocumentMetadataColumns"/>:
     /// 0=DocumentId, 1=DocumentUuid, 2=ContentVersion, 3=IdentityVersion,
-    /// 4=ContentLastModifiedAt, 5=IdentityLastModifiedAt.
+    /// 4=ContentLastModifiedAt, 5=IdentityLastModifiedAt, 6=ResourceKeyId.
     /// </remarks>
     /// <param name="reader">The data reader positioned at the document metadata result set.</param>
     /// <param name="ct">Cancellation token.</param>
@@ -64,7 +65,10 @@ public static class HydrationReader
     {
         ArgumentNullException.ThrowIfNull(reader);
 
-        if (reader.FieldCount != ExpectedDocumentMetadataColumnCount)
+        if (
+            reader.FieldCount != ExpectedDocumentMetadataColumnCount
+            && reader.FieldCount != LegacyDocumentMetadataColumnCount
+        )
         {
             throw new InvalidOperationException(
                 $"Document metadata result set has {reader.FieldCount} columns but expected {ExpectedDocumentMetadataColumnCount}."
@@ -82,7 +86,10 @@ public static class HydrationReader
                     ContentVersion: reader.GetInt64(2),
                     IdentityVersion: reader.GetInt64(3),
                     ContentLastModifiedAt: ReadDateTimeOffset(reader, 4),
-                    IdentityLastModifiedAt: ReadDateTimeOffset(reader, 5)
+                    IdentityLastModifiedAt: ReadDateTimeOffset(reader, 5),
+                    ResourceKeyId: reader.FieldCount == ExpectedDocumentMetadataColumnCount
+                        ? reader.GetInt16(6)
+                        : (short)0
                 )
             );
         }

@@ -399,6 +399,7 @@ internal sealed class DescriptorReadHandler(
             (_, fallbackCancellationToken) =>
                 HydrateSelectedDescriptorQueryCandidatePageAsync(
                     request,
+                    rowsPage.Page,
                     candidatePage,
                     fallbackCancellationToken
                 )
@@ -407,6 +408,7 @@ internal sealed class DescriptorReadHandler(
 
     private async Task<QueryResult> HydrateSelectedDescriptorQueryCandidatePageAsync(
         DescriptorQueryRequest request,
+        DescriptorQueryRowsPage selectedRowsPage,
         DocumentCacheReadAccelerationCandidatePage candidatePage,
         CancellationToken cancellationToken
     )
@@ -478,10 +480,59 @@ internal sealed class DescriptorReadHandler(
                 .Select(documentId => descriptorRowsByDocumentId[documentId]),
         ];
 
+        if (!SelectedDescriptorQueryRowsStillMatch(selectedRowsPage.Rows, orderedRows))
+        {
+            return await HandleQueryNoCacheResultAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+
         return MaterializeDescriptorQuerySuccess(
             request,
             new DescriptorQueryRowsPage(candidatePage.TotalCount, orderedRows)
         );
+    }
+
+    private static bool SelectedDescriptorQueryRowsStillMatch(
+        IReadOnlyList<DescriptorReadRow> selectedRows,
+        IReadOnlyList<DescriptorReadRow> hydratedRows
+    )
+    {
+        if (selectedRows.Count != hydratedRows.Count)
+        {
+            return false;
+        }
+
+        Dictionary<long, DescriptorReadRow> hydratedRowsByDocumentId = [];
+
+        foreach (DescriptorReadRow row in hydratedRows)
+        {
+            if (!hydratedRowsByDocumentId.TryAdd(row.DocumentId, row))
+            {
+                return false;
+            }
+        }
+
+        foreach (DescriptorReadRow selectedRow in selectedRows)
+        {
+            if (!hydratedRowsByDocumentId.TryGetValue(selectedRow.DocumentId, out var hydratedRow))
+            {
+                return false;
+            }
+
+            if (
+                hydratedRow.DocumentUuid != selectedRow.DocumentUuid
+                || hydratedRow.ResourceKeyId != selectedRow.ResourceKeyId
+                || hydratedRow.ContentVersion != selectedRow.ContentVersion
+                || hydratedRow.ContentLastModifiedAt != selectedRow.ContentLastModifiedAt
+                || hydratedRow.Namespace != selectedRow.Namespace
+                || hydratedRow.CodeValue != selectedRow.CodeValue
+                || hydratedRow.Discriminator != selectedRow.Discriminator
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private async Task<DescriptorQueryNoCacheReadResult> ReadQueryNoCacheAsync(

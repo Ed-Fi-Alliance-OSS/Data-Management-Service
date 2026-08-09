@@ -122,6 +122,7 @@ internal static class DocumentMetadataColumns
     public const string IdentityVersion = "IdentityVersion";
     public const string ContentLastModifiedAt = "ContentLastModifiedAt";
     public const string IdentityLastModifiedAt = "IdentityLastModifiedAt";
+    public const string ResourceKeyId = "ResourceKeyId";
 
     /// <summary>
     /// Metadata column names in reader ordinal order.
@@ -134,6 +135,7 @@ internal static class DocumentMetadataColumns
         IdentityVersion,
         ContentLastModifiedAt,
         IdentityLastModifiedAt,
+        ResourceKeyId,
     ];
 
     /// <summary>

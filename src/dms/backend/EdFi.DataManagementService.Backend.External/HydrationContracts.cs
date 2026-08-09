@@ -16,13 +16,15 @@ namespace EdFi.DataManagementService.Backend.External;
 /// <param name="IdentityVersion">Stored identity-change version stamp.</param>
 /// <param name="ContentLastModifiedAt">Timestamp of the last content change.</param>
 /// <param name="IdentityLastModifiedAt">Timestamp of the last identity change.</param>
+/// <param name="ResourceKeyId">Stored resource identity.</param>
 public sealed record DocumentMetadataRow(
     long DocumentId,
     Guid DocumentUuid,
     long ContentVersion,
     long IdentityVersion,
     DateTimeOffset ContentLastModifiedAt,
-    DateTimeOffset IdentityLastModifiedAt
+    DateTimeOffset IdentityLastModifiedAt,
+    short ResourceKeyId = 0
 );
 
 /// <summary>

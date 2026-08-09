@@ -1287,6 +1287,7 @@ public sealed class RelationalDocumentStoreRepository(
             (_, fallbackCancellationToken) =>
                 HydrateSelectedQueryCandidatePageAsync(
                     queryRequest,
+                    traditionalPaging,
                     resource,
                     readPlan,
                     candidatePage,
@@ -1297,6 +1298,7 @@ public sealed class RelationalDocumentStoreRepository(
 
     private async Task<QueryResult> HydrateSelectedQueryCandidatePageAsync(
         IQueryRequest queryRequest,
+        CollectionPaging.Traditional traditionalPaging,
         QualifiedResourceName resource,
         ResourceReadPlan readPlan,
         DocumentCacheReadAccelerationCandidatePage candidatePage,
@@ -1322,7 +1324,54 @@ public sealed class RelationalDocumentStoreRepository(
             HighestSelectedDocumentId = candidatePage.HighestSelectedDocumentId,
         };
 
+        if (!SelectedQueryCandidatePageStillMatches(candidatePage, hydratedPage.DocumentMetadata))
+        {
+            return await QueryDocumentsRelationalAsync(queryRequest, traditionalPaging, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         return BuildQuerySuccess(queryRequest, resource, readPlan, hydratedPage);
+    }
+
+    private static bool SelectedQueryCandidatePageStillMatches(
+        DocumentCacheReadAccelerationCandidatePage candidatePage,
+        IReadOnlyList<DocumentMetadataRow> hydratedMetadata
+    )
+    {
+        if (candidatePage.Candidates.Count != hydratedMetadata.Count)
+        {
+            return false;
+        }
+
+        Dictionary<long, DocumentMetadataRow> hydratedMetadataByDocumentId = [];
+
+        foreach (DocumentMetadataRow metadata in hydratedMetadata)
+        {
+            if (!hydratedMetadataByDocumentId.TryAdd(metadata.DocumentId, metadata))
+            {
+                return false;
+            }
+        }
+
+        foreach (DocumentCacheReadAccelerationCandidate candidate in candidatePage.Candidates)
+        {
+            if (!hydratedMetadataByDocumentId.TryGetValue(candidate.DocumentId, out var metadata))
+            {
+                return false;
+            }
+
+            if (
+                metadata.DocumentUuid != candidate.DocumentUuid.Value
+                || metadata.ResourceKeyId != candidate.ResourceKeyId
+                || metadata.ContentVersion != candidate.ContentVersion
+                || metadata.ContentLastModifiedAt != candidate.ContentLastModifiedAt
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private async Task<DocumentCacheReadAccelerationCandidatePage> SelectDocumentCandidatePageAsync(
