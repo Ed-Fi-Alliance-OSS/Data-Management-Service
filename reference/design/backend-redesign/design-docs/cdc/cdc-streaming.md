@@ -987,7 +987,8 @@ Template generation sets `topic.heartbeat.prefix=__debezium-heartbeat` and leave
 `topic.heartbeat.name` unset or empty. Rendering and live validation reject a non-empty
 `topic.heartbeat.name` or any conflicting heartbeat topic prefix, because the
 `DocumentState` SMT recognizes native Debezium heartbeat topics only as
-`__debezium-heartbeat.<topic-prefix>` before relational source-metadata validation.
+`__debezium-heartbeat.<topic-prefix>` when that suffix exactly matches the Debezium
+source-partition `server` value before relational source-metadata validation.
 
 Every connector explicitly sets `statistics.metrics.enabled=true`. Debezium 3.6 then
 exposes minimum, maximum, average, P50, P95, and P99 statistics for

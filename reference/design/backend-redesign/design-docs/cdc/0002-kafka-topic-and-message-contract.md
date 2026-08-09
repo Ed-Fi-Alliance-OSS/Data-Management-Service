@@ -246,9 +246,13 @@ replaces the source key and key schema with this internal progress key. It never
 through a provider-specific structured key or a null heartbeat key.
 
 Native Debezium heartbeat recognition happens before relational source-metadata
-validation and is topic-only: the raw source record topic must start with
-`__debezium-heartbeat.` and have a non-empty suffix. A non-heartbeat record with missing
-source metadata still fails transformation.
+validation and is exact: the raw source record topic must equal
+`__debezium-heartbeat.` plus `record.sourcePartition().get("server")`, and the source
+partition `server` value must be a non-empty string. A heartbeat-looking source topic
+with a missing, empty, or non-string source-partition `server` value fails transformation
+as a malformed native heartbeat. A relational table topic whose configured Debezium
+`topic.prefix` starts with `__debezium-heartbeat` still classifies through relational
+source metadata rather than by topic prefix alone.
 
 Progress output preserves the input value schema, value, headers, source partition,
 source offset, and Connect record timestamp, including a null native-heartbeat value or
@@ -560,8 +564,9 @@ configurable mapping language.
    internal heartbeat singleton for source-position progress.
 2. Inspect the original Debezium source table and operation before discarding the
    envelope. Retain Debezium heartbeat records as internal progress only when the raw
-   source topic starts with `__debezium-heartbeat.` and has a non-empty suffix. For
-   relational records, reject every unexpected source table, including
+   source topic exactly matches `__debezium-heartbeat.` plus the non-empty Debezium
+   source-partition `server` value. For relational records, reject every unexpected
+   source table, including
    `dms.DocumentProjectionWork`, which provider capture and connector include lists must
    already exclude. Among the three recognized relational sources, retain
    every `dms.CdcHeartbeat` operation as an internal progress record; accept cache create,
