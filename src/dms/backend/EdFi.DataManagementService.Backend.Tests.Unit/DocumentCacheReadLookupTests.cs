@@ -488,6 +488,75 @@ public class Given_DocumentCacheReadLookup
         responseShaper.QueryShapeAttempts.Should().Be(0);
     }
 
+    [Test]
+    public async Task It_preserves_get_by_id_deterministic_invariant_message_for_target_diagnostics()
+    {
+        DocumentCacheReadAccelerationCandidate candidate = Candidate();
+        var adapter = new ObservationLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            [Observation(candidate) with { SourceDocumentId = 999 }]
+        );
+
+        DocumentCacheReadLookupResult<GetResult> result = await adapter.TryGetByIdAsync(
+            GetByIdRequest(candidate),
+            ExecutionContext()
+        );
+
+        result.CachedResult.Should().BeNull();
+        result
+            .FallbackReason.Should()
+            .Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure);
+        result.RawLookupOutcome.Should().Be(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure);
+        result.InvariantDiagnostic.Should().NotBeNull();
+        result
+            .InvariantDiagnostic!.Message.Should()
+            .Contain("DocumentCache source row identity does not match the authorized candidate.");
+        result.InvariantDiagnostic.Message.Should().NotContain("deterministic cache invariant failure");
+        result.InvariantDiagnostic.Message.Should().NotContain(candidate.DocumentUuid.Value.ToString());
+    }
+
+    [Test]
+    public async Task It_preserves_query_deterministic_invariant_message_for_target_diagnostics()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+        );
+        var adapter = new ObservationLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            [
+                Observation(first, ordinal: 0) with
+                {
+                    CacheDocumentId = null,
+                },
+                Observation(second, ordinal: 1) with
+                {
+                    CacheContentVersion = second.ContentVersion + 1,
+                },
+            ]
+        );
+
+        DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            ExecutionContext()
+        );
+
+        result.CachedResult.Should().BeNull();
+        result
+            .FallbackReason.Should()
+            .Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure);
+        result.RawLookupOutcome.Should().Be(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure);
+        result.DirectFillCandidates.Should().BeEmpty();
+        result.InvariantDiagnostic.Should().NotBeNull();
+        result
+            .InvariantDiagnostic!.Message.Should()
+            .Contain("DocumentCache row has invalid matching-version metadata.");
+        result.InvariantDiagnostic.Message.Should().NotContain("One or more cache rows were not fresh.");
+        result.InvariantDiagnostic.Message.Should().NotContain(second.DocumentUuid.Value.ToString());
+    }
+
     [TestCase(nameof(DocumentCacheReadLookupOutcome.MissingCacheRow))]
     [TestCase(nameof(DocumentCacheReadLookupOutcome.StaleCacheRow))]
     [TestCase(nameof(DocumentCacheReadLookupOutcome.SourceDrift))]

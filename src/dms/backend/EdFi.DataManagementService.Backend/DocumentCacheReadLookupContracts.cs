@@ -189,12 +189,16 @@ internal sealed record DocumentCacheReadBatchLookupResult
                 document.Outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
             ) ?? documents.FirstOrDefault(static document => !document.IsFreshHit);
 
+        string fallbackMessage = firstFallback is DocumentCacheReadDocumentLookupResult.Fallback fallback
+            ? fallback.Message
+            : "One or more cache rows were not fresh.";
+
         return firstFallback is null
             ? new(DocumentCacheReadLookupOutcome.FreshHit, documents, "All cache rows are fresh.")
             : new(
                 firstFallback.Outcome,
                 documents,
-                "One or more cache rows were not fresh.",
+                fallbackMessage,
                 firstFallback.IsAdapterAcquisitionFailure
             );
     }
@@ -320,6 +324,7 @@ internal abstract class DocumentCacheReadLookupAdapterBase
             : DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
                 lookupResult.Outcome,
                 SelectDirectFillCandidates([lookupResult]),
+                CreateInvariantDiagnostic(lookupResult),
                 isAdapterAcquisitionFailure: lookupResult.IsAdapterAcquisitionFailure
             );
     }
@@ -354,6 +359,7 @@ internal abstract class DocumentCacheReadLookupAdapterBase
             : DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
                 lookupResult.Outcome,
                 SelectQueryDirectFillCandidates(lookupResult),
+                CreateInvariantDiagnostic(lookupResult),
                 isAdapterAcquisitionFailure: lookupResult.IsAdapterAcquisitionFailure
             );
     }
@@ -520,6 +526,28 @@ internal abstract class DocumentCacheReadLookupAdapterBase
         lookupResult.Outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
             ? []
             : SelectDirectFillCandidates(lookupResult.Documents);
+
+    private static DocumentCacheReadInvariantDiagnostic? CreateInvariantDiagnostic(
+        DocumentCacheReadDocumentLookupResult lookupResult
+    )
+    {
+        if (
+            lookupResult is not DocumentCacheReadDocumentLookupResult.Fallback fallback
+            || fallback.Outcome != DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+        )
+        {
+            return null;
+        }
+
+        return DocumentCacheReadInvariantDiagnostic.CacheLookupInvariant(fallback.Message);
+    }
+
+    private static DocumentCacheReadInvariantDiagnostic? CreateInvariantDiagnostic(
+        DocumentCacheReadBatchLookupResult lookupResult
+    ) =>
+        lookupResult.Outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+            ? DocumentCacheReadInvariantDiagnostic.CacheLookupInvariant(lookupResult.Message)
+            : null;
 }
 
 internal static class DocumentCacheReadLookupOutcomeMapper

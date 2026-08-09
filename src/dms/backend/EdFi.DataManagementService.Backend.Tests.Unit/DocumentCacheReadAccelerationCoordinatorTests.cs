@@ -727,7 +727,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         {
             QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
                 batchResult.Outcome,
-                [first]
+                [first],
+                DocumentCacheReadInvariantDiagnostic.CacheLookupInvariant(batchResult.Message)
             ),
         };
         var materializer = new RecordingMaterializer();
@@ -782,7 +783,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         telemetry.Events.Should().NotContain(("directFill", DocumentCacheReadTelemetryLabel.Attempted));
         AssertTargetInvariantDiagnostic(
             observationStore.CurrentSnapshot.GetCurrentTarget(executionContext.TargetKey)!,
-            "deterministic cache invariant failure"
+            "DocumentCache row has invalid matching-version metadata."
         );
     }
 

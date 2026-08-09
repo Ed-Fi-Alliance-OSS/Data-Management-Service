@@ -260,6 +260,8 @@ internal sealed record DocumentCacheReadInvariantDiagnostic
     public static DocumentCacheReadInvariantDiagnostic CacheLookupInvariant() =>
         new("DocumentCache read lookup observed a deterministic cache invariant failure.");
 
+    public static DocumentCacheReadInvariantDiagnostic CacheLookupInvariant(string message) => new(message);
+
     public static DocumentCacheReadInvariantDiagnostic CacheHitResponseShaping(
         DocumentCacheReadResponseShapingFailureReason reason
     ) =>
