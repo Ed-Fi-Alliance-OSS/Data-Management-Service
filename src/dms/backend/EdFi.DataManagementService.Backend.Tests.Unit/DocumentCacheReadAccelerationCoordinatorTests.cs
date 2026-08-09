@@ -1854,6 +1854,50 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     [Test]
+    public async Task It_direct_fills_surviving_query_candidates_from_mixed_missing_source_pages()
+    {
+        DocumentCacheReadAccelerationCandidate missingSource = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate missingCache = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: SecondDocumentUuid
+        );
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() }],
+            2,
+            HighestSelectedDocumentId: 346
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                DocumentCacheReadLookupOutcome.MissingSourceRow,
+                [missingCache]
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (_, _) => Task.FromResult<QueryResult>(fallbackResult),
+                CandidatePage([missingSource, missingCache], totalCount: 2, highestSelectedDocumentId: 346)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Select(request => request.DocumentId).Should().Equal(346);
+        writer.Requests.Select(request => request.DocumentId).Should().Equal(346);
+    }
+
+    [Test]
     public async Task It_skips_tracking_query_direct_fill_for_page_level_fallback()
     {
         var fallbackResult = new QueryResult.QuerySuccess(

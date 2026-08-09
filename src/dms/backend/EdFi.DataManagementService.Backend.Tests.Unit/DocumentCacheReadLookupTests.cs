@@ -536,6 +536,40 @@ public class Given_DocumentCacheReadLookup
     }
 
     [Test]
+    public async Task It_preserves_query_direct_fill_candidates_when_aggregate_outcome_is_missing_source_row()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+        );
+        var adapter = new ObservationLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            [
+                Observation(first, ordinal: 0) with
+                {
+                    SourceDocumentId = null,
+                },
+                Observation(second, ordinal: 1) with
+                {
+                    CacheDocumentId = null,
+                },
+            ]
+        );
+
+        DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            ExecutionContext()
+        );
+
+        result.CachedResult.Should().BeNull();
+        result.FallbackReason.Should().Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss);
+        result.RawLookupOutcome.Should().Be(DocumentCacheReadLookupOutcome.MissingSourceRow);
+        result.DirectFillCandidates.Should().Equal(second);
+    }
+
+    [Test]
     public async Task It_preserves_rebuilding_query_fallback_without_adapter_direct_fill_candidates()
     {
         DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);

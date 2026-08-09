@@ -1599,9 +1599,15 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return DirectFillCandidateSelection.For(request.AuthorizedCandidatePage.Candidates);
         }
 
-        return IsDocumentLevelDirectFillReason(lookupResult.FallbackReason)
-            ? DirectFillCandidateSelection.For(lookupResult.DirectFillCandidates)
-            : DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
+        if (
+            lookupResult.FallbackReason
+            == DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure
+        )
+        {
+            return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
+        }
+
+        return DirectFillCandidateSelection.For(lookupResult.DirectFillCandidates);
     }
 
     private static bool IsDirectFillTargetEligible(DocumentCacheTargetExecutionContext targetContext) =>

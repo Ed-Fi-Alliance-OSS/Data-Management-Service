@@ -517,12 +517,9 @@ internal abstract class DocumentCacheReadLookupAdapterBase
     private static IReadOnlyList<DocumentCacheReadAccelerationCandidate> SelectQueryDirectFillCandidates(
         DocumentCacheReadBatchLookupResult lookupResult
     ) =>
-        lookupResult.Outcome
-            is DocumentCacheReadLookupOutcome.MissingCacheRow
-                or DocumentCacheReadLookupOutcome.StaleCacheRow
-                or DocumentCacheReadLookupOutcome.SourceDrift
-            ? SelectDirectFillCandidates(lookupResult.Documents)
-            : [];
+        lookupResult.Outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+            ? []
+            : SelectDirectFillCandidates(lookupResult.Documents);
 }
 
 internal static class DocumentCacheReadLookupOutcomeMapper
