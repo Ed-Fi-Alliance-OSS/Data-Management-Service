@@ -583,6 +583,118 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     [Test]
+    public async Task It_returns_relational_fallback_and_records_target_diagnostic_for_stream_etag_mismatch()
+    {
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure,
+                invariantDiagnostic: DocumentCacheReadInvariantDiagnostic.CacheHitResponseShaping(
+                    DocumentCacheReadResponseShapingFailureReason.StreamEtagMismatch
+                ),
+                rawLookupOutcome: DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+            ),
+        };
+        var telemetry = new RecordingReadTelemetry();
+        DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(executionContext),
+            readTelemetry: telemetry,
+            projectionObservationSink: observationStore,
+            projectionObservationProvider: observationStore,
+            timeProvider: new FixedTimeProvider(ObservedAt)
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<GetResult>(fallbackResult);
+                }
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext
+            .Reason.Should()
+            .Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure);
+        telemetry
+            .Events.Should()
+            .Contain(("miss", nameof(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure)));
+        DocumentCacheProjectionTargetHealthSnapshot? health =
+            observationStore.CurrentSnapshot.GetCurrentTarget(executionContext.TargetKey);
+        health.Should().NotBeNull();
+        AssertTargetInvariantDiagnostic(health!, "FixedStreamEtagMismatch");
+    }
+
+    [Test]
+    public async Task It_returns_query_relational_fallback_and_records_target_diagnostic_for_stream_etag_mismatch()
+    {
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [new JsonObject { ["id"] = DocumentUuid.Value.ToString() }],
+            TotalCount: 1
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.Fallback(
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure,
+                invariantDiagnostic: DocumentCacheReadInvariantDiagnostic.CacheHitResponseShaping(
+                    DocumentCacheReadResponseShapingFailureReason.StreamEtagMismatch
+                ),
+                rawLookupOutcome: DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+            ),
+        };
+        var telemetry = new RecordingReadTelemetry();
+        DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(executionContext),
+            readTelemetry: telemetry,
+            projectionObservationSink: observationStore,
+            projectionObservationProvider: observationStore,
+            timeProvider: new FixedTimeProvider(ObservedAt)
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<QueryResult>(fallbackResult);
+                }
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext
+            .Reason.Should()
+            .Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure);
+        telemetry
+            .Events.Should()
+            .Contain(("miss", nameof(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure)));
+        DocumentCacheProjectionTargetHealthSnapshot? health =
+            observationStore.CurrentSnapshot.GetCurrentTarget(executionContext.TargetKey);
+        health.Should().NotBeNull();
+        AssertTargetInvariantDiagnostic(health!, "FixedStreamEtagMismatch");
+    }
+
+    [Test]
     public async Task It_records_query_target_diagnostic_and_skips_direct_fill_for_mixed_page_invariant()
     {
         DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
