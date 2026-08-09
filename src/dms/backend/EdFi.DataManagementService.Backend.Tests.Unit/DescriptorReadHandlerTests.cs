@@ -126,6 +126,8 @@ public class Given_DescriptorReadHandler
                     new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)
                 )
             );
+        commandExecutor.Commands.Should().ContainSingle();
+        AssertDescriptorCandidateCommandOmitsBodyColumns(commandExecutor.Commands[0]);
         A.CallTo(() =>
                 readAccelerationCoordinator.GetByIdAsync(
                     A<DocumentCacheReadAccelerationGetByIdRequest>._,
@@ -198,6 +200,8 @@ public class Given_DescriptorReadHandler
         success.EdfiDoc["shortDescription"]!.GetValue<string>().Should().Be("After fallback");
         success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(84L));
         commandExecutor.Commands.Should().HaveCount(2);
+        AssertDescriptorCandidateCommandOmitsBodyColumns(commandExecutor.Commands[0]);
+        AssertDescriptorMaterializationCommandSelectsBodyColumns(commandExecutor.Commands[1]);
     }
 
     [Test]
@@ -1533,6 +1537,8 @@ public class Given_DescriptorReadHandler
                     HighestSelectedDocumentId: null
                 )
             );
+        commandExecutor.Commands.Should().ContainSingle();
+        AssertDescriptorCandidateCommandOmitsBodyColumns(commandExecutor.Commands[0]);
         A.CallTo(() =>
                 readAccelerationCoordinator.QueryAsync(
                     A<DocumentCacheReadAccelerationQueryRequest>._,
@@ -1640,6 +1646,8 @@ public class Given_DescriptorReadHandler
         success.EdfiDocs[0]!["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(42L));
         success.EdfiDocs[1]!["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(43L));
         commandExecutor.Commands.Should().HaveCount(2);
+        AssertDescriptorCandidateCommandOmitsBodyColumns(commandExecutor.Commands[0]);
+        AssertDescriptorMaterializationCommandSelectsBodyColumns(commandExecutor.Commands[1]);
         commandExecutor.Commands[1].CommandText.Should().Contain(expectedOrderByFragment);
         commandExecutor.Commands[1].CommandText.Should().NotContain("COUNT(1)");
 
@@ -2109,6 +2117,25 @@ public class Given_DescriptorReadHandler
                 CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash
             )
         );
+
+    private static void AssertDescriptorCandidateCommandOmitsBodyColumns(RelationalCommand command)
+    {
+        command.CommandText.Should().NotContain("\"ShortDescription\"");
+        command.CommandText.Should().NotContain("[ShortDescription]");
+        command.CommandText.Should().NotContain("descriptor.\"Description\"");
+        command.CommandText.Should().NotContain("descriptor.[Description]");
+        command.CommandText.Should().NotContain("\"EffectiveBeginDate\"");
+        command.CommandText.Should().NotContain("[EffectiveBeginDate]");
+        command.CommandText.Should().NotContain("\"EffectiveEndDate\"");
+        command.CommandText.Should().NotContain("[EffectiveEndDate]");
+    }
+
+    private static void AssertDescriptorMaterializationCommandSelectsBodyColumns(RelationalCommand command)
+    {
+        command.CommandText.Should().Contain("ShortDescription");
+        command.CommandText.Should().Contain("EffectiveBeginDate");
+        command.CommandText.Should().Contain("EffectiveEndDate");
+    }
 
     private static QueryElement CreateQueryElement(
         string queryFieldName,

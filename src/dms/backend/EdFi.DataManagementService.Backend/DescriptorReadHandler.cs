@@ -21,6 +21,11 @@ namespace EdFi.DataManagementService.Backend;
 
 internal sealed record DescriptorQueryRowsPage(long? TotalCount, IReadOnlyList<DescriptorReadRow> Rows);
 
+internal sealed record DescriptorQueryCandidatePage(
+    long? TotalCount,
+    IReadOnlyList<DescriptorReadCandidateRow> Rows
+);
+
 internal sealed class DescriptorReadHandler(
     IRelationalCommandExecutor commandExecutor,
     IReadableProfileProjector readableProfileProjector,
@@ -59,6 +64,16 @@ internal sealed class DescriptorReadHandler(
         public sealed record AuthorizedRow(DescriptorReadRow Row) : DescriptorGetByIdNoCacheReadResult;
     }
 
+    private abstract record DescriptorGetByIdCandidateSelectionReadResult
+    {
+        private DescriptorGetByIdCandidateSelectionReadResult() { }
+
+        public sealed record Complete(GetResult Result) : DescriptorGetByIdCandidateSelectionReadResult;
+
+        public sealed record AuthorizedRow(DescriptorReadCandidateRow Row)
+            : DescriptorGetByIdCandidateSelectionReadResult;
+    }
+
     private abstract record DescriptorQueryNoCacheReadResult
     {
         private DescriptorQueryNoCacheReadResult() { }
@@ -66,6 +81,16 @@ internal sealed class DescriptorReadHandler(
         public sealed record Complete(QueryResult Result) : DescriptorQueryNoCacheReadResult;
 
         public sealed record RowsPage(DescriptorQueryRowsPage Page) : DescriptorQueryNoCacheReadResult;
+    }
+
+    private abstract record DescriptorQueryCandidateSelectionReadResult
+    {
+        private DescriptorQueryCandidateSelectionReadResult() { }
+
+        public sealed record Complete(QueryResult Result) : DescriptorQueryCandidateSelectionReadResult;
+
+        public sealed record CandidatePage(DescriptorQueryCandidatePage Page)
+            : DescriptorQueryCandidateSelectionReadResult;
     }
 
     public async Task<GetResult> HandleGetByIdAsync(
@@ -140,24 +165,118 @@ internal sealed class DescriptorReadHandler(
         CancellationToken cancellationToken
     )
     {
-        DescriptorGetByIdNoCacheReadResult noCacheReadResult = await ReadGetByIdNoCacheAsync(
+        DescriptorGetByIdCandidateSelectionReadResult candidateReadResult = await ReadGetByIdCandidateAsync(
                 request,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (noCacheReadResult is DescriptorGetByIdNoCacheReadResult.Complete complete)
+        if (candidateReadResult is DescriptorGetByIdCandidateSelectionReadResult.Complete complete)
         {
             return new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(complete.Result);
         }
 
-        var authorizedRow = (DescriptorGetByIdNoCacheReadResult.AuthorizedRow)noCacheReadResult;
+        var authorizedRow = (DescriptorGetByIdCandidateSelectionReadResult.AuthorizedRow)candidateReadResult;
 
         return new DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate(
             CreateDescriptorReadAccelerationCandidate(authorizedRow.Row),
             (_, fallbackCancellationToken) =>
                 HandleGetByIdNoCacheResultAsync(request, fallbackCancellationToken)
         );
+    }
+
+    private async Task<DescriptorGetByIdCandidateSelectionReadResult> ReadGetByIdCandidateAsync(
+        DescriptorGetByIdRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var authorizationResult = ResolveGetByIdAuthorizationPreflight(request);
+
+        if (authorizationResult.CompleteResult is not null)
+        {
+            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(
+                authorizationResult.CompleteResult
+            );
+        }
+
+        RelationalCommand command;
+
+        try
+        {
+            command = BuildGetByIdCandidateCommand(
+                request.MappingSet.Key.Dialect,
+                request.DocumentUuid,
+                RelationalWriteSupport.GetResourceKeyIdOrThrow(request.MappingSet, request.Resource)
+            );
+        }
+        catch (NotSupportedException ex)
+        {
+            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(
+                new GetResult.UnknownFailure(ex.Message)
+            );
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(
+                new GetResult.UnknownFailure(ex.Message)
+            );
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(
+                new GetResult.UnknownFailure(ex.Message)
+            );
+        }
+
+        DescriptorReadCandidateRow? descriptorRow;
+
+        try
+        {
+            descriptorRow = await _commandExecutor
+                .ExecuteReaderAsync(
+                    command,
+                    DescriptorReadRowReader.ReadSingleCandidateOrDefaultAsync,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (DescriptorReadInvariantException ex)
+        {
+            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(
+                new GetResult.UnknownFailure(ex.Message)
+            );
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(
+                new GetResult.UnknownFailure(ex.Message)
+            );
+        }
+
+        if (descriptorRow is null)
+        {
+            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(
+                new GetResult.GetFailureNotExists()
+            );
+        }
+
+        if (
+            ValidateGetByIdDescriptorCandidate(
+                descriptorRow,
+                authorizationResult.NamespacePrefixParameterization
+            ) is
+            { } terminal
+        )
+        {
+            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(terminal);
+        }
+
+        LogDiscriminatorMismatchIfPresent(request, descriptorRow);
+
+        return new DescriptorGetByIdCandidateSelectionReadResult.AuthorizedRow(descriptorRow);
     }
 
     private async Task<DescriptorGetByIdNoCacheReadResult> ReadGetByIdNoCacheAsync(
@@ -168,54 +287,11 @@ internal sealed class DescriptorReadHandler(
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // StoredDocument reads are internal read-modify-write fetches that bypass per-record
-        // authorization exactly as the generic single-record path does: the caller was already
-        // authorized for the operation that triggered the fetch. Only ExternalResponse reads run the
-        // namespace authorization preflight and the in-memory stored-namespace check below.
-        NamespacePrefixParameterization? namespacePrefixParameterization = null;
+        var authorizationResult = ResolveGetByIdAuthorizationPreflight(request);
 
-        if (request.ReadMode != RelationalGetRequestReadMode.StoredDocument)
+        if (authorizationResult.CompleteResult is not null)
         {
-            // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) and
-            // unsupported strategies resolve before any SQL roundtrip. The stored namespace check itself
-            // runs in memory against the namespace value materialized by the existing single SELECT.
-            var authorizationPreflight = ResolveDescriptorReadAuthorization(
-                request.MappingSet,
-                request.Resource,
-                request.AuthorizationStrategyEvaluators,
-                request.RelationalAuthorizationContext,
-                NamespaceAuthorizationOperation.ReadSingle,
-                "descriptor GET",
-                "GET"
-            );
-
-            // Custom views are implemented for GET-many only, so no GET-by-id terminal may carry checks.
-            // Guard every terminal uniformly rather than one shape, so a future planner change that starts
-            // emitting them here fails loudly instead of silently skipping validation.
-            ThrowIfGetByIdCarriesCustomViewChecks(authorizationPreflight);
-
-            switch (authorizationPreflight)
-            {
-                case DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented:
-                    return new DescriptorGetByIdNoCacheReadResult.Complete(
-                        new GetResult.GetFailureNotImplemented(notImplemented.FailureMessage)
-                    );
-                case DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError:
-                    return new DescriptorGetByIdNoCacheReadResult.Complete(
-                        new GetResult.GetFailureSecurityConfiguration(
-                            configError.Errors,
-                            configError.Diagnostics
-                        )
-                    );
-                case DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
-                    return new DescriptorGetByIdNoCacheReadResult.Complete(
-                        new GetResult.GetFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure)
-                    );
-            }
-
-            namespacePrefixParameterization = (
-                (DescriptorReadAuthorizationPreflightOutcome.Proceed)authorizationPreflight
-            ).NamespacePrefixParameterization;
+            return new DescriptorGetByIdNoCacheReadResult.Complete(authorizationResult.CompleteResult);
         }
 
         RelationalCommand command;
@@ -272,6 +348,87 @@ internal sealed class DescriptorReadHandler(
         // value without a second SQL roundtrip. The stored-namespace mismatch and uninitialized
         // failure kinds are constructed directly here because no AUTH1 codec mediates the
         // single-record path.
+        if (
+            ValidateGetByIdDescriptorCandidate(
+                descriptorRow,
+                authorizationResult.NamespacePrefixParameterization
+            ) is
+            { } terminal
+        )
+        {
+            return new DescriptorGetByIdNoCacheReadResult.Complete(terminal);
+        }
+
+        LogDiscriminatorMismatchIfPresent(request, descriptorRow);
+
+        return new DescriptorGetByIdNoCacheReadResult.AuthorizedRow(descriptorRow);
+    }
+
+    private sealed record DescriptorGetByIdAuthorizationResult(
+        GetResult? CompleteResult,
+        NamespacePrefixParameterization? NamespacePrefixParameterization
+    );
+
+    private static DescriptorGetByIdAuthorizationResult ResolveGetByIdAuthorizationPreflight(
+        DescriptorGetByIdRequest request
+    )
+    {
+        // StoredDocument reads are internal read-modify-write fetches that bypass per-record
+        // authorization exactly as the generic single-record path does: the caller was already
+        // authorized for the operation that triggered the fetch. Only ExternalResponse reads run the
+        // namespace authorization preflight and the in-memory stored-namespace check below.
+        if (request.ReadMode == RelationalGetRequestReadMode.StoredDocument)
+        {
+            return new DescriptorGetByIdAuthorizationResult(null, null);
+        }
+
+        // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) and
+        // unsupported strategies resolve before any SQL roundtrip. The stored namespace check itself
+        // runs in memory against the namespace value materialized by the existing single SELECT.
+        var authorizationPreflight = ResolveDescriptorReadAuthorization(
+            request.MappingSet,
+            request.Resource,
+            request.AuthorizationStrategyEvaluators,
+            request.RelationalAuthorizationContext,
+            NamespaceAuthorizationOperation.ReadSingle,
+            "descriptor GET",
+            "GET"
+        );
+
+        // Custom views are implemented for GET-many only, so no GET-by-id terminal may carry checks.
+        // Guard every terminal uniformly rather than one shape, so a future planner change that starts
+        // emitting them here fails loudly instead of silently skipping validation.
+        ThrowIfGetByIdCarriesCustomViewChecks(authorizationPreflight);
+
+        return authorizationPreflight switch
+        {
+            DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented => new(
+                new GetResult.GetFailureNotImplemented(notImplemented.FailureMessage),
+                null
+            ),
+            DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError => new(
+                new GetResult.GetFailureSecurityConfiguration(configError.Errors, configError.Diagnostics),
+                null
+            ),
+            DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized => new(
+                new GetResult.GetFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure),
+                null
+            ),
+            DescriptorReadAuthorizationPreflightOutcome.Proceed proceed => new(
+                null,
+                proceed.NamespacePrefixParameterization
+            ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported descriptor GET authorization preflight outcome '{authorizationPreflight.GetType().Name}'."
+            ),
+        };
+    }
+
+    private static GetResult? ValidateGetByIdDescriptorCandidate(
+        IDescriptorReadCandidateMetadata descriptorRow,
+        NamespacePrefixParameterization? namespacePrefixParameterization
+    )
+    {
         if (namespacePrefixParameterization is not null)
         {
             var namespaceFailure = EvaluateStoredNamespace(
@@ -279,30 +436,24 @@ internal sealed class DescriptorReadHandler(
                 namespacePrefixParameterization
             );
 
-            if (namespaceFailure is not null)
-            {
-                return new DescriptorGetByIdNoCacheReadResult.Complete(
-                    new GetResult.GetFailureNamespaceNotAuthorized(namespaceFailure)
-                );
-            }
+            return namespaceFailure is null
+                ? null
+                : new GetResult.GetFailureNamespaceNotAuthorized(namespaceFailure);
         }
-        else if (string.IsNullOrEmpty(descriptorRow.Namespace))
+
+        if (!string.IsNullOrEmpty(descriptorRow.Namespace))
         {
-            // Without namespace authorization configured, the stored-namespace-uninitialized 403
-            // path does not apply, so a null stored Namespace is genuine descriptor row corruption.
-            // Surface it as an UnknownFailure with the same column-naming diagnostic the row
-            // reader produces for the other required descriptor columns.
-            return new DescriptorGetByIdNoCacheReadResult.Complete(
-                new GetResult.UnknownFailure(
-                    $"Descriptor read corruption detected for DocumentId {descriptorRow.DocumentId} "
-                        + $"(ResourceKeyId={descriptorRow.ResourceKeyId}): dms.Descriptor.Namespace must not be null."
-                )
-            );
+            return null;
         }
 
-        LogDiscriminatorMismatchIfPresent(request, descriptorRow);
-
-        return new DescriptorGetByIdNoCacheReadResult.AuthorizedRow(descriptorRow);
+        // Without namespace authorization configured, the stored-namespace-uninitialized 403
+        // path does not apply, so a null stored Namespace is genuine descriptor row corruption.
+        // Surface it as an UnknownFailure with the same column-naming diagnostic the row
+        // reader produces for the other required descriptor columns.
+        return new GetResult.UnknownFailure(
+            $"Descriptor read corruption detected for DocumentId {descriptorRow.DocumentId} "
+                + $"(ResourceKeyId={descriptorRow.ResourceKeyId}): dms.Descriptor.Namespace must not be null."
+        );
     }
 
     public async Task<QueryResult> HandleQueryAsync(
@@ -370,24 +521,30 @@ internal sealed class DescriptorReadHandler(
         CancellationToken cancellationToken
     )
     {
-        DescriptorQueryNoCacheReadResult noCacheReadResult = await ReadQueryNoCacheAsync(
+        DescriptorQueryCandidateSelectionReadResult candidateReadResult = await ReadQueryCandidatePageAsync(
                 request,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (noCacheReadResult is DescriptorQueryNoCacheReadResult.Complete complete)
+        if (candidateReadResult is DescriptorQueryCandidateSelectionReadResult.Complete complete)
         {
             return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(complete.Result);
         }
 
-        var rowsPage = (DescriptorQueryNoCacheReadResult.RowsPage)noCacheReadResult;
+        var rowsPage = (DescriptorQueryCandidateSelectionReadResult.CandidatePage)candidateReadResult;
 
         if (rowsPage.Page.Rows.Count == 0)
         {
-            QueryResult.QuerySuccess relationalSuccess = MaterializeDescriptorQuerySuccess(
-                request,
-                rowsPage.Page
+            QueryResult.QuerySuccess relationalSuccess = new(
+                [],
+                request.PaginationParameters.TotalCount
+                    ? RelationalReadGuardrails.ConvertTotalCountOrThrow(
+                        request.Resource,
+                        rowsPage.Page.TotalCount,
+                        "descriptor query"
+                    )
+                    : null
             );
 
             return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(relationalSuccess);
@@ -407,9 +564,165 @@ internal sealed class DescriptorReadHandler(
         );
     }
 
+    private async Task<DescriptorQueryCandidateSelectionReadResult> ReadQueryCandidatePageAsync(
+        DescriptorQueryRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var authorizationPreflight = ResolveDescriptorReadAuthorization(
+            request.MappingSet,
+            request.Resource,
+            request.AuthorizationStrategyEvaluators,
+            request.RelationalAuthorizationContext,
+            NamespaceAuthorizationOperation.ReadMany,
+            "descriptor query",
+            "GET-many"
+        );
+
+        switch (authorizationPreflight)
+        {
+            case DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented:
+                await ValidateCustomViewsAsync(request, notImplemented.CustomViewChecks, cancellationToken)
+                    .ConfigureAwait(false);
+                return new DescriptorQueryCandidateSelectionReadResult.Complete(
+                    new QueryResult.QueryFailureNotImplemented(notImplemented.FailureMessage)
+                );
+            case DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError:
+                await ValidateCustomViewsAsync(request, configError.CustomViewChecks, cancellationToken)
+                    .ConfigureAwait(false);
+                return new DescriptorQueryCandidateSelectionReadResult.Complete(
+                    new QueryResult.QueryFailureSecurityConfiguration(
+                        configError.Errors,
+                        configError.Diagnostics
+                    )
+                );
+            case DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
+                await ValidateCustomViewsAsync(
+                        request,
+                        namespaceNotAuthorized.CustomViewChecks,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                return new DescriptorQueryCandidateSelectionReadResult.Complete(
+                    new QueryResult.QueryFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure)
+                );
+        }
+
+        var proceed = (DescriptorReadAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
+        var authorizationSpec = BuildDescriptorQueryAuthorizationSpec(proceed);
+
+        DescriptorQueryPreprocessingResult preprocessingResult;
+
+        try
+        {
+            preprocessingResult = DescriptorQueryRequestPreprocessor.Preprocess(
+                request.MappingSet,
+                request.Resource,
+                request.QueryElements
+            );
+        }
+        catch (NotSupportedException ex)
+        {
+            return new DescriptorQueryCandidateSelectionReadResult.Complete(
+                new QueryResult.QueryFailureNotImplemented(ex.Message)
+            );
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new DescriptorQueryCandidateSelectionReadResult.Complete(
+                new QueryResult.UnknownFailure(ex.Message)
+            );
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return new DescriptorQueryCandidateSelectionReadResult.Complete(
+                new QueryResult.UnknownFailure(ex.Message)
+            );
+        }
+
+        if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
+        {
+            await ValidateCustomViewsAsync(request, authorizationSpec?.CustomViewChecks, cancellationToken)
+                .ConfigureAwait(false);
+
+            return new DescriptorQueryCandidateSelectionReadResult.Complete(
+                new QueryResult.QuerySuccess([], request.PaginationParameters.TotalCount ? 0 : null)
+            );
+        }
+
+        await ValidateCustomViewsAsync(request, authorizationSpec?.CustomViewChecks, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (
+            BuildDescriptorQueryParameterBudgetFailure(
+                request.MappingSet.Key.Dialect,
+                request.Resource,
+                proceed.NamespacePrefixParameterization,
+                preprocessingResult.QueryElementsInOrder.Count,
+                CountChangeVersionParameters(request.ChangeVersionRange)
+            ) is
+            { } parameterBudgetFailure
+        )
+        {
+            return new DescriptorQueryCandidateSelectionReadResult.Complete(parameterBudgetFailure);
+        }
+
+        DescriptorQueryCandidatePage candidatePage;
+
+        try
+        {
+            candidatePage = await ReadQueryCandidateRowsAsync(
+                    request,
+                    preprocessingResult,
+                    authorizationSpec,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (DbException ex) when (authorizationSpec?.CustomViewChecks is { Count: > 0 })
+        {
+            throw new CustomViewAuthorizationValidationException(ex);
+        }
+        catch (NotSupportedException ex)
+        {
+            return new DescriptorQueryCandidateSelectionReadResult.Complete(
+                new QueryResult.UnknownFailure(ex.Message)
+            );
+        }
+        catch (DescriptorReadInvariantException ex)
+        {
+            return new DescriptorQueryCandidateSelectionReadResult.Complete(
+                new QueryResult.UnknownFailure(ex.Message)
+            );
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new DescriptorQueryCandidateSelectionReadResult.Complete(
+                new QueryResult.UnknownFailure(ex.Message)
+            );
+        }
+        catch (ArgumentException ex)
+        {
+            return new DescriptorQueryCandidateSelectionReadResult.Complete(
+                new QueryResult.UnknownFailure(ex.Message)
+            );
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return new DescriptorQueryCandidateSelectionReadResult.Complete(
+                new QueryResult.UnknownFailure(ex.Message)
+            );
+        }
+
+        return new DescriptorQueryCandidateSelectionReadResult.CandidatePage(candidatePage);
+    }
+
     private async Task<QueryResult> HydrateSelectedDescriptorQueryCandidatePageAsync(
         DescriptorQueryRequest request,
-        DescriptorQueryRowsPage selectedRowsPage,
+        DescriptorQueryCandidatePage selectedRowsPage,
         DocumentCacheReadAccelerationCandidatePage candidatePage,
         CancellationToken cancellationToken
     )
@@ -493,7 +806,7 @@ internal sealed class DescriptorReadHandler(
     }
 
     private static bool SelectedDescriptorQueryRowsStillMatch(
-        IReadOnlyList<DescriptorReadRow> selectedRows,
+        IReadOnlyList<DescriptorReadCandidateRow> selectedRows,
         IReadOnlyList<DescriptorReadRow> hydratedRows
     )
     {
@@ -512,7 +825,7 @@ internal sealed class DescriptorReadHandler(
             }
         }
 
-        foreach (DescriptorReadRow selectedRow in selectedRows)
+        foreach (DescriptorReadCandidateRow selectedRow in selectedRows)
         {
             if (!hydratedRowsByDocumentId.TryGetValue(selectedRow.DocumentId, out var hydratedRow))
             {
@@ -849,9 +1162,46 @@ internal sealed class DescriptorReadHandler(
         );
     }
 
+    private Task<DescriptorQueryCandidatePage> ReadQueryCandidateRowsAsync(
+        DescriptorQueryRequest request,
+        DescriptorQueryPreprocessingResult preprocessingResult,
+        PageDocumentIdAuthorizationSpec? authorizationSpec = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(preprocessingResult);
+
+        if (preprocessingResult.Outcome is not RelationalQueryPreprocessingOutcome.Continue)
+        {
+            throw new ArgumentException(
+                "Descriptor query candidate retrieval requires preprocessing results in the continue state.",
+                nameof(preprocessingResult)
+            );
+        }
+
+        var plannedQuery = new DescriptorQueryPageKeysetPlanner(request.MappingSet.Key.Dialect).Plan(
+            request.MappingSet,
+            request.Resource,
+            preprocessingResult,
+            request.PaginationParameters,
+            authorizationSpec,
+            request.ChangeVersionRange,
+            orderingMode: _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange)
+        );
+        var command = BuildQueryCandidateCommand(request.MappingSet.Key.Dialect, plannedQuery);
+
+        return _commandExecutor.ExecuteReaderAsync(
+            command,
+            (reader, ct) =>
+                ReadQueryCandidateRowsPageAsync(reader, plannedQuery.Plan.TotalCountSql is not null, ct),
+            cancellationToken
+        );
+    }
+
     private void LogDiscriminatorMismatchIfPresent(
         DescriptorGetByIdRequest request,
-        DescriptorReadRow descriptorRow
+        IDescriptorReadCandidateMetadata descriptorRow
     )
     {
         if (
@@ -931,7 +1281,7 @@ internal sealed class DescriptorReadHandler(
     }
 
     private static DocumentCacheReadAccelerationCandidate CreateDescriptorReadAccelerationCandidate(
-        DescriptorReadRow descriptorRow
+        IDescriptorReadCandidateMetadata descriptorRow
     ) =>
         new(
             descriptorRow.DocumentId,
@@ -942,7 +1292,7 @@ internal sealed class DescriptorReadHandler(
         );
 
     private static DocumentCacheReadAccelerationCandidatePage CreateDescriptorReadAccelerationCandidatePage(
-        DescriptorQueryRowsPage queryRowsPage
+        DescriptorQueryCandidatePage queryRowsPage
     ) =>
         new(
             [.. queryRowsPage.Rows.Select(CreateDescriptorReadAccelerationCandidate)],
@@ -1029,6 +1379,21 @@ internal sealed class DescriptorReadHandler(
         var commandText = plannedQuery.Plan.TotalCountSql is null
             ? pageRowsSql
             : $"{PlanSqlStatementText.AsTerminatedStatement(plannedQuery.Plan.TotalCountSql)}{Environment.NewLine}{Environment.NewLine}{pageRowsSql}";
+
+        return new RelationalCommand(commandText, BuildQueryParameters(plannedQuery));
+    }
+
+    private static RelationalCommand BuildQueryCandidateCommand(
+        SqlDialect dialect,
+        PageKeysetSpec.Query plannedQuery
+    )
+    {
+        ArgumentNullException.ThrowIfNull(plannedQuery);
+
+        var pageRowsSql = BuildPageCandidateRowsSql(dialect, plannedQuery.Plan.PageDocumentIdSql);
+        var commandText = plannedQuery.Plan.TotalCountSql is null
+            ? pageRowsSql
+            : $"{EnsureTrailingSemicolon(plannedQuery.Plan.TotalCountSql)}{Environment.NewLine}{Environment.NewLine}{pageRowsSql}";
 
         return new RelationalCommand(commandText, BuildQueryParameters(plannedQuery));
     }
@@ -1126,6 +1491,35 @@ internal sealed class DescriptorReadHandler(
         return new DescriptorQueryRowsPage(totalCount, rows);
     }
 
+    private static async Task<DescriptorQueryCandidatePage> ReadQueryCandidateRowsPageAsync(
+        IRelationalCommandReader reader,
+        bool hasTotalCount,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+
+        long? totalCount = null;
+
+        if (hasTotalCount)
+        {
+            totalCount = await ReadTotalCountAsync(reader, cancellationToken).ConfigureAwait(false);
+
+            if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException(
+                    "Expected descriptor query candidate result set after total count but no more result sets were available."
+                );
+            }
+        }
+
+        var rows = await DescriptorReadRowReader
+            .ReadAllCandidatesAsync(reader, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new DescriptorQueryCandidatePage(totalCount, rows);
+    }
+
     private static async Task<long> ReadTotalCountAsync(
         IRelationalCommandReader reader,
         CancellationToken cancellationToken
@@ -1208,6 +1602,56 @@ internal sealed class DescriptorReadHandler(
                 """,
             _ => throw new NotSupportedException(
                 $"Relational descriptor GET-many row retrieval does not support SQL dialect '{dialect}'."
+            ),
+        };
+    }
+
+    private static string BuildPageCandidateRowsSql(SqlDialect dialect, string pageDocumentIdSql)
+    {
+        var pageDocumentIdSqlBody = StripTrailingSemicolon(pageDocumentIdSql);
+
+        return dialect switch
+        {
+            SqlDialect.Pgsql => $$"""
+                SELECT
+                    page_document_ids."DocumentId" AS "DocumentId",
+                    document."DocumentUuid" AS "DocumentUuid",
+                    document."ContentVersion" AS "ContentVersion",
+                    document."ContentLastModifiedAt" AS "ContentLastModifiedAt",
+                    document."ResourceKeyId" AS "ResourceKeyId",
+                    descriptor."Namespace" AS "Namespace",
+                    descriptor."CodeValue" AS "CodeValue",
+                    descriptor."Discriminator" AS "Discriminator"
+                FROM (
+                {{pageDocumentIdSqlBody}}
+                ) page_document_ids
+                INNER JOIN dms."Document" document
+                    ON document."DocumentId" = page_document_ids."DocumentId"
+                LEFT JOIN dms."Descriptor" descriptor
+                    ON descriptor."DocumentId" = page_document_ids."DocumentId"
+                ORDER BY page_document_ids."DocumentId" ASC;
+                """,
+            SqlDialect.Mssql => $$"""
+                SELECT
+                    page_document_ids.[DocumentId] AS [DocumentId],
+                    document.[DocumentUuid] AS [DocumentUuid],
+                    document.[ContentVersion] AS [ContentVersion],
+                    document.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
+                    document.[ResourceKeyId] AS [ResourceKeyId],
+                    descriptor.[Namespace] AS [Namespace],
+                    descriptor.[CodeValue] AS [CodeValue],
+                    descriptor.[Discriminator] AS [Discriminator]
+                FROM (
+                {{pageDocumentIdSqlBody}}
+                ) page_document_ids
+                INNER JOIN [dms].[Document] document
+                    ON document.[DocumentId] = page_document_ids.[DocumentId]
+                LEFT JOIN [dms].[Descriptor] descriptor
+                    ON descriptor.[DocumentId] = page_document_ids.[DocumentId]
+                ORDER BY page_document_ids.[DocumentId] ASC;
+                """,
+            _ => throw new NotSupportedException(
+                $"Relational descriptor GET-many candidate retrieval does not support SQL dialect '{dialect}'."
             ),
         };
     }
@@ -1987,6 +2431,64 @@ internal sealed class DescriptorReadHandler(
             ),
             _ => throw new NotSupportedException(
                 $"Relational descriptor GET by id does not support SQL dialect '{dialect}'."
+            ),
+        };
+    }
+
+    private static RelationalCommand BuildGetByIdCandidateCommand(
+        SqlDialect dialect,
+        DocumentUuid documentUuid,
+        short resourceKeyId
+    )
+    {
+        IReadOnlyList<RelationalParameter> parameters =
+        [
+            new(DocumentUuidParameterName, documentUuid.Value),
+            new(ResourceKeyIdParameterName, resourceKeyId),
+        ];
+
+        return dialect switch
+        {
+            SqlDialect.Pgsql => new RelationalCommand(
+                """
+                SELECT
+                    document."DocumentId" AS "DocumentId",
+                    document."DocumentUuid" AS "DocumentUuid",
+                    document."ContentVersion" AS "ContentVersion",
+                    document."ContentLastModifiedAt" AS "ContentLastModifiedAt",
+                    document."ResourceKeyId" AS "ResourceKeyId",
+                    descriptor."Namespace" AS "Namespace",
+                    descriptor."CodeValue" AS "CodeValue",
+                    descriptor."Discriminator" AS "Discriminator"
+                FROM dms."Document" document
+                LEFT JOIN dms."Descriptor" descriptor
+                    ON descriptor."DocumentId" = document."DocumentId"
+                WHERE document."DocumentUuid" = @documentUuid
+                    AND document."ResourceKeyId" = @resourceKeyId;
+                """,
+                parameters
+            ),
+            SqlDialect.Mssql => new RelationalCommand(
+                """
+                SELECT
+                    document.[DocumentId] AS [DocumentId],
+                    document.[DocumentUuid] AS [DocumentUuid],
+                    document.[ContentVersion] AS [ContentVersion],
+                    document.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
+                    document.[ResourceKeyId] AS [ResourceKeyId],
+                    descriptor.[Namespace] AS [Namespace],
+                    descriptor.[CodeValue] AS [CodeValue],
+                    descriptor.[Discriminator] AS [Discriminator]
+                FROM [dms].[Document] document
+                LEFT JOIN [dms].[Descriptor] descriptor
+                    ON descriptor.[DocumentId] = document.[DocumentId]
+                WHERE document.[DocumentUuid] = @documentUuid
+                    AND document.[ResourceKeyId] = @resourceKeyId;
+                """,
+                parameters
+            ),
+            _ => throw new NotSupportedException(
+                $"Relational descriptor GET by id candidate retrieval does not support SQL dialect '{dialect}'."
             ),
         };
     }
