@@ -2383,9 +2383,12 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
         var materializer = new RecordingMaterializer
         {
-            ExceptionToThrow = new InvalidOperationException("projection failure"),
+            ExceptionToThrow = new InvalidOperationException(
+                $"projection failure for DocumentId 345 {DocumentUuid.Value} DocumentJson Host=localhost"
+            ),
         };
         var writer = new RecordingCacheWriter();
+        var logger = new CapturingLogger<DocumentCacheReadAccelerationCoordinator>();
         var sut = CreateCoordinator(
             readAccelerationEnabled: true,
             new RecordingLookupAdapter
@@ -2397,7 +2400,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             },
             CreateRegistry(ExecutionContext()),
             materializer,
-            writer
+            writer,
+            logger: logger
         );
 
         GetResult result = await sut.GetByIdAsync(
@@ -2410,6 +2414,11 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         result.Should().BeSameAs(fallbackResult);
         materializer.Requests.Should().ContainSingle();
         writer.Requests.Should().BeEmpty();
+        AssertDirectFillWarningIsSanitized(
+            logger.Entries.Should().ContainSingle().Subject,
+            typeof(InvalidOperationException),
+            DocumentCacheReadTelemetryLabel.UnexpectedException
+        );
     }
 
     [Test]
@@ -2431,6 +2440,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             ),
         };
         var writer = new RecordingCacheWriter();
+        var logger = new CapturingLogger<DocumentCacheReadAccelerationCoordinator>();
         var sut = CreateCoordinator(
             readAccelerationEnabled: true,
             new RecordingLookupAdapter
@@ -2445,7 +2455,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             writer,
             projectionObservationSink: observationStore,
             projectionObservationProvider: observationStore,
-            timeProvider: new FixedTimeProvider(ObservedAt)
+            timeProvider: new FixedTimeProvider(ObservedAt),
+            logger: logger
         );
 
         GetResult result = await sut.GetByIdAsync(
@@ -2462,6 +2473,11 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             observationStore.CurrentSnapshot.GetCurrentTarget(executionContext.TargetKey)!,
             nameof(DocumentCacheTargetMappingFailureReason.ResourceKeyMetadataMismatch)
         );
+        AssertDirectFillWarningIsSanitized(
+            logger.Entries.Should().ContainSingle().Subject,
+            typeof(DocumentCacheTargetMappingException),
+            nameof(DocumentCacheTargetMappingFailureReason.ResourceKeyMetadataMismatch)
+        );
     }
 
     [Test]
@@ -2476,7 +2492,9 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter
         {
-            ExceptionToThrow = new InvalidOperationException("writer failure"),
+            ExceptionToThrow = new InvalidOperationException(
+                $"writer failure for DocumentId 345 {DocumentUuid.Value} DocumentJson Host=localhost"
+            ),
         };
         var logger = new CapturingLogger<DocumentCacheReadAccelerationCoordinator>();
         var sut = CreateCoordinator(
@@ -2504,14 +2522,11 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         result.Should().BeSameAs(fallbackResult);
         materializer.Requests.Should().ContainSingle();
         writer.Requests.Should().ContainSingle();
-        CapturedLogEntry logEntry = logger.Entries.Should().ContainSingle().Subject;
-        logEntry.Level.Should().Be(LogLevel.Warning);
-        logEntry.Exception.Should().BeSameAs(writer.ExceptionToThrow);
-        logEntry.Message.Should().Contain(nameof(InvalidOperationException));
-        logEntry.Message.Should().NotContain(DocumentUuid.Value.ToString());
-        logEntry.Message.Should().NotContain("DocumentId");
-        logEntry.Message.Should().NotContain("DocumentJson");
-        logEntry.Message.Should().NotContain("Host=localhost");
+        AssertDirectFillWarningIsSanitized(
+            logger.Entries.Should().ContainSingle().Subject,
+            typeof(InvalidOperationException),
+            DocumentCacheReadTelemetryLabel.UnexpectedException
+        );
     }
 
     [Test]
@@ -2587,6 +2602,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         var writer = new RecordingCacheWriter();
         var telemetry = new RecordingReadTelemetry();
+        var logger = new CapturingLogger<DocumentCacheReadAccelerationCoordinator>();
         var sut = CreateCoordinator(
             readAccelerationEnabled: true,
             new RecordingLookupAdapter
@@ -2599,7 +2615,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             CreateRegistry(ExecutionContext()),
             materializer,
             writer,
-            telemetry
+            telemetry,
+            logger: logger
         );
 
         GetResult result = await sut.GetByIdAsync(
@@ -2615,6 +2632,10 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         writer.Requests.Should().BeEmpty();
         telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.Attempted));
         telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.CallerCanceled));
+        AssertDirectFillSkippedLog(
+            logger.Entries.Should().ContainSingle().Subject,
+            DocumentCacheReadTelemetryLabel.CallerCanceled
+        );
     }
 
     [Test]
@@ -2690,6 +2711,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
         var materializer = new RecordingMaterializer { DelayUntilCancellation = TimeSpan.FromSeconds(30) };
         var writer = new RecordingCacheWriter();
+        var logger = new CapturingLogger<DocumentCacheReadAccelerationCoordinator>();
         var sut = CreateCoordinator(
             readAccelerationEnabled: true,
             new RecordingLookupAdapter
@@ -2701,7 +2723,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             },
             CreateRegistry(ExecutionContext(directFillTimeout: TimeSpan.FromMilliseconds(10))),
             materializer,
-            writer
+            writer,
+            logger: logger
         );
 
         QueryResult result = await sut.QueryAsync(
@@ -2714,6 +2737,10 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         result.Should().BeSameAs(fallbackResult);
         materializer.Requests.Should().ContainSingle();
         writer.Requests.Should().BeEmpty();
+        AssertDirectFillSkippedLog(
+            logger.Entries.Should().ContainSingle().Subject,
+            DocumentCacheReadTelemetryLabel.TimedOut
+        );
     }
 
     [Test]
@@ -2858,6 +2885,33 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         diagnostic.Message.Should().NotContain("DocumentJson");
         diagnostic.Message.Should().NotContain("Host=localhost");
         health.FailureDiagnostics.DocumentIds.Should().BeEmpty();
+    }
+
+    private static void AssertDirectFillWarningIsSanitized(
+        CapturedLogEntry logEntry,
+        Type exceptionType,
+        string expectedFailureReason
+    )
+    {
+        logEntry.Level.Should().Be(LogLevel.Warning);
+        logEntry.Exception.Should().BeNull();
+        logEntry.Message.Should().Contain(exceptionType.Name);
+        logEntry.Message.Should().Contain(expectedFailureReason);
+        logEntry.Message.Should().NotContain(DocumentUuid.Value.ToString());
+        logEntry.Message.Should().NotContain("DocumentId");
+        logEntry.Message.Should().NotContain("DocumentJson");
+        logEntry.Message.Should().NotContain("Host=localhost");
+    }
+
+    private static void AssertDirectFillSkippedLog(CapturedLogEntry logEntry, string expectedReason)
+    {
+        logEntry.Level.Should().Be(LogLevel.Debug);
+        logEntry.Exception.Should().BeNull();
+        logEntry.Message.Should().Contain(expectedReason);
+        logEntry.Message.Should().NotContain(DocumentUuid.Value.ToString());
+        logEntry.Message.Should().NotContain("DocumentId");
+        logEntry.Message.Should().NotContain("DocumentJson");
+        logEntry.Message.Should().NotContain("Host=localhost");
     }
 
     private static DocumentCacheReadAccelerationGetByIdRequest CreateGetByIdRequest(

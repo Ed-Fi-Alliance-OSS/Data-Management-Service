@@ -1430,7 +1430,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                             exception.Reason
                         )
                     );
-                    LogDirectFillFailure(targetContext, exception);
+                    LogDirectFillFailure(targetContext, exception, exception.Reason.ToString());
                 }
                 catch (DocumentCacheTargetMappingException exception)
                 {
@@ -1442,13 +1442,17 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                             exception.Reason
                         )
                     );
-                    LogDirectFillFailure(targetContext, exception);
+                    LogDirectFillFailure(targetContext, exception, exception.Reason.ToString());
                 }
                 catch (Exception exception)
                 {
                     directFillDurationOutcome = DocumentCacheReadTelemetryLabel.Failed;
                     RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
-                    LogDirectFillFailure(targetContext, exception);
+                    LogDirectFillFailure(
+                        targetContext,
+                        exception,
+                        DocumentCacheReadTelemetryLabel.UnexpectedException
+                    );
                 }
             }
         }
@@ -1664,12 +1668,13 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
     private void LogDirectFillFailure(
         DocumentCacheTargetExecutionContext targetContext,
-        Exception exception
+        Exception exception,
+        string failureReason
     ) =>
         _logger.LogWarning(
-            exception,
-            "DocumentCache direct fill failed for target {TargetKey}. ExceptionType: {ExceptionType}",
+            "DocumentCache direct fill failed for target {TargetKey}. FailureReason: {FailureReason}. ExceptionType: {ExceptionType}",
             targetContext.TargetKey,
+            failureReason,
             exception.GetType().Name
         );
 }
